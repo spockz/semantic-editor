@@ -15,7 +15,7 @@ To conserve LLM context budget during pair-programming sessions, consult this in
 | [RQ-0003](RQ-0003-ast-indexing-latency-and-caching.md) | AST Indexing Latency & Caching | Performance | **Open** | Evaluating Tree-sitter whole-repo scan latency vs. in-memory daemon cache. |
 | [RQ-0004](RQ-0004-lsp-daemon-lifecycle-management.md) | LSP Daemon Lifecycle Management | Runtime | **Open** | Managing persistent background LSPs over Unix sockets vs ephemeral process execution. |
 | [RQ-0005](RQ-0005-monorepo-workspace-topologies.md) | Monorepo Workspace Topologies | Workspaces | **Open** | Handling single-language monorepos (`go.work`, Cargo) safely without dirtying git roots. |
-| [RQ-0006](RQ-0006-multi-step-refactoring-diagnostic-deltas.md) | Multi-Step Refactorings & Diagnostic Deltas | Workflows | **Open** | Managing intermediate breaking states by tracking compiler diagnostic deltas. |
+| [RQ-0006](RQ-0006-multi-step-refactoring-diagnostic-deltas.md) | Multi-Step Refactorings & Diagnostic Deltas | Workflows | **Resolved** | Managing intermediate breaking states by tracking compiler diagnostic deltas. |
 | [RQ-0007](RQ-0007-intentional-variable-unification.md) | Intentional Variable Unification | Semantics | **Open** | Bypassing compiler collision aborts to coalesce duplicate declarations. |
 | [RQ-0008](RQ-0008-structured-documentation-and-diagrams.md) | Structured Docs & Diagrams (MD/ADR/Mermaid) | Documents | **Open** | Division of labor between LSP/AST tooling, skills, and LLM for docs and diagrams. |
 | [RQ-0009](RQ-0009-read-only-vs-mutating-lsp-in-agents.md) | Read-Only vs. Mutating LSP in Agents | Harness | **Open** | Extending agent planners from read-only LSP consumers into full mutating actors. |

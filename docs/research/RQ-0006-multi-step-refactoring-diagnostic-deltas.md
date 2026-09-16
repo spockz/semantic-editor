@@ -1,8 +1,8 @@
 # RQ-0006: Multi-Step Refactorings & Diagnostic Deltas
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Workflows & Verification
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-09-16
 
 ---
 
@@ -44,4 +44,15 @@ semedit session finish
 
 * **Language Server Protocol Diagnostics**: [LSP textDocument/publishDiagnostics](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_publishDiagnostics).
 * **Rust `ra_ap_ide` Diagnostics Engine**: [rust-analyzer internals](https://github.com/rust-lang/rust-analyzer).
-* **Grit.io Multi-Step Rewriters**: [GritQL documentation](https://www.grit.io/docs) — chained AST rewriting passes.
+* **Grit.io Multi-Step Rewriters**: [GritQL documentation](https://www.grit.io/docs) - chained AST rewriting passes.
+
+---
+
+## 4. Resolution & Findings
+
+We implemented Path A (Diagnostic Delta Tracking) in `internal/pipeline`:
+
+* `ComputeDelta` calculates `net_delta`, `introduced`, and `resolved` diagnostic lists across pre- and post-refactoring states.
+* Both CLI `semedit rename` and MCP `semantic_rename` emit structured delta feedback.
+* Rather than aborting or unilaterally rolling back intermediate edits, the agent receives clear diagnostic signals showing whether an edit fixed or introduced errors.
+* Multi-step acceptance tests (`testdata/scripts/rename_diagnostic_delta.txtar`) and Tier 3 property tests validate that diagnostic deltas correctly guide multi-step workflows to completion.
