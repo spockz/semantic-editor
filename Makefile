@@ -2,14 +2,15 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
+HUGO_BASE_URL ?= /
 
 .DEFAULT_GOAL := check
 
 ## ---------------------------------------------------------
-## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests)
+## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
 ## ---------------------------------------------------------
 .PHONY: check
-check: fmt tidy lint vuln test ## Run all checks (format, tidy, lint [go, markdown, vale], security, test)
+check: fmt tidy lint vuln test verify-docs ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
@@ -157,10 +158,33 @@ build: build-next ## Build development and stable binaries
 	fi
 
 .PHONY: docgen
-docgen: ## Generate static documentation and test-driven examples from code
-	@echo "==> Generating documentation to dist/docs..."
-	@mkdir -p dist/docs
-	go run ./cmd/docgen
+docgen: docgen-source ## Generate the documentation site into dist/docs
+	@echo "==> Building Hugo documentation to dist/docs..."
+	@if command -v hugo >/dev/null 2>&1; then \
+		hugo --source .scratch/docgen --destination "$(CURDIR)/dist/docs" --baseURL "$(HUGO_BASE_URL)" --cleanDestinationDir --minify; \
+	else \
+		echo "Hugo is not installed. Install Hugo Extended to build documentation."; \
+		exit 1; \
+	fi
+	@touch dist/docs/.nojekyll
+
+.PHONY: docgen-source
+docgen-source: ## Generate temporary Hugo Markdown and module source in .scratch/docgen
+	@echo "==> Generating Hugo documentation source in .scratch/docgen..."
+	@mkdir -p .scratch/docgen
+	go run ./cmd/docgen --output-dir .scratch/docgen
+
+.PHONY: docs
+docs: docgen ## Alias for docgen
+
+.PHONY: verify-docs
+verify-docs: docgen ## Generate the site and assert its published files exist
+	@echo "==> Verifying generated documentation output..."
+	@test -f "$(CURDIR)/dist/docs/index.html"
+	@test -f "$(CURDIR)/dist/docs/docs/index.html"
+	@test -f "$(CURDIR)/dist/docs/docs/getting-started/index.html"
+	@test -f "$(CURDIR)/dist/docs/docs/reference/index.html"
+	@test -f "$(CURDIR)/dist/docs/.nojekyll"
 
 .PHONY: clean
 clean: ## Clean build artifacts and test cache

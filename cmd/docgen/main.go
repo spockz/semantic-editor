@@ -1,9 +1,10 @@
-// Package main synthesizes code-derived capability documentation and test-driven examples into a modern standalone HTML documentation site.
+// Package main synthesizes code-derived capability documentation and test-driven examples into a Hugo source tree.
 package main
 
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -18,7 +19,13 @@ import (
 	"unicode"
 )
 
-const githubSourceBaseURL = "https://github.com/spockz/semantic-editor/blob/main"
+const (
+	githubRepositoryURL    = "https://github.com/spockz/semantic-editor"
+	githubSourceBaseURL    = githubRepositoryURL + "/blob/main"
+	githubRawSourceBaseURL = "https://raw.githubusercontent.com/spockz/semantic-editor/main"
+	lotusDocsModuleVersion = "v0.3.0"
+	bootstrapModuleVersion = "v5.20300.20800"
+)
 
 // CodeCapability represents extracted language capability metadata.
 type CodeCapability struct {
@@ -84,10 +91,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	distDir := filepath.Join(rootDir, "dist", "docs")
-	if err := os.MkdirAll(distDir, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating dist/docs: %v\n", err)
+	outputDir := filepath.Join(rootDir, ".scratch", "docgen")
+	flags := flag.NewFlagSet("docgen", flag.ExitOnError)
+	flags.StringVar(&outputDir, "output-dir", outputDir, "directory for the generated Hugo source tree")
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
 		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(outputDir, "content", "docs"), 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating documentation source directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(outputDir, "data"), 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating Hugo data directory: %v\n", err)
+		os.Exit(1)
+	}
+	for _, stalePath := range []string{
+		filepath.Join(outputDir, "content", "docs", "index.md"),
+		filepath.Join(outputDir, "content", "docs", "getting-started"),
+		filepath.Join(outputDir, "content", "docs", "reference"),
+	} {
+		if err := os.RemoveAll(stalePath); err != nil {
+			fmt.Fprintf(os.Stderr, "Error removing stale documentation output: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	// 1. Extract capabilities from code AST
@@ -104,15 +131,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. Render HTML site
-	htmlContent := renderHTML(capabilities, placements, examples)
-	targetFile := filepath.Join(distDir, "index.html")
-	if err := os.WriteFile(targetFile, []byte(htmlContent), 0o600); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing HTML output: %v\n", err)
+	// 3. Render Hugo source content
+	markdownContent := renderMarkdown(capabilities, placements, examples)
+	targetFile := filepath.Join(outputDir, "content", "docs", "reference.md")
+	if err := writeGeneratedFile(targetFile, []byte(markdownContent)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing Markdown output: %v\n", err)
+		os.Exit(1)
+	}
+	gettingStartedFile := filepath.Join(outputDir, "content", "docs", "getting-started.md")
+	if err := writeGeneratedFile(gettingStartedFile, []byte(renderGettingStarted())); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing getting started output: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeHugoConfig(outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing Hugo configuration: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Successfully synthesized documentation site: %s\n", targetFile)
+	fmt.Printf("Successfully synthesized Hugo documentation source: %s\n", targetFile)
 	fmt.Printf("Extracted %d languages, %d placement modes, %d txtar workflows.\n", len(capabilities), len(placements), len(examples))
 }
 
@@ -687,6 +723,411 @@ func generateDiff(before, after string) []DiffLine {
 	return diff
 }
 
+func renderMarkdown(caps []CodeCapability, placements []string, examples []TxtarExample) string {
+	var buf bytes.Buffer
+
+	buf.WriteString(`---
+title: "Automated Capability Documentation"
+description: "Deterministic, zero-token refactoring capabilities and executable examples."
+icon: "code"
+draft: false
+toc: true
+weight: 10
+---
+
+Deterministic, zero-token refactoring capabilities extracted directly from compiler AST implementations and executable test archives (` + "`txtar`" + `).
+
+[View the semedit repository on GitHub](` + githubRepositoryURL + `)
+
+## Cross-Language Capability Matrix
+
+| Language | Maturity | Supported Access Modifiers | Operations Supported |
+| :--- | :--- | :--- | :--- |` + "\n")
+	for _, c := range caps {
+		modifiers := make([]string, 0, len(c.SupportedModifiers))
+		for _, modifier := range c.SupportedModifiers {
+			modifiers = append(modifiers, "`"+modifier+"`")
+		}
+		var operations []string
+		for operation, metadata := range c.Operations {
+			if metadata.Supported {
+				operations = append(operations, "`"+operation+"`")
+			}
+		}
+		sort.Strings(operations)
+		fmt.Fprintf(&buf, "| %s | %s | %s | %s |\n",
+			markdownCell(c.DisplayName),
+			markdownCell(c.Maturity),
+			markdownCell(strings.Join(modifiers, ", ")),
+			markdownCell(strings.Join(operations, ", ")),
+		)
+	}
+
+	buf.WriteString("\n## Compiler Constraints & Semantic Rules\n\n")
+	for _, c := range caps {
+		fmt.Fprintf(&buf, "### %s Engine Constraints\n\n", markdownCell(c.DisplayName))
+		for _, rule := range c.Limitations {
+			fmt.Fprintf(&buf, "- **%s**: %s\n", markdownCell(rule.Title), markdownCell(rule.Description))
+		}
+		buf.WriteString("\n")
+	}
+
+	buf.WriteString("## Placement Qualifiers\n\n")
+	buf.WriteString("| Placement Mode | Target Identifier Required | Semantic Behavior |\n| :--- | :--- | :--- |\n")
+	placementDescriptions := map[string]struct {
+		targetRequired bool
+		description    string
+	}{
+		"file_start":    {false, "Prepends declaration immediately after the package/import preamble."},
+		"file_end":      {false, "Appends declaration at the conclusion of the file (default fallback)."},
+		"public_start":  {false, "Anchors declaration at the start of the public declarations section."},
+		"public_end":    {false, "Appends declaration at the boundary concluding public declarations."},
+		"private_start": {false, "Anchors declaration at the start of the unexported/private section."},
+		"private_end":   {false, "Appends declaration at the boundary concluding private declarations."},
+		"before_symbol": {true, "Locates target symbol AST node and injects declaration directly preceding it."},
+		"after_symbol":  {true, "Locates target symbol AST node and injects declaration directly succeeding it."},
+	}
+	for _, placement := range placements {
+		info := placementDescriptions[placement]
+		required := "No"
+		if info.targetRequired {
+			required = "Yes"
+		}
+		fmt.Fprintf(&buf, "| `%s` | %s | %s |\n", placement, required, markdownCell(info.description))
+	}
+
+	buf.WriteString("\n## Executable Test Workflows\n\n")
+	buf.WriteString("Every scenario below is parsed from active, compiler-verified regression tests in `testdata/scripts/*.txtar`.\n\n")
+	for _, ex := range examples {
+		fmt.Fprintf(&buf, "### %s\n\n", markdownCell(ex.Title))
+		sourcePath := "/testdata/scripts/" + ex.Filename
+		fmt.Fprintf(&buf, "Source: [%s](%s) · [Download raw file](%s)\n\n", ex.Filename, githubSourceBaseURL+sourcePath, githubRawSourceBaseURL+sourcePath)
+		if ex.Description != "" {
+			fmt.Fprintf(&buf, "%s\n\n", markdownCell(ex.Description))
+		}
+		for _, step := range ex.Steps {
+			fmt.Fprintf(&buf, "#### %s\n\n", markdownCell(step.Description))
+			buf.WriteString("**CLI invocation**\n\n")
+			writeMarkdownCodeBlock(&buf, "console", "$ "+step.Command)
+			fmt.Fprintf(&buf, "**Equivalent MCP tool call (`%s`)**\n\n", step.MCPTool)
+			writeMarkdownCodeBlock(&buf, "json", step.MCPArgsJSON)
+			if step.ExpectedOut != "" {
+				fmt.Fprintf(&buf, "> Assert: %s\n\n", markdownCell(step.ExpectedOut))
+			}
+			if step.ExpectedErr != "" {
+				fmt.Fprintf(&buf, "> Expected error: %s\n\n", markdownCell(step.ExpectedErr))
+			}
+		}
+		if len(ex.DiffLines) > 0 {
+			buf.WriteString("**Unified AST transformation diff**\n\n")
+			var diff strings.Builder
+			for _, line := range ex.DiffLines {
+				diff.WriteString(line.Content)
+				diff.WriteByte('\n')
+			}
+			writeMarkdownCodeBlock(&buf, "diff", strings.TrimSuffix(diff.String(), "\n"))
+		}
+	}
+
+	buf.WriteString("## CI Drift Invariant\n\nDocumentation is regenerated from compiler capabilities and regression test archives during continuous integration before publication.\n")
+	return buf.String()
+}
+
+func writeMarkdownCodeBlock(buf *bytes.Buffer, language, content string) {
+	fence := "```"
+	if strings.Contains(content, fence) {
+		fence = "````"
+	}
+	fmt.Fprintf(buf, "%s%s\n%s\n%s\n\n", fence, language, content, fence)
+}
+
+func markdownCell(value string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(value, "|", "\\|"), "\n", " ")
+}
+
+func renderGettingStarted() string {
+	return `---
+title: "Getting Started"
+description: "Install semedit on macOS or Linux and run your first semantic edit."
+icon: "rocket_launch"
+draft: false
+weight: 1
+---
+
+semedit turns an editing intent into a compiler-backed change. The CLI and MCP server use the same deterministic engine.
+
+## macOS with Homebrew
+
+Install Go and Hugo Extended with [Homebrew](https://brew.sh/), then install the Go language server and semedit:
+
+~~~console
+brew install go hugo
+go install golang.org/x/tools/gopls@latest
+go install github.com/spockz/semantic-editor@latest
+~~~
+
+Ensure the Go binary directory is on your PATH, then verify the installation:
+
+~~~console
+semedit --help
+~~~
+
+## Linux
+
+Install Go and Hugo Extended using your Linux distribution's package manager. Then install gopls and semedit with Go:
+
+~~~console
+sudo apt install golang-go hugo
+go install golang.org/x/tools/gopls@latest
+go install github.com/spockz/semantic-editor@latest
+~~~
+
+Verify the installation:
+
+~~~console
+semedit --help
+~~~
+
+## Run a semantic edit
+
+From a Go module, resolve a symbol without counting lines:
+
+~~~console
+semedit lookup --file api/server.go --symbol Server.Start
+~~~
+
+Rename the resolved symbol across the workspace:
+
+~~~console
+semedit rename --file api/server.go --symbol Server.Start --to Serve
+~~~
+
+## Connect an MCP client
+
+Start the stdio MCP server from the project workspace:
+
+~~~console
+semedit mcp
+~~~
+
+Configure your MCP client to launch the same command. Keep the executable path absolute when the client does not inherit your shell PATH.
+
+The generated [capability reference](../reference/) contains the available semantic tools and executable examples.
+`
+}
+
+func writeHugoConfig(outputDir string) error {
+	config := `baseURL = "/"
+languageCode = "en-us"
+title = "semedit"
+contentDir = "content"
+enableEmoji = true
+
+[module]
+  [[module.imports]]
+    path = "github.com/colinwilson/lotusdocs"
+    disable = false
+  [[module.imports]]
+    path = "github.com/gohugoio/hugo-mod-bootstrap-scss/v5"
+    disable = false
+
+[markup]
+  [markup.tableOfContents]
+    endLevel = 3
+    startLevel = 1
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[params]
+  google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]
+  sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  mono_font = "'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+
+[params.docs]
+  title = "semedit"
+  themeColor = "blue"
+  darkMode = true
+  prism = true
+  prismTheme = "lotusdocs"
+  repoURL = "https://github.com/spockz/semantic-editor"
+  repoBranch = "main"
+  breadcrumbs = true
+  toc = true
+  tocMobile = true
+  scrollSpy = true
+  backToTop = true
+  extLinkNewTab = true
+
+[params.social]
+  github = "spockz"
+
+[menu]
+  [[menu.primary]]
+    name = "Getting Started"
+    url = "/docs/getting-started/"
+    identifier = "getting-started"
+    weight = 1
+  [[menu.primary]]
+    name = "Documentation"
+    url = "/docs/"
+    identifier = "docs"
+    weight = 10
+`
+	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(config)); err != nil {
+		return fmt.Errorf("write hugo.toml: %w", err)
+	}
+	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire (\n\tgithub.com/colinwilson/lotusdocs %s\n\tgithub.com/gohugoio/hugo-mod-bootstrap-scss/v5 %s\n)\n", lotusDocsModuleVersion, bootstrapModuleVersion)
+	if err := writeGeneratedFile(filepath.Join(outputDir, "go.mod"), []byte(module)); err != nil {
+		return fmt.Errorf("write Hugo module go.mod: %w", err)
+	}
+	landing := `---
+title: "semedit"
+description: "Intent-driven code editing for AI agents."
+icon: "rocket_launch"
+draft: false
+---
+
+# Intent-driven code editing for AI agents
+
+LLMs plan intent. Host compilers execute zero-token AST refactorings.
+
+[Get started](docs/getting-started/)
+
+[View on GitHub](https://github.com/spockz/semantic-editor)
+
+Open source and MIT licensed.
+
+## Why semedit?
+
+semedit separates semantic intent, decided by the LLM, from mechanical syntax transformation, executed by local host CPUs, compilers, language servers, and AST tools.
+
+### Deterministic edits
+
+Compiler-backed transformations preserve syntactic validity across state transitions and eliminate fragile line-based patching.
+
+### Symbol-based intent
+
+Ask for Server.Start instead of hunting for a byte offset or line number. The symbol resolver finds the exact declaration before the host engine edits it.
+
+### Structured feedback
+
+The execution pipeline formats changes, checks diagnostics, and returns structured results so an agent can continue from compiler evidence.
+
+### One contract for agents
+
+Use the same semantic operations through the CLI or MCP, including rename, declaration insertion, function insertion, type insertion, and import organization.
+
+## How it works
+
+1. The LLM plans a high-level intent.
+2. semedit resolves symbols and dispatches to the compiler or language server.
+3. The host applies and formats the change deterministically.
+4. Diagnostics return to the agent without re-emitting a full file diff.
+
+## Explore the documentation
+
+[Read the capability reference](docs/reference/)
+
+The reference is generated from compiler capability declarations and executable txtar regression tests, so examples stay aligned with the implementation.
+`
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(landing)); err != nil {
+		return fmt.Errorf("write Hugo landing page: %w", err)
+	}
+	docsSection := `---
+title: "Documentation"
+description: "semedit installation and compiler-backed capability reference."
+draft: false
+weight: 10
+---
+`
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
+		return fmt.Errorf("write Hugo docs section: %w", err)
+	}
+	landingData := `hero:
+  enable: true
+  weight: 10
+  template: hero
+  badge:
+    text: "semedit"
+    color: primary
+    pill: false
+    soft: true
+  title: "Intent-driven code editing for AI agents"
+  subtitle: "LLMs plan intent. Host compilers execute zero-token AST refactorings."
+  ctaButton:
+    icon: rocket_launch
+    btnText: "Get Started"
+    url: "/docs/getting-started/"
+  cta2Button:
+    icon: code
+    btnText: "View on GitHub"
+    url: "https://github.com/spockz/semantic-editor"
+  info: "**Open Source** MIT Licensed."
+
+featureGrid:
+  enable: true
+  weight: 20
+  template: feature grid
+  title: "Why semedit?"
+  subtitle: "semedit separates semantic intent from mechanical syntax transformation, so agents can ask for a change and let local compiler tooling execute it precisely."
+  items:
+    - title: "Deterministic edits"
+      icon: lock
+      description: "Compiler-backed transformations preserve syntactic validity and eliminate fragile line-based patching."
+    - title: "Symbol-based intent"
+      icon: search
+      description: "Ask for Server.Start instead of hunting for byte offsets or line numbers."
+    - title: "Structured feedback"
+      icon: speed
+      description: "Formatting, diagnostics, and compiler evidence return to the agent as structured results."
+    - title: "One contract for agents"
+      icon: settings
+      description: "Use the same semantic operations through the CLI or MCP, including rename and declaration insertion."
+
+imageCompare:
+  enable: false
+  weight: 30
+  template: image compare
+`
+	if err := writeGeneratedFile(filepath.Join(outputDir, "data", "landing.yaml"), []byte(landingData)); err != nil {
+		return fmt.Errorf("write Hugo landing data: %w", err)
+	}
+	return nil
+}
+
+func writeGeneratedFile(targetPath string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(targetPath), ".docgen-*")
+	if err != nil {
+		return fmt.Errorf("create temporary output: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() { _ = os.Remove(tmpPath) }()
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("set temporary output mode: %w", err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("write temporary output: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("sync temporary output: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temporary output: %w", err)
+	}
+	if err := os.Rename(tmpPath, targetPath); err != nil {
+		return fmt.Errorf("rename temporary output: %w", err)
+	}
+	return nil
+}
+
+// renderHTML is retained as a reference during the Hugo migration and is not part of the build path.
+//
+//nolint:unused
 func renderHTML(caps []CodeCapability, placements []string, examples []TxtarExample) string {
 	var buf bytes.Buffer
 
@@ -851,6 +1292,32 @@ main.content {
   font-size: 1.15rem;
   color: var(--text-secondary);
   max-width: 850px;
+}
+
+.github-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 1.25rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.github-badge:hover {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.github-badge svg {
+  fill: currentColor;
+  height: 1rem;
+  width: 1rem;
 }
 
 .section {
@@ -1167,6 +1634,10 @@ footer {
     <p>
       Deterministic, zero-token refactoring capabilities extracted directly from compiler AST implementations and executable test archives (<code>txtar</code>).
     </p>
+    <a class="github-badge" href="https://github.com/spockz/semantic-editor">
+      <svg aria-hidden="true" viewBox="0 0 16 16"><path d="M8 0a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.66 7.66 0 0 1 8 4.73c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.53.73.53 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8 8 0 0 0 8 0Z"/></svg>
+      View on GitHub
+    </a>
   </section>
 
   <!-- Capability Matrix -->
@@ -1423,7 +1894,7 @@ footer {
     <div class="callout callout-info">
       <div class="callout-title">Deterministic Compilation Gate</div>
       <div class="callout-desc">
-        <code>make check</code> invokes <code>docgen</code> and asserts <code>git diff --exit-code dist/docs/</code> is empty. If any AST capability or test change alters documentation without regeneration, CI fails immediately.
+        <code>make docgen</code> regenerates the Hugo site into <code>dist/docs</code> before publication. If any AST capability or test change alters documentation, the generated site changes with it.
       </div>
     </div>
   </section>
@@ -1442,11 +1913,13 @@ footer {
 	return buf.String()
 }
 
+//nolint:unused
 func sanitizeID(name string) string {
 	r := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
 	return r.ReplaceAllString(strings.TrimSuffix(name, ".txtar"), "-")
 }
 
+//nolint:unused
 func toTitleCase(s string) string {
 	words := strings.Fields(s)
 	for i, w := range words {

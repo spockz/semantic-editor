@@ -314,33 +314,26 @@ The generator operates deterministically and safely:
   3. Replace the target file atomically via `os.Rename`.
   4. Advance file modification time (`mtime`) to invalidate file caches.
 
-### 5.2 CI Drift Gate
+### 5.2 CI Documentation Build and Output Gate
 
-The `Makefile` introduces two integrated targets:
+The `Makefile` exposes a single generation path and a verification target that depends on it:
 
 ```makefile
 .PHONY: docgen
-docgen: ## Generate all documentation, agent skills, and schemas from code declarations
-    @echo "==> Synthesizing capability documentation..."
-    go run ./cmd/docgen
+docgen: docgen-source ## Build the generated Hugo site into dist/docs
+    hugo --source .scratch/docgen --destination "$(CURDIR)/dist/docs" --cleanDestinationDir --minify
+    touch dist/docs/.nojekyll
 
 .PHONY: verify-docs
-verify-docs: docgen ## Verify that generated documentation matches committed files on disk
-    @echo "==> Verifying documentation synchronization..."
-    @git diff --exit-code docs/reference/ skills/semedit/SKILL.md docs/cli/ docs/man/ internal/mcp/server.go || { \
-        echo "ERROR: Documentation drift detected in tracked files!"; \
-        echo "The committed documentation does not match code capabilities."; \
-        echo "Run 'make docgen' locally and commit the resulting changes."; \
-        exit 1; \
-    }
-    @test -z "$$(git status --porcelain docs/reference/ skills/semedit/ docs/cli/ docs/man/)" || { \
-        echo "ERROR: Untracked or unstaged documentation files detected!"; \
-        git status --porcelain docs/reference/ skills/semedit/ docs/cli/ docs/man/; \
-        exit 1; \
-    }
+verify-docs: docgen ## Build the site and assert the published files exist
+    test -f "$(CURDIR)/dist/docs/index.html"
+    test -f "$(CURDIR)/dist/docs/docs/index.html"
+    test -f "$(CURDIR)/dist/docs/docs/getting-started/index.html"
+    test -f "$(CURDIR)/dist/docs/docs/reference/index.html"
+    test -f "$(CURDIR)/dist/docs/.nojekyll"
 ```
 
-The top-level `make check` target invokes `verify-docs` alongside `fmt`, `tidy`, `lint`, and `test`. Any pull request or commit that modifies language capabilities without regenerating documentation fails CI immediately.
+The top-level `make check` target invokes `verify-docs` alongside `fmt`, `tidy`, `lint`, `vuln`, and `test`. Any pull request or commit that modifies language capabilities or test archives rebuilds the Hugo site and fails immediately if a required published page is missing. Generated Hugo source remains temporary in `.scratch/docgen`; only the built `dist/docs` tree is published.
 
 ---
 
@@ -387,6 +380,6 @@ The top-level `make check` target invokes `verify-docs` alongside `fmt`, `tidy`,
 
 ### Phase 4: CI Integration & Drift Gate
 
-* Add `make docgen` and `make verify-docs` to `Makefile`.
-* Integrate `verify-docs` into `make check`.
+* Add `make docgen`, `make docgen-source`, and `make verify-docs` to `Makefile`.
+* Integrate `verify-docs` into `make check` and call the same target from the Pages workflow.
 * Validate that repository passes `make check` and markdown linter checks with zero warnings.
