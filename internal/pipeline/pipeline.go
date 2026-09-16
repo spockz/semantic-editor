@@ -74,11 +74,73 @@ func Format(ctx context.Context, workDir string, paths ...string) error {
 	return nil
 }
 
+// DiagnosticDelta records compiler diagnostic shifts across an edit (ADR-0004, RQ-0006).
+type DiagnosticDelta struct {
+	Before     []string `json:"before"`
+	After      []string `json:"after"`
+	NetDelta   int      `json:"net_delta"`
+	Introduced []string `json:"introduced"`
+	Resolved   []string `json:"resolved"`
+}
+
+// ComputeDelta calculates introduced and resolved diagnostics between two states.
+func ComputeDelta(before []string, after []string) DiagnosticDelta {
+	beforeMap := make(map[string]bool, len(before))
+	for _, b := range before {
+		beforeMap[b] = true
+	}
+
+	afterMap := make(map[string]bool, len(after))
+	for _, a := range after {
+		afterMap[a] = true
+	}
+
+	var introduced []string
+	for _, a := range after {
+		if !beforeMap[a] {
+			introduced = append(introduced, a)
+		}
+	}
+
+	var resolved []string
+	for _, b := range before {
+		if !afterMap[b] {
+			resolved = append(resolved, b)
+		}
+	}
+
+	return DiagnosticDelta{
+		Before:     before,
+		After:      after,
+		NetDelta:   len(after) - len(before),
+		Introduced: introduced,
+		Resolved:   resolved,
+	}
+}
+
+// FindModuleRoot locates the nearest enclosing directory containing go.mod.
+func FindModuleRoot(dir string) string {
+	cur := filepath.Clean(dir)
+	for {
+		if _, err := os.Stat(filepath.Join(cur, "go.mod")); err == nil {
+			return cur
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return dir
+}
+
 // CheckDiagnostics collects compiler/linter diagnostics without rolling back intermediate states (ADR-0004).
 func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
+	effectiveDir := FindModuleRoot(workDir)
+
 	cmd := exec.CommandContext(ctx, "go", "vet", "./...")
-	if workDir != "" {
-		cmd.Dir = workDir
+	if effectiveDir != "" {
+		cmd.Dir = effectiveDir
 	}
 	cmd.Env = os.Environ()
 

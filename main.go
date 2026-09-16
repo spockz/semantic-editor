@@ -137,13 +137,23 @@ func runRename(workDir string, args []string) int {
 	}
 
 	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
 	if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, to); err != nil {
 		fmt.Fprintf(os.Stderr, "rename execution error: %v\n", err)
 		return 1
 	}
 
 	_ = pipeline.Format(ctx, workDir, ".")
-	_, _ = pipeline.CheckDiagnostics(ctx, workDir)
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	if len(delta.Introduced) > 0 {
+		fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
+	}
+	if len(delta.Resolved) > 0 {
+		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
+	}
 
 	return 0
 }

@@ -32,8 +32,8 @@ type Symbol struct {
 	Offset        int    `json:"offset"`
 }
 
-// FormatQualifiedName returns the formatted name including receiver if present.
-func (s *Symbol) FormatQualifiedName() string {
+// BuildQualifiedName returns the formatted name including receiver if present.
+func (s *Symbol) BuildQualifiedName() string {
 	if s.Receiver != "" {
 		return s.Receiver + "." + s.Name
 	}
@@ -129,7 +129,7 @@ func Resolve(rootDir string, filePath string, query string) (*LookupResult, erro
 	}
 
 	for _, m := range matches {
-		m.QualifiedName = m.FormatQualifiedName()
+		m.QualifiedName = m.BuildQualifiedName()
 		if rootDir != "" {
 			if rel, err := filepath.Rel(rootDir, m.File); err == nil && !strings.HasPrefix(rel, "..") {
 				m.File = rel

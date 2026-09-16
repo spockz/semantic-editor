@@ -104,6 +104,25 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 
 	switch req.Method {
 	case "initialize":
+		var initParams struct {
+			RootURI          string `json:"rootUri"`
+			RootPath         string `json:"rootPath"`
+			WorkspaceFolders []struct {
+				URI  string `json:"uri"`
+				Name string `json:"name"`
+			} `json:"workspaceFolders"`
+		}
+		if err := json.Unmarshal(req.Params, &initParams); err == nil {
+			switch {
+			case initParams.RootURI != "":
+				s.workDir = strings.TrimPrefix(initParams.RootURI, "file://")
+			case initParams.RootPath != "":
+				s.workDir = initParams.RootPath
+			case len(initParams.WorkspaceFolders) > 0 && initParams.WorkspaceFolders[0].URI != "":
+				s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
+			}
+		}
+
 		res := map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]any{
@@ -269,17 +288,28 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			return
 		}
 
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
 		if err := golang.Rename(ctx, s.workDir, res.File, res.Line, res.Column, to); err != nil {
 			s.sendToolError(id, fmt.Sprintf("rename error: %v", err))
 			return
 		}
 
 		_ = pipeline.Format(ctx, s.workDir, ".")
-		diags, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
 
 		respText := fmt.Sprintf("Successfully renamed %s to %s.", sym, to)
-		if len(diags) > 0 {
-			respText += fmt.Sprintf("\nDiagnostics after rename:\n%s", strings.Join(diags, "\n"))
+		if len(delta.Introduced) > 0 || len(delta.Resolved) > 0 {
+			respText += fmt.Sprintf("\nDiagnostics delta (net %d):\n", delta.NetDelta)
+			if len(delta.Resolved) > 0 {
+				respText += fmt.Sprintf("Resolved:\n- %s\n", strings.Join(delta.Resolved, "\n- "))
+			}
+			if len(delta.Introduced) > 0 {
+				respText += fmt.Sprintf("Introduced:\n- %s\n", strings.Join(delta.Introduced, "\n- "))
+			}
+		} else if len(diagsAfter) > 0 {
+			respText += fmt.Sprintf("\nDiagnostics unchanged (%d active):\n%s", len(diagsAfter), strings.Join(diagsAfter, "\n"))
 		}
 		s.sendToolSuccess(id, respText)
 

@@ -60,3 +60,41 @@ func TestFormat(t *testing.T) {
 		t.Errorf("got %q, want %q", string(formatted), expected)
 	}
 }
+
+func TestComputeDelta(t *testing.T) {
+	t.Parallel()
+
+	before := []string{"err1: syntax", "err2: unused variable"}
+	after := []string{"err1: syntax", "err3: type mismatch"}
+
+	delta := pipeline.ComputeDelta(before, after)
+
+	if delta.NetDelta != 0 {
+		t.Errorf("expected NetDelta 0, got %d", delta.NetDelta)
+	}
+	if len(delta.Introduced) != 1 || delta.Introduced[0] != "err3: type mismatch" {
+		t.Errorf("unexpected Introduced: %v", delta.Introduced)
+	}
+	if len(delta.Resolved) != 1 || delta.Resolved[0] != "err2: unused variable" {
+		t.Errorf("unexpected Resolved: %v", delta.Resolved)
+	}
+}
+
+func TestFindModuleRoot(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "pkg", "sub")
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
+		t.Fatalf("mkdir failed: %v", err)
+	}
+	modFile := filepath.Join(dir, "go.mod")
+	if err := os.WriteFile(modFile, []byte("module test\n"), 0o600); err != nil {
+		t.Fatalf("write mod failed: %v", err)
+	}
+
+	found := pipeline.FindModuleRoot(subDir)
+	if found != dir {
+		t.Errorf("FindModuleRoot(%q) = %q, want %q", subDir, found, dir)
+	}
+}

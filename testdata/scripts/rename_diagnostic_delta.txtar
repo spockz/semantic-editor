@@ -1,0 +1,32 @@
+# Test rename with diagnostic delta verification
+exec semedit rename --file api/server.go --symbol "Server.OldName" --to "NewName"
+cmp api/server.go want/api/server.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) OldName() {}
+
+func Run() {
+	s := &Server{}
+	s.OldName()
+}
+
+-- want/api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) NewName() {}
+
+func Run() {
+	s := &Server{}
+	s.NewName()
+}
