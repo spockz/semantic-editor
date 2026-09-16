@@ -1,0 +1,70 @@
+# Test specialized AST insertion tools: insert-func, insert-type, insert-decl, and explicit imports.
+
+# 1. Insert struct type into api/server.go
+exec semedit insert-type --file api/server.go --source 'type Config struct { Port int }'
+stdout 'Successfully inserted type into api/server.go'
+
+# 2. Insert public method on Server (clusters after receiver definition)
+exec semedit insert-func --file api/server.go --source 'func (s *Server) Start() error { var _ = crand.Reader; return nil }'
+stdout 'Successfully inserted function into api/server.go'
+
+# 3. Insert private method on Server (clusters in private section)
+exec semedit insert-func --file api/server.go --source 'func (s *Server) stop() error { return nil }'
+stdout 'Successfully inserted function into api/server.go'
+
+# 4. Insert constant into existing const group
+exec semedit insert-decl --file api/server.go --source 'const DefaultPort = 8080'
+stdout 'Successfully inserted declaration into api/server.go'
+
+# 5. Add explicit import with alias
+exec semedit imports --file api/server.go --add 'crand crypto/rand'
+stdout 'Successfully organized imports.'
+
+# 6. Verify transformed file matches expected golden state
+cmp api/server.go want/api/server.go
+
+# 7. Assert unsupported access modifier in Go is rejected
+! exec semedit insert-func --file api/server.go --access protected --source 'func Helper() {}'
+stderr 'not supported by the Go language backend'
+
+-- go.mod --
+module example.com/specialized
+
+go 1.23
+
+-- api/server.go --
+package api
+
+const (
+	StatusStarting = "starting"
+	StatusRunning  = "running"
+)
+
+type Server struct {
+	name string
+}
+
+func (s *Server) helper() {}
+
+-- want/api/server.go --
+package api
+
+import crand "crypto/rand"
+
+type Config struct{ Port int }
+
+const (
+	StatusStarting = "starting"
+	StatusRunning  = "running"
+	DefaultPort    = 8080
+)
+
+type Server struct {
+	name string
+}
+
+func (s *Server) Start() error { var _ = crand.Reader; return nil }
+
+func (s *Server) helper() {}
+
+func (s *Server) stop() error { return nil }

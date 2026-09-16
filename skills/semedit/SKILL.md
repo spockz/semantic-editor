@@ -15,17 +15,28 @@ Prioritize `semedit` tools over manual text replacement (`replace_file_content`)
    - Renaming functions, methods, structs, interfaces, or variables across one or multiple packages.
    - Automatically cleans up and organizes imports post-rename (`auto_organize_imports: true`).
    - Eliminates diff generation, whitespace errors, and broken call sites across imports.
-2. **Declaration Insertion (`semantic_insert_declaration`)**:
-   - Adding top-level functions, methods, types, or constants to existing Go files.
+2. **Function & Method Insertion (`semantic_insert_function`)**:
+   - Adding top-level functions or methods to existing Go files.
+   - Automatically clusters methods near other methods on the same receiver.
+   - Enforces strict public vs private section partitioning.
+   - Accepts `access_modifier`: `"infer"` (default), `"public"`, `"private"` (rejects unsupported modifiers like `"protected"`).
+3. **Type Insertion (`semantic_insert_type`)**:
+   - Adding structs, interfaces, or type aliases to existing Go files.
+   - Automatically anchors types in public or private type sections and resolves package imports.
+4. **Declaration & Group Merging (`semantic_insert_decl`)**:
+   - Adding constants, variables, or declarations to existing Go files.
+   - Intelligently merges constants and variables into existing `const (...)` or `var (...)` blocks (`group: "append"`).
+5. **General Declaration Insertion (`semantic_insert_declaration`)**:
+   - General-purpose fallback for multi-declaration snippets.
    - Supports granular placement (`file_start`, `file_end`, `public_start`, `public_end`, `private_start`, `private_end`, `before_symbol`, `after_symbol`).
-   - Validates Go syntax before touching disk; automatically resolves and adds required package imports.
-3. **Import Management (`semantic_organize_imports`)**:
+6. **Import Management (`semantic_organize_imports`)**:
    - Arranging imports, resolving missing packages, and removing unused imports without manual diffs.
-4. **Dependency Management (`semantic_add_dependency`)**:
+   - Supports explicit package additions with aliases (`add: ["crand crypto/rand", "_ net/http/pprof"]`) and removals (`remove: ["net/http"]`).
+7. **Dependency Management (`semantic_add_dependency`)**:
    - Adding external Go module dependencies and tidying `go.mod` without manual shell command formatting.
-5. **Symbol Location & Coordinates (`resolve_symbol_location`)**:
+8. **Symbol Location & Coordinates (`resolve_symbol_location`)**:
    - Querying exact file, line, column, byte offset, and receiver for a symbol without line counting.
-6. **Verification & Diagnostics (`semantic_verify`)**:
+9. **Verification & Diagnostics (`semantic_verify`)**:
    - Formatting source files and checking compiler diagnostics across the workspace without rolling back intermediate states.
 
 ## Tool Routing & Intent Formulation

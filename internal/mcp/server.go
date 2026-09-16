@@ -228,14 +228,153 @@ func (s *Server) listTools() []map[string]any {
 			},
 		},
 		{
+			"name":        "semantic_insert_function",
+			"description": "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Automatically clusters methods near their receiver types and enforces public vs private section partitioning.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "Target file path",
+					},
+					"source": map[string]any{
+						"type":        "string",
+						"description": "Function or method Go source code snippet",
+					},
+					"access_modifier": map[string]any{
+						"type":        "string",
+						"description": "Access modifier (infer, public, private, protected, package-private)",
+						"enum": []string{
+							"infer", "public", "private", "protected", "package-private",
+						},
+					},
+					"placement": map[string]any{
+						"type":        "string",
+						"description": "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol",
+						"enum": []string{
+							"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol",
+						},
+					},
+					"target_symbol": map[string]any{
+						"type":        "string",
+						"description": "Target symbol identifier required when placement is before_symbol or after_symbol",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "Automatically resolve and organize package imports (default true)",
+					},
+				},
+				"required": []string{"file", "source"},
+			},
+		},
+		{
+			"name":        "semantic_insert_type",
+			"description": "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Automatically anchors types within the appropriate section and resolves package imports.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "Target file path",
+					},
+					"source": map[string]any{
+						"type":        "string",
+						"description": "Type definition Go source code snippet",
+					},
+					"access_modifier": map[string]any{
+						"type":        "string",
+						"description": "Access modifier (infer, public, private, protected, package-private)",
+						"enum": []string{
+							"infer", "public", "private", "protected", "package-private",
+						},
+					},
+					"placement": map[string]any{
+						"type":        "string",
+						"description": "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol",
+						"enum": []string{
+							"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol",
+						},
+					},
+					"target_symbol": map[string]any{
+						"type":        "string",
+						"description": "Target symbol identifier required when placement is before_symbol or after_symbol",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "Automatically resolve and organize package imports (default true)",
+					},
+				},
+				"required": []string{"file", "source"},
+			},
+		},
+		{
+			"name":        "semantic_insert_decl",
+			"description": "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. Intelligently merges constants and variables into existing parenthesized const (...) or var (...) blocks.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "Target file path",
+					},
+					"source": map[string]any{
+						"type":        "string",
+						"description": "Declaration Go source code snippet",
+					},
+					"access_modifier": map[string]any{
+						"type":        "string",
+						"description": "Access modifier (infer, public, private, protected, package-private)",
+						"enum": []string{
+							"infer", "public", "private", "protected", "package-private",
+						},
+					},
+					"group": map[string]any{
+						"type":        "string",
+						"description": "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')",
+						"enum":        []string{"append", "standalone"},
+					},
+					"placement": map[string]any{
+						"type":        "string",
+						"description": "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol",
+						"enum": []string{
+							"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol",
+						},
+					},
+					"target_symbol": map[string]any{
+						"type":        "string",
+						"description": "Target symbol identifier required when placement is before_symbol or after_symbol",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "Automatically resolve and organize package imports (default true)",
+					},
+				},
+				"required": []string{"file", "source"},
+			},
+		},
+		{
 			"name":        "semantic_organize_imports",
-			"description": "Use this tool to automatically format imports, resolve missing package imports, and strip unused imports across specified files or the workspace.",
+			"description": "Use this tool to format imports, resolve missing package imports, and strip unused imports across specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
 					"file": map[string]any{
 						"type":        "string",
 						"description": "Optional file or directory path to process (defaults to entire workspace)",
+					},
+					"add": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+						},
+						"description": "Optional list of import paths to explicitly add. Supports 'path', 'alias path', or '_ path'.",
+					},
+					"remove": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+						},
+						"description": "Optional list of import paths to explicitly remove.",
 					},
 				},
 			},
@@ -449,23 +588,166 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
 
 		respText := fmt.Sprintf("Successfully inserted declaration into %s.", args.File)
-		if len(delta.Introduced) > 0 || len(delta.Resolved) > 0 {
-			respText += fmt.Sprintf("\nDiagnostics delta (net %d):\n", delta.NetDelta)
-			if len(delta.Resolved) > 0 {
-				respText += fmt.Sprintf("Resolved:\n- %s\n", strings.Join(delta.Resolved, "\n- "))
-			}
-			if len(delta.Introduced) > 0 {
-				respText += fmt.Sprintf("Introduced:\n- %s\n", strings.Join(delta.Introduced, "\n- "))
-			}
+		respText = appendDiagnosticDelta(respText, delta)
+		s.sendToolSuccess(id, respText)
+
+	case "semantic_insert_function":
+		var args struct {
+			File                string `json:"file"`
+			Source              string `json:"source"`
+			AccessModifier      string `json:"access_modifier"`
+			Placement           string `json:"placement"`
+			TargetSymbol        string `json:"target_symbol"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
 		}
-		if len(delta.Suggestions) > 0 {
-			respText += fmt.Sprintf("\nActionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
 		}
+
+		if args.File == "" || args.Source == "" {
+			s.sendToolError(id, "semantic_insert_function requires 'file' and 'source' arguments")
+			return
+		}
+
+		targetPath := args.File
+		if s.workDir != "" && !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(s.workDir, targetPath)
+		}
+
+		autoOrg := true
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		opts := astedit.FunctionOptions{
+			AccessModifier:      astedit.AccessModifier(args.AccessModifier),
+			Placement:           astedit.Placement(args.Placement),
+			TargetSymbol:        args.TargetSymbol,
+			AutoOrganizeImports: autoOrg,
+		}
+
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
+		if err := astedit.InsertFunction(ctx, targetPath, args.Source, opts); err != nil {
+			s.sendToolError(id, fmt.Sprintf("insert function error: %v", err))
+			return
+		}
+
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+		respText := fmt.Sprintf("Successfully inserted function into %s.", args.File)
+		respText = appendDiagnosticDelta(respText, delta)
+		s.sendToolSuccess(id, respText)
+
+	case "semantic_insert_type":
+		var args struct {
+			File                string `json:"file"`
+			Source              string `json:"source"`
+			AccessModifier      string `json:"access_modifier"`
+			Placement           string `json:"placement"`
+			TargetSymbol        string `json:"target_symbol"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if args.File == "" || args.Source == "" {
+			s.sendToolError(id, "semantic_insert_type requires 'file' and 'source' arguments")
+			return
+		}
+
+		targetPath := args.File
+		if s.workDir != "" && !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(s.workDir, targetPath)
+		}
+
+		autoOrg := true
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		opts := astedit.TypeOptions{
+			AccessModifier:      astedit.AccessModifier(args.AccessModifier),
+			Placement:           astedit.Placement(args.Placement),
+			TargetSymbol:        args.TargetSymbol,
+			AutoOrganizeImports: autoOrg,
+		}
+
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
+		if err := astedit.InsertType(ctx, targetPath, args.Source, opts); err != nil {
+			s.sendToolError(id, fmt.Sprintf("insert type error: %v", err))
+			return
+		}
+
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+		respText := fmt.Sprintf("Successfully inserted type into %s.", args.File)
+		respText = appendDiagnosticDelta(respText, delta)
+		s.sendToolSuccess(id, respText)
+
+	case "semantic_insert_decl":
+		var args struct {
+			File                string `json:"file"`
+			Source              string `json:"source"`
+			AccessModifier      string `json:"access_modifier"`
+			Group               string `json:"group"`
+			Placement           string `json:"placement"`
+			TargetSymbol        string `json:"target_symbol"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if args.File == "" || args.Source == "" {
+			s.sendToolError(id, "semantic_insert_decl requires 'file' and 'source' arguments")
+			return
+		}
+
+		targetPath := args.File
+		if s.workDir != "" && !filepath.IsAbs(targetPath) {
+			targetPath = filepath.Join(s.workDir, targetPath)
+		}
+
+		autoOrg := true
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		opts := astedit.DeclOptions{
+			AccessModifier:      astedit.AccessModifier(args.AccessModifier),
+			Group:               args.Group,
+			Placement:           astedit.Placement(args.Placement),
+			TargetSymbol:        args.TargetSymbol,
+			AutoOrganizeImports: autoOrg,
+		}
+
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
+		if err := astedit.InsertDecl(ctx, targetPath, args.Source, opts); err != nil {
+			s.sendToolError(id, fmt.Sprintf("insert decl error: %v", err))
+			return
+		}
+
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+		respText := fmt.Sprintf("Successfully inserted declaration into %s.", args.File)
+		respText = appendDiagnosticDelta(respText, delta)
 		s.sendToolSuccess(id, respText)
 
 	case "semantic_organize_imports":
 		var args struct {
-			File string `json:"file"`
+			File   string   `json:"file"`
+			Add    []string `json:"add"`
+			Remove []string `json:"remove"`
 		}
 		_ = json.Unmarshal(params.Arguments, &args)
 
@@ -475,7 +757,11 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 
 		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
-		if err := pipeline.OrganizeImports(ctx, s.workDir, paths...); err != nil {
+		opts := pipeline.ImportOptions{
+			Add:    args.Add,
+			Remove: args.Remove,
+		}
+		if err := pipeline.OrganizeImportsWithOptions(ctx, s.workDir, opts, paths...); err != nil {
 			s.sendToolError(id, fmt.Sprintf("organize imports error: %v", err))
 			return
 		}
@@ -484,18 +770,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
 
 		respText := "Successfully organized imports."
-		if len(delta.Introduced) > 0 || len(delta.Resolved) > 0 {
-			respText += fmt.Sprintf("\nDiagnostics delta (net %d):\n", delta.NetDelta)
-			if len(delta.Resolved) > 0 {
-				respText += fmt.Sprintf("Resolved:\n- %s\n", strings.Join(delta.Resolved, "\n- "))
-			}
-			if len(delta.Introduced) > 0 {
-				respText += fmt.Sprintf("Introduced:\n- %s\n", strings.Join(delta.Introduced, "\n- "))
-			}
-		}
-		if len(delta.Suggestions) > 0 {
-			respText += fmt.Sprintf("\nActionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
-		}
+		respText = appendDiagnosticDelta(respText, delta)
 		s.sendToolSuccess(id, respText)
 
 	case "semantic_add_dependency":
@@ -599,4 +874,25 @@ func (s *Server) writeJSON(resp *jsonRPCResponse) {
 	if err == nil {
 		_, _ = s.out.Write(append(data, '\n'))
 	}
+}
+
+func appendDiagnosticDelta(base string, delta pipeline.DiagnosticDelta) string {
+	if len(delta.Introduced) == 0 && len(delta.Resolved) == 0 && len(delta.Suggestions) == 0 {
+		return base
+	}
+	var sb strings.Builder
+	sb.WriteString(base)
+	if len(delta.Introduced) > 0 || len(delta.Resolved) > 0 {
+		fmt.Fprintf(&sb, "\nDiagnostics delta (net %d):\n", delta.NetDelta)
+		if len(delta.Resolved) > 0 {
+			fmt.Fprintf(&sb, "Resolved:\n- %s\n", strings.Join(delta.Resolved, "\n- "))
+		}
+		if len(delta.Introduced) > 0 {
+			fmt.Fprintf(&sb, "Introduced:\n- %s\n", strings.Join(delta.Introduced, "\n- "))
+		}
+	}
+	if len(delta.Suggestions) > 0 {
+		fmt.Fprintf(&sb, "\nActionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
+	}
+	return sb.String()
 }

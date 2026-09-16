@@ -40,6 +40,12 @@ func run(args []string) int {
 		return runRename(workDir, args[1:])
 	case "insert":
 		return runInsert(workDir, args[1:])
+	case "insert-func":
+		return runInsertFunc(workDir, args[1:])
+	case "insert-type":
+		return runInsertType(workDir, args[1:])
+	case "insert-decl":
+		return runInsertDecl(workDir, args[1:])
 	case "imports":
 		return runImports(workDir, args[1:])
 	case "get":
@@ -222,6 +228,187 @@ func runInsert(workDir string, args []string) int {
 	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
 
 	fmt.Printf("Successfully inserted declaration into %s\n", file)
+	printDelta(delta)
+	return 0
+}
+
+func runInsertFunc(workDir string, args []string) int {
+	fs := flag.NewFlagSet("insert-func", flag.ContinueOnError)
+	var file string
+	var source string
+	var access string
+	var placement string
+	var target string
+	var noImports bool
+
+	fs.StringVar(&file, "file", "", "Target file path")
+	fs.StringVar(&source, "source", "", "Function or method source code snippet")
+	fs.StringVar(&access, "access", "infer", "Access modifier (infer, public, private, protected, package-private)")
+	fs.StringVar(&placement, "placement", "", "Placement (file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol)")
+	fs.StringVar(&target, "target", "", "Target symbol for before_symbol/after_symbol placement")
+	fs.BoolVar(&noImports, "no-imports", false, "Disable automatic import resolution")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-func flags error: %v\n", err)
+		return 1
+	}
+
+	if file == "" || source == "" {
+		fmt.Fprintf(os.Stderr, "insert-func requires --file and --source\n")
+		return 1
+	}
+
+	targetPath := file
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(workDir, targetPath)
+	}
+
+	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+	opts := astedit.FunctionOptions{
+		AccessModifier:      astedit.AccessModifier(access),
+		Placement:           astedit.Placement(placement),
+		TargetSymbol:        target,
+		AutoOrganizeImports: !noImports,
+	}
+
+	if err := astedit.InsertFunction(ctx, targetPath, source, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-func error: %v\n", err)
+		return 1
+	}
+
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	fmt.Printf("Successfully inserted function into %s\n", file)
+	printDelta(delta)
+	return 0
+}
+
+func runInsertType(workDir string, args []string) int {
+	fs := flag.NewFlagSet("insert-type", flag.ContinueOnError)
+	var file string
+	var source string
+	var access string
+	var placement string
+	var target string
+	var noImports bool
+
+	fs.StringVar(&file, "file", "", "Target file path")
+	fs.StringVar(&source, "source", "", "Type declaration source code snippet")
+	fs.StringVar(&access, "access", "infer", "Access modifier (infer, public, private, protected, package-private)")
+	fs.StringVar(&placement, "placement", "", "Placement (file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol)")
+	fs.StringVar(&target, "target", "", "Target symbol for before_symbol/after_symbol placement")
+	fs.BoolVar(&noImports, "no-imports", false, "Disable automatic import resolution")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-type flags error: %v\n", err)
+		return 1
+	}
+
+	if file == "" || source == "" {
+		fmt.Fprintf(os.Stderr, "insert-type requires --file and --source\n")
+		return 1
+	}
+
+	targetPath := file
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(workDir, targetPath)
+	}
+
+	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+	opts := astedit.TypeOptions{
+		AccessModifier:      astedit.AccessModifier(access),
+		Placement:           astedit.Placement(placement),
+		TargetSymbol:        target,
+		AutoOrganizeImports: !noImports,
+	}
+
+	if err := astedit.InsertType(ctx, targetPath, source, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-type error: %v\n", err)
+		return 1
+	}
+
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	fmt.Printf("Successfully inserted type into %s\n", file)
+	printDelta(delta)
+	return 0
+}
+
+func runInsertDecl(workDir string, args []string) int {
+	fs := flag.NewFlagSet("insert-decl", flag.ContinueOnError)
+	var file string
+	var source string
+	var access string
+	var group string
+	var placement string
+	var target string
+	var noImports bool
+
+	fs.StringVar(&file, "file", "", "Target file path")
+	fs.StringVar(&source, "source", "", "Declaration source code snippet")
+	fs.StringVar(&access, "access", "infer", "Access modifier (infer, public, private, protected, package-private)")
+	fs.StringVar(&group, "group", "append", "Group merging behavior (append, standalone)")
+	fs.StringVar(&placement, "placement", "", "Placement (file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol)")
+	fs.StringVar(&target, "target", "", "Target symbol for before_symbol/after_symbol placement")
+	fs.BoolVar(&noImports, "no-imports", false, "Disable automatic import resolution")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-decl flags error: %v\n", err)
+		return 1
+	}
+
+	if file == "" || source == "" {
+		fmt.Fprintf(os.Stderr, "insert-decl requires --file and --source\n")
+		return 1
+	}
+
+	targetPath := file
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(workDir, targetPath)
+	}
+
+	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+	opts := astedit.DeclOptions{
+		AccessModifier:      astedit.AccessModifier(access),
+		Group:               group,
+		Placement:           astedit.Placement(placement),
+		TargetSymbol:        target,
+		AutoOrganizeImports: !noImports,
+	}
+
+	if err := astedit.InsertDecl(ctx, targetPath, source, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "insert-decl error: %v\n", err)
+		return 1
+	}
+
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	fmt.Printf("Successfully inserted declaration into %s\n", file)
+	printDelta(delta)
+	return 0
+}
+
+type stringSlice []string
+
+func (s *stringSlice) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *stringSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
+func printDelta(delta pipeline.DiagnosticDelta) {
 	if len(delta.Introduced) > 0 {
 		fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
 	}
@@ -231,14 +418,17 @@ func runInsert(workDir string, args []string) int {
 	if len(delta.Resolved) > 0 {
 		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
 	}
-
-	return 0
 }
 
 func runImports(workDir string, args []string) int {
 	fs := flag.NewFlagSet("imports", flag.ContinueOnError)
 	var file string
+	var addFlags stringSlice
+	var removeFlags stringSlice
+
 	fs.StringVar(&file, "file", "", "Target file path or directory (defaults to entire workspace)")
+	fs.Var(&addFlags, "add", "Explicit import path or alias to add (repeatable)")
+	fs.Var(&removeFlags, "remove", "Explicit import path to remove (repeatable)")
 
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "imports flags error: %v\n", err)
@@ -255,7 +445,12 @@ func runImports(workDir string, args []string) int {
 	ctx := context.Background()
 	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
 
-	if err := pipeline.OrganizeImports(ctx, workDir, paths...); err != nil {
+	opts := pipeline.ImportOptions{
+		Add:    addFlags,
+		Remove: removeFlags,
+	}
+
+	if err := pipeline.OrganizeImportsWithOptions(ctx, workDir, opts, paths...); err != nil {
 		fmt.Fprintf(os.Stderr, "organize imports error: %v\n", err)
 		return 1
 	}
@@ -264,16 +459,7 @@ func runImports(workDir string, args []string) int {
 	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
 
 	fmt.Println("Successfully organized imports.")
-	if len(delta.Introduced) > 0 {
-		fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
-	}
-	if len(delta.Suggestions) > 0 {
-		fmt.Printf("Actionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
-	}
-	if len(delta.Resolved) > 0 {
-		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
-	}
-
+	printDelta(delta)
 	return 0
 }
 

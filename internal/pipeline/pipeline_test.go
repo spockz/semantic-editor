@@ -158,3 +158,55 @@ func main() {
 		t.Errorf("expected unused bytes import to be removed, got:\n%s", content)
 	}
 }
+
+func TestOrganizeImportsWithOptions_ExplicitAddAndRemove(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.go")
+
+	src := `package main
+
+import (
+	"fmt"
+	"net/http"
+)
+
+func main() {
+	fmt.Println("hello")
+	var _ = crand.Reader
+}
+`
+	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+
+	ctx := context.Background()
+	opts := pipeline.ImportOptions{
+		Add: []string{
+			"crand crypto/rand",
+			"_ net/http/pprof",
+		},
+		Remove: []string{
+			"net/http",
+		},
+	}
+
+	if err := pipeline.OrganizeImportsWithOptions(ctx, dir, opts, file); err != nil {
+		t.Fatalf("OrganizeImportsWithOptions failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatalf("read file failed: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, `crand "crypto/rand"`) {
+		t.Errorf("expected crand alias import, got:\n%s", content)
+	}
+	if !strings.Contains(content, `_ "net/http/pprof"`) {
+		t.Errorf("expected blank pprof import, got:\n%s", content)
+	}
+	if strings.Contains(content, `"net/http"`) && !strings.Contains(content, `"net/http/pprof"`) {
+		t.Errorf("expected removed net/http to be absent, got:\n%s", content)
+	}
+}

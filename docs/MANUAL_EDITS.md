@@ -30,7 +30,14 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0018** | `main.go` | Added `insert`, `imports`, and `get` CLI subcommands | CLI command dispatch branches | AST statement insertion into control flow | `apply_ast_rewrite` / `insert_statement` |
 | **ME-0019** | `internal/mcp/server.go` | Added `semantic_insert_declaration`, `semantic_organize_imports`, and `semantic_add_dependency` | MCP tool registration | Function declaration addition | `insert_declaration` |
 | **ME-0020** | `internal/adapters/golang/property_test.go` | Added `configureRapidChecks` helper for fast property checks | Test configuration helper | Function declaration addition | `insert_declaration` |
-| **ME-0021** | `Makefile` | Added `test-property-full` and `test-fuzz` targets | Build configuration edit | Non-code file mutation (outside AST scope) | N/A (Build automation) |
+| **ME-0022** | `internal/astedit/access.go` & `access_test.go` | Added `AccessModifier` enum and `LanguageBackend` capability validation | Access modifier abstraction | Cross-language access model | `insert_function` / `insert_type` |
+| **ME-0023** | `internal/astedit/function.go` & `function_test.go` | Added `InsertFunction` with receiver clustering and public/private section partitioning | Function insertion engine | AST function/method insertion | `insert_function` |
+| **ME-0024** | `internal/astedit/type.go` & `type_test.go` | Added `InsertType` with section placement and auto-imports | Type declaration insertion engine | AST type insertion | `insert_type` |
+| **ME-0025** | `internal/astedit/decl.go` & `decl_test.go` | Added `InsertDecl` with `const (...)` / `var (...)` group merging | Declaration group merging engine | AST declaration group insertion | `insert_decl` |
+| **ME-0026** | `internal/pipeline/pipeline.go` & `pipeline_test.go` | Added `OrganizeImportsWithOptions` and `ImportOptions` (`Add`, `Remove`) | Import management engine | Explicit import addition and removal | `organize_imports` |
+| **ME-0027** | `main.go` | Added `insert-func`, `insert-type`, `insert-decl` CLI subcommands and `--add`/`--remove` to `imports` | CLI command dispatch branches | AST statement insertion into control flow | `apply_ast_rewrite` / `insert_statement` |
+| **ME-0028** | `internal/mcp/server.go` & `server_test.go` | Registered `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_decl`, updated `semantic_organize_imports` | MCP tool registration | Function declaration addition | `insert_declaration` |
+| **ME-0029** | `Makefile` | Added `rm -f bin/semedit` and `build-next` prerequisite to `promote` and `build` | Build automation fix | Non-code file mutation (outside AST scope) | N/A (Build automation) |
 
 ---
 
@@ -42,25 +49,25 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **SE-0001** | `internal/symbol/resolver.go` | `Symbol.FormatQualifiedName` | `BuildQualifiedName` | `semedit` (`semantic_rename`) | Zero-token diff, declaration and call sites renamed deterministically; `go test` passed. |
 | **SE-0002** | `internal/astedit/insert.go` | `validateSnippet` | `verifySnippetSyntax` | `semedit` (`semantic_rename`) | Zero-token diff, declaration and call site renamed deterministically; `go test` passed. |
+| **SE-0003** | `internal/astedit/function.go` | `verifyFunctionSnippet` | `parseFunctionSnippet` | `semedit` (`semantic_rename`) | Zero-token diff, declaration and call site renamed deterministically; `go test` passed. |
 
 ---
 
 ## Capability Gap Analysis & Future Tool Roadmap
 
-Based on the manual edits above, the highest-ROI semantic editing capabilities to add next after `semantic_rename` are:
+### Completed Capabilities (Promoted to CLI `./bin/semedit` and Registered on MCP Server)
 
-1. **`organize_imports`** (High ROI):
-   - **Need**: Solves ME-0001. When code references a new symbol from another package, the model currently falls back to line-based diffs to add imports.
-   - **Engine**: Standard LSP code action (`source.organizeImports`), `gopls imports`, or `imports.Process`.
-   - **Chaining Option**: Offer `auto_organize_imports: true` as an opt-in parameter or flag across other semantic mutation tools (`semantic_insert_declaration`, `semantic_rename`).
-2. **`insert_function` / `insert_type` / `insert_decl`** (High ROI):
-   - **Need**: Solves ME-0003, ME-0004, ME-0005. Adding new top-level functions or types to an existing file without having to read and rewrite entire files.
-   - **Engine**: Go AST parser identifies target insertion boundary; formats via `pipeline.Format`.
-   - **Placement Qualifiers**:
-     - Boundary: `file_start`, `file_end` (default).
-     - Section: `public_start`, `public_end`, `private_start`, `private_end`.
-     - Relative: `before_symbol`, `after_symbol`.
-   - **Visibility Qualifiers**: Explicit `visibility: "public" | "private"` validation (asserting or ensuring exported capitalization rules).
-3. **`replace_symbol_body`** (Medium ROI):
-   - **Need**: Solves ME-0006, ME-0007. Replacing only the body of an existing function (`func Foo(...) { <body> }`) without touching signature, comments, or surrounding declarations.
+1. **`organize_imports` with Explicit Add/Remove** (Completed):
+   - Supports plain import paths, custom aliases `alias "path"`, blank imports `_ "path"`, and explicit import removal alongside auto-resolution.
+2. **`insert_function` / `insert_type` / `insert_decl`** (Completed):
+   - Receiver-aware method clustering, strict public/private section partitioning, access modifier inference (`infer`, `public`, `private`), and `const`/`var` group merging (`append_group`).
+
+### Remaining Gaps & Next Highest-ROI Capabilities
+
+1. **`replace_symbol_body`** (Highest Current ROI):
+   - **Need**: Solves ME-0006, ME-0007, ME-0010. Replacing only the body of an existing function (`func Foo(...) { <body> }`) without touching signature, comments, or surrounding declarations.
    - **Engine**: Tree-sitter or Go AST locates function body braces `{ ... }` and replaces only the body range.
+2. **AST Statement / Branch Insertion (`insert_statement`)**:
+   - **Need**: Solves ME-0002, ME-0018, ME-0027. Adding a `case` branch to a `switch` statement or an entry to a router/table without rewriting the entire function.
+3. **File Scaffolding (`scaffold_file`)**:
+   - **Need**: Solves ME-0011, ME-0012, ME-0022-0025. Creating a new Go file with package header and skeleton declarations atomically.

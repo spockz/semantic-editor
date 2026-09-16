@@ -5,10 +5,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,8 +155,19 @@ func ComputeDelta(before []string, after []string) DiagnosticDelta {
 	}
 }
 
+// ImportOptions configures explicit import additions and removals.
+type ImportOptions struct {
+	Add    []string
+	Remove []string
+}
+
 // OrganizeImports adjusts imports and formats the given paths using golang.org/x/tools/imports.
-func OrganizeImports(_ context.Context, workDir string, paths ...string) error {
+func OrganizeImports(ctx context.Context, workDir string, paths ...string) error {
+	return OrganizeImportsWithOptions(ctx, workDir, ImportOptions{}, paths...)
+}
+
+// OrganizeImportsWithOptions adjusts imports and formats using explicit additions/removals and imports.Process.
+func OrganizeImportsWithOptions(_ context.Context, workDir string, opts ImportOptions, paths ...string) error {
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
@@ -191,23 +208,153 @@ func OrganizeImports(_ context.Context, workDir string, paths ...string) error {
 	}
 
 	for _, file := range goFiles {
-		data, err := os.ReadFile(filepath.Clean(file))
+		cleanFile := filepath.Clean(file)
+		data, err := os.ReadFile(cleanFile)
 		if err != nil {
 			return fmt.Errorf("read file %s: %w", file, err)
 		}
 
-		res, err := imports.Process(file, data, nil)
+		modifiedData, err := applyExplicitImports(cleanFile, data, opts)
+		if err != nil {
+			return fmt.Errorf("apply explicit imports for %s: %w", file, err)
+		}
+
+		res, err := imports.Process(cleanFile, modifiedData, nil)
 		if err != nil {
 			return fmt.Errorf("organize imports for %s: %w", file, err)
 		}
 
 		if !bytes.Equal(data, res) {
-			if err := WriteAtomic(file, res); err != nil {
+			if err := WriteAtomic(cleanFile, res); err != nil {
 				return fmt.Errorf("write organized file %s: %w", file, err)
 			}
 		}
 	}
 	return nil
+}
+
+func parseImportEntry(entry string) (alias string, path string) {
+	trimmed := strings.TrimSpace(entry)
+	if idx := strings.Index(trimmed, " "); idx > 0 {
+		alias = strings.TrimSpace(trimmed[:idx])
+		path = strings.Trim(strings.TrimSpace(trimmed[idx+1:]), `"'`)
+		return alias, path
+	}
+	if idx := strings.Index(trimmed, ":"); idx > 0 {
+		alias = strings.TrimSpace(trimmed[:idx])
+		path = strings.Trim(strings.TrimSpace(trimmed[idx+1:]), `"'`)
+		return alias, path
+	}
+	return "", strings.Trim(trimmed, `"'`)
+}
+
+func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]byte, error) {
+	if len(opts.Add) == 0 && len(opts.Remove) == 0 {
+		return src, nil
+	}
+
+	fset := token.NewFileSet()
+	fileNode, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
+	if err != nil {
+		return src, nil
+	}
+
+	if len(opts.Remove) > 0 {
+		var newDecls []ast.Decl
+		for _, decl := range fileNode.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.IMPORT {
+				newDecls = append(newDecls, decl)
+				continue
+			}
+
+			var newSpecs []ast.Spec
+			for _, spec := range gen.Specs {
+				imp, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					newSpecs = append(newSpecs, spec)
+					continue
+				}
+				impPath := strings.Trim(imp.Path.Value, `"'`)
+				if slices.Contains(opts.Remove, impPath) {
+					continue
+				}
+				newSpecs = append(newSpecs, spec)
+			}
+			if len(newSpecs) > 0 {
+				gen.Specs = newSpecs
+				newDecls = append(newDecls, gen)
+			}
+		}
+		fileNode.Decls = newDecls
+	}
+
+	for _, entry := range opts.Add {
+		alias, pkgPath := parseImportEntry(entry)
+		if pkgPath == "" {
+			continue
+		}
+
+		found := false
+		for _, decl := range fileNode.Decls {
+			gen, ok := decl.(*ast.GenDecl)
+			if !ok || gen.Tok != token.IMPORT {
+				continue
+			}
+			for _, spec := range gen.Specs {
+				imp, ok := spec.(*ast.ImportSpec)
+				if !ok {
+					continue
+				}
+				if strings.Trim(imp.Path.Value, `"'`) == pkgPath {
+					found = true
+					if alias != "" {
+						imp.Name = ast.NewIdent(alias)
+					}
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+
+		if !found {
+			newSpec := &ast.ImportSpec{
+				Path: &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: strconv.Quote(pkgPath),
+				},
+			}
+			if alias != "" {
+				newSpec.Name = ast.NewIdent(alias)
+			}
+
+			var firstImportDecl *ast.GenDecl
+			for _, decl := range fileNode.Decls {
+				if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+					firstImportDecl = gen
+					break
+				}
+			}
+
+			if firstImportDecl != nil {
+				firstImportDecl.Specs = append(firstImportDecl.Specs, newSpec)
+			} else {
+				newGen := &ast.GenDecl{
+					Tok:   token.IMPORT,
+					Specs: []ast.Spec{newSpec},
+				}
+				fileNode.Decls = slices.Insert(fileNode.Decls, 0, ast.Decl(newGen))
+			}
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := format.Node(&buf, fset, fileNode); err != nil {
+		return src, nil
+	}
+	return buf.Bytes(), nil
 }
 
 // FindModuleRoot locates the nearest enclosing directory containing go.mod.
