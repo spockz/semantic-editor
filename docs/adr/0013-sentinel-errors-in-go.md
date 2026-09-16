@@ -31,19 +31,20 @@ In Go codebases, error handling without structured error types or sentinel error
    )
    ```
 
-2. **Structured Record Structs with `Unwrap()` for Contextual Errors**:
-   When an error condition carries dynamic contextual variables (e.g., symbol identifiers, file paths, requested access modifiers), packages must define focused record structs embedding typed fields and the underlying sentinel:
+2. **Structured Record Structs with `Unwrap()` for Domain Errors**:
+   When an error condition carries structured domain entities or coordinates (e.g., symbol identifiers, file paths, access modifiers, or AST locations), packages must define focused record structs embedding typed fields and the underlying sentinel:
 
    ```go
    type SymbolError struct {
        Op     string
        File   string
        Symbol string
+       Pos    token.Position
        Err    error
    }
 
    func (e *SymbolError) Error() string {
-       if e.File != "" {
+       if e.File != "" && !e.Pos.IsValid() {
            return fmt.Sprintf("%s %s in %s: %v", e.Op, e.Symbol, e.File, e.Err)
        }
        return fmt.Sprintf("%s %s: %v", e.Op, e.Symbol, e.Err)
@@ -55,12 +56,13 @@ In Go codebases, error handling without structured error types or sentinel error
    * **Lazy Evaluation**: `Error() string` is evaluated strictly on demand when formatted for display; error creation copies only typed struct fields with zero string allocation.
    * **Sentinel Compatibility**: Implementing `Unwrap() error` guarantees automatic traversal by `errors.Is(err, targetErr)`.
    * **Programmatic Inspection**: Downstream callers extract typed fields directly using `errors.As(err, &targetStruct)` without string scraping.
+   * **Auxiliary Validation**: Auxiliary input and parameter validations without source coordinates may wrap sentinels directly using `fmt.Errorf("%w: ...", sentinel, details)`.
 
-3. **Mandatory Location Invariants for Coordinate-Bound Errors**:
-   Any error arising from parsing, AST transformation, syntax validation, or JSON deserialization must capture source coordinates:
-   * **Internal Representation**: Embed or record standard `token.Position` (`Filename`, `Offset`, `Line`, `Column`).
-   * **CLI Delivery**: Render standard compiler location format using `pos.String()` (`"api/server.go:12:4: syntax error: ..."`).
-   * **MCP Delivery**: Serialize coordinates into LSP-native 0-indexed ranges:
+3. **Mandatory Location Invariants for Source-Bound Errors**:
+   Any error arising from source parsing, AST transformation, or snippet syntax validation must capture source coordinates:
+   * **Internal Representation**: Embed or record standard `token.Position` (`Filename`, `Offset`, `Line`, `Column`). Snippet validation preserves snippet-relative coordinates (`"snippet"`).
+   * **CLI Delivery**: Render standard compiler location format using `pos.String()` (`"api/server.go:12:4: syntax error: ..."` or `"snippet:1:14: syntax error: ..."`).
+   * **MCP Delivery**: Serialize coordinates into LSP-native 0-indexed ranges (`start` and `end`), converting line byte offsets to UTF-16 code units and formatting file paths via properly escaped `file://` or virtual `snippet:///source` URIs:
 
      ```json
      {

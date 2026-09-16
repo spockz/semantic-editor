@@ -526,6 +526,7 @@ func formatCLIError(op string, err error) {
 	var pos token.Position
 	var synErr *astedit.SyntaxError
 	var symErr *symbol.SymbolError
+	var visErr *astedit.VisibilityMismatchError
 	var placeErr *astedit.PlacementError
 
 	switch {
@@ -533,12 +534,19 @@ func formatCLIError(op string, err error) {
 		pos = synErr.Pos
 	case errors.As(err, &symErr) && symErr.Pos.IsValid():
 		pos = symErr.Pos
+	case errors.As(err, &visErr) && visErr.Pos.IsValid():
+		pos = visErr.Pos
 	case errors.As(err, &placeErr) && placeErr.Pos.IsValid():
 		pos = placeErr.Pos
 	}
 
 	if pos.IsValid() {
-		fmt.Fprintf(os.Stderr, "%s: %v\n", pos.String(), err)
+		msg := err.Error()
+		prefix := pos.String() + ": "
+		if after, ok := strings.CutPrefix(msg, prefix); ok {
+			msg = after
+		}
+		fmt.Fprintf(os.Stderr, "%s: %s\n", pos.String(), msg)
 	} else {
 		fmt.Fprintf(os.Stderr, "%s error: %v\n", op, err)
 	}

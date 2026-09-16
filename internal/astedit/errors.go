@@ -52,6 +52,8 @@ var (
 
 // VisibilityMismatchError represents an access modifier or casing visibility constraint violation.
 type VisibilityMismatchError struct {
+	File       string
+	Pos        token.Position
 	Identifier string
 	Requested  AccessModifier
 	Effective  AccessModifier
@@ -76,7 +78,11 @@ type SyntaxError struct {
 
 func (e *SyntaxError) Error() string {
 	if e.Cause != nil {
-		return fmt.Sprintf("%v: %v", e.Err, e.Cause)
+		causeMsg := e.Cause.Error()
+		if parts := strings.SplitN(causeMsg, ": ", 2); len(parts) == 2 && strings.Count(parts[0], ":") >= 2 {
+			causeMsg = parts[1]
+		}
+		return fmt.Sprintf("%v: %s", e.Err, causeMsg)
 	}
 	return e.Err.Error()
 }

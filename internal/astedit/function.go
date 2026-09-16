@@ -41,17 +41,14 @@ func InsertFunction(ctx context.Context, filePath string, source string, opts Fu
 
 	fnDecl, err := parseFunctionSnippet(source)
 	if err != nil {
-		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
-			synErr.File = cleanPath
-			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
-				synErr.Pos.Filename = cleanPath
-			}
-		}
 		return fmt.Errorf("validate function snippet: %w", err)
 	}
 
 	fnName := fnDecl.Name.Name
 	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, fnName); err != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+			visErr.File = "snippet"
+		}
 		return fmt.Errorf("validate access modifier: %w", err)
 	}
 
@@ -68,9 +65,13 @@ func InsertFunction(ctx context.Context, filePath string, source string, opts Fu
 
 	insertOffset, err := calculateFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)
 	if err != nil {
-		var pErr *PlacementError
-		if errors.As(err, &pErr) && pErr.File == "" {
-			pErr.File = cleanPath
+		if pErr, ok := errors.AsType[*PlacementError](err); ok {
+			if pErr.File == "" {
+				pErr.File = cleanPath
+			}
+			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
+				pErr.Pos = fset.Position(fileNode.Package)
+			}
 		}
 		return fmt.Errorf("calculate function offset: %w", err)
 	}
@@ -137,7 +138,7 @@ func parseFunctionSnippet(source string) (*ast.FuncDecl, error) {
 	}
 
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
+	node, err := parser.ParseFile(fset, "snippet", toParse, parser.ParseComments)
 	if err != nil {
 		pos := extractSyntaxPosition(fset, err)
 		if prepended && pos.Line > 2 {
@@ -147,6 +148,7 @@ func parseFunctionSnippet(source string) (*ast.FuncDecl, error) {
 				pos.Offset = 0
 			}
 		}
+		pos.Filename = "snippet"
 		return nil, &SyntaxError{
 			Snippet: source,
 			Pos:     pos,

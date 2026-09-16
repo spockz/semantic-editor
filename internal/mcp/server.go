@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"go/token"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf16"
 
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
@@ -862,6 +864,7 @@ func (s *Server) extractLocation(err error) map[string]any {
 
 	var synErr *astedit.SyntaxError
 	var symErr *symbol.SymbolError
+	var visErr *astedit.VisibilityMismatchError
 	var placeErr *astedit.PlacementError
 
 	switch {
@@ -877,6 +880,12 @@ func (s *Server) extractLocation(err error) map[string]any {
 		if filePath == "" {
 			filePath = pos.Filename
 		}
+	case errors.As(err, &visErr) && visErr.Pos.IsValid():
+		pos = visErr.Pos
+		filePath = visErr.File
+		if filePath == "" {
+			filePath = pos.Filename
+		}
 	case errors.As(err, &placeErr) && placeErr.Pos.IsValid():
 		pos = placeErr.Pos
 		filePath = placeErr.File
@@ -889,16 +898,30 @@ func (s *Server) extractLocation(err error) map[string]any {
 		return nil
 	}
 
-	uri := filePath
-	if !strings.HasPrefix(uri, "file://") {
-		if !filepath.IsAbs(uri) && s.workDir != "" {
-			uri = filepath.Join(s.workDir, uri)
+	var uri string
+	switch {
+	case filePath == "" || filePath == "snippet" || filePath == "snippet.go" || pos.Filename == "snippet" || pos.Filename == "snippet.go":
+		uri = "snippet:///source"
+	case strings.HasPrefix(filePath, "file://"):
+		uri = filePath
+	default:
+		absPath := filePath
+		if !filepath.IsAbs(absPath) && s.workDir != "" {
+			absPath = filepath.Join(s.workDir, absPath)
+		} else if !filepath.IsAbs(absPath) {
+			if cwd, err := os.Getwd(); err == nil {
+				absPath = filepath.Join(cwd, absPath)
+			}
 		}
-		uri = "file://" + filepath.ToSlash(filepath.Clean(uri))
+		u := &url.URL{
+			Scheme: "file",
+			Path:   filepath.ToSlash(filepath.Clean(absPath)),
+		}
+		uri = u.String()
 	}
 
 	startLine := max(pos.Line-1, 0)
-	startChar := max(pos.Column-1, 0)
+	startChar := s.resolveLSPCharacter(pos, filePath, synErr)
 
 	return map[string]any{
 		"uri": uri,
@@ -913,6 +936,45 @@ func (s *Server) extractLocation(err error) map[string]any {
 			},
 		},
 	}
+}
+
+func (s *Server) resolveLSPCharacter(pos token.Position, filePath string, synErr *astedit.SyntaxError) int {
+	startChar := max(pos.Column-1, 0)
+	var lineContent string
+	if synErr != nil && synErr.Snippet != "" {
+		lines := strings.Split(synErr.Snippet, "\n")
+		lineIdx := pos.Line - 1
+		if lineIdx >= 0 && lineIdx < len(lines) {
+			lineContent = lines[lineIdx]
+		}
+	} else if filePath != "" && filePath != "snippet" && filePath != "snippet.go" {
+		targetPath := filePath
+		if !filepath.IsAbs(targetPath) && s.workDir != "" {
+			targetPath = filepath.Join(s.workDir, targetPath)
+		}
+		cleanTarget := filepath.Clean(targetPath)
+		// #nosec G304 -- reading verified target source file for coordinate translation
+		if data, err := os.ReadFile(cleanTarget); err == nil {
+			lines := strings.Split(string(data), "\n")
+			lineIdx := pos.Line - 1
+			if lineIdx >= 0 && lineIdx < len(lines) {
+				lineContent = lines[lineIdx]
+			}
+		}
+	}
+
+	if lineContent != "" {
+		byteOffset := min(pos.Column-1, len(lineContent))
+		if byteOffset > 0 {
+			prefix := lineContent[:byteOffset]
+			utf16Chars := 0
+			for _, r := range prefix {
+				utf16Chars += utf16.RuneLen(r)
+			}
+			return utf16Chars
+		}
+	}
+	return startChar
 }
 
 func (s *Server) sendResult(id json.RawMessage, result any) {

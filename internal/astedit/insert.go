@@ -57,13 +57,7 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 	snippetDecls, err := verifySnippetSyntax(source, opts.Visibility)
 	if err != nil {
-		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
-			synErr.File = cleanPath
-			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
-				synErr.Pos.Filename = cleanPath
-			}
-		}
-		return fmt.Errorf("validate declaration snippet: %w", err)
+		return fmt.Errorf("validate snippet: %w", err)
 	}
 
 	fset := token.NewFileSet()
@@ -75,9 +69,13 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 	insertOffset, err := calculateInsertionOffset(fset, fileNode, content, opts)
 	if err != nil {
-		var pErr *PlacementError
-		if errors.As(err, &pErr) && pErr.File == "" {
-			pErr.File = cleanPath
+		if pErr, ok := errors.AsType[*PlacementError](err); ok {
+			if pErr.File == "" {
+				pErr.File = cleanPath
+			}
+			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
+				pErr.Pos = fset.Position(fileNode.Package)
+			}
 		}
 		return fmt.Errorf("calculate insertion offset: %w", err)
 	}
@@ -147,7 +145,7 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 	}
 
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
+	node, err := parser.ParseFile(fset, "snippet", toParse, parser.ParseComments)
 	if err != nil {
 		pos := extractSyntaxPosition(fset, err)
 		if prepended && pos.Line > 2 {
@@ -157,6 +155,7 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 				pos.Offset = 0
 			}
 		}
+		pos.Filename = "snippet"
 		return nil, &SyntaxError{
 			Snippet: source,
 			Pos:     pos,
@@ -174,8 +173,19 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 			names := extractDeclNames(decl)
 			for _, name := range names {
 				exported := ast.IsExported(name)
+				pos := fset.Position(decl.Pos())
+				if prepended && pos.Line > 2 {
+					pos.Line -= 2
+					pos.Offset -= len("package dummy\n\n")
+					if pos.Offset < 0 {
+						pos.Offset = 0
+					}
+				}
+				pos.Filename = "snippet"
 				if expectedVisibility == "public" && !exported {
 					return nil, &VisibilityMismatchError{
+						File:       "snippet",
+						Pos:        pos,
 						Identifier: name,
 						Requested:  AccessModifierPublic,
 						Effective:  AccessModifierPrivate,
@@ -184,6 +194,8 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 				}
 				if expectedVisibility == "private" && exported {
 					return nil, &VisibilityMismatchError{
+						File:       "snippet",
+						Pos:        pos,
 						Identifier: name,
 						Requested:  AccessModifierPrivate,
 						Effective:  AccessModifierPublic,

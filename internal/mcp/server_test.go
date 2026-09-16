@@ -218,12 +218,51 @@ func TestMCPToolLocationError(t *testing.T) {
 		t.Fatalf("expected location in tool error response, got nil:\n%s", outBuf.String())
 	}
 
-	expectedURI := "file://" + filepath.ToSlash(filepath.Clean(filePath))
+	expectedURI := "snippet:///source"
 	if resp.Result.Location.URI != expectedURI {
-		t.Errorf("expected URI %q, got %q", expectedURI, resp.Result.Location.URI)
+		t.Errorf("expected snippet URI %q, got %q", expectedURI, resp.Result.Location.URI)
 	}
 
 	if resp.Result.Location.Range.Start.Line < 0 || resp.Result.Location.Range.Start.Character < 0 {
 		t.Errorf("expected non-negative 0-indexed range, got %+v", resp.Result.Location.Range)
+	}
+
+	// Also verify disk file location on parse error
+	brokenPath := filepath.Join(dir, "broken.go")
+	if err := os.WriteFile(brokenPath, []byte("package app\nfunc bad( {\n"), 0o600); err != nil {
+		t.Fatalf("write broken file: %v", err)
+	}
+
+	callFileMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"resolve_symbol_location","arguments":{"file":%q,"symbol":"bad"}}}`, brokenPath) + "\n"
+	var outBuf2 bytes.Buffer
+	srv2 := mcp.NewServer("full", dir, &outBuf2)
+	if err := srv2.Serve(ctx, bytes.NewBufferString(callFileMsg)); err != nil {
+		t.Fatalf("Serve failed: %v", err)
+	}
+
+	var resp2 struct {
+		JSONRPC string `json:"jsonrpc"`
+		ID      int    `json:"id"`
+		Result  struct {
+			IsError  bool `json:"isError"`
+			Location *struct {
+				URI   string `json:"uri"`
+				Range struct {
+					Start struct {
+						Line      int `json:"line"`
+						Character int `json:"character"`
+					} `json:"start"`
+				} `json:"range"`
+			} `json:"location"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(outBuf2.Bytes(), &resp2); err != nil {
+		t.Fatalf("unmarshal resp2: %v", err)
+	}
+	if resp2.Result.Location == nil {
+		t.Fatalf("expected location in file error response, got nil")
+	}
+	if !strings.HasPrefix(resp2.Result.Location.URI, "file://") {
+		t.Errorf("expected file:// URI for disk file, got %q", resp2.Result.Location.URI)
 	}
 }

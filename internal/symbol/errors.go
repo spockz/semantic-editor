@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go/token"
+	"strings"
 )
 
 var (
@@ -28,18 +29,27 @@ type SymbolError struct {
 }
 
 func (e *SymbolError) Error() string {
-	var prefix string
-	if e.Pos.IsValid() {
-		prefix = e.Pos.String() + ": "
-	}
 	opPart := e.Op
 	if opPart != "" {
 		opPart += " "
 	}
-	if e.File != "" && !e.Pos.IsValid() {
-		return fmt.Sprintf("%s%s%s in %s: %v", prefix, opPart, e.Symbol, e.File, e.Err)
+	errMsg := ""
+	if e.Err != nil {
+		errMsg = e.Err.Error()
+		if e.Pos.IsValid() {
+			prefix := e.Pos.String() + ": "
+			if after, ok := strings.CutPrefix(errMsg, prefix); ok {
+				errMsg = after
+			}
+		}
 	}
-	return fmt.Sprintf("%s%s%s: %v", prefix, opPart, e.Symbol, e.Err)
+	if e.File != "" && !e.Pos.IsValid() {
+		return fmt.Sprintf("%s%s in %s: %s", opPart, e.Symbol, e.File, errMsg)
+	}
+	if e.Symbol != "" {
+		return fmt.Sprintf("%s%s: %s", opPart, e.Symbol, errMsg)
+	}
+	return fmt.Sprintf("%s: %s", e.Op, errMsg)
 }
 
 func (e *SymbolError) Unwrap() error { return e.Err }

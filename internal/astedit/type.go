@@ -41,16 +41,13 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 
 	genDecl, typeName, err := verifyTypeSnippet(source)
 	if err != nil {
-		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
-			synErr.File = cleanPath
-			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
-				synErr.Pos.Filename = cleanPath
-			}
-		}
 		return fmt.Errorf("validate type snippet: %w", err)
 	}
 
 	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, typeName); err != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+			visErr.File = "snippet"
+		}
 		return fmt.Errorf("validate access modifier: %w", err)
 	}
 
@@ -67,9 +64,13 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 
 	insertOffset, err := calculateTypeOffset(fset, fileNode, content, genDecl, typeName, effectiveAccess, opts)
 	if err != nil {
-		var pErr *PlacementError
-		if errors.As(err, &pErr) && pErr.File == "" {
-			pErr.File = cleanPath
+		if pErr, ok := errors.AsType[*PlacementError](err); ok {
+			if pErr.File == "" {
+				pErr.File = cleanPath
+			}
+			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
+				pErr.Pos = fset.Position(fileNode.Package)
+			}
 		}
 		return fmt.Errorf("calculate type offset: %w", err)
 	}
@@ -136,7 +137,7 @@ func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {
 	}
 
 	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
+	node, err := parser.ParseFile(fset, "snippet", toParse, parser.ParseComments)
 	if err != nil {
 		pos := extractSyntaxPosition(fset, err)
 		if prepended && pos.Line > 2 {
@@ -146,6 +147,7 @@ func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {
 				pos.Offset = 0
 			}
 		}
+		pos.Filename = "snippet"
 		return nil, "", &SyntaxError{
 			Snippet: source,
 			Pos:     pos,

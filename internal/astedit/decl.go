@@ -42,18 +42,15 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 
 	snippetDecls, err := verifySnippetSyntax(source, "")
 	if err != nil {
-		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
-			synErr.File = cleanPath
-			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
-				synErr.Pos.Filename = cleanPath
-			}
-		}
 		return fmt.Errorf("validate declaration snippet: %w", err)
 	}
 
 	for _, decl := range snippetDecls {
 		for _, name := range extractDeclNames(decl) {
 			if err := ValidateAccess(DefaultBackend, opts.AccessModifier, name); err != nil {
+				if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+					visErr.File = "snippet"
+				}
 				return fmt.Errorf("validate access modifier for %q: %w", name, err)
 			}
 		}
@@ -102,9 +99,13 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 	// 2. Standalone insertion
 	insertOffset, err := calculateDeclOffset(fset, fileNode, content, effectiveAccess, opts)
 	if err != nil {
-		var pErr *PlacementError
-		if errors.As(err, &pErr) && pErr.File == "" {
-			pErr.File = cleanPath
+		if pErr, ok := errors.AsType[*PlacementError](err); ok {
+			if pErr.File == "" {
+				pErr.File = cleanPath
+			}
+			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
+				pErr.Pos = fset.Position(fileNode.Package)
+			}
 		}
 		return fmt.Errorf("calculate declaration offset: %w", err)
 	}
