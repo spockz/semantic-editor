@@ -13,16 +13,27 @@ import (
 	"semedit/internal/pipeline"
 )
 
+var (
+	// ErrEmptyPackage indicates an empty package was supplied to dependency tooling.
+	ErrEmptyPackage = errors.New("empty package name")
+	// ErrNoModuleRoot indicates a go.mod file could not be located.
+	ErrNoModuleRoot = errors.New("cannot determine module root")
+	// ErrDependencyFailed indicates go get failed.
+	ErrDependencyFailed = errors.New("dependency acquisition failed")
+	// ErrModTidyFailed indicates go mod tidy failed.
+	ErrModTidyFailed = errors.New("go mod tidy failed")
+)
+
 // AddDependency executes 'go get <pkg>' and 'go mod tidy' in the enclosing module root.
 func AddDependency(ctx context.Context, workDir string, pkg string) error {
 	trimmedPkg := strings.TrimSpace(pkg)
 	if trimmedPkg == "" {
-		return errors.New("empty package name")
+		return ErrEmptyPackage
 	}
 
 	modRoot := pipeline.FindModuleRoot(workDir)
 	if modRoot == "" {
-		return errors.New("cannot determine module root")
+		return ErrNoModuleRoot
 	}
 
 	// #nosec G204 -- trimmedPkg is an explicit package identifier
@@ -34,7 +45,7 @@ func AddDependency(ctx context.Context, workDir string, pkg string) error {
 	getCmd.Stderr = &getErr
 
 	if err := getCmd.Run(); err != nil {
-		return fmt.Errorf("go get %s: %w: %s", trimmedPkg, err, getErr.String())
+		return fmt.Errorf("%w: go get %s: %s: %w", ErrDependencyFailed, trimmedPkg, getErr.String(), err)
 	}
 
 	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
@@ -45,7 +56,7 @@ func AddDependency(ctx context.Context, workDir string, pkg string) error {
 	tidyCmd.Stderr = &tidyErr
 
 	if err := tidyCmd.Run(); err != nil {
-		return fmt.Errorf("go mod tidy: %w: %s", err, tidyErr.String())
+		return fmt.Errorf("%w: %s: %w", ErrModTidyFailed, tidyErr.String(), err)
 	}
 
 	return nil

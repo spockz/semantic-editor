@@ -2,7 +2,6 @@
 package astedit
 
 import (
-	"errors"
 	"fmt"
 	"go/ast"
 	"slices"
@@ -70,15 +69,15 @@ func (g GolangBackend) ValidateModifier(mod AccessModifier, identifier string) e
 
 	supported := g.SupportedAccessModifiers()
 	if !slices.Contains(supported, mod) {
-		return fmt.Errorf("access modifier %q is not supported by the Go language backend; supported modifiers are: infer, public, private", mod)
+		return fmt.Errorf("%w: %q is not supported by the Go language backend (supported: infer, public, private)", ErrUnsupportedModifier, mod)
 	}
 
 	exported := isIdentifierExported(identifier)
 	if mod == AccessModifierPublic && !exported {
-		return fmt.Errorf("identifier %q has private casing (lowercase) but access modifier was explicitly specified as %q", identifier, mod)
+		return fmt.Errorf("%w: identifier %q has private casing (lowercase) but access modifier was explicitly specified as %q", ErrVisibilityMismatch, identifier, mod)
 	}
 	if mod == AccessModifierPrivate && exported {
-		return fmt.Errorf("identifier %q has public casing (uppercase) but access modifier was explicitly specified as %q", identifier, mod)
+		return fmt.Errorf("%w: identifier %q has public casing (uppercase) but access modifier was explicitly specified as %q", ErrVisibilityMismatch, identifier, mod)
 	}
 
 	return nil
@@ -109,7 +108,7 @@ func ResolveAccess(backend LanguageBackend, mod AccessModifier, identifier strin
 		backend = DefaultBackend
 	}
 	if identifier == "" {
-		return "", errors.New("identifier required to resolve access modifier")
+		return "", ErrMissingIdentifier
 	}
 	return backend.ResolveEffectiveAccess(mod, identifier)
 }

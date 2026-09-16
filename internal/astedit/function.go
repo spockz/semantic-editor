@@ -4,7 +4,6 @@ package astedit
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -116,7 +115,7 @@ func InsertFunction(ctx context.Context, filePath string, source string, opts Fu
 func parseFunctionSnippet(source string) (*ast.FuncDecl, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return nil, errors.New("empty function snippet")
+		return nil, ErrEmptySnippet
 	}
 
 	toParse := trimmed
@@ -127,20 +126,20 @@ func parseFunctionSnippet(source string) (*ast.FuncDecl, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("syntax error: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrSyntax, err)
 	}
 
 	if len(node.Decls) == 0 {
-		return nil, errors.New("no declarations found in snippet")
+		return nil, ErrNoDeclarations
 	}
 
 	if len(node.Decls) > 1 {
-		return nil, fmt.Errorf("expected single function declaration, found %d declarations", len(node.Decls))
+		return nil, fmt.Errorf("%w: expected single function declaration, found %d declarations", ErrMultipleDeclarations, len(node.Decls))
 	}
 
 	fnDecl, ok := node.Decls[0].(*ast.FuncDecl)
 	if !ok {
-		return nil, fmt.Errorf("expected function declaration (*ast.FuncDecl), found %T", node.Decls[0])
+		return nil, fmt.Errorf("%w: expected function declaration (*ast.FuncDecl), found %T", ErrUnexpectedDeclType, node.Decls[0])
 	}
 
 	return fnDecl, nil
@@ -168,10 +167,10 @@ func extractReceiverTypeName(recv *ast.FieldList) string {
 func calculateFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, fnDecl *ast.FuncDecl, effectiveAccess AccessModifier, opts FunctionOptions) (int, error) {
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, fmt.Errorf("section violation: public function %q cannot be placed in private section", fnDecl.Name.Name)
+			return 0, fmt.Errorf("%w: public function %q cannot be placed in private section", ErrSectionViolation, fnDecl.Name.Name)
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, fmt.Errorf("section violation: private function %q cannot be placed in public section", fnDecl.Name.Name)
+			return 0, fmt.Errorf("%w: private function %q cannot be placed in public section", ErrSectionViolation, fnDecl.Name.Name)
 		}
 
 		insertOpts := Options{

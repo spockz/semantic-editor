@@ -4,7 +4,6 @@ package astedit
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -164,10 +163,10 @@ func extractSpecSource(raw string, tok token.Token) string {
 func calculateDeclOffset(fset *token.FileSet, fileNode *ast.File, content []byte, effectiveAccess AccessModifier, opts DeclOptions) (int, error) {
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, errors.New("section violation: public declaration cannot be placed in private section")
+			return 0, fmt.Errorf("%w: public declaration cannot be placed in private section", ErrSectionViolation)
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, errors.New("section violation: private declaration cannot be placed in public section")
+			return 0, fmt.Errorf("%w: private declaration cannot be placed in public section", ErrSectionViolation)
 		}
 
 		insertOpts := Options{

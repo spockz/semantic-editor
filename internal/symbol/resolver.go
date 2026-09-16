@@ -18,6 +18,8 @@ var (
 	ErrNotFound = errors.New("symbol not found")
 	// ErrAmbiguous indicates multiple matching symbols were discovered.
 	ErrAmbiguous = errors.New("ambiguous symbol query")
+	// ErrInvalidIdentifier indicates an identifier is empty or improperly formatted.
+	ErrInvalidIdentifier = errors.New("invalid identifier")
 )
 
 // Symbol represents an identified symbol in source code with exact coordinates.
@@ -57,7 +59,7 @@ type LookupResult struct {
 func ParseIdentifier(raw string) (receiver string, name string, err error) {
 	clean := strings.Trim(strings.TrimSpace(raw), `"'`)
 	if clean == "" {
-		return "", "", fmt.Errorf("empty identifier: %w", ErrNotFound)
+		return "", "", fmt.Errorf("%w: identifier cannot be empty", ErrInvalidIdentifier)
 	}
 
 	parts := strings.Split(clean, ".")
@@ -71,7 +73,7 @@ func ParseIdentifier(raw string) (receiver string, name string, err error) {
 		recv = strings.TrimPrefix(recv, "*")
 		return recv, parts[1], nil
 	default:
-		return "", "", fmt.Errorf("invalid qualified identifier %q: too many segments", raw)
+		return "", "", fmt.Errorf("%w: %q (expected [Receiver.]Name)", ErrInvalidIdentifier, raw)
 	}
 }
 

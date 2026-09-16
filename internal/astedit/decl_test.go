@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,5 +113,28 @@ const (
 
 	if !strings.Contains(content, "const TimeoutSeconds = 30") {
 		t.Errorf("expected standalone const declaration, got:\n%s", content)
+	}
+}
+
+func TestInsertDecl_SectionViolation(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "consts.go")
+	initial := `package consts
+
+const PublicConst = 1
+
+const privateConst = 2
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	ctx := context.Background()
+
+	err := InsertDecl(ctx, file, `const AnotherPublic = 3`, DeclOptions{
+		Placement: PlacementPrivateStart,
+	})
+	if !errors.Is(err, ErrSectionViolation) {
+		t.Fatalf("expected ErrSectionViolation, got %v", err)
 	}
 }

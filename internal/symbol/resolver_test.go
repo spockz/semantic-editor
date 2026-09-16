@@ -2,6 +2,7 @@
 package symbol_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,8 +29,13 @@ func TestParseIdentifier(t *testing.T) {
 
 	for _, tt := range tests {
 		recv, name, err := symbol.ParseIdentifier(tt.input)
-		if tt.wantErr && err == nil {
-			t.Fatalf("ParseIdentifier(%q) expected error, got nil", tt.input)
+		if tt.wantErr {
+			if err == nil {
+				t.Fatalf("ParseIdentifier(%q) expected error, got nil", tt.input)
+			}
+			if !errors.Is(err, symbol.ErrInvalidIdentifier) {
+				t.Fatalf("ParseIdentifier(%q) expected ErrInvalidIdentifier, got %v", tt.input, err)
+			}
 		}
 		if !tt.wantErr && err != nil {
 			t.Fatalf("ParseIdentifier(%q) unexpected error: %v", tt.input, err)

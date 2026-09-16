@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,29 +108,29 @@ func privateOne() {}
 	err := InsertFunction(ctx, file, `func PublicTwo() {}`, FunctionOptions{
 		Placement: PlacementPrivateStart,
 	})
-	if err == nil {
-		t.Fatal("expected error placing public function in private section, got nil")
+	if !errors.Is(err, ErrSectionViolation) {
+		t.Fatalf("expected ErrSectionViolation placing public function in private section, got %v", err)
 	}
 
 	// 2. Section violation: private function in public section
 	err = InsertFunction(ctx, file, `func privateTwo() {}`, FunctionOptions{
 		Placement: PlacementPublicStart,
 	})
-	if err == nil {
-		t.Fatal("expected error placing private function in public section, got nil")
+	if !errors.Is(err, ErrSectionViolation) {
+		t.Fatalf("expected ErrSectionViolation placing private function in public section, got %v", err)
 	}
 
 	// 3. Unsupported access modifier in Go
 	err = InsertFunction(ctx, file, `func ProtectedHelper() {}`, FunctionOptions{
 		AccessModifier: AccessModifierProtected,
 	})
-	if err == nil {
-		t.Fatal("expected error for protected access modifier in Go, got nil")
+	if !errors.Is(err, ErrUnsupportedModifier) {
+		t.Fatalf("expected ErrUnsupportedModifier for protected access modifier in Go, got %v", err)
 	}
 
 	// 4. Non-function snippet
 	err = InsertFunction(ctx, file, `type NonFunction struct {}`, FunctionOptions{})
-	if err == nil {
-		t.Fatal("expected error when passing struct type to InsertFunction, got nil")
+	if !errors.Is(err, ErrUnexpectedDeclType) {
+		t.Fatalf("expected ErrUnexpectedDeclType when passing struct type to InsertFunction, got %v", err)
 	}
 }

@@ -16,6 +16,8 @@ import (
 var (
 	// ErrGoplsNotFound indicates the gopls executable could not be located.
 	ErrGoplsNotFound = errors.New("gopls executable not found")
+	// ErrRenameFailed indicates gopls rename failed to execute.
+	ErrRenameFailed = errors.New("gopls rename failed")
 )
 
 // FindGopls locates the gopls binary across system PATH and Go environment directories.
@@ -67,7 +69,7 @@ func Rename(ctx context.Context, workDir string, file string, line int, col int,
 	cmd.Stderr = &out
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gopls rename failed: %w: %s", err, strings.TrimSpace(out.String()))
+		return fmt.Errorf("%w: %w: %s", ErrRenameFailed, err, strings.TrimSpace(out.String()))
 	}
 
 	return nil

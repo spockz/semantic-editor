@@ -3,6 +3,7 @@ package astedit_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -232,8 +233,8 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 			Placement:  astedit.PlacementFileEnd,
 			Visibility: "public",
 		})
-		if err == nil {
-			t.Fatal("expected error on public visibility mismatch, got nil")
+		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
+			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
 		}
 	})
 
@@ -245,8 +246,8 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 			Placement:  astedit.PlacementFileEnd,
 			Visibility: "private",
 		})
-		if err == nil {
-			t.Fatal("expected error on private visibility mismatch, got nil")
+		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
+			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
 		}
 	})
 
@@ -257,8 +258,8 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
 			Placement: astedit.PlacementFileEnd,
 		})
-		if err == nil {
-			t.Fatal("expected syntax error, got nil")
+		if !errors.Is(err, astedit.ErrSyntax) {
+			t.Fatalf("expected ErrSyntax, got %v", err)
 		}
 		data, _ := os.ReadFile(filepath.Clean(file))
 		if string(data) != baseFile {

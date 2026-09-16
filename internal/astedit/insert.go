@@ -4,7 +4,6 @@ package astedit
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -126,7 +125,7 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return nil, errors.New("empty declaration snippet")
+		return nil, ErrEmptySnippet
 	}
 
 	toParse := trimmed
@@ -137,11 +136,11 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("syntax error: %w", err)
+		return nil, fmt.Errorf("%w: %w", ErrSyntax, err)
 	}
 
 	if len(node.Decls) == 0 {
-		return nil, errors.New("no Go declarations found in snippet")
+		return nil, ErrNoDeclarations
 	}
 
 	if expectedVisibility != "" {
@@ -150,10 +149,10 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 			for _, name := range names {
 				exported := ast.IsExported(name)
 				if expectedVisibility == "public" && !exported {
-					return nil, fmt.Errorf("visibility mismatch: expected public symbol, found private %q", name)
+					return nil, fmt.Errorf("%w: expected public symbol, found private %q", ErrVisibilityMismatch, name)
 				}
 				if expectedVisibility == "private" && exported {
-					return nil, fmt.Errorf("visibility mismatch: expected private symbol, found public %q", name)
+					return nil, fmt.Errorf("%w: expected private symbol, found public %q", ErrVisibilityMismatch, name)
 				}
 			}
 		}
@@ -197,7 +196,7 @@ func calculateInsertionOffset(fset *token.FileSet, fileNode *ast.File, content [
 
 	case PlacementBeforeSymbol, PlacementAfterSymbol:
 		if opts.TargetSymbol == "" {
-			return 0, errors.New("target symbol required for before_symbol and after_symbol placement")
+			return 0, fmt.Errorf("%w: target symbol required for %s placement", ErrSymbolNotFound, opts.Placement)
 		}
 		targetDecl, err := findTargetDecl(fileNode, opts.TargetSymbol)
 		if err != nil {
@@ -336,7 +335,7 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("symbol %q not found", targetSymbol)
+	return nil, fmt.Errorf("%w: %q", ErrSymbolNotFound, targetSymbol)
 }
 
 func appendToEOF(ctx context.Context, filePath string, content []byte, source string, autoOrganize bool) error {

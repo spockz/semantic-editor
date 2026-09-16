@@ -4,7 +4,6 @@ package astedit
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -115,7 +114,7 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return nil, "", errors.New("empty type snippet")
+		return nil, "", ErrEmptySnippet
 	}
 
 	toParse := trimmed
@@ -126,25 +125,25 @@ func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, "", fmt.Errorf("syntax error: %w", err)
+		return nil, "", fmt.Errorf("%w: %w", ErrSyntax, err)
 	}
 
 	if len(node.Decls) == 0 {
-		return nil, "", errors.New("no declarations found in snippet")
+		return nil, "", ErrNoDeclarations
 	}
 
 	genDecl, ok := node.Decls[0].(*ast.GenDecl)
 	if !ok || genDecl.Tok != token.TYPE {
-		return nil, "", fmt.Errorf("expected type declaration (*ast.GenDecl with token.TYPE), found %T", node.Decls[0])
+		return nil, "", fmt.Errorf("%w: expected type declaration (*ast.GenDecl with token.TYPE), found %T", ErrUnexpectedDeclType, node.Decls[0])
 	}
 
 	if len(genDecl.Specs) == 0 {
-		return nil, "", errors.New("no type specs found in declaration")
+		return nil, "", ErrNoTypeSpecs
 	}
 
 	typeSpec, ok := genDecl.Specs[0].(*ast.TypeSpec)
 	if !ok {
-		return nil, "", fmt.Errorf("expected *ast.TypeSpec, found %T", genDecl.Specs[0])
+		return nil, "", fmt.Errorf("%w: expected *ast.TypeSpec, found %T", ErrUnexpectedDeclType, genDecl.Specs[0])
 	}
 
 	return genDecl, typeSpec.Name.Name, nil
@@ -154,10 +153,10 @@ func calculateTypeOffset(fset *token.FileSet, fileNode *ast.File, content []byte
 	_ = genDecl
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, fmt.Errorf("section violation: public type %q cannot be placed in private section", typeName)
+			return 0, fmt.Errorf("%w: public type %q cannot be placed in private section", ErrSectionViolation, typeName)
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, fmt.Errorf("section violation: private type %q cannot be placed in public section", typeName)
+			return 0, fmt.Errorf("%w: private type %q cannot be placed in public section", ErrSectionViolation, typeName)
 		}
 
 		insertOpts := Options{

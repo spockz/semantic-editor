@@ -4,6 +4,7 @@ package pipeline
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -22,6 +23,13 @@ import (
 )
 
 var (
+	// ErrAtomicWrite indicates a failure during atomic file staging, sync, or rename.
+	ErrAtomicWrite = errors.New("atomic write failed")
+	// ErrFormatFailed indicates gofmt execution failed.
+	ErrFormatFailed = errors.New("gofmt execution failed")
+	// ErrOrganizeImportsFailed indicates import organization failed.
+	ErrOrganizeImportsFailed = errors.New("organize imports failed")
+
 	reMissingPackage = regexp.MustCompile(`cannot find package "([^"]+)"`)
 	reNoModule       = regexp.MustCompile(`no required module provides package ([^;:\s]+)`)
 )
@@ -32,7 +40,7 @@ func WriteAtomic(targetPath string, data []byte) error {
 	base := filepath.Base(targetPath)
 	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
-		return fmt.Errorf("create temp file: %w", err)
+		return fmt.Errorf("%w: create temp file: %w", ErrAtomicWrite, err)
 	}
 	tmpName := tmpFile.Name()
 	defer func() {
@@ -41,16 +49,16 @@ func WriteAtomic(targetPath string, data []byte) error {
 
 	if _, err := tmpFile.Write(data); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("write temp file: %w", err)
+		return fmt.Errorf("%w: write temp file: %w", ErrAtomicWrite, err)
 	}
 
 	if err := tmpFile.Sync(); err != nil {
 		_ = tmpFile.Close()
-		return fmt.Errorf("sync temp file: %w", err)
+		return fmt.Errorf("%w: sync temp file: %w", ErrAtomicWrite, err)
 	}
 
 	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("close temp file: %w", err)
+		return fmt.Errorf("%w: close temp file: %w", ErrAtomicWrite, err)
 	}
 
 	// Ensure advancing mtime before renaming (ADR-0010)
@@ -64,7 +72,7 @@ func WriteAtomic(targetPath string, data []byte) error {
 	}
 
 	if err := os.Rename(tmpName, targetPath); err != nil {
-		return fmt.Errorf("rename to target: %w", err)
+		return fmt.Errorf("%w: rename to target: %w", ErrAtomicWrite, err)
 	}
 
 	return nil
@@ -84,7 +92,7 @@ func Format(ctx context.Context, workDir string, paths ...string) error {
 	cmd.Stderr = &errBuf
 
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gofmt failed: %w: %s", err, errBuf.String())
+		return fmt.Errorf("%w: %s: %w", ErrFormatFailed, strings.TrimSpace(errBuf.String()), err)
 	}
 	return nil
 }
@@ -221,7 +229,7 @@ func OrganizeImportsWithOptions(_ context.Context, workDir string, opts ImportOp
 
 		res, err := imports.Process(cleanFile, modifiedData, nil)
 		if err != nil {
-			return fmt.Errorf("organize imports for %s: %w", file, err)
+			return fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err)
 		}
 
 		if !bytes.Equal(data, res) {

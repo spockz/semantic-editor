@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -94,15 +95,15 @@ func Run() {}
 
 	// 1. Non-type declaration rejected
 	err := InsertType(ctx, file, `func NotAType() {}`, TypeOptions{})
-	if err == nil {
-		t.Fatal("expected error passing function to InsertType, got nil")
+	if !errors.Is(err, ErrUnexpectedDeclType) {
+		t.Fatalf("expected ErrUnexpectedDeclType passing function to InsertType, got %v", err)
 	}
 
 	// 2. Section violation
 	err = InsertType(ctx, file, `type PublicType struct {}`, TypeOptions{
 		Placement: PlacementPrivateEnd,
 	})
-	if err == nil {
-		t.Fatal("expected error placing public type in private section, got nil")
+	if !errors.Is(err, ErrSectionViolation) {
+		t.Fatalf("expected ErrSectionViolation placing public type in private section, got %v", err)
 	}
 }

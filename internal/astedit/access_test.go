@@ -2,6 +2,7 @@
 package astedit
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -9,11 +10,12 @@ func TestAccessModifier_Inference(t *testing.T) {
 	backend := GolangBackend{}
 
 	tests := []struct {
-		name       string
-		identifier string
-		mod        AccessModifier
-		want       AccessModifier
-		wantErr    bool
+		name          string
+		identifier    string
+		mod           AccessModifier
+		want          AccessModifier
+		wantErr       bool
+		wantTargetErr error
 	}{
 		{
 			name:       "infer uppercase as public",
@@ -52,28 +54,32 @@ func TestAccessModifier_Inference(t *testing.T) {
 			want:       AccessModifierPrivate,
 		},
 		{
-			name:       "unsupported protected in Go",
-			identifier: "Helper",
-			mod:        AccessModifierProtected,
-			wantErr:    true,
+			name:          "unsupported protected in Go",
+			identifier:    "Helper",
+			mod:           AccessModifierProtected,
+			wantErr:       true,
+			wantTargetErr: ErrUnsupportedModifier,
 		},
 		{
-			name:       "unsupported package-private in Go",
-			identifier: "helper",
-			mod:        AccessModifierPackagePrivate,
-			wantErr:    true,
+			name:          "unsupported package-private in Go",
+			identifier:    "helper",
+			mod:           AccessModifierPackagePrivate,
+			wantErr:       true,
+			wantTargetErr: ErrUnsupportedModifier,
 		},
 		{
-			name:       "mismatch public requested for lowercase identifier",
-			identifier: "helper",
-			mod:        AccessModifierPublic,
-			wantErr:    true,
+			name:          "mismatch public requested for lowercase identifier",
+			identifier:    "helper",
+			mod:           AccessModifierPublic,
+			wantErr:       true,
+			wantTargetErr: ErrVisibilityMismatch,
 		},
 		{
-			name:       "mismatch private requested for uppercase identifier",
-			identifier: "Helper",
-			mod:        AccessModifierPrivate,
-			wantErr:    true,
+			name:          "mismatch private requested for uppercase identifier",
+			identifier:    "Helper",
+			mod:           AccessModifierPrivate,
+			wantErr:       true,
+			wantTargetErr: ErrVisibilityMismatch,
 		},
 	}
 
@@ -83,6 +89,9 @@ func TestAccessModifier_Inference(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for mod %q and identifier %q, got nil", tt.mod, tt.identifier)
+				}
+				if tt.wantTargetErr != nil && !errors.Is(err, tt.wantTargetErr) {
+					t.Fatalf("expected error wrapping %v, got %v", tt.wantTargetErr, err)
 				}
 				return
 			}

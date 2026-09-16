@@ -3,6 +3,7 @@ package golang_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"semedit/internal/adapters/golang"
@@ -13,7 +14,7 @@ func TestAddDependency_Validation(t *testing.T) {
 	ctx := context.Background()
 
 	err := golang.AddDependency(ctx, t.TempDir(), "")
-	if err == nil {
-		t.Fatal("expected error on empty package, got nil")
+	if !errors.Is(err, golang.ErrEmptyPackage) {
+		t.Fatalf("expected ErrEmptyPackage, got %v", err)
 	}
 }
