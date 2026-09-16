@@ -4,6 +4,7 @@ package astedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -56,6 +57,12 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 	snippetDecls, err := verifySnippetSyntax(source, opts.Visibility)
 	if err != nil {
+		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
+			synErr.File = cleanPath
+			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
+				synErr.Pos.Filename = cleanPath
+			}
+		}
 		return fmt.Errorf("validate declaration snippet: %w", err)
 	}
 
@@ -68,6 +75,10 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 	insertOffset, err := calculateInsertionOffset(fset, fileNode, content, opts)
 	if err != nil {
+		var pErr *PlacementError
+		if errors.As(err, &pErr) && pErr.File == "" {
+			pErr.File = cleanPath
+		}
 		return fmt.Errorf("calculate insertion offset: %w", err)
 	}
 
@@ -129,14 +140,29 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 	}
 
 	toParse := trimmed
+	prepended := false
 	if !strings.HasPrefix(trimmed, "package ") {
 		toParse = "package dummy\n\n" + trimmed
+		prepended = true
 	}
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSyntax, err)
+		pos := extractSyntaxPosition(fset, err)
+		if prepended && pos.Line > 2 {
+			pos.Line -= 2
+			pos.Offset -= len("package dummy\n\n")
+			if pos.Offset < 0 {
+				pos.Offset = 0
+			}
+		}
+		return nil, &SyntaxError{
+			Snippet: source,
+			Pos:     pos,
+			Cause:   err,
+			Err:     ErrSyntax,
+		}
 	}
 
 	if len(node.Decls) == 0 {
@@ -149,10 +175,20 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 			for _, name := range names {
 				exported := ast.IsExported(name)
 				if expectedVisibility == "public" && !exported {
-					return nil, fmt.Errorf("%w: expected public symbol, found private %q", ErrVisibilityMismatch, name)
+					return nil, &VisibilityMismatchError{
+						Identifier: name,
+						Requested:  AccessModifierPublic,
+						Effective:  AccessModifierPrivate,
+						Err:        ErrVisibilityMismatch,
+					}
 				}
 				if expectedVisibility == "private" && exported {
-					return nil, fmt.Errorf("%w: expected private symbol, found public %q", ErrVisibilityMismatch, name)
+					return nil, &VisibilityMismatchError{
+						Identifier: name,
+						Requested:  AccessModifierPrivate,
+						Effective:  AccessModifierPublic,
+						Err:        ErrVisibilityMismatch,
+					}
 				}
 			}
 		}
@@ -196,10 +232,16 @@ func calculateInsertionOffset(fset *token.FileSet, fileNode *ast.File, content [
 
 	case PlacementBeforeSymbol, PlacementAfterSymbol:
 		if opts.TargetSymbol == "" {
-			return 0, fmt.Errorf("%w: target symbol required for %s placement", ErrSymbolNotFound, opts.Placement)
+			return 0, &PlacementError{
+				Strategy: opts.Placement,
+				Err:      ErrSymbolNotFound,
+			}
 		}
 		targetDecl, err := findTargetDecl(fileNode, opts.TargetSymbol)
 		if err != nil {
+			if pErr, ok := errors.AsType[*PlacementError](err); ok {
+				pErr.Strategy = opts.Placement
+			}
 			return 0, err
 		}
 		if opts.Placement == PlacementBeforeSymbol {
@@ -335,7 +377,10 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %q", ErrSymbolNotFound, targetSymbol)
+	return nil, &PlacementError{
+		TargetSymbol: targetSymbol,
+		Err:          ErrSymbolNotFound,
+	}
 }
 
 func appendToEOF(ctx context.Context, filePath string, content []byte, source string, autoOrganize bool) error {

@@ -40,6 +40,7 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0029** | `Makefile` | Added `rm -f bin/semedit` and `build-next` prerequisite to `promote` and `build` | Build automation fix | Non-code file mutation (outside AST scope) | N/A (Build automation) |
 | **ME-0030** | `internal/...` | Standardized on exported package-level sentinel errors and `%w` wrapping (ADR-0013) | Domain error standardization | AST error refactoring | `standardize_errors` |
 | **ME-0031** | `main.go` | Migrated CLI entry point from `flag.FlagSet` to Cobra subcommands (ADR-0014) | CLI command framework migration | Full CLI restructure | N/A (CLI Framework) |
+| **ME-0032** | `internal/...`, `main.go` | Implemented structured record errors (`SymbolError`, `SyntaxError`, `PlacementError`, `VisibilityMismatchError`) with source locations, compiler standard stderr formatting, and LSP-compatible MCP error payloads (ADR-0013) | Domain error structure and diagnostic location enrichment | AST error type scaffolding / Location-aware error mapping | `standardize_errors` / `refactor_ast` |
 
 ---
 

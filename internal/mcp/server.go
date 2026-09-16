@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -457,13 +458,13 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 
 		res, err := symbol.Resolve(s.workDir, args.File, args.Symbol)
 		if err != nil {
-			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)
 			return
 		}
 
 		outJSON, err := json.MarshalIndent(res, "", "  ")
 		if err != nil {
-			s.sendToolError(id, fmt.Sprintf("serialization error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("serialization error: %v", err), err)
 			return
 		}
 		s.sendToolSuccess(id, string(outJSON))
@@ -490,7 +491,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 
 		res, err := symbol.Resolve(s.workDir, args.File, sym)
 		if err != nil {
-			s.sendToolError(id, fmt.Sprintf("symbol resolution error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("symbol resolution error: %v", err), err)
 			return
 		}
 
@@ -580,7 +581,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
 
 		if err := astedit.InsertDeclaration(ctx, targetPath, args.Source, opts); err != nil {
-			s.sendToolError(id, fmt.Sprintf("insert error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("insert error: %v", err), err)
 			return
 		}
 
@@ -630,7 +631,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
 
 		if err := astedit.InsertFunction(ctx, targetPath, args.Source, opts); err != nil {
-			s.sendToolError(id, fmt.Sprintf("insert function error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("insert function error: %v", err), err)
 			return
 		}
 
@@ -680,7 +681,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
 
 		if err := astedit.InsertType(ctx, targetPath, args.Source, opts); err != nil {
-			s.sendToolError(id, fmt.Sprintf("insert type error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("insert type error: %v", err), err)
 			return
 		}
 
@@ -732,7 +733,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
 
 		if err := astedit.InsertDecl(ctx, targetPath, args.Source, opts); err != nil {
-			s.sendToolError(id, fmt.Sprintf("insert decl error: %v", err))
+			s.sendToolError(id, fmt.Sprintf("insert decl error: %v", err), err)
 			return
 		}
 
@@ -835,8 +836,8 @@ func (s *Server) sendToolSuccess(id json.RawMessage, text string) {
 	})
 }
 
-func (s *Server) sendToolError(id json.RawMessage, text string) {
-	s.sendResult(id, map[string]any{
+func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
+	result := map[string]any{
 		"content": []map[string]any{
 			{
 				"type": "text",
@@ -844,7 +845,74 @@ func (s *Server) sendToolError(id json.RawMessage, text string) {
 			},
 		},
 		"isError": true,
-	})
+	}
+
+	if len(errs) > 0 && errs[0] != nil {
+		if loc := s.extractLocation(errs[0]); loc != nil {
+			result["location"] = loc
+		}
+	}
+
+	s.sendResult(id, result)
+}
+
+func (s *Server) extractLocation(err error) map[string]any {
+	var pos token.Position
+	var filePath string
+
+	var synErr *astedit.SyntaxError
+	var symErr *symbol.SymbolError
+	var placeErr *astedit.PlacementError
+
+	switch {
+	case errors.As(err, &synErr) && synErr.Pos.IsValid():
+		pos = synErr.Pos
+		filePath = synErr.File
+		if filePath == "" {
+			filePath = pos.Filename
+		}
+	case errors.As(err, &symErr) && symErr.Pos.IsValid():
+		pos = symErr.Pos
+		filePath = symErr.File
+		if filePath == "" {
+			filePath = pos.Filename
+		}
+	case errors.As(err, &placeErr) && placeErr.Pos.IsValid():
+		pos = placeErr.Pos
+		filePath = placeErr.File
+		if filePath == "" {
+			filePath = pos.Filename
+		}
+	}
+
+	if !pos.IsValid() {
+		return nil
+	}
+
+	uri := filePath
+	if !strings.HasPrefix(uri, "file://") {
+		if !filepath.IsAbs(uri) && s.workDir != "" {
+			uri = filepath.Join(s.workDir, uri)
+		}
+		uri = "file://" + filepath.ToSlash(filepath.Clean(uri))
+	}
+
+	startLine := max(pos.Line-1, 0)
+	startChar := max(pos.Column-1, 0)
+
+	return map[string]any{
+		"uri": uri,
+		"range": map[string]any{
+			"start": map[string]int{
+				"line":      startLine,
+				"character": startChar,
+			},
+			"end": map[string]int{
+				"line":      startLine,
+				"character": startChar,
+			},
+		},
+	}
 }
 
 func (s *Server) sendResult(id json.RawMessage, result any) {

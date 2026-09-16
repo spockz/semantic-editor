@@ -4,6 +4,7 @@ package astedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -41,6 +42,12 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 
 	snippetDecls, err := verifySnippetSyntax(source, "")
 	if err != nil {
+		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
+			synErr.File = cleanPath
+			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
+				synErr.Pos.Filename = cleanPath
+			}
+		}
 		return fmt.Errorf("validate declaration snippet: %w", err)
 	}
 
@@ -95,6 +102,10 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 	// 2. Standalone insertion
 	insertOffset, err := calculateDeclOffset(fset, fileNode, content, effectiveAccess, opts)
 	if err != nil {
+		var pErr *PlacementError
+		if errors.As(err, &pErr) && pErr.File == "" {
+			pErr.File = cleanPath
+		}
 		return fmt.Errorf("calculate declaration offset: %w", err)
 	}
 
@@ -163,10 +174,16 @@ func extractSpecSource(raw string, tok token.Token) string {
 func calculateDeclOffset(fset *token.FileSet, fileNode *ast.File, content []byte, effectiveAccess AccessModifier, opts DeclOptions) (int, error) {
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, fmt.Errorf("%w: public declaration cannot be placed in private section", ErrSectionViolation)
+			return 0, &PlacementError{
+				Strategy: opts.Placement,
+				Err:      ErrSectionViolation,
+			}
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, fmt.Errorf("%w: private declaration cannot be placed in public section", ErrSectionViolation)
+			return 0, &PlacementError{
+				Strategy: opts.Placement,
+				Err:      ErrSectionViolation,
+			}
 		}
 
 		insertOpts := Options{

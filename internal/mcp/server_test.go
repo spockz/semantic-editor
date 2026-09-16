@@ -164,3 +164,66 @@ func Existing() {}
 		t.Errorf("expected DefaultLimit const in file, got:\n%s", content)
 	}
 }
+
+func TestMCPToolLocationError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	filePath := filepath.Join(dir, "app.go")
+	if err := os.WriteFile(filePath, []byte("package app\n"), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":%q,"source":"func broken( {"}}}`, filePath) + "\n"
+	inBuf := bytes.NewBufferString(callMsg)
+	var outBuf bytes.Buffer
+
+	srv := mcp.NewServer("full", dir, &outBuf)
+	ctx := context.Background()
+
+	if err := srv.Serve(ctx, inBuf); err != nil {
+		t.Fatalf("Serve failed: %v", err)
+	}
+
+	var resp struct {
+		JSONRPC string `json:"jsonrpc"`
+		ID      int    `json:"id"`
+		Result  struct {
+			IsError  bool `json:"isError"`
+			Location *struct {
+				URI   string `json:"uri"`
+				Range struct {
+					Start struct {
+						Line      int `json:"line"`
+						Character int `json:"character"`
+					} `json:"start"`
+					End struct {
+						Line      int `json:"line"`
+						Character int `json:"character"`
+					} `json:"end"`
+				} `json:"range"`
+			} `json:"location"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(outBuf.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal error response: %v\nraw: %s", err, outBuf.String())
+	}
+
+	if !resp.Result.IsError {
+		t.Fatalf("expected isError true, got false")
+	}
+
+	if resp.Result.Location == nil {
+		t.Fatalf("expected location in tool error response, got nil:\n%s", outBuf.String())
+	}
+
+	expectedURI := "file://" + filepath.ToSlash(filepath.Clean(filePath))
+	if resp.Result.Location.URI != expectedURI {
+		t.Errorf("expected URI %q, got %q", expectedURI, resp.Result.Location.URI)
+	}
+
+	if resp.Result.Location.Range.Start.Line < 0 || resp.Result.Location.Range.Start.Character < 0 {
+		t.Errorf("expected non-negative 0-indexed range, got %+v", resp.Result.Location.Range)
+	}
+}

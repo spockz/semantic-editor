@@ -111,6 +111,16 @@ func privateOne() {}
 	if !errors.Is(err, ErrSectionViolation) {
 		t.Fatalf("expected ErrSectionViolation placing public function in private section, got %v", err)
 	}
+	var pErr *PlacementError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected *PlacementError via errors.As, got %T", err)
+	}
+	if pErr.Strategy != PlacementPrivateStart {
+		t.Errorf("expected Strategy PlacementPrivateStart, got %q", pErr.Strategy)
+	}
+	if pErr.TargetSymbol != "PublicTwo" {
+		t.Errorf("expected TargetSymbol 'PublicTwo', got %q", pErr.TargetSymbol)
+	}
 
 	// 2. Section violation: private function in public section
 	err = InsertFunction(ctx, file, `func privateTwo() {}`, FunctionOptions{
@@ -132,5 +142,18 @@ func privateOne() {}
 	err = InsertFunction(ctx, file, `type NonFunction struct {}`, FunctionOptions{})
 	if !errors.Is(err, ErrUnexpectedDeclType) {
 		t.Fatalf("expected ErrUnexpectedDeclType when passing struct type to InsertFunction, got %v", err)
+	}
+
+	// 5. Syntax error in snippet
+	err = InsertFunction(ctx, file, `func broken( {`, FunctionOptions{})
+	if !errors.Is(err, ErrSyntax) {
+		t.Fatalf("expected ErrSyntax, got %v", err)
+	}
+	var synErr *SyntaxError
+	if !errors.As(err, &synErr) {
+		t.Fatalf("expected *SyntaxError via errors.As, got %T", err)
+	}
+	if !synErr.Pos.IsValid() {
+		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
 	}
 }

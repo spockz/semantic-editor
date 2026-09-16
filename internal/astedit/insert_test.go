@@ -236,6 +236,13 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
 			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
 		}
+		var visErr *astedit.VisibilityMismatchError
+		if !errors.As(err, &visErr) {
+			t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
+		}
+		if visErr.Identifier != "privateHelper" {
+			t.Errorf("expected Identifier 'privateHelper', got %q", visErr.Identifier)
+		}
 	})
 
 	t.Run("visibility_mismatch_private_requested", func(t *testing.T) {
@@ -249,6 +256,36 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
 			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
 		}
+		var visErr *astedit.VisibilityMismatchError
+		if !errors.As(err, &visErr) {
+			t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
+		}
+		if visErr.Identifier != "PublicHelper" {
+			t.Errorf("expected Identifier 'PublicHelper', got %q", visErr.Identifier)
+		}
+	})
+
+	t.Run("missing_target_symbol", func(t *testing.T) {
+		t.Parallel()
+		file := setupTestFile(t, baseFile)
+		snippet := "func NewFunc() {}"
+		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
+			Placement:    astedit.PlacementBeforeSymbol,
+			TargetSymbol: "NoSuchSymbol",
+		})
+		if !errors.Is(err, astedit.ErrSymbolNotFound) {
+			t.Fatalf("expected ErrSymbolNotFound, got %v", err)
+		}
+		var placeErr *astedit.PlacementError
+		if !errors.As(err, &placeErr) {
+			t.Fatalf("expected *PlacementError via errors.As, got %T", err)
+		}
+		if placeErr.TargetSymbol != "NoSuchSymbol" {
+			t.Errorf("expected TargetSymbol 'NoSuchSymbol', got %q", placeErr.TargetSymbol)
+		}
+		if placeErr.Strategy != astedit.PlacementBeforeSymbol {
+			t.Errorf("expected Strategy 'before_symbol', got %q", placeErr.Strategy)
+		}
 	})
 
 	t.Run("syntax_error_zero_disk_mutation", func(t *testing.T) {
@@ -260,6 +297,16 @@ func TestInsertDeclaration_Validation(t *testing.T) {
 		})
 		if !errors.Is(err, astedit.ErrSyntax) {
 			t.Fatalf("expected ErrSyntax, got %v", err)
+		}
+		var synErr *astedit.SyntaxError
+		if !errors.As(err, &synErr) {
+			t.Fatalf("expected *SyntaxError via errors.As, got %T", err)
+		}
+		if !synErr.Pos.IsValid() {
+			t.Errorf("expected valid Pos, got %v", synErr.Pos)
+		}
+		if synErr.Snippet != snippet {
+			t.Errorf("expected Snippet %q, got %q", snippet, synErr.Snippet)
 		}
 		data, _ := os.ReadFile(filepath.Clean(file))
 		if string(data) != baseFile {

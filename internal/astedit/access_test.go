@@ -93,6 +93,18 @@ func TestAccessModifier_Inference(t *testing.T) {
 				if tt.wantTargetErr != nil && !errors.Is(err, tt.wantTargetErr) {
 					t.Fatalf("expected error wrapping %v, got %v", tt.wantTargetErr, err)
 				}
+				if errors.Is(err, ErrVisibilityMismatch) {
+					var visErr *VisibilityMismatchError
+					if !errors.As(err, &visErr) {
+						t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
+					}
+					if visErr.Identifier != tt.identifier {
+						t.Errorf("expected Identifier %q, got %q", tt.identifier, visErr.Identifier)
+					}
+					if visErr.Requested != tt.mod {
+						t.Errorf("expected Requested %q, got %q", tt.mod, visErr.Requested)
+					}
+				}
 				return
 			}
 			if err != nil {

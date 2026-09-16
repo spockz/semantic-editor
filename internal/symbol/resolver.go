@@ -6,20 +6,12 @@ import (
 	"fmt"
 	"go/ast"
 	"go/parser"
+	"go/scanner"
 	"go/token"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-)
-
-var (
-	// ErrNotFound indicates the queried symbol does not exist in scope.
-	ErrNotFound = errors.New("symbol not found")
-	// ErrAmbiguous indicates multiple matching symbols were discovered.
-	ErrAmbiguous = errors.New("ambiguous symbol query")
-	// ErrInvalidIdentifier indicates an identifier is empty or improperly formatted.
-	ErrInvalidIdentifier = errors.New("invalid identifier")
 )
 
 // Symbol represents an identified symbol in source code with exact coordinates.
@@ -81,7 +73,12 @@ func ParseIdentifier(raw string) (receiver string, name string, err error) {
 func Resolve(rootDir string, filePath string, query string) (*LookupResult, error) {
 	recv, name, err := ParseIdentifier(query)
 	if err != nil {
-		return nil, err
+		return nil, &SymbolError{
+			Op:     "resolve",
+			File:   filePath,
+			Symbol: query,
+			Err:    err,
+		}
 	}
 
 	var targetFiles []string
@@ -121,13 +118,18 @@ func Resolve(rootDir string, filePath string, query string) (*LookupResult, erro
 	for _, file := range targetFiles {
 		syms, err := scanFile(file, recv, name)
 		if err != nil {
-			return nil, fmt.Errorf("failed scanning %s: %w", file, err)
+			return nil, err
 		}
 		matches = append(matches, syms...)
 	}
 
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, query)
+		return nil, &SymbolError{
+			Op:     "resolve",
+			File:   filePath,
+			Symbol: query,
+			Err:    ErrNotFound,
+		}
 	}
 
 	for _, m := range matches {
@@ -164,13 +166,25 @@ func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol,
 	// #nosec G304 -- reading verified target go source files
 	src, err := os.ReadFile(cleanPath)
 	if err != nil {
-		return nil, fmt.Errorf("read file: %w", err)
+		return nil, &SymbolError{
+			Op:     "read",
+			File:   cleanPath,
+			Symbol: targetName,
+			Err:    err,
+		}
 	}
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("parse file: %w", err)
+		pos := extractPosition(fset, err)
+		return nil, &SymbolError{
+			Op:     "parse",
+			File:   filePath,
+			Symbol: targetName,
+			Pos:    pos,
+			Err:    err,
+		}
 	}
 
 	var results []*Symbol
@@ -256,4 +270,25 @@ func extractReceiver(recv *ast.FieldList) string {
 			return ""
 		}
 	}
+}
+
+func extractPosition(fset *token.FileSet, err error) token.Position {
+	var errList scanner.ErrorList
+	if errors.As(err, &errList) && len(errList) > 0 {
+		if fset != nil {
+			if f := fset.File(token.Pos(1)); f != nil {
+				return fset.Position(f.Pos(errList[0].Pos.Offset))
+			}
+		}
+		return errList[0].Pos
+	}
+	if sErr, ok := errors.AsType[*scanner.Error](err); ok {
+		if fset != nil {
+			if f := fset.File(token.Pos(1)); f != nil {
+				return fset.Position(f.Pos(sErr.Pos.Offset))
+			}
+		}
+		return sErr.Pos
+	}
+	return token.Position{}
 }

@@ -137,4 +137,24 @@ const privateConst = 2
 	if !errors.Is(err, ErrSectionViolation) {
 		t.Fatalf("expected ErrSectionViolation, got %v", err)
 	}
+	var pErr *PlacementError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected *PlacementError via errors.As, got %T", err)
+	}
+	if pErr.Strategy != PlacementPrivateStart {
+		t.Errorf("expected Strategy PlacementPrivateStart, got %q", pErr.Strategy)
+	}
+
+	// Syntax error
+	err = InsertDecl(ctx, file, `const broken = {`, DeclOptions{})
+	if !errors.Is(err, ErrSyntax) {
+		t.Fatalf("expected ErrSyntax, got %v", err)
+	}
+	var synErr *SyntaxError
+	if !errors.As(err, &synErr) {
+		t.Fatalf("expected *SyntaxError via errors.As, got %T", err)
+	}
+	if !synErr.Pos.IsValid() {
+		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
+	}
 }

@@ -76,3 +76,43 @@ func (s *Server) Start() {}
 		t.Errorf("expected Kind 'method', got %q", res.Kind)
 	}
 }
+
+func TestResolveNotFound_StructuredError(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := `package api
+
+type Server struct{}
+
+func (s *Server) Start() {}
+`
+	filePath := filepath.Join(dir, "server.go")
+	if err := os.WriteFile(filePath, []byte(source), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	res, err := symbol.Resolve(dir, "server.go", "NonExistent")
+	if err == nil {
+		t.Fatalf("expected error, got result: %v", res)
+	}
+
+	if !errors.Is(err, symbol.ErrNotFound) {
+		t.Fatalf("expected ErrNotFound via errors.Is, got %v", err)
+	}
+
+	var symErr *symbol.SymbolError
+	if !errors.As(err, &symErr) {
+		t.Fatalf("expected *symbol.SymbolError via errors.As, got %T", err)
+	}
+
+	if symErr.Symbol != "NonExistent" {
+		t.Errorf("expected Symbol 'NonExistent', got %q", symErr.Symbol)
+	}
+	if symErr.File != "server.go" {
+		t.Errorf("expected File 'server.go', got %q", symErr.File)
+	}
+	if symErr.Op != "resolve" {
+		t.Errorf("expected Op 'resolve', got %q", symErr.Op)
+	}
+}

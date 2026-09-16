@@ -4,6 +4,7 @@ package astedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -40,6 +41,12 @@ func InsertFunction(ctx context.Context, filePath string, source string, opts Fu
 
 	fnDecl, err := parseFunctionSnippet(source)
 	if err != nil {
+		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
+			synErr.File = cleanPath
+			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
+				synErr.Pos.Filename = cleanPath
+			}
+		}
 		return fmt.Errorf("validate function snippet: %w", err)
 	}
 
@@ -61,6 +68,10 @@ func InsertFunction(ctx context.Context, filePath string, source string, opts Fu
 
 	insertOffset, err := calculateFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)
 	if err != nil {
+		var pErr *PlacementError
+		if errors.As(err, &pErr) && pErr.File == "" {
+			pErr.File = cleanPath
+		}
 		return fmt.Errorf("calculate function offset: %w", err)
 	}
 
@@ -119,14 +130,29 @@ func parseFunctionSnippet(source string) (*ast.FuncDecl, error) {
 	}
 
 	toParse := trimmed
+	prepended := false
 	if !strings.HasPrefix(trimmed, "package ") {
 		toParse = "package dummy\n\n" + trimmed
+		prepended = true
 	}
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrSyntax, err)
+		pos := extractSyntaxPosition(fset, err)
+		if prepended && pos.Line > 2 {
+			pos.Line -= 2
+			pos.Offset -= len("package dummy\n\n")
+			if pos.Offset < 0 {
+				pos.Offset = 0
+			}
+		}
+		return nil, &SyntaxError{
+			Snippet: source,
+			Pos:     pos,
+			Cause:   err,
+			Err:     ErrSyntax,
+		}
 	}
 
 	if len(node.Decls) == 0 {
@@ -167,10 +193,18 @@ func extractReceiverTypeName(recv *ast.FieldList) string {
 func calculateFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, fnDecl *ast.FuncDecl, effectiveAccess AccessModifier, opts FunctionOptions) (int, error) {
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, fmt.Errorf("%w: public function %q cannot be placed in private section", ErrSectionViolation, fnDecl.Name.Name)
+			return 0, &PlacementError{
+				Strategy:     opts.Placement,
+				TargetSymbol: fnDecl.Name.Name,
+				Err:          ErrSectionViolation,
+			}
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, fmt.Errorf("%w: private function %q cannot be placed in public section", ErrSectionViolation, fnDecl.Name.Name)
+			return 0, &PlacementError{
+				Strategy:     opts.Placement,
+				TargetSymbol: fnDecl.Name.Name,
+				Err:          ErrSectionViolation,
+			}
 		}
 
 		insertOpts := Options{

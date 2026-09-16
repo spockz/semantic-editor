@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -95,7 +96,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 					fmt.Fprintf(os.Stderr, "symbol not found: %s\n", sym)
 					return errCommandFailed
 				}
-				fmt.Fprintf(os.Stderr, "lookup error: %v\n", err)
+				formatCLIError("lookup", err)
 				return errCommandFailed
 			}
 
@@ -140,7 +141,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 					fmt.Fprintf(os.Stderr, "symbol not found: %s\n", sym)
 					return errCommandFailed
 				}
-				fmt.Fprintf(os.Stderr, "rename resolution error: %v\n", err)
+				formatCLIError("rename resolution", err)
 				return errCommandFailed
 			}
 
@@ -153,7 +154,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 			diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
 
 			if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, to); err != nil {
-				fmt.Fprintf(os.Stderr, "rename execution error: %v\n", err)
+				formatCLIError("rename execution", err)
 				return errCommandFailed
 			}
 
@@ -220,7 +221,7 @@ func newInsertCmd(workDir string) *cobra.Command {
 			}
 
 			if err := astedit.InsertDeclaration(ctx, targetPath, source, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "insert error: %v\n", err)
+				formatCLIError("insert", err)
 				return errCommandFailed
 			}
 
@@ -277,7 +278,7 @@ func newInsertFuncCmd(workDir string) *cobra.Command {
 			}
 
 			if err := astedit.InsertFunction(ctx, targetPath, source, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "insert-func error: %v\n", err)
+				formatCLIError("insert-func", err)
 				return errCommandFailed
 			}
 
@@ -334,7 +335,7 @@ func newInsertTypeCmd(workDir string) *cobra.Command {
 			}
 
 			if err := astedit.InsertType(ctx, targetPath, source, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "insert-type error: %v\n", err)
+				formatCLIError("insert-type", err)
 				return errCommandFailed
 			}
 
@@ -393,7 +394,7 @@ func newInsertDeclCmd(workDir string) *cobra.Command {
 			}
 
 			if err := astedit.InsertDecl(ctx, targetPath, source, opts); err != nil {
-				fmt.Fprintf(os.Stderr, "insert-decl error: %v\n", err)
+				formatCLIError("insert-decl", err)
 				return errCommandFailed
 			}
 
@@ -443,7 +444,7 @@ func newImportsCmd(workDir string) *cobra.Command {
 			}
 
 			if err := pipeline.OrganizeImportsWithOptions(ctx, workDir, opts, paths...); err != nil {
-				fmt.Fprintf(os.Stderr, "organize imports error: %v\n", err)
+				formatCLIError("organize imports", err)
 				return errCommandFailed
 			}
 
@@ -477,7 +478,7 @@ func newGetCmd(workDir string) *cobra.Command {
 			ctx := cmd.Context()
 			pkg := args[0]
 			if err := golang.AddDependency(ctx, workDir, pkg); err != nil {
-				fmt.Fprintf(os.Stderr, "get dependency error: %v\n", err)
+				formatCLIError("get dependency", err)
 				return errCommandFailed
 			}
 
@@ -498,7 +499,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			srv := mcp.NewServer(profile, workDir, os.Stdout)
 			if err := srv.Serve(cmd.Context(), os.Stdin); err != nil {
-				fmt.Fprintf(os.Stderr, "mcp server error: %v\n", err)
+				formatCLIError("mcp server", err)
 				return errCommandFailed
 			}
 			return nil
@@ -518,5 +519,27 @@ func printDelta(delta pipeline.DiagnosticDelta) {
 	}
 	if len(delta.Resolved) > 0 {
 		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
+	}
+}
+
+func formatCLIError(op string, err error) {
+	var pos token.Position
+	var synErr *astedit.SyntaxError
+	var symErr *symbol.SymbolError
+	var placeErr *astedit.PlacementError
+
+	switch {
+	case errors.As(err, &synErr) && synErr.Pos.IsValid():
+		pos = synErr.Pos
+	case errors.As(err, &symErr) && symErr.Pos.IsValid():
+		pos = symErr.Pos
+	case errors.As(err, &placeErr) && placeErr.Pos.IsValid():
+		pos = placeErr.Pos
+	}
+
+	if pos.IsValid() {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", pos.String(), err)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s error: %v\n", op, err)
 	}
 }

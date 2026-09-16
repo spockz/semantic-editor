@@ -74,10 +74,20 @@ func (g GolangBackend) ValidateModifier(mod AccessModifier, identifier string) e
 
 	exported := isIdentifierExported(identifier)
 	if mod == AccessModifierPublic && !exported {
-		return fmt.Errorf("%w: identifier %q has private casing (lowercase) but access modifier was explicitly specified as %q", ErrVisibilityMismatch, identifier, mod)
+		return &VisibilityMismatchError{
+			Identifier: identifier,
+			Requested:  AccessModifierPublic,
+			Effective:  AccessModifierPrivate,
+			Err:        ErrVisibilityMismatch,
+		}
 	}
 	if mod == AccessModifierPrivate && exported {
-		return fmt.Errorf("%w: identifier %q has public casing (uppercase) but access modifier was explicitly specified as %q", ErrVisibilityMismatch, identifier, mod)
+		return &VisibilityMismatchError{
+			Identifier: identifier,
+			Requested:  AccessModifierPrivate,
+			Effective:  AccessModifierPublic,
+			Err:        ErrVisibilityMismatch,
+		}
 	}
 
 	return nil

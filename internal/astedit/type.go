@@ -4,6 +4,7 @@ package astedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -40,6 +41,12 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 
 	genDecl, typeName, err := verifyTypeSnippet(source)
 	if err != nil {
+		if synErr, ok := errors.AsType[*SyntaxError](err); ok {
+			synErr.File = cleanPath
+			if synErr.Pos.Filename == "" || synErr.Pos.Filename == "snippet.go" {
+				synErr.Pos.Filename = cleanPath
+			}
+		}
 		return fmt.Errorf("validate type snippet: %w", err)
 	}
 
@@ -60,6 +67,10 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 
 	insertOffset, err := calculateTypeOffset(fset, fileNode, content, genDecl, typeName, effectiveAccess, opts)
 	if err != nil {
+		var pErr *PlacementError
+		if errors.As(err, &pErr) && pErr.File == "" {
+			pErr.File = cleanPath
+		}
 		return fmt.Errorf("calculate type offset: %w", err)
 	}
 
@@ -118,14 +129,29 @@ func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {
 	}
 
 	toParse := trimmed
+	prepended := false
 	if !strings.HasPrefix(trimmed, "package ") {
 		toParse = "package dummy\n\n" + trimmed
+		prepended = true
 	}
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet.go", toParse, parser.ParseComments)
 	if err != nil {
-		return nil, "", fmt.Errorf("%w: %w", ErrSyntax, err)
+		pos := extractSyntaxPosition(fset, err)
+		if prepended && pos.Line > 2 {
+			pos.Line -= 2
+			pos.Offset -= len("package dummy\n\n")
+			if pos.Offset < 0 {
+				pos.Offset = 0
+			}
+		}
+		return nil, "", &SyntaxError{
+			Snippet: source,
+			Pos:     pos,
+			Cause:   err,
+			Err:     ErrSyntax,
+		}
 	}
 
 	if len(node.Decls) == 0 {
@@ -153,10 +179,18 @@ func calculateTypeOffset(fset *token.FileSet, fileNode *ast.File, content []byte
 	_ = genDecl
 	if opts.Placement != "" {
 		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, fmt.Errorf("%w: public type %q cannot be placed in private section", ErrSectionViolation, typeName)
+			return 0, &PlacementError{
+				Strategy:     opts.Placement,
+				TargetSymbol: typeName,
+				Err:          ErrSectionViolation,
+			}
 		}
 		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, fmt.Errorf("%w: private type %q cannot be placed in public section", ErrSectionViolation, typeName)
+			return 0, &PlacementError{
+				Strategy:     opts.Placement,
+				TargetSymbol: typeName,
+				Err:          ErrSectionViolation,
+			}
 		}
 
 		insertOpts := Options{

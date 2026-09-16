@@ -106,4 +106,27 @@ func Run() {}
 	if !errors.Is(err, ErrSectionViolation) {
 		t.Fatalf("expected ErrSectionViolation placing public type in private section, got %v", err)
 	}
+	var pErr *PlacementError
+	if !errors.As(err, &pErr) {
+		t.Fatalf("expected *PlacementError via errors.As, got %T", err)
+	}
+	if pErr.Strategy != PlacementPrivateEnd {
+		t.Errorf("expected Strategy PlacementPrivateEnd, got %q", pErr.Strategy)
+	}
+	if pErr.TargetSymbol != "PublicType" {
+		t.Errorf("expected TargetSymbol 'PublicType', got %q", pErr.TargetSymbol)
+	}
+
+	// 3. Syntax error
+	err = InsertType(ctx, file, `type Broken {`, TypeOptions{})
+	if !errors.Is(err, ErrSyntax) {
+		t.Fatalf("expected ErrSyntax, got %v", err)
+	}
+	var synErr *SyntaxError
+	if !errors.As(err, &synErr) {
+		t.Fatalf("expected *SyntaxError via errors.As, got %T", err)
+	}
+	if !synErr.Pos.IsValid() {
+		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
+	}
 }
