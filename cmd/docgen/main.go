@@ -655,6 +655,41 @@ func mapCLIToMCP(cmd string) (string, map[string]any) {
 		args["symbol"] = flags["symbol"]
 		return "resolve_symbol_location", args
 
+	case "replace-body":
+		args["file"] = flags["file"]
+		args["symbol"] = flags["symbol"]
+		if v, ok := flags["body"]; ok {
+			args["body"] = v
+		}
+		return "semantic_replace_body", args
+
+	case "scaffold-file":
+		args["file"] = flags["file"]
+		if v, ok := flags["package"]; ok {
+			args["package"] = v
+		}
+		if v, ok := flags["overwrite"]; ok {
+			args["overwrite"] = v == "true"
+		}
+		return "semantic_scaffold_file", args
+
+	case "insert-case":
+		args["file"] = flags["file"]
+		args["func"] = flags["func"]
+		if v, ok := flags["switch-on"]; ok {
+			args["switch_on"] = v
+		}
+		if v, ok := flags["placement"]; ok {
+			args["placement"] = v
+		}
+		if v, ok := flags["anchor"]; ok {
+			args["anchor"] = v
+		}
+		if v, ok := flags["case"]; ok {
+			args["case"] = v
+		}
+		return "semantic_insert_case", args
+
 	default:
 		return "semedit_" + sub, args
 	}

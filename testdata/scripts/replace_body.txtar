@@ -1,0 +1,40 @@
+# Replace function and method body with syntax validation
+# 1. Replace top-level function body
+exec semedit replace-body --file math/calc.go --symbol Add --body 'return a + b'
+# 2. Replace method body with receiver qualification
+exec semedit replace-body --file math/calc.go --symbol (*Calculator).Compute --body 'return c.factor * x'
+cmp math/calc.go want/math/calc.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- math/calc.go --
+package math
+
+type Calculator struct {
+	factor int
+}
+
+func Add(a, b int) int {
+	return 0
+}
+
+func (c *Calculator) Compute(x int) int {
+	return 0
+}
+
+-- want/math/calc.go --
+package math
+
+type Calculator struct {
+	factor int
+}
+
+func Add(a, b int) int {
+	return a + b
+}
+
+func (c *Calculator) Compute(x int) int {
+	return c.factor * x
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"go/token"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,9 @@ func newRootCmd(workDir string) *cobra.Command {
 		newImportsCmd(workDir),
 		newGetCmd(workDir),
 		newMCPCmd(workDir),
+		newReplaceBodyCmd(workDir),
+		newScaffoldFileCmd(workDir),
+		newInsertCaseCmd(workDir),
 	)
 
 	return rootCmd
@@ -507,6 +511,186 @@ func newMCPCmd(workDir string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&profile, "profile", "full", "MCP server profile (full, mutations-only)")
+	return cmd
+}
+
+func newReplaceBodyCmd(workDir string) *cobra.Command {
+	var file string
+	var sym string
+	var bodyFlag string
+	var autoImports bool
+
+	cmd := &cobra.Command{
+		Use:           "replace-body",
+		Short:         "Replace the body of an existing Go function or method by name",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" || sym == "" {
+				fmt.Fprintf(os.Stderr, "replace-body requires --file and --symbol\n")
+				return errCommandFailed
+			}
+
+			body := bodyFlag
+			if body == "" {
+				data, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
+					return errCommandFailed
+				}
+				body = string(data)
+			}
+
+			targetPath := file
+			if !filepath.IsAbs(targetPath) {
+				targetPath = filepath.Join(workDir, targetPath)
+			}
+
+			ctx := cmd.Context()
+			diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+			diff, err := astedit.ReplaceBody(ctx, targetPath, sym, body, astedit.BodyOptions{
+				AutoOrganizeImports: autoImports,
+			})
+			if err != nil {
+				formatCLIError("replace-body", err)
+				return errCommandFailed
+			}
+
+			diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+			delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+			fmt.Printf("Successfully replaced body of %s in %s\n", sym, file)
+			if diff != "" {
+				fmt.Print(diff)
+			}
+			printDelta(delta)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
+	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier (e.g. 'Foo' or '(*Server).Start')")
+	cmd.Flags().StringVarP(&bodyFlag, "body", "b", "", "Replacement body as bare Go statements")
+	cmd.Flags().BoolVar(&autoImports, "auto-imports", false, "Automatically organize imports after replacement")
+	return cmd
+}
+
+func newScaffoldFileCmd(workDir string) *cobra.Command {
+	var file string
+	var pkg string
+	var overwrite bool
+	var autoImports bool
+
+	cmd := &cobra.Command{
+		Use:           "scaffold-file",
+		Short:         "Scaffold a new Go source file with package declaration",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" {
+				fmt.Fprintf(os.Stderr, "scaffold-file requires --file\n")
+				return errCommandFailed
+			}
+
+			targetPath := file
+			if !filepath.IsAbs(targetPath) {
+				targetPath = filepath.Join(workDir, targetPath)
+			}
+
+			resolvedPkg, err := astedit.ScaffoldFile(cmd.Context(), targetPath, pkg, astedit.ScaffoldOptions{
+				Overwrite:           overwrite,
+				AutoOrganizeImports: autoImports,
+			})
+			if err != nil {
+				formatCLIError("scaffold-file", err)
+				return errCommandFailed
+			}
+
+			fmt.Printf("Successfully scaffolded %s with package %s\n", file, resolvedPkg)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
+	cmd.Flags().StringVarP(&pkg, "package", "p", "infer", "Package name or 'infer' (default 'infer')")
+	cmd.Flags().BoolVar(&overwrite, "overwrite", false, "Overwrite file if it already exists")
+	cmd.Flags().BoolVar(&autoImports, "auto-imports", false, "Accepted for schema uniformity")
+	return cmd
+}
+
+func newInsertCaseCmd(workDir string) *cobra.Command {
+	var file string
+	var fn string
+	var switchOn string
+	var caseFlag string
+	var placement string
+	var anchor string
+	var autoImports bool
+
+	cmd := &cobra.Command{
+		Use:           "insert-case",
+		Short:         "Insert a case clause into an existing switch statement",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if file == "" || fn == "" {
+				fmt.Fprintf(os.Stderr, "insert-case requires --file and --func\n")
+				return errCommandFailed
+			}
+
+			caseSrc := caseFlag
+			if caseSrc == "" {
+				data, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
+					return errCommandFailed
+				}
+				caseSrc = string(data)
+			}
+
+			if strings.TrimSpace(caseSrc) == "" {
+				fmt.Fprintf(os.Stderr, "insert-case requires case source via --case or stdin\n")
+				return errCommandFailed
+			}
+
+			targetPath := file
+			if !filepath.IsAbs(targetPath) {
+				targetPath = filepath.Join(workDir, targetPath)
+			}
+
+			ctx := cmd.Context()
+			diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+			diff, err := astedit.InsertCase(ctx, targetPath, fn, switchOn, caseSrc, astedit.CaseOptions{
+				Placement:           astedit.CasePlacement(placement),
+				AnchorCase:          anchor,
+				AutoOrganizeImports: autoImports,
+			})
+			if err != nil {
+				formatCLIError("insert-case", err)
+				return errCommandFailed
+			}
+
+			diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+			delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+			fmt.Printf("Successfully inserted case into %s in %s\n", fn, file)
+			if diff != "" {
+				fmt.Print(diff)
+			}
+			printDelta(delta)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
+	cmd.Flags().StringVar(&fn, "func", "", "Name of function containing the switch")
+	cmd.Flags().StringVar(&switchOn, "switch-on", "", "Discriminant expression (omit for tagless switch)")
+	cmd.Flags().StringVar(&caseFlag, "case", "", "Case clause Go source code")
+	cmd.Flags().StringVarP(&placement, "placement", "p", "before_default", "Placement (first, last, before_default, before, after)")
+	cmd.Flags().StringVar(&anchor, "anchor", "", "Anchor case value for before/after placement")
+	cmd.Flags().BoolVar(&autoImports, "auto-imports", false, "Automatically organize imports after insertion")
 	return cmd
 }
 

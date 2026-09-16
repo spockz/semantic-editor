@@ -42,6 +42,10 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0031** | `main.go` | Migrated CLI entry point from `flag.FlagSet` to Cobra subcommands (ADR-0014) | CLI command framework migration | Full CLI restructure | N/A (CLI Framework) |
 | **ME-0032** | `internal/...`, `main.go` | Implemented structured record errors (`SymbolError`, `SyntaxError`, `PlacementError`, `VisibilityMismatchError`) with source locations, compiler standard stderr formatting, and LSP-compatible MCP error payloads (ADR-0013) | Domain error structure and diagnostic location enrichment | AST error type scaffolding / Location-aware error mapping | `standardize_errors` / `refactor_ast` |
 | **ME-0033** | `internal/mcp/server.go`, `internal/astedit/...`, `internal/symbol/...`, `main.go` | Resolved Codex peer review findings for ADR-0013: UTF-16 character translation, virtual snippet URIs, single-render CLI locations, URL escaping, and VisibilityMismatchError coordinates | Error record and location delivery refinement | Diagnostic location formatting / LSP encoding | `refactor_ast` |
+| **ME-0034** | `internal/astedit/body.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_replace_body` engine, Cobra subcommand, and MCP tool | Scoped function/method body replacement | Scoped block modification | `semantic_replace_body` |
+| **ME-0035** | `internal/astedit/scaffold.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_scaffold_file` engine, Cobra subcommand, and MCP tool | New file creation with sibling package inference | File creation / scaffolding | `semantic_scaffold_file` |
+| **ME-0036** | `internal/astedit/switchcase.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_insert_case` engine, Cobra subcommand, and MCP tool | Switch case clause insertion | AST statement insertion into control flow | `semantic_insert_case` |
+| **ME-0037** | `internal/mcp/batch.go`, `internal/mcp/server.go` | Added `semantic_batch` engine and MCP tool for sequential multi-edit execution | Multi-edit composition and orchestration | Protocol-level multi-edit orchestration | `semantic_batch` |
 
 ---
 

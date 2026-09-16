@@ -48,6 +48,21 @@ var (
 
 	// ErrMissingIdentifier indicates an identifier required for resolution was omitted.
 	ErrMissingIdentifier = errors.New("missing identifier")
+
+	// ErrSwitchNotFound indicates a target switch statement was not found.
+	ErrSwitchNotFound = errors.New("switch statement not found")
+
+	// ErrAnchorNotFound indicates the anchor case clause for relative placement was not found.
+	ErrAnchorNotFound = errors.New("anchor case not found")
+
+	// ErrInferNoSiblings indicates no non-test Go files exist to infer package name.
+	ErrInferNoSiblings = errors.New("cannot infer package: no non-test sibling Go files found")
+
+	// ErrFileExists indicates target file already exists and overwrite was not specified.
+	ErrFileExists = errors.New("file already exists")
+
+	// ErrNoBody indicates the target function does not have a body.
+	ErrNoBody = errors.New("function has no body")
 )
 
 // VisibilityMismatchError represents an access modifier or casing visibility constraint violation.

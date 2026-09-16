@@ -409,6 +409,131 @@ func (s *Server) listTools() []map[string]any {
 				},
 			},
 		},
+		{
+			"name":        "semantic_replace_body",
+			"description": "Replace the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "relative path to the Go source file",
+					},
+					"symbol": map[string]any{
+						"type":        "string",
+						"description": "function or method name, e.g. 'Foo' or '(*T).Foo'",
+					},
+					"body": map[string]any{
+						"type":        "string",
+						"description": "replacement body as bare Go statements, no braces",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "run goimports after replacement (default false)",
+					},
+				},
+				"required": []string{"file", "symbol", "body"},
+			},
+		},
+		{
+			"name":        "semantic_scaffold_file",
+			"description": "Create a new Go source file with the correct package declaration. Use 'infer' (default) for package to auto-detect from sibling non-test files. Fails if the file already exists unless overwrite is true. Does not seed declarations — use insert tools afterward.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "relative path for the new file",
+					},
+					"package": map[string]any{
+						"type":        "string",
+						"description": "package name or 'infer' (default 'infer')",
+					},
+					"overwrite": map[string]any{
+						"type":        "boolean",
+						"description": "replace existing file (default false)",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "no-op for new files; present for schema uniformity",
+					},
+				},
+				"required": []string{"file"},
+			},
+		},
+		{
+			"name":        "semantic_insert_case",
+			"description": "Insert a new case clause into an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). Validates the case source in memory before writing.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"file": map[string]any{
+						"type":        "string",
+						"description": "relative path to the Go source file",
+					},
+					"func": map[string]any{
+						"type":        "string",
+						"description": "name of the function containing the switch",
+					},
+					"switch_on": map[string]any{
+						"type":        "string",
+						"description": "the switch discriminant expression, e.g. 'method'; omit for tagless switch",
+					},
+					"case": map[string]any{
+						"type":        "string",
+						"description": "full case clause source, e.g. 'case \"foo\":\\n\\treturn bar'",
+					},
+					"placement": map[string]any{
+						"type":        "string",
+						"description": "one of: first, last, before_default, before, after (default 'before_default')",
+						"enum": []string{
+							"first", "last", "before_default", "before", "after",
+						},
+					},
+					"anchor": map[string]any{
+						"type":        "string",
+						"description": "case value to insert before/after when placement is 'before' or 'after'",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "run goimports after insertion (default false)",
+					},
+				},
+				"required": []string{"file", "func", "case"},
+			},
+		},
+		{
+			"name":        "semantic_batch",
+			"description": "Execute multiple semantic edits in sequence (fail-fast). Each edit is written to disk on success. If any edit fails, processing stops and subsequent edits are skipped. auto_organize_imports runs once per written file after all batch edits complete. Cross-file atomicity (all-or-nothing) is not supported — use semantic_verify afterward to confirm workspace state.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"edits": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"tool": map[string]any{
+									"type":        "string",
+									"description": "name of semantic tool to execute",
+								},
+								"params": map[string]any{
+									"type":        "object",
+									"description": "tool-specific parameter map",
+								},
+							},
+							"required": []string{"tool", "params"},
+						},
+						"description": "ordered list of tool calls to execute",
+					},
+					"auto_organize_imports": map[string]any{
+						"type":        "boolean",
+						"description": "run goimports once per written file at the end (default false)",
+					},
+				},
+				"required": []string{"edits"},
+			},
+		},
 	}
 
 	if s.profile != "mutations-only" {
@@ -819,6 +944,158 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			s.sendToolSuccess(id, "Verification clean: 0 diagnostics.")
 		} else {
 			s.sendToolSuccess(id, fmt.Sprintf("Diagnostics detected:\n%s", strings.Join(diags, "\n")))
+		}
+
+	case "semantic_replace_body":
+		var args struct {
+			File                string `json:"file"`
+			Symbol              string `json:"symbol"`
+			Body                string `json:"body"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if args.File == "" || args.Symbol == "" || args.Body == "" {
+			s.sendToolError(id, "semantic_replace_body requires 'file', 'symbol', and 'body' arguments")
+			return
+		}
+
+		targetPath := s.resolvePath(args.File)
+		autoOrg := false
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
+		diff, err := astedit.ReplaceBody(ctx, targetPath, args.Symbol, args.Body, astedit.BodyOptions{
+			AutoOrganizeImports: autoOrg,
+		})
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("replace body error: %v", err), err)
+			return
+		}
+
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+		respText := fmt.Sprintf("Successfully replaced body of %s in %s.\n%s", args.Symbol, args.File, diff)
+		respText = appendDiagnosticDelta(respText, delta)
+		s.sendToolSuccess(id, respText)
+
+	case "semantic_scaffold_file":
+		var args struct {
+			File                string `json:"file"`
+			Package             string `json:"package"`
+			Overwrite           bool   `json:"overwrite"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if args.File == "" {
+			s.sendToolError(id, "semantic_scaffold_file requires 'file' argument")
+			return
+		}
+
+		targetPath := s.resolvePath(args.File)
+		autoOrg := false
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		pkgName, err := astedit.ScaffoldFile(ctx, targetPath, args.Package, astedit.ScaffoldOptions{
+			Overwrite:           args.Overwrite,
+			AutoOrganizeImports: autoOrg,
+		})
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("scaffold error: %v", err), err)
+			return
+		}
+
+		s.sendToolSuccess(id, fmt.Sprintf("Successfully scaffolded %s with package %s.", args.File, pkgName))
+
+	case "semantic_insert_case":
+		var args struct {
+			File                string `json:"file"`
+			Func                string `json:"func"`
+			SwitchOn            string `json:"switch_on"`
+			Case                string `json:"case"`
+			Placement           string `json:"placement"`
+			Anchor              string `json:"anchor"`
+			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if args.File == "" || args.Func == "" || args.Case == "" {
+			s.sendToolError(id, "semantic_insert_case requires 'file', 'func', and 'case' arguments")
+			return
+		}
+
+		targetPath := s.resolvePath(args.File)
+		autoOrg := false
+		if args.AutoOrganizeImports != nil {
+			autoOrg = *args.AutoOrganizeImports
+		}
+
+		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+
+		diff, err := astedit.InsertCase(ctx, targetPath, args.Func, args.SwitchOn, args.Case, astedit.CaseOptions{
+			Placement:           astedit.CasePlacement(args.Placement),
+			AnchorCase:          args.Anchor,
+			AutoOrganizeImports: autoOrg,
+		})
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("insert case error: %v", err), err)
+			return
+		}
+
+		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
+		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+		respText := fmt.Sprintf("Successfully inserted case into %s in %s.\n%s", args.Func, args.File, diff)
+		respText = appendDiagnosticDelta(respText, delta)
+		s.sendToolSuccess(id, respText)
+
+	case "semantic_batch":
+		var args struct {
+			Edits               []BatchEntry `json:"edits"`
+			AutoOrganizeImports bool         `json:"auto_organize_imports"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		if len(args.Edits) == 0 {
+			s.sendToolError(id, "semantic_batch requires non-empty 'edits' list")
+			return
+		}
+
+		res, err := s.ExecuteBatch(ctx, args.Edits, args.AutoOrganizeImports)
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("batch execution error: %v", err))
+			return
+		}
+
+		outJSON, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("serialization error: %v", err))
+			return
+		}
+
+		if res.Status == "error" {
+			s.sendToolError(id, string(outJSON))
+		} else {
+			s.sendToolSuccess(id, string(outJSON))
 		}
 
 	default:

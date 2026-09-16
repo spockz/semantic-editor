@@ -1,0 +1,24 @@
+# Scaffold new Go files with explicit or inferred package declaration
+# 1. Scaffold new file inferring package from non-test siblings
+exec semedit scaffold-file --file service/helper.go --package infer
+# 2. Scaffold new file with explicit package name
+exec semedit scaffold-file --file service/sub/types.go --package sub
+cmp service/helper.go want/service/helper.go
+cmp service/sub/types.go want/service/sub/types.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- service/service.go --
+package service
+
+type Service struct{}
+
+-- service/service_test.go --
+package service_test
+
+-- want/service/helper.go --
+package service
+-- want/service/sub/types.go --
+package sub

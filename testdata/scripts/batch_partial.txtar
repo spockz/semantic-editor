@@ -1,0 +1,43 @@
+# Fail-fast batch execution across multiple files
+# 1. Execute batch with valid first edit and invalid second edit
+stdin input.json
+exec semedit mcp
+stdout 'isError":true'
+stdout 'NonExistentSymbol'
+cmp file1.go want/file1.go
+cmp file2.go want/file2.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- file1.go --
+package main
+
+func StepOne() string {
+	return "pending"
+}
+
+-- file2.go --
+package main
+
+func StepTwo() string {
+	return "untouched"
+}
+
+-- want/file1.go --
+package main
+
+func StepOne() string {
+	return "completed"
+}
+-- want/file2.go --
+package main
+
+func StepTwo() string {
+	return "untouched"
+}
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file1.go","symbol":"StepOne","body":"return \"completed\""}},{"tool":"semantic_replace_body","params":{"file":"file2.go","symbol":"NonExistentSymbol","body":"return \"broken\""}}]}}}

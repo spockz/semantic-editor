@@ -1,0 +1,43 @@
+# Insert case clause into switch statement
+# 1. Insert case before default clause
+exec semedit insert-case --file router/handler.go --func Dispatch --switch-on method --placement before_default --case 'case "POST": return handlePost()'
+cmp router/handler.go want/router/handler.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- router/handler.go --
+package router
+
+func Dispatch(method string) string {
+	switch method {
+	case "GET":
+		return handleGet()
+	default:
+		return handleNotFound()
+	}
+}
+
+func handleGet() string      { return "get" }
+func handlePost() string     { return "post" }
+func handleNotFound() string { return "404" }
+
+-- want/router/handler.go --
+package router
+
+func Dispatch(method string) string {
+	switch method {
+	case "GET":
+		return handleGet()
+
+	case "POST":
+		return handlePost()
+	default:
+		return handleNotFound()
+	}
+}
+
+func handleGet() string      { return "get" }
+func handlePost() string     { return "post" }
+func handleNotFound() string { return "404" }
