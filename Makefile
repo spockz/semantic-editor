@@ -156,6 +156,12 @@ build: build-next ## Build development and stable binaries
 		cp bin/semedit-next bin/semedit; \
 	fi
 
+.PHONY: docgen
+docgen: ## Generate static documentation and test-driven examples from code
+	@echo "==> Generating documentation to dist/docs..."
+	@mkdir -p dist/docs
+	go run ./cmd/docgen
+
 .PHONY: clean
 clean: ## Clean build artifacts and test cache
 	@echo "==> Cleaning cache..."
