@@ -14,6 +14,15 @@ Furthermore, model reasoning budgets (extended thinking allocations from 0 to 32
 
 Evaluating `semedit` across these disparate dimensions demands a formalized evaluation matrix, an unambiguous testcase fixture design, and a multi-level correctness oracle.
 
+### Measurement Boundaries
+
+This research question separates two performance measurements that are easy to conflate:
+
+1. **Solution effectiveness**: whether the agent plus `semedit` completes the requested semantic edit, measured by AST correctness, compilation, first-pass success, turns, tokens, and task-level latency.
+2. **Validation and harness overhead**: how long the repository's own checks take after an edit, measured by `make check`, package scheduling, documentation generation, and cache state.
+
+The direct `semedit` invocation is the control for the first measurement. It runs the same `txtar` task and correctness oracle without an LLM. Comparing an agent-mediated run with this control estimates the LLM and harness overhead layered on top of the semantic edit. `make check` timings are a separate CI and validation baseline; they must not be presented as the speed or effectiveness of `semedit` itself.
+
 ---
 
 ## 2. The Evaluation Matrix Formulation
