@@ -43,10 +43,16 @@ Based on the manual edits above, the highest-ROI semantic editing capabilities t
 
 1. **`organize_imports`** (High ROI):
    - **Need**: Solves ME-0001. When code references a new symbol from another package, the model currently falls back to line-based diffs to add imports.
-   - **Engine**: Can delegate directly to `gopls imports` or `goimports`.
+   - **Engine**: Standard LSP code action (`source.organizeImports`), `gopls imports`, or `imports.Process`.
+   - **Chaining Option**: Offer `auto_organize_imports: true` as an opt-in parameter or flag across other semantic mutation tools (`semantic_insert_declaration`, `semantic_rename`).
 2. **`insert_function` / `insert_type` / `insert_decl`** (High ROI):
    - **Need**: Solves ME-0003, ME-0004, ME-0005. Adding new top-level functions or types to an existing file without having to read and rewrite entire files.
-   - **Engine**: Go AST parser identifies file end or target position; formats via `gofmt`.
+   - **Engine**: Go AST parser identifies target insertion boundary; formats via `pipeline.Format`.
+   - **Placement Qualifiers**:
+     - Boundary: `file_start`, `file_end` (default).
+     - Section: `public_start`, `public_end`, `private_start`, `private_end`.
+     - Relative: `before_symbol`, `after_symbol`.
+   - **Visibility Qualifiers**: Explicit `visibility: "public" | "private"` validation (asserting or ensuring exported capitalization rules).
 3. **`replace_symbol_body`** (Medium ROI):
    - **Need**: Solves ME-0006, ME-0007. Replacing only the body of an existing function (`func Foo(...) { <body> }`) without touching signature, comments, or surrounding declarations.
    - **Engine**: Tree-sitter or Go AST locates function body braces `{ ... }` and replaces only the body range.
