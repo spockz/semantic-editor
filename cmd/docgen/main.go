@@ -18,6 +18,8 @@ import (
 	"unicode"
 )
 
+const githubSourceBaseURL = "https://github.com/spockz/semantic-editor/blob/main"
+
 // CodeCapability represents extracted language capability metadata.
 type CodeCapability struct {
 	Language           string
@@ -809,6 +811,7 @@ aside.sidebar {
 /* Main Content */
 main.content {
   flex: 1;
+  min-width: 0;
   padding: 2.5rem 3.5rem;
   max-width: 1200px;
   overflow-x: hidden;
@@ -988,6 +991,11 @@ tr:hover td {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   color: var(--accent-blue);
+  text-decoration: none;
+}
+
+.card-file:hover {
+  text-decoration: underline;
 }
 
 .card-body {
@@ -1024,7 +1032,7 @@ tr:hover td {
 
 .dual-invocations {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-top: 0.75rem;
 }
@@ -1033,6 +1041,7 @@ tr:hover td {
   background-color: var(--code-bg);
   border: 1px solid var(--border-color);
   border-radius: 6px;
+  min-width: 0;
   padding: 0.75rem;
 }
 
@@ -1048,6 +1057,7 @@ tr:hover td {
 pre {
   font-family: var(--font-mono);
   font-size: 0.82rem;
+  max-width: 100%;
   overflow-x: auto;
   line-height: 1.45;
 }
@@ -1319,12 +1329,13 @@ footer {
 
 	for _, ex := range examples {
 		anchorID := sanitizeID(ex.Filename)
+		sourceURL := fmt.Sprintf("%s/testdata/scripts/%s", githubSourceBaseURL, ex.Filename)
 		fmt.Fprintf(&buf, `
     <div class="example-card" id="%s">
       <div class="card-header">
         <div class="card-title-group">
           <h3>%s</h3>
-          <span class="card-file">testdata/scripts/%s</span>
+          <a class="card-file" href="%s">testdata/scripts/%s</a>
         </div>
         <span class="badge badge-pass">Test Passing ✓</span>
       </div>
@@ -1332,6 +1343,7 @@ footer {
         <p class="card-desc">%s</p>`,
 			anchorID,
 			html.EscapeString(ex.Title),
+			html.EscapeString(sourceURL),
 			html.EscapeString(ex.Filename),
 			html.EscapeString(ex.Description),
 		)
