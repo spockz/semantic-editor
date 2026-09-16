@@ -5,10 +5,10 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := check
 
 ## ---------------------------------------------------------
-## Single-entry check target (runs formatting, lint, security, tests)
+## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests)
 ## ---------------------------------------------------------
 .PHONY: check
-check: fmt tidy lint vuln test ## Run all checks (format, tidy, lint, security, test)
+check: fmt tidy lint vuln test ## Run all checks (format, tidy, lint [go, markdown, vale], security, test)
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
@@ -30,6 +30,11 @@ tools: ## Install development tools (linters, formatters, scanners)
 		pnpm install -g markdownlint-cli2; \
 	elif command -v npm >/dev/null 2>&1; then \
 		npm install -g markdownlint-cli2; \
+	fi
+	@if command -v brew >/dev/null 2>&1; then \
+		brew install vale; \
+	else \
+		go install github.com/errata-ai/vale/v3/cmd/vale@latest; \
 	fi
 
 ## ---------------------------------------------------------
@@ -61,7 +66,7 @@ tidy: ## Ensure dependencies match source code
 ## Linting and Static Analysis
 ## ---------------------------------------------------------
 .PHONY: lint
-lint: lint-go lint-markdown ## Run all static linters (golangci-lint and markdownlint-cli2)
+lint: lint-go lint-markdown lint-vale ## Run all static linters (golangci-lint, markdownlint-cli2, vale)
 
 .PHONY: lint-go
 lint-go: ## Run golangci-lint
@@ -80,6 +85,16 @@ lint-markdown: ## Run markdownlint-cli2
 		markdownlint-cli2 "**/*.md"; \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
+		exit 1; \
+	fi
+
+.PHONY: lint-vale
+lint-vale: ## Run vale prose linter
+	@echo "==> Running vale..."
+	@if command -v vale >/dev/null 2>&1; then \
+		vale .; \
+	else \
+		echo "vale not installed. Run 'make tools' or: brew install vale"; \
 		exit 1; \
 	fi
 
@@ -108,10 +123,25 @@ test-short: ## Run short test suite without long-running tests
 ## ---------------------------------------------------------
 ## Build and Clean
 ## ---------------------------------------------------------
+.PHONY: build-next
+build-next: ## Build the active development binary (bin/semedit-next)
+	@echo "==> Building bin/semedit-next..."
+	@mkdir -p bin
+	go build -o bin/semedit-next .
+
+.PHONY: promote
+promote: check ## Verify checks and promote bin/semedit-next to healthy bin/semedit
+	@echo "==> Promoting semedit-next to semedit..."
+	@mkdir -p bin
+	cp bin/semedit-next bin/semedit
+	@echo "Successfully promoted healthy semedit binary"
+
 .PHONY: build
-build: ## Build all binaries in the module
-	@echo "==> Building binaries..."
-	go build ./...
+build: build-next ## Build development and stable binaries
+	@echo "==> Ensuring bin/semedit exists..."
+	@if [ ! -f bin/semedit ]; then \
+		cp bin/semedit-next bin/semedit; \
+	fi
 
 .PHONY: clean
 clean: ## Clean build artifacts and test cache

@@ -29,7 +29,7 @@ Semantic Agent Flow (Deterministic Execution):
 LLM Plan ──► LLM Emits 1 Intent (~20 tokens) ──► Host Tooling Transforms Code ──► Compiler Reports Diagnostics
 ```
 
-Established local development toolchains—compiler typecheckers, language servers (`gopls`, `rust-analyzer`, `tsserver`, `jdtls`), and AST utilities—already perform precise structural modifications deterministically on the host CPU.
+Established local development toolchains (compiler typecheckers, language servers such as `gopls`, `rust-analyzer`, `tsserver`, `jdtls`, and AST utilities) already perform precise structural modifications deterministically on the host CPU.
 
 `semedit` bridges AI agents directly to these engines.
 
@@ -265,7 +265,7 @@ The table below contrasts existing tools across the three tiers against `semedit
 3. **Why `OpenRewrite` complements interactive refactoring**:
    `OpenRewrite` operates at the batch/recipe layer (e.g. migrating 500 files to a new logging framework). `semedit` delegates batch migration tasks in Java to OpenRewrite while using `jdtls` for granular, interactive single-step edits.
 4. **Functional & Pure Language Advantages (Haskell, Elixir, Elm)**:
-   * **Haskell**: Enables *equational rewriting* via `retrie`—transformations can replace expressions according to algebraic laws while GHC guarantees semantic equivalence.
+   * **Haskell**: Enables *equational rewriting* via `retrie`: transformations can replace expressions according to algebraic laws while GHC guarantees semantic equivalence.
    * **Elixir**: Homoiconic syntax enables lossless AST manipulation via `Sourceror` and `Igniter`, allowing the agent to perform safe pattern replacements that respect comments and formatting.
    * **Elm**: The Elm compiler is famous for generating the most precise, human-readable, and machine-parsable error messages in software engineering. Verification and automated diagnostic repair loops are simpler in Elm than in virtually any other ecosystem.
 

@@ -37,7 +37,7 @@ To conserve context budget and maintain architectural integrity, follow these ru
 
 ## 3. Tooling & Workspace Invariants
 
-* **Verification Standard**: Always verify changes via `make check` before concluding work.
+* **Verification Standard**: Always run `make check` prior to executing specific test or verification tools, ensuring automated formatters, fixers, and dependency tidying apply upfront. Verify changes via `make check` before concluding work.
 * **Workspace Manifest Safety (ADR-0005)**: Never write `go.work` or mutate repository workspace manifests on disk without explicit user approval.
 * **Atomic Disk Updates (ADR-0010)**: All file mutations must follow atomic write semantics (temporary file $\to$ `fsync` $\to$ `os.Rename`) with advancing `mtime`.
 * **Temporary Work**: Place all temporary scratch files in the gitignored `.scratch/` directory.

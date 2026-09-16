@@ -1,0 +1,14 @@
+# Lookup a non-existent symbol should fail with non-zero exit code
+! exec semedit lookup --file api/server.go --symbol "NonExistent"
+stderr 'symbol not found'
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Start() {}

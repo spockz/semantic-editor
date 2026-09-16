@@ -1,0 +1,51 @@
+# Cross-package rename
+exec semedit rename --file auth/token.go --symbol "ValidateToken" --to "VerifyToken"
+
+# Assert changes across files
+cmp auth/token.go want/auth/token.go
+cmp cmd/main.go want/cmd/main.go
+
+# Assert compiler health across modules
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- auth/token.go --
+package auth
+
+func ValidateToken(t string) bool {
+	return t != ""
+}
+
+-- want/auth/token.go --
+package auth
+
+func VerifyToken(t string) bool {
+	return t != ""
+}
+
+-- cmd/main.go --
+package main
+
+import (
+	"fmt"
+	"example.com/test/auth"
+)
+
+func main() {
+	fmt.Println(auth.ValidateToken("secret"))
+}
+
+-- want/cmd/main.go --
+package main
+
+import (
+	"fmt"
+	"example.com/test/auth"
+)
+
+func main() {
+	fmt.Println(auth.VerifyToken("secret"))
+}

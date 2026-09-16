@@ -1,0 +1,36 @@
+# Run semedit rename
+exec semedit rename --file api/server.go --symbol "Server.Start" --to "Serve"
+
+# Assert file transformations
+cmp api/server.go want/api/server.go
+
+# Assert compiler health in the sandbox
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Start() {}
+
+func Run() {
+	s := &Server{}
+	s.Start()
+}
+
+-- want/api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Serve() {}
+
+func Run() {
+	s := &Server{}
+	s.Serve()
+}

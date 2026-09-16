@@ -1,0 +1,14 @@
+# Attempting to rename a non-existent symbol must fail and leave files untouched
+! exec semedit rename --file api/server.go --symbol "NonExistent" --to "NewName"
+stderr 'symbol not found'
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) Start() {}
