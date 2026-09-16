@@ -13,11 +13,19 @@ Prioritize `semedit` tools over manual text replacement (`replace_file_content`)
 
 1. **Symbol Renaming (`semantic_rename`)**:
    - Renaming functions, methods, structs, interfaces, or variables across one or multiple packages.
+   - Automatically cleans up and organizes imports post-rename (`auto_organize_imports: true`).
    - Eliminates diff generation, whitespace errors, and broken call sites across imports.
-2. **Symbol Location & Coordinates (`resolve_symbol_location`)**:
-   - Querying exact file, line, column, byte offset, and receiver for a symbol.
-   - Eliminates manual coordinate hunting or line-counting turns.
-3. **Verification & Diagnostics (`semantic_verify`)**:
+2. **Declaration Insertion (`semantic_insert_declaration`)**:
+   - Adding top-level functions, methods, types, or constants to existing Go files.
+   - Supports granular placement (`file_start`, `file_end`, `public_start`, `public_end`, `private_start`, `private_end`, `before_symbol`, `after_symbol`).
+   - Validates Go syntax before touching disk; automatically resolves and adds required package imports.
+3. **Import Management (`semantic_organize_imports`)**:
+   - Arranging imports, resolving missing packages, and removing unused imports without manual diffs.
+4. **Dependency Management (`semantic_add_dependency`)**:
+   - Adding external Go module dependencies and tidying `go.mod` without manual shell command formatting.
+5. **Symbol Location & Coordinates (`resolve_symbol_location`)**:
+   - Querying exact file, line, column, byte offset, and receiver for a symbol without line counting.
+6. **Verification & Diagnostics (`semantic_verify`)**:
    - Formatting source files and checking compiler diagnostics across the workspace without rolling back intermediate states.
 
 ## Tool Routing & Intent Formulation

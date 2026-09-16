@@ -1,0 +1,34 @@
+# Test automated import organization
+exec semedit imports --file api/server.go
+cmp api/server.go want/api/server.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+import (
+	"bytes"
+	"os"
+)
+
+func Greet() {
+	fmt.Println("hello world")
+	_ = os.Getenv("ENV")
+}
+
+-- want/api/server.go --
+package api
+
+import (
+	"fmt"
+	"os"
+)
+
+func Greet() {
+	fmt.Println("hello world")
+	_ = os.Getenv("ENV")
+}

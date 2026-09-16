@@ -3,6 +3,7 @@ package golang_test
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,11 +16,31 @@ import (
 	"semedit/internal/symbol"
 )
 
+func configureRapidChecks(t *testing.T, shortChecks int, defaultChecks int) {
+	t.Helper()
+	var cliSet bool
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "rapid.checks" {
+			cliSet = true
+		}
+	})
+	if cliSet {
+		return
+	}
+	if _, ok := os.LookupEnv("RAPID_CHECKS"); ok {
+		return
+	}
+	if testing.Short() {
+		// Rapid divides flags.checks by 5 when testing.Short() is true
+		_ = flag.Set("rapid.checks", fmt.Sprintf("%d", shortChecks*5))
+	} else {
+		_ = flag.Set("rapid.checks", fmt.Sprintf("%d", defaultChecks))
+	}
+}
+
 // TestProperty_RoundTripInvertibility asserts R^-1(R(P)) == P across generated AST variations.
 func TestProperty_RoundTripInvertibility(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping property test in short mode")
-	}
+	configureRapidChecks(t, 5, 5)
 
 	rapid.Check(t, func(rt *rapid.T) {
 		typeName := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "typeName")

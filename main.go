@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"semedit/internal/adapters/golang"
+	"semedit/internal/astedit"
 	"semedit/internal/mcp"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
@@ -36,6 +38,12 @@ func run(args []string) int {
 		return runLookup(workDir, args[1:])
 	case "rename":
 		return runRename(workDir, args[1:])
+	case "insert":
+		return runInsert(workDir, args[1:])
+	case "imports":
+		return runImports(workDir, args[1:])
+	case "get":
+		return runGet(workDir, args[1:])
 	case "mcp":
 		return runMCP(workDir, args[1:])
 	default:
@@ -155,5 +163,133 @@ func runRename(workDir string, args []string) int {
 		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
 	}
 
+	return 0
+}
+
+func runInsert(workDir string, args []string) int {
+	fs := flag.NewFlagSet("insert", flag.ContinueOnError)
+	var file string
+	var placement string
+	var target string
+	var visibility string
+	var source string
+	var organizeImports bool
+	fs.StringVar(&file, "file", "", "Target file path")
+	fs.StringVar(&placement, "placement", "file_end", "Placement boundary (file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol)")
+	fs.StringVar(&target, "target", "", "Target symbol for before_symbol / after_symbol")
+	fs.StringVar(&visibility, "visibility", "", "Optional visibility constraint (public, private)")
+	fs.StringVar(&source, "source", "", "Go declaration code snippet")
+	fs.BoolVar(&organizeImports, "organize-imports", true, "Automatically organize imports after insertion")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "insert flags error: %v\n", err)
+		return 1
+	}
+
+	source = strings.TrimSpace(source)
+	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
+		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
+		source = source[1 : len(source)-1]
+	}
+	target = strings.Trim(strings.TrimSpace(target), `"'`)
+
+	if file == "" || source == "" {
+		fmt.Fprintf(os.Stderr, "insert requires --file and --source\n")
+		return 1
+	}
+
+	targetPath := file
+	if !filepath.IsAbs(targetPath) {
+		targetPath = filepath.Join(workDir, targetPath)
+	}
+
+	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+	opts := astedit.Options{
+		Placement:           astedit.Placement(placement),
+		TargetSymbol:        target,
+		Visibility:          visibility,
+		AutoOrganizeImports: organizeImports,
+	}
+
+	if err := astedit.InsertDeclaration(ctx, targetPath, source, opts); err != nil {
+		fmt.Fprintf(os.Stderr, "insert error: %v\n", err)
+		return 1
+	}
+
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	fmt.Printf("Successfully inserted declaration into %s\n", file)
+	if len(delta.Introduced) > 0 {
+		fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
+	}
+	if len(delta.Suggestions) > 0 {
+		fmt.Printf("Actionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
+	}
+	if len(delta.Resolved) > 0 {
+		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
+	}
+
+	return 0
+}
+
+func runImports(workDir string, args []string) int {
+	fs := flag.NewFlagSet("imports", flag.ContinueOnError)
+	var file string
+	fs.StringVar(&file, "file", "", "Target file path or directory (defaults to entire workspace)")
+
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "imports flags error: %v\n", err)
+		return 1
+	}
+
+	var paths []string
+	if file != "" {
+		paths = []string{file}
+	} else {
+		paths = []string{"."}
+	}
+
+	ctx := context.Background()
+	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
+
+	if err := pipeline.OrganizeImports(ctx, workDir, paths...); err != nil {
+		fmt.Fprintf(os.Stderr, "organize imports error: %v\n", err)
+		return 1
+	}
+
+	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+
+	fmt.Println("Successfully organized imports.")
+	if len(delta.Introduced) > 0 {
+		fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
+	}
+	if len(delta.Suggestions) > 0 {
+		fmt.Printf("Actionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
+	}
+	if len(delta.Resolved) > 0 {
+		fmt.Printf("diagnostics resolved:\n%s\n", strings.Join(delta.Resolved, "\n"))
+	}
+
+	return 0
+}
+
+func runGet(workDir string, args []string) int {
+	if len(args) == 0 || args[0] == "" {
+		fmt.Fprintf(os.Stderr, "get requires package name (e.g. semedit get github.com/google/uuid)\n")
+		return 1
+	}
+
+	ctx := context.Background()
+	pkg := args[0]
+	if err := golang.AddDependency(ctx, workDir, pkg); err != nil {
+		fmt.Fprintf(os.Stderr, "get dependency error: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("Successfully added dependency %s\n", pkg)
 	return 0
 }

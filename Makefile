@@ -1,6 +1,7 @@
 # Standard Go Makefile for semedit
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
+export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
 
 .DEFAULT_GOAL := check
 
@@ -119,6 +120,16 @@ test: ## Run unit and race tests
 test-short: ## Run short test suite without long-running tests
 	@echo "==> Running short tests..."
 	go test -short ./...
+
+.PHONY: test-property-full
+test-property-full: ## Run comprehensive 100-check property tests
+	@echo "==> Running full property tests (100 checks)..."
+	RAPID_CHECKS=100 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
+
+.PHONY: test-fuzz
+test-fuzz: ## Run deep 1000-check metamorphic property fuzzing
+	@echo "==> Running deep property fuzzing (1000 checks)..."
+	RAPID_CHECKS=1000 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
 
 ## ---------------------------------------------------------
 ## Build and Clean

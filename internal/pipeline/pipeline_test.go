@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"semedit/internal/pipeline"
@@ -96,5 +97,64 @@ func TestFindModuleRoot(t *testing.T) {
 	found := pipeline.FindModuleRoot(subDir)
 	if found != dir {
 		t.Errorf("FindModuleRoot(%q) = %q, want %q", subDir, found, dir)
+	}
+}
+
+func TestComputeDelta_Suggestions(t *testing.T) {
+	t.Parallel()
+
+	before := []string{}
+	after := []string{
+		`server.go:4:2: cannot find package "github.com/google/uuid" in any of:`,
+		`main.go:5:2: no required module provides package github.com/stretchr/testify/assert; to add it:`,
+	}
+
+	delta := pipeline.ComputeDelta(before, after)
+
+	if len(delta.Suggestions) != 2 {
+		t.Fatalf("expected 2 suggestions, got %d: %v", len(delta.Suggestions), delta.Suggestions)
+	}
+	expected0 := "Run 'go get github.com/google/uuid' or use semantic_add_dependency to install the missing dependency."
+	if delta.Suggestions[0] != expected0 {
+		t.Errorf("got suggestion[0] %q, want %q", delta.Suggestions[0], expected0)
+	}
+}
+
+func TestOrganizeImports(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.go")
+	// Source with unused import and missing import for fmt.Println
+	unorganized := `package main
+
+import (
+	"bytes"
+)
+
+func main() {
+	fmt.Println("hello")
+}
+`
+	if err := os.WriteFile(file, []byte(unorganized), 0o600); err != nil {
+		t.Fatalf("write file failed: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := pipeline.OrganizeImports(ctx, dir, file); err != nil {
+		t.Fatalf("OrganizeImports failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatalf("read file failed: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, `"fmt"`) {
+		t.Errorf("expected fmt to be imported, got:\n%s", content)
+	}
+	if strings.Contains(content, `"bytes"`) {
+		t.Errorf("expected unused bytes import to be removed, got:\n%s", content)
 	}
 }

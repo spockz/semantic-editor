@@ -1,0 +1,43 @@
+# Test declaration insertion with placement qualifiers and import organization
+exec semedit insert --file api/server.go --placement public_start --source 'func InitServer() *Server { return &Server{} }'
+exec semedit insert --file api/server.go --placement after_symbol --target Server.Start --source 'func (s *Server) Stop() {}'
+cmp api/server.go want/api/server.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+import (
+	"fmt"
+)
+
+type Server struct{}
+
+func (s *Server) Start() {
+	fmt.Println("start")
+}
+
+func (s *Server) internalRun() {}
+
+-- want/api/server.go --
+package api
+
+import (
+	"fmt"
+)
+
+func InitServer() *Server { return &Server{} }
+
+type Server struct{}
+
+func (s *Server) Start() {
+	fmt.Println("start")
+}
+
+func (s *Server) Stop() {}
+
+func (s *Server) internalRun() {}

@@ -67,7 +67,14 @@ func TestMCPServerLifecycle(t *testing.T) {
 	for _, tool := range toolsResp.Result.Tools {
 		toolNames[tool.Name] = true
 	}
-	for _, required := range []string{"semantic_rename", "semantic_verify", "resolve_symbol_location"} {
+	for _, required := range []string{
+		"semantic_rename",
+		"semantic_insert_declaration",
+		"semantic_organize_imports",
+		"semantic_add_dependency",
+		"semantic_verify",
+		"resolve_symbol_location",
+	} {
 		if !toolNames[required] {
 			t.Errorf("missing tool in full profile: %s", required)
 		}

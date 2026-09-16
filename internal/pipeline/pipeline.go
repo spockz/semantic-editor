@@ -8,7 +8,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
+
+	"golang.org/x/tools/imports"
+)
+
+var (
+	reMissingPackage = regexp.MustCompile(`cannot find package "([^"]+)"`)
+	reNoModule       = regexp.MustCompile(`no required module provides package ([^;:\s]+)`)
 )
 
 // WriteAtomic writes data to a file atomically via sibling temp file, fsync, and rename.
@@ -76,11 +85,12 @@ func Format(ctx context.Context, workDir string, paths ...string) error {
 
 // DiagnosticDelta records compiler diagnostic shifts across an edit (ADR-0004, RQ-0006).
 type DiagnosticDelta struct {
-	Before     []string `json:"before"`
-	After      []string `json:"after"`
-	NetDelta   int      `json:"net_delta"`
-	Introduced []string `json:"introduced"`
-	Resolved   []string `json:"resolved"`
+	Before      []string `json:"before"`
+	After       []string `json:"after"`
+	NetDelta    int      `json:"net_delta"`
+	Introduced  []string `json:"introduced"`
+	Resolved    []string `json:"resolved"`
+	Suggestions []string `json:"suggestions,omitempty"`
 }
 
 // ComputeDelta calculates introduced and resolved diagnostics between two states.
@@ -109,13 +119,95 @@ func ComputeDelta(before []string, after []string) DiagnosticDelta {
 		}
 	}
 
-	return DiagnosticDelta{
-		Before:     before,
-		After:      after,
-		NetDelta:   len(after) - len(before),
-		Introduced: introduced,
-		Resolved:   resolved,
+	var suggestions []string
+	seenSuggestion := make(map[string]bool)
+	for _, intro := range introduced {
+		if m := reMissingPackage.FindStringSubmatch(intro); len(m) > 1 {
+			pkg := m[1]
+			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_dependency to install the missing dependency.", pkg)
+			if !seenSuggestion[sug] {
+				suggestions = append(suggestions, sug)
+				seenSuggestion[sug] = true
+			}
+		} else if m := reNoModule.FindStringSubmatch(intro); len(m) > 1 {
+			pkg := m[1]
+			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_dependency to install the missing dependency.", pkg)
+			if !seenSuggestion[sug] {
+				suggestions = append(suggestions, sug)
+				seenSuggestion[sug] = true
+			}
+		}
 	}
+
+	return DiagnosticDelta{
+		Before:      before,
+		After:       after,
+		NetDelta:    len(after) - len(before),
+		Introduced:  introduced,
+		Resolved:    resolved,
+		Suggestions: suggestions,
+	}
+}
+
+// OrganizeImports adjusts imports and formats the given paths using golang.org/x/tools/imports.
+func OrganizeImports(_ context.Context, workDir string, paths ...string) error {
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+
+	var goFiles []string
+	for _, p := range paths {
+		target := p
+		if workDir != "" && !filepath.IsAbs(target) {
+			target = filepath.Join(workDir, target)
+		}
+		fi, err := os.Stat(target)
+		if err != nil {
+			return fmt.Errorf("stat path %s: %w", p, err)
+		}
+		if fi.IsDir() {
+			err := filepath.Walk(target, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					name := info.Name()
+					if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if strings.HasSuffix(info.Name(), ".go") {
+					goFiles = append(goFiles, path)
+				}
+				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("walk dir %s: %w", target, err)
+			}
+		} else if strings.HasSuffix(target, ".go") {
+			goFiles = append(goFiles, target)
+		}
+	}
+
+	for _, file := range goFiles {
+		data, err := os.ReadFile(filepath.Clean(file))
+		if err != nil {
+			return fmt.Errorf("read file %s: %w", file, err)
+		}
+
+		res, err := imports.Process(file, data, nil)
+		if err != nil {
+			return fmt.Errorf("organize imports for %s: %w", file, err)
+		}
+
+		if !bytes.Equal(data, res) {
+			if err := WriteAtomic(file, res); err != nil {
+				return fmt.Errorf("write organized file %s: %w", file, err)
+			}
+		}
+	}
+	return nil
 }
 
 // FindModuleRoot locates the nearest enclosing directory containing go.mod.
