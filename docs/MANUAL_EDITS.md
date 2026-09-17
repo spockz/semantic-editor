@@ -81,5 +81,5 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
    - **Need**: Solves ME-0002, ME-0018, ME-0027, and `rootCmd.AddCommand(...)` registration. Inserting a statement or call expression inside a specific function block (e.g. adding a command to a CLI root or an HTTP route to a router) without rewriting the whole function.
 2. **Compound Literal / Collection Element Insertion (`insert_element`)**:
    - **Need**: Solves appending tool definitions into `tools/list` JSON/slice arrays or registering handlers in static tables.
-3. **In-Tree Live-Reload for Self-Modification (`--live-edits` & `semantic_reload`)**:
+3. **In-Tree Live-Reload for Self-Modification (`--live-reload` & `semantic_reload`)**:
    - **Need**: Solves the chicken-and-egg MCP dogfooding friction explored in [RQ-0021](research/RQ-0021-mcp-in-tree-live-reload.md). Enables the MCP server to reload in-place preserving stdio descriptors and notify the agent harness via `notifications/tools/list_changed`.

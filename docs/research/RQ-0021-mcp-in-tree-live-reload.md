@@ -18,7 +18,7 @@ When AI coding agents (such as Antigravity, Claude Code, or Cursor) dogfood `sem
 
 To enable true iterative self-hosting, `semedit mcp` needs a mechanism to detect binary updates, reload itself in-place without breaking the transport pipe, and notify the MCP client of schema updates.
 
-Crucially, **in production deployments, unexpected in-flight process restarts or file-watching overhead must be avoided.** Therefore, this behavior must be strictly opt-in and gated behind a CLI flag: `--live-edits` (or `--live-reload`).
+Crucially, **in production deployments, unexpected in-flight process restarts or file-watching overhead must be avoided.** Therefore, this behavior must be strictly opt-in and gated behind a CLI flag: `--live-reload`.
 
 ---
 
@@ -55,13 +55,13 @@ Under POSIX/Unix systems (macOS, Linux), a process can replace its own execution
 
 ### Approach A: Supervisor / Process Proxy
 
-* **Architecture**: When launched with `semedit mcp --live-edits`, the command acts as a lightweight supervisor process that spawns `bin/semedit mcp --worker` as a child process and proxies stdio pipes. When `bin/semedit` is recompiled, the supervisor terminates the child, spawns the new binary, and forward `notifications/tools/list_changed`.
+* **Architecture**: When launched with `semedit mcp --live-reload`, the command acts as a lightweight supervisor process that spawns `bin/semedit mcp --worker` as a child process and proxies stdio pipes. When `bin/semedit` is recompiled, the supervisor terminates the child, spawns the new binary, and forward `notifications/tools/list_changed`.
 * **Pros**: Complete crash isolation; if the newly compiled binary fails to boot, the supervisor can report an error or rollback.
 * **Cons**: Introduces process hierarchy, pipe buffering latency, and signal forwarding complexity.
 
 ### Approach B: In-Process Binary Watcher + In-Place `syscall.Exec`
 
-* **Architecture**: When `--live-edits` is active, the server tracks the `mtime` and inode/size of `os.Executable()`.
+* **Architecture**: When `--live-reload` is active, the server tracks the `mtime` and inode/size of `os.Executable()`.
   * Before handling any tool invocation (or via an explicit background poll / `mtime` check), if the binary on disk is newer than process start time:
     1. Complete any current active in-flight request.
     2. Invoke `syscall.Exec(os.Args[0], os.Args, os.Environ())` in-place.
@@ -71,7 +71,7 @@ Under POSIX/Unix systems (macOS, Linux), a process can replace its own execution
 
 ### Approach C: Explicit Admin Tool (`semantic_reload`)
 
-* **Architecture**: When `--live-edits` is set, `semedit mcp` registers an additional meta-tool: `semantic_reload`.
+* **Architecture**: When `--live-reload` is set, `semedit mcp` registers an additional meta-tool: `semantic_reload`.
   * After the agent runs `make promote`, it explicitly calls `semantic_reload`.
   * The server re-execs or refreshes its internal tool registry and returns success, followed by `notifications/tools/list_changed`.
 * **Pros**: 100% deterministic; reload never happens mid-command or while a compiler is half-way through writing the binary.
@@ -81,13 +81,13 @@ Under POSIX/Unix systems (macOS, Linux), a process can replace its own execution
 
 ## Recommended Hybrid Architecture
 
-A unified solution combining **Approach B & C** under the `--live-edits` flag:
+A unified solution combining **Approach B & C** under the `--live-reload` flag:
 
-1. **Flag Guard**: Add `--live-edits` (boolean flag, default `false`) to `semedit mcp`. When absent, `semedit mcp` runs in standard immutable production mode with zero file watching or re-exec overhead.
-2. **Explicit Administrative Tool**: When `--live-edits=true`, the server registers `semantic_reload` in `tools/list`:
+1. **Flag Guard**: Add `--live-reload` (boolean flag, default `false`) to `semedit mcp`. When absent, `semedit mcp` runs in standard immutable production mode with zero file watching or re-exec overhead.
+2. **Explicit Administrative Tool**: When `--live-reload=true`, the server registers `semantic_reload` in `tools/list`:
    * Schema: `"description": "Reloads the semedit MCP server in-place after recompilation (make promote) and emits notifications/tools/list_changed to discover newly added tools."`
    * Action: Waits for drain, re-executes `os.Executable()` via `syscall.Exec` (preserving stdio), and sends `notifications/tools/list_changed`.
-3. **Passive Check on Request**: Optionally, when `--live-edits=true`, check binary `mtime` before executing each tool turn. If stale, automatically trigger reload before executing the request.
+3. **Passive Check on Request**: Optionally, when `--live-reload=true`, check binary `mtime` before executing each tool turn. If stale, automatically trigger reload before executing the request.
 
 ---
 
@@ -101,6 +101,6 @@ A unified solution combining **Approach B & C** under the `--live-edits` flag:
 
 ## Next Steps
 
-1. Draft ADR for `semedit mcp --live-edits` and `semantic_reload`.
+1. Draft ADR for `semedit mcp --live-reload` and `semantic_reload`.
 2. Ensure `Makefile` promotion uses atomic rename (`mv` or atomic swap) rather than `cp` to prevent binary execution collisions.
 3. Implement `semantic_reload` and stdio descriptor-preserving re-exec in `internal/mcp`.
