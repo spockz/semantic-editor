@@ -200,7 +200,7 @@ func (s *Server) listTools() []map[string]any {
 	tools := []map[string]any{
 		{
 			"name":        "semantic_rename",
-			"description": "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust supports a selected-file rust-analyzer rename. Other languages may be lookup-only.",
+			"description": "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -218,13 +218,15 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go", "rust"},
-						"description": "Language backend (default auto; Rust requires a selected .rs file and workspace trust)",
+						"enum":        []string{"auto", "go", "rust", "java"},
+						"description": "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and workspace trust)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",
 						"description": "Explicitly trust this workspace for future external-tool backends (default false)",
 					},
+					"jdtls_home": map[string]any{"type": "string", "description": "Explicit preinstalled JDT LS distribution home required for Java rename"},
+					"java_bin":   map[string]any{"type": "string", "description": "Optional Java 21+ executable; defaults to java on PATH"},
 					"auto_organize_imports": map[string]any{
 						"type":        "boolean",
 						"description": "Automatically clean up and organize imports after rename (default true)",
@@ -771,6 +773,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			Language            string `json:"language"`
 			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
 			TrustWorkspace      bool   `json:"trust_workspace"`
+			JDTLSHome           string `json:"jdtls_home"`
+			JavaBin             string `json:"java_bin"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -795,6 +799,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 				File:           args.File,
 				Language:       backend.LanguageID(args.Language),
 				WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
+				Java:           backend.JavaConfig{JDTLSHome: args.JDTLSHome, JavaBin: args.JavaBin},
 			},
 			Symbol:          sym,
 			To:              to,

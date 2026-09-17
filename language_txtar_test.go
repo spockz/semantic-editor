@@ -102,7 +102,7 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 				uri = parsed.String()
 			}
 			edit := map[string]any{"changes": map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}}
-			if os.Getenv("SEMEDIT_RUST_UNSAFE") == "1" {
+			if os.Getenv("SEMEDIT_RUST_UNSAFE") == "1" || os.Getenv("SEMEDIT_JAVA_UNSAFE") == "1" {
 				edit["changes"] = map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}, "file:///foreign.rs": []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}
 			}
 			result = edit
