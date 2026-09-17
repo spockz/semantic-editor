@@ -26,6 +26,8 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 2. **Native Binaries for External Tooling**:
    * Any external tools utilized by the build, linting, formatting, or documentation pipelines must be distributed and executed as **standalone native compiled binaries** (e.g. `gofmt`, `golangci-lint`, `hugo`, `vale`).
 
+   * Qualification for read-only Java lookup: a user-installed Java 21 or newer runtime and a user-installed Eclipse JDT Language Server distribution may be invoked as external tooling. This does not add Java to semedit's implementation language set; semedit remains entirely Go.
+
 3. **Strict Prohibition & Exception Policy for Node.js and Python**:
    * Node.js and Python are **strictly prohibited** by default for any repository code, scripts, runners, or auxiliary tooling.
    * **Last-Resort Exception Criteria**: Node.js or Python may only be considered if all of the following conditions are met:
@@ -38,6 +40,7 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 ## Invariants
 
 * No `package.json`, `pyproject.toml`, virtual environments (`.venv`), or Python/Node scripts may be added to the repository without documented, explicit user approval.
+* Java runtime and JDT LS paths must be explicitly configured (except Java may intentionally resolve from the user's `PATH`); semedit never downloads, installs, embeds, or launches a Python JDT LS launcher such as `jdtls.py`.
 * Continuous Integration (`make check`) must execute with a pure Go toolchain alongside pre-installed native binary executables.
 * All evaluation, benchmarking, and AST verification harnesses (e.g. `internal/bench`) must compile and execute as native Go programs.
 

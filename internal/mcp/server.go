@@ -632,7 +632,7 @@ func (s *Server) listTools() []map[string]any {
 	if s.profile != "mutations-only" {
 		tools = append(tools, map[string]any{
 			"name":        "resolve_symbol_location",
-			"description": "Locate a Go or trusted Rust symbol in a selected source file without line counting. Rust lookup is read-only and requires an explicit workspace trust grant.",
+			"description": "Locate a Go, trusted Rust, or trusted Java symbol in a selected source file without line counting. Rust and Java lookup are read-only and require explicit workspace trust; Java additionally requires configured preinstalled JDT LS and Java 21+.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -646,12 +646,20 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go", "rust"},
-						"description": "Language backend (default auto; Rust supports read-only lookup only)",
+						"enum":        []string{"auto", "go", "rust", "java"},
+						"description": "Language backend (default auto; Rust and Java support read-only lookup only)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",
 						"description": "Explicitly trust this workspace for future external-tool backends (default false)",
+					},
+					"jdtls_home": map[string]any{
+						"type":        "string",
+						"description": "Explicit preinstalled JDT LS distribution home required for Java lookup",
+					},
+					"java_bin": map[string]any{
+						"type":        "string",
+						"description": "Optional Java 21+ executable; defaults to java on PATH",
 					},
 				},
 				"required": []string{"symbol"},
@@ -693,6 +701,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			File           string `json:"file"`
 			Language       string `json:"language"`
 			TrustWorkspace bool   `json:"trust_workspace"`
+			JDTLSHome      string `json:"jdtls_home"`
+			JavaBin        string `json:"java_bin"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -704,6 +714,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			File:           args.File,
 			Language:       backend.LanguageID(args.Language),
 			WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
+			Java:           backend.JavaConfig{JDTLSHome: args.JDTLSHome, JavaBin: args.JavaBin},
 		}, args.Symbol)
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)

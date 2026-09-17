@@ -24,6 +24,8 @@ const (
 	LanguageGo LanguageID = "go"
 	// LanguageRust selects the read-only Rust lookup backend.
 	LanguageRust LanguageID = "rust"
+	// LanguageJava selects the read-only Java lookup backend.
+	LanguageJava LanguageID = "java"
 )
 
 // Operation identifies a service operation for capability checks.
@@ -217,6 +219,10 @@ type ProjectContext struct {
 	File           string
 	Language       LanguageID
 	WorkspaceTrust WorkspaceTrust
+	Java           JavaConfig
+	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
+	JDTLSHome string
+	JavaBin   string
 }
 
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
@@ -341,6 +347,9 @@ func detectLanguage(project ProjectContext) LanguageID {
 	if strings.EqualFold(filepath.Ext(project.File), ".rs") {
 		return LanguageRust
 	}
+	if strings.EqualFold(filepath.Ext(project.File), ".java") {
+		return LanguageJava
+	}
 	root := project.RootDir
 	if root == "" {
 		root = "."
@@ -356,8 +365,24 @@ func detectLanguage(project ProjectContext) LanguageID {
 	if _, err := os.Stat(filepath.Join(root, "Cargo.toml")); err == nil {
 		rustMarker = true
 	}
-	if goMarker == rustMarker {
+	javaMarker := false
+	for _, name := range []string{"pom.xml", "build.gradle", "build.gradle.kts"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			javaMarker = true
+			break
+		}
+	}
+	markers := 0
+	for _, marker := range []bool{goMarker, rustMarker, javaMarker} {
+		if marker {
+			markers++
+		}
+	}
+	if markers != 1 {
 		return ""
+	}
+	if javaMarker {
+		return LanguageJava
 	}
 	if rustMarker {
 		return LanguageRust
@@ -373,9 +398,9 @@ type Service struct {
 // NewService constructs the shared ingress-facing service.
 func NewService(registry *Registry) *Service { return &Service{Registry: registry} }
 
-// NewDefaultService constructs a service with the built-in Go and Rust lookup backends.
+// NewDefaultService constructs a service with the built-in Go, Rust, and Java lookup backends.
 func NewDefaultService() *Service {
-	registry, err := NewRegistry(NewGoBackend(), NewRustBackend())
+	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend())
 	if err != nil {
 		panic(fmt.Sprintf("register built-in backends: %v", err))
 	}
@@ -401,6 +426,11 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 		trustRoot := project.RootDir
 		if b.Language() == LanguageRust && trustRoot == "" {
 			if discovered, discoverErr := rustWorkspaceRoot(project); discoverErr == nil {
+				trustRoot = discovered
+			}
+		}
+		if b.Language() == LanguageJava && trustRoot == "" {
+			if discovered, discoverErr := javaWorkspaceRoot(project); discoverErr == nil {
 				trustRoot = discovered
 			}
 		}

@@ -356,6 +356,25 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				},
 			},
 		},
+		{
+			Language:    "java",
+			DisplayName: "Java",
+			Maturity:    "Read-only preview",
+			Operations: map[string]OpMetadata{
+				"get": {
+					Supported:    true,
+					Description:  "File-scoped hierarchical Java symbol lookup through a trusted, preinstalled JDT LS session using UTF-16 LSP positions.",
+					CLICommand:   "semedit lookup --language java --file <path.java> --symbol <sym> --jdtls-home <path>",
+					MCPTool:      "resolve_symbol_location",
+					PlacementKey: false,
+				},
+			},
+			Limitations: []Constraint{
+				{Title: "Lookup Only", Description: "Java rename, formatting, imports, verification, and structural edits are unavailable.", Severity: "error"},
+				{Title: "Trusted Explicit Workspace", Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.", Severity: "error"},
+				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.", Severity: "info"},
+			},
+		},
 	}
 
 	return capabilities, placements, nil
