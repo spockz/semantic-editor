@@ -69,13 +69,17 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
    - Supports plain import paths, custom aliases `alias "path"`, blank imports `_ "path"`, and explicit import removal alongside auto-resolution.
 2. **`insert_function` / `insert_type` / `insert_decl`** (Completed):
    - Receiver-aware method clustering, strict public/private section partitioning, access modifier inference (`infer`, `public`, `private`), and `const`/`var` group merging (`append_group`).
+3. **`replace_body` / `scaffold_file` / `insert_case` / `batch`** (Completed - ADR-0016):
+   - `semantic_replace_body`: Scoped function/method body replacement by symbol name with in-memory validation and diff generation.
+   - `semantic_scaffold_file`: Directory and file creation with sibling non-test package inference and overwrite guard.
+   - `semantic_insert_case`: AST switch case clause insertion across multiple placement modes (`first`, `last`, `before_default`, `before`, `after`) with expression-matching anchor verification.
+   - `semantic_batch`: Sequential fail-fast multi-edit orchestration with per-file deferred import optimization.
 
 ### Remaining Gaps & Next Highest-ROI Capabilities
 
-1. **`replace_symbol_body`** (Highest Current ROI):
-   - **Need**: Solves ME-0006, ME-0007, ME-0010. Replacing only the body of an existing function (`func Foo(...) { <body> }`) without touching signature, comments, or surrounding declarations.
-   - **Engine**: Tree-sitter or Go AST locates function body braces `{ ... }` and replaces only the body range.
-2. **AST Statement / Branch Insertion (`insert_statement`)**:
-   - **Need**: Solves ME-0002, ME-0018, ME-0027. Adding a `case` branch to a `switch` statement or an entry to a router/table without rewriting the entire function.
-3. **File Scaffolding (`scaffold_file`)**:
-   - **Need**: Solves ME-0011, ME-0012, ME-0022-0025. Creating a new Go file with package header and skeleton declarations atomically.
+1. **Function Block & Registration Statement Insertion (`insert_statement` / `append_call`)**:
+   - **Need**: Solves ME-0002, ME-0018, ME-0027, and `rootCmd.AddCommand(...)` registration. Inserting a statement or call expression inside a specific function block (e.g. adding a command to a CLI root or an HTTP route to a router) without rewriting the whole function.
+2. **Compound Literal / Collection Element Insertion (`insert_element`)**:
+   - **Need**: Solves appending tool definitions into `tools/list` JSON/slice arrays or registering handlers in static tables.
+3. **In-Tree Live-Reload for Self-Modification (`--live-edits` & `semantic_reload`)**:
+   - **Need**: Solves the chicken-and-egg MCP dogfooding friction explored in [RQ-0021](research/RQ-0021-mcp-in-tree-live-reload.md). Enables the MCP server to reload in-place preserving stdio descriptors and notify the agent harness via `notifications/tools/list_changed`.

@@ -43,3 +43,16 @@ To conserve context budget and maintain architectural integrity, follow these ru
 * **Temporary Work**: Place all temporary scratch files in the gitignored `.scratch/` directory.
 * **Error Handling**: Wrap Go errors with context: `fmt.Errorf("...: %w", err)`. Inspect with `errors.Is` / `errors.As`.
 * **Git Safety**: Never execute destructive git operations (`git reset --hard`, `git clean -fd`, `git push --force`) without explicit user confirmation.
+
+---
+
+## 4. Semantic Editing Dogfooding Invariant
+
+When developing or refactoring code inside this repository, agents must dogfood `semedit` semantic tools rather than falling back to text-based file editing:
+
+* **Renaming**: Use `semantic_rename` for function, method, type, or variable renames instead of search-and-replace.
+* **Function/Method Bodies**: Use `semantic_replace_body` to modify existing function implementations rather than editing entire blocks.
+* **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.
+* **Declarations & Imports**: Use `semantic_insert_declaration` / `semantic_insert_function` / `semantic_insert_type` / `semantic_insert_decl` and `semantic_organize_imports`.
+* **Switch Statements**: Use `semantic_insert_case` to add dispatch branches.
+* **Composite Refactorings**: Use `semantic_batch` to execute multiple semantic transformations in sequence.
