@@ -124,7 +124,66 @@ The agent performs targeted insertion referencing the discovered handle:
 
 ---
 
-## 4. Cross-Language Normalization & Idioms
+## 4. The Dual-Tier Interaction Model: Intent Roles vs Precision Anchors
+
+To prevent turning the LLM into a manual AST compiler (forcing a 2-turn read-analyze-insert loop for common edits), `semedit` provides two complementary interaction tiers:
+
+### Tier A: Fast-Path Zero-Turn Declarative Intent (`semantic_insert_decl`)
+When the model intends to declare a standard language entity, it does not need to know where that entity physically lives in the file. It specifies the **semantic role**:
+
+```json
+{
+  "name": "semantic_insert_decl",
+  "inputSchema": {
+    "file": "internal/user/user.go",
+    "role": "sentinel_error",
+    "source": "var ErrNotFound = errors.New(\"user not found\")",
+    "auto_organize_imports": true
+  }
+}
+```
+
+The engine automatically enforces language placement invariants without any pre-flight inspection turns:
+- `role: "sentinel_error"`:
+  * In Go: Placed in the package-level `var (...)` error block directly below imports and above types. If existing `Err*` definitions exist, appends to the existing `var` block.
+  * In Java: Created as `public static final class UserNotFoundException extends RuntimeException { ... }` or grouped exception static inner class.
+- `role: "constant"`: Placed in the package/class constant section.
+- `role: "type"` / `role: "interface"`: Partitioned by public/private visibility (ADR-0012).
+- `role: "constructor"`: Grouped directly adjacent to the instantiated type definition.
+- `role: "init_registration"`: Appended to the `init()` block (or creates `func init()` if absent).
+
+### Tier B: Precision Anchoring Inside Function Bodies (`semantic_insert_statement`)
+When surgical statement insertion inside an existing function or control structure is required, the model specifies an anchor pattern directly:
+
+```json
+{
+  "name": "semantic_insert_statement",
+  "inputSchema": {
+    "file": "internal/server.go",
+    "func": "Serve",
+    "anchor": "before_return",
+    "statement": "s.logger.Info(\"server shutdown complete\")"
+  }
+}
+```
+Or relative to existing code:
+```json
+{
+  "name": "semantic_insert_statement",
+  "inputSchema": {
+    "file": "internal/server.go",
+    "func": "Serve",
+    "anchor": "after:s.init()",
+    "statement": "s.metrics.RecordStart()"
+  }
+}
+```
+
+If disambiguation is needed in deeply nested control flow, the discovery tool `semantic_supported_locations` serves as a surgical fallback.
+
+---
+
+## 5. Cross-Language Normalization & Idioms
 
 | Language | Specific Control Structures | Structural Nuances |
 | :--- | :--- | :--- |
@@ -135,8 +194,9 @@ The agent performs targeted insertion referencing the discovered handle:
 
 ---
 
-## 5. Next Steps
+## 6. Next Steps
 
-1. **Codify Architecture**: Incorporate slot taxonomy and discovery contracts into upcoming ADR.
-2. **Phase 1 Implementation**: Implement `semantic_supported_locations` for Go in `internal/astedit/locations.go`.
-3. **Phase 2 Implementation**: Implement `semantic_insert_statement` and `semantic_replace_expression` targeting discovered location handles.
+1. **Codify Architecture in ADR-0019**: Document Intent-Driven Declarative Roles and Precision Block Anchors.
+2. **Implement `semantic_insert_decl` Role Engine**: Support `sentinel_error`, `constant`, `type`, `constructor`, and `init_registration`.
+3. **Implement `semantic_insert_statement`**: Support `start`, `end`, `before_return`, and `before/after:<pattern>`.
+
