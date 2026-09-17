@@ -148,7 +148,7 @@ Existing language servers and CLI tools were built for **interactive human IDE s
 
 * **Python**: `Rope` + `LibCST` (heuristic type resolution; dynamic runtime bounds).
 * **C#**: `Roslyn` (compiler-as-a-library; premier refactoring engine).
-* **Haskell**: `Haskell Language Server (HLS)` for interactive LSP refactorings (rename, type signatures) paired with `retrie` (equational rewriting engine based on GHC exactprint) and `hlint --refactor`.
+* **Haskell**: `Haskell Language Server (HLS)` for explicitly standalone, trusted, read-only hierarchical `.hs` symbol lookup. Project cradles, compilation, diagnostics, rename, `retrie`, and `hlint` remain unavailable.
 * **Elixir**: `ElixirLS` / `Lexical` (LSP) for symbol navigation and refactorings paired with `Sourceror` / `Igniter` for lossless AST rewriting that preserves comments and formatting.
 * **Elm**: `elm-language-server` paired with `elm-review --fix` and `elm-format`. Elm's compiler provides exceptionally deterministic error payloads, making the automated verification loop nearly zero-friction.
 * **Dart**: `Dart Analysis Server` (explicit `edit.getRefactoring` RPC protocol).
@@ -247,7 +247,7 @@ The table below contrasts existing tools across the three tiers against `semedit
 | **Eclipse `jdtls`** | Tier 1 (Java LSP) | **Yes** | No | No (requires line/col) | LSP diagnostics | No (Java only) | Deepest classic refactoring catalog; heavy startup overhead. |
 | **`OpenRewrite`** | Tier 2 (Java / Polyglot) | **Yes** (LST) | No | **Yes** (Recipe queries) | Build logs | Partial | Gold standard for repo-wide migrations; slow for one-off edits. |
 | **`Rope`** | Tier 2 (Python) | Heuristic | No | Partial (Python scopes) | Python exceptions | No (Python only) | Best-in-class Python semantic refactorer; dynamic typing limits. |
-| **`HLS` / `retrie`** | Tier 1/2 (Haskell) | **Yes** | Partial | Partial | GHC diagnostics | No (Haskell only) | Equational rewrites preserve algebraic laws; HLS type-signatures. |
+| **`HLS`** | Tier 1 (Haskell lookup) | **Yes** | No | Partial | Not requested | No (Haskell only) | Standalone UTF-16 hierarchical document symbols; project cradles and source mutation remain outside the slice. |
 | **`ElixirLS` / `Sourceror`** | Tier 1/2 (Elixir) | Partial | Partial | Partial (Sourceror AST) | Mix diagnostics | No (Elixir only) | Lossless CST preserves comments/formatting; homoiconic AST transforms. |
 | **`elm-language-server`** | Tier 1 (Elm LSP) | **Yes** | No | No (requires line/col) | Elm compiler JSON | No (Elm only) | Pure compiler guarantees; exceptionally deterministic diagnostic payloads. |
 | **`ast-grep` (`sg`)** | Tier 3 (Polyglot CST) | No | **Yes** | **Yes** (Pattern queries) | Syntax check only | **Yes** (Tree-sitter) | Extremely fast pattern rewrites; type-blind across packages. |

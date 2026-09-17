@@ -28,6 +28,8 @@ const (
 	LanguageJava LanguageID = "java"
 	// LanguageScala selects the read-only Scala lookup backend.
 	LanguageScala LanguageID = "scala"
+	// LanguageHaskell selects the trusted standalone Haskell lookup backend.
+	LanguageHaskell LanguageID = "haskell"
 )
 
 // Operation identifies a service operation for capability checks.
@@ -217,12 +219,14 @@ func (c Capabilities) RequiresTrust(operation Operation) bool {
 
 // ProjectContext identifies the project and optional source file selected by an ingress.
 type ProjectContext struct {
-	RootDir        string
-	File           string
-	Language       LanguageID
-	WorkspaceTrust WorkspaceTrust
-	Java           JavaConfig
-	Scala          ScalaConfig
+	RootDir           string
+	File              string
+	Language          LanguageID
+	WorkspaceTrust    WorkspaceTrust
+	Java              JavaConfig
+	Scala             ScalaConfig
+	Haskell           HaskellConfig
+	HaskellStandalone bool
 	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
 	JDTLSHome   string
 	JavaBin     string
@@ -233,15 +237,16 @@ type ProjectContext struct {
 
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
 type SymbolCandidate struct {
-	Name          string         `json:"name"`
-	Receiver      string         `json:"receiver,omitempty"`
-	QualifiedName string         `json:"qualified_name,omitempty"`
-	Kind          string         `json:"kind"`
-	File          string         `json:"file"`
-	Line          int            `json:"line,omitempty"`
-	Column        int            `json:"column,omitempty"`
-	Offset        int            `json:"offset,omitempty"`
-	Location      SourceLocation `json:"-"`
+	Name           string         `json:"name"`
+	Receiver       string         `json:"receiver,omitempty"`
+	QualifiedName  string         `json:"qualified_name,omitempty"`
+	Kind           string         `json:"kind"`
+	File           string         `json:"file"`
+	Line           int            `json:"line,omitempty"`
+	Column         int            `json:"column,omitempty"`
+	Offset         int            `json:"offset,omitempty"`
+	SelectionRange *Range         `json:"selection_range,omitempty"`
+	Location       SourceLocation `json:"-"`
 }
 
 // LookupResult retains legacy fields for CLI/MCP compatibility and adds a neutral location.
@@ -359,6 +364,7 @@ func detectLanguage(project ProjectContext) LanguageID {
 	if strings.EqualFold(filepath.Ext(project.File), ".scala") {
 		return LanguageScala
 	}
+	// Haskell standalone lookup requires an explicit language and standalone flag.
 	root := project.RootDir
 	if root == "" {
 		root = "."
@@ -417,9 +423,9 @@ type Service struct {
 // NewService constructs the shared ingress-facing service.
 func NewService(registry *Registry) *Service { return &Service{Registry: registry} }
 
-// NewDefaultService constructs a service with the built-in Go, Rust, Java, and Scala lookup backends.
+// NewDefaultService constructs a service with the built-in Go, Rust, Java, Scala, and Haskell lookup backends.
 func NewDefaultService() *Service {
-	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend(), NewScalaBackend())
+	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend(), NewScalaBackend(), NewHaskellBackend())
 	if err != nil {
 		panic(fmt.Sprintf("register built-in backends: %v", err))
 	}
@@ -455,6 +461,11 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 		}
 		if b.Language() == LanguageScala && trustRoot == "" {
 			if discovered, discoverErr := scalaWorkspaceRoot(project); discoverErr == nil {
+				trustRoot = discovered
+			}
+		}
+		if b.Language() == LanguageHaskell && trustRoot == "" {
+			if discovered, discoverErr := haskellWorkspaceRoot(project); discoverErr == nil {
 				trustRoot = discovered
 			}
 		}

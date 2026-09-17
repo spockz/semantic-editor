@@ -93,6 +93,11 @@ func newLookupCmd(workDir string) *cobra.Command {
 	var metalsHome string
 	var metalsBin string
 	var javaVersion string
+	var haskellStandalone bool
+	var ghcBin string
+	var hlsBin string
+	var ghcVersion string
+	var hlsVersion string
 
 	cmd := &cobra.Command{
 		Use:           "lookup",
@@ -107,12 +112,14 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 			service := backend.NewDefaultService()
 			res, err := service.Lookup(cmd.Context(), backend.ProjectContext{
-				RootDir:        workDir,
-				File:           file,
-				Language:       backend.LanguageID(language),
-				WorkspaceTrust: backend.NewWorkspaceTrust(workDir, trustWorkspace),
-				Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
-				Scala:          backend.ScalaConfig{MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion},
+				RootDir:           workDir,
+				File:              file,
+				Language:          backend.LanguageID(language),
+				WorkspaceTrust:    backend.NewWorkspaceTrust(workDir, trustWorkspace),
+				Java:              backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
+				Scala:             backend.ScalaConfig{MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion},
+				Haskell:           backend.HaskellConfig{Standalone: haskellStandalone, GHCBin: ghcBin, HLSBin: hlsBin, GHCVersion: ghcVersion, HLSVersion: hlsVersion},
+				HaskellStandalone: haskellStandalone,
 			}, sym)
 			if err != nil {
 				if errors.Is(err, symbol.ErrNotFound) {
@@ -136,13 +143,18 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
-	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust, java, scala for read-only lookup)")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust, java, scala, or explicit haskell standalone lookup)")
 	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
 	cmd.Flags().StringVar(&jdtlsHome, "jdtls-home", "", "Preinstalled JDT LS distribution home (required for Java lookup)")
 	cmd.Flags().StringVar(&javaBin, "java-bin", "", "Java 21+ executable (defaults to java on PATH)")
 	cmd.Flags().StringVar(&metalsHome, "metals-home", "", "Preinstalled pinned Metals distribution home (required for Scala lookup)")
 	cmd.Flags().StringVar(&metalsBin, "metals-bin", "", "Direct pinned Metals executable (alternative to --metals-home)")
 	cmd.Flags().StringVar(&javaVersion, "java-version", "", "Recorded Java major version (required for Scala lookup)")
+	cmd.Flags().BoolVar(&haskellStandalone, "haskell-standalone", false, "Explicitly select standalone Haskell .hs lookup (project markers are rejected)")
+	cmd.Flags().StringVar(&ghcBin, "ghc-bin", "", "Preinstalled GHC executable for standalone Haskell lookup")
+	cmd.Flags().StringVar(&hlsBin, "hls-bin", "", "Preinstalled haskell-language-server-wrapper executable")
+	cmd.Flags().StringVar(&ghcVersion, "ghc-version", "", "Recorded GHC version to require")
+	cmd.Flags().StringVar(&hlsVersion, "hls-version", "", "Recorded HLS version to require")
 	return cmd
 }
 

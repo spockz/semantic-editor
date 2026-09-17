@@ -19,7 +19,7 @@ CLI and MCP previously called Go symbol resolution, gopls rename, and diagnostic
 
 * New backend and service contracts do not expose `go/token.Position`.
 * Capabilities are the single source for service-level operation rejection.
-* The registry contains only implemented backends; Java, Rust, and Scala are registered for their explicitly documented lookup-only capabilities, while Python, TypeScript, and Haskell remain unavailable.
+* The registry contains only implemented backends; Java, Rust, Scala, and Haskell are registered for their explicitly documented lookup-only capabilities, while Python and TypeScript remain unavailable.
 * Existing Go CLI and MCP behavior remains unchanged for common operations unless an explicit language selection is supplied.
 
 ## Consequences

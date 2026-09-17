@@ -394,6 +394,25 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical classes, objects, traits, enums, methods, fields, and nested types are resolved; overload signatures, givens, extensions, package objects, generated symbols, and cross-file SemanticDB search are not promised.", Severity: "info"},
 			},
 		},
+		{
+			Language:    "haskell",
+			DisplayName: "Haskell",
+			Maturity:    "Read-only preview",
+			Operations: map[string]OpMetadata{
+				"get": {
+					Supported:    true,
+					Description:  "Explicit standalone .hs hierarchical symbol lookup through a trusted, preinstalled Haskell Language Server session using UTF-16 LSP positions.",
+					CLICommand:   "semedit lookup --language haskell --haskell-standalone --file <path.hs> --symbol <sym> --ghc-bin <path> --hls-bin <path>",
+					MCPTool:      "resolve_symbol_location",
+					PlacementKey: false,
+				},
+			},
+			Limitations: []Constraint{
+				{Title: "Lookup Only", Description: "Haskell rename, formatting, imports, verification, compilation, diagnostics, and structural edits are unavailable.", Severity: "error"},
+				{Title: "Explicit Standalone Trust", Description: "Lookup requires --haskell-standalone (or standalone_haskell=true), a selected .hs file, explicit workspace trust, preinstalled GHC, and a matching preinstalled haskell-language-server-wrapper; hie.yaml, stack.yaml, cabal.project, *.cabal, and package.yaml project markers are rejected.", Severity: "error"},
+				{Title: "Hierarchical Document Symbols", Description: "Only module, top-level values, types, classes, constructors, fields, and instances returned hierarchically by HLS are resolved; locals, pattern synonyms, duplicate record fields, reexports, generated or Template Haskell symbols, and malformed-source fallback are not promised.", Severity: "info"},
+			},
+		},
 	}
 
 	return capabilities, placements, nil

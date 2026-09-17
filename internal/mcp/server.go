@@ -632,7 +632,7 @@ func (s *Server) listTools() []map[string]any {
 	if s.profile != "mutations-only" {
 		tools = append(tools, map[string]any{
 			"name":        "resolve_symbol_location",
-			"description": "Locate a Go, trusted Rust, Java, or Scala symbol in a selected source file without line counting. Rust, Java, and Scala lookup are read-only and require explicit workspace trust; Scala additionally requires a pinned Metals distribution and recorded Java 21+ runtime.",
+			"description": "Locate a Go, trusted Rust, Java, Scala, or explicitly standalone Haskell symbol in a selected source file without line counting. Rust, Java, Scala, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -646,8 +646,8 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go", "rust", "java", "scala"},
-						"description": "Language backend (default auto; Rust, Java, and Scala support read-only lookup only)",
+						"enum":        []string{"auto", "go", "rust", "java", "scala", "haskell"},
+						"description": "Language backend (default auto; Haskell requires standalone_haskell=true and supports read-only lookup only)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",
@@ -669,6 +669,21 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"java_version": map[string]any{
 						"type": "string", "description": "Recorded Java major version required for Scala lookup",
+					},
+					"standalone_haskell": map[string]any{
+						"type": "boolean", "description": "Explicitly select standalone Haskell .hs lookup; rejects project markers",
+					},
+					"ghc_bin": map[string]any{
+						"type": "string", "description": "Preinstalled GHC executable for standalone Haskell lookup",
+					},
+					"hls_bin": map[string]any{
+						"type": "string", "description": "Preinstalled haskell-language-server-wrapper executable",
+					},
+					"ghc_version": map[string]any{
+						"type": "string", "description": "Recorded GHC version to require",
+					},
+					"hls_version": map[string]any{
+						"type": "string", "description": "Recorded HLS version to require",
 					},
 				},
 				"required": []string{"symbol"},
@@ -706,15 +721,20 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	switch params.Name {
 	case "resolve_symbol_location":
 		var args struct {
-			Symbol         string `json:"symbol"`
-			File           string `json:"file"`
-			Language       string `json:"language"`
-			TrustWorkspace bool   `json:"trust_workspace"`
-			JDTLSHome      string `json:"jdtls_home"`
-			JavaBin        string `json:"java_bin"`
-			MetalsHome     string `json:"metals_home"`
-			MetalsBin      string `json:"metals_bin"`
-			JavaVersion    string `json:"java_version"`
+			Symbol            string `json:"symbol"`
+			File              string `json:"file"`
+			Language          string `json:"language"`
+			TrustWorkspace    bool   `json:"trust_workspace"`
+			JDTLSHome         string `json:"jdtls_home"`
+			JavaBin           string `json:"java_bin"`
+			MetalsHome        string `json:"metals_home"`
+			MetalsBin         string `json:"metals_bin"`
+			JavaVersion       string `json:"java_version"`
+			StandaloneHaskell bool   `json:"standalone_haskell"`
+			GHCBin            string `json:"ghc_bin"`
+			HLSBin            string `json:"hls_bin"`
+			GHCVersion        string `json:"ghc_version"`
+			HLSVersion        string `json:"hls_version"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -722,12 +742,14 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 
 		res, err := s.service.Lookup(ctx, backend.ProjectContext{
-			RootDir:        s.workDir,
-			File:           args.File,
-			Language:       backend.LanguageID(args.Language),
-			WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
-			Java:           backend.JavaConfig{JDTLSHome: args.JDTLSHome, JavaBin: args.JavaBin},
-			Scala:          backend.ScalaConfig{MetalsHome: args.MetalsHome, MetalsBin: args.MetalsBin, JavaBin: args.JavaBin, JavaVersion: args.JavaVersion},
+			RootDir:           s.workDir,
+			File:              args.File,
+			Language:          backend.LanguageID(args.Language),
+			WorkspaceTrust:    backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
+			Java:              backend.JavaConfig{JDTLSHome: args.JDTLSHome, JavaBin: args.JavaBin},
+			Scala:             backend.ScalaConfig{MetalsHome: args.MetalsHome, MetalsBin: args.MetalsBin, JavaBin: args.JavaBin, JavaVersion: args.JavaVersion},
+			Haskell:           backend.HaskellConfig{Standalone: args.StandaloneHaskell, GHCBin: args.GHCBin, HLSBin: args.HLSBin, GHCVersion: args.GHCVersion, HLSVersion: args.HLSVersion},
+			HaskellStandalone: args.StandaloneHaskell,
 		}, args.Symbol)
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)

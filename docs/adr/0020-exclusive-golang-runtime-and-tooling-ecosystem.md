@@ -26,7 +26,7 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 2. **Native Binaries for External Tooling**:
    * Any external tools utilized by the build, linting, formatting, or documentation pipelines must be distributed and executed as **standalone native compiled binaries** (e.g. `gofmt`, `golangci-lint`, `hugo`, `vale`).
 
-   * Qualification for limited read-only lookup: a user-installed, version-recorded Java 21 or newer runtime and a user-installed direct, pinned Metals or Eclipse JDT Language Server distribution may be invoked as external tooling. The distribution path must be explicitly configured; semedit never bootstraps it through Coursier or another package manager. This does not add Java or Scala to semedit's implementation language set; semedit remains entirely Go.
+   * Qualification for limited read-only lookup: a user-installed, version-recorded Java 21 or newer runtime and a user-installed direct, pinned Metals or Eclipse JDT Language Server distribution may be invoked as external tooling. A user-installed GHC and matching, version-recorded Haskell Language Server wrapper may likewise support explicitly standalone read-only symbol lookup. Distribution paths must be explicitly configured where applicable; semedit never bootstraps any of these tools through GHCup, Coursier, Cabal, Stack, or another package manager. This does not add Java, Scala, or Haskell to semedit's implementation language set; semedit remains entirely Go.
 
 3. **Strict Prohibition & Exception Policy for Node.js and Python**:
    * Node.js and Python are **strictly prohibited** by default for any repository code, scripts, runners, or auxiliary tooling.
