@@ -8,28 +8,51 @@
 
 ## Context
 
-Snapshots and conflict-checked undo recover from completed changes, but higher-risk edit and refactoring capabilities need an inspectable proposal before mutation. Extraction, inline, move, safe delete, and signature change can affect multiple symbols or files and must not rely on blind text edits or partial application.
+Refactoring batches may call language servers, formatters, compilers, and other
+CLI tools. The system needs both a low-latency direct mode and an optional
+private workspace mode without treating either mode as a user-approval
+protocol.
 
 ## Research Questions
 
-1. What revision hash and structural-handle contract detects stale source between inspection and commit?
-2. Which affected-file sets can receive an all-or-nothing bounded commit, and how are external changes reported?
-3. How can each language backend own semantic analysis and edit validation without creating a generic arbitrary-WorkspaceEdit engine?
-4. What preview format provides useful agent and CLI review without requiring an IDE UI?
+1. How can direct execution report partial application honestly without an
+   unsafe automatic rollback?
+2. How can arbitrary CLI tools receive a private filesystem view without
+   copying source bytes for every batch?
+3. How can an isolated multi-file result detect stale targets and publish a
+   generated patch without a generic client patch API?
 
 ## Resolution
 
-The Go backend now derives complete-file candidates under the workspace lock and exposes an inspect, dry-run, and commit lifecycle. The host recomputes and validates candidate digests before mutation, records durable HMAC-authenticated receipts and journals in private user configuration state, and treats `.scratch` output as preview-only.
+`semantic_batch` remains direct: its mutating request authorizes execution,
+and successful operations remain applied even if later compiler, test, lint, or
+formatter diagnostics fail. Results distinguish successful application with
+diagnostics from partial semantic-operation failure and include the resulting
+diff. No automatic Git restore, receipt, or second commit request is used.
 
-The initial boundary is intentionally narrow: existing regular Go files only, with no resource or workspace-manifest operations. Staging and parent-directory fsync make the mutation durable; a post-rename sync failure produces an explicit indeterminate-commit state. Recovery recognizes only known preimage and postimage states, and a completed mutation remains committed even when post-commit diagnostics report warnings.
+The separate isolated-batch capability creates a complete logical
+`WorkspaceView` for arbitrary CLI tools. It uses copy-on-write clones where the
+filesystem supports them and a portable copy or persistent-mirror fallback
+otherwise. All tools receive view paths only. The initial boundary excludes
+symlinks, special files, resource and manifest operations, file lifecycle
+operations, and binary mutation.
+
+An isolated batch records start metadata and validates only final patch targets
+for regular-file status, containment, symlink absence, mode, size, and
+nanosecond mtime. One target uses direct atomic replacement. Multiple targets
+use an internal strict patch applied by plain `git apply`; no repository index
+is required, and the generated patch is never caller input. This gives normal
+hunk-conflict atomicity without claiming crash recovery.
 
 ## Related Work
 
-* ADR-0018 provides snapshot and undo recovery.
+* ADR-0010 provides atomic disk-write and timestamp rules.
+* ADR-0016 retains direct sequential `semantic_batch` behavior.
 * ADR-0029 keeps trusted LSP rename and WorkspaceEdit interpretation backend-owned.
-* RQ-0024 defines the edit and refactoring capability families that depend on this protocol.
+* ADR-0032 records the direct and isolated execution boundary.
 
 ## Follow-up
 
-* Apply this protocol to multi-site Go refactoring capabilities after their language-specific planning is approved.
-* Expand the boundary only with an explicit resource-operation transaction design.
+* Apply the isolated capability to multi-site refactoring operations after
+  their language-specific planning is approved.
+* Add binary or resource operations only with their own publication semantics.
