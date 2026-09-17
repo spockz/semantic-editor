@@ -19,6 +19,7 @@ import (
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
 	"semedit/internal/pipeline"
+	"semedit/internal/snapshot"
 	"semedit/internal/symbol"
 )
 
@@ -532,6 +533,49 @@ func (s *Server) listTools() []map[string]any {
 					},
 				},
 				"required": []string{"edits"},
+			},
+		},
+		{
+			"name":        "semantic_snapshot",
+			"description": "Capture a pre-edit transactional snapshot of specified files or the workspace root, creating an immutable journal under .scratch/snapshots/<id>/ for subsequent conflict-checked undo.",
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"label": map[string]any{
+						"type":        "string",
+						"description": "Human-readable label for the snapshot (e.g. 'before-rename-server')",
+					},
+					"description": map[string]any{
+						"type":        "string",
+						"description": "Optional description of the pending change or purpose",
+					},
+					"paths": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "string",
+						},
+						"description": "Optional list of file or directory paths to capture; if omitted, captures all workspace source files",
+					},
+				},
+				"required": []string{"label"},
+			},
+		},
+		{
+			"name":            "semantic_undo",
+			"description":     "Roll back workspace files to a previously captured snapshot state using conflict-checked atomic writes. Fails and performs zero writes if any touched file was modified after the snapshot's recorded post-edit state.",
+			"destructiveHint": true,
+			"annotations": map[string]any{
+				"destructiveHint": true,
+			},
+			"inputSchema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"snapshot_id": map[string]any{
+						"type":        "string",
+						"description": "The unique snapshot ID to restore (e.g. 'snap-20260917-123456-abcdef' or 'latest')",
+					},
+				},
+				"required": []string{"snapshot_id"},
 			},
 		},
 	}
@@ -1097,6 +1141,72 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		} else {
 			s.sendToolSuccess(id, string(outJSON))
 		}
+
+	case "semantic_snapshot":
+		var args struct {
+			Label       string   `json:"label"`
+			Description string   `json:"description"`
+			Paths       []string `json:"paths"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		label := strings.TrimSpace(args.Label)
+		if label == "" {
+			s.sendToolError(id, "semantic_snapshot requires 'label' argument")
+			return
+		}
+
+		res, err := snapshot.Create(ctx, s.workDir, snapshot.CreateOptions{
+			Label:       label,
+			Description: args.Description,
+			Paths:       args.Paths,
+		})
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("snapshot error: %v", err))
+			return
+		}
+
+		outJSON, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("serialization error: %v", err))
+			return
+		}
+		s.sendToolSuccess(id, string(outJSON))
+
+	case "semantic_undo":
+		var args struct {
+			SnapshotID string `json:"snapshot_id"`
+		}
+		if err := json.Unmarshal(params.Arguments, &args); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
+			return
+		}
+
+		snapID := strings.TrimSpace(args.SnapshotID)
+		if snapID == "" {
+			s.sendToolError(id, "semantic_undo requires 'snapshot_id' argument")
+			return
+		}
+
+		res, err := snapshot.Undo(ctx, s.workDir, snapID)
+		if err != nil {
+			if errors.Is(err, snapshot.ErrConflict) {
+				s.sendToolError(id, fmt.Sprintf("conflict error: %v", err))
+				return
+			}
+			s.sendToolError(id, fmt.Sprintf("undo error: %v", err))
+			return
+		}
+
+		outJSON, err := json.MarshalIndent(res, "", "  ")
+		if err != nil {
+			s.sendToolError(id, fmt.Sprintf("serialization error: %v", err))
+			return
+		}
+		s.sendToolSuccess(id, string(outJSON))
 
 	default:
 		s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))

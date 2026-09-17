@@ -17,6 +17,7 @@ import (
 	"semedit/internal/astedit"
 	"semedit/internal/mcp"
 	"semedit/internal/pipeline"
+	"semedit/internal/snapshot"
 	"semedit/internal/symbol"
 )
 
@@ -74,6 +75,8 @@ func newRootCmd(workDir string) *cobra.Command {
 		newReplaceBodyCmd(workDir),
 		newScaffoldFileCmd(workDir),
 		newInsertCaseCmd(workDir),
+		newSnapshotCmd(workDir),
+		newUndoCmd(workDir),
 	)
 
 	return rootCmd
@@ -691,6 +694,105 @@ func newInsertCaseCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVarP(&placement, "placement", "p", "before_default", "Placement (first, last, before_default, before, after)")
 	cmd.Flags().StringVar(&anchor, "anchor", "", "Anchor case value for before/after placement")
 	cmd.Flags().BoolVar(&autoImports, "auto-imports", false, "Automatically organize imports after insertion")
+	return cmd
+}
+
+func newSnapshotCmd(workDir string) *cobra.Command {
+	var label string
+	var desc string
+	var paths []string
+	var recordPost string
+
+	cmd := &cobra.Command{
+		Use:           "snapshot [paths...]",
+		Short:         "Capture pre-edit state into transactional content-addressed snapshot journal",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if recordPost != "" {
+				manifest, err := snapshot.RecordPostEdit(cmd.Context(), workDir, recordPost)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "record-post error: %v\n", err)
+					return errCommandFailed
+				}
+				data, err := json.MarshalIndent(map[string]any{
+					"status":      "ok",
+					"snapshot_id": manifest.ID,
+					"files_count": len(manifest.Files),
+				}, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Println(string(data))
+				return nil
+			}
+
+			allPaths := append([]string(nil), paths...)
+			allPaths = append(allPaths, args...)
+			res, err := snapshot.Create(cmd.Context(), workDir, snapshot.CreateOptions{
+				Label:       label,
+				Description: desc,
+				Paths:       allPaths,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "snapshot error: %v\n", err)
+				return errCommandFailed
+			}
+
+			data, err := json.MarshalIndent(res, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVarP(&label, "label", "l", "snapshot", "Human-readable label for the snapshot")
+	cmd.Flags().StringVarP(&desc, "desc", "d", "", "Description of pending change or purpose")
+	cmd.Flags().StringSliceVarP(&paths, "paths", "p", nil, "Paths to include in snapshot")
+	cmd.Flags().StringVar(&recordPost, "record-post", "", "Snapshot ID to record post-edit hashes for")
+	return cmd
+}
+
+func newUndoCmd(workDir string) *cobra.Command {
+	var idFlag string
+
+	cmd := &cobra.Command{
+		Use:           "undo [snapshot-id]",
+		Short:         "Roll back workspace files to a snapshot state with conflict checking",
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			targetID := idFlag
+			if len(args) > 0 && args[0] != "" {
+				targetID = args[0]
+			}
+			if targetID == "" {
+				fmt.Fprintf(os.Stderr, "undo requires snapshot ID (as argument or --id)\n")
+				return errCommandFailed
+			}
+
+			res, err := snapshot.Undo(cmd.Context(), workDir, targetID)
+			if err != nil {
+				if errors.Is(err, snapshot.ErrConflict) {
+					fmt.Fprintf(os.Stderr, "conflict error: %v\n", err)
+				} else {
+					fmt.Fprintf(os.Stderr, "undo error: %v\n", err)
+				}
+				return errCommandFailed
+			}
+
+			data, err := json.MarshalIndent(res, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(data))
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&idFlag, "id", "", "Snapshot ID to restore")
 	return cmd
 }
 

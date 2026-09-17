@@ -10,7 +10,7 @@ To conserve LLM context budget during pair-programming sessions, consult this in
 
 | ID | Topic | Category | Status | Summary |
 | :--- | :--- | :--- | :---: | :--- |
-| [RQ-0001](RQ-0001-interactive-snapshot-undo-ux.md) | Interactive Snapshot & Undo UX | UX & Harness | **Open** | Presenting on-demand snapshots/undo as a 1-click native UI choice without typing. |
+| [RQ-0001](RQ-0001-interactive-snapshot-undo-ux.md) | Interactive Snapshot & Undo UX | UX & Harness | **Resolved** | Content-addressed storage journal, preflight conflict checking, atomic restore, and destructiveHint MCP integration. |
 | [RQ-0002](RQ-0002-symbol-addressing-and-disambiguation.md) | Symbol Addressing & Disambiguation | Addressing | **Open** | Disambiguating duplicate or overloaded symbol names without line/col coordinates. |
 | [RQ-0003](RQ-0003-ast-indexing-latency-and-caching.md) | AST Indexing Latency & Caching | Performance | **Open** | Evaluating Tree-sitter whole-repo scan latency vs. in-memory daemon cache. |
 | [RQ-0004](RQ-0004-lsp-daemon-lifecycle-management.md) | LSP Daemon Lifecycle Management | Runtime | **Open** | Managing persistent background LSPs over Unix sockets vs ephemeral process execution. |

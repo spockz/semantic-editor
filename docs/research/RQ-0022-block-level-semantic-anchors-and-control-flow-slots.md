@@ -16,6 +16,7 @@ Current AST mutation tools in `semedit` (`semantic_replace_body`, `semantic_inse
 4. Inserting clauses into compound structures (`select` communication clauses, `try-catch-finally` handlers).
 
 When an LLM attempts to make these modifications using conventional tools, it faces a dilemma:
+
 * **Text Diff Editors**: Must read the file, locate token/line coordinates, and emit brittle unified diffs or character slices.
 * **Naive AST Tooling**: Lacks granular targeting for nested blocks, forcing the LLM to replace the entire function body (wasting tokens and risking accidental regressions).
 
@@ -37,6 +38,7 @@ AST nodes cannot be treated as uniform insertion points. Slots in control flow s
 | `binding` | Go `range` variables (`k, v`), Java enhanced-for (`Type item : items`), Python `for item in items` | `replace_binding` |
 
 ### Architectural Invariant
+
 > **Anchors identify semantic containers and roles; placements identify positions within ordered containers.**
 
 * An `if` statement's `then` block is a `statement_list` container (an anchor).
@@ -129,6 +131,7 @@ The agent performs targeted insertion referencing the discovered handle:
 To prevent turning the LLM into a manual AST compiler (forcing a 2-turn read-analyze-insert loop for common edits), `semedit` provides two complementary interaction tiers:
 
 ### Tier A: Fast-Path Zero-Turn Declarative Intent (`semantic_insert_decl`)
+
 When the model intends to declare a standard language entity, it does not need to know where that entity physically lives in the file. It specifies the **semantic role**:
 
 ```json
@@ -144,15 +147,17 @@ When the model intends to declare a standard language entity, it does not need t
 ```
 
 The engine automatically enforces language placement invariants without any pre-flight inspection turns:
-- `role: "sentinel_error"`:
+
+* `role: "sentinel_error"`:
   * In Go: Placed in the package-level `var (...)` error block directly below imports and above types. If existing `Err*` definitions exist, appends to the existing `var` block.
   * In Java: Created as `public static final class UserNotFoundException extends RuntimeException { ... }` or grouped exception static inner class.
-- `role: "constant"`: Placed in the package/class constant section.
-- `role: "type"` / `role: "interface"`: Partitioned by public/private visibility (ADR-0012).
-- `role: "constructor"`: Grouped directly adjacent to the instantiated type definition.
-- `role: "init_registration"`: Appended to the `init()` block (or creates `func init()` if absent).
+* `role: "constant"`: Placed in the package/class constant section.
+* `role: "type"` / `role: "interface"`: Partitioned by public/private visibility (ADR-0012).
+* `role: "constructor"`: Grouped directly adjacent to the instantiated type definition.
+* `role: "init_registration"`: Appended to the `init()` block (or creates `func init()` if absent).
 
 ### Tier B: Precision Anchoring Inside Function Bodies (`semantic_insert_statement`)
+
 When surgical statement insertion inside an existing function or control structure is required, the model specifies an anchor pattern directly:
 
 ```json
@@ -166,7 +171,9 @@ When surgical statement insertion inside an existing function or control structu
   }
 }
 ```
+
 Or relative to existing code:
+
 ```json
 {
   "name": "semantic_insert_statement",
@@ -199,4 +206,3 @@ If disambiguation is needed in deeply nested control flow, the discovery tool `s
 1. **Codify Architecture in ADR-0019**: Document Intent-Driven Declarative Roles and Precision Block Anchors.
 2. **Implement `semantic_insert_decl` Role Engine**: Support `sentinel_error`, `constant`, `type`, `constructor`, and `init_registration`.
 3. **Implement `semantic_insert_statement`**: Support `start`, `end`, `before_return`, and `before/after:<pattern>`.
-
