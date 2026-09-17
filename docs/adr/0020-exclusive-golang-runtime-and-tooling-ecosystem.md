@@ -10,6 +10,7 @@
 `semedit` is designed as a deterministic, zero-token AST code transformation engine and developer tool. Maintaining a unified, lightweight, and hermetic developer environment requires strict discipline over language runtimes, package managers, and external dependencies.
 
 Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environments, `uv`, `node`, `npm`/`pnpm`) introduce severe operational trade-offs:
+
 1. **Host Friction & Portability**: Users and AI coding harnesses are forced to maintain Python or Node.js runtime environments, global PATH configurations, and package manager state.
 2. **Sandbox Permission Gaps**: Script interpreters and dynamic language package managers frequently trigger OS sandbox permission interruptions when traversing files or installing virtual environments.
 3. **Distribution & Build Complexity**: Non-native helper scripts complicate single-binary release pipelines, CI checks, and container packaging.

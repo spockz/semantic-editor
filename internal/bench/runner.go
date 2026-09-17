@@ -59,7 +59,7 @@ func NewRunner(scratchDir string) *Runner {
 }
 
 // ExecuteControl runs a benchmark task using deterministic semedit operations directly.
-func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, error) {
+func (r *Runner) ExecuteControl(_ context.Context, task *Task) (*RunResult, error) {
 	start := time.Now()
 	runID := fmt.Sprintf("run_control_%s_%d", task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"semedit/internal/bench"
@@ -26,7 +27,8 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 		}
 
 		foundTasks++
-		data, err := os.ReadFile(filepath.Join(benchDir, entry.Name()))
+		cleanPath := filepath.Clean(filepath.Join(benchDir, entry.Name()))
+		data, err := os.ReadFile(cleanPath)
 		if err != nil {
 			t.Fatalf("read fixture %s: %v", entry.Name(), err)
 		}
@@ -48,7 +50,8 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 
 		// Verify no want/ files inside archive (crucial invariant)
 		for _, file := range task.Archive.Files {
-			if filepath.HasPrefix(file.Name, "want/") || filepath.HasPrefix(file.Name, "want\\") {
+			normalized := filepath.ToSlash(file.Name)
+			if strings.HasPrefix(normalized, "want/") {
 				t.Errorf("fixture %s contains golden want/ file %s: violates anti-leakage invariant", entry.Name(), file.Name)
 			}
 		}
@@ -71,7 +74,7 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 }
 
 func TestOracleMutationPolicyEnforcement(t *testing.T) {
-	fixturePath := filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar")
+	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
 	data, err := os.ReadFile(fixturePath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -101,7 +104,7 @@ func TestOracleMutationPolicyEnforcement(t *testing.T) {
 }
 
 func TestOracleAdversarialCheating(t *testing.T) {
-	fixturePath := filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar")
+	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
 	data, err := os.ReadFile(fixturePath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)

@@ -47,7 +47,6 @@ func findFile(data []byte) (before []byte, name string) {
 				if m := bytes.Index(data[i:], markerSuffix); m >= 0 {
 					before = data[:i]
 					name = strings.TrimSpace(string(data[i+len(markerPrefix) : i+m]))
-					data = data[i+m+len(markerSuffix):]
 					return before, name
 				}
 			}

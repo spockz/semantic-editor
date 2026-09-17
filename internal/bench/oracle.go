@@ -123,8 +123,8 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 		indent := len(rawLine) - len(strings.TrimLeft(rawLine, " "))
 		level := indent / 2
 
-		if strings.HasPrefix(trimmed, "- ") {
-			itemVal := strings.Trim(strings.TrimPrefix(trimmed, "- "), `"'`)
+		if after, ok := strings.CutPrefix(trimmed, "- "); ok {
+			itemVal := strings.Trim(after, `"'`)
 			targetSlice := strings.Join(currentPath, ".")
 			switch targetSlice {
 			case "oracle.level_1_mutation_policy.disallowed_files":
