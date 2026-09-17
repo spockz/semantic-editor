@@ -53,6 +53,12 @@ When developing or refactoring code inside this repository, agents must dogfood 
 * **Renaming**: Use `semantic_rename` for function, method, type, or variable renames instead of search-and-replace.
 * **Function/Method Bodies**: Use `semantic_replace_body` to modify existing function implementations rather than editing entire blocks.
 * **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.
-* **Declarations & Imports**: Use `semantic_insert_declaration` / `semantic_insert_function` / `semantic_insert_type` / `semantic_insert_decl` and `semantic_organize_imports`.
+* **Declarations & Imports**: Use `semantic_insert_declaration`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_decl`, and `semantic_organize_imports`.
 * **Switch Statements**: Use `semantic_insert_case` to add dispatch branches.
+* **Dependencies**: Use `semantic_add_dependency` to add external Go modules and tidy `go.mod`.
+* **Verification & Diagnostics**: Use `semantic_verify` to confirm workspace cleanliness after modifications.
 * **Composite Refactorings**: Use `semantic_batch` to execute multiple semantic transformations in sequence.
+
+### Mandatory Logging of Suboptimal Tool Behavior
+
+If any MCP tool call fails, produces incorrect AST output, panics, or requires an immediate manual text edit to touch up or fix the result, agents **must immediately log the occurrence in [`docs/SUBOPTIMAL_TOOLS.md`](docs/SUBOPTIMAL_TOOLS.md)** detailing the tool, target file, observed failure, workaround applied, and root cause before proceeding.
