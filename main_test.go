@@ -46,3 +46,21 @@ func TestScripts(t *testing.T) {
 		},
 	})
 }
+
+func TestMCPLiveReloadFlag(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCmd(".")
+	mcpCmd, _, err := cmd.Find([]string{"mcp"})
+	if err != nil {
+		t.Fatalf("failed to find mcp command: %v", err)
+	}
+
+	flag := mcpCmd.Flags().Lookup("live-reload")
+	if flag == nil {
+		t.Fatalf("expected --live-reload flag on mcp command")
+	}
+	if flag.DefValue != "false" {
+		t.Errorf("expected --live-reload default value 'false', got %q", flag.DefValue)
+	}
+}

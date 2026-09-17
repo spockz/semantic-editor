@@ -156,11 +156,11 @@ The oracle must treat the model-controlled workspace as **hostile**. Evaluating 
 
 1. **Precondition Validation**: Confirm target exists and initial fixture doesn't already satisfy the task.
 2. **Mutation-Policy Validation**: Reject unauthorized changes (e.g., modifying `go.mod`, tests, or build scripts), deletions of packages, or fake dummy declarations.
-3. **Type-Resolved Structural Validation (AST Oracle)**: 
+3. **Type-Resolved Structural Validation (AST Oracle)**:
    * Verify the required postcondition by resolving object identities (not just identifier spelling).
    * Ensure the exported API shape, signatures, and receiver bindings are preserved.
    * *Note*: The simple "old identifier occurs zero times" check is insufficient and prone to false negatives.
-4. **Isolated Compilation and Behavioral Verification**: 
+4. **Isolated Compilation and Behavioral Verification**:
    * Copy *only* accepted candidate source files into a fresh, isolated verifier workspace.
    * Inject hidden tests only *after* the model loses access.
    * Run tests with network disabled and trusted `go` binaries.

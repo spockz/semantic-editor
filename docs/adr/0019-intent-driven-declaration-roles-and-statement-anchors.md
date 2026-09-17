@@ -8,6 +8,7 @@
 ## Context
 
 AI coding agents refactoring code currently face an undesirable trade-off between brittle text editing and cognitive overload:
+
 1. **Text Diffs (`replace_file_content`)**: The model must read lines, calculate token offsets, and emit fragile string replacements.
 2. **Low-Level AST Probing (`supported_locations` -> `insert_statement`)**: Forcing the LLM to inspect AST nodes, parse container IDs, and pick an insertion slot turns the agent into a manual AST compiler, burning tokens and requiring multi-turn roundtrips for standard declarations.
 
@@ -39,20 +40,21 @@ The agent emits its declaration intent in a **single tool turn** by specifying a
 }
 ```
 
-#### Placement Rules by Semantic Role:
+#### Placement Rules by Semantic Role
+
 * **`sentinel_error`**:
-  - In Go: Targets the package-level `var (...)` error block. If an existing `var` block containing `Err*` definitions exists, appends inside that block. If absent, creates a new `var` declaration in the sentinel errors section directly below imports and above types.
-  - In Java: Synthesizes a nested or package-private exception class.
+  * In Go: Targets the package-level `var (...)` error block. If an existing `var` block containing `Err*` definitions exists, appends inside that block. If absent, creates a new `var` declaration in the sentinel errors section directly below imports and above types.
+  * In Java: Synthesizes a nested or package-private exception class.
 * **`constant`**:
-  - Targets the package `const (...)` block preceding variable and type definitions.
+  * Targets the package `const (...)` block preceding variable and type definitions.
 * **`global_variable`**:
-  - Targets package-level `var` block following constants.
+  * Targets package-level `var` block following constants.
 * **`type`**:
-  - Placed according to visibility invariants ([ADR-0012](0012-access-modifiers-and-section-placement.md)): public types in public sections, private types in private sections.
+  * Placed according to visibility invariants ([ADR-0012](0012-access-modifiers-and-section-placement.md)): public types in public sections, private types in private sections.
 * **`constructor`**:
-  - Placed directly adjacent to the instantiated type definition.
+  * Placed directly adjacent to the instantiated type definition.
 * **`init_registration`**:
-  - Appended to the `init()` block (or creates `func init()` if absent).
+  * Appended to the `init()` block (or creates `func init()` if absent).
 
 ### 2. Tier 2: Precision Statement Anchors Inside Function Bodies (`semantic_insert_statement`)
 
@@ -72,13 +74,15 @@ When surgical insertion inside an existing function body or control flow block i
 }
 ```
 
-#### Anchor Semantics:
+#### Anchor Semantics
+
 * **`start`**: First statement inside the target function/block.
 * **`end`**: Last statement inside the target function/block (automatically places before terminal return if present to avoid unreachable code).
 * **`before_return`**: Immediately preceding the terminal `return` statement in the block.
 * **`after:<snippet>` / `before:<snippet>`**: Matches statement whose AST contains `<snippet>`.
 
 ### 3. Inspection Tool (`semantic_supported_locations`)
+
 Maintained as a diagnostic inspection tool for complex, deeply nested control structures (or multi-language discovery) when direct pattern matching is ambiguous.
 
 ---

@@ -145,8 +145,7 @@ build-next: ## Build the active development binary (bin/semedit-next)
 promote: check build-next ## Verify checks and promote bin/semedit-next to healthy bin/semedit
 	@echo "==> Promoting semedit-next to semedit..."
 	@mkdir -p bin
-	rm -f bin/semedit
-	cp bin/semedit-next bin/semedit
+	cp bin/semedit-next bin/semedit.tmp && mv -f bin/semedit.tmp bin/semedit
 	@echo "Successfully promoted healthy semedit binary"
 
 .PHONY: build

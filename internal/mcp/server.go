@@ -24,14 +24,25 @@ import (
 
 // Server handles MCP JSON-RPC protocol requests over stdio streams.
 type Server struct {
-	profile string
-	workDir string
-	outMu   sync.Mutex
-	out     io.Writer
+	profile    string
+	workDir    string
+	liveReload bool
+	outMu      sync.Mutex
+	out        io.Writer
+}
+
+// Option configures a Server instance.
+type Option func(*Server)
+
+// WithLiveReload enables in-place re-exec and dynamic tool updates.
+func WithLiveReload(enabled bool) Option {
+	return func(s *Server) {
+		s.liveReload = enabled
+	}
 }
 
 // NewServer initializes an MCP server instance.
-func NewServer(profile string, workDir string, out io.Writer) *Server {
+func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *Server {
 	if profile == "" {
 		profile = "full"
 	}
@@ -42,11 +53,15 @@ func NewServer(profile string, workDir string, out io.Writer) *Server {
 			workDir = "."
 		}
 	}
-	return &Server{
+	s := &Server{
 		profile: profile,
 		workDir: workDir,
 		out:     out,
 	}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // JSON-RPC 2.0 structures
@@ -131,7 +146,9 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 		res := map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities": map[string]any{
-				"tools": map[string]any{},
+				"tools": map[string]any{
+					"listChanged": true,
+				},
 			},
 			"serverInfo": map[string]any{
 				"name":    "semedit",
@@ -141,7 +158,11 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 		s.sendResult(req.ID, res)
 
 	case "notifications/initialized":
-		// Acknowledgement notification, no response required.
+		// Acknowledgement notification. If live-reload is enabled, emit
+		// dynamic tools notification in case the server just reloaded.
+		if s.liveReload {
+			s.notifyToolsListChanged()
+		}
 
 	case "ping":
 		if !isNotification {
@@ -553,6 +574,18 @@ func (s *Server) listTools() []map[string]any {
 					},
 				},
 				"required": []string{"symbol"},
+			},
+		})
+	}
+
+	if s.liveReload {
+		tools = append(tools, map[string]any{
+			"name":        "semantic_reload",
+			"description": "Reloads the semedit MCP server in-place after recompilation (make promote) and emits notifications/tools/list_changed to discover newly added tools.",
+			"inputSchema": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{},
+				"additionalProperties": false,
 			},
 		})
 	}
@@ -1098,6 +1131,24 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			s.sendToolSuccess(id, string(outJSON))
 		}
 
+	case "semantic_reload":
+		if !s.liveReload {
+			s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
+			return
+		}
+
+		// Reply with success before executing in-place re-exec.
+		reloadResp := map[string]string{
+			"status":  "ok",
+			"message": "server reloading",
+		}
+		reloadJSON, _ := json.Marshal(reloadResp)
+		s.sendToolSuccess(id, string(reloadJSON))
+
+		if err := execReload(); err != nil {
+			s.sendError(id, -32000, fmt.Sprintf("reload failed: %v", err))
+		}
+
 	default:
 		s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
 	}
@@ -1278,6 +1329,20 @@ func (s *Server) writeJSON(resp *jsonRPCResponse) {
 	defer s.outMu.Unlock()
 
 	data, err := json.Marshal(resp)
+	if err == nil {
+		_, _ = s.out.Write(append(data, '\n'))
+	}
+}
+
+func (s *Server) notifyToolsListChanged() {
+	s.outMu.Lock()
+	defer s.outMu.Unlock()
+
+	notif := map[string]any{
+		"jsonrpc": "2.0",
+		"method":  "notifications/tools/list_changed",
+	}
+	data, err := json.Marshal(notif)
 	if err == nil {
 		_, _ = s.out.Write(append(data, '\n'))
 	}

@@ -46,6 +46,7 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0035** | `internal/astedit/scaffold.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_scaffold_file` engine, Cobra subcommand, and MCP tool | New file creation with sibling package inference | File creation / scaffolding | `semantic_scaffold_file` |
 | **ME-0036** | `internal/astedit/switchcase.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_insert_case` engine, Cobra subcommand, and MCP tool | Switch case clause insertion | AST statement insertion into control flow | `semantic_insert_case` |
 | **ME-0037** | `internal/mcp/batch.go`, `internal/mcp/server.go` | Added `semantic_batch` engine and MCP tool for sequential multi-edit execution | Multi-edit composition and orchestration | Protocol-level multi-edit orchestration | `semantic_batch` |
+| **ME-0038** | `internal/mcp/server.go`, `internal/mcp/reload_*.go`, `main.go`, `Makefile` | Added `semantic_reload` tool, `--live-reload` flag, listChanged capability, and atomic binary promotion (ADR-0017) | MCP server lifecycle & live re-exec | Dynamic MCP tool reload & in-place exec | `semantic_reload` |
 
 ---
 
@@ -74,6 +75,8 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
    - `semantic_scaffold_file`: Directory and file creation with sibling non-test package inference and overwrite guard.
    - `semantic_insert_case`: AST switch case clause insertion across multiple placement modes (`first`, `last`, `before_default`, `before`, `after`) with expression-matching anchor verification.
    - `semantic_batch`: Sequential fail-fast multi-edit orchestration with per-file deferred import optimization.
+4. **In-Tree Live-Reload for Self-Modification** (Completed - ADR-0017):
+   - `semantic_reload` & `--live-reload`: In-place stdio re-exec via `syscall.Exec`, dynamic schema discovery via `notifications/tools/list_changed`, and atomic Makefile binary promotion.
 
 ### Remaining Gaps & Next Highest-ROI Capabilities
 
@@ -81,5 +84,3 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
    - **Need**: Solves ME-0002, ME-0018, ME-0027, and `rootCmd.AddCommand(...)` registration. Inserting a statement or call expression inside a specific function block (e.g. adding a command to a CLI root or an HTTP route to a router) without rewriting the whole function.
 2. **Compound Literal / Collection Element Insertion (`insert_element`)**:
    - **Need**: Solves appending tool definitions into `tools/list` JSON/slice arrays or registering handlers in static tables.
-3. **In-Tree Live-Reload for Self-Modification (`--live-reload` & `semantic_reload`)**:
-   - **Need**: Solves the chicken-and-egg MCP dogfooding friction explored in [RQ-0021](research/RQ-0021-mcp-in-tree-live-reload.md). Enables the MCP server to reload in-place preserving stdio descriptors and notify the agent harness via `notifications/tools/list_changed`.

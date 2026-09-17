@@ -494,6 +494,7 @@ func newGetCmd(workDir string) *cobra.Command {
 
 func newMCPCmd(workDir string) *cobra.Command {
 	var profile string
+	var liveReload bool
 
 	cmd := &cobra.Command{
 		Use:           "mcp",
@@ -501,7 +502,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			srv := mcp.NewServer(profile, workDir, os.Stdout)
+			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithLiveReload(liveReload))
 			if err := srv.Serve(cmd.Context(), os.Stdin); err != nil {
 				formatCLIError("mcp server", err)
 				return errCommandFailed
@@ -511,6 +512,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&profile, "profile", "full", "MCP server profile (full, mutations-only)")
+	cmd.Flags().BoolVar(&liveReload, "live-reload", false, "Enable in-place live-reload and dynamic tool schema discovery")
 	return cmd
 }
 

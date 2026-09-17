@@ -1,6 +1,6 @@
 # RQ-0021: In-Tree Live-Reload & Dynamic Tool Schema Discovery for MCP Server
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Runtime & Developer Experience
 * **Date**: 2026-09-17
 
