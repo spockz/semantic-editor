@@ -129,7 +129,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
-	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust for read-only lookup)")
 	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
 	return cmd
 }

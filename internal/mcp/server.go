@@ -632,7 +632,7 @@ func (s *Server) listTools() []map[string]any {
 	if s.profile != "mutations-only" {
 		tools = append(tools, map[string]any{
 			"name":        "resolve_symbol_location",
-			"description": "Locate the file, line, column, byte offset, and receiver for a Go symbol (e.g. 'Server.Start') without line counting.",
+			"description": "Locate a Go or trusted Rust symbol in a selected source file without line counting. Rust lookup is read-only and requires an explicit workspace trust grant.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -646,8 +646,8 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go"},
-						"description": "Language backend (default auto)",
+						"enum":        []string{"auto", "go", "rust"},
+						"description": "Language backend (default auto; Rust supports read-only lookup only)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",

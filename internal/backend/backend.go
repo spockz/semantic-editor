@@ -22,6 +22,8 @@ const (
 	LanguageAuto LanguageID = "auto"
 	// LanguageGo selects the built-in Go backend.
 	LanguageGo LanguageID = "go"
+	// LanguageRust selects the read-only Rust lookup backend.
+	LanguageRust LanguageID = "rust"
 )
 
 // Operation identifies a service operation for capability checks.
@@ -336,16 +338,31 @@ func detectLanguage(project ProjectContext) LanguageID {
 	if strings.EqualFold(filepath.Ext(project.File), ".go") {
 		return LanguageGo
 	}
+	if strings.EqualFold(filepath.Ext(project.File), ".rs") {
+		return LanguageRust
+	}
 	root := project.RootDir
 	if root == "" {
 		root = "."
 	}
+	goMarker := false
 	for _, name := range []string{"go.mod", "go.work"} {
 		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			return LanguageGo
+			goMarker = true
+			break
 		}
 	}
-	return ""
+	rustMarker := false
+	if _, err := os.Stat(filepath.Join(root, "Cargo.toml")); err == nil {
+		rustMarker = true
+	}
+	if goMarker == rustMarker {
+		return ""
+	}
+	if rustMarker {
+		return LanguageRust
+	}
+	return LanguageGo
 }
 
 // Service is the ingress-facing orchestration boundary shared by CLI and MCP.
@@ -356,9 +373,9 @@ type Service struct {
 // NewService constructs the shared ingress-facing service.
 func NewService(registry *Registry) *Service { return &Service{Registry: registry} }
 
-// NewDefaultService constructs a service with the built-in Go backend.
+// NewDefaultService constructs a service with the built-in Go and Rust lookup backends.
 func NewDefaultService() *Service {
-	registry, err := NewRegistry(NewGoBackend())
+	registry, err := NewRegistry(NewGoBackend(), NewRustBackend())
 	if err != nil {
 		panic(fmt.Sprintf("register built-in backends: %v", err))
 	}
@@ -381,10 +398,19 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 		return nil, &Error{Operation: operation, Language: b.Language(), Err: ErrUnsupportedOperation}
 	}
 	if b.Capabilities().RequiresTrust(operation) && !project.WorkspaceTrust.Allows(project.RootDir) {
+		trustRoot := project.RootDir
+		if b.Language() == LanguageRust && trustRoot == "" {
+			if discovered, discoverErr := rustWorkspaceRoot(project); discoverErr == nil {
+				trustRoot = discovered
+			}
+		}
+		if project.WorkspaceTrust.Allows(trustRoot) {
+			return b, nil
+		}
 		return nil, &WorkspaceTrustError{
 			Operation: operation,
 			Language:  b.Language(),
-			Workspace: CanonicalWorkspaceRoot(project.RootDir),
+			Workspace: CanonicalWorkspaceRoot(trustRoot),
 		}
 	}
 	return b, nil

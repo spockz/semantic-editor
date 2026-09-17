@@ -325,6 +325,37 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				},
 			},
 		},
+		{
+			Language:    "rust",
+			DisplayName: "Rust",
+			Maturity:    "Read-only preview",
+			Operations: map[string]OpMetadata{
+				"get": {
+					Supported:    true,
+					Description:  "File-scoped hierarchical Rust symbol lookup through a trusted, preinstalled rust-analyzer session using UTF-16 LSP positions.",
+					CLICommand:   "semedit lookup --language rust --file <path.rs> --symbol <sym>",
+					MCPTool:      "resolve_symbol_location",
+					PlacementKey: false,
+				},
+			},
+			Limitations: []Constraint{
+				{
+					Title:       "Lookup Only",
+					Description: "Rust rename, formatting, imports, verification, and structural edits are unavailable.",
+					Severity:    "error",
+				},
+				{
+					Title:       "Trusted Explicit Workspace",
+					Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
+					Severity:    "error",
+				},
+				{
+					Title:       "Hierarchical Document Symbols",
+					Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
+					Severity:    "info",
+				},
+			},
+		},
 	}
 
 	return capabilities, placements, nil
