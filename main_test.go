@@ -3,6 +3,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,11 @@ func TestMain(m *testing.M) {
 		"semedit": func() {
 			os.Exit(run(os.Args[1:]))
 		},
+		"rust-analyzer":                   runFakeRustAnalyzer,
+		"java":                            runFakeJava,
+		"metals":                          runFakeMetals,
+		"ghc":                             runFakeGHC,
+		"haskell-language-server-wrapper": runFakeHLS,
 	})
 }
 
@@ -40,6 +46,19 @@ func TestScripts(t *testing.T) {
 			}
 			if !pathFound {
 				env.Vars = append(env.Vars, "PATH="+goBin+":"+os.Getenv("PATH"))
+			}
+
+			for variable, command := range map[string]string{
+				"SEMEDIT_TEST_JAVA":   "java",
+				"SEMEDIT_TEST_GHC":    "ghc",
+				"SEMEDIT_TEST_HLS":    "haskell-language-server-wrapper",
+				"SEMEDIT_TEST_METALS": "metals",
+			} {
+				path, err := exec.LookPath(command)
+				if err != nil {
+					return err
+				}
+				env.Vars = append(env.Vars, variable+"="+path)
 			}
 
 			return nil
