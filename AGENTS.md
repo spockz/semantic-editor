@@ -41,6 +41,7 @@ To conserve context budget and maintain architectural integrity, adhere strictly
 * **Workspace Manifest Safety (ADR-0005)**: Never write `go.work` or mutate repository workspace manifests on disk without explicit user approval.
 * **Atomic Disk Updates (ADR-0010)**: All file mutations must follow atomic write semantics (temporary file $\to$ `fsync` $\to$ `os.Rename`) with advancing `mtime`.
 * **Temporary Work**: Place all temporary scratch files in the gitignored `.scratch/` directory.
+* **Git Worktrees in Sandbox**: All git worktrees created for parallel tracks or subagents must reside inside `.scratch/worktrees/` within the repository root. This ensures subagents and tools operate entirely inside the primary workspace boundary, eliminating sandbox permission prompts.
 * **Error Handling**: Wrap Go errors with context: `fmt.Errorf("...: %w", err)`. Inspect with `errors.Is` / `errors.As`.
 * **Git Safety**: Never execute destructive git operations (`git reset --hard`, `git clean -fd`, `git push --force`) without explicit user confirmation.
 
