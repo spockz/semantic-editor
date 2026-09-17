@@ -74,3 +74,11 @@ When developing or refactoring code inside this repository, agents must dogfood 
 ### Mandatory Logging of Suboptimal Tool Behavior
 
 If any MCP tool call fails, produces incorrect AST output, panics, or requires an immediate manual text edit to touch up or fix the result, agents **must immediately log the occurrence in [`docs/SUBOPTIMAL_TOOLS.md`](docs/SUBOPTIMAL_TOOLS.md)** detailing the tool, target file, observed failure, workaround applied, and root cause before proceeding.
+
+---
+
+## 6. Cross-Language CLI Txtar Coverage Invariant
+
+`testdata/scripts/*.txtar` is the primary executable contract for public semantic operations. Tests must invoke the `semedit` CLI, assert its observable output or diagnostics, and assert resulting workspace state when an operation mutates files. Unit tests that fake an LSP, compiler, or external tool remain necessary for transport and failure isolation, but do not replace CLI txtar coverage.
+
+For every operation advertised by more than one language backend, maintain comparable txtar coverage for every implemented language-operation pair. A language may omit a scenario only when the capability registry marks that operation unsupported; document the intentional asymmetry in the backend capability metadata and its ADR. When adding an operation to a second language, add or update the corresponding CLI txtar cases in the same change.
