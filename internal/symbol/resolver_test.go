@@ -23,6 +23,8 @@ func TestParseIdentifier(t *testing.T) {
 		{"(*Server).Start", "Server", "Start", false},
 		{"*Server.Start", "Server", "Start", false},
 		{"ValidateToken", "", "ValidateToken", false},
+		{"'ValidateToken'", "", "ValidateToken", false},
+		{"validate'", "", "validate'", false},
 		{"", "", "", true},
 		{"a.b.c", "", "", true},
 	}

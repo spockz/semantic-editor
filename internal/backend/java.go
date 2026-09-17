@@ -123,6 +123,11 @@ type JavaBackend struct {
 	session JavaSession
 }
 
+// TrustedWorkspaceRoot discovers the workspace used for trust comparison.
+func (b *JavaBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+	return javaWorkspaceRoot(project)
+}
+
 // NewJavaBackend constructs the managed JDT LS lookup adapter.
 func NewJavaBackend(options ...JavaBackendOption) *JavaBackend {
 	backend := &JavaBackend{factory: defaultJavaSessionFactory}
@@ -226,8 +231,8 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 }
 
 // Rename is intentionally unavailable for the Java lookup-only slice.
-func (*JavaBackend) Rename(context.Context, ProjectContext, *LookupResult, string) error {
-	return &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrUnsupportedOperation}
+func (*JavaBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
+	return nil, &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Java lookup-only slice.

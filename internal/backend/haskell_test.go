@@ -162,7 +162,7 @@ func TestHaskellLookupPropagatesCancellationAndClose(t *testing.T) {
 
 func TestHaskellLookupRejectsUnsupportedOperations(t *testing.T) {
 	underTest := backend.NewHaskellBackend()
-	if err := underTest.Rename(context.Background(), backend.ProjectContext{}, nil, "Other"); !errors.Is(err, backend.ErrUnsupportedOperation) {
+	if _, err := underTest.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{}, To: "Other"}); !errors.Is(err, backend.ErrUnsupportedOperation) {
 		t.Fatalf("rename error = %v", err)
 	}
 	if _, err := underTest.Verify(context.Background(), backend.ProjectContext{}, ""); !errors.Is(err, backend.ErrUnsupportedOperation) {

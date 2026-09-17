@@ -777,8 +777,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			return
 		}
 
-		sym := strings.Trim(strings.TrimSpace(args.Symbol), `"'`)
-		to := strings.Trim(strings.TrimSpace(args.To), `"'`)
+		sym := backend.NormalizeRenameInput(args.Symbol)
+		to := backend.NormalizeRenameInput(args.To)
 
 		if sym == "" || to == "" {
 			s.sendToolError(id, "semantic_rename requires 'symbol' and 'to' arguments")

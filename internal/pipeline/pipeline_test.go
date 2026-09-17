@@ -36,6 +36,36 @@ func TestWriteAtomic(t *testing.T) {
 	}
 }
 
+func TestWriteAtomicPreservesPermissionsAndAdvancesMtime(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	target := filepath.Join(dir, "test.txt")
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	// #nosec G302 -- the test deliberately uses a non-default mode to verify preservation.
+	if err := os.Chmod(target, 0o640); err != nil {
+		t.Fatalf("chmod initial file: %v", err)
+	}
+	oldInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat initial file: %v", err)
+	}
+	if err := pipeline.WriteAtomic(target, []byte("new")); err != nil {
+		t.Fatalf("atomic write failed: %v", err)
+	}
+	newInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat updated file: %v", err)
+	}
+	if got, want := newInfo.Mode().Perm(), oldInfo.Mode().Perm(); got != want {
+		t.Fatalf("permissions = %o, want %o", got, want)
+	}
+	if !newInfo.ModTime().After(oldInfo.ModTime()) {
+		t.Fatalf("mtime = %v, want after %v", newInfo.ModTime(), oldInfo.ModTime())
+	}
+}
+
 func TestFormat(t *testing.T) {
 	t.Parallel()
 

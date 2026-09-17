@@ -38,6 +38,12 @@ var (
 func WriteAtomic(targetPath string, data []byte) error {
 	dir := filepath.Dir(targetPath)
 	base := filepath.Base(targetPath)
+	var oldInfo os.FileInfo
+	if info, statErr := os.Stat(targetPath); statErr == nil {
+		oldInfo = info
+	} else if !errors.Is(statErr, os.ErrNotExist) {
+		return fmt.Errorf("%w: stat target: %w", ErrAtomicWrite, statErr)
+	}
 	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
 	if err != nil {
 		return fmt.Errorf("%w: create temp file: %w", ErrAtomicWrite, err)
@@ -61,13 +67,17 @@ func WriteAtomic(targetPath string, data []byte) error {
 		return fmt.Errorf("%w: close temp file: %w", ErrAtomicWrite, err)
 	}
 
-	// Ensure advancing mtime before renaming (ADR-0010)
-	if fi, err := os.Stat(targetPath); err == nil {
-		oldTime := fi.ModTime()
-		now := time.Now()
-		if !now.After(oldTime) {
-			newTime := oldTime.Add(2 * time.Millisecond)
-			_ = os.Chtimes(tmpName, newTime, newTime)
+	if oldInfo != nil {
+		if err := os.Chmod(tmpName, oldInfo.Mode().Perm()); err != nil {
+			return fmt.Errorf("%w: preserve target permissions: %w", ErrAtomicWrite, err)
+		}
+		// Ensure advancing mtime before renaming (ADR-0010).
+		newTime := time.Now()
+		if minimum := oldInfo.ModTime().Add(time.Millisecond); newTime.Before(minimum) {
+			newTime = minimum
+		}
+		if err := os.Chtimes(tmpName, newTime, newTime); err != nil {
+			return fmt.Errorf("%w: set target mtime: %w", ErrAtomicWrite, err)
 		}
 	}
 

@@ -21,8 +21,8 @@ func (b testBackend) Capabilities() backend.Capabilities { return b.capabilities
 func (b testBackend) Lookup(context.Context, backend.ProjectContext, string) (*backend.LookupResult, error) {
 	return &backend.LookupResult{}, nil
 }
-func (b testBackend) Rename(context.Context, backend.ProjectContext, *backend.LookupResult, string) error {
-	return nil
+func (b testBackend) Rename(context.Context, backend.RenameRequest) (*backend.RenameResult, error) {
+	return &backend.RenameResult{}, nil
 }
 func (b testBackend) Verify(context.Context, backend.ProjectContext, string) ([]backend.Diagnostic, error) {
 	return nil, nil

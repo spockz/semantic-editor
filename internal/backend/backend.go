@@ -10,8 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
-
-	"semedit/internal/pipeline"
 )
 
 // LanguageID identifies a source language supported by a backend registry.
@@ -271,6 +269,19 @@ type RenameRequest struct {
 	OrganizeImports bool
 }
 
+// NormalizeRenameInput trims whitespace and removes one matching outer quote pair.
+// A lone trailing apostrophe is valid in languages such as Haskell and is preserved.
+func NormalizeRenameInput(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if len(trimmed) >= 2 {
+		first, last := trimmed[0], trimmed[len(trimmed)-1]
+		if (first == '\'' || first == '"') && first == last {
+			return trimmed[1 : len(trimmed)-1]
+		}
+	}
+	return trimmed
+}
+
 // RenameResult reports the resolved target and diagnostic delta after a rename.
 type RenameResult struct {
 	Lookup      *LookupResult
@@ -294,8 +305,12 @@ type Backend interface {
 	Language() LanguageID
 	Capabilities() Capabilities
 	Lookup(context.Context, ProjectContext, string) (*LookupResult, error)
-	Rename(context.Context, ProjectContext, *LookupResult, string) error
+	Rename(context.Context, RenameRequest) (*RenameResult, error)
 	Verify(context.Context, ProjectContext, string) ([]Diagnostic, error)
+}
+
+type trustedWorkspaceRootProvider interface {
+	TrustedWorkspaceRoot(ProjectContext) (string, error)
 }
 
 // Registry stores one backend per language and selects the requested or detected backend.
@@ -449,23 +464,8 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 	}
 	if b.Capabilities().RequiresTrust(operation) && !project.WorkspaceTrust.Allows(project.RootDir) {
 		trustRoot := project.RootDir
-		if b.Language() == LanguageRust && trustRoot == "" {
-			if discovered, discoverErr := rustWorkspaceRoot(project); discoverErr == nil {
-				trustRoot = discovered
-			}
-		}
-		if b.Language() == LanguageJava && trustRoot == "" {
-			if discovered, discoverErr := javaWorkspaceRoot(project); discoverErr == nil {
-				trustRoot = discovered
-			}
-		}
-		if b.Language() == LanguageScala && trustRoot == "" {
-			if discovered, discoverErr := scalaWorkspaceRoot(project); discoverErr == nil {
-				trustRoot = discovered
-			}
-		}
-		if b.Language() == LanguageHaskell && trustRoot == "" {
-			if discovered, discoverErr := haskellWorkspaceRoot(project); discoverErr == nil {
+		if provider, ok := b.(trustedWorkspaceRootProvider); ok && trustRoot == "" {
+			if discovered, discoverErr := provider.TrustedWorkspaceRoot(project); discoverErr == nil {
 				trustRoot = discovered
 			}
 		}
@@ -492,40 +492,13 @@ func (s *Service) Lookup(ctx context.Context, project ProjectContext, symbol str
 
 // Rename resolves and executes a rename through the selected backend.
 func (s *Service) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+	request.Symbol = NormalizeRenameInput(request.Symbol)
+	request.To = NormalizeRenameInput(request.To)
 	b, err := s.backendFor(request.Project, OperationRename)
 	if err != nil {
 		return nil, err
 	}
-	lookup, err := b.Lookup(ctx, request.Project, request.Symbol)
-	if err != nil {
-		return nil, err
-	}
-	if lookup.Ambiguous {
-		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
-	}
-	before, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
-	if err := b.Rename(ctx, request.Project, lookup, request.To); err != nil {
-		return nil, err
-	}
-	if request.OrganizeImports {
-		_ = pipeline.OrganizeImports(ctx, request.Project.RootDir, ".")
-	} else {
-		_ = pipeline.Format(ctx, request.Project.RootDir, ".")
-	}
-	after, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
-	delta := pipeline.ComputeDelta(before, after)
-	return &RenameResult{
-		Lookup: lookup,
-		Diagnostics: DiagnosticDelta{
-			Before:      delta.Before,
-			After:       delta.After,
-			NetDelta:    delta.NetDelta,
-			Introduced:  delta.Introduced,
-			Resolved:    delta.Resolved,
-			Suggestions: delta.Suggestions,
-		},
-		Active: after,
-	}, nil
+	return b.Rename(ctx, request)
 }
 
 // Verify formats and checks diagnostics through the selected backend.

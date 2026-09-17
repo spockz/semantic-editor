@@ -52,9 +52,30 @@ func (GoBackend) Lookup(_ context.Context, project ProjectContext, query string)
 	return converted, nil
 }
 
-// Rename delegates execution to the existing gopls adapter.
-func (GoBackend) Rename(ctx context.Context, project ProjectContext, lookup *LookupResult, newName string) error {
-	return golang.Rename(ctx, project.RootDir, lookup.File, lookup.Line, lookup.Column, newName)
+// Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
+func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+	lookup, err := (GoBackend{}).Lookup(ctx, request.Project, request.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	if lookup.Ambiguous {
+		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
+	}
+	before, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	if err := golang.Rename(ctx, request.Project.RootDir, lookup.File, lookup.Line, lookup.Column, request.To); err != nil {
+		return nil, err
+	}
+	if request.OrganizeImports {
+		_ = pipeline.OrganizeImports(ctx, request.Project.RootDir, ".")
+	} else {
+		_ = pipeline.Format(ctx, request.Project.RootDir, ".")
+	}
+	after, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	delta := pipeline.ComputeDelta(before, after)
+	return &RenameResult{Lookup: lookup, Diagnostics: DiagnosticDelta{
+		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
+		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
+	}, Active: after}, nil
 }
 
 // Verify delegates formatting and diagnostics to the existing Go pipeline.

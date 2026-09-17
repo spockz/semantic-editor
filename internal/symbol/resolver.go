@@ -49,7 +49,7 @@ type LookupResult struct {
 
 // ParseIdentifier decomposes a query identifier into receiver and symbol name.
 func ParseIdentifier(raw string) (receiver string, name string, err error) {
-	clean := strings.Trim(strings.TrimSpace(raw), `"'`)
+	clean := normalizeInput(raw)
 	if clean == "" {
 		return "", "", fmt.Errorf("%w: identifier cannot be empty", ErrInvalidIdentifier)
 	}
@@ -67,6 +67,17 @@ func ParseIdentifier(raw string) (receiver string, name string, err error) {
 	default:
 		return "", "", fmt.Errorf("%w: %q (expected [Receiver.]Name)", ErrInvalidIdentifier, raw)
 	}
+}
+
+func normalizeInput(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if len(trimmed) >= 2 {
+		first, last := trimmed[0], trimmed[len(trimmed)-1]
+		if (first == '\'' || first == '"') && first == last {
+			return trimmed[1 : len(trimmed)-1]
+		}
+	}
+	return trimmed
 }
 
 // Resolve locates a symbol within a target file or workspace directory.

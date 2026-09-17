@@ -93,6 +93,11 @@ type RustBackend struct {
 	session RustSession
 }
 
+// TrustedWorkspaceRoot discovers the workspace used for trust comparison.
+func (b *RustBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+	return rustWorkspaceRoot(project)
+}
+
 // NewRustBackend constructs the managed rust-analyzer lookup adapter.
 func NewRustBackend(options ...RustBackendOption) *RustBackend {
 	backend := &RustBackend{factory: defaultRustSessionFactory}
@@ -197,8 +202,8 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 }
 
 // Rename is intentionally unavailable for the Rust lookup-only slice.
-func (b *RustBackend) Rename(context.Context, ProjectContext, *LookupResult, string) error {
-	return &Error{Operation: OperationRename, Language: LanguageRust, Err: ErrUnsupportedOperation}
+func (b *RustBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
+	return nil, &Error{Operation: OperationRename, Language: LanguageRust, Err: ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.

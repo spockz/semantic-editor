@@ -135,6 +135,11 @@ type HaskellBackend struct {
 	session HaskellSession
 }
 
+// TrustedWorkspaceRoot discovers the workspace used for trust comparison.
+func (b *HaskellBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+	return haskellWorkspaceRoot(project)
+}
+
 // Language returns the Haskell language identifier.
 func (*HaskellBackend) Language() LanguageID { return LanguageHaskell }
 
@@ -220,8 +225,8 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, que
 }
 
 // Rename is intentionally unavailable for the Haskell lookup-only slice.
-func (*HaskellBackend) Rename(context.Context, ProjectContext, *LookupResult, string) error {
-	return &Error{Operation: OperationRename, Language: LanguageHaskell, Err: ErrUnsupportedOperation}
+func (*HaskellBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
+	return nil, &Error{Operation: OperationRename, Language: LanguageHaskell, Err: ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Haskell lookup-only slice.

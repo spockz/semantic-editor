@@ -147,7 +147,7 @@ func TestScalaLookupPropagatesCancellation(t *testing.T) {
 
 func TestScalaLookupRejectsUnsupportedOperations(t *testing.T) {
 	backendUnderTest := backend.NewScalaBackend()
-	if err := backendUnderTest.Rename(context.Background(), backend.ProjectContext{}, nil, "Other"); !errors.Is(err, backend.ErrUnsupportedOperation) {
+	if _, err := backendUnderTest.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{}, To: "Other"}); !errors.Is(err, backend.ErrUnsupportedOperation) {
 		t.Fatalf("rename error = %v", err)
 	}
 	if _, err := backendUnderTest.Verify(context.Background(), backend.ProjectContext{}, ""); !errors.Is(err, backend.ErrUnsupportedOperation) {

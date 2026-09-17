@@ -124,6 +124,11 @@ type ScalaBackend struct {
 	session ScalaSession
 }
 
+// TrustedWorkspaceRoot discovers the workspace used for trust comparison.
+func (b *ScalaBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+	return scalaWorkspaceRoot(project)
+}
+
 // NewScalaBackend constructs the managed JDT LS lookup adapter.
 func NewScalaBackend(options ...ScalaBackendOption) *ScalaBackend {
 	backend := &ScalaBackend{factory: defaultScalaSessionFactory}
@@ -233,8 +238,8 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project ProjectContext, query
 }
 
 // Rename is intentionally unavailable for the Scala lookup-only slice.
-func (*ScalaBackend) Rename(context.Context, ProjectContext, *LookupResult, string) error {
-	return &Error{Operation: OperationRename, Language: LanguageScala, Err: ErrUnsupportedOperation}
+func (*ScalaBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
+	return nil, &Error{Operation: OperationRename, Language: LanguageScala, Err: ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Scala lookup-only slice.
