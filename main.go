@@ -87,6 +87,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 	var file string
 	var sym string
 	var language string
+	var trustWorkspace bool
 
 	cmd := &cobra.Command{
 		Use:           "lookup",
@@ -101,9 +102,10 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 			service := backend.NewDefaultService()
 			res, err := service.Lookup(cmd.Context(), backend.ProjectContext{
-				RootDir:  workDir,
-				File:     file,
-				Language: backend.LanguageID(language),
+				RootDir:        workDir,
+				File:           file,
+				Language:       backend.LanguageID(language),
+				WorkspaceTrust: backend.NewWorkspaceTrust(workDir, trustWorkspace),
 			}, sym)
 			if err != nil {
 				if errors.Is(err, symbol.ErrNotFound) {
@@ -128,6 +130,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
 	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
+	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
 	return cmd
 }
 
@@ -136,6 +139,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 	var sym string
 	var to string
 	var language string
+	var trustWorkspace bool
 
 	cmd := &cobra.Command{
 		Use:           "rename",
@@ -155,9 +159,10 @@ func newRenameCmd(workDir string) *cobra.Command {
 			service := backend.NewDefaultService()
 			result, err := service.Rename(ctx, backend.RenameRequest{
 				Project: backend.ProjectContext{
-					RootDir:  workDir,
-					File:     file,
-					Language: backend.LanguageID(language),
+					RootDir:        workDir,
+					File:           file,
+					Language:       backend.LanguageID(language),
+					WorkspaceTrust: backend.NewWorkspaceTrust(workDir, trustWorkspace),
 				},
 				Symbol:          sym,
 				To:              to,
@@ -196,6 +201,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
 	cmd.Flags().StringVarP(&to, "to", "t", "", "New name for target symbol")
 	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
+	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
 	return cmd
 }
 

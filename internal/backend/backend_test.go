@@ -74,6 +74,61 @@ func TestServiceRejectsUnsupportedCapability(t *testing.T) {
 	}
 }
 
+func TestWorkspaceTrustRequiresExplicitCanonicalConsent(t *testing.T) {
+	root := t.TempDir()
+	registry, err := backend.NewRegistry(testBackend{
+		language:     "external",
+		capabilities: backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationLookup),
+	})
+	if err != nil {
+		t.Fatalf("NewRegistry failed: %v", err)
+	}
+	service := backend.NewService(registry)
+	project := backend.ProjectContext{RootDir: root, Language: "external"}
+
+	_, err = service.Lookup(context.Background(), project, "Thing")
+	if err == nil || !errors.Is(err, backend.ErrWorkspaceTrustRequired) {
+		t.Fatalf("untrusted lookup error = %v, want workspace trust error", err)
+	}
+	var trustErr *backend.WorkspaceTrustError
+	if !errors.As(err, &trustErr) {
+		t.Fatalf("lookup error type = %T, want *WorkspaceTrustError", err)
+	}
+	if trustErr.Operation != backend.OperationLookup || trustErr.Language != "external" || trustErr.Workspace != backend.CanonicalWorkspaceRoot(root) {
+		t.Fatalf("trust error = %+v, want operation, language, and canonical workspace", trustErr)
+	}
+
+	trusted := project
+	trusted.WorkspaceTrust = backend.NewWorkspaceTrust(root, true)
+	if _, err := service.Lookup(context.Background(), trusted, "Thing"); err != nil {
+		t.Fatalf("trusted lookup failed: %v", err)
+	}
+
+	// Consent is carried by the request only; a later request remains untrusted.
+	if _, err := service.Lookup(context.Background(), project, "Thing"); !errors.Is(err, backend.ErrWorkspaceTrustRequired) {
+		t.Fatalf("trust persisted across requests: %v", err)
+	}
+}
+
+func TestWorkspaceTrustUsesCanonicalRootScope(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "workspace-link")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	trust := backend.NewWorkspaceTrust(alias, true)
+	if !trust.Allows(root) {
+		t.Fatalf("canonical trust does not apply to symlinked workspace: %+v", trust)
+	}
+	if trust.Allows(t.TempDir()) {
+		t.Fatal("trust unexpectedly applies to another workspace")
+	}
+	if (backend.WorkspaceTrust{}).Allows(root) {
+		t.Fatal("zero-value workspace trust is trusted")
+	}
+}
+
 func TestPositionFromByteOffsetUsesUTF16Units(t *testing.T) {
 	source := []byte("🙂name\nnext")
 	position := backend.PositionFromByteOffset(source, 6)

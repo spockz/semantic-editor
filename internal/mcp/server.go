@@ -221,6 +221,10 @@ func (s *Server) listTools() []map[string]any {
 						"enum":        []string{"auto", "go"},
 						"description": "Language backend (default auto)",
 					},
+					"trust_workspace": map[string]any{
+						"type":        "boolean",
+						"description": "Explicitly trust this workspace for future external-tool backends (default false)",
+					},
 					"auto_organize_imports": map[string]any{
 						"type":        "boolean",
 						"description": "Automatically clean up and organize imports after rename (default true)",
@@ -448,6 +452,10 @@ func (s *Server) listTools() []map[string]any {
 						"enum":        []string{"auto", "go"},
 						"description": "Language backend (default auto)",
 					},
+					"trust_workspace": map[string]any{
+						"type":        "boolean",
+						"description": "Explicitly trust this workspace for future external-tool backends (default false)",
+					},
 				},
 			},
 		},
@@ -641,6 +649,10 @@ func (s *Server) listTools() []map[string]any {
 						"enum":        []string{"auto", "go"},
 						"description": "Language backend (default auto)",
 					},
+					"trust_workspace": map[string]any{
+						"type":        "boolean",
+						"description": "Explicitly trust this workspace for future external-tool backends (default false)",
+					},
 				},
 				"required": []string{"symbol"},
 			},
@@ -677,9 +689,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	switch params.Name {
 	case "resolve_symbol_location":
 		var args struct {
-			Symbol   string `json:"symbol"`
-			File     string `json:"file"`
-			Language string `json:"language"`
+			Symbol         string `json:"symbol"`
+			File           string `json:"file"`
+			Language       string `json:"language"`
+			TrustWorkspace bool   `json:"trust_workspace"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -687,9 +700,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 
 		res, err := s.service.Lookup(ctx, backend.ProjectContext{
-			RootDir:  s.workDir,
-			File:     args.File,
-			Language: backend.LanguageID(args.Language),
+			RootDir:        s.workDir,
+			File:           args.File,
+			Language:       backend.LanguageID(args.Language),
+			WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
 		}, args.Symbol)
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)
@@ -710,6 +724,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			File                string `json:"file"`
 			Language            string `json:"language"`
 			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
+			TrustWorkspace      bool   `json:"trust_workspace"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -730,9 +745,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 		result, err := s.service.Rename(ctx, backend.RenameRequest{
 			Project: backend.ProjectContext{
-				RootDir:  s.workDir,
-				File:     args.File,
-				Language: backend.LanguageID(args.Language),
+				RootDir:        s.workDir,
+				File:           args.File,
+				Language:       backend.LanguageID(args.Language),
+				WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
 			},
 			Symbol:          sym,
 			To:              to,
@@ -1029,8 +1045,9 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 
 	case "semantic_verify":
 		var args struct {
-			Path     string `json:"path"`
-			Language string `json:"language"`
+			Path           string `json:"path"`
+			Language       string `json:"language"`
+			TrustWorkspace bool   `json:"trust_workspace"`
 		}
 		_ = json.Unmarshal(params.Arguments, &args)
 
@@ -1041,9 +1058,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 
 		result, err := s.service.Verify(ctx, backend.VerifyRequest{
 			Project: backend.ProjectContext{
-				RootDir:  s.workDir,
-				File:     targetPath,
-				Language: backend.LanguageID(args.Language),
+				RootDir:        s.workDir,
+				File:           targetPath,
+				Language:       backend.LanguageID(args.Language),
+				WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
 			},
 			Path: targetPath,
 		})

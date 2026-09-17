@@ -57,7 +57,66 @@ var (
 	ErrAmbiguous = errors.New("ambiguous symbol")
 	// ErrInvalidProject indicates missing project context.
 	ErrInvalidProject = errors.New("invalid project context")
+	// ErrWorkspaceTrustRequired indicates an external-tool operation needs explicit consent.
+	ErrWorkspaceTrustRequired = errors.New("workspace trust required")
 )
+
+// WorkspaceTrust is an explicit, in-memory consent scoped to one canonical workspace root.
+// The zero value is untrusted and no consent is persisted between requests.
+type WorkspaceTrust struct {
+	WorkspaceRoot string `json:"workspace_root,omitempty"`
+	Trusted       bool   `json:"trusted,omitempty"`
+}
+
+// CanonicalWorkspaceRoot returns the cleaned absolute path used for trust comparisons.
+// Existing symlinks are resolved, while not-yet-created roots still receive a stable absolute path.
+func CanonicalWorkspaceRoot(root string) string {
+	if strings.TrimSpace(root) == "" {
+		root = "."
+	}
+	absolute, err := filepath.Abs(root)
+	if err == nil {
+		root = absolute
+	}
+	root = filepath.Clean(root)
+	if evaluated, err := filepath.EvalSymlinks(root); err == nil {
+		root = filepath.Clean(evaluated)
+	}
+	return root
+}
+
+// NewWorkspaceTrust creates request-scoped consent for the supplied workspace root.
+func NewWorkspaceTrust(root string, trusted bool) WorkspaceTrust {
+	return WorkspaceTrust{WorkspaceRoot: CanonicalWorkspaceRoot(root), Trusted: trusted}
+}
+
+// Allows reports whether this consent applies to the requested canonical workspace root.
+func (t WorkspaceTrust) Allows(root string) bool {
+	return t.Trusted && t.WorkspaceRoot != "" && CanonicalWorkspaceRoot(t.WorkspaceRoot) == CanonicalWorkspaceRoot(root)
+}
+
+// WorkspaceTrustError identifies an operation that was refused without explicit consent.
+type WorkspaceTrustError struct {
+	Operation Operation
+	Language  LanguageID
+	Workspace string
+}
+
+func (e *WorkspaceTrustError) Error() string {
+	parts := []string{ErrWorkspaceTrustRequired.Error()}
+	if e.Operation != "" {
+		parts = append(parts, string(e.Operation))
+	}
+	if e.Language != "" {
+		parts = append(parts, string(e.Language))
+	}
+	if e.Workspace != "" {
+		parts = append(parts, e.Workspace)
+	}
+	return strings.Join(parts, ": ")
+}
+
+func (e *WorkspaceTrustError) Unwrap() error { return ErrWorkspaceTrustRequired }
 
 // Error is a typed service boundary error. Callers can use errors.Is and errors.As.
 type Error struct {
@@ -119,7 +178,8 @@ type DiagnosticDelta struct {
 
 // Capabilities declares the operations a backend can execute.
 type Capabilities struct {
-	Operations map[Operation]bool `json:"operations"`
+	Operations             map[Operation]bool `json:"operations"`
+	RequiresWorkspaceTrust map[Operation]bool `json:"requires_workspace_trust,omitempty"`
 }
 
 // NewCapabilities constructs a capability set from supported operations.
@@ -131,14 +191,30 @@ func NewCapabilities(operations ...Operation) Capabilities {
 	return Capabilities{Operations: set}
 }
 
+// NewCapabilitiesRequiringWorkspaceTrust declares external-tool operations that need explicit consent.
+func NewCapabilitiesRequiringWorkspaceTrust(operations ...Operation) Capabilities {
+	capabilities := NewCapabilities(operations...)
+	capabilities.RequiresWorkspaceTrust = make(map[Operation]bool, len(operations))
+	for _, operation := range operations {
+		capabilities.RequiresWorkspaceTrust[operation] = true
+	}
+	return capabilities
+}
+
 // Supports reports whether operation is declared by the capability set.
 func (c Capabilities) Supports(operation Operation) bool { return c.Operations[operation] }
 
+// RequiresTrust reports whether operation may invoke an external project tool.
+func (c Capabilities) RequiresTrust(operation Operation) bool {
+	return c.RequiresWorkspaceTrust[operation]
+}
+
 // ProjectContext identifies the project and optional source file selected by an ingress.
 type ProjectContext struct {
-	RootDir  string
-	File     string
-	Language LanguageID
+	RootDir        string
+	File           string
+	Language       LanguageID
+	WorkspaceTrust WorkspaceTrust
 }
 
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
@@ -303,6 +379,13 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 	}
 	if !b.Capabilities().Supports(operation) {
 		return nil, &Error{Operation: operation, Language: b.Language(), Err: ErrUnsupportedOperation}
+	}
+	if b.Capabilities().RequiresTrust(operation) && !project.WorkspaceTrust.Allows(project.RootDir) {
+		return nil, &WorkspaceTrustError{
+			Operation: operation,
+			Language:  b.Language(),
+			Workspace: CanonicalWorkspaceRoot(project.RootDir),
+		}
 	}
 	return b, nil
 }
