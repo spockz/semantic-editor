@@ -244,7 +244,7 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		}
 	}
 
-	// Build multi-language capability matrix
+	// Build the cross-language edit and refactoring capability matrix.
 	goOps := map[string]OpMetadata{
 		"rename": {
 			Supported:    true,
@@ -328,8 +328,15 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		{
 			Language:    "rust",
 			DisplayName: "Rust",
-			Maturity:    "Read-only preview",
+			Maturity:    "Selected-file refactoring preview",
 			Operations: map[string]OpMetadata{
+				"rename": {
+					Supported:    true,
+					Description:  "Trusted rust-analyzer semantic rename confined to one selected canonical Rust file; workspace-wide edits are rejected.",
+					CLICommand:   "semedit rename --language rust --trust-workspace --file <path.rs> --symbol <sym> --to <name>",
+					MCPTool:      "semantic_rename",
+					PlacementKey: false,
+				},
 				"get": {
 					Supported:    true,
 					Description:  "File-scoped hierarchical Rust symbol lookup through a trusted, preinstalled rust-analyzer session using UTF-16 LSP positions.",
@@ -340,8 +347,8 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 			},
 			Limitations: []Constraint{
 				{
-					Title:       "Lookup Only",
-					Description: "Rust rename, formatting, imports, verification, and structural edits are unavailable.",
+					Title:       "Selected-File Rename Only",
+					Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
 					Severity:    "error",
 				},
 				{
@@ -359,8 +366,15 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		{
 			Language:    "java",
 			DisplayName: "Java",
-			Maturity:    "Read-only preview",
+			Maturity:    "Selected-file refactoring preview",
 			Operations: map[string]OpMetadata{
+				"rename": {
+					Supported:    true,
+					Description:  "Trusted JDT LS semantic rename confined to one selected canonical Java file; workspace-wide edits are rejected.",
+					CLICommand:   "semedit rename --language java --trust-workspace --jdtls-home <path> --java-bin <path> --file <path.java> --symbol <sym> --to <name>",
+					MCPTool:      "semantic_rename",
+					PlacementKey: false,
+				},
 				"get": {
 					Supported:    true,
 					Description:  "File-scoped hierarchical Java symbol lookup through a trusted, preinstalled JDT LS session using UTF-16 LSP positions.",
@@ -370,7 +384,7 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				},
 			},
 			Limitations: []Constraint{
-				{Title: "Lookup Only", Description: "Java rename, formatting, imports, verification, and structural edits are unavailable.", Severity: "error"},
+				{Title: "Selected-File Rename Only", Description: "Java supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and hierarchy refactoring capabilities are unavailable.", Severity: "error"},
 				{Title: "Trusted Explicit Workspace", Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.", Severity: "error"},
 				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.", Severity: "info"},
 			},
@@ -788,9 +802,9 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 
 [View the semedit repository on GitHub](` + githubRepositoryURL + `)
 
-## Cross-Language Capability Matrix
+## Cross-Language Edit & Refactoring Capability Matrix
 
-| Language | Maturity | Supported Access Modifiers | Operations Supported |
+| Language | Maturity | Supported Access Modifiers | Supported Edit / Refactoring Capabilities |
 | :--- | :--- | :--- | :--- |` + "\n")
 	for _, c := range caps {
 		modifiers := make([]string, 0, len(c.SupportedModifiers))
@@ -812,7 +826,7 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 		)
 	}
 
-	buf.WriteString("\n## Compiler Constraints & Semantic Rules\n\n")
+	buf.WriteString("\n## Language Constraints & Capability Rules\n\n")
 	for _, c := range caps {
 		fmt.Fprintf(&buf, "### %s Engine Constraints\n\n", markdownCell(c.DisplayName))
 		for _, rule := range c.Limitations {
@@ -1649,7 +1663,7 @@ footer {
   <div class="nav-group">
     <div class="nav-heading">Overview</div>
     <a href="#overview" class="nav-link">Introduction</a>
-    <a href="#matrix" class="nav-link">Capability Matrix</a>
+    <a href="#matrix" class="nav-link">Edit &amp; Refactoring Capabilities</a>
     <a href="#limitations" class="nav-link">Language Rules & Limitations</a>
     <a href="#placements" class="nav-link">Placement Qualifiers</a>
   </div>
@@ -1689,10 +1703,10 @@ footer {
     </a>
   </section>
 
-  <!-- Capability Matrix -->
+  <!-- Edit and refactoring capability matrix -->
   <section class="section" id="matrix">
     <div class="section-header">
-      <h2 class="section-title">Cross-Language Capability Matrix</h2>
+      <h2 class="section-title">Cross-Language Edit &amp; Refactoring Capability Matrix</h2>
       <span class="badge badge-prod">Live AST Extraction</span>
     </div>
     <div class="table-container">
@@ -1702,7 +1716,7 @@ footer {
             <th>Language</th>
             <th>Maturity</th>
             <th>Supported Access Modifiers</th>
-            <th>Operations Supported</th>
+            <th>Supported Edit / Refactoring Capabilities</th>
           </tr>
         </thead>
         <tbody>`)

@@ -1,4 +1,4 @@
-# RQ-0022: Block-Level Semantic Anchors, Control Structure Slots & Location Discovery
+# RQ-0022: Structural Edit Capability Family: Block Anchors, Control Slots & Location Discovery
 
 * **Status**: Open
 * **Category**: Semantics & Architecture
@@ -8,7 +8,7 @@
 
 ## 1. Context & Motivation
 
-Current AST mutation tools in `semedit` (`semantic_replace_body`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_case`) address top-level declarations and whole-function bodies. However, real-world refactorings and code additions predominantly happen **inside** functions and compound control flow structures:
+The IDE capability family commonly called structural editing includes statement insertion, expression replacement, and clause insertion. Current `semedit` tools (`semantic_replace_body`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_case`) address top-level declarations and whole-function bodies. However, real-world edits and refactorings predominantly happen **inside** functions and compound control flow structures:
 
 1. Inserting statements into an `if` block (e.g. error handling, logging, return).
 2. Updating or augmenting loop headers (e.g. `for ... in`, `for ... range`, loop initialization/condition/post).

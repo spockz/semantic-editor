@@ -8,7 +8,7 @@ The objective is to categorize the underlying intent of each manual edit, identi
 
 ## Log of Manual Edits
 
-| ID | File | Nature of Change | AST / Semantic Intent | Missing Capability in `semedit` | Candidate Semantic Tool |
+| ID | File | Nature of Change | IDE Capability Family | Edit / Refactoring Capability Gap | Candidate Semantic Tool |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **ME-0001** | `main.go` | Added `os`, `strings`, `semedit/internal/mcp` to imports | Import addition | Import management | `organize_imports` / `add_import` |
 | **ME-0002** | `main.go` | Added `case "mcp":` to command dispatch switch | Branch statement insertion | AST statement insertion into control flow | `apply_ast_rewrite` / `insert_statement` |
@@ -62,9 +62,9 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
 
 ---
 
-## Capability Gap Analysis & Future Tool Roadmap
+## Edit / Refactoring Capability Gap Analysis
 
-### Completed Capabilities (Promoted to CLI `./bin/semedit` and Registered on MCP Server)
+### Implemented Edit / Refactoring Capabilities
 
 1. **`organize_imports` with Explicit Add/Remove** (Completed):
    - Supports plain import paths, custom aliases `alias "path"`, blank imports `_ "path"`, and explicit import removal alongside auto-resolution.
@@ -78,7 +78,7 @@ Subagents executed the following edits deterministically via `semedit` MCP tools
 4. **In-Tree Live-Reload for Self-Modification** (Completed - ADR-0017):
    - `semantic_reload` & `--live-reload`: In-place stdio re-exec via `syscall.Exec`, dynamic schema discovery via `notifications/tools/list_changed`, and atomic Makefile binary promotion.
 
-### Remaining Gaps & Next Highest-ROI Capabilities
+### Unimplemented Edit / Refactoring Capability Families
 
 1. **Function Block & Registration Statement Insertion (`insert_statement` / `append_call`)**:
    - **Need**: Solves ME-0002, ME-0018, ME-0027, and `rootCmd.AddCommand(...)` registration. Inserting a statement or call expression inside a specific function block (e.g. adding a command to a CLI root or an HTTP route to a router) without rewriting the whole function.
