@@ -73,9 +73,11 @@ Harnesses introduce distinct middleware layers that influence agent trajectory:
 
 ### D. Ingress / Toolset ($I$)
 
-* `baseline-diff`: Standard text tools (`view_file`, `replace_file_content`, `grep_search`).
-* `semedit-mcp`: Full intent-based MCP tools (`semantic_rename`, `organize_imports`, `insert_declaration`, `verify_diagnostics`).
-* `semedit-cli`: Agent executes bash commands invoking `semedit` CLI subcommands (`semedit rename`, `semedit insert`, `semedit organize-imports`).
+* `baseline-diff`: Standard text tools (**plus a strong, unified patch application tool**). Avoid using deliberately weak string-replace tools, as this introduces treatment-definition bias.
+* `semedit-mcp`: The `baseline-diff` text toolset **plus** full intent-based MCP tools (`semantic_rename`, `organize_imports`, `insert_declaration`, `verify_diagnostics`).
+* `semedit-cli`: The `baseline-diff` text toolset **plus** CLI access to `semedit` subcommands (`semedit rename`, `semedit insert`).
+
+*Note on Controls*: Direct `semedit` execution without an LLM provides a baseline calibration for transformation and verification overhead, but is **not** the control group. The text-tool agent (`baseline-diff`) is the actual control.
 
 ### E. TestCase Dimension ($T$) & Fixture Design Trade-Offs
 
@@ -83,7 +85,7 @@ The benchmark suite balances hermetic execution against real-world repository sc
 
 #### 1. Synthetic `txtar` Scenarios
 
-* **Properties**: Single-file multi-part archives containing `go.mod`, package sources, test files, and oracle assertions.
+* **Properties**: Single-file multi-part archives containing `go.mod`, package sources, test files, and oracle assertions. Must use **YAML frontmatter** for the prompt and expected outcome, and strictly exclude `want/` golden directories to avoid information leakage.
 * **Advantages**:
   * Near-instant instantiation (<50ms) in temporary directories (`t.TempDir()`).
   * Zero external network or package repository dependencies.
@@ -103,7 +105,7 @@ The benchmark suite balances hermetic execution against real-world repository sc
 
 #### 3. Two-Tier Suite Strategy
 
-* **Tier 1 (Hermetic Core Suite)**: 10 synthetic `txtar` scenarios running in seconds during CI test runs (`make test`).
+* **Tier 1 (Hermetic Core Suite)**: 10 synthetic `txtar` scenarios running in seconds during CI test runs (`make test`). Kept in `testdata/bench/`.
 * **Tier 2 (Real-World Benchmark Suite)**: 5 real repository tasks using pinned Git submodules, evaluated during dedicated release benchmarking.
 
 ---
@@ -120,64 +122,67 @@ The Tier 1 suite standardizes 10 canonical refactoring tasks spanning rename, de
 | `task-04-insert-public` | Insert | `testdata/bench/task_04_insert_public.txtar` | "Add public constructor `func InitServer() *Server` placed before private helpers." | Constructor placed in public declarations section; package builds cleanly. |
 | `task-05-insert-method` | Insert | `testdata/bench/task_05_insert_method.txtar` | "Add a new method `func (s *Server) Stop()` placed immediately after `Server.Start`." | Method receiver attaches to `Server`; position matches adjacency rule. |
 | `task-06-imports-cleanup` | Imports | `testdata/bench/task_06_imports_cleanup.txtar` | "Clean up unused standard library imports and group third-party imports." | Unused imports removed; stdlib precedes third-party; `goimports` clean. |
-| `task-07-imports-qualify` | Imports | `testdata/bench/task_07_imports_qualify.txtar` | "Import `github.com/google/uuid` and initialize a UUID inside `GenerateID()`." | Import statement inserted; `uuid.NewString()` resolves without diagnostics. |
+| `task-07-imports-qualify` | Imports | `testdata/bench/task_07_imports_qualify.txtar` | "Import the local `pkg/mockuuid` vendor package and initialize a UUID inside `GenerateID()`." | Import statement inserted; `mockuuid.NewString()` resolves without diagnostics. Network disabled. |
 | `task-08-delta-recovery` | Recovery | `testdata/bench/task_08_delta_recovery.txtar` | "Repair signature mismatch compile errors between caller and callee in `service/`." | Compiler diagnostic count drops from $N > 0$ to $0$; tests pass. |
 | `task-09-composite-refactor` | Multi-Step | `testdata/bench/task_09_composite_refactor.txtar` | "Rename `Config.Port`, insert helper `func DefaultConfig()`, and clean imports." | All three operations succeed without reverting intermediate states. |
-| `task-10-disambiguate-var` | Semantics | `testdata/bench/task_10_disambiguate_var.txtar` | "Disambiguate shadowing variable `ctx` in handler without altering package context." | Target variable renamed; parent scope variables remain untouched. |
+| `task-10-disambiguate-var` | Semantics | `testdata/bench/task_10_disambiguate_var.txtar` | "Disambiguate shadowing variable `ctx` in handler without altering package context." | Shadowed variable renamed; parent scope variables and external references remain untouched. |
 
 ---
 
-## 5. Correctness Oracle Architecture
+### 5. Correctness Oracle Architecture
 
-Evaluating agent task completion requires strict semantic validation rather than superficial exit codes or brittle line diffs.
+Evaluating agent task completion requires strict semantic validation that treats the model-controlled workspace as **hostile**. A robust oracle must verify correctness without relying on superficial exit codes or brittle line diffs.
 
 ```text
                      Agent Output Code
                             │
                             ▼
               ┌───────────────────────────┐
-              │  Level 1: AST Invariants  │ ──► FAIL: Obsolete symbol present or
-              │  - Target symbol exists   │           target declaration missing
-              │  - Zero stale occurrences │
+              │  Level 1: Preconditions & │ ──► FAIL: Unauthorized modifications
+              │           Mutation Policy │           (e.g. go.mod, tests, build)
               └─────────────┬─────────────┘
                             │ PASS
                             ▼
               ┌───────────────────────────┐
-              │  Level 2: Compiler Clean  │ ──► FAIL: Syntax or typecheck errors
-              │  - go build ./... exits 0 │           (diagnostic delta > 0)
+              │  Level 2: AST Invariants  │ ──► FAIL: Semantic identities missing,
+              │  - Identity & Signatures  │           API shape altered, or
+              │  - Call-sites resolved    │           stale bindings persist.
               └─────────────┬─────────────┘
                             │ PASS
                             ▼
               ┌───────────────────────────┐
-              │  Level 3: Behavioral Test │ ──► FAIL: Unit or integration test
-              │  - go test ./... exits 0  │           assertion failure
+              │  Level 3: Isolated Build  │ ──► FAIL: Syntax or typecheck errors
+              │  - Fresh workspace copy   │           in a network-free box.
               └─────────────┬─────────────┘
                             │ PASS
                             ▼
               ┌───────────────────────────┐
-              │  Level 4: Diff Audit Log  │ ──► PASS: Record line churn and
-              │  - git diff recorded      │           patch footprint metrics
+              │  Level 4: Hidden Tests    │ ──► FAIL: Unit or integration test
+              │  - Injected post-run      │           assertion failure
+              └─────────────┬─────────────┘
+                            │ PASS
+                            ▼
+              ┌───────────────────────────┐
+              │  Level 5: Diff Audit Log  │ ──► PASS: Record line churn and
+              │  - For metrics only       │           patch footprint
               └───────────────────────────┘
 ```
 
 ### Oracle Level Comparison
 
-1. **Compiler Pass/Fail (`go build ./...`)**:
-   * *Strengths*: Fast, universal. Catches syntax errors, unresolved identifiers, and type mismatches.
-   * *Limitations*: An agent can achieve a passing build by deleting the caller, leaving a stub, or reverting the file entirely.
-2. **Behavioral Test Suite (`go test ./...`)**:
-   * *Strengths*: Confirms runtime correctness and preserves external behavior.
-   * *Limitations*: Tests only cover paths exercise by assertions. Refactorings on untested code paths pass despite incomplete symbol renames.
-3. **AST Semantic Invariant Verification (Core `semedit` Oracle)**:
-   * *Strengths*: Inspects the AST directly via Go parser APIs (`go/parser`, `go/types`). Asserts:
-     * Declared identifier matches expected new name.
-     * All references across packages resolve to the expected object definition.
-     * Target obsolete identifier occurrence count equals zero.
-     * Whitespace, comment layout, and irrelevant formatting differences do not trigger false failures.
-   * *Limitations*: Requires authoring specific AST assertion rules per benchmark task.
-4. **Golden Diff Comparison (`cmp` / `git diff`)**:
-   * *Strengths*: Fast byte comparison against human golden reference.
-   * *Limitations*: Overly fragile; fails valid solutions due to harmless comment rewrites or alternate blank line spacing. Used strictly for audit telemetry rather than pass/fail gating.
+1. **Preconditions & Mutation Policy**: 
+   * Ensures the agent did not cheat by deleting callers, modifying `go.mod`, or removing testing logic. Verifies the exact starting state hasn't been bypassed.
+2. **AST Semantic Invariant Verification**:
+   * *Strengths*: Inspects the AST directly via Go parser APIs (`go/parser`, `go/types`). Resolves objects and verifies that the exported API shape, signatures, and receiver bindings match the required postcondition.
+   * *Limitations*: Requires authoring specific AST assertion rules per task.
+3. **Isolated Compilation (`go build ./...`)**:
+   * *Strengths*: Catches syntax errors, unresolved identifiers, and type mismatches in a clean environment where the agent has no network access to download alternative packages.
+4. **Behavioral Test Suite (`go test ./...`)**:
+   * *Strengths*: Injected as **hidden tests** after the model loses access. Confirms runtime correctness without the model gaming the assertions.
+5. **Golden Diff Comparison (`cmp` / `git diff`)**:
+   * Used strictly for audit telemetry rather than pass/fail gating.
+
+**Adversarial Oracles**: Every oracle should be explicitly tested against cheating strategies (e.g., no-ops, dummy declarations, commenting out tests).
 
 ---
 
@@ -239,8 +244,18 @@ Each benchmark run emits a single JSON record capturing configuration, outcomes,
 ```
 
 ---
+## 8. Credibility & Blind Spots
 
-## 8. Prior Art & References
+Publishing credible benchmarks requires mitigating the following biases:
+
+1. **Treatment-Definition Bias**: The true control group (Arm A) must be a strong text-based agent with unified patch application tools, not a strawman with deliberately weak string replacements.
+2. **Task-Selection Bias**: The suite must include tasks where `semedit` has no inherent advantage, unsupported transformations, or ambiguous instructions to measure general agent productivity rather than just capability matching.
+3. **Information Leakage**: Golden files (`want/`), oracle definitions, hidden tests, and transcripts must be entirely hidden from the model's runtime environment.
+4. **Statistical Overconfidence**: Using only 5 repetitions is insufficient. Results must use paired runs by task/model, randomized arm order, and report hierarchical intervals over tasks (not just repeat runs).
+5. **Metric Comparability**: Provider tokens and costs vary widely. They should not be aggregated as if they were equivalent units. Separate model, tool, and verification latency.
+---
+
+## 9. Prior Art & References
 
 * **SWE-bench**: Standard benchmark for autonomous repository issue resolution on GitHub.
 * **Aider LLM Leaderboards**: Refactoring benchmarks comparing unified diff formats with whole-file replacements.

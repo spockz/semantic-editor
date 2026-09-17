@@ -139,33 +139,34 @@ Evaluating token savings requires high-fidelity accounting across three potentia
 
 ### B. Testcase Fixture Design
 
-Evaluating realistic agent behavior requires balancing hermetic determinism against real-world structural complexity:
+Evaluating realistic agent behavior requires balancing hermetic determinism against real-world structural complexity, while strictly avoiding **information leakage**:
 
-1. **Synthetic `txtar` Fixtures**:
-   * *Properties*: Small footprint, fast initialization (<100ms), fully self-contained within single archive files, independent of external network access.
-   * *Limitations*: May underestimate search latency, import graph resolution complexity, and symbol collision probabilities present in production codebases.
-2. **Real-World Repository Snapshots (e.g., `go-chi/chi`, `gin-gonic/gin`, `kubernetes/kubernetes`)**:
-   * *Properties*: Exercises genuine multi-package dependency trees, comprehensive test suites, and realistic compiler workloads.
-   * *Limitations*: Large disk footprints; slow checkout and compile cycles; vulnerability to Go toolchain drift over time.
-3. **Resolution Strategy**: Adopt a two-tiered suite:
-   * *Tier 1 (Core Suite)*: 10 hermetic `txtar` fixtures representing canonical atomic refactoring operations for fast CI regression testing.
-   * *Tier 2 (Ecosystem Suite)*: Pinned Git commits of established mid-sized Go repositories (`chi`, `ristretto`) stored as submodules or tarballs for comprehensive benchmark publications.
-   * Cross-reference [RQ-0015](RQ-0015-multi-dimensional-benchmark-matrix.md) for detailed task specifications and matrix dimensions.
+1. **Enhanced Synthetic `txtar` Fixtures**:
+   * *Properties*: Single-file archives stored in a dedicated `testdata/bench/` suite. Crucially, these must include **YAML frontmatter** containing the natural language prompt and oracle expectations, while strictly excluding `want/` golden files from the model's environment.
+   * *Advantages*: Small footprint, fast initialization (<100ms), fully self-contained.
+   * *Limitations*: May underestimate search latency in large repos.
+2. **Real-World Repository Snapshots**:
+   * *Properties*: Pinned Git commits of established mid-sized Go repositories (`chi`, `gin`).
+   * *Limitations*: Large disk footprints; slow checkout and compile cycles.
+3. **Resolution Strategy**: Adopt a two-tiered suite (Tier 1 Core `txtar`, Tier 2 Ecosystem). **Crucial Invariant**: The environment must be strictly hermetic. Remove any network dependencies (e.g., fetching `google/uuid`) in favor of local mock packages.
 
 ### C. Correctness Oracle Architecture
 
-A benchmark runner must verify whether an edit achieved the intended semantic transformation without relying on brittle textual diffs:
+The oracle must treat the model-controlled workspace as **hostile**. Evaluating correctness requires a multi-stage validation chain:
 
-1. **Compiler Pass/Fail (`go test ./...`)**: Necessary baseline. Confirms syntactic validity and preserves existing behavioral invariants. Insufficient on its own, because an agent could pass tests by reverting modifications or performing no-op edits.
-2. **Golden File Git Diff (`cmp` / `git diff`)**: Confirms exact byte parity with a human-authored reference commit. Brittle against benign cosmetic differences: varying import ordering, comment placement, or whitespace changes fail despite valid refactorings.
-3. **AST Semantic Invariant Verification**: The optimal oracle. Parses the Go AST post-run to verify:
-   * Target symbol exists with the expected identifier at target declarations.
-   * Reference call-sites resolve to the new symbol identifier.
-   * The obsolete identifier occurs zero times in the package symbol table.
-   * Diagnostic deltas reflect zero introduced errors.
-4. **Resolution Strategy**: Implement a tiered verification chain:
-   $$\text{AST Semantic Invariants} \longrightarrow \text{Compiler Build Clean} \longrightarrow \text{Package Test Suite Pass}$$
-   Cross-reference [RQ-0015](RQ-0015-multi-dimensional-benchmark-matrix.md) for formal verification oracle implementation details.
+1. **Precondition Validation**: Confirm target exists and initial fixture doesn't already satisfy the task.
+2. **Mutation-Policy Validation**: Reject unauthorized changes (e.g., modifying `go.mod`, tests, or build scripts), deletions of packages, or fake dummy declarations.
+3. **Type-Resolved Structural Validation (AST Oracle)**: 
+   * Verify the required postcondition by resolving object identities (not just identifier spelling).
+   * Ensure the exported API shape, signatures, and receiver bindings are preserved.
+   * *Note*: The simple "old identifier occurs zero times" check is insufficient and prone to false negatives.
+4. **Isolated Compilation and Behavioral Verification**: 
+   * Copy *only* accepted candidate source files into a fresh, isolated verifier workspace.
+   * Inject hidden tests only *after* the model loses access.
+   * Run tests with network disabled and trusted `go` binaries.
+5. **Diff Audit**: Record normalized textual and AST diffs for analysis.
+
+**Adversarial Oracle Tests**: Every oracle implementation must be tested against cheating candidates (e.g., no-ops, commenting out assertions, leaving stale call sites).
 
 ### D. Harness Non-Determinism Management
 
@@ -200,10 +201,11 @@ Developing `semedit-bench` proceeds through four structured phases:
 
 ### Phase 2: Headless A/B Evaluation Runner
 
-* Construct the test execution harness supporting:
+* Construct the test execution harness starting with **Approach B** (Python/LiteLLM) to validate extraction metrics, followed by a migration to **Approach C** (Cobra CLI) for the final developer tooling.
+* Support evaluation arms:
   * **Arm A (Baseline)**: Standard agent toolset (`grep_search`, `view_file`, `replace_file_content`).
-  * **Arm B (Semedit)**: Semantic intent toolset (`semantic_rename`, `semantic_verify`, `semantic_insert_declaration`, `semantic_organize_imports`).
-* Provide execution isolation via ephemeral scratch directories (`.scratch/benchmarks/run_<id>/`).
+  * **Arm B (Semedit)**: Baseline text tools **plus** the semantic intent toolset (`semantic_rename`, `semantic_verify`, `semantic_insert_declaration`, `semantic_organize_imports`).
+* Provide strict execution isolation via ephemeral scratch directories (`.scratch/benchmarks/run_<id>/`).
 * Support dual execution backends: local `llama.cpp` server for cost-free iteration and direct provider APIs (Anthropic, OpenAI) for frontier validation.
 
 ### Phase 3: Telemetry Extraction Engine
