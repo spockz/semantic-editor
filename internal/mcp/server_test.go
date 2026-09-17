@@ -89,6 +89,17 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 }
 
+func TestSemanticRenameAdvertisesRust(t *testing.T) {
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", ".", &out)
+	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
+		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	}
+}
+
 func TestMCPMutationsOnlyProfile(t *testing.T) {
 	t.Parallel()
 

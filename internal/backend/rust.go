@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"semedit/internal/lsp"
+	"semedit/internal/pipeline"
 )
 
 var (
@@ -36,6 +37,10 @@ var (
 	ErrRustSessionConflict = errors.New("another Rust language session is active")
 	// ErrRustSymbolNotFound indicates that an exact hierarchical query had no candidate.
 	ErrRustSymbolNotFound = errors.New("rust symbol not found")
+	// ErrRustRenameInvalidEdit indicates an unsafe or malformed workspace edit.
+	ErrRustRenameInvalidEdit = errors.New("invalid rust rename edit")
+	// ErrRustRenameStaleEdit indicates that an edit preimage differs from source.
+	ErrRustRenameStaleEdit = errors.New("stale rust rename edit")
 )
 
 // RustError identifies a failure in the read-only Rust lookup adapter.
@@ -119,7 +124,7 @@ func (*RustBackend) Language() LanguageID { return LanguageRust }
 
 // Capabilities declares Rust's read-only lookup capability.
 func (*RustBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup)
+	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
 }
 
 // Close terminates the managed Rust server, if one is active.
@@ -201,9 +206,232 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	return selectRustSymbol(query, root, file, source, symbols)
 }
 
-// Rename is intentionally unavailable for the Rust lookup-only slice.
-func (b *RustBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
-	return nil, &Error{Operation: OperationRename, Language: LanguageRust, Err: ErrUnsupportedOperation}
+// Rename executes one trusted, file-scoped rust-analyzer rename transaction.
+func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	root, file, source, err := resolveRustProject(request.Project)
+	if err != nil {
+		return nil, err
+	}
+	if !request.Project.WorkspaceTrust.Allows(root) {
+		return nil, &WorkspaceTrustError{Operation: OperationRename, Language: LanguageRust, Workspace: root}
+	}
+	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
+		return nil, &Error{Operation: OperationRename, Language: LanguageRust, Err: ErrRustRenameInvalidEdit}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.session != nil && b.root != root {
+		return nil, &RustError{Op: "rename", Workspace: root, Err: ErrRustSessionConflict}
+	}
+	if b.session == nil {
+		if b.factory == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		s, factoryErr := b.factory(ctx, root)
+		if factoryErr != nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: factoryErr}
+		}
+		if s == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		b.session, b.root = s, root
+		if initErr := initializeRustSession(ctx, s, root); initErr != nil {
+			_ = s.Close()
+			b.session, b.root = nil, ""
+			return nil, &RustError{Op: "initialize", Workspace: root, Err: initErr}
+		}
+	}
+	session := b.session
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+		return nil, &RustError{Op: "didOpen", File: file, Err: err}
+	}
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}})
+	if err != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+	}
+	symbols, err := decodeRustDocumentSymbols(raw, root, file, source)
+	if err != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+	}
+	lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
+	if err != nil {
+		return nil, err
+	}
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start})
+	if err != nil {
+		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
+	}
+	if !validPrepareRename(prepRaw) {
+		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
+	}
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	if err != nil {
+		return nil, &RustError{Op: "rename", File: file, Err: err}
+	}
+	oldName := request.Symbol
+	if parts := strings.Split(oldName, "::"); len(parts) > 0 {
+		oldName = strings.TrimSpace(parts[len(parts)-1])
+	}
+	updated, err := applyRustWorkspaceEdit(file, source, editRaw, oldName)
+	if err != nil {
+		return nil, &RustError{Op: "rename", File: file, Err: err}
+	}
+	if err := pipeline.WriteAtomic(file, updated); err != nil {
+		return nil, &RustError{Op: "write", File: file, Err: err}
+	}
+	_ = session.Close()
+	b.session, b.root = nil, ""
+	return &RenameResult{Lookup: lookup}, nil
+}
+
+type rustTextEdit struct {
+	Range   rustRange `json:"range"`
+	NewText string    `json:"newText"`
+}
+type rustEditSpan struct {
+	start, end int
+	text       string
+}
+
+func decodeRustTextEdits(raw json.RawMessage) ([]rustTextEdit, error) {
+	var values []json.RawMessage
+	if json.Unmarshal(raw, &values) != nil || len(values) == 0 {
+		return nil, ErrRustRenameInvalidEdit
+	}
+	edits := make([]rustTextEdit, len(values))
+	for i, value := range values {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(value, &object) != nil || object == nil {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		if _, ok := object["annotationId"]; ok {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		if json.Unmarshal(value, &edits[i]) != nil {
+			return nil, ErrRustRenameInvalidEdit
+		}
+	}
+	return edits, nil
+}
+
+func validPrepareRename(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var direct rustRange
+	if json.Unmarshal(raw, &direct) == nil && validPositionRangeShape(direct) {
+		return true
+	}
+	var wrapped struct {
+		Range rustRange `json:"range"`
+	}
+	return json.Unmarshal(raw, &wrapped) == nil && validPositionRangeShape(wrapped.Range)
+}
+
+func validPositionRangeShape(r rustRange) bool {
+	return r.Start.Line >= 0 && r.Start.Character >= 0 && r.End.Line >= 0 && r.End.Character >= 0
+}
+
+func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, oldName string) ([]byte, error) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || object == nil {
+		return nil, ErrRustRenameInvalidEdit
+	}
+	_, hasChanges := object["changes"]
+	_, hasDocuments := object["documentChanges"]
+	if hasChanges == hasDocuments {
+		return nil, ErrRustRenameInvalidEdit
+	}
+	if _, ok := object["changeAnnotations"]; ok {
+		return nil, ErrRustRenameInvalidEdit
+	}
+	if _, ok := object["resourceOperations"]; ok {
+		return nil, ErrRustRenameInvalidEdit
+	}
+	var edits []rustTextEdit
+	if hasChanges {
+		var changes map[string]json.RawMessage
+		if json.Unmarshal(object["changes"], &changes) != nil || len(changes) != 1 {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		for uri, encoded := range changes {
+			path, err := filePathFromURI(uri)
+			if err != nil || path != CanonicalWorkspaceRoot(file) {
+				return nil, ErrRustRenameInvalidEdit
+			}
+			edits, err = decodeRustTextEdits(encoded)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		var docs []json.RawMessage
+		if json.Unmarshal(object["documentChanges"], &docs) != nil || len(docs) != 1 {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		var doc struct {
+			TextDocument struct {
+				URI     string `json:"uri"`
+				Version *int   `json:"version"`
+			} `json:"textDocument"`
+			Edits              json.RawMessage `json:"edits"`
+			ResourceOperations json.RawMessage `json:"resourceOperations"`
+			AnnotationID       json.RawMessage `json:"annotationId"`
+		}
+		if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		path, err := filePathFromURI(doc.TextDocument.URI)
+		if err != nil || path != CanonicalWorkspaceRoot(file) {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		edits, err = decodeRustTextEdits(doc.Edits)
+		if err != nil {
+			return nil, err
+		}
+	}
+	spans := make([]rustEditSpan, 0, len(edits))
+	seen := map[string]bool{}
+	for _, edit := range edits {
+		start, err := rustByteOffset(source, edit.Range.Start)
+		if err != nil {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		end, err := rustByteOffset(source, edit.Range.End)
+		if err != nil || end <= start {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		if edit.NewText == "" {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		if string(source[start:end]) != oldName {
+			return nil, ErrRustRenameStaleEdit
+		}
+		key := fmt.Sprintf("%d:%d", start, end)
+		if seen[key] {
+			return nil, ErrRustRenameInvalidEdit
+		}
+		seen[key] = true
+		spans = append(spans, rustEditSpan{start: start, end: end, text: edit.NewText})
+	}
+	for i := 1; i < len(spans); i++ {
+		for j := i; j > 0 && spans[j].start > spans[j-1].start; j-- {
+			spans[j], spans[j-1] = spans[j-1], spans[j]
+		}
+	}
+	for i := 1; i < len(spans); i++ {
+		if spans[i].end > spans[i-1].start {
+			return nil, ErrRustRenameInvalidEdit
+		}
+	}
+	updated := append([]byte(nil), source...)
+	for _, span := range spans {
+		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
+	}
+	return updated, nil
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.

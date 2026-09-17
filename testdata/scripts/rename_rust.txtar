@@ -1,0 +1,15 @@
+# Rust rename is file-scoped and uses the deterministic rust-analyzer stand-in.
+exec semedit rename --language rust --trust-workspace --file src/lib.rs --symbol Widget --to Gadget
+exec cat src/lib.rs
+stdout 'struct Gadget {}'
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- src/lib.rs --
+struct Widget {}
+
+-- want.rs --
+struct Gadget {}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 
 	"semedit/internal/lsp"
@@ -75,6 +76,7 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 		var request struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
 		}
 		if json.Unmarshal(payload, &request) != nil || len(request.ID) == 0 {
 			continue
@@ -85,6 +87,25 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			result = map[string]any{"capabilities": map[string]any{}}
 		case "textDocument/documentSymbol":
 			result = []fakeDocumentSymbol{symbol}
+		case "textDocument/prepareRename":
+			result = symbol.SelectionRange
+		case "textDocument/rename":
+			var params struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+				NewName string `json:"newName"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			uri := params.TextDocument.URI
+			if parsed, err := url.Parse(uri); err == nil {
+				uri = parsed.String()
+			}
+			edit := map[string]any{"changes": map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}}
+			if os.Getenv("SEMEDIT_RUST_UNSAFE") == "1" {
+				edit["changes"] = map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}, "file:///foreign.rs": []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}
+			}
+			result = edit
 		}
 		response, err := json.Marshal(struct {
 			JSONRPC string          `json:"jsonrpc"`

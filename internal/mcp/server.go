@@ -200,7 +200,7 @@ func (s *Server) listTools() []map[string]any {
 	tools := []map[string]any{
 		{
 			"name":        "semantic_rename",
-			"description": "Use this tool instead of replace_file_content whenever renaming an identifier, type, or function across one or more files. Executes deterministically via the host compiler/LSP without coordinate hunting.",
+			"description": "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust supports a selected-file rust-analyzer rename. Other languages may be lookup-only.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -218,8 +218,8 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go"},
-						"description": "Language backend (default auto)",
+						"enum":        []string{"auto", "go", "rust"},
+						"description": "Language backend (default auto; Rust requires a selected .rs file and workspace trust)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",

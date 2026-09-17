@@ -14,9 +14,8 @@ Rust supports trusted semantic rename only for the selected canonical regular `.
 ## Invariants
 
 - Trust is checked before process discovery or launch.
-- Only one selected file, one valid LSP edit representation, and version 1 are accepted.
-- Resource operations, annotations, foreign URIs, malformed UTF-16 ranges, overlap, and stale preimages are rejected before writing.
-- Session cleanup after a successful commit does not turn the rename into a failure.
+- Foreign files, resources, annotations, malformed UTF-16 ranges, overlap, version mismatch, and stale preimages are rejected before writing.
+- Session cleanup failure after commit is not reported as rename failure.
 
 ## Consequences
 
