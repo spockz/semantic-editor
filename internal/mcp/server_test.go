@@ -79,6 +79,8 @@ func TestMCPServerLifecycle(t *testing.T) {
 		"semantic_organize_imports",
 		"semantic_add_dependency",
 		"semantic_verify",
+		"semantic_snapshot",
+		"semantic_undo",
 		"resolve_symbol_location",
 	} {
 		if !toolNames[required] {
@@ -264,5 +266,88 @@ func TestMCPToolLocationError(t *testing.T) {
 	}
 	if !strings.HasPrefix(resp2.Result.Location.URI, "file://") {
 		t.Errorf("expected file:// URI for disk file, got %q", resp2.Result.Location.URI)
+	}
+}
+
+func TestMCPSnapshotAndUndo(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	calcFile := filepath.Join(dir, "calc.go")
+	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatalf("write calc.go: %v", err)
+	}
+
+	ctx := t.Context()
+
+	// 1. Take snapshot
+	snapReq := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_snapshot","arguments":{"label":"test-snap"}}}` + "\n"
+	var snapOut bytes.Buffer
+	srv := mcp.NewServer("full", dir, &snapOut)
+	if err := srv.Serve(ctx, bytes.NewBufferString(snapReq)); err != nil {
+		t.Fatalf("snapshot call: %v", err)
+	}
+
+	var snapResp struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(snapOut.Bytes(), &snapResp); err != nil {
+		t.Fatalf("unmarshal snapResp: %v", err)
+	}
+	if snapResp.Result.IsError || len(snapResp.Result.Content) == 0 {
+		t.Fatalf("snapshot failed: %s", snapOut.String())
+	}
+
+	var snapData struct {
+		SnapshotID string `json:"snapshot_id"`
+	}
+	if err := json.Unmarshal([]byte(snapResp.Result.Content[0].Text), &snapData); err != nil {
+		t.Fatalf("unmarshal snapData: %v", err)
+	}
+	if snapData.SnapshotID == "" {
+		t.Fatalf("empty snapshot id")
+	}
+
+	// 2. Modify file on disk
+	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 99 }\n"), 0o600); err != nil {
+		t.Fatalf("modify calc.go: %v", err)
+	}
+
+	// 3. Undo snapshot
+	undoReq := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_undo","arguments":{"snapshot_id":%q}}}`, snapData.SnapshotID) + "\n"
+	var undoOut bytes.Buffer
+	srv2 := mcp.NewServer("full", dir, &undoOut)
+	if err := srv2.Serve(ctx, bytes.NewBufferString(undoReq)); err != nil {
+		t.Fatalf("undo call: %v", err)
+	}
+
+	var undoResp struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(undoOut.Bytes(), &undoResp); err != nil {
+		t.Fatalf("unmarshal undoResp: %v", err)
+	}
+	if undoResp.Result.IsError || len(undoResp.Result.Content) == 0 {
+		t.Fatalf("undo failed: %s", undoOut.String())
+	}
+
+	// 4. Verify restored content on disk
+	// #nosec G304 -- test reads temporary file
+	restored, err := os.ReadFile(calcFile)
+	if err != nil {
+		t.Fatalf("read restored: %v", err)
+	}
+	if !strings.Contains(string(restored), "return 1") {
+		t.Errorf("expected return 1, got %s", string(restored))
 	}
 }

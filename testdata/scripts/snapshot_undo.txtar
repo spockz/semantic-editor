@@ -1,0 +1,40 @@
+# Transactional snapshots and conflict-checked undo
+# 1. Capture snapshot before refactoring
+exec semedit snapshot --label before-calc-edit calc.go
+stdout '"snapshot_id":'
+stdout 'calc.go'
+
+# 2. Modify function body with semantic edit
+exec semedit replace-body --file calc.go --symbol Compute --body 'return x * 10'
+cmp calc.go want/modified_calc.go
+
+# 3. Restore pre-edit state using latest snapshot
+exec semedit undo latest
+stdout '"restored_files":'
+stdout 'calc.go'
+cmp calc.go want/calc.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- calc.go --
+package main
+
+func Compute(x int) int {
+	return x + 1
+}
+
+-- want/calc.go --
+package main
+
+func Compute(x int) int {
+	return x + 1
+}
+
+-- want/modified_calc.go --
+package main
+
+func Compute(x int) int {
+	return x * 10
+}

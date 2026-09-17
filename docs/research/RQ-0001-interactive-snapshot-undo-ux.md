@@ -1,8 +1,8 @@
 # RQ-0001: Interactive Snapshot & Undo UX (No-Type Affirmation)
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: UX & Agent Harness Integration
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-09-17
 
 ---
 
@@ -41,3 +41,14 @@ The research challenge is to present snapshot review and rollback as a native, 1
 * **Agent-LSP Simulate Mode**: [Blackwell Systems agent-lsp](https://github.com/blackwell-systems/agent-lsp) — dry-run simulation of LSP edits in memory.
 * **Antigravity Interactive Question Modals**: Built-in harness capability for blocked, structured choice presentation.
 * **Model Context Protocol Specification**: [modelcontextprotocol.io](https://modelcontextprotocol.io) — interactive tool call semantics.
+
+---
+
+## 4. Resolution & Architecture Decision
+
+Formalized in [ADR-0018: Transactional Snapshots and Conflict-Checked Undo](../adr/0018-transactional-snapshots-and-undo.md):
+
+1. **Content-Addressed Storage Journal**: Implemented scoped content journals under `.scratch/snapshots/<id>/` containing `manifest.json` and `blobs/<sha256>`, completely avoiding git stash reflog pollution and shadow commit overhead.
+2. **Preflight Conflict Detection**: Restores perform strict preflight validation and abort with `ErrConflict` / `*ConflictError` and zero disk writes if on-disk state diverged from recorded `post_edit_sha256`.
+3. **Atomic Restore**: Restorations enforce ADR-0010 atomic write semantics (`pipeline.WriteAtomic`) with advancing `mtime`.
+4. **Dual Interface & Tool Safety**: Exposed via `semantic_snapshot` and `semantic_undo` (annotated with `destructiveHint: true` to trigger harness confirmation dialogs) alongside Cobra CLI subcommands `semedit snapshot` and `semedit undo`.
