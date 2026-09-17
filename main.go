@@ -164,6 +164,8 @@ func newRenameCmd(workDir string) *cobra.Command {
 	var to string
 	var language string
 	var trustWorkspace bool
+	var jdtlsHome string
+	var javaBin string
 
 	cmd := &cobra.Command{
 		Use:           "rename",
@@ -187,6 +189,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 					File:           file,
 					Language:       backend.LanguageID(language),
 					WorkspaceTrust: backend.NewWorkspaceTrust(workDir, trustWorkspace),
+					Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
 				},
 				Symbol:          sym,
 				To:              to,
@@ -224,8 +227,10 @@ func newRenameCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
 	cmd.Flags().StringVarP(&to, "to", "t", "", "New name for target symbol")
-	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust, or java)")
 	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
+	cmd.Flags().StringVar(&jdtlsHome, "jdtls-home", "", "Preinstalled JDT LS distribution home (required for Java rename)")
+	cmd.Flags().StringVar(&javaBin, "java-bin", "", "Java 21+ executable (defaults to java on PATH)")
 	return cmd
 }
 

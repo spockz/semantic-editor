@@ -1,0 +1,14 @@
+# Java rename is file-scoped and uses the deterministic JDT LS stand-in.
+exec semedit rename --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget --to Gadget
+exec cat src/Widget.java
+stdout 'class Gadget {}'
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+
+-- tools/jdtls/config_mac/.keep --
+
+-- src/Widget.java --
+class Widget {}
+
+-- want.java --
+class Gadget {}

@@ -19,6 +19,7 @@ import (
 	"unicode/utf8"
 
 	"semedit/internal/lsp"
+	"semedit/internal/pipeline"
 )
 
 var (
@@ -48,6 +49,10 @@ var (
 	ErrJavaSessionConflict = errors.New("another Java language session is active")
 	// ErrJavaSymbolNotFound indicates that no exact hierarchical candidate matched.
 	ErrJavaSymbolNotFound = errors.New("java symbol not found")
+	// ErrJavaRenameInvalidEdit indicates an unsafe or malformed workspace edit.
+	ErrJavaRenameInvalidEdit = errors.New("invalid Java rename edit")
+	// ErrJavaRenameStaleEdit indicates that an edit preimage differs from source.
+	ErrJavaRenameStaleEdit = errors.New("stale Java rename edit")
 )
 
 // JavaConfig contains only explicit external-tool paths. An empty JavaBin uses
@@ -115,7 +120,7 @@ func WithJavaSessionFactory(factory JavaSessionFactory) JavaBackendOption {
 	}
 }
 
-// JavaBackend provides trusted, file-scoped, read-only lookup through JDT LS.
+// JavaBackend provides trusted, file-scoped lookup and rename through JDT LS.
 type JavaBackend struct {
 	mu      sync.Mutex
 	factory javaSessionFactory
@@ -149,7 +154,7 @@ func (*JavaBackend) Language() LanguageID { return LanguageJava }
 
 // Capabilities declares Java's trusted read-only lookup capability.
 func (*JavaBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup)
+	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
 }
 
 // Close terminates the managed JDT LS server, if one is active.
@@ -230,9 +235,233 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	return selectJavaSymbol(query, root, file, source, symbols)
 }
 
-// Rename is intentionally unavailable for the Java lookup-only slice.
-func (*JavaBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
-	return nil, &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrUnsupportedOperation}
+// Rename executes one trusted, file-scoped JDT LS rename transaction.
+func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	root, file, source, err := resolveJavaProject(request.Project)
+	if err != nil {
+		return nil, err
+	}
+	if !request.Project.WorkspaceTrust.Allows(root) {
+		return nil, &WorkspaceTrustError{Operation: OperationRename, Language: LanguageJava, Workspace: root}
+	}
+	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
+		return nil, &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrJavaRenameInvalidEdit}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.session != nil && b.root != root {
+		return nil, &JavaError{Op: "rename", Workspace: root, Err: ErrJavaSessionConflict}
+	}
+	if b.session == nil {
+		config := request.Project.Java
+		if config.JDTLSHome == "" {
+			config.JDTLSHome = request.Project.JDTLSHome
+		}
+		if config.JavaBin == "" {
+			config.JavaBin = request.Project.JavaBin
+		}
+		if b.factory == nil {
+			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+		}
+		s, factoryErr := b.factory(ctx, root, config)
+		if factoryErr != nil {
+			return nil, &JavaError{Op: "start", Workspace: root, Err: factoryErr}
+		}
+		if s == nil {
+			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+		}
+		b.session, b.root = s, root
+		if initErr := initializeJavaSession(ctx, s, root); initErr != nil {
+			_ = s.Close()
+			b.session, b.root = nil, ""
+			return nil, &JavaError{Op: "initialize", Workspace: root, Err: initErr}
+		}
+	}
+	session := b.session
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
+	}
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}})
+	if err != nil {
+		return nil, &JavaError{Op: "documentSymbol", File: file, Err: err}
+	}
+	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
+	if err != nil {
+		return nil, &JavaError{Op: "documentSymbol", File: file, Err: err}
+	}
+	lookup, err := selectJavaSymbol(request.Symbol, root, file, source, symbols)
+	if err != nil {
+		return nil, err
+	}
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start})
+	if err != nil || !validJavaPrepareRename(prepRaw) {
+		if err == nil {
+			err = ErrJavaRenameInvalidEdit
+		}
+		return nil, &JavaError{Op: "prepareRename", File: file, Err: err}
+	}
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	if err != nil {
+		return nil, &JavaError{Op: "rename", File: file, Err: err}
+	}
+	oldName := request.Symbol
+	if parts := strings.Split(oldName, "."); len(parts) > 0 {
+		oldName = strings.TrimSpace(parts[len(parts)-1])
+	}
+	updated, err := applyJavaWorkspaceEdit(file, source, editRaw, oldName)
+	if err != nil {
+		return nil, &JavaError{Op: "rename", File: file, Err: err}
+	}
+	if err := pipeline.WriteAtomic(file, updated); err != nil {
+		return nil, &JavaError{Op: "write", File: file, Err: err}
+	}
+	_ = session.Close()
+	b.session, b.root = nil, ""
+	return &RenameResult{Lookup: lookup}, nil
+}
+
+type javaTextEdit struct {
+	Range   javaRange `json:"range"`
+	NewText string    `json:"newText"`
+}
+type javaEditSpan struct {
+	start, end int
+	text       string
+}
+
+func validJavaPrepareRename(raw json.RawMessage) bool {
+	if len(raw) == 0 || string(raw) == "null" {
+		return false
+	}
+	var direct javaRange
+	if json.Unmarshal(raw, &direct) == nil && validJavaPositionShape(direct) {
+		return true
+	}
+	var wrapped struct {
+		Range javaRange `json:"range"`
+	}
+	return json.Unmarshal(raw, &wrapped) == nil && validJavaPositionShape(wrapped.Range)
+}
+
+func validJavaPositionShape(r javaRange) bool {
+	return r.Start.Line >= 0 && r.Start.Character >= 0 && r.End.Line >= 0 && r.End.Character >= 0
+}
+
+func decodeJavaTextEdits(raw json.RawMessage) ([]javaTextEdit, error) {
+	var values []json.RawMessage
+	if json.Unmarshal(raw, &values) != nil || len(values) == 0 {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	edits := make([]javaTextEdit, len(values))
+	for i, value := range values {
+		var object map[string]json.RawMessage
+		if json.Unmarshal(value, &object) != nil || object == nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		if _, ok := object["annotationId"]; ok {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		if json.Unmarshal(value, &edits[i]) != nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+	}
+	return edits, nil
+}
+
+func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, oldName string) ([]byte, error) {
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || object == nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	_, hasChanges := object["changes"]
+	_, hasDocuments := object["documentChanges"]
+	if hasChanges == hasDocuments {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if _, ok := object["changeAnnotations"]; ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if _, ok := object["resourceOperations"]; ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	var edits []javaTextEdit
+	if hasChanges {
+		var changes map[string]json.RawMessage
+		if json.Unmarshal(object["changes"], &changes) != nil || len(changes) != 1 {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		for uri, encoded := range changes {
+			path, err := filePathFromURI(uri)
+			if err != nil || path != CanonicalWorkspaceRoot(file) {
+				return nil, ErrJavaRenameInvalidEdit
+			}
+			edits, err = decodeJavaTextEdits(encoded)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		var docs []json.RawMessage
+		if json.Unmarshal(object["documentChanges"], &docs) != nil || len(docs) != 1 {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		var doc struct {
+			TextDocument struct {
+				URI     string `json:"uri"`
+				Version *int   `json:"version"`
+			} `json:"textDocument"`
+			Edits              json.RawMessage `json:"edits"`
+			ResourceOperations json.RawMessage `json:"resourceOperations"`
+			AnnotationID       json.RawMessage `json:"annotationId"`
+		}
+		if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		path, err := filePathFromURI(doc.TextDocument.URI)
+		if err != nil || path != CanonicalWorkspaceRoot(file) {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		var decodeErr error
+		edits, decodeErr = decodeJavaTextEdits(doc.Edits)
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+	}
+	spans := make([]javaEditSpan, 0, len(edits))
+	seen := map[string]bool{}
+	for _, edit := range edits {
+		start, err := javaByteOffset(source, edit.Range.Start)
+		if err != nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		end, err := javaByteOffset(source, edit.Range.End)
+		if err != nil || end <= start || edit.NewText == "" {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		if string(source[start:end]) != oldName {
+			return nil, ErrJavaRenameStaleEdit
+		}
+		key := fmt.Sprintf("%d:%d", start, end)
+		if seen[key] {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		seen[key] = true
+		spans = append(spans, javaEditSpan{start: start, end: end, text: edit.NewText})
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start > spans[j].start })
+	for i := 1; i < len(spans); i++ {
+		if spans[i].end > spans[i-1].start {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+	}
+	updated := append([]byte(nil), source...)
+	for _, span := range spans {
+		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
+	}
+	return updated, nil
 }
 
 // Verify is intentionally unavailable for the Java lookup-only slice.
