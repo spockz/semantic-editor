@@ -14,6 +14,7 @@ import (
 
 type fakeRustSession struct {
 	symbols json.RawMessage
+	rename  json.RawMessage
 	calls   []string
 	init    map[string]any
 	closed  bool
@@ -32,10 +33,29 @@ func (f *fakeRustSession) Request(ctx context.Context, method string, params any
 		}
 		return json.RawMessage(`{"capabilities":{}}`), json.Unmarshal(encoded, &f.init)
 	}
+	if method == "textDocument/prepareRename" {
+		return json.RawMessage(`{"start":{"line":0,"character":3},"end":{"line":0,"character":8}}`), nil
+	}
+	if method == "textDocument/rename" && f.rename != nil {
+		return f.rename, nil
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.symbols, nil
+}
+
+func TestRustRenameRejectsUnsafeWorkspaceEditWithoutWrite(t *testing.T) {
+	root, file := rustProject(t, "fn value() {}\n")
+	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"children":[]}]`), rename: json.RawMessage(`{"changes":{"file:///foreign.rs":[]}}`)}
+	b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
+	if _, err := b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "value", To: "other"}); !errors.Is(err, backend.ErrRustRenameInvalidEdit) {
+		t.Fatalf("err = %v", err)
+	}
+	got, _ := os.ReadFile(file) // #nosec G304 -- test fixture path is created in t.TempDir.
+	if string(got) != "fn value() {}\n" {
+		t.Fatalf("source changed: %q", got)
+	}
 }
 
 func (f *fakeRustSession) Notify(ctx context.Context, method string, _ any) error {

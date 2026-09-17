@@ -1,0 +1,16 @@
+# Rust mutation must reject an untrusted workspace before starting rust-analyzer.
+! semedit rename --language rust --file src/lib.rs --symbol Widget --to Gadget
+stderr 'workspace trust required'
+exec cat src/lib.rs
+stdout 'struct Widget {}'
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- src/lib.rs --
+struct Widget {}
+
+-- original.rs --
+struct Widget {}

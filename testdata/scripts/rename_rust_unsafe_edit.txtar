@@ -1,0 +1,17 @@
+# Unsafe multi-file WorkspaceEdit must be rejected without modifying the selected file.
+env SEMEDIT_RUST_UNSAFE=1
+! semedit rename --language rust --trust-workspace --file src/lib.rs --symbol Widget --to Gadget
+stderr 'invalid rust rename edit'
+exec cat src/lib.rs
+stdout 'struct Widget {}'
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- src/lib.rs --
+struct Widget {}
+
+-- original.rs --
+struct Widget {}
