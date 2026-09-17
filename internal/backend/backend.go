@@ -26,6 +26,8 @@ const (
 	LanguageRust LanguageID = "rust"
 	// LanguageJava selects the read-only Java lookup backend.
 	LanguageJava LanguageID = "java"
+	// LanguageScala selects the read-only Scala lookup backend.
+	LanguageScala LanguageID = "scala"
 )
 
 // Operation identifies a service operation for capability checks.
@@ -220,9 +222,13 @@ type ProjectContext struct {
 	Language       LanguageID
 	WorkspaceTrust WorkspaceTrust
 	Java           JavaConfig
+	Scala          ScalaConfig
 	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
-	JDTLSHome string
-	JavaBin   string
+	JDTLSHome   string
+	JavaBin     string
+	MetalsHome  string
+	MetalsBin   string
+	JavaVersion string
 }
 
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
@@ -350,6 +356,9 @@ func detectLanguage(project ProjectContext) LanguageID {
 	if strings.EqualFold(filepath.Ext(project.File), ".java") {
 		return LanguageJava
 	}
+	if strings.EqualFold(filepath.Ext(project.File), ".scala") {
+		return LanguageScala
+	}
 	root := project.RootDir
 	if root == "" {
 		root = "."
@@ -373,7 +382,14 @@ func detectLanguage(project ProjectContext) LanguageID {
 		}
 	}
 	markers := 0
-	for _, marker := range []bool{goMarker, rustMarker, javaMarker} {
+	scalaMarker := false
+	for _, name := range []string{"build.sbt", "build.sc", "pom.xml", "build.gradle", "build.gradle.kts"} {
+		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
+			scalaMarker = true
+			break
+		}
+	}
+	for _, marker := range []bool{goMarker, rustMarker, javaMarker, scalaMarker} {
 		if marker {
 			markers++
 		}
@@ -383,6 +399,9 @@ func detectLanguage(project ProjectContext) LanguageID {
 	}
 	if javaMarker {
 		return LanguageJava
+	}
+	if scalaMarker {
+		return LanguageScala
 	}
 	if rustMarker {
 		return LanguageRust
@@ -398,9 +417,9 @@ type Service struct {
 // NewService constructs the shared ingress-facing service.
 func NewService(registry *Registry) *Service { return &Service{Registry: registry} }
 
-// NewDefaultService constructs a service with the built-in Go, Rust, and Java lookup backends.
+// NewDefaultService constructs a service with the built-in Go, Rust, Java, and Scala lookup backends.
 func NewDefaultService() *Service {
-	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend())
+	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend(), NewScalaBackend())
 	if err != nil {
 		panic(fmt.Sprintf("register built-in backends: %v", err))
 	}
@@ -431,6 +450,11 @@ func (s *Service) backendFor(project ProjectContext, operation Operation) (Backe
 		}
 		if b.Language() == LanguageJava && trustRoot == "" {
 			if discovered, discoverErr := javaWorkspaceRoot(project); discoverErr == nil {
+				trustRoot = discovered
+			}
+		}
+		if b.Language() == LanguageScala && trustRoot == "" {
+			if discovered, discoverErr := scalaWorkspaceRoot(project); discoverErr == nil {
 				trustRoot = discovered
 			}
 		}

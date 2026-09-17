@@ -375,6 +375,25 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.", Severity: "info"},
 			},
 		},
+		{
+			Language:    "scala",
+			DisplayName: "Scala",
+			Maturity:    "Read-only preview",
+			Operations: map[string]OpMetadata{
+				"get": {
+					Supported:    true,
+					Description:  "File-scoped hierarchical Scala symbol lookup through a trusted, pinned Metals session using UTF-16 LSP positions.",
+					CLICommand:   "semedit lookup --language scala --file <path.scala> --symbol <sym> --metals-bin <path> --java-bin <path> --java-version <major>",
+					MCPTool:      "resolve_symbol_location",
+					PlacementKey: false,
+				},
+			},
+			Limitations: []Constraint{
+				{Title: "Lookup Only", Description: "Scala rename, formatting, imports, verification, build import, and structural edits are unavailable.", Severity: "error"},
+				{Title: "Trusted Explicit Tools", Description: "Lookup requires a selected .scala file, an explicit workspace root for project markers, explicit workspace trust, a pinned preinstalled Metals distribution, and recorded Java 21 or newer; no build tool is invoked.", Severity: "error"},
+				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical classes, objects, traits, enums, methods, fields, and nested types are resolved; overload signatures, givens, extensions, package objects, generated symbols, and cross-file SemanticDB search are not promised.", Severity: "info"},
+			},
+		},
 	}
 
 	return capabilities, placements, nil

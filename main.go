@@ -90,6 +90,9 @@ func newLookupCmd(workDir string) *cobra.Command {
 	var trustWorkspace bool
 	var jdtlsHome string
 	var javaBin string
+	var metalsHome string
+	var metalsBin string
+	var javaVersion string
 
 	cmd := &cobra.Command{
 		Use:           "lookup",
@@ -109,6 +112,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 				Language:       backend.LanguageID(language),
 				WorkspaceTrust: backend.NewWorkspaceTrust(workDir, trustWorkspace),
 				Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
+				Scala:          backend.ScalaConfig{MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion},
 			}, sym)
 			if err != nil {
 				if errors.Is(err, symbol.ErrNotFound) {
@@ -132,10 +136,13 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
-	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust, java for read-only lookup)")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go, rust, java, scala for read-only lookup)")
 	cmd.Flags().BoolVar(&trustWorkspace, "trust-workspace", false, "Explicitly trust this workspace for future external-tool backends")
 	cmd.Flags().StringVar(&jdtlsHome, "jdtls-home", "", "Preinstalled JDT LS distribution home (required for Java lookup)")
 	cmd.Flags().StringVar(&javaBin, "java-bin", "", "Java 21+ executable (defaults to java on PATH)")
+	cmd.Flags().StringVar(&metalsHome, "metals-home", "", "Preinstalled pinned Metals distribution home (required for Scala lookup)")
+	cmd.Flags().StringVar(&metalsBin, "metals-bin", "", "Direct pinned Metals executable (alternative to --metals-home)")
+	cmd.Flags().StringVar(&javaVersion, "java-version", "", "Recorded Java major version (required for Scala lookup)")
 	return cmd
 }
 

@@ -632,7 +632,7 @@ func (s *Server) listTools() []map[string]any {
 	if s.profile != "mutations-only" {
 		tools = append(tools, map[string]any{
 			"name":        "resolve_symbol_location",
-			"description": "Locate a Go, trusted Rust, or trusted Java symbol in a selected source file without line counting. Rust and Java lookup are read-only and require explicit workspace trust; Java additionally requires configured preinstalled JDT LS and Java 21+.",
+			"description": "Locate a Go, trusted Rust, Java, or Scala symbol in a selected source file without line counting. Rust, Java, and Scala lookup are read-only and require explicit workspace trust; Scala additionally requires a pinned Metals distribution and recorded Java 21+ runtime.",
 			"inputSchema": map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -646,8 +646,8 @@ func (s *Server) listTools() []map[string]any {
 					},
 					"language": map[string]any{
 						"type":        "string",
-						"enum":        []string{"auto", "go", "rust", "java"},
-						"description": "Language backend (default auto; Rust and Java support read-only lookup only)",
+						"enum":        []string{"auto", "go", "rust", "java", "scala"},
+						"description": "Language backend (default auto; Rust, Java, and Scala support read-only lookup only)",
 					},
 					"trust_workspace": map[string]any{
 						"type":        "boolean",
@@ -660,6 +660,15 @@ func (s *Server) listTools() []map[string]any {
 					"java_bin": map[string]any{
 						"type":        "string",
 						"description": "Optional Java 21+ executable; defaults to java on PATH",
+					},
+					"metals_home": map[string]any{
+						"type": "string", "description": "Explicit preinstalled pinned Metals distribution home required for Scala lookup",
+					},
+					"metals_bin": map[string]any{
+						"type": "string", "description": "Direct pinned Metals executable, alternative to metals_home",
+					},
+					"java_version": map[string]any{
+						"type": "string", "description": "Recorded Java major version required for Scala lookup",
 					},
 				},
 				"required": []string{"symbol"},
@@ -703,6 +712,9 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			TrustWorkspace bool   `json:"trust_workspace"`
 			JDTLSHome      string `json:"jdtls_home"`
 			JavaBin        string `json:"java_bin"`
+			MetalsHome     string `json:"metals_home"`
+			MetalsBin      string `json:"metals_bin"`
+			JavaVersion    string `json:"java_version"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
@@ -715,6 +727,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			Language:       backend.LanguageID(args.Language),
 			WorkspaceTrust: backend.NewWorkspaceTrust(s.workDir, args.TrustWorkspace),
 			Java:           backend.JavaConfig{JDTLSHome: args.JDTLSHome, JavaBin: args.JavaBin},
+			Scala:          backend.ScalaConfig{MetalsHome: args.MetalsHome, MetalsBin: args.MetalsBin, JavaBin: args.JavaBin, JavaVersion: args.JavaVersion},
 		}, args.Symbol)
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)
