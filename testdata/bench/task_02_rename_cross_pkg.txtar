@@ -1,0 +1,58 @@
+task_id: task-02-rename-cross-pkg
+category: mechanics
+instruction: "Rename public function auth.ValidateToken to auth.VerifyToken across all consuming packages."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "auth/token.go"
+    must_contain_symbols:
+      - "VerifyToken"
+    must_not_contain_symbols:
+      - "ValidateToken"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- auth/token.go --
+package auth
+
+func ValidateToken(t string) bool {
+	return t != ""
+}
+
+-- cmd/main.go --
+package main
+
+import (
+	"fmt"
+	"example.com/test/auth"
+)
+
+func CheckAuth(token string) bool {
+	return auth.ValidateToken(token)
+}
+
+func main() {
+	fmt.Println(CheckAuth("secret"))
+}
+
+-- cmd/main_test.go --
+package main
+
+import "testing"
+
+func TestCheckAuth(t *testing.T) {
+	if !CheckAuth("token-123") {
+		t.Fatal("expected token to be valid")
+	}
+	if CheckAuth("") {
+		t.Fatal("expected empty token to be invalid")
+	}
+}

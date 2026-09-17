@@ -1,0 +1,46 @@
+task_id: task-08-delta-recovery
+category: mechanics
+instruction: "Repair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "service/service.go"
+    must_contain_symbols:
+      - "Service.Process"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- service/service.go --
+package service
+
+type Service struct{}
+
+func (s *Service) Process(id string, count int) string {
+	return id
+}
+
+func Execute() string {
+	s := &Service{}
+	// Signature mismatch: caller passes only id, callee expects (id string, count int)
+	return s.Process("item-42")
+}
+
+-- service/service_test.go --
+package service
+
+import "testing"
+
+func TestExecute(t *testing.T) {
+	res := Execute()
+	if res != "item-42" {
+		t.Fatalf("expected item-42, got %s", res)
+	}
+}

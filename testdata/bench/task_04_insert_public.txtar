@@ -1,0 +1,45 @@
+task_id: task-04-insert-public
+category: mechanics
+instruction: "Add public constructor func InitServer() *Server placed before private helpers."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/server.go"
+    must_contain_symbols:
+      - "InitServer"
+    symbol_before:
+      first: "InitServer"
+      second: "internalRun"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct {
+	Port int
+}
+
+func (s *Server) Start() {}
+
+func (s *Server) internalRun() {}
+
+-- api/server_test.go --
+package api
+
+import "testing"
+
+func TestInitServer(t *testing.T) {
+	s := InitServer()
+	if s == nil {
+		t.Fatal("expected non-nil server")
+	}
+}
