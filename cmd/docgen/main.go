@@ -290,33 +290,6 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		},
 	}
 
-	javaOps := map[string]OpMetadata{
-		"rename":      {Supported: true, Description: "Cross-class and method refactoring via Java LSP.", CLICommand: "semedit rename", MCPTool: "semantic_rename"},
-		"insert_func": {Supported: true, Description: "Method insertion with 4-tier visibility clustering.", CLICommand: "semedit insert-func", MCPTool: "semantic_insert_function", PlacementKey: true},
-		"insert_type": {Supported: true, Description: "Class, interface, record, and enum declaration insertion.", CLICommand: "semedit insert-type", MCPTool: "semantic_insert_type", PlacementKey: true},
-		"insert_decl": {Supported: true, Description: "Field and static constant injection.", CLICommand: "semedit insert-decl", MCPTool: "semantic_insert_decl"},
-		"imports":     {Supported: true, Description: "Package import cleanup and wildcard expansion.", CLICommand: "semedit imports", MCPTool: "semantic_organize_imports"},
-		"get":         {Supported: true, Description: "Class and method coordinate resolution.", CLICommand: "semedit lookup", MCPTool: "resolve_symbol_location"},
-	}
-
-	pyOps := map[string]OpMetadata{
-		"rename":      {Supported: true, Description: "Symbol rename across Python modules.", CLICommand: "semedit rename", MCPTool: "semantic_rename"},
-		"insert_func": {Supported: true, Description: "Top-level def and class method insertion.", CLICommand: "semedit insert-func", MCPTool: "semantic_insert_function", PlacementKey: true},
-		"insert_type": {Supported: true, Description: "Class and dataclass definition insertion.", CLICommand: "semedit insert-type", MCPTool: "semantic_insert_type", PlacementKey: true},
-		"insert_decl": {Supported: true, Description: "Module-level constant and variable injection.", CLICommand: "semedit insert-decl", MCPTool: "semantic_insert_decl"},
-		"imports":     {Supported: true, Description: "isort-aligned import sorting and resolution.", CLICommand: "semedit imports", MCPTool: "semantic_organize_imports"},
-		"get":         {Supported: true, Description: "AST node and coordinate query.", CLICommand: "semedit lookup", MCPTool: "resolve_symbol_location"},
-	}
-
-	tsOps := map[string]OpMetadata{
-		"rename":      {Supported: true, Description: "TypeScript symbol and interface renaming.", CLICommand: "semedit rename", MCPTool: "semantic_rename"},
-		"insert_func": {Supported: true, Description: "Function and class method insertion.", CLICommand: "semedit insert-func", MCPTool: "semantic_insert_function", PlacementKey: true},
-		"insert_type": {Supported: true, Description: "Type alias and interface insertion.", CLICommand: "semedit insert-type", MCPTool: "semantic_insert_type", PlacementKey: true},
-		"insert_decl": {Supported: true, Description: "const/let declaration insertion.", CLICommand: "semedit insert-decl", MCPTool: "semantic_insert_decl"},
-		"imports":     {Supported: true, Description: "ES module import resolution and sorting.", CLICommand: "semedit imports", MCPTool: "semantic_organize_imports"},
-		"get":         {Supported: true, Description: "Symbol definition location resolution.", CLICommand: "semedit lookup", MCPTool: "resolve_symbol_location"},
-	}
-
 	capabilities := []CodeCapability{
 		{
 			Language:           "go",
@@ -348,53 +321,6 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 				{
 					Title:       "Declaration Block Merging",
 					Description: "Constants and variables automatically merge into existing 'const (...)' or 'var (...)' blocks instead of creating duplicate blocks.",
-					Severity:    "info",
-				},
-			},
-		},
-		{
-			Language:           "java",
-			DisplayName:        "Java",
-			Maturity:           "Planned",
-			SupportedModifiers: []string{"infer", "public", "protected", "package-private", "private"},
-			Operations:         javaOps,
-			Limitations: []Constraint{
-				{
-					Title:       "Single Public Class Constraint",
-					Description: "Files allow only one top-level public class matching the file basename.",
-					Severity:    "error",
-				},
-				{
-					Title:       "Four-Tier Visibility Partitioning",
-					Description: "Methods cluster by visibility bands: public -> protected -> package-private -> private.",
-					Severity:    "info",
-				},
-			},
-		},
-		{
-			Language:           "python",
-			DisplayName:        "Python",
-			Maturity:           "Planned",
-			SupportedModifiers: []string{"infer", "public", "private"},
-			Operations:         pyOps,
-			Limitations: []Constraint{
-				{
-					Title:       "Underscore Visibility Inference",
-					Description: "Leading underscore ('_') determines private/internal scope. Keyword modifiers are rejected.",
-					Severity:    "error",
-				},
-			},
-		},
-		{
-			Language:           "typescript",
-			DisplayName:        "TypeScript",
-			Maturity:           "Planned",
-			SupportedModifiers: []string{"infer", "public", "protected", "private"},
-			Operations:         tsOps,
-			Limitations: []Constraint{
-				{
-					Title:       "Type vs Value Import Distinction",
-					Description: "Type-only imports use 'import type' syntax to prevent bundle inflation.",
 					Severity:    "info",
 				},
 			},

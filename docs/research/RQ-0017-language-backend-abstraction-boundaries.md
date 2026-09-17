@@ -1,6 +1,6 @@
 # RQ-0017: Language Backend Abstraction Boundaries and Package Placement
 
-* **Status**: Open
+* **Status**: Resolved
 * **Date**: 2026-09-16
 * **Category**: Architecture & Modular Design
 
@@ -19,7 +19,7 @@ type LanguageBackend interface {
 }
 ```
 
-Currently, this interface and its default implementation `GolangBackend` reside directly in `internal/astedit/access.go`.
+The original access-modifier interface and its default implementation `GolangBackend` reside directly in `internal/astedit/access.go`. Common ingress operations additionally need a language boundary that does not depend on Go AST coordinates.
 
 However, the concept of a programming language backend encompasses broader domain responsibilities than AST-level insertion alone:
 
@@ -68,7 +68,13 @@ Until at least one trigger condition is satisfied, `LanguageBackend` remains anc
 
 ---
 
-## 4. Next Steps
+## 4. Resolution
+
+The accepted boundary is `internal/backend`. It owns language IDs, project selection, UTF-16-neutral protocol locations and diagnostics, operation capabilities, typed errors, a backend registry, and the ingress-facing service. The registered Go adapter delegates existing `internal/symbol`, `internal/adapters/golang`, and `internal/pipeline` behavior. This satisfies the second-backend trigger for the common service boundary while leaving Go AST insertion APIs in `internal/astedit`.
+
+`auto` selects Go from `.go` files or `go.mod`/`go.work`; no other language backend is registered. Service checks consult backend capabilities before dispatch. ADR-0003 is qualified to permit backend-native lookup without requiring broken-source fallback.
+
+## 5. Next Steps
 
 * Monitor coupling between `internal/astedit`, `internal/symbol`, and `internal/adapters/golang`.
 * Revisit package extraction when implementing the first non-Go language prototype.

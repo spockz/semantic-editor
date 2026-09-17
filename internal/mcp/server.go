@@ -18,6 +18,7 @@ import (
 
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/snapshot"
 	"semedit/internal/symbol"
@@ -27,6 +28,7 @@ import (
 type Server struct {
 	profile    string
 	workDir    string
+	service    *backend.Service
 	liveReload bool
 	outMu      sync.Mutex
 	out        io.Writer
@@ -39,6 +41,13 @@ type Option func(*Server)
 func WithLiveReload(enabled bool) Option {
 	return func(s *Server) {
 		s.liveReload = enabled
+	}
+}
+
+// WithService injects the shared language service for ingress routing tests and composition.
+func WithService(service *backend.Service) Option {
+	return func(s *Server) {
+		s.service = service
 	}
 }
 
@@ -57,6 +66,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	s := &Server{
 		profile: profile,
 		workDir: workDir,
+		service: backend.NewDefaultService(),
 		out:     out,
 	}
 	for _, opt := range opts {
@@ -205,6 +215,11 @@ func (s *Server) listTools() []map[string]any {
 					"file": map[string]any{
 						"type":        "string",
 						"description": "Optional file path containing the declaration to disambiguate scope",
+					},
+					"language": map[string]any{
+						"type":        "string",
+						"enum":        []string{"auto", "go"},
+						"description": "Language backend (default auto)",
 					},
 					"auto_organize_imports": map[string]any{
 						"type":        "boolean",
@@ -428,6 +443,11 @@ func (s *Server) listTools() []map[string]any {
 						"type":        "string",
 						"description": "Optional file or directory path to check and format",
 					},
+					"language": map[string]any{
+						"type":        "string",
+						"enum":        []string{"auto", "go"},
+						"description": "Language backend (default auto)",
+					},
 				},
 			},
 		},
@@ -616,6 +636,11 @@ func (s *Server) listTools() []map[string]any {
 						"type":        "string",
 						"description": "Optional file path to constrain search",
 					},
+					"language": map[string]any{
+						"type":        "string",
+						"enum":        []string{"auto", "go"},
+						"description": "Language backend (default auto)",
+					},
 				},
 				"required": []string{"symbol"},
 			},
@@ -652,15 +677,20 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	switch params.Name {
 	case "resolve_symbol_location":
 		var args struct {
-			Symbol string `json:"symbol"`
-			File   string `json:"file"`
+			Symbol   string `json:"symbol"`
+			File     string `json:"file"`
+			Language string `json:"language"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
 			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err))
 			return
 		}
 
-		res, err := symbol.Resolve(s.workDir, args.File, args.Symbol)
+		res, err := s.service.Lookup(ctx, backend.ProjectContext{
+			RootDir:  s.workDir,
+			File:     args.File,
+			Language: backend.LanguageID(args.Language),
+		}, args.Symbol)
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("resolution error: %v", err), err)
 			return
@@ -678,6 +708,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			Symbol              string `json:"symbol"`
 			To                  string `json:"to"`
 			File                string `json:"file"`
+			Language            string `json:"language"`
 			AutoOrganizeImports *bool  `json:"auto_organize_imports"`
 		}
 		if err := json.Unmarshal(params.Arguments, &args); err != nil {
@@ -693,36 +724,33 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			return
 		}
 
-		res, err := symbol.Resolve(s.workDir, args.File, sym)
-		if err != nil {
-			s.sendToolError(id, fmt.Sprintf("symbol resolution error: %v", err), err)
-			return
-		}
-
-		if res.Ambiguous {
-			s.sendToolError(id, fmt.Sprintf("ambiguous symbol %q, please specify receiver or file", sym))
-			return
-		}
-
-		diagsBefore, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
-
-		if err := golang.Rename(ctx, s.workDir, res.File, res.Line, res.Column, to); err != nil {
-			s.sendToolError(id, fmt.Sprintf("rename error: %v", err))
-			return
-		}
-
 		autoOrg := true
 		if args.AutoOrganizeImports != nil {
 			autoOrg = *args.AutoOrganizeImports
 		}
-		if autoOrg {
-			_ = pipeline.OrganizeImports(ctx, s.workDir, ".")
-		} else {
-			_ = pipeline.Format(ctx, s.workDir, ".")
+		result, err := s.service.Rename(ctx, backend.RenameRequest{
+			Project: backend.ProjectContext{
+				RootDir:  s.workDir,
+				File:     args.File,
+				Language: backend.LanguageID(args.Language),
+			},
+			Symbol:          sym,
+			To:              to,
+			OrganizeImports: autoOrg,
+		})
+		if err != nil {
+			switch {
+			case errors.Is(err, symbol.ErrNotFound):
+				s.sendToolError(id, fmt.Sprintf("symbol resolution error: %v", err), err)
+			case errors.Is(err, backend.ErrAmbiguous):
+				s.sendToolError(id, fmt.Sprintf("ambiguous symbol %q, please specify receiver or file", sym))
+			default:
+				s.sendToolError(id, fmt.Sprintf("rename error: %v", err), err)
+			}
+			return
 		}
 
-		diagsAfter, _ := pipeline.CheckDiagnostics(ctx, s.workDir)
-		delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+		delta := result.Diagnostics
 
 		respText := fmt.Sprintf("Successfully renamed %s to %s.", sym, to)
 		if len(delta.Introduced) > 0 || len(delta.Resolved) > 0 {
@@ -733,8 +761,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			if len(delta.Introduced) > 0 {
 				respText += fmt.Sprintf("Introduced:\n- %s\n", strings.Join(delta.Introduced, "\n- "))
 			}
-		} else if len(diagsAfter) > 0 {
-			respText += fmt.Sprintf("\nDiagnostics unchanged (%d active):\n%s", len(diagsAfter), strings.Join(diagsAfter, "\n"))
+		} else if len(result.Active) > 0 {
+			respText += fmt.Sprintf("\nDiagnostics unchanged (%d active):\n%s", len(result.Active), strings.Join(result.Active, "\n"))
 		}
 		if len(delta.Suggestions) > 0 {
 			respText += fmt.Sprintf("\nActionable suggestions:\n- %s\n", strings.Join(delta.Suggestions, "\n- "))
@@ -1001,7 +1029,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 
 	case "semantic_verify":
 		var args struct {
-			Path string `json:"path"`
+			Path     string `json:"path"`
+			Language string `json:"language"`
 		}
 		_ = json.Unmarshal(params.Arguments, &args)
 
@@ -1010,17 +1039,27 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			targetPath = args.Path
 		}
 
-		_ = pipeline.Format(ctx, s.workDir, targetPath)
-		diags, err := pipeline.CheckDiagnostics(ctx, s.workDir)
+		result, err := s.service.Verify(ctx, backend.VerifyRequest{
+			Project: backend.ProjectContext{
+				RootDir:  s.workDir,
+				File:     targetPath,
+				Language: backend.LanguageID(args.Language),
+			},
+			Path: targetPath,
+		})
 		if err != nil {
 			s.sendToolError(id, fmt.Sprintf("diagnostic check failed: %v", err))
 			return
 		}
 
-		if len(diags) == 0 {
+		if len(result.Diagnostics) == 0 {
 			s.sendToolSuccess(id, "Verification clean: 0 diagnostics.")
 		} else {
-			s.sendToolSuccess(id, fmt.Sprintf("Diagnostics detected:\n%s", strings.Join(diags, "\n")))
+			messages := make([]string, 0, len(result.Diagnostics))
+			for _, diagnostic := range result.Diagnostics {
+				messages = append(messages, diagnostic.Message)
+			}
+			s.sendToolSuccess(id, fmt.Sprintf("Diagnostics detected:\n%s", strings.Join(messages, "\n")))
 		}
 
 	case "semantic_replace_body":

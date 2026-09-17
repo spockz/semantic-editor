@@ -15,6 +15,7 @@ import (
 
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
+	"semedit/internal/backend"
 	"semedit/internal/mcp"
 	"semedit/internal/pipeline"
 	"semedit/internal/snapshot"
@@ -85,19 +86,25 @@ func newRootCmd(workDir string) *cobra.Command {
 func newLookupCmd(workDir string) *cobra.Command {
 	var file string
 	var sym string
+	var language string
 
 	cmd := &cobra.Command{
 		Use:           "lookup",
 		Short:         "Resolve symbol location and AST coordinates",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			if sym == "" {
 				fmt.Fprintf(os.Stderr, "lookup requires --symbol\n")
 				return errCommandFailed
 			}
 
-			res, err := symbol.Resolve(workDir, file, sym)
+			service := backend.NewDefaultService()
+			res, err := service.Lookup(cmd.Context(), backend.ProjectContext{
+				RootDir:  workDir,
+				File:     file,
+				Language: backend.LanguageID(language),
+			}, sym)
 			if err != nil {
 				if errors.Is(err, symbol.ErrNotFound) {
 					fmt.Fprintf(os.Stderr, "symbol not found: %s\n", sym)
@@ -120,6 +127,7 @@ func newLookupCmd(workDir string) *cobra.Command {
 
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
 	return cmd
 }
 
@@ -127,6 +135,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 	var file string
 	var sym string
 	var to string
+	var language string
 
 	cmd := &cobra.Command{
 		Use:           "rename",
@@ -142,32 +151,35 @@ func newRenameCmd(workDir string) *cobra.Command {
 				return errCommandFailed
 			}
 
-			res, err := symbol.Resolve(workDir, file, sym)
-			if err != nil {
-				if errors.Is(err, symbol.ErrNotFound) {
-					fmt.Fprintf(os.Stderr, "symbol not found: %s\n", sym)
-					return errCommandFailed
-				}
-				formatCLIError("rename resolution", err)
-				return errCommandFailed
-			}
-
-			if res.Ambiguous {
-				fmt.Fprintf(os.Stderr, "ambiguous symbol %q, please qualify receiver\n", sym)
-				return errCommandFailed
-			}
-
 			ctx := cmd.Context()
-			diagsBefore, _ := pipeline.CheckDiagnostics(ctx, workDir)
-
-			if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, to); err != nil {
-				formatCLIError("rename execution", err)
+			service := backend.NewDefaultService()
+			result, err := service.Rename(ctx, backend.RenameRequest{
+				Project: backend.ProjectContext{
+					RootDir:  workDir,
+					File:     file,
+					Language: backend.LanguageID(language),
+				},
+				Symbol:          sym,
+				To:              to,
+				OrganizeImports: false,
+			})
+			if err != nil {
+				switch {
+				case errors.Is(err, symbol.ErrNotFound):
+					fmt.Fprintf(os.Stderr, "symbol not found: %s\n", sym)
+				case errors.Is(err, backend.ErrAmbiguous):
+					fmt.Fprintf(os.Stderr, "ambiguous symbol %q, please qualify receiver\n", sym)
+				default:
+					if _, ok := errors.AsType[*symbol.SymbolError](err); ok {
+						formatCLIError("rename resolution", err)
+					} else {
+						formatCLIError("rename execution", err)
+					}
+				}
 				return errCommandFailed
 			}
 
-			_ = pipeline.Format(ctx, workDir, ".")
-			diagsAfter, _ := pipeline.CheckDiagnostics(ctx, workDir)
-			delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+			delta := result.Diagnostics
 
 			if len(delta.Introduced) > 0 {
 				fmt.Fprintf(os.Stderr, "diagnostics introduced:\n%s\n", strings.Join(delta.Introduced, "\n"))
@@ -183,6 +195,7 @@ func newRenameCmd(workDir string) *cobra.Command {
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Target file path")
 	cmd.Flags().StringVarP(&sym, "symbol", "s", "", "Target symbol identifier")
 	cmd.Flags().StringVarP(&to, "to", "t", "", "New name for target symbol")
+	cmd.Flags().StringVar(&language, "language", string(backend.LanguageAuto), "Language backend (auto, go)")
 	return cmd
 }
 
