@@ -1,0 +1,51 @@
+task_id: task-05-insert-method
+category: mechanics
+instruction: "Add a new method func (s *Server) Stop() placed immediately after Server.Start."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/server.go"
+    must_contain_symbols:
+      - "Server.Stop"
+    symbol_before:
+      first: "Server.Start"
+      second: "Server.Stop"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct {
+	running bool
+}
+
+func (s *Server) Start() {
+	s.running = true
+}
+
+func (s *Server) IsRunning() bool {
+	return s.running
+}
+
+-- api/server_test.go --
+package api
+
+import "testing"
+
+func TestServerStop(t *testing.T) {
+	s := &Server{}
+	s.Start()
+	if !s.IsRunning() {
+		t.Fatal("expected server running")
+	}
+	s.Stop()
+}

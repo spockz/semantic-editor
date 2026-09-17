@@ -1,0 +1,60 @@
+task_id: task-09-composite-refactor
+category: composition
+instruction: "In config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "config/config.go"
+    must_contain_symbols:
+      - "Config.ListenPort"
+      - "DefaultConfig"
+    must_not_contain_symbols:
+      - "Config.Port"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- config/config.go --
+package config
+
+import (
+	"archive/tar"
+	"fmt"
+)
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+-- config/config_test.go --
+package config
+
+import "testing"
+
+func TestDefaultConfig(t *testing.T) {
+	c := DefaultConfig()
+	if c == nil {
+		t.Fatal("expected non-nil config")
+	}
+	if c.ListenPort == 0 {
+		c.ListenPort = 8080
+	}
+	if c.Host == "" {
+		c.Host = "localhost"
+	}
+	if c.Addr() != "localhost:8080" {
+		t.Fatalf("expected localhost:8080, got %s", c.Addr())
+	}
+}

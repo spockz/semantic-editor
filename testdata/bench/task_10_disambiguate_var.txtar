@@ -1,0 +1,49 @@
+task_id: task-10-disambiguate-var
+category: semantics
+instruction: "In handler/handler.go, disambiguate the inner shadowing variable ctx inside HandleRequest so it uses reqCtx without shadowing the outer context package or parameter."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "handler/handler.go"
+    must_contain_symbols:
+      - "HandleRequest"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- handler/handler.go --
+package handler
+
+import (
+	"context"
+)
+
+func HandleRequest(parentCtx context.Context, action string) string {
+	// Shadowed ctx in inner block
+	ctx := action + "-processed"
+	_ = parentCtx
+	return ctx
+}
+
+-- handler/handler_test.go --
+package handler
+
+import (
+	"context"
+	"testing"
+)
+
+func TestHandleRequest(t *testing.T) {
+	ctx := context.Background()
+	res := HandleRequest(ctx, "data")
+	if res != "data-processed" {
+		t.Fatalf("expected data-processed, got %s", res)
+	}
+}

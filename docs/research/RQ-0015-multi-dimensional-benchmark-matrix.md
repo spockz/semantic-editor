@@ -170,7 +170,7 @@ Evaluating agent task completion requires strict semantic validation that treats
 
 ### Oracle Level Comparison
 
-1. **Preconditions & Mutation Policy**: 
+1. **Preconditions & Mutation Policy**:
    * Ensures the agent did not cheat by deleting callers, modifying `go.mod`, or removing testing logic. Verifies the exact starting state hasn't been bypassed.
 2. **AST Semantic Invariant Verification**:
    * *Strengths*: Inspects the AST directly via Go parser APIs (`go/parser`, `go/types`). Resolves objects and verifies that the exported API shape, signatures, and receiver bindings match the required postcondition.
@@ -244,6 +244,7 @@ Each benchmark run emits a single JSON record capturing configuration, outcomes,
 ```
 
 ---
+
 ## 8. Credibility & Blind Spots
 
 Publishing credible benchmarks requires mitigating the following biases:
@@ -253,6 +254,7 @@ Publishing credible benchmarks requires mitigating the following biases:
 3. **Information Leakage**: Golden files (`want/`), oracle definitions, hidden tests, and transcripts must be entirely hidden from the model's runtime environment.
 4. **Statistical Overconfidence**: Using only 5 repetitions is insufficient. Results must use paired runs by task/model, randomized arm order, and report hierarchical intervals over tasks (not just repeat runs).
 5. **Metric Comparability**: Provider tokens and costs vary widely. They should not be aggregated as if they were equivalent units. Separate model, tool, and verification latency.
+
 ---
 
 ## 9. Prior Art & References

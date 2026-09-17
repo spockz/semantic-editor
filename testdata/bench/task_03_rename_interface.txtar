@@ -1,0 +1,68 @@
+task_id: task-03-rename-interface
+category: mechanics
+instruction: "Rename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "store/store.go"
+    must_contain_symbols:
+      - "Storage.Persist"
+      - "MemoryStore.Persist"
+    must_not_contain_symbols:
+      - "Storage.Save"
+      - "MemoryStore.Save"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- store/store.go --
+package store
+
+type Storage interface {
+	Save(key string, val []byte) error
+}
+
+type MemoryStore struct {
+	data map[string][]byte
+}
+
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{data: make(map[string][]byte)}
+}
+
+func (m *MemoryStore) Save(key string, val []byte) error {
+	m.data[key] = val
+	return nil
+}
+
+func (m *MemoryStore) Get(key string) ([]byte, bool) {
+	v, ok := m.data[key]
+	return v, ok
+}
+
+-- store/store_test.go --
+package store
+
+import "testing"
+
+func saveWithInterface(s Storage, key string, val []byte) error {
+	return s.Save(key, val)
+}
+
+func TestStorage(t *testing.T) {
+	mem := NewMemoryStore()
+	if err := saveWithInterface(mem, "greeting", []byte("hello")); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val, ok := mem.Get("greeting")
+	if !ok || string(val) != "hello" {
+		t.Fatalf("expected hello, got %s", string(val))
+	}
+}

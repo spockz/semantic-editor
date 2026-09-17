@@ -1,0 +1,47 @@
+task_id: task-07-imports-qualify
+category: mechanics
+instruction: "Import the local pkg/mockuuid package into api/id.go and use mockuuid.NewString() inside GenerateID()."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/id.go"
+    must_contain_imports:
+      - "example.com/test/pkg/mockuuid"
+    must_contain_symbols:
+      - "GenerateID"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- pkg/mockuuid/uuid.go --
+package mockuuid
+
+func NewString() string {
+	return "00000000-0000-0000-0000-000000000000"
+}
+
+-- api/id.go --
+package api
+
+func GenerateID() string {
+	return ""
+}
+
+-- api/id_test.go --
+package api
+
+import "testing"
+
+func TestGenerateID(t *testing.T) {
+	id := GenerateID()
+	if id != "00000000-0000-0000-0000-000000000000" {
+		t.Fatalf("expected mock uuid, got %q", id)
+	}
+}

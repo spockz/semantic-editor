@@ -16,6 +16,7 @@ Modern programming languages and frameworks feature specialized idioms and archi
 * **Java / Spring**: Dependency injection fields (`@Autowired`), lifecycle hooks (`@PostConstruct`), and endpoint mapping methods follow explicit container conventions.
 
 Attempting to bake framework-specific patterns (e.g., Akka actor message placement, Cobra command registration, Spring bean annotations) into the core `semedit` AST transformation engine creates severe anti-patterns:
+
 1. **Engine Bloat**: Explosion of specialized tool flags, ad-hoc AST walkers, and brittle pattern matchers.
 2. **Grammar Rigidity**: The engine becomes coupled to specific framework versions and third-party libraries.
 3. **Loss of Composability**: Breaks the clean separation between generic language semantics and application architecture.
@@ -46,7 +47,9 @@ We formalize a strict two-tier separation of concerns:
 ```
 
 ### Tier 1: The Core `semedit` Engine (Language-Level Grammar & Containers)
+
 The engine only understands language grammar constructs, structural containers, and semantic roles:
+
 * In Scala: `class`, `trait`, `object` (including companion objects), `def`, `val/var`, `case class`.
 * In Java: `class`, `interface`, `record`, fields, methods, constructors, inner classes.
 * In Go: `package`, `import`, `type`, `func`, `method`, `const/var`.
@@ -55,7 +58,9 @@ The engine only understands language grammar constructs, structural containers, 
 The engine provides discovery (`semantic_supported_locations`) and targeted mutations (`insert_declaration`, `insert_statement`, `replace_expression`, `insert_case`).
 
 ### Tier 2: Agent Skills (Framework & Architecture-Specific Steering)
+
 Higher-level framework rules, architectural patterns, and design conventions belong in **Agent Skills** (e.g. `skills/akka/SKILL.md`, `skills/cobra/SKILL.md`):
+
 * Teaches the LLM planner the domain pattern: *"When adding a new command to an Akka Actor `CartActor`, declare the command as a `case class` inside `object CartActor` using `semantic_insert_type(owner: 'CartActor', container: 'companion_object')`"*.
 * Recommends multi-tool composition chains to accomplish full domain workflows without bloating tool schemas.
 

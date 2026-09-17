@@ -1,0 +1,47 @@
+task_id: task-01-rename-local
+category: mechanics
+instruction: "Rename the unexported method Server.oldName to Server.newName and update all call-sites."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/server.go"
+    must_contain_symbols:
+      - "Server.newName"
+    must_not_contain_symbols:
+      - "Server.oldName"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) oldName() string {
+	return "ok"
+}
+
+func Run() string {
+	s := &Server{}
+	return s.oldName()
+}
+
+-- api/server_test.go --
+package api
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	s := Run()
+	if s != "ok" {
+		t.Fatalf("expected ok, got %s", s)
+	}
+}

@@ -1,0 +1,49 @@
+task_id: task-06-imports-cleanup
+category: mechanics
+instruction: "Clean up unused standard library imports and group imports in api/server.go."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/server.go"
+    must_not_contain_imports:
+      - "bytes"
+      - "net/http"
+    must_contain_imports:
+      - "fmt"
+      - "os"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+import (
+	"bytes"
+	"fmt"
+	"net/http"
+	"os"
+)
+
+func Info() string {
+	_ = os.Getenv("PORT")
+	return fmt.Sprintf("status: ok")
+}
+
+-- api/server_test.go --
+package api
+
+import "testing"
+
+func TestInfo(t *testing.T) {
+	if s := Info(); s != "status: ok" {
+		t.Fatalf("expected status: ok, got %s", s)
+	}
+}
