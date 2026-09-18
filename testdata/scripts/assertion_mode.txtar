@@ -1,0 +1,61 @@
+# Test assertion-mode: dry-run previews without writing, relax rewrites with trust
+exec semedit assertion-mode --file api/api_test.go --mode relax --dry-run
+stdout '1 swapped'
+stdout 'dry run'
+cmp api/api_test.go want/api/api_test.go.orig
+
+exec semedit assertion-mode --file api/api_test.go --mode relax --trust-workspace
+stdout 'wrote api/api_test.go'
+cmp api/api_test.go want/api/api_test.go.relaxed
+
+! exec semedit assertion-mode --file api/api_test.go --mode relax
+stderr 'workspace trust required'
+
+! exec semedit assertion-mode --file api/api_test.go --mode sideways
+stderr 'must be one of'
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/api_test.go --
+package api
+
+import "testing"
+
+func TestPing(t *testing.T) {
+	if err := Ping(); err != nil {
+		t.Fatalf("Ping failed: %v", err)
+	}
+	if Probe() != "out" {
+		t.Errorf("Probe wrong")
+	}
+}
+
+-- want/api/api_test.go.orig --
+package api
+
+import "testing"
+
+func TestPing(t *testing.T) {
+	if err := Ping(); err != nil {
+		t.Fatalf("Ping failed: %v", err)
+	}
+	if Probe() != "out" {
+		t.Errorf("Probe wrong")
+	}
+}
+
+-- want/api/api_test.go.relaxed --
+package api
+
+import "testing"
+
+func TestPing(t *testing.T) {
+	if err := Ping(); err != nil {
+		t.Errorf("Ping failed: %v", err)
+	}
+	if Probe() != "out" {
+		t.Errorf("Probe wrong")
+	}
+}
