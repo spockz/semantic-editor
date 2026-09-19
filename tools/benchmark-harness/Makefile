@@ -32,6 +32,23 @@ list-benchmarks: ## List all available benchmark tasks and prompt variants
 
 bench-list: list-benchmarks ## Alias for list-benchmarks
 
+.PHONY: bench-test
+bench-test: ## Run unit and oracle tests for benchmark harness
+	@echo "==> Testing benchmark harness..."
+	cd "$(REPO_ROOT)" && go test -v ./tools/benchmark-harness
+
+.PHONY: bench-build
+bench-build: ## Compile standalone benchmark harness binary (.scratch/bin/benchmark-harness)
+	@echo "==> Building benchmark harness..."
+	@mkdir -p "$(REPO_ROOT)/.scratch/bin"
+	cd "$(REPO_ROOT)" && go build -o "$(REPO_ROOT)/.scratch/bin/benchmark-harness" ./tools/benchmark-harness
+
+ifneq ($(CURDIR),$(REPO_ROOT))
+.PHONY: test build
+test: bench-test ## Run unit tests for benchmark harness
+build: bench-build ## Build benchmark harness binary
+endif
+
 .PHONY: bench-all
 bench-all: ## Run all benchmarks in small and large context with all prompt variants
 	@echo "==> Running all benchmarks for target $(TARGET) across variants $(VARIANTS)..."
