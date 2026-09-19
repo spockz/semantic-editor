@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"semedit/internal/adapters/golang"
+	"semedit/internal/astedit"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
 )
@@ -23,6 +24,101 @@ func (GoBackend) Language() LanguageID { return LanguageGo }
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() Capabilities {
 	return NewCapabilities(OperationLookup, OperationRename, OperationVerify)
+}
+
+// CapabilityMatrix returns the declarative documentation matrix for the Go backend.
+func (GoBackend) CapabilityMatrix() LanguageMatrix {
+	// Derive supported access modifiers from the astedit backend to keep them in sync.
+	raw := astedit.GolangBackend{}.SupportedAccessModifiers()
+	mods := make([]string, len(raw))
+	for i, m := range raw {
+		mods[i] = string(m)
+	}
+
+	return LanguageMatrix{
+		Language:           "go",
+		DisplayName:        "Go (Golang)",
+		Maturity:           "Production",
+		SupportedModifiers: mods,
+		Operations: map[string]OpCapability{
+			"rename": {
+				Supported:    true,
+				Description:  "Compiler-backed symbol renaming across identifiers, methods, interfaces, and packages with automatic import tidying.",
+				CLICommand:   "semedit rename --file <path> --symbol <sym> --to <name>",
+				MCPTool:      "semantic_rename",
+				PlacementKey: false,
+			},
+			"insert_func": {
+				Supported:    true,
+				Description:  "Function and method AST insertion with receiver clustering and public-precedes-private section partitioning.",
+				CLICommand:   "semedit insert-func --file <path> --source <code snippet>",
+				MCPTool:      "semantic_insert_function",
+				PlacementKey: true,
+			},
+			"insert_type": {
+				Supported:    true,
+				Description:  "Struct, interface, and type alias AST insertion anchored in public/private type sections.",
+				CLICommand:   "semedit insert-type --file <path> --source <type snippet>",
+				MCPTool:      "semantic_insert_type",
+				PlacementKey: true,
+			},
+			"insert_decl": {
+				Supported:    true,
+				Description:  "Constant and variable declaration insertion with automatic merging into existing const/var blocks.",
+				CLICommand:   "semedit insert-decl --file <path> --source <decl snippet>",
+				MCPTool:      "semantic_insert_decl",
+				PlacementKey: true,
+			},
+			"imports": {
+				Supported:    true,
+				Description:  "Deterministic import management: resolve missing packages, remove unused imports, and add aliased imports.",
+				CLICommand:   "semedit imports --file <path> [--add <pkg>] [--remove <pkg>]",
+				MCPTool:      "semantic_organize_imports",
+				PlacementKey: false,
+			},
+			"lookup": {
+				Supported:    true,
+				Description:  "Fast symbol coordinate, byte offset, receiver, and AST range lookup without line counting.",
+				CLICommand:   "semedit lookup --file <path> --symbol <sym>",
+				MCPTool:      "resolve_symbol_location",
+				PlacementKey: false,
+			},
+			"verify": {
+				Supported:    true,
+				Description:  "Format source files and report compiler diagnostics for the project.",
+				CLICommand:   "semedit verify --file <path>",
+				MCPTool:      "semantic_verify",
+				PlacementKey: false,
+			},
+		},
+		Limitations: []Constraint{
+			{
+				Title:       "Unsupported Modifiers Rejection",
+				Description: "Go lacks 'protected' and 'package-private' scopes. The engine rejects these modifiers with ErrUnsupportedModifier.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Casing & Visibility Invariant",
+				Description: "Identifier capitalization governs visibility. Specifying 'public' for a lowercase symbol or 'private' for an uppercase symbol returns VisibilityMismatchError.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Strict Public-Precedes-Private Ordering",
+				Description: "All public declarations precede private declarations within generated or updated source files.",
+				Severity:    "info",
+			},
+			{
+				Title:       "Receiver Method Clustering",
+				Description: "Methods sharing a common receiver type cluster near each other while maintaining public vs private partitioning.",
+				Severity:    "info",
+			},
+			{
+				Title:       "Declaration Block Merging",
+				Description: "Constants and variables automatically merge into existing 'const (...)' or 'var (...)' blocks instead of creating duplicate blocks.",
+				Severity:    "info",
+			},
+		},
+	}
 }
 
 // Lookup resolves a Go symbol and converts its location to the neutral contract.

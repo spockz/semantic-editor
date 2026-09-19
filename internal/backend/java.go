@@ -157,6 +157,48 @@ func (*JavaBackend) Capabilities() Capabilities {
 	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
 }
 
+// CapabilityMatrix returns the declarative documentation matrix for the Java backend.
+func (*JavaBackend) CapabilityMatrix() LanguageMatrix {
+	return LanguageMatrix{
+		Language:    "java",
+		DisplayName: "Java",
+		Maturity:    "Selected-file refactoring preview",
+		Operations: map[string]OpCapability{
+			"rename": {
+				Supported:    true,
+				Description:  "Trusted JDT LS semantic rename confined to one selected canonical Java file; workspace-wide edits are rejected.",
+				CLICommand:   "semedit rename --language java --trust-workspace --jdtls-home <path> --java-bin <path> --file <path.java> --symbol <sym> --to <name>",
+				MCPTool:      "semantic_rename",
+				PlacementKey: false,
+			},
+			"lookup": {
+				Supported:    true,
+				Description:  "File-scoped hierarchical Java symbol lookup through a trusted, preinstalled JDT LS session using UTF-16 LSP positions.",
+				CLICommand:   "semedit lookup --language java --file <path.java> --symbol <sym> --jdtls-home <path>",
+				MCPTool:      "resolve_symbol_location",
+				PlacementKey: false,
+			},
+		},
+		Limitations: []Constraint{
+			{
+				Title:       "Selected-File Rename Only",
+				Description: "Java supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and hierarchy refactoring capabilities are unavailable.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Trusted Explicit Workspace",
+				Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Hierarchical Document Symbols",
+				Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.",
+				Severity:    "info",
+			},
+		},
+	}
+}
+
 // Close terminates the managed JDT LS server, if one is active.
 func (b *JavaBackend) Close() error {
 	if b == nil {

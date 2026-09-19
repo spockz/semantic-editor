@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
+
+	"semedit/internal/capability"
 )
 
 // LanguageID identifies a source language supported by a backend registry.
@@ -213,6 +215,23 @@ func (c Capabilities) Supports(operation Operation) bool { return c.Operations[o
 // RequiresTrust reports whether operation may invoke an external project tool.
 func (c Capabilities) RequiresTrust(operation Operation) bool {
 	return c.RequiresWorkspaceTrust[operation]
+}
+
+// OpCapability is an alias for capability.OpCapability.
+// Use semedit/internal/capability directly when building LanguageMatrix values.
+type OpCapability = capability.OpCapability
+
+// Constraint is an alias for capability.Constraint.
+type Constraint = capability.Constraint
+
+// LanguageMatrix is an alias for capability.LanguageMatrix.
+type LanguageMatrix = capability.LanguageMatrix
+
+// MatrixProvider is an optional extension of Backend. Backends that implement it
+// expose their declarative LanguageMatrix so that cmd/docgen can build capability
+// documentation from the registry rather than from hardcoded tables.
+type MatrixProvider interface {
+	CapabilityMatrix() capability.LanguageMatrix
 }
 
 // ProjectContext identifies the project and optional source file selected by an ingress.

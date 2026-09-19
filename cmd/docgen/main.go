@@ -17,6 +17,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"semedit/internal/backend"
 )
 
 const (
@@ -65,6 +67,13 @@ type TxtarStep struct {
 	ExpectedErr string
 }
 
+// TxtarFileOutput captures the expected post-transformation state of a file in a txtar scenario.
+type TxtarFileOutput struct {
+	Path      string
+	Content   string
+	DiffLines []DiffLine
+}
+
 // TxtarExample captures parsed executable scenario from a .txtar file.
 type TxtarExample struct {
 	Filename    string
@@ -76,6 +85,7 @@ type TxtarExample struct {
 	OutputFile  string
 	OutputCode  string
 	DiffLines   []DiffLine
+	Outputs     []TxtarFileOutput
 }
 
 // DiffLine represents a line in a unified diff.
@@ -181,45 +191,13 @@ func findRepoRoot() (string, error) {
 }
 
 func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error) {
-	// Parse internal/astedit/access.go
-	accessFile := filepath.Join(rootDir, "internal", "astedit", "access.go")
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, accessFile, nil, parser.ParseComments)
-	if err != nil {
-		return nil, nil, fmt.Errorf("parse access.go: %w", err)
-	}
+	// Parse internal/astedit/insert.go for placement qualifier constants.
+	// These are used by the docs template and are not exposed through the backend interface.
 
-	var goModifiers []string
-	ast.Inspect(node, func(n ast.Node) bool {
-		fn, ok := n.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || fn.Name.Name != "SupportedAccessModifiers" {
-			return true
-		}
-		// Inspect return slice
-		ast.Inspect(fn.Body, func(bn ast.Node) bool {
-			comp, ok := bn.(*ast.CompositeLit)
-			if !ok {
-				return true
-			}
-			for _, elt := range comp.Elts {
-				if ident, ok := elt.(*ast.Ident); ok {
-					cleanMod := strings.TrimPrefix(ident.Name, "AccessModifier")
-					if cleanMod == "PackagePrivate" {
-						cleanMod = "package-private"
-					} else {
-						cleanMod = strings.ToLower(cleanMod)
-					}
-					goModifiers = append(goModifiers, cleanMod)
-				}
-			}
-			return false
-		})
-		return false
-	})
-
-	// Parse internal/astedit/insert.go for placements
 	insertFile := filepath.Join(rootDir, "internal", "astedit", "insert.go")
+	fset := token.NewFileSet()
 	insertNode, err := parser.ParseFile(fset, insertFile, nil, 0)
+
 	var placements []string
 	if err == nil {
 		ast.Inspect(insertNode, func(n ast.Node) bool {
@@ -254,189 +232,53 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		}
 	}
 
-	// Build the cross-language edit and refactoring capability matrix.
-	goOps := map[string]OpMetadata{
-		"rename": {
-			Supported:    true,
-			Description:  "Compiler-backed symbol renaming across identifiers, methods, interfaces, and packages with automatic import tidying.",
-			CLICommand:   "semedit rename --file <path> --symbol <sym> --to <name>",
-			MCPTool:      "semantic_rename",
-			PlacementKey: false,
-		},
-		"insert_func": {
-			Supported:    true,
-			Description:  "Function and method AST insertion with receiver clustering and public-precedes-private section partitioning.",
-			CLICommand:   "semedit insert-func --file <path> --source <code snippet>",
-			MCPTool:      "semantic_insert_function",
-			PlacementKey: true,
-		},
-		"insert_type": {
-			Supported:    true,
-			Description:  "Struct, interface, and type alias AST insertion anchored in public/private type sections.",
-			CLICommand:   "semedit insert-type --file <path> --source <type snippet>",
-			MCPTool:      "semantic_insert_type",
-			PlacementKey: true,
-		},
-		"insert_decl": {
-			Supported:    true,
-			Description:  "Constant and variable declaration insertion with automatic merging into existing const/var blocks.",
-			CLICommand:   "semedit insert-decl --file <path> --source <decl snippet>",
-			MCPTool:      "semantic_insert_decl",
-			PlacementKey: true,
-		},
-		"imports": {
-			Supported:    true,
-			Description:  "Deterministic import management: resolve missing packages, remove unused imports, and add aliased imports.",
-			CLICommand:   "semedit imports --file <path> [--add <pkg>] [--remove <pkg>]",
-			MCPTool:      "semantic_organize_imports",
-			PlacementKey: false,
-		},
-		"get": {
-			Supported:    true,
-			Description:  "Fast symbol coordinate, byte offset, receiver, and AST range lookup without line counting.",
-			CLICommand:   "semedit lookup --file <path> --symbol <sym>",
-			MCPTool:      "resolve_symbol_location",
-			PlacementKey: false,
-		},
+	// Build the capability matrix by querying the registered backends.
+	// Only backends that implement backend.MatrixProvider are included.
+	svc := backend.NewDefaultService()
+	langOrder := []backend.LanguageID{
+		backend.LanguageGo,
+		backend.LanguageRust,
+		backend.LanguageJava,
+		backend.LanguageScala,
+		backend.LanguageHaskell,
 	}
-
-	capabilities := []CodeCapability{
-		{
-			Language:           "go",
-			DisplayName:        "Go (Golang)",
-			Maturity:           "Production",
-			SupportedModifiers: goModifiers,
-			Operations:         goOps,
-			Limitations: []Constraint{
-				{
-					Title:       "Unsupported Modifiers Rejection",
-					Description: "Go lacks 'protected' and 'package-private' scopes. The engine rejects these modifiers with ErrUnsupportedModifier.",
-					Severity:    "error",
-				},
-				{
-					Title:       "Casing & Visibility Invariant",
-					Description: "Identifier capitalization governs visibility. Specifying 'public' for a lowercase symbol or 'private' for an uppercase symbol returns VisibilityMismatchError.",
-					Severity:    "error",
-				},
-				{
-					Title:       "Strict Public-Precedes-Private Ordering",
-					Description: "All public declarations precede private declarations within generated or updated source files.",
-					Severity:    "info",
-				},
-				{
-					Title:       "Receiver Method Clustering",
-					Description: "Methods sharing a common receiver type cluster near each other while maintaining public vs private partitioning.",
-					Severity:    "info",
-				},
-				{
-					Title:       "Declaration Block Merging",
-					Description: "Constants and variables automatically merge into existing 'const (...)' or 'var (...)' blocks instead of creating duplicate blocks.",
-					Severity:    "info",
-				},
-			},
-		},
-		{
-			Language:    "rust",
-			DisplayName: "Rust",
-			Maturity:    "Selected-file refactoring preview",
-			Operations: map[string]OpMetadata{
-				"rename": {
-					Supported:    true,
-					Description:  "Trusted rust-analyzer semantic rename confined to one selected canonical Rust file; workspace-wide edits are rejected.",
-					CLICommand:   "semedit rename --language rust --trust-workspace --file <path.rs> --symbol <sym> --to <name>",
-					MCPTool:      "semantic_rename",
-					PlacementKey: false,
-				},
-				"get": {
-					Supported:    true,
-					Description:  "File-scoped hierarchical Rust symbol lookup through a trusted, preinstalled rust-analyzer session using UTF-16 LSP positions.",
-					CLICommand:   "semedit lookup --language rust --file <path.rs> --symbol <sym>",
-					MCPTool:      "resolve_symbol_location",
-					PlacementKey: false,
-				},
-			},
-			Limitations: []Constraint{
-				{
-					Title:       "Selected-File Rename Only",
-					Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
-					Severity:    "error",
-				},
-				{
-					Title:       "Trusted Explicit Workspace",
-					Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
-					Severity:    "error",
-				},
-				{
-					Title:       "Hierarchical Document Symbols",
-					Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
-					Severity:    "info",
-				},
-			},
-		},
-		{
-			Language:    "java",
-			DisplayName: "Java",
-			Maturity:    "Selected-file refactoring preview",
-			Operations: map[string]OpMetadata{
-				"rename": {
-					Supported:    true,
-					Description:  "Trusted JDT LS semantic rename confined to one selected canonical Java file; workspace-wide edits are rejected.",
-					CLICommand:   "semedit rename --language java --trust-workspace --jdtls-home <path> --java-bin <path> --file <path.java> --symbol <sym> --to <name>",
-					MCPTool:      "semantic_rename",
-					PlacementKey: false,
-				},
-				"get": {
-					Supported:    true,
-					Description:  "File-scoped hierarchical Java symbol lookup through a trusted, preinstalled JDT LS session using UTF-16 LSP positions.",
-					CLICommand:   "semedit lookup --language java --file <path.java> --symbol <sym> --jdtls-home <path>",
-					MCPTool:      "resolve_symbol_location",
-					PlacementKey: false,
-				},
-			},
-			Limitations: []Constraint{
-				{Title: "Selected-File Rename Only", Description: "Java supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and hierarchy refactoring capabilities are unavailable.", Severity: "error"},
-				{Title: "Trusted Explicit Workspace", Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.", Severity: "error"},
-				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.", Severity: "info"},
-			},
-		},
-		{
-			Language:    "scala",
-			DisplayName: "Scala",
-			Maturity:    "Read-only preview",
-			Operations: map[string]OpMetadata{
-				"get": {
-					Supported:    true,
-					Description:  "File-scoped hierarchical Scala symbol lookup through a trusted, pinned Metals session using UTF-16 LSP positions.",
-					CLICommand:   "semedit lookup --language scala --file <path.scala> --symbol <sym> --metals-bin <path> --java-bin <path> --java-version <major>",
-					MCPTool:      "resolve_symbol_location",
-					PlacementKey: false,
-				},
-			},
-			Limitations: []Constraint{
-				{Title: "Lookup Only", Description: "Scala rename, formatting, imports, verification, build import, and structural edits are unavailable.", Severity: "error"},
-				{Title: "Trusted Explicit Tools", Description: "Lookup requires a selected .scala file, an explicit workspace root for project markers, explicit workspace trust, a pinned preinstalled Metals distribution, and recorded Java 21 or newer; no build tool is invoked.", Severity: "error"},
-				{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical classes, objects, traits, enums, methods, fields, and nested types are resolved; overload signatures, givens, extensions, package objects, generated symbols, and cross-file SemanticDB search are not promised.", Severity: "info"},
-			},
-		},
-		{
-			Language:    "haskell",
-			DisplayName: "Haskell",
-			Maturity:    "Read-only preview",
-			Operations: map[string]OpMetadata{
-				"get": {
-					Supported:    true,
-					Description:  "Explicit standalone .hs hierarchical symbol lookup through a trusted, preinstalled Haskell Language Server session using UTF-16 LSP positions.",
-					CLICommand:   "semedit lookup --language haskell --haskell-standalone --file <path.hs> --symbol <sym> --ghc-bin <path> --hls-bin <path>",
-					MCPTool:      "resolve_symbol_location",
-					PlacementKey: false,
-				},
-			},
-			Limitations: []Constraint{
-				{Title: "Lookup Only", Description: "Haskell rename, formatting, imports, verification, compilation, diagnostics, and structural edits are unavailable.", Severity: "error"},
-				{Title: "Explicit Standalone Trust", Description: "Lookup requires --haskell-standalone (or standalone_haskell=true), a selected .hs file, explicit workspace trust, preinstalled GHC, and a matching preinstalled haskell-language-server-wrapper; hie.yaml, stack.yaml, cabal.project, *.cabal, and package.yaml project markers are rejected.", Severity: "error"},
-				{Title: "Hierarchical Document Symbols", Description: "Only module, top-level values, types, classes, constructors, fields, and instances returned hierarchically by HLS are resolved; locals, pattern synonyms, duplicate record fields, reexports, generated or Template Haskell symbols, and malformed-source fallback are not promised.", Severity: "info"},
-			},
-		},
+	var capabilities []CodeCapability
+	for _, lang := range langOrder {
+		b, ok := svc.Registry.Backend(lang)
+		if !ok {
+			continue
+		}
+		mp, ok := b.(backend.MatrixProvider)
+		if !ok {
+			continue
+		}
+		m := mp.CapabilityMatrix()
+		ops := make(map[string]OpMetadata, len(m.Operations))
+		for name, op := range m.Operations {
+			ops[name] = OpMetadata{
+				Supported:    op.Supported,
+				Description:  op.Description,
+				CLICommand:   op.CLICommand,
+				MCPTool:      op.MCPTool,
+				PlacementKey: op.PlacementKey,
+			}
+		}
+		constraints := make([]Constraint, len(m.Limitations))
+		for i, lim := range m.Limitations {
+			constraints[i] = Constraint{
+				Title:       lim.Title,
+				Description: lim.Description,
+				Severity:    lim.Severity,
+			}
+		}
+		capabilities = append(capabilities, CodeCapability{
+			Language:           m.Language,
+			DisplayName:        m.DisplayName,
+			Maturity:           m.Maturity,
+			SupportedModifiers: m.SupportedModifiers,
+			Operations:         ops,
+			Limitations:        constraints,
+		})
 	}
 
 	return capabilities, placements, nil
@@ -505,6 +347,7 @@ func parseTxtarFile(filename string, content string) *TxtarExample {
 	var title string
 	var descriptionLines []string
 	var steps []TxtarStep
+	cmpMap := make(map[string]string)
 
 	currentStepDesc := ""
 	stepNum := 1
@@ -557,13 +400,29 @@ func parseTxtarFile(filename string, content string) *TxtarExample {
 			continue
 		}
 
+		if strings.HasPrefix(line, "cmp ") {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 {
+				cmpMap[fields[2]] = fields[1]
+			}
+			continue
+		}
+
 		if strings.HasPrefix(line, "stderr ") && len(steps) > 0 {
 			errPattern := strings.Trim(strings.TrimPrefix(line, "stderr "), `"'`)
-			steps[len(steps)-1].ExpectedErr = errPattern
+			if steps[len(steps)-1].ExpectedErr == "" {
+				steps[len(steps)-1].ExpectedErr = errPattern
+			} else {
+				steps[len(steps)-1].ExpectedErr += "\n" + errPattern
+			}
 		}
 		if strings.HasPrefix(line, "stdout ") && len(steps) > 0 {
 			outPattern := strings.Trim(strings.TrimPrefix(line, "stdout "), `"'`)
-			steps[len(steps)-1].ExpectedOut = outPattern
+			if steps[len(steps)-1].ExpectedOut == "" {
+				steps[len(steps)-1].ExpectedOut = outPattern
+			} else {
+				steps[len(steps)-1].ExpectedOut += "\n" + outPattern
+			}
 		}
 	}
 
@@ -571,42 +430,79 @@ func parseTxtarFile(filename string, content string) *TxtarExample {
 		title = strings.TrimSuffix(filename, ".txtar")
 	}
 
-	// Determine before and after files
-	var inputCode, outputCode, inputPath, outputPath string
-	for k, v := range fileMap {
-		if strings.HasPrefix(k, "want/") {
-			outputPath = k
-			outputCode = v
-			origPath := strings.TrimPrefix(k, "want/")
-			if origCode, ok := fileMap[origPath]; ok {
-				inputPath = origPath
-				inputCode = origCode
-			}
+	// Identify all expected output (want) files and compute their transformation diffs
+	var wantKeys []string
+	for k := range fileMap {
+		if strings.HasPrefix(k, "want/") || strings.HasPrefix(k, "want.") {
+			wantKeys = append(wantKeys, k)
 		}
 	}
+	sort.Strings(wantKeys)
 
-	if inputCode == "" {
+	var outputs []TxtarFileOutput
+	for _, wantKey := range wantKeys {
+		wantContent := fileMap[wantKey]
+		var targetPath string
+		var inputContent string
+
+		if actual, ok := cmpMap[wantKey]; ok {
+			targetPath = actual
+			inputContent = fileMap[actual]
+		} else if after, ok := strings.CutPrefix(wantKey, "want/"); ok {
+			targetPath = after
+			inputContent = fileMap[after]
+		} else if ext := filepath.Ext(wantKey); ext != "" {
+			for f := range fileMap {
+				if strings.HasSuffix(f, ext) && !strings.HasPrefix(f, "want") {
+					targetPath = f
+					inputContent = fileMap[f]
+					break
+				}
+			}
+			if targetPath == "" {
+				targetPath = wantKey
+			}
+		} else {
+			targetPath = wantKey
+		}
+
+		diff := generateDiff(inputContent, wantContent)
+		outputs = append(outputs, TxtarFileOutput{
+			Path:      targetPath,
+			Content:   wantContent,
+			DiffLines: diff,
+		})
+	}
+
+	var firstInput, firstInputCode, firstOutput, firstOutputCode string
+	var firstDiff []DiffLine
+	if len(outputs) > 0 {
+		firstOutput = outputs[0].Path
+		firstOutputCode = outputs[0].Content
+		firstDiff = outputs[0].DiffLines
+		firstInput = outputs[0].Path
+		firstInputCode = fileMap[outputs[0].Path]
+	} else {
 		for k, v := range fileMap {
-			if strings.HasSuffix(k, ".go") && !strings.HasPrefix(k, "want/") {
-				inputPath = k
-				inputCode = v
+			if strings.HasSuffix(k, ".go") && !strings.HasPrefix(k, "want") {
+				firstInput = k
+				firstInputCode = v
 				break
 			}
 		}
 	}
-
-	diffLines := generateDiff(inputCode, outputCode)
 
 	return &TxtarExample{
 		Filename:    filename,
 		Title:       title,
 		Description: strings.Join(descriptionLines, " "),
 		Steps:       steps,
-		InputFile:   inputPath,
-		InputCode:   inputCode,
-		OutputFile:  outputPath,
-		OutputCode:  outputCode,
-		DiffLines:   diffLines,
+		InputFile:   firstInput,
+		InputCode:   firstInputCode,
+		OutputFile:  firstOutput,
+		OutputCode:  firstOutputCode,
+		DiffLines:   firstDiff,
+		Outputs:     outputs,
 	}
 }
 
@@ -885,25 +781,101 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 			fmt.Fprintf(&buf, "**Equivalent MCP tool call (`%s`)**\n\n", step.MCPTool)
 			writeMarkdownCodeBlock(&buf, "json", step.MCPArgsJSON)
 			if step.ExpectedOut != "" {
-				fmt.Fprintf(&buf, "> Assert: %s\n\n", markdownCell(step.ExpectedOut))
+				for _, assertLine := range strings.Split(step.ExpectedOut, "\n") {
+					if assertLine != "" {
+						fmt.Fprintf(&buf, "> Assert: %s\n\n", markdownCell(assertLine))
+					}
+				}
 			}
 			if step.ExpectedErr != "" {
-				fmt.Fprintf(&buf, "> Expected error: %s\n\n", markdownCell(step.ExpectedErr))
+				for _, errLine := range strings.Split(step.ExpectedErr, "\n") {
+					if errLine != "" {
+						fmt.Fprintf(&buf, "> Expected error: %s\n\n", markdownCell(errLine))
+					}
+				}
 			}
 		}
-		if len(ex.DiffLines) > 0 {
-			buf.WriteString("**Unified AST transformation diff**\n\n")
-			var diff strings.Builder
-			for _, line := range ex.DiffLines {
-				diff.WriteString(line.Content)
-				diff.WriteByte('\n')
+
+		outputs := ex.Outputs
+		if len(outputs) == 0 && (ex.OutputCode != "" || len(ex.DiffLines) > 0) {
+			outputs = []TxtarFileOutput{{
+				Path:      ex.OutputFile,
+				Content:   ex.OutputCode,
+				DiffLines: ex.DiffLines,
+			}}
+		}
+
+		for _, out := range outputs {
+			if len(out.DiffLines) > 0 {
+				if len(outputs) == 1 {
+					buf.WriteString("**Unified AST transformation diff**\n\n")
+				} else {
+					fmt.Fprintf(&buf, "**Unified AST transformation diff (`%s`)**\n\n", out.Path)
+				}
+				var diff strings.Builder
+				for _, line := range out.DiffLines {
+					diff.WriteString(line.Content)
+					diff.WriteByte('\n')
+				}
+				writeMarkdownCodeBlock(&buf, "diff", strings.TrimSuffix(diff.String(), "\n"))
 			}
-			writeMarkdownCodeBlock(&buf, "diff", strings.TrimSuffix(diff.String(), "\n"))
+
+			if out.Content != "" {
+				if len(outputs) == 1 {
+					if out.Path != "" {
+						fmt.Fprintf(&buf, "**Expected output state (`%s`)**\n\n", out.Path)
+					} else {
+						buf.WriteString("**Expected output state**\n\n")
+					}
+				} else {
+					fmt.Fprintf(&buf, "**Expected output state (`%s`)**\n\n", out.Path)
+				}
+				lang := detectCodeBlockLanguage(out.Path)
+				writeMarkdownCodeBlock(&buf, lang, out.Content)
+			}
 		}
 	}
 
 	buf.WriteString("## CI Drift Invariant\n\nDocumentation is regenerated from compiler capabilities and regression test archives during continuous integration before publication.\n")
 	return buf.String()
+}
+
+func detectCodeBlockLanguage(filePath string) string {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".go":
+		return "go"
+	case ".rs":
+		return "rust"
+	case ".java":
+		return "java"
+	case ".scala":
+		return "scala"
+	case ".hs":
+		return "haskell"
+	case ".toml":
+		return "toml"
+	case ".json":
+		return "json"
+	case ".yaml", ".yml":
+		return "yaml"
+	case ".md":
+		return "markdown"
+	case ".sh":
+		return "bash"
+	default:
+		base := strings.ToLower(filepath.Base(filePath))
+		switch base {
+		case "go.mod", "go.sum":
+			return "go"
+		case "cargo.toml":
+			return "toml"
+		}
+		if ext != "" {
+			return strings.TrimPrefix(ext, ".")
+		}
+		return "text"
+	}
 }
 
 func writeMarkdownCodeBlock(buf *bytes.Buffer, language, content string) {
@@ -1936,23 +1908,50 @@ footer {
 			)
 		}
 
-		if len(ex.DiffLines) > 0 {
-			buf.WriteString(`
-        <div class="diff-container">
-          <div class="diff-title">Unified AST Transformation Diff</div>
-          <pre>`)
-			for _, dl := range ex.DiffLines {
-				lineClass := "diff-same"
-				switch dl.Type {
-				case "add":
-					lineClass = "diff-add"
-				case "del":
-					lineClass = "diff-del"
+		outputs := ex.Outputs
+		if len(outputs) == 0 && (ex.OutputCode != "" || len(ex.DiffLines) > 0) {
+			outputs = []TxtarFileOutput{{
+				Path:      ex.OutputFile,
+				Content:   ex.OutputCode,
+				DiffLines: ex.DiffLines,
+			}}
+		}
+
+		for _, out := range outputs {
+			if len(out.DiffLines) > 0 {
+				title := "Unified AST Transformation Diff"
+				if len(outputs) > 1 && out.Path != "" {
+					title = fmt.Sprintf("Unified AST Transformation Diff (%s)", out.Path)
 				}
-				fmt.Fprintf(&buf, `<div class="diff-line %s">%s</div>`, lineClass, html.EscapeString(dl.Content))
-			}
-			buf.WriteString(`</pre>
+				fmt.Fprintf(&buf, `
+        <div class="diff-container">
+          <div class="diff-title">%s</div>
+          <pre>`, html.EscapeString(title))
+				for _, dl := range out.DiffLines {
+					lineClass := "diff-same"
+					switch dl.Type {
+					case "add":
+						lineClass = "diff-add"
+					case "del":
+						lineClass = "diff-del"
+					}
+					fmt.Fprintf(&buf, `<div class="diff-line %s">%s</div>`, lineClass, html.EscapeString(dl.Content))
+				}
+				buf.WriteString(`</pre>
         </div>`)
+			}
+
+			if out.Content != "" {
+				title := "Expected Output State"
+				if out.Path != "" {
+					title = fmt.Sprintf("Expected Output State (%s)", out.Path)
+				}
+				fmt.Fprintf(&buf, `
+        <div class="diff-container">
+          <div class="diff-title">%s</div>
+          <pre><code>%s</code></pre>
+        </div>`, html.EscapeString(title), html.EscapeString(out.Content))
+			}
 		}
 
 		buf.WriteString(`

@@ -141,3 +141,88 @@ func TestPositionFromByteOffsetUsesUTF16Units(t *testing.T) {
 		t.Fatalf("position = %+v, want line 1 character 4", position)
 	}
 }
+
+// TestCapabilityMatrixConformance asserts that every backend implementing
+// MatrixProvider declares operations that exactly match its runtime Capabilities.
+// This is the CI drift gate between documentation and behaviour.
+func TestCapabilityMatrixConformance(t *testing.T) {
+	svc := backend.NewDefaultService()
+	langs := []backend.LanguageID{
+		backend.LanguageGo,
+		backend.LanguageRust,
+		backend.LanguageJava,
+		backend.LanguageScala,
+		backend.LanguageHaskell,
+	}
+	for _, lang := range langs {
+		b, ok := svc.Registry.Backend(lang)
+		if !ok {
+			t.Errorf("language %q: not found in default registry", lang)
+			continue
+		}
+		mp, ok := b.(backend.MatrixProvider)
+		if !ok {
+			// Not every backend must implement MatrixProvider, but all current ones do.
+			t.Errorf("language %q: Backend does not implement MatrixProvider", lang)
+			continue
+		}
+		matrix := mp.CapabilityMatrix()
+		caps := b.Capabilities()
+
+		// Map operation names used in the matrix to the backend.Operation constants.
+		opMapping := map[string]backend.Operation{
+			"rename": backend.OperationRename,
+			"lookup": backend.OperationLookup,
+			"verify": backend.OperationVerify,
+		}
+
+		for opName, opCap := range matrix.Operations {
+			if !opCap.Supported {
+				continue
+			}
+			runtimeOp, known := opMapping[opName]
+			if !known {
+				// Operations like insert_func are Go-AST-layer operations not in the
+				// backend.Operation set; they are not gated by Capabilities().Supports().
+				continue
+			}
+			if !caps.Supports(runtimeOp) {
+				t.Errorf("language %q operation %q: declared Supported=true in matrix but Capabilities().Supports(%q)=false",
+					lang, opName, runtimeOp)
+			}
+		}
+
+		// Verify that runtime operations not in the matrix are not silently missing.
+		for _, runtimeOp := range []backend.Operation{backend.OperationLookup, backend.OperationRename, backend.OperationVerify} {
+			if !caps.Supports(runtimeOp) {
+				continue
+			}
+			// Find the matrix key that maps to this runtime operation.
+			matrixKey := ""
+			for key, mapped := range opMapping {
+				if mapped == runtimeOp {
+					matrixKey = key
+					break
+				}
+			}
+			if matrixKey == "" {
+				continue
+			}
+			opCap, declared := matrix.Operations[matrixKey]
+			if !declared || !opCap.Supported {
+				t.Errorf("language %q: runtime Capabilities().Supports(%q)=true but matrix operation %q is absent or Supported=false",
+					lang, runtimeOp, matrixKey)
+			}
+		}
+
+		if matrix.Language == "" {
+			t.Errorf("language %q: LanguageMatrix.Language is empty", lang)
+		}
+		if matrix.DisplayName == "" {
+			t.Errorf("language %q: LanguageMatrix.DisplayName is empty", lang)
+		}
+		if matrix.Maturity == "" {
+			t.Errorf("language %q: LanguageMatrix.Maturity is empty", lang)
+		}
+	}
+}

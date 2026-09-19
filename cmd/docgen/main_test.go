@@ -104,3 +104,76 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		t.Fatal("Hugo config must not hardcode the GitHub Pages deployment URL")
 	}
 }
+
+func TestParseTxtarExpectedOutputState(t *testing.T) {
+	t.Parallel()
+
+	content := `# Scenario with want file and cmp command
+exec semedit rename --file api/server.go --symbol Old --to New
+cmp api/server.go want/api/server.go
+
+-- api/server.go --
+package api
+
+type Old struct{}
+
+-- want/api/server.go --
+package api
+
+type New struct{}
+`
+	ex := parseTxtarFile("test.txtar", content)
+	if ex == nil {
+		t.Fatal("expected non-nil TxtarExample")
+	}
+	if len(ex.Outputs) != 1 {
+		t.Fatalf("expected 1 output file, got %d", len(ex.Outputs))
+	}
+	if ex.Outputs[0].Path != "api/server.go" {
+		t.Errorf("expected output path %q, got %q", "api/server.go", ex.Outputs[0].Path)
+	}
+	if !strings.Contains(ex.Outputs[0].Content, "type New struct{}") {
+		t.Errorf("expected output content to contain %q, got %q", "type New struct{}", ex.Outputs[0].Content)
+	}
+	if len(ex.Outputs[0].DiffLines) == 0 {
+		t.Error("expected non-empty diff lines for transformation")
+	}
+}
+
+func TestRenderMarkdownOutputsExpectedState(t *testing.T) {
+	t.Parallel()
+
+	page := renderMarkdown(nil, nil, []TxtarExample{{
+		Filename: "rename.txtar",
+		Title:    "Rename Symbol",
+		Steps: []TxtarStep{{
+			Description: "Rename symbol",
+			Command:     "semedit rename --file api/server.go --symbol Old --to New",
+			MCPTool:     "semantic_rename",
+			MCPArgsJSON: `{"file":"api/server.go","symbol":"Old","to":"New"}`,
+		}},
+		Outputs: []TxtarFileOutput{{
+			Path:    "api/server.go",
+			Content: "package api\n\ntype New struct{}\n",
+			DiffLines: []DiffLine{
+				{Type: "del", Content: "- type Old struct{}"},
+				{Type: "add", Content: "+ type New struct{}"},
+			},
+		}},
+	}})
+
+	wants := []string{
+		"**Unified AST transformation diff**",
+		"```diff",
+		"+ type New struct{}",
+		"**Expected output state (`api/server.go`)**",
+		"```go",
+		"type New struct{}",
+	}
+	for _, want := range wants {
+		if !strings.Contains(page, want) {
+			t.Errorf("rendered markdown missing expected string %q", want)
+		}
+	}
+}
+

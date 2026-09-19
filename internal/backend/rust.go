@@ -127,6 +127,48 @@ func (*RustBackend) Capabilities() Capabilities {
 	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
 }
 
+// CapabilityMatrix returns the declarative documentation matrix for the Rust backend.
+func (*RustBackend) CapabilityMatrix() LanguageMatrix {
+	return LanguageMatrix{
+		Language:    "rust",
+		DisplayName: "Rust",
+		Maturity:    "Selected-file refactoring preview",
+		Operations: map[string]OpCapability{
+			"rename": {
+				Supported:    true,
+				Description:  "Trusted rust-analyzer semantic rename confined to one selected canonical Rust file; workspace-wide edits are rejected.",
+				CLICommand:   "semedit rename --language rust --trust-workspace --file <path.rs> --symbol <sym> --to <name>",
+				MCPTool:      "semantic_rename",
+				PlacementKey: false,
+			},
+			"lookup": {
+				Supported:    true,
+				Description:  "File-scoped hierarchical Rust symbol lookup through a trusted, preinstalled rust-analyzer session using UTF-16 LSP positions.",
+				CLICommand:   "semedit lookup --language rust --file <path.rs> --symbol <sym>",
+				MCPTool:      "resolve_symbol_location",
+				PlacementKey: false,
+			},
+		},
+		Limitations: []Constraint{
+			{
+				Title:       "Selected-File Rename Only",
+				Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Trusted Explicit Workspace",
+				Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Hierarchical Document Symbols",
+				Description: "Only exact hierarchical document symbols and associated items are resolved; macros, generated symbols, locals, ambiguous trait methods, and multiple impl resolution are not promised.",
+				Severity:    "info",
+			},
+		},
+	}
+}
+
 // Close terminates the managed Rust server, if one is active.
 func (b *RustBackend) Close() error {
 	if b == nil {

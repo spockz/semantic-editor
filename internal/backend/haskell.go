@@ -148,6 +148,41 @@ func (*HaskellBackend) Capabilities() Capabilities {
 	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup)
 }
 
+// CapabilityMatrix returns the declarative documentation matrix for the Haskell backend.
+func (*HaskellBackend) CapabilityMatrix() LanguageMatrix {
+	return LanguageMatrix{
+		Language:    "haskell",
+		DisplayName: "Haskell",
+		Maturity:    "Read-only preview",
+		Operations: map[string]OpCapability{
+			"lookup": {
+				Supported:    true,
+				Description:  "Explicit standalone .hs hierarchical symbol lookup through a trusted, preinstalled Haskell Language Server session using UTF-16 LSP positions.",
+				CLICommand:   "semedit lookup --language haskell --haskell-standalone --file <path.hs> --symbol <sym> --ghc-bin <path> --hls-bin <path>",
+				MCPTool:      "resolve_symbol_location",
+				PlacementKey: false,
+			},
+		},
+		Limitations: []Constraint{
+			{
+				Title:       "Lookup Only",
+				Description: "Haskell rename, formatting, imports, verification, compilation, diagnostics, and structural edits are unavailable.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Explicit Standalone Trust",
+				Description: "Lookup requires --haskell-standalone (or standalone_haskell=true), a selected .hs file, explicit workspace trust, preinstalled GHC, and a matching preinstalled haskell-language-server-wrapper; hie.yaml, stack.yaml, cabal.project, *.cabal, and package.yaml project markers are rejected.",
+				Severity:    "error",
+			},
+			{
+				Title:       "Hierarchical Document Symbols",
+				Description: "Only module, top-level values, types, classes, constructors, fields, and instances returned hierarchically by HLS are resolved; locals, pattern synonyms, duplicate record fields, reexports, generated or Template Haskell symbols, and malformed-source fallback are not promised.",
+				Severity:    "info",
+			},
+		},
+	}
+}
+
 // Close terminates the managed HLS server, if one is active.
 func (b *HaskellBackend) Close() error {
 	if b == nil {
