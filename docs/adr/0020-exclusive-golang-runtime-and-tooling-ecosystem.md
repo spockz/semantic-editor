@@ -42,7 +42,7 @@ Polyglot toolchains and multi-runtime dependencies (e.g. Python virtual environm
 * No `package.json`, `pyproject.toml`, virtual environments (`.venv`), or Python/Node scripts may be added to the repository without documented, explicit user approval.
 * Java runtime versions and direct Metals/JDT LS paths must be explicitly configured for external lookup; semedit never downloads, installs, embeds, bootstraps with Coursier, or launches a Python JDT LS launcher such as `jdtls.py`.
 * Continuous Integration (`make check`) must execute with a pure Go toolchain alongside pre-installed native binary executables.
-* All evaluation, benchmarking, and AST verification harnesses (e.g. `internal/bench`) must compile and execute as native Go programs.
+* All evaluation, benchmarking, and AST verification harnesses (e.g. `tools/benchmark-harness`) must compile and execute as native Go programs.
 
 ---
 

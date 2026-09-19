@@ -9,7 +9,7 @@ A test run that stops at the first failed assertion hides remaining defects
 and forces repeated fix-and-rerun cycles. Each cycle costs a full `go test`
 or txtar invocation plus fresh agent context. The repository already favors
 `t.Errorf` for value checks and reserves `t.Fatalf` for setup failures (see
-`internal/symbol/resolver_test.go`, `internal/bench/bench_test.go`,
+`internal/symbol/resolver_test.go`, `tools/benchmark-harness/bench_test.go`,
 `main_test.go`), and `make test` runs `go test` without `-failfast` so all
 packages report. This practice was implicit. It needs an explicit contract so
 new tests preserve single-run diagnostic completeness.
