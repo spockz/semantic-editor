@@ -18,6 +18,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"slices"
 )
 
 // Mode selects the rewrite direction.
@@ -123,8 +124,8 @@ func Apply(filename string, src []byte, mode Mode) ([]byte, Result, error) {
 // Ranges must be disjoint; they apply from the end so offsets stay valid.
 func splice(src []byte, edits []spliceEdit) []byte {
 	out := append([]byte(nil), src...)
-	for i := len(edits) - 1; i >= 0; i-- {
-		edit := edits[i]
+	for _, edit := range slices.Backward(edits) {
+
 		out = append(out[:edit.start], append([]byte(edit.text), out[edit.end:]...)...)
 	}
 	return out

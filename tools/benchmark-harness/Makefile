@@ -1,4 +1,4 @@
-# Makefile coordinates empirical benchmark execution across targets, context scales, and prompt variants for semedit.
+# Benchmark harness targets for semedit
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
@@ -11,38 +11,26 @@ VARIANTS ?= small,large
 CONCURRENCY ?= 2
 TASK ?= task-01-rename-local
 
-.DEFAULT_GOAL := help
+ifndef .DEFAULT_GOAL
+.DEFAULT_GOAL := bench-help
+endif
 
-.PHONY: help
-help: ## Show available benchmark harness targets
+.PHONY: bench-help
+bench-help: ## Show benchmark harness commands and usage examples
 	@echo "Benchmark Harness Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-15s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' "$(REPO_ROOT)/tools/benchmark-harness/Makefile" | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "Examples:"
-	@echo "  # Run a specific benchmark (small & large context, all prompt variants):"
 	@echo "  make bench TASK=generate_template_main"
 	@echo "  make bench TASK=task-01-rename-local TARGET=agy/gemini-3.8-flash-low"
-	@echo ""
-	@echo "  # Run all benchmarks across all targets and variants:"
 	@echo "  make bench-all"
-	@echo "  make bench-all TARGET=agy/gemini-3.8-flash-low CONCURRENCY=4"
-	@echo ""
-	@echo "  # Regenerate documentation with updated benchmark outcomes:"
 	@echo "  make docgen"
 
-.PHONY: list
-list: ## List all available benchmark tasks and their prompt variants
+.PHONY: list-benchmarks bench-list
+list-benchmarks: ## List all available benchmark tasks and prompt variants
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness list --dir "$(BENCH_DIR)"
 
-.PHONY: test
-test: ## Run unit tests for benchmark harness
-	@echo "==> Testing benchmark harness..."
-	cd "$(REPO_ROOT)" && go test -v ./tools/benchmark-harness
-
-.PHONY: build
-build: ## Build benchmark harness executable
-	@echo "==> Building benchmark harness..."
-	cd "$(REPO_ROOT)" && go build -o "$(REPO_ROOT)/.scratch/bin/benchmark-harness" ./tools/benchmark-harness
+bench-list: list-benchmarks ## Alias for list-benchmarks
 
 .PHONY: bench-all
 bench-all: ## Run all benchmarks in small and large context with all prompt variants
@@ -71,8 +59,3 @@ bench: ## Run a specific benchmark in small and large context (e.g. make bench T
 		--concurrency "$(CONCURRENCY)" \
 		--dir "$(BENCH_DIR)" \
 		--out-dir "$(OUT_DIR)"
-
-.PHONY: docgen
-docgen: ## Regenerate Hugo documentation site with recorded benchmark outcomes
-	@echo "==> Regenerating documentation with benchmark outcomes..."
-	cd "$(REPO_ROOT)" && make docgen
