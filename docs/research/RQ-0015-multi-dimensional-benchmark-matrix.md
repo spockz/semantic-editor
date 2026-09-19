@@ -34,7 +34,7 @@ $$\mathbf{Run} = \langle \text{Harness}, \text{Model}, \text{ReasoningLevel}, \t
 ```text
    INPUT DIMENSIONS                                                    OUTPUT RESULT
 ┌──────────────────────────────────────────────────┐                ┌───────────────────────────────────┐
-│ Harness        : agy | claude-code | direct-api  │                │ Outcome                           │
+│ Harness        : agy | claude-code | codex-cli | direct-api | local-runner │                │ Outcome                           │
 │ Model          : claude-3-7 | gpt-4o | qwen-2.5  │                │ - Compilation Clean (exit 0)      │
 │ ReasoningLevel : none | low | medium | high      │ ─────────────► │ - Semantic Correctness (AST match)│
 │ IngressMode    : baseline-diff | semedit-mcp/cli │                │ - First-Pass Success Rate         │
@@ -58,6 +58,7 @@ Harnesses introduce distinct middleware layers that influence agent trajectory:
 * **`agy` (Antigravity)**: Production IDE/CLI harness featuring rich tool schemas, subagent orchestration, and session transcripts.
 * **`claude-code` / `aider`**: CLI harnesses with built-in diff patchers, compact error reporting, and git integration.
 * **`local-runner`**: Direct driver communicating with `llama.cpp` or Ollama servers for zero-cost, local Apple Silicon runs.
+* **`codex-cli`**: OpenAI Codex CLI harness with native file-edit tools, structured diff application, and built-in retry loops. Routes through `--message` prompts with embedded tool schemas; supports both streaming and non-streaming evaluation modes.
 
 ### B. Model ($M$)
 

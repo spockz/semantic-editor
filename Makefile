@@ -183,7 +183,18 @@ verify-docs: docgen ## Generate the site and assert its published files exist
 	@test -f "$(CURDIR)/dist/docs/docs/index.html"
 	@test -f "$(CURDIR)/dist/docs/docs/getting-started/index.html"
 	@test -f "$(CURDIR)/dist/docs/docs/reference/index.html"
+	@test -f "$(CURDIR)/dist/docs/docs/benchmarks/index.html"
 	@test -f "$(CURDIR)/dist/docs/.nojekyll"
+
+.PHONY: bench bench-all list-benchmarks
+bench: ## Run a specific benchmark task via benchmark-harness (TASK=<task-name>)
+	$(MAKE) -C tools/benchmark-harness bench TASK="$(or $(TASK),task-01-rename-local)"
+
+bench-all: ## Run all benchmarks via benchmark-harness
+	$(MAKE) -C tools/benchmark-harness bench-all
+
+list-benchmarks: ## List all available benchmark tasks
+	$(MAKE) -C tools/benchmark-harness list
 
 .PHONY: clean
 clean: ## Clean build artifacts and test cache
@@ -194,3 +205,9 @@ clean: ## Clean build artifacts and test cache
 .PHONY: help
 help: ## Display this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "\033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "Benchmarking Examples:"
+	@echo "  make bench TASK=generate_template_main"
+	@echo "  make bench TASK=task-01-rename-local TARGET=agy/gemini-3.8-flash-low"
+	@echo "  make bench-all"
+	@echo "  make docgen"

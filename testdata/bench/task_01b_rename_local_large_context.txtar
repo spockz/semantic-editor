@@ -1,0 +1,421 @@
+task_id: task-01b-rename-local-large-context
+category: scale
+instruction: "Rename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "api/server.go"
+    must_contain_symbols:
+      - "Server.newName"
+    must_not_contain_symbols:
+      - "Server.oldName"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/largeproject
+go 1.23
+
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (s *Server) oldName() string {
+	return "ok"
+}
+
+func Run() string {
+	s := &Server{}
+	return s.oldName()
+}
+
+-- api/server_test.go --
+package api
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	s := Run()
+	if s != "ok" {
+		t.Fatalf("expected ok, got %s", s)
+	}
+}
+
+-- api/router.go --
+package api
+
+type Route struct {
+	Path   string
+	Method string
+}
+
+func DefaultRoutes() []Route {
+	return []Route{
+		{Path: "/healthz", Method: "GET"},
+		{Path: "/metrics", Method: "GET"},
+		{Path: "/api/v1/status", Method: "GET"},
+	}
+}
+
+-- api/middleware.go --
+package api
+
+import "time"
+
+type MiddlewareFunc func(path string, start time.Time) bool
+
+func LoggerMiddleware(path string, start time.Time) bool {
+	return len(path) > 0 && !start.IsZero()
+}
+
+-- auth/token.go --
+package auth
+
+import "errors"
+
+var ErrInvalidToken = errors.New("invalid authentication token")
+
+type TokenValidator struct {
+	SecretKey string
+}
+
+func NewValidator(key string) *TokenValidator {
+	return &TokenValidator{SecretKey: key}
+}
+
+func (v *TokenValidator) Validate(tok string) (bool, error) {
+	if tok == "" {
+		return false, ErrInvalidToken
+	}
+	return len(tok) > 8, nil
+}
+
+-- auth/session.go --
+package auth
+
+import "time"
+
+type Session struct {
+	ID        string
+	UserID    int64
+	ExpiresAt time.Time
+}
+
+func (s *Session) IsExpired() bool {
+	return time.Now().After(s.ExpiresAt)
+}
+
+-- auth/permissions.go --
+package auth
+
+type Role string
+
+const (
+	RoleAdmin Role = "admin"
+	RoleUser  Role = "user"
+)
+
+func HasPermission(r Role, action string) bool {
+	if r == RoleAdmin {
+		return true
+	}
+	return action == "read"
+}
+
+-- config/config.go --
+package config
+
+type Config struct {
+	Environment string
+	Port        int
+	Debug       bool
+}
+
+func LoadDefault() *Config {
+	return &Config{
+		Environment: "production",
+		Port:        8080,
+		Debug:       false,
+	}
+}
+
+-- config/parser.go --
+package config
+
+import "strconv"
+
+func ParsePort(val string, fallback int) int {
+	p, err := strconv.Atoi(val)
+	if err != nil || p <= 0 || p > 65535 {
+		return fallback
+	}
+	return p
+}
+
+-- db/connection.go --
+package db
+
+import "errors"
+
+var ErrConnectionFailed = errors.New("failed to connect to database")
+
+type ConnectionPool struct {
+	DSN      string
+	MaxConns int
+}
+
+func NewPool(dsn string, max int) (*ConnectionPool, error) {
+	if dsn == "" {
+		return nil, ErrConnectionFailed
+	}
+	return &ConnectionPool{DSN: dsn, MaxConns: max}, nil
+}
+
+-- db/query.go --
+package db
+
+type QueryBuilder struct {
+	table string
+	where []string
+}
+
+func From(table string) *QueryBuilder {
+	return &QueryBuilder{table: table}
+}
+
+func (qb *QueryBuilder) Where(cond string) *QueryBuilder {
+	qb.where = append(qb.where, cond)
+	return qb
+}
+
+func (qb *QueryBuilder) Build() string {
+	if len(qb.where) == 0 {
+		return "SELECT * FROM " + qb.table
+	}
+	return "SELECT * FROM " + qb.table + " WHERE " + qb.where[0]
+}
+
+-- db/migrations.go --
+package db
+
+type Migration struct {
+	Version int
+	Name    string
+}
+
+func PendingMigrations() []Migration {
+	return []Migration{
+		{Version: 1, Name: "init_schema"},
+		{Version: 2, Name: "add_indexes"},
+	}
+}
+
+-- cache/store.go --
+package cache
+
+import "sync"
+
+type MemoryStore struct {
+	mu    sync.RWMutex
+	items map[string]string
+}
+
+func NewMemoryStore() *MemoryStore {
+	return &MemoryStore{items: make(map[string]string)}
+}
+
+func (m *MemoryStore) Get(key string) (string, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	val, ok := m.items[key]
+	return val, ok
+}
+
+func (m *MemoryStore) Set(key, val string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.items[key] = val
+}
+
+-- cache/eviction.go --
+package cache
+
+type EvictionPolicy string
+
+const (
+	PolicyLRU  EvictionPolicy = "lru"
+	PolicyFIFO EvictionPolicy = "fifo"
+)
+
+type PolicyEngine struct {
+	Current EvictionPolicy
+}
+
+func (p *PolicyEngine) ShouldEvict(count, max int) bool {
+	return count > max
+}
+
+-- metrics/collector.go --
+package metrics
+
+type Counter struct {
+	name  string
+	value int64
+}
+
+func NewCounter(name string) *Counter {
+	return &Counter{name: name}
+}
+
+func (c *Counter) Inc() {
+	c.value++
+}
+
+func (c *Counter) Value() int64 {
+	return c.value
+}
+
+-- metrics/prometheus.go --
+package metrics
+
+import "fmt"
+
+func FormatPrometheus(name string, val int64) string {
+	return fmt.Sprintf("# TYPE %s counter\n%s %d\n", name, name, val)
+}
+
+-- models/user.go --
+package models
+
+type User struct {
+	ID    int64
+	Name  string
+	Email string
+}
+
+func (u *User) DisplayName() string {
+	if u.Name != "" {
+		return u.Name
+	}
+	return u.Email
+}
+
+-- models/account.go --
+package models
+
+type Account struct {
+	AccountID string
+	Balance   int64
+	Active    bool
+}
+
+func (a *Account) CanDebit(amount int64) bool {
+	return a.Active && a.Balance >= amount
+}
+
+-- models/validator.go --
+package models
+
+import "strings"
+
+func ValidateEmail(email string) bool {
+	return strings.Contains(email, "@") && strings.Contains(email, ".")
+}
+
+-- logging/logger.go --
+package logging
+
+type Level int
+
+const (
+	LevelDebug Level = iota
+	LevelInfo
+	LevelWarn
+	LevelError
+)
+
+type Logger struct {
+	MinLevel Level
+}
+
+func (l *Logger) IsEnabled(lvl Level) bool {
+	return lvl >= l.MinLevel
+}
+
+-- logging/formatter.go --
+package logging
+
+import "fmt"
+
+func FormatMessage(prefix, msg string) string {
+	return fmt.Sprintf("[%s] %s", prefix, msg)
+}
+
+-- utils/strings.go --
+package utils
+
+import "strings"
+
+func Truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
+func Capitalize(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
+-- utils/math.go --
+package utils
+
+func ClampInt(val, min, max int) int {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
+
+-- health/checker.go --
+package health
+
+type Status string
+
+const (
+	StatusHealthy   Status = "HEALTHY"
+	StatusDegraded  Status = "DEGRADED"
+	StatusUnhealthy Status = "UNHEALTHY"
+)
+
+type CheckResult struct {
+	Component string
+	Status    Status
+}
+
+func Aggregate(checks []CheckResult) Status {
+	for _, c := range checks {
+		if c.Status == StatusUnhealthy {
+			return StatusUnhealthy
+		}
+	}
+	return StatusHealthy
+}
+
+-- health/ping.go --
+package health
+
+func PingService() bool {
+	return true
+}

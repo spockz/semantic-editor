@@ -1,0 +1,361 @@
+{
+  "timestamp": "2026-09-18T08:54:10.025999+02:00",
+  "runs": [
+    {
+      "task_id": "task-01-rename-local",
+      "variant": "small",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.8-flash-low"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 4,
+      "mcp_load_turns": 0,
+      "internal_turns": 8,
+      "tool_count": 7,
+      "wall_clock_ms": 16828858750,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 52690,
+      "cached_prompt_tokens": 142408,
+      "uncached_prompt_tokens": 52690,
+      "output_tokens": 714,
+      "reasoning_tokens": 0,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 519819000
+      },
+      "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "tools_used": [
+        "view_file",
+        "find_by_name",
+        "view_file",
+        "view_file",
+        "semantic_rename",
+        "view_file",
+        "run_command"
+      ],
+      "mcp_verified": true
+    },
+    {
+      "task_id": "task-01-rename-local",
+      "variant": "small",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.8-flash-low"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 2,
+      "mcp_load_turns": 0,
+      "internal_turns": 6,
+      "tool_count": 5,
+      "wall_clock_ms": 18228257708,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 86460,
+      "cached_prompt_tokens": 93553,
+      "uncached_prompt_tokens": 86460,
+      "output_tokens": 698,
+      "reasoning_tokens": 0,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 486025750
+      },
+      "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "tools_used": [
+        "grep_search",
+        "view_file",
+        "replace_file_content",
+        "replace_file_content",
+        "run_command"
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-01-rename-local",
+      "variant": "small+verified",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.8-flash-low"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 3,
+      "mcp_load_turns": 0,
+      "internal_turns": 8,
+      "tool_count": 7,
+      "wall_clock_ms": 15737777083,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 53330,
+      "cached_prompt_tokens": 142412,
+      "uncached_prompt_tokens": 53330,
+      "output_tokens": 705,
+      "reasoning_tokens": 0,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 482273375
+      },
+      "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "tools_used": [
+        "grep_search",
+        "view_file",
+        "view_file",
+        "semantic_rename",
+        "view_file",
+        "run_command",
+        "run_command"
+      ],
+      "mcp_verified": true
+    },
+    {
+      "task_id": "task-01-rename-local",
+      "variant": "small+verified",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.8-flash-low"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 2,
+      "mcp_load_turns": 0,
+      "internal_turns": 8,
+      "tool_count": 7,
+      "wall_clock_ms": 28569263458,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 70508,
+      "cached_prompt_tokens": 134310,
+      "uncached_prompt_tokens": 70508,
+      "output_tokens": 945,
+      "reasoning_tokens": 0,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 497306291
+      },
+      "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "tools_used": [
+        "grep_search",
+        "view_file",
+        "replace_file_content",
+        "run_command",
+        "run_command",
+        "run_command",
+        "view_file"
+      ],
+      "mcp_verified": false
+    }
+  ],
+  "comparisons": [
+    {
+      "task_id": "task-01-rename-local",
+      "txtar_path": "testdata/bench/task_01_rename_local.txtar",
+      "txtar_provenance": "sha256:50c61232c233e7d42ed86846 (uncommitted)",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.8-flash-low"
+      },
+      "vanilla_prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "vanilla_verified_prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_verified_prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "small_baseline": {
+        "task_id": "task-01-rename-local",
+        "variant": "small",
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.8-flash-low"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 2,
+        "mcp_load_turns": 0,
+        "internal_turns": 6,
+        "tool_count": 5,
+        "wall_clock_ms": 18228257708,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 86460,
+        "cached_prompt_tokens": 93553,
+        "uncached_prompt_tokens": 86460,
+        "output_tokens": 698,
+        "reasoning_tokens": 0,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 486025750
+        },
+        "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "tools_used": [
+          "grep_search",
+          "view_file",
+          "replace_file_content",
+          "replace_file_content",
+          "run_command"
+        ],
+        "mcp_verified": false
+      },
+      "small_semedit": {
+        "task_id": "task-01-rename-local",
+        "variant": "small",
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.8-flash-low"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 4,
+        "mcp_load_turns": 0,
+        "internal_turns": 8,
+        "tool_count": 7,
+        "wall_clock_ms": 16828858750,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 52690,
+        "cached_prompt_tokens": 142408,
+        "uncached_prompt_tokens": 52690,
+        "output_tokens": 714,
+        "reasoning_tokens": 0,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 519819000
+        },
+        "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "tools_used": [
+          "view_file",
+          "find_by_name",
+          "view_file",
+          "view_file",
+          "semantic_rename",
+          "view_file",
+          "run_command"
+        ],
+        "mcp_verified": true
+      },
+      "small_verified_baseline": {
+        "task_id": "task-01-rename-local",
+        "variant": "small+verified",
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.8-flash-low"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 2,
+        "mcp_load_turns": 0,
+        "internal_turns": 8,
+        "tool_count": 7,
+        "wall_clock_ms": 28569263458,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 70508,
+        "cached_prompt_tokens": 134310,
+        "uncached_prompt_tokens": 70508,
+        "output_tokens": 945,
+        "reasoning_tokens": 0,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 497306291
+        },
+        "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "tools_used": [
+          "grep_search",
+          "view_file",
+          "replace_file_content",
+          "run_command",
+          "run_command",
+          "run_command",
+          "view_file"
+        ],
+        "mcp_verified": false
+      },
+      "small_verified_semedit": {
+        "task_id": "task-01-rename-local",
+        "variant": "small+verified",
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.8-flash-low"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 3,
+        "mcp_load_turns": 0,
+        "internal_turns": 8,
+        "tool_count": 7,
+        "wall_clock_ms": 15737777083,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 53330,
+        "cached_prompt_tokens": 142412,
+        "uncached_prompt_tokens": 53330,
+        "output_tokens": 705,
+        "reasoning_tokens": 0,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 482273375
+        },
+        "prompt": "Rename the unexported method Server.oldName to Server.newName and update all call-sites. Verify your changes and ensure 'go test ./...' passes with zero errors before concluding. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "tools_used": [
+          "grep_search",
+          "view_file",
+          "view_file",
+          "semantic_rename",
+          "view_file",
+          "run_command",
+          "run_command"
+        ],
+        "mcp_verified": true
+      }
+    }
+  ]
+}

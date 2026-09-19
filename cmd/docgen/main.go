@@ -143,6 +143,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error writing getting started output: %v\n", err)
 		os.Exit(1)
 	}
+	benchmarksContent, err := renderBenchmarksDoc(rootDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error rendering benchmarks output: %v\n", err)
+		os.Exit(1)
+	}
+	benchmarksFile := filepath.Join(outputDir, "content", "docs", "benchmarks.md")
+	if err := writeGeneratedFile(benchmarksFile, []byte(benchmarksContent)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmarks output: %v\n", err)
+		os.Exit(1)
+	}
 	if err := writeHugoConfig(outputDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing Hugo configuration: %v\n", err)
 		os.Exit(1)
@@ -1037,6 +1047,11 @@ enableEmoji = true
     url = "/docs/"
     identifier = "docs"
     weight = 10
+  [[menu.primary]]
+    name = "Benchmarks"
+    url = "/docs/benchmarks/"
+    identifier = "benchmarks"
+    weight = 20
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(config)); err != nil {
 		return fmt.Errorf("write hugo.toml: %w", err)
@@ -1092,6 +1107,8 @@ Use the same semantic operations through the CLI or MCP, including rename, decla
 ## Explore the documentation
 
 [Read the capability reference](docs/reference/)
+
+[View empirical benchmarks](docs/benchmarks/)
 
 The reference is generated from compiler capability declarations and executable txtar regression tests, so examples stay aligned with the implementation.
 `
