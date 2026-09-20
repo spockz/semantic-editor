@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ type fakeJavaSession struct {
 	initialize    map[string]any
 	notifications map[string]any
 	cancel        bool
+	closed        int
+	closeErr      error
 }
 
 func (f *fakeJavaSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -40,7 +43,7 @@ func (f *fakeJavaSession) Notify(_ context.Context, method string, params any) e
 	f.notifications[method] = params
 	return nil
 }
-func (f *fakeJavaSession) Close() error { return nil }
+func (f *fakeJavaSession) Close() error { f.closed++; return f.closeErr }
 
 func javaFixture(t *testing.T, source string) (string, string) {
 	t.Helper()
@@ -54,6 +57,108 @@ func javaFixture(t *testing.T, source string) (string, string) {
 
 func trustedJavaProject(root, file string) backend.ProjectContext {
 	return backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+}
+
+func TestJavaSessionFingerprintReusesAndRestarts(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project><modules><module>module</module></modules></project>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "module"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "module", "pom.xml"), []byte(`<project/>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	created := make([]*fakeJavaSession, 0, 3)
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+		session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
+		created = append(created, session)
+		return session, nil
+	})
+	project := trustedJavaProject(root, file)
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 {
+		t.Fatalf("unchanged descriptor created %d sessions", len(created))
+	}
+	if err := os.WriteFile(filepath.Join(root, "module", "pom.xml"), []byte(`<project><name>changed</name></project>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 2 || created[0].closed != 1 {
+		t.Fatalf("descriptor change sessions=%d closed=%d", len(created), created[0].closed)
+	}
+	project.Java.ImportMaven = true
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 3 || created[1].closed != 1 {
+		t.Fatalf("config change sessions=%d closed=%d", len(created), created[1].closed)
+	}
+	aliasProject := trustedJavaProject(root, file)
+	aliasProject.Java = backend.JavaConfig{}
+	aliasProject.JDTLSHome = "alias-jdtls"
+	if _, err := underTest.Lookup(context.Background(), aliasProject, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 4 {
+		t.Fatalf("alias config did not restart session: %d", len(created))
+	}
+}
+
+func TestJavaSessionFingerprintCloseFailurePreventsReplacement(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project/>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := &fakeJavaSession{closeErr: errors.New("close failed"), symbols: json.RawMessage(`[]`)}
+	created := 0
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+		created++
+		if created == 1 {
+			return first, nil
+		}
+		return &fakeJavaSession{symbols: json.RawMessage(`[]`)}, nil
+	})
+	project := trustedJavaProject(root, file)
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err == nil {
+		t.Fatal("expected lookup failure")
+	}
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project><name>changed</name></project>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := underTest.Lookup(context.Background(), project, "Thing")
+	if err == nil || !strings.Contains(err.Error(), "close stale Java session") || created != 1 {
+		t.Fatalf("err=%v created=%d", err, created)
+	}
+}
+
+func TestJavaFingerprintRejectsModuleDescriptorOutsideRoot(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	outside := filepath.Join(root, "..", "outside-java-pom.xml")
+	if err := os.WriteFile(outside, []byte(`<project/>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(outside)
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project><modules><module>../outside-java-pom</module></modules></project>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	started := false
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+		started = true
+		return nil, nil
+	})
+	_, err := underTest.Lookup(context.Background(), trustedJavaProject(root, file), "Thing")
+	if err == nil || !errors.Is(err, backend.ErrJavaFileOutsideWorkspace) || started {
+		t.Fatalf("err=%v started=%v", err, started)
+	}
 }
 
 func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {

@@ -66,6 +66,17 @@ type JavaConfig struct {
 	ImportMaven bool `json:"import_maven,omitempty"`
 }
 
+func effectiveJavaConfig(project ProjectContext) JavaConfig {
+	config := project.Java
+	if config.JDTLSHome == "" {
+		config.JDTLSHome = project.JDTLSHome
+	}
+	if config.JavaBin == "" {
+		config.JavaBin = project.JavaBin
+	}
+	return config
+}
+
 // JavaError identifies a failure in the read-only Java lookup adapter.
 type JavaError struct {
 	Op        string
@@ -126,10 +137,11 @@ func WithJavaSessionFactory(factory JavaSessionFactory) JavaBackendOption {
 
 // JavaBackend provides trusted, file-scoped lookup and rename through JDT LS.
 type JavaBackend struct {
-	mu      sync.Mutex
-	factory javaSessionFactory
-	root    string
-	session JavaSession
+	mu          sync.Mutex
+	factory     javaSessionFactory
+	root        string
+	fingerprint string
+	session     JavaSession
 }
 
 // TrustedWorkspaceRoot discovers the workspace used for trust comparison.
@@ -216,6 +228,7 @@ func (b *JavaBackend) Close() error {
 	err := b.session.Close()
 	b.session = nil
 	b.root = ""
+	b.fingerprint = ""
 	return err
 }
 
@@ -231,6 +244,11 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	if !project.WorkspaceTrust.Allows(root) {
 		return nil, &WorkspaceTrustError{Operation: OperationLookup, Language: LanguageJava, Workspace: root}
 	}
+	javaConfig := effectiveJavaConfig(project)
+	fingerprint, fingerprintErr := javaImportFingerprint(root, javaConfig)
+	if fingerprintErr != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &JavaError{Op: "lookup", File: file, Symbol: query, Err: ErrJavaMalformedResponse}
 	}
@@ -240,16 +258,15 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	if b.session != nil && b.root != root {
 		return nil, &JavaError{Op: "lookup", Workspace: root, Err: ErrJavaSessionConflict}
 	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		if err := b.session.Close(); err != nil {
+			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
+		}
+		b.session, b.root, b.fingerprint = nil, "", ""
+	}
 	if b.session == nil {
 		if b.factory == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		javaConfig := project.Java
-		if javaConfig.JDTLSHome == "" {
-			javaConfig.JDTLSHome = project.JDTLSHome
-		}
-		if javaConfig.JavaBin == "" {
-			javaConfig.JavaBin = project.JavaBin
 		}
 		session, factoryErr := b.factory(ctx, root, javaConfig)
 		if factoryErr != nil {
@@ -258,10 +275,10 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 		if session == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
-		b.session, b.root = session, root
+		b.session, b.root, b.fingerprint = session, root, fingerprint
 		if err := initializeJavaSession(ctx, session, root, javaConfig); err != nil {
 			_ = session.Close()
-			b.session, b.root = nil, ""
+			b.session, b.root, b.fingerprint = nil, "", ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: err}
 		}
 	}
@@ -293,6 +310,11 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if !request.Project.WorkspaceTrust.Allows(root) {
 		return nil, &WorkspaceTrustError{Operation: OperationRename, Language: LanguageJava, Workspace: root}
 	}
+	config := effectiveJavaConfig(request.Project)
+	fingerprint, fingerprintErr := javaImportFingerprint(root, config)
+	if fingerprintErr != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	}
 	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
 		return nil, &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrJavaRenameInvalidEdit}
 	}
@@ -301,14 +323,13 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if b.session != nil && b.root != root {
 		return nil, &JavaError{Op: "rename", Workspace: root, Err: ErrJavaSessionConflict}
 	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		if err := b.session.Close(); err != nil {
+			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
+		}
+		b.session, b.root, b.fingerprint = nil, "", ""
+	}
 	if b.session == nil {
-		config := request.Project.Java
-		if config.JDTLSHome == "" {
-			config.JDTLSHome = request.Project.JDTLSHome
-		}
-		if config.JavaBin == "" {
-			config.JavaBin = request.Project.JavaBin
-		}
 		if b.factory == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
@@ -319,10 +340,10 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 		if s == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
-		b.session, b.root = s, root
+		b.session, b.root, b.fingerprint = s, root, fingerprint
 		if initErr := initializeJavaSession(ctx, s, root, config); initErr != nil {
 			_ = s.Close()
-			b.session, b.root = nil, ""
+			b.session, b.root, b.fingerprint = nil, "", ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: initErr}
 		}
 	}
@@ -366,6 +387,7 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	}
 	_ = session.Close()
 	b.session, b.root = nil, ""
+	b.fingerprint = ""
 	return &RenameResult{Lookup: lookup}, nil
 }
 
@@ -790,6 +812,48 @@ func mavenPOMListsModule(parentPom, childDir string) bool {
 		}
 	}
 	return false
+}
+
+// javaImportFingerprint identifies the selected Maven reactor descriptors and
+// import-related runtime configuration without invoking any build tool.
+func javaImportFingerprint(root string, config JavaConfig) (string, error) {
+	hash := sha256.New()
+	_, _ = fmt.Fprintf(hash, "jdtls=%s\njava=%s\nimport_maven=%t\n", config.JDTLSHome, config.JavaBin, config.ImportMaven)
+	paths := []string{filepath.Join(CanonicalWorkspaceRoot(root), "pom.xml")}
+	seen := make(map[string]bool)
+	for len(paths) > 0 {
+		path := paths[0]
+		paths = paths[1:]
+		path = CanonicalWorkspaceRoot(path)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		if !pathWithin(CanonicalWorkspaceRoot(root), path) {
+			return "", fmt.Errorf("Java project descriptor %s is outside workspace root %s: %w", path, root, ErrJavaFileOutsideWorkspace)
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- path is derived from the trusted workspace and POM modules.
+		if os.IsNotExist(err) && path == CanonicalWorkspaceRoot(filepath.Join(root, "pom.xml")) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("read Java project descriptor %s: %w", path, err)
+		}
+		_, _ = fmt.Fprintf(hash, "%s\x00", path)
+		_, _ = hash.Write(data)
+		if len(strings.TrimSpace(string(data))) == 0 {
+			continue
+		}
+		var pom mavenPOM
+		if err := xml.Unmarshal(data, &pom); err != nil {
+			return "", fmt.Errorf("parse Java project descriptor %s: %w", path, err)
+		}
+		base := filepath.Dir(path)
+		for _, module := range pom.Modules.Module {
+			paths = append(paths, filepath.Join(base, filepath.Clean(module), "pom.xml"))
+		}
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func fileExists(path string) bool { info, err := os.Stat(path); return err == nil && !info.IsDir() }
