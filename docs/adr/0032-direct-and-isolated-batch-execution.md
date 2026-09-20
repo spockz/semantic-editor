@@ -1,4 +1,4 @@
-# ADR-0032: Direct and Isolated Batch Execution
+# ADR-0032: Direct Batch Execution and Deferred Workspace Views
 
 Status: Accepted
 Date: 2026-09-17
@@ -6,10 +6,16 @@ Date: 2026-09-17
 ## Context
 
 Semantic batches may combine language-server edits, formatters, compilers, and
-other command-line tools. Most callers prefer direct low-latency mutation and
-accept a partially applied batch when later validation reports diagnostics.
-Some callers instead need external tools to operate on a private filesystem
-view before source files are changed.
+other command-line tools. Callers prefer direct low-latency mutation and accept
+a partially applied batch when later validation reports diagnostics.
+
+A temporary copy-on-write workspace is a useful orchestration primitive, but it
+is not a different semantic-editor capability. An LLM or another controller can
+create such a workspace through its own filesystem or workspace-management MCP,
+run `semedit` there, inspect the resulting diff, and decide how to carry the
+result forward. Embedding that lifecycle here would couple the semantic engine
+to a provider, platform, repository, cache, and publication policy it does not
+need to own.
 
 ## Decision
 
@@ -18,43 +24,87 @@ authorization. Operations and optional formatting write the live workspace in
 order. A later compiler, test, lint, or formatter diagnostic returns
 `applied_with_diagnostics`; it does not roll back successful edits.
 
-Provide a separate isolated batch capability for callers that require it. It
-builds a complete logical `WorkspaceView` under `.scratch/views/` and runs all
-external tools with that root as their working directory. The view uses
-copy-on-write file clones when supported by the workspace filesystem, with a
-portable copy or persistent-mirror fallback. This supports arbitrary CLI tools,
-not only LSP overlays.
+Do not implement an embedded `WorkspaceView` or isolated-batch MCP operation
+now. There is no principled safety distinction between direct one-file and
+direct multi-file edits: both are authorized mutations in the caller's working
+copy. Direct operation is also appropriate when formatters, generators, and
+other cooperative tools need to write their normal derived files.
 
-For the isolated capability, one affected file is copied back with the atomic
-writer. Multiple affected files produce an internally generated strict unified
-patch. After validating only the affected live files' regular-file status,
-containment, symlink absence, mode, size, and nanosecond mtime against the
-batch-start metadata, the host invokes `git apply` without relaxed, index, or
-partial-reject options. Plain `git apply` works from the workspace directory
-without requiring repository metadata and rejects the entire patch if a hunk
-does not apply.
+If a future caller needs speculation before publication, it owns workspace
+isolation and publication. `semedit` continues to operate on the workspace it
+is given. This is intentionally provider-neutral: it neither selects nor
+requires a copy-on-write implementation, Git worktree, overlay filesystem, or
+operating-system sandbox.
 
 ## Invariants
 
 - No second approval, authenticated receipt, or client-supplied patch exists.
 - Direct mode reports applied operations and the resulting diff; it does not
   promise rollback or crash recovery.
-- All tools in isolated mode receive only WorkspaceView paths, never live-root
-  workspace paths.
-- Isolated mode initially permits existing regular source-file modifications
-  only. Symlinks, special files, resources, manifests, create/delete/move, and
-  binary mutation are unsupported.
-- A target whose metadata differs from the batch-start manifest, or whose
-  mtime is later than batch start, is stale and is not published.
-- Generated multi-file patches are never accepted as caller input and use no
-  `--reject`, `--3way`, `--index`, `--cached`, path-rewriting, or
-  whitespace-relaxing flags.
+- A higher-level controller may provide a private working copy, but
+  semantic-editor makes no isolation or security claim about it.
+- `semedit` does not manage copy creation, tool confinement, diff publication,
+  rollback, or workspace cleanup for a controller-owned copy.
 
 ## Consequences
 
 Direct batches remain simple and fast, with explicit partial-application
-reporting. Isolated batches have a filesystem setup cost, but CoW cloning avoids
-duplicating file data on supporting filesystems and gives arbitrary tools a
-consistent private tree. The generated patch provides review output and normal
-multi-file hunk-conflict atomicity; it does not claim crash or power-loss
-recovery.
+reporting. A controller that needs an isolated experiment can use an external
+workspace mechanism without expanding semantic-editor's trust or lifecycle
+surface.
+
+## Deferred Design Record
+
+This decision retains the investigation because it may become relevant for a
+future speculative-edit workflow, not because current direct batches are
+unsafe. Reopen it only for a concrete requirement such as previewing an
+unbounded third-party tool write set, comparing candidate transformations before
+choosing one, or preserving a stable input while another actor is concurrently
+editing the live tree.
+
+Prior art confirms that this is an orchestration-layer problem with
+platform-specific trade-offs:
+
+- Apple documents APFS copy-on-write clones through `clonefile` and
+  `copyfile`; the [APFS tools and APIs guide](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/APFS_Guide/ToolsandAPIs/ToolsandAPIs.html)
+  describes the platform primitive.
+- [cow](https://github.com/joeinnes/cow) is one external workspace manager. It
+  exposes a separate MCP that creates APFS CoW copies, runs commands there, and
+  extracts a branch or patch. It is evidence that an agent-level controller can
+  own this lifecycle, not a dependency or recommendation for semantic-editor.
+- [Git worktrees](https://git-scm.com/docs/git-worktree) are a portable
+  repository-oriented alternative, with their own checkout and untracked-file
+  trade-offs.
+- [Bubblewrap](https://manpages.debian.org/unstable/bubblewrap/bwrap.1.en.html)
+  is a Linux-specific process-isolation mechanism. It is relevant only if a
+  future requirement is operating-system confinement; a private working copy
+  alone is not a security boundary.
+
+The retained, unmerged exploration is
+`codex/direct-isolated-batch` at `de22f2c3951f048e3fe8a97b149e270981c3b983`.
+It is not a current product feature. The dedicated Sol review found these
+constraints before any future reuse:
+
+1. A view nested beneath the live repository, with inherited environment or
+   incomplete argument mapping, lets Git-aware tools rediscover and mutate the
+   live root. A future design must establish an execution boundary appropriate
+   to its stated, non-security isolation claim.
+2. A denylist cannot enforce an "existing regular source files only" boundary.
+   A future publisher needs a positive source-file classifier and must exclude
+   resources, manifests, and private scratch paths.
+3. Start metadata alone is insufficient. Publication must preserve full mode
+   and validated preimage bytes, then revalidate immediately before publishing,
+   so an intervening edit cannot become the patch preimage.
+4. A generated unified patch must reject or correctly quote control-bearing
+   filenames and verify that its parsed targets exactly match the validated
+   change set.
+5. Direct batches need one final workspace diff, including formatter and
+   import changes, on success, diagnostics, and partial semantic-operation
+   failure.
+
+The review also found that the prototype omitted empty directories and recreated
+parent directories with the wrong mode. These are design constraints, not
+implementation work authorized by this ADR.
+
+The review's final-diff finding remains a direct-batch conformance task. It is
+independent of, and must not be used to justify, an embedded workspace view.
