@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -60,6 +61,9 @@ var (
 type JavaConfig struct {
 	JDTLSHome string `json:"jdtls_home,omitempty"`
 	JavaBin   string `json:"java_bin,omitempty"`
+	// ImportMaven enables JDT LS Maven project import after explicit trust.
+	// Gradle import is never enabled by this option.
+	ImportMaven bool `json:"import_maven,omitempty"`
 }
 
 // JavaError identifies a failure in the read-only Java lookup adapter.
@@ -187,7 +191,7 @@ func (*JavaBackend) CapabilityMatrix() LanguageMatrix {
 			},
 			{
 				Title:       "Trusted Explicit Workspace",
-				Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.",
+				Description: "Lookup requires a selected .java file, an explicit or Maven-reactor-aware workspace root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked. Maven import is opt-in and Gradle import remains disabled.",
 				Severity:    "error",
 			},
 			{
@@ -255,7 +259,7 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
 		b.session, b.root = session, root
-		if err := initializeJavaSession(ctx, session, root); err != nil {
+		if err := initializeJavaSession(ctx, session, root, javaConfig); err != nil {
 			_ = session.Close()
 			b.session, b.root = nil, ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: err}
@@ -316,7 +320,7 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
 		b.session, b.root = s, root
-		if initErr := initializeJavaSession(ctx, s, root); initErr != nil {
+		if initErr := initializeJavaSession(ctx, s, root, config); initErr != nil {
 			_ = s.Close()
 			b.session, b.root = nil, ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: initErr}
@@ -511,22 +515,28 @@ func (*JavaBackend) Verify(context.Context, ProjectContext, string) ([]Diagnosti
 	return nil, &Error{Operation: OperationVerify, Language: LanguageJava, Err: ErrUnsupportedOperation}
 }
 
-var javaJDTLSSettings = map[string]any{
-	"java.autobuild.enabled":                      false,
-	"java.import.maven.enabled":                   false,
-	"java.import.gradle.enabled":                  false,
-	"java.configuration.updateBuildConfiguration": "disabled",
-	"java": map[string]any{
-		"autobuild": map[string]any{"enabled": false},
-		"import": map[string]any{
-			"maven":  map[string]any{"enabled": false},
-			"gradle": map[string]any{"enabled": false},
+func javaJDTLSSettings(config JavaConfig) map[string]any {
+	mavenImport := config.ImportMaven
+	return map[string]any{
+		"java.autobuild.enabled":                          false,
+		"java.import.maven.enabled":                       mavenImport,
+		"java.import.gradle.enabled":                      false,
+		"java.import.generatesMetadataFilesAtProjectRoot": false,
+		"java.configuration.updateBuildConfiguration":     "disabled",
+		"java": map[string]any{
+			"autobuild": map[string]any{"enabled": false},
+			"import": map[string]any{
+				"maven":                               map[string]any{"enabled": mavenImport},
+				"gradle":                              map[string]any{"enabled": false},
+				"generatesMetadataFilesAtProjectRoot": false,
+			},
+			"configuration": map[string]any{"updateBuildConfiguration": "disabled"},
 		},
-		"configuration": map[string]any{"updateBuildConfiguration": "disabled"},
-	},
+	}
 }
 
-func initializeJavaSession(ctx context.Context, session JavaSession, root string) error {
+func initializeJavaSession(ctx context.Context, session JavaSession, root string, config JavaConfig) error {
+	settings := javaJDTLSSettings(config)
 	params := map[string]any{
 		"processId":        nil,
 		"rootUri":          fileURI(root),
@@ -537,7 +547,7 @@ func initializeJavaSession(ctx context.Context, session JavaSession, root string
 			"workspace":    map[string]any{"workspaceFolders": true, "configuration": true},
 		},
 		"initializationOptions": map[string]any{"bundles": []string{}},
-		"settings":              javaJDTLSSettings,
+		"settings":              settings,
 	}
 	if _, err := session.Request(ctx, "initialize", params); err != nil {
 		return err
@@ -545,7 +555,7 @@ func initializeJavaSession(ctx context.Context, session JavaSession, root string
 	if err := session.Notify(ctx, "initialized", map[string]any{}); err != nil {
 		return err
 	}
-	return session.Notify(ctx, "workspace/didChangeConfiguration", map[string]any{"settings": javaJDTLSSettings})
+	return session.Notify(ctx, "workspace/didChangeConfiguration", map[string]any{"settings": settings})
 }
 
 func defaultJavaSessionFactory(ctx context.Context, root string, config JavaConfig) (JavaSession, error) {
@@ -721,6 +731,9 @@ func discoverJavaWorkspaceRoot(file string) (string, error) {
 			if hasMaven && hasGradle {
 				return "", ErrJavaWorkspaceAmbiguous
 			}
+			if hasMaven {
+				return discoverMavenReactorRoot(dir)
+			}
 			return CanonicalWorkspaceRoot(dir), nil
 		}
 		parent := filepath.Dir(dir)
@@ -730,6 +743,53 @@ func discoverJavaWorkspaceRoot(file string) (string, error) {
 		dir = parent
 	}
 	return "", ErrJavaWorkspaceRequired
+}
+
+// discoverMavenReactorRoot follows only explicit POM parent/module relationships.
+// It never invokes Maven or reads user settings, so discovery remains side-effect free.
+func discoverMavenReactorRoot(module string) (string, error) {
+	current := CanonicalWorkspaceRoot(module)
+	ancestor := filepath.Dir(current)
+	for ancestor != filepath.Dir(ancestor) {
+		pom := filepath.Join(ancestor, "pom.xml")
+		if fileExists(pom) {
+			if mavenPOMListsModule(pom, current) {
+				if fileExists(filepath.Join(ancestor, "build.gradle")) || fileExists(filepath.Join(ancestor, "build.gradle.kts")) {
+					return "", ErrJavaWorkspaceAmbiguous
+				}
+				current = ancestor
+			}
+		}
+		ancestor = filepath.Dir(ancestor)
+	}
+	return current, nil
+}
+
+type mavenPOM struct {
+	Parent struct {
+		RelativePath string `xml:"relativePath"`
+	} `xml:"parent"`
+	Modules struct {
+		Module []string `xml:"module"`
+	} `xml:"modules"`
+}
+
+func mavenPOMListsModule(parentPom, childDir string) bool {
+	data, err := os.ReadFile(parentPom) // #nosec G304 -- parentPom is derived from canonical workspace traversal.
+	if err != nil {
+		return false
+	}
+	var pom mavenPOM
+	if xml.Unmarshal(data, &pom) != nil {
+		return false
+	}
+	parentDir := filepath.Dir(parentPom)
+	for _, module := range pom.Modules.Module {
+		if CanonicalWorkspaceRoot(filepath.Join(parentDir, filepath.Clean(module))) == CanonicalWorkspaceRoot(childDir) {
+			return true
+		}
+	}
+	return false
 }
 
 func fileExists(path string) bool { info, err := os.Stat(path); return err == nil && !info.IsDir() }

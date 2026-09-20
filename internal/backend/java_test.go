@@ -13,10 +13,11 @@ import (
 )
 
 type fakeJavaSession struct {
-	symbols    json.RawMessage
-	methods    []string
-	initialize map[string]any
-	cancel     bool
+	symbols       json.RawMessage
+	methods       []string
+	initialize    map[string]any
+	notifications map[string]any
+	cancel        bool
 }
 
 func (f *fakeJavaSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
@@ -31,8 +32,12 @@ func (f *fakeJavaSession) Request(ctx context.Context, method string, params any
 	}
 	return f.symbols, nil
 }
-func (f *fakeJavaSession) Notify(_ context.Context, method string, _ any) error {
+func (f *fakeJavaSession) Notify(_ context.Context, method string, params any) error {
 	f.methods = append(f.methods, method)
+	if f.notifications == nil {
+		f.notifications = make(map[string]any)
+	}
+	f.notifications[method] = params
 	return nil
 }
 func (f *fakeJavaSession) Close() error { return nil }
@@ -73,6 +78,13 @@ func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	documentSymbol := caps["textDocument"].(map[string]any)["documentSymbol"].(map[string]any)
 	if documentSymbol["hierarchicalDocumentSymbolSupport"] != true {
 		t.Fatalf("missing hierarchy capability: %#v", documentSymbol)
+	}
+	settings := session.initialize["settings"].(map[string]any)
+	change := session.notifications["workspace/didChangeConfiguration"].(map[string]any)["settings"].(map[string]any)
+	for name, values := range map[string]map[string]any{"initialize": settings, "configuration-change": change} {
+		if values["java.import.maven.enabled"] != false || values["java.import.gradle.enabled"] != false || values["java.autobuild.enabled"] != false || values["java.import.generatesMetadataFilesAtProjectRoot"] != false {
+			t.Fatalf("unsafe %s settings: %#v", name, values)
+		}
 	}
 }
 
@@ -116,6 +128,133 @@ func TestJavaServiceDiscoversNearestRootAndRejectsSameLevelAmbiguity(t *testing.
 	_, err = backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil }).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
 	if !errors.Is(err, backend.ErrJavaWorkspaceAmbiguous) {
 		t.Fatalf("ambiguity error = %v", err)
+	}
+}
+
+func TestJavaMavenReactorDiscoveryAndExplicitImportSetting(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "module")
+	file := filepath.Join(module, "src", "Thing.java")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(root, "pom.xml"):   `<project><modelVersion>4.0.0</modelVersion><groupId>x</groupId><artifactId>root</artifactId><version>1</version><packaging>pom</packaging><modules><module>module</module></modules></project>`,
+		filepath.Join(module, "pom.xml"): `<project><modelVersion>4.0.0</modelVersion><parent><groupId>x</groupId><artifactId>root</artifactId><version>1</version></parent><artifactId>module</artifactId></project>`,
+		file:                             "class Thing {}\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
+	var gotRoot string
+	underTest := backend.NewJavaBackendWithFactory(func(_ context.Context, root string, config backend.JavaConfig) (backend.JavaSession, error) {
+		gotRoot = root
+		if !config.ImportMaven {
+			t.Fatal("expected explicit Maven import opt-in")
+		}
+		return session, nil
+	})
+	project := backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true), Java: backend.JavaConfig{ImportMaven: true}}
+	if _, err := underTest.Lookup(context.Background(), project, "Thing"); err != nil {
+		t.Fatal(err)
+	}
+	if gotRoot != backend.CanonicalWorkspaceRoot(root) {
+		t.Fatalf("reactor root = %q, want %q", gotRoot, root)
+	}
+	if err := os.WriteFile(filepath.Join(root, "build.gradle"), []byte(""), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file}); !errors.Is(err, backend.ErrJavaWorkspaceAmbiguous) {
+		t.Fatalf("reactor candidate ambiguity = %v", err)
+	}
+	settings := session.initialize["settings"].(map[string]any)
+	if settings["java.import.maven.enabled"] != true || settings["java.import.gradle.enabled"] != false {
+		t.Fatalf("unsafe import settings: %#v", settings)
+	}
+	if settings["java.import.generatesMetadataFilesAtProjectRoot"] != false {
+		t.Fatalf("metadata files at project root must remain disabled: %#v", settings)
+	}
+	change := session.notifications["workspace/didChangeConfiguration"].(map[string]any)["settings"].(map[string]any)
+	if change["java.import.maven.enabled"] != true || change["java.import.gradle.enabled"] != false || change["java.autobuild.enabled"] != false || change["java.import.generatesMetadataFilesAtProjectRoot"] != false {
+		t.Fatalf("unsafe configuration-change settings: %#v", change)
+	}
+}
+
+func TestJavaMavenInheritedParentDoesNotImplyReactorMembership(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "module")
+	file := filepath.Join(module, "src", "Thing.java")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(root, "pom.xml"):   `<project><packaging>pom</packaging></project>`,
+		filepath.Join(module, "pom.xml"): `<project><parent><relativePath>../pom.xml</relativePath></parent></project>`,
+		file:                             "class Thing {}\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != backend.CanonicalWorkspaceRoot(module) {
+		t.Fatalf("inherited non-reactor root = %q, want module %q", got, module)
+	}
+}
+
+func TestJavaMavenReactorDiscoverySkipsNonPOMDirectories(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "services", "widget")
+	file := filepath.Join(module, "src", "Widget.java")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(root, "pom.xml"):   `<project><modules><module>services/widget</module></modules></project>`,
+		filepath.Join(module, "pom.xml"): `<project></project>`,
+		file:                             "class Widget {}\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != backend.CanonicalWorkspaceRoot(root) {
+		t.Fatalf("root = %q, want %q", got, root)
+	}
+}
+
+func TestJavaMavenIgnoresUnrelatedPolyglotAncestor(t *testing.T) {
+	root := t.TempDir()
+	module := filepath.Join(root, "services", "widget")
+	file := filepath.Join(module, "src", "Widget.java")
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, content := range map[string]string{
+		filepath.Join(root, "pom.xml"):      `<project><packaging>pom</packaging></project>`,
+		filepath.Join(root, "build.gradle"): "",
+		filepath.Join(module, "pom.xml"):    `<project></project>`,
+		file:                                "class Widget {}\n",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != backend.CanonicalWorkspaceRoot(module) {
+		t.Fatalf("root = %q, want module %q", got, module)
 	}
 }
 

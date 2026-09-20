@@ -78,13 +78,26 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		if json.Unmarshal(payload, &request) != nil || len(request.ID) == 0 {
+		if json.Unmarshal(payload, &request) != nil {
+			continue
+		}
+		if len(request.ID) == 0 {
+			if request.Method == "workspace/didChangeConfiguration" && os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 			continue
 		}
 		var result any
 		switch request.Method {
 		case "initialize":
+			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 			result = map[string]any{"capabilities": map[string]any{}}
+		case "workspace/didChangeConfiguration":
+			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 		case "textDocument/documentSymbol":
 			result = []fakeDocumentSymbol{symbol}
 		case "textDocument/prepareRename":
@@ -116,4 +129,30 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			return
 		}
 	}
+}
+
+func assertJavaSettings(raw json.RawMessage, expected string) bool {
+	var params struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if json.Unmarshal(raw, &params) != nil {
+		return false
+	}
+	readBool := func(name string) (bool, bool) {
+		value, ok := params.Settings[name]
+		if !ok {
+			return false, false
+		}
+		boolean, ok := value.(bool)
+		return boolean, ok
+	}
+	maven, mavenOK := readBool("java.import.maven.enabled")
+	gradle, gradleOK := readBool("java.import.gradle.enabled")
+	autobuild, autobuildOK := readBool("java.autobuild.enabled")
+	metadata, metadataOK := readBool("java.import.generatesMetadataFilesAtProjectRoot")
+	if !mavenOK || !gradleOK || !autobuildOK || !metadataOK {
+		return false
+	}
+	wantMaven := expected == "enabled"
+	return maven == wantMaven && !gradle && !autobuild && !metadata
 }

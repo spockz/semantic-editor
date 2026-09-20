@@ -11,8 +11,33 @@ import (
 	"strings"
 	"testing"
 
+	"semedit/internal/backend"
 	"semedit/internal/mcp"
 )
+
+type mcpJavaSession struct{}
+
+func (mcpJavaSession) Request(_ context.Context, method string, params any) (json.RawMessage, error) {
+	switch method {
+	case "initialize":
+		return json.RawMessage(`{}`), nil
+	case "textDocument/documentSymbol":
+		return json.RawMessage(`[{"name":"Widget","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}}]`), nil
+	case "textDocument/prepareRename":
+		return json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}`), nil
+	case "textDocument/rename":
+		p := params.(map[string]any)
+		doc := p["textDocument"].(map[string]string)
+		uri := doc["uri"]
+		return json.RawMessage(fmt.Sprintf(`{"changes":{%q:[{"range":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}},"newText":"Gadget"}]}}`, uri)), nil
+	default:
+		return json.RawMessage(`{}`), nil
+	}
+}
+func (mcpJavaSession) Notify(context.Context, string, any) error { return nil }
+func (mcpJavaSession) Close() error                              { return nil }
+
+var _ backend.JavaSession = mcpJavaSession{}
 
 func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
@@ -97,6 +122,54 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
 		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	}
+}
+
+func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", ".", &out)
+	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), `"import_maven"`) < 2 {
+		t.Fatalf("MCP schemas must expose import_maven for lookup and rename: %s", out.String())
+	}
+}
+
+func TestMCPForwardsJavaMavenImportToLookupAndRename(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.java")
+	if err := os.WriteFile(file, []byte("class Widget {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range []string{"lookup", "rename"} {
+		t.Run(operation, func(t *testing.T) {
+			var got backend.JavaConfig
+			java := backend.NewJavaBackendWithFactory(func(_ context.Context, _ string, config backend.JavaConfig) (backend.JavaSession, error) {
+				got = config
+				return mcpJavaSession{}, nil
+			})
+			registry, err := backend.NewRegistry(java)
+			if err != nil {
+				t.Fatal(err)
+			}
+			service := backend.NewService(registry)
+			var out bytes.Buffer
+			args := fmt.Sprintf(`{"file":%q,"symbol":"Widget","language":"java","trust_workspace":true,"import_maven":true`, file)
+			method := "resolve_symbol_location"
+			if operation == "rename" {
+				args += `,"to":"Gadget"`
+				method = "semantic_rename"
+			}
+			args += `}`
+			input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`+"\n", method, args)
+			if err := mcp.NewServer("full", root, &out, mcp.WithService(service)).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+				t.Fatal(err)
+			}
+			if !got.ImportMaven {
+				t.Fatalf("ImportMaven was not forwarded for %s", operation)
+			}
+		})
 	}
 }
 
