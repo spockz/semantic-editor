@@ -32,9 +32,9 @@ IDE documentation groups semantic operations into capability families rather tha
 
 ## Sources
 
-* IntelliJ IDEA refactoring catalog: https://www.jetbrains.com/help/idea/refactoring-source-code.html
-* Eclipse JDT refactoring actions: https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.user/reference/ref-menu-refactor.htm
-* Visual Studio Code refactoring: https://code.visualstudio.com/docs/editing/refactoring
+* [IntelliJ IDEA refactoring catalog](https://www.jetbrains.com/help/idea/refactoring-source-code.html)
+* [Eclipse JDT refactoring actions](https://help.eclipse.org/latest/topic/org.eclipse.jdt.doc.user/reference/ref-menu-refactor.htm)
+* [Visual Studio Code refactoring](https://code.visualstudio.com/docs/editing/refactoring)
 
 ## Next Steps
 
