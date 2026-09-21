@@ -157,7 +157,8 @@ func parseTOMLSections(text string) (map[string]tomlSection, error) {
 }
 
 func normalizeTOMLTableName(name string) string {
-	return strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, `"`, "")
+	return strings.ReplaceAll(name, `'`, "")
 }
 
 func stripTOMLComment(line string) string {

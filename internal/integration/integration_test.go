@@ -158,7 +158,7 @@ func TestCodexAcceptsQuotedTargetHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(configDir, "config.toml")
-	config := "[mcp_servers.\"semedit\"]\ncommand = \"/old\"\nargs = [\"mcp\", \"--profile\", \"full\"]\n"
+	config := "[mcp_servers.'semedit']\ncommand = \"/old\"\nargs = [\"mcp\", \"--profile\", \"full\"]\n"
 	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -245,6 +245,24 @@ func TestDryRunParsesExistingState(t *testing.T) {
 	}
 }
 
+func TestMalformedDryRunDoesNotWrite(t *testing.T) {
+	workspace := t.TempDir()
+	binary := executable(t, workspace)
+	configPath := filepath.Join(workspace, ".mcp.json")
+	original := []byte(`{"mcpServers":`)
+	if err := os.WriteFile(configPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := integration.Install(integration.Request{Target: integration.TargetCopilot, Scope: integration.ScopeWorkspace, Workspace: workspace, Binary: binary, DryRun: true})
+	if err == nil {
+		t.Fatal("expected malformed dry-run error")
+	}
+	after, readErr := os.ReadFile(configPath) // #nosec G304 -- test path is created inside t.TempDir.
+	if readErr != nil || string(after) != string(original) {
+		t.Fatalf("malformed dry-run mutated config: %q, %v", after, readErr)
+	}
+}
+
 func TestCopilotCommentsFailSafelyAndUnrelatedStatusIsNotInstalled(t *testing.T) {
 	workspace := t.TempDir()
 	configPath := filepath.Join(workspace, ".mcp.json")
@@ -314,6 +332,27 @@ func TestOwnershipFailureRollsBackConfiguration(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(workspace, ".mcp.json")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("config remained after ownership failure: %v", statErr)
+	}
+}
+
+func TestOwnershipCleanupFailureRollsBackUninstall(t *testing.T) {
+	workspace := t.TempDir()
+	binary := executable(t, workspace)
+	req := integration.Request{Target: integration.TargetCopilot, Scope: integration.ScopeWorkspace, Workspace: workspace, Binary: binary}
+	if _, err := integration.Install(req); err != nil {
+		t.Fatal(err)
+	}
+	ledgerDir := filepath.Join(workspace, ".semedit")
+	if err := os.Chmod(ledgerDir, 0o500); err != nil { // #nosec G302 -- restrict fixture directory to force cleanup failure.
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Chmod(ledgerDir, 0o750) }() // #nosec G302 -- restore fixture permissions.
+	if _, err := integration.Uninstall(integration.StatusRequest{Target: req.Target, Scope: req.Scope, Workspace: workspace}); err == nil {
+		t.Fatal("expected ownership cleanup failure")
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, ".mcp.json")) // #nosec G304 -- test path is created inside t.TempDir.
+	if err != nil || !strings.Contains(string(data), "mcpServers") {
+		t.Fatalf("uninstall cleanup failure lost registration: %q, %v", data, err)
 	}
 }
 

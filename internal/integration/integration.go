@@ -280,6 +280,11 @@ func Uninstall(req StatusRequest) (Result, error) {
 		}
 	}
 	if err := removeOwnership(path, req.Target, req.Scope); err != nil {
+		if removed {
+			if rollbackErr := rollbackConfig(path, data, mode, true); rollbackErr != nil {
+				return Result{}, fmt.Errorf("remove ownership record: %w; rollback config: %w", err, rollbackErr)
+			}
+		}
 		return Result{}, err
 	}
 	result.Status = "uninstalled"
@@ -318,9 +323,6 @@ func configPath(target Target, scope Scope, workspace string) (string, error) {
 		}
 		return filepath.Join(home, ".codex", "config.toml"), nil
 	case TargetCopilot:
-		if value := os.Getenv("SEMEDIT_COPILOT_USER_CONFIG"); value != "" {
-			return filepath.Clean(value), nil
-		}
 		if value := os.Getenv("COPILOT_HOME"); value != "" {
 			return filepath.Join(value, "mcp-config.json"), nil
 		}
