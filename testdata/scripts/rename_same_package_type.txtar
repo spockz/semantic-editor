@@ -1,0 +1,29 @@
+# Exported type rename updates references in another file in the same package.
+exec semedit rename --file api/model.go --symbol Widget --to Gadget
+cmp api/model.go want/api/model.go
+cmp api/use.go want/api/use.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/model.go --
+package api
+
+type Widget struct{}
+
+-- api/use.go --
+package api
+
+func New() Widget { return Widget{} }
+
+-- want/api/model.go --
+package api
+
+type Gadget struct{}
+
+-- want/api/use.go --
+package api
+
+func New() Gadget { return Gadget{} }

@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"semedit/internal/gocache"
 )
 
 var (
@@ -62,7 +64,10 @@ func Rename(ctx context.Context, workDir string, file string, line int, col int,
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	cmd.Env = os.Environ()
+	cmd.Env, err = gocache.Environment(workDir)
+	if err != nil {
+		return fmt.Errorf("prepare gopls environment: %w", err)
+	}
 
 	var out bytes.Buffer
 	cmd.Stdout = &out

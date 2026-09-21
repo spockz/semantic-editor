@@ -6,10 +6,19 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"semedit/internal/backend"
 )
+
+func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
+	result := &backend.RenameResult{Diagnostics: backend.DiagnosticDelta{After: []string{"existing", "new"}, Introduced: []string{"new"}}}
+	err := (&backend.RenameDiagnosticsError{Result: result}).Error()
+	if !strings.Contains(err, "1 introduced compilation diagnostics") || !strings.Contains(err, "new") {
+		t.Fatalf("error = %q", err)
+	}
+}
 
 type testBackend struct {
 	language     backend.LanguageID

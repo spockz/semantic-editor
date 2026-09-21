@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -157,21 +158,35 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 	if lookup.Ambiguous {
 		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
 	}
-	before, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	before, err := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	if err != nil {
+		return nil, err
+	}
 	if err := golang.Rename(ctx, request.Project.RootDir, lookup.File, lookup.Line, lookup.Column, request.To); err != nil {
 		return nil, err
 	}
 	if request.OrganizeImports {
-		_ = pipeline.OrganizeImports(ctx, request.Project.RootDir, ".")
+		if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, "."); err != nil {
+			return nil, fmt.Errorf("organize imports after rename: %w", err)
+		}
 	} else {
-		_ = pipeline.Format(ctx, request.Project.RootDir, ".")
+		if err := pipeline.Format(ctx, request.Project.RootDir, "."); err != nil {
+			return nil, fmt.Errorf("format after rename: %w", err)
+		}
 	}
-	after, _ := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	after, err := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	if err != nil {
+		return nil, err
+	}
 	delta := pipeline.ComputeDelta(before, after)
-	return &RenameResult{Lookup: lookup, Diagnostics: DiagnosticDelta{
+	result := &RenameResult{Lookup: lookup, Diagnostics: DiagnosticDelta{
 		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
 		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
-	}, Active: after}, nil
+	}, Active: after}
+	if len(result.Diagnostics.Introduced) > 0 {
+		return result, &RenameDiagnosticsError{Result: result}
+	}
+	return result, nil
 }
 
 // Verify delegates formatting and diagnostics to the existing Go pipeline.

@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"semedit/internal/gocache"
+
 	"golang.org/x/tools/imports"
 )
 
@@ -399,7 +401,11 @@ func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
 	if effectiveDir != "" {
 		cmd.Dir = effectiveDir
 	}
-	cmd.Env = os.Environ()
+	var err error
+	cmd.Env, err = gocache.Environment(effectiveDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare go diagnostics environment: %w", err)
+	}
 
 	var out bytes.Buffer
 	cmd.Stdout = &out

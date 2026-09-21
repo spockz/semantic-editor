@@ -308,6 +308,19 @@ type RenameResult struct {
 	Active      []string
 }
 
+// RenameDiagnosticsError reports diagnostics introduced by an applied rename.
+// The edit remains on disk so callers can continue a staged refactoring.
+type RenameDiagnosticsError struct {
+	Result *RenameResult
+}
+
+func (e *RenameDiagnosticsError) Error() string {
+	if e == nil || e.Result == nil {
+		return "rename applied with compilation diagnostics"
+	}
+	return fmt.Sprintf("rename applied with %d introduced compilation diagnostics: %s", len(e.Result.Diagnostics.Introduced), strings.Join(e.Result.Diagnostics.Introduced, "; "))
+}
+
 // VerifyRequest describes a verification operation.
 type VerifyRequest struct {
 	Project            ProjectContext
