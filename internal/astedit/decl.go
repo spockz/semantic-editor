@@ -78,18 +78,32 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 		if gen, ok := snippetDecls[0].(*ast.GenDecl); ok && (gen.Tok == token.CONST || gen.Tok == token.VAR) {
 			targetGroup := findMatchingGroup(fileNode, gen.Tok, effectiveAccess)
 			if targetGroup != nil && targetGroup.Rparen.IsValid() {
-				rparenOffset := fset.Position(targetGroup.Rparen).Offset
 				specSource := extractSpecSource(source, gen.Tok)
+				insertOffset := fset.Position(targetGroup.Rparen).Offset
+				if gen.Tok == token.VAR {
+					if sentinelOffset, ok := sentinelVarInsertionOffset(fset, targetGroup, gen); ok {
+						insertOffset = sentinelOffset
+					}
+				}
 
 				var buf bytes.Buffer
-				buf.Write(content[:rparenOffset])
-				if !bytes.HasSuffix(content[:rparenOffset], []byte("\n")) {
+				buf.Write(content[:insertOffset])
+				groupEnd := fset.Position(targetGroup.Rparen).Offset
+				switch {
+				case insertOffset != groupEnd:
+					buf.WriteString(specSource)
+					buf.WriteString("\n\t")
+				case !bytes.HasSuffix(content[:insertOffset], []byte("\n")):
+					buf.WriteString("\n")
+					buf.WriteString("\t")
+				default:
+					buf.WriteString("\t")
+				}
+				if insertOffset == groupEnd {
+					buf.WriteString(specSource)
 					buf.WriteString("\n")
 				}
-				buf.WriteString("\t")
-				buf.WriteString(specSource)
-				buf.WriteString("\n")
-				buf.Write(content[rparenOffset:])
+				buf.Write(content[insertOffset:])
 
 				return writeAndOrganize(ctx, cleanPath, buf.Bytes(), opts.AutoOrganizeImports)
 			}
@@ -140,6 +154,27 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 	newContent.Write(restTrimmed)
 
 	return writeAndOrganize(ctx, cleanPath, newContent.Bytes(), opts.AutoOrganizeImports)
+}
+
+func sentinelVarInsertionOffset(fset *token.FileSet, group *ast.GenDecl, incoming *ast.GenDecl) (int, bool) {
+	if len(incoming.Specs) != 1 {
+		return 0, false
+	}
+	incomingSpec, ok := incoming.Specs[0].(*ast.ValueSpec)
+	if !ok || len(incomingSpec.Names) != 1 || !strings.HasPrefix(incomingSpec.Names[0].Name, "Err") {
+		return 0, false
+	}
+	incomingName := incomingSpec.Names[0].Name
+	for _, spec := range group.Specs {
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok || len(valueSpec.Names) != 1 || !strings.HasPrefix(valueSpec.Names[0].Name, "Err") {
+			continue
+		}
+		if valueSpec.Names[0].Name > incomingName {
+			return fset.Position(valueSpec.Pos()).Offset, true
+		}
+	}
+	return 0, false
 }
 
 func findMatchingGroup(fileNode *ast.File, tok token.Token, targetAccess AccessModifier) *ast.GenDecl {

@@ -67,7 +67,7 @@ When developing or refactoring code inside this repository, agents must dogfood 
 * **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.
 * **Declarations & Imports**: Use `semantic_insert_declaration`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_decl`, and `semantic_organize_imports`.
 * **Switch Statements**: Use `semantic_insert_case` to add dispatch branches.
-* **Dependencies**: Use `semantic_add_dependency` to add external Go modules and tidy `go.mod`.
+* **Dependencies**: Use `semantic_add_build_dependency` to add external Go modules and tidy `go.mod`.
 * **Verification & Diagnostics**: Use `semantic_verify` to confirm workspace cleanliness after modifications.
 * **Composite Refactorings**: Use `semantic_batch` to execute multiple semantic transformations in sequence.
 

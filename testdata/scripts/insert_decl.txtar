@@ -1,0 +1,77 @@
+# Test sentinel-error aware declaration insertion with alphabetical grouping
+exec semedit insert-decl --file api/errs.go --source 'var ErrAlpha = errors.New("alpha")'
+exec semedit insert-decl --file api/plain.go --source 'var ErrMike = errors.New("mike")'
+exec semedit insert-decl --file api/plain.go --source 'var Patch = 3'
+exec semedit insert-decl --file api/noblock.go --source 'var ErrSolo = errors.New("solo")'
+cmp api/errs.go want/api/errs.go
+cmp api/plain.go want/api/plain.go
+cmp api/noblock.go want/api/noblock.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/errs.go --
+package api
+
+import "errors"
+
+var (
+	ErrBravo = errors.New("bravo")
+)
+
+var Version = "1.0"
+
+-- api/plain.go --
+package api
+
+var Revision = "1.0"
+
+-- api/noblock.go --
+package api
+
+import "fmt"
+
+type Server struct{}
+
+func (s *Server) Start() {
+	fmt.Println("start")
+}
+
+-- want/api/errs.go --
+package api
+
+import "errors"
+
+var (
+	ErrAlpha = errors.New("alpha")
+	ErrBravo = errors.New("bravo")
+)
+
+var Version = "1.0"
+-- want/api/plain.go --
+package api
+
+import "errors"
+
+var Patch = 3
+
+var ErrMike = errors.New("mike")
+
+var Revision = "1.0"
+-- want/api/noblock.go --
+package api
+
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrSolo = errors.New("solo")
+
+type Server struct{}
+
+func (s *Server) Start() {
+	fmt.Println("start")
+}

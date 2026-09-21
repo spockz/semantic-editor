@@ -1,0 +1,26 @@
+# Test build-level verification: gofmt rewrite plus go vet diagnostics
+exec semedit verify --path .
+stdout 'Verification clean: 0 diagnostics'
+cmp api/server.go want/api/server.go
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/server.go --
+package api
+
+import "fmt"
+
+func Greet() {
+fmt.Println("hello world")
+}
+
+-- want/api/server.go --
+package api
+
+import "fmt"
+
+func Greet() {
+	fmt.Println("hello world")
+}

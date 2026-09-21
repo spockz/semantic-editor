@@ -77,11 +77,11 @@ func TestMCPServerLifecycle(t *testing.T) {
 		"semantic_insert_type",
 		"semantic_insert_decl",
 		"semantic_organize_imports",
-		"semantic_add_dependency",
+		"semantic_add_build_dependency",
 		"semantic_verify",
 		"semantic_snapshot",
 		"semantic_undo",
-		"resolve_symbol_location",
+		"semantic_lookup",
 	} {
 		if !toolNames[required] {
 			t.Errorf("missing tool in full profile: %s", required)
@@ -126,8 +126,8 @@ func TestMCPMutationsOnlyProfile(t *testing.T) {
 	}
 
 	for _, tool := range toolsResp.Result.Tools {
-		if tool.Name == "resolve_symbol_location" {
-			t.Errorf("mutations-only profile should not expose resolve_symbol_location")
+		if tool.Name == "semantic_lookup" {
+			t.Errorf("mutations-only profile should not expose semantic_lookup")
 		}
 	}
 }
@@ -246,7 +246,7 @@ func TestMCPToolLocationError(t *testing.T) {
 		t.Fatalf("write broken file: %v", err)
 	}
 
-	callFileMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"resolve_symbol_location","arguments":{"file":%q,"symbol":"bad"}}}`, brokenPath) + "\n"
+	callFileMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":%q,"symbol":"bad"}}}`, brokenPath) + "\n"
 	var outBuf2 bytes.Buffer
 	srv2 := mcp.NewServer("full", dir, &outBuf2)
 	if err := srv2.Serve(ctx, bytes.NewBufferString(callFileMsg)); err != nil {

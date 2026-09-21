@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"semedit/internal/backend"
+	"semedit/internal/operation"
 )
 
 const (
@@ -232,9 +233,9 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 		}
 	}
 
-	// Build the capability matrix by querying the registered backends.
-	// Only backends that implement backend.MatrixProvider are included.
-	svc := backend.NewDefaultService()
+	// The operation registry is the documentation source of truth. Language
+	// profiles provide the static limitations that accompany its handlers.
+	registry := operation.DefaultRegistry()
 	langOrder := []backend.LanguageID{
 		backend.LanguageGo,
 		backend.LanguageRust,
@@ -244,15 +245,10 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 	}
 	var capabilities []CodeCapability
 	for _, lang := range langOrder {
-		b, ok := svc.Registry.Backend(lang)
-		if !ok {
-			continue
+		m, err := registry.Matrix(lang)
+		if err != nil {
+			return nil, nil, fmt.Errorf("operation capability matrix for %s: %w", lang, err)
 		}
-		mp, ok := b.(backend.MatrixProvider)
-		if !ok {
-			continue
-		}
-		m := mp.CapabilityMatrix()
 		ops := make(map[string]OpMetadata, len(m.Operations))
 		for name, op := range m.Operations {
 			ops[name] = OpMetadata{
@@ -511,122 +507,39 @@ func mapCLIToMCP(cmd string) (string, map[string]any) {
 	if len(tokens) < 2 {
 		return "semedit", map[string]any{}
 	}
-
-	sub := tokens[1]
-	args := make(map[string]any)
-
-	flags := make(map[string]string)
+	entry, ok := operation.DefaultRegistry().LookupCLI(tokens[1])
+	if !ok {
+		return "semedit_" + tokens[1], map[string]any{}
+	}
+	flags := make(map[string][]string)
 	for i := 2; i < len(tokens); i++ {
-		tok := tokens[i]
-		if after, ok := strings.CutPrefix(tok, "--"); ok {
-			flagName := after
-			if i+1 < len(tokens) && !strings.HasPrefix(tokens[i+1], "--") {
-				flags[flagName] = tokens[i+1]
-				i++
-			} else {
-				flags[flagName] = "true"
-			}
+		name, isFlag := strings.CutPrefix(tokens[i], "--")
+		if !isFlag {
+			continue
+		}
+		value := "true"
+		if i+1 < len(tokens) && !strings.HasPrefix(tokens[i+1], "--") {
+			value = tokens[i+1]
+			i++
+		}
+		flags[name] = append(flags[name], value)
+	}
+	args := make(map[string]any)
+	for _, param := range entry.Params {
+		values := flags[param.CLIName]
+		if len(values) == 0 {
+			continue
+		}
+		switch param.Type {
+		case operation.ParamBoolean:
+			args[param.JSONName] = values[len(values)-1] == "true"
+		case operation.ParamStringSlice:
+			args[param.JSONName] = values
+		default:
+			args[param.JSONName] = values[len(values)-1]
 		}
 	}
-
-	switch sub {
-	case "insert-func":
-		args["file"] = flags["file"]
-		args["source"] = flags["source"]
-		if v, ok := flags["access"]; ok {
-			args["access_modifier"] = v
-		}
-		if v, ok := flags["placement"]; ok {
-			args["placement"] = v
-		}
-		return "semantic_insert_function", args
-
-	case "insert-type":
-		args["file"] = flags["file"]
-		args["source"] = flags["source"]
-		if v, ok := flags["placement"]; ok {
-			args["placement"] = v
-		}
-		return "semantic_insert_type", args
-
-	case "insert-decl":
-		args["file"] = flags["file"]
-		args["source"] = flags["source"]
-		if v, ok := flags["placement"]; ok {
-			args["placement"] = v
-		}
-		return "semantic_insert_decl", args
-
-	case "insert":
-		args["file"] = flags["file"]
-		args["source"] = flags["source"]
-		if v, ok := flags["placement"]; ok {
-			args["placement"] = v
-		}
-		if v, ok := flags["target"]; ok {
-			args["target_symbol"] = v
-		}
-		return "semantic_insert_declaration", args
-
-	case "rename":
-		args["file"] = flags["file"]
-		args["symbol"] = flags["symbol"]
-		args["to"] = flags["to"]
-		return "semantic_rename", args
-
-	case "imports":
-		args["file"] = flags["file"]
-		if v, ok := flags["add"]; ok {
-			args["add"] = []string{v}
-		}
-		if v, ok := flags["remove"]; ok {
-			args["remove"] = []string{v}
-		}
-		return "semantic_organize_imports", args
-
-	case "lookup":
-		args["file"] = flags["file"]
-		args["symbol"] = flags["symbol"]
-		return "resolve_symbol_location", args
-
-	case "replace-body":
-		args["file"] = flags["file"]
-		args["symbol"] = flags["symbol"]
-		if v, ok := flags["body"]; ok {
-			args["body"] = v
-		}
-		return "semantic_replace_body", args
-
-	case "scaffold-file":
-		args["file"] = flags["file"]
-		if v, ok := flags["package"]; ok {
-			args["package"] = v
-		}
-		if v, ok := flags["overwrite"]; ok {
-			args["overwrite"] = v == "true"
-		}
-		return "semantic_scaffold_file", args
-
-	case "insert-case":
-		args["file"] = flags["file"]
-		args["func"] = flags["func"]
-		if v, ok := flags["switch-on"]; ok {
-			args["switch_on"] = v
-		}
-		if v, ok := flags["placement"]; ok {
-			args["placement"] = v
-		}
-		if v, ok := flags["anchor"]; ok {
-			args["anchor"] = v
-		}
-		if v, ok := flags["case"]; ok {
-			args["case"] = v
-		}
-		return "semantic_insert_case", args
-
-	default:
-		return "semedit_" + sub, args
-	}
+	return entry.MCPName, args
 }
 
 func parseCommandLine(cmd string) []string {

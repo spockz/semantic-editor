@@ -80,6 +80,32 @@ var (
 	}
 }
 
+func TestInsertDecl_SentinelVarSortedWithinGroup(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "errors.go")
+	initial := `package errors
+
+var (
+	ErrBravo = errors.New("bravo")
+)
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	if err := InsertDecl(context.Background(), file, `var ErrAlpha = errors.New("alpha")`, DeclOptions{}); err != nil {
+		t.Fatalf("InsertDecl sentinel failed: %v", err)
+	}
+	// #nosec G304 -- test reads the controlled temporary source created above.
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	content := string(data)
+	if strings.Index(content, "ErrAlpha") > strings.Index(content, "ErrBravo") {
+		t.Fatalf("expected ErrAlpha before ErrBravo, got:\n%s", content)
+	}
+}
+
 func TestInsertDecl_Standalone(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "values.go")

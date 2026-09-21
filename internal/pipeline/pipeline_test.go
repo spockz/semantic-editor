@@ -144,7 +144,7 @@ func TestComputeDelta_Suggestions(t *testing.T) {
 	if len(delta.Suggestions) != 2 {
 		t.Fatalf("expected 2 suggestions, got %d: %v", len(delta.Suggestions), delta.Suggestions)
 	}
-	expected0 := "Run 'go get github.com/google/uuid' or use semantic_add_dependency to install the missing dependency."
+	expected0 := "Run 'go get github.com/google/uuid' or use semantic_add_build_dependency to install the missing dependency."
 	if delta.Suggestions[0] != expected0 {
 		t.Errorf("got suggestion[0] %q, want %q", delta.Suggestions[0], expected0)
 	}

@@ -32,9 +32,9 @@ Prioritize `semedit` tools over manual text replacement (`replace_file_content`)
 6. **Import Management (`semantic_organize_imports`)**:
    - Arranging imports, resolving missing packages, and removing unused imports without manual diffs.
    - Supports explicit package additions with aliases (`add: ["crand crypto/rand", "_ net/http/pprof"]`) and removals (`remove: ["net/http"]`).
-7. **Dependency Management (`semantic_add_dependency`)**:
+7. **Dependency Management (`semantic_add_build_dependency`)**:
    - Adding external Go module dependencies and tidying `go.mod` without manual shell command formatting.
-8. **Symbol Location & Coordinates (`resolve_symbol_location`)**:
+8. **Symbol Location & Coordinates (`semantic_lookup`)**:
    - Querying exact file, line, column, byte offset, and receiver for a symbol without line counting.
 9. **Verification & Diagnostics (`semantic_verify`)**:
    - Formatting source files and checking compiler diagnostics across the workspace without rolling back intermediate states.

@@ -148,14 +148,14 @@ func ComputeDelta(before []string, after []string) DiagnosticDelta {
 	for _, intro := range introduced {
 		if m := reMissingPackage.FindStringSubmatch(intro); len(m) > 1 {
 			pkg := m[1]
-			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_dependency to install the missing dependency.", pkg)
+			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_build_dependency to install the missing dependency.", pkg)
 			if !seenSuggestion[sug] {
 				suggestions = append(suggestions, sug)
 				seenSuggestion[sug] = true
 			}
 		} else if m := reNoModule.FindStringSubmatch(intro); len(m) > 1 {
 			pkg := m[1]
-			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_dependency to install the missing dependency.", pkg)
+			sug := fmt.Sprintf("Run 'go get %s' or use semantic_add_build_dependency to install the missing dependency.", pkg)
 			if !seenSuggestion[sug] {
 				suggestions = append(suggestions, sug)
 				seenSuggestion[sug] = true
