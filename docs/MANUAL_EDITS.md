@@ -47,6 +47,7 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0036** | `internal/astedit/switchcase.go`, `main.go`, `internal/mcp/server.go` | Added `semantic_insert_case` engine, Cobra subcommand, and MCP tool | Switch case clause insertion | AST statement insertion into control flow | `semantic_insert_case` |
 | **ME-0037** | `internal/mcp/batch.go`, `internal/mcp/server.go` | Added `semantic_batch` engine and MCP tool for sequential multi-edit execution | Multi-edit composition and orchestration | Protocol-level multi-edit orchestration | `semantic_batch` |
 | **ME-0038** | `internal/mcp/server.go`, `internal/mcp/reload_*.go`, `main.go`, `Makefile` | Added `semantic_reload` tool, `--live-reload` flag, listChanged capability, and atomic binary promotion (ADR-0017) | MCP server lifecycle & live re-exec | Dynamic MCP tool reload & in-place exec | `semantic_reload` |
+| **ME-0039** | `task-07-generate-template-main` benchmark trace | After `semantic_replace_body` and `semantic_organize_imports`, the agent manually re-read `main.go` to inspect the selected imports | Post-edit context feedback | Mutation results omit the post-format enclosing scope and selected imports, forcing confirmation reads before the next semantic operation | `post_edit_context` / enclosing-scope projection |
 
 ---
 

@@ -694,14 +694,14 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 			fmt.Fprintf(&buf, "**Equivalent MCP tool call (`%s`)**\n\n", step.MCPTool)
 			writeMarkdownCodeBlock(&buf, "json", step.MCPArgsJSON)
 			if step.ExpectedOut != "" {
-				for _, assertLine := range strings.Split(step.ExpectedOut, "\n") {
+				for assertLine := range strings.SplitSeq(step.ExpectedOut, "\n") {
 					if assertLine != "" {
 						fmt.Fprintf(&buf, "> Assert: %s\n\n", markdownCell(assertLine))
 					}
 				}
 			}
 			if step.ExpectedErr != "" {
-				for _, errLine := range strings.Split(step.ExpectedErr, "\n") {
+				for errLine := range strings.SplitSeq(step.ExpectedErr, "\n") {
 					if errLine != "" {
 						fmt.Fprintf(&buf, "> Expected error: %s\n\n", markdownCell(errLine))
 					}

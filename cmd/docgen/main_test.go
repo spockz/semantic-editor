@@ -176,4 +176,3 @@ func TestRenderMarkdownOutputsExpectedState(t *testing.T) {
 		}
 	}
 }
-
