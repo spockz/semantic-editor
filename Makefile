@@ -43,9 +43,19 @@ tools: ## Install development tools (linters, formatters, scanners)
 ## Formatting, Refactoring & Imports
 ## ---------------------------------------------------------
 .PHONY: fix
-fix: ## Apply automatic Go fixes and standard library modernizations
+fix: lint-fix ## Apply automatic Go fixes and standard library modernizations
 	@echo "==> Running go fix..."
 	go fix ./...
+
+.PHONY: lint-fix
+lint-fix: ## Apply unambiguous fixes supplied by configured Go linters
+	@echo "==> Applying Go linter fixes..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run --fix ./...; \
+	else \
+		echo "golangci-lint not installed. Run 'make tools' or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		exit 1; \
+	fi
 
 .PHONY: fmt
 fmt: fix ## Format Go source code and optimize imports
