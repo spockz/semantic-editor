@@ -43,6 +43,8 @@ func newRootCmd(workDir string) *cobra.Command {
 		},
 	}
 	rootCmd.AddCommand(cli.Commands(workDir)...)
+	rootCmd.AddCommand(cli.IntegrationCommands(workDir)...)
+	rootCmd.AddCommand(cli.IntegrationGroup(workDir))
 	rootCmd.AddCommand(newMCPCmd(workDir))
 	return rootCmd
 }
