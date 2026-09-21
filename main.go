@@ -17,10 +17,6 @@ func main() {
 }
 
 func run(args []string) int {
-	if len(args) == 0 {
-		fmt.Println("semedit initialized")
-		return 0
-	}
 	workDir, err := os.Getwd()
 	if err != nil {
 		workDir = "."
@@ -42,8 +38,8 @@ func newRootCmd(workDir string) *cobra.Command {
 		Short:         "Semantic Editor for LLM Intent-Driven Code Refactoring",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println("semedit initialized")
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return cmd.Help()
 		},
 	}
 	rootCmd.AddCommand(cli.Commands(workDir)...)

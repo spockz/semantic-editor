@@ -21,19 +21,14 @@ The initial CLI interface for `semedit` used the standard library `flag.FlagSet`
    Refactor `main.go` to declare CLI commands using Cobra's `*cobra.Command` tree.
 
 2. **Root Command & Default Output**:
-   The root command represents `semedit`. Invoking `semedit` with zero arguments prints `"semedit initialized"` to preserve existing initialization behavior.
+   The root command represents `semedit`. Invoking `semedit` with zero
+   arguments renders standard Cobra help.
 
-3. **Subcommand Parity**:
-   Define dedicated `*cobra.Command` instances for:
-   * `lookupCmd`
-   * `renameCmd`
-   * `insertCmd`
-   * `insertFuncCmd`
-   * `insertTypeCmd`
-   * `insertDeclCmd`
-   * `importsCmd`
-   * `getCmd`
-   * `mcpCmd`
+3. **Registry-Derived Subcommands**:
+   Build one `*cobra.Command` for every registered operation with a CLI name.
+   Command names, summaries, flags, defaults, validation, and result
+   rendering derive from the central operation registry rather than per-command
+   adapters.
 
 4. **Error & Usage Silence**:
    Set `SilenceErrors: true` and `SilenceUsage: true` on all commands. This ensures Cobra does not automatically print usage messages or unformatted errors, allowing `semedit` to format its stderr outputs and exit codes deterministically for acceptance tests.
@@ -45,8 +40,11 @@ The initial CLI interface for `semedit` used the standard library `flag.FlagSet`
 
 ## Invariants
 
-* All existing CLI command names, flag names, flag defaults, and output contracts must remain backward-compatible with existing scripts and `txtar` tests.
-* Calling `semedit` without arguments must output `"semedit initialized\n"` and exit with code 0.
+* CLI command names, flags, defaults, validation, and output contracts derive
+  from the central operation registry. A registry change intentionally changes
+  the CLI contract; compatibility shims are not maintained.
+* Calling `semedit` without arguments renders command help and exits with code
+  0.
 * CLI commands must delegate heavy transformation and validation logic to internal domain packages (`internal/astedit`, `internal/pipeline`, `internal/symbol`, `internal/mcp`).
 * Commands must return exit code 0 on success and exit code 1 on user or validation errors.
 
@@ -57,3 +55,6 @@ The initial CLI interface for `semedit` used the standard library `flag.FlagSet`
 * The CLI entry point gains robust POSIX flag parsing, shorthand flags, and consistent subcommand lifecycle.
 * Dependency on `github.com/spf13/cobra` is introduced into `go.mod`.
 * Custom argument splitting and flag set declarations in `main.go` are eliminated in favor of idiomatic Cobra command definitions.
+* The CLI presents each successful operation through its registry formatter and
+  each failure as `<command>: <error>`, producing the same standardized
+  operation semantics as MCP without historical presentation exceptions.

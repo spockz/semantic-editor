@@ -30,12 +30,12 @@ multiple languages share one func value where logic is identical. A lone
 backend language resolution. The registry never imports backend-level
 dispatch; backend leaves stay typed underneath.
 
-Presentation stays at the edge: CLI output shapes, MCP error prefixes, and
-validation message formats live in ingress adapters, driven by def metadata
-where uniform (required-parameter messages derive from contracts) and by
-explicit quirk tables where history demands it (rename rendering, undo
-conflict mapping). `semantic_reload` stays hand-wired: reply-before-reexec
-cannot fit `Dispatch`'s return-a-value contract.
+Presentation stays at the edge but is standardized: CLI commands derive their
+name, summary, flags, validation, result formatting, and error shape from the
+registered def. MCP derives its schema and dispatch from the same def. No
+historical CLI output or positional-argument compatibility adapters remain.
+`semantic_reload` stays hand-wired: reply-before-reexec cannot fit
+`Dispatch`'s return-a-value contract.
 
 Batch entries recurse through `Dispatch` with `InBatch`/`DeferImports`
 context: nesting stays rejected, import organization stays deferred to one
@@ -61,6 +61,8 @@ diagnostic deltas like standalone rename (prior bypass read as accidental).
 
 - Adding an operation means writing one def plus ingress-neutral tests; CLI,
   MCP, docs, and batch coverage follow by construction.
+- CLI contracts are intentionally registry-defined rather than
+  backward-compatible with historical command-specific spellings or output.
 - `internal/capability` keeps only transfer shapes for docgen; backend
   `CapabilityMatrix` methods and the cross-literal conformance test are
   deleted as redundant.

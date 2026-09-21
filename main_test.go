@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,5 +82,20 @@ func TestMCPLiveReloadFlag(t *testing.T) {
 	}
 	if flag.DefValue != "false" {
 		t.Errorf("expected --live-reload default value 'false', got %q", flag.DefValue)
+	}
+}
+
+func TestRootCommandWithoutArgumentsRendersHelp(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCmd(t.TempDir())
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	cmd.SetArgs(nil)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("root command without arguments failed: %v", err)
+	}
+	if !strings.Contains(output.String(), "Semantic Editor for LLM Intent-Driven Code Refactoring") {
+		t.Errorf("root help = %q, want command description", output.String())
 	}
 }

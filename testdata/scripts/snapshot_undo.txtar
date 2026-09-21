@@ -1,6 +1,6 @@
 # Transactional snapshots and conflict-checked undo
 # 1. Capture snapshot before refactoring
-exec semedit snapshot --label before-calc-edit calc.go
+exec semedit snapshot --label before-calc-edit --paths calc.go
 stdout '"snapshot_id":'
 stdout 'calc.go'
 
@@ -9,7 +9,7 @@ exec semedit replace-body --file calc.go --symbol Compute --body 'return x * 10'
 cmp calc.go want/modified_calc.go
 
 # 3. Restore pre-edit state using latest snapshot
-exec semedit undo latest
+exec semedit undo --id latest
 stdout '"restored_files":'
 stdout 'calc.go'
 cmp calc.go want/calc.go
