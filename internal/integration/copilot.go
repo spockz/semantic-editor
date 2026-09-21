@@ -1,3 +1,4 @@
+// Package integration validates and edits Copilot CLI JSON configuration.
 package integration
 
 import (
@@ -8,26 +9,53 @@ import (
 
 func copilotRegistration(req Request) map[string]any {
 	return map[string]any{
-		"type":    "stdio",
+		"type":    "local",
 		"command": req.Binary,
 		"args":    []string{"mcp", "--profile", req.Profile},
+		"tools":   []string{"*"},
 	}
+}
+
+func currentCopilotRegistration(data []byte) ([]byte, error) {
+	root := map[string]any{}
+	if hasJSONComments(data) {
+		return nil, fmt.Errorf("copilot MCP config contains comments")
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, err
+	}
+	servers, ok := root["mcpServers"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("mcpServers is not an object")
+	}
+	value, present := servers[serverName]
+	if !present {
+		return nil, fmt.Errorf("semedit registration not found")
+	}
+	registration, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("semedit registration is not an object")
+	}
+	return json.Marshal(registration)
 }
 
 func mergeCopilot(data []byte, req Request, exists bool) ([]byte, bool, error) {
 	root := map[string]any{}
 	if exists && len(bytes.TrimSpace(data)) > 0 {
-		if err := json.Unmarshal(stripJSONComments(data), &root); err != nil {
+		if hasJSONComments(data) {
+			return nil, false, fmt.Errorf("copilot MCP config contains comments; JSON comments are not supported safely")
+		}
+		if err := json.Unmarshal(data, &root); err != nil {
 			return nil, false, fmt.Errorf("parse Copilot MCP config: %w", err)
 		}
 	}
-	servers, ok := root["servers"].(map[string]any)
+	servers, ok := root["mcpServers"].(map[string]any)
 	if !ok {
-		if value, present := root["servers"]; present && value != nil {
+		if value, present := root["mcpServers"]; present && value != nil {
 			return nil, false, fmt.Errorf("copilot MCP config servers must be an object")
 		}
 		servers = map[string]any{}
-		root["servers"] = servers
+		root["mcpServers"] = servers
 	}
 	current, present := servers[serverName]
 	if present {
@@ -48,14 +76,21 @@ func mergeCopilot(data []byte, req Request, exists bool) ([]byte, bool, error) {
 
 func inspectCopilot(data []byte) (string, string, bool, error) {
 	root := map[string]any{}
-	if err := json.Unmarshal(stripJSONComments(data), &root); err != nil {
+	if hasJSONComments(data) {
+		return "", "", false, fmt.Errorf("copilot MCP config contains comments; JSON comments are not supported safely")
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
 		return "", "", false, err
 	}
-	servers, ok := root["servers"].(map[string]any)
+	servers, ok := root["mcpServers"].(map[string]any)
 	if !ok {
 		return "", "", false, nil
 	}
-	registration, ok := servers[serverName].(map[string]any)
+	value, present := servers[serverName]
+	if !present {
+		return "", "", false, nil
+	}
+	registration, ok := value.(map[string]any)
 	if !ok {
 		return "", "", false, fmt.Errorf("copilot registration %q is not an object", serverName)
 	}
@@ -67,6 +102,13 @@ func inspectCopilot(data []byte) (string, string, bool, error) {
 func copilotMatches(current map[string]any, req Request) bool {
 	command, _ := current["command"].(string)
 	if command != req.Binary {
+		return false
+	}
+	if typ, _ := current["type"].(string); typ != "local" {
+		return false
+	}
+	tools, ok := current["tools"].([]any)
+	if !ok || len(tools) != 1 || tools[0] != "*" {
 		return false
 	}
 	args, ok := current["args"].([]any)
@@ -105,10 +147,13 @@ func profileFromArgs(value any) string {
 
 func removeCopilot(data []byte) ([]byte, bool, error) {
 	root := map[string]any{}
-	if err := json.Unmarshal(stripJSONComments(data), &root); err != nil {
+	if hasJSONComments(data) {
+		return nil, false, fmt.Errorf("copilot MCP config contains comments; JSON comments are not supported safely")
+	}
+	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, false, fmt.Errorf("parse Copilot MCP config: %w", err)
 	}
-	servers, ok := root["servers"].(map[string]any)
+	servers, ok := root["mcpServers"].(map[string]any)
 	if !ok {
 		return data, false, nil
 	}
@@ -136,28 +181,11 @@ func stringsEqual(a, b []string) bool {
 	return true
 }
 
-// stripJSONComments accepts VS Code's JSONC input while keeping strings intact.
-func stripJSONComments(data []byte) []byte {
-	var out bytes.Buffer
-	inString, escaped, lineComment, blockComment := false, false, false, false
-	for index := 0; index < len(data); index++ {
+func hasJSONComments(data []byte) bool {
+	inString, escaped := false, false
+	for index := 0; index+1 < len(data); index++ {
 		char := data[index]
-		if lineComment {
-			if char == '\n' {
-				lineComment = false
-				out.WriteByte(char)
-			}
-			continue
-		}
-		if blockComment {
-			if char == '*' && index+1 < len(data) && data[index+1] == '/' {
-				blockComment = false
-				index++
-			}
-			continue
-		}
 		if inString {
-			out.WriteByte(char)
 			switch {
 			case escaped:
 				escaped = false
@@ -170,22 +198,11 @@ func stripJSONComments(data []byte) []byte {
 		}
 		if char == '"' {
 			inString = true
-			out.WriteByte(char)
 			continue
 		}
-		if char == '/' && index+1 < len(data) {
-			switch data[index+1] {
-			case '/':
-				lineComment = true
-				index++
-				continue
-			case '*':
-				blockComment = true
-				index++
-				continue
-			}
+		if char == '/' && (data[index+1] == '/' || data[index+1] == '*') {
+			return true
 		}
-		out.WriteByte(char)
 	}
-	return out.Bytes()
+	return false
 }

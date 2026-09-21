@@ -2,13 +2,13 @@
 package integration
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -123,18 +123,11 @@ func Install(req Request) (Result, error) {
 	result.Binary = req.Binary
 	result.Profile = req.Profile
 	result.Command = []string{req.Binary, "mcp", "--profile", req.Profile}
-	if req.DryRun {
-		result.Status = "dry-run"
-		result.Changed = true
-		result.Detail = "would register semedit MCP server"
-		return result, nil
-	}
-
 	data, mode, exists, err := readConfig(path)
 	if err != nil {
 		return Result{}, err
 	}
-	owned, err := ownedRegistration(path, req.Target, req.Scope)
+	owned, err := ownedRegistration(path, req.Target, req.Scope, data)
 	if err != nil {
 		return Result{}, err
 	}
@@ -155,16 +148,35 @@ func Install(req Request) (Result, error) {
 		result.Changed = false
 		return result, nil
 	}
+	if req.DryRun {
+		result.Status = "dry-run"
+		result.Changed = true
+		result.Detail = "would register semedit MCP server"
+		return result, nil
+	}
 	if err := atomicWrite(path, updated, mode); err != nil {
 		return Result{}, err
 	}
-	if err := writeOwnership(path, req.Target, req.Scope); err != nil {
-		return Result{}, err
+	if err := writeOwnership(path, req.Target, req.Scope, desiredRegistration(req)); err != nil {
+		if rollbackErr := rollbackConfig(path, data, mode, exists); rollbackErr != nil {
+			return Result{}, fmt.Errorf("write ownership record: %w; rollback config: %w", err, rollbackErr)
+		}
+		return Result{}, fmt.Errorf("write ownership record: %w", err)
 	}
 	result.Status = "installed"
 	result.Changed = true
 	result.Owned = true
 	return result, nil
+}
+
+func rollbackConfig(path string, data []byte, mode fs.FileMode, existed bool) error {
+	if existed {
+		return atomicWrite(path, data, mode)
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove newly created config: %w", err)
+	}
+	return nil
 }
 
 // Status reports only the selected target and scope. It does not execute the binary.
@@ -212,7 +224,7 @@ func Status(req StatusRequest) (Result, error) {
 	result.Profile = profile
 	result.Command = []string{binary, "mcp", "--profile", profile}
 	result.BinaryExists = binary != "" && executable(binary)
-	result.Owned, err = ownedRegistration(path, req.Target, req.Scope)
+	result.Owned, err = ownedRegistration(path, req.Target, req.Scope, data)
 	if err != nil {
 		return Result{}, err
 	}
@@ -242,7 +254,7 @@ func Uninstall(req StatusRequest) (Result, error) {
 		result.Skill = "not-installed"
 		return result, nil
 	}
-	owned, err := ownedRegistration(path, req.Target, req.Scope)
+	owned, err := ownedRegistration(path, req.Target, req.Scope, data)
 	if err != nil {
 		return Result{}, err
 	}
@@ -289,7 +301,8 @@ func configPath(target Target, scope Scope, workspace string) (string, error) {
 		}
 		switch target {
 		case TargetCopilot:
-			return filepath.Join(root, ".vscode", "mcp.json"), nil
+			// Copilot CLI reads project-local registrations from .mcp.json.
+			return filepath.Join(root, ".mcp.json"), nil
 		case TargetCodex:
 			return filepath.Join(root, ".codex", "config.toml"), nil
 		}
@@ -308,13 +321,10 @@ func configPath(target Target, scope Scope, workspace string) (string, error) {
 		if value := os.Getenv("SEMEDIT_COPILOT_USER_CONFIG"); value != "" {
 			return filepath.Clean(value), nil
 		}
-		if runtime.GOOS == "darwin" {
-			return filepath.Join(home, "Library", "Application Support", "Code", "User", "mcp.json"), nil
+		if value := os.Getenv("COPILOT_HOME"); value != "" {
+			return filepath.Join(value, "mcp-config.json"), nil
 		}
-		if value := os.Getenv("XDG_CONFIG_HOME"); value != "" {
-			return filepath.Join(value, "Code", "User", "mcp.json"), nil
-		}
-		return filepath.Join(home, ".config", "Code", "User", "mcp.json"), nil
+		return filepath.Join(home, ".copilot", "mcp-config.json"), nil
 	}
 	return "", fmt.Errorf("unsupported integration target %q", target)
 }
@@ -396,9 +406,10 @@ func atomicWrite(path string, data []byte, mode fs.FileMode) error {
 }
 
 type ownershipRecord struct {
-	Target string `json:"target"`
-	Scope  string `json:"scope"`
-	Path   string `json:"path"`
+	Target             string `json:"target"`
+	Scope              string `json:"scope"`
+	Path               string `json:"path"`
+	RegistrationDigest string `json:"registration_digest"`
 }
 
 func ownershipPath(config string, target Target, scope Scope) string {
@@ -406,7 +417,7 @@ func ownershipPath(config string, target Target, scope Scope) string {
 	return filepath.Join(base, fmt.Sprintf("%s-%s.json", target, scope))
 }
 
-func ownedRegistration(config string, target Target, scope Scope) (bool, error) {
+func ownedRegistration(config string, target Target, scope Scope, current []byte) (bool, error) {
 	data, err := os.ReadFile(ownershipPath(config, target, scope))
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -418,15 +429,54 @@ func ownedRegistration(config string, target Target, scope Scope) (bool, error) 
 	if err := json.Unmarshal(data, &record); err != nil {
 		return false, fmt.Errorf("parse ownership record: %w", err)
 	}
-	return record.Target == string(target) && record.Scope == string(scope) && filepath.Clean(record.Path) == filepath.Clean(config), nil
+	if record.Target != string(target) || record.Scope != string(scope) || filepath.Clean(record.Path) != filepath.Clean(config) {
+		return false, nil
+	}
+	digest, err := registrationDigest(current, target)
+	if err != nil {
+		return false, nil
+	}
+	return record.RegistrationDigest == digest, nil
 }
 
-func writeOwnership(config string, target Target, scope Scope) error {
-	data, err := json.Marshal(ownershipRecord{Target: string(target), Scope: string(scope), Path: config})
+func writeOwnership(config string, target Target, scope Scope, registration []byte) error {
+	digest := fmt.Sprintf("%x", sha256.Sum256(registration))
+	data, err := json.Marshal(ownershipRecord{Target: string(target), Scope: string(scope), Path: config, RegistrationDigest: digest})
 	if err != nil {
 		return fmt.Errorf("encode ownership record: %w", err)
 	}
 	return atomicWrite(ownershipPath(config, target, scope), append(data, '\n'), 0o600)
+}
+
+func registrationDigest(data []byte, target Target) (string, error) {
+	registration, err := currentRegistration(data, target)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(registration)), nil
+}
+
+func currentRegistration(data []byte, target Target) ([]byte, error) {
+	switch target {
+	case TargetCopilot:
+		return currentCopilotRegistration(data)
+	case TargetCodex:
+		return currentCodexRegistration(data)
+	default:
+		return nil, fmt.Errorf("unsupported integration target %q", target)
+	}
+}
+
+func desiredRegistration(req Request) []byte {
+	switch req.Target {
+	case TargetCopilot:
+		data, _ := json.Marshal(copilotRegistration(req))
+		return data
+	case TargetCodex:
+		return []byte(codexSection(req))
+	default:
+		return nil
+	}
 }
 
 func removeOwnership(config string, target Target, scope Scope) error {
