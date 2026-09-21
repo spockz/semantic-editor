@@ -477,7 +477,7 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.
-func (b *RustBackend) Verify(context.Context, ProjectContext, string) ([]Diagnostic, error) {
+func (b *RustBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
 	return nil, &Error{Operation: OperationVerify, Language: LanguageRust, Err: ErrUnsupportedOperation}
 }
 

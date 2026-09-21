@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,20 +17,36 @@ import (
 )
 
 type fakeJavaSession struct {
-	symbols       json.RawMessage
-	methods       []string
-	initialize    map[string]any
-	notifications map[string]any
-	cancel        bool
-	closed        int
-	closeErr      error
+	symbols            json.RawMessage
+	methods            []string
+	requests           map[string]any
+	initialize         map[string]any
+	notifications      map[string]any
+	cancel             bool
+	closed             int
+	closeErr           error
+	formatting         json.RawMessage
+	codeAction         json.RawMessage
+	diagnostics        []backend.Diagnostic
+	diagnosticsVersion int
+	blockDiagnostics   bool
 }
 
 func (f *fakeJavaSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	f.methods = append(f.methods, method)
+	if f.requests == nil {
+		f.requests = make(map[string]any)
+	}
+	f.requests[method] = params
 	if method == "initialize" {
 		f.initialize = params.(map[string]any)
 		return json.RawMessage(`{}`), nil
+	}
+	if method == "textDocument/formatting" && f.formatting != nil {
+		return f.formatting, nil
+	}
+	if method == "textDocument/codeAction" && f.codeAction != nil {
+		return f.codeAction, nil
 	}
 	if f.cancel {
 		<-ctx.Done()
@@ -42,6 +61,19 @@ func (f *fakeJavaSession) Notify(_ context.Context, method string, params any) e
 	}
 	f.notifications[method] = params
 	return nil
+}
+func (f *fakeJavaSession) WaitDiagnostics(ctx context.Context, _ string, version int) ([]backend.Diagnostic, error) {
+	f.diagnosticsVersion = version
+	if f.blockDiagnostics {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+		return f.diagnostics, nil
+	}
 }
 func (f *fakeJavaSession) Close() error { f.closed++; return f.closeErr }
 
@@ -146,7 +178,7 @@ func TestJavaFingerprintRejectsModuleDescriptorOutsideRoot(t *testing.T) {
 	if err := os.WriteFile(outside, []byte(`<project/>`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(outside)
+	defer func() { _ = os.Remove(outside) }()
 	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte(`<project><modules><module>../outside-java-pom</module></modules></project>`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -394,4 +426,216 @@ func TestJavaLookupPropagatesCancellation(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancellation error = %v", err)
 	}
+}
+
+func TestJavaVerifyFormattingWritesAndForwardsDiagnostics(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	session := &fakeJavaSession{
+		formatting:  json.RawMessage(`[{"range":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}},"newText":"Gadget"}]`),
+		diagnostics: []backend.Diagnostic{{Message: "warning", Severity: 2}},
+	}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+		return session, nil
+	})
+	result, err := underTest.Verify(context.Background(), backend.VerifyRequest{
+		Project:            trustedJavaProject(root, file),
+		FormatSelectedFile: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "class Gadget {}\n" {
+		t.Fatalf("formatted source = %q", contents)
+	}
+	if len(result) != 1 || result[0].Message != "warning" {
+		t.Fatalf("diagnostics = %#v", result)
+	}
+	for _, method := range []string{"initialize", "textDocument/didOpen", "textDocument/formatting", "textDocument/didChange", "textDocument/didSave"} {
+		if !containsString(session.methods, method) {
+			t.Fatalf("missing session method %q in %v", method, session.methods)
+		}
+	}
+}
+
+func TestJavaVerifyOrganizeImportsWritesSelectedFile(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	uri := (&url.URL{Scheme: "file", Path: file}).String()
+	session := &fakeJavaSession{codeAction: json.RawMessage(fmt.Sprintf(`[{"kind":"source.organizeImports","edit":{"changes":{%q:[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"import x.Y;\n"}]}}}]`, uri))}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), OrganizeImports: true}); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(contents) != "import x.Y;\nclass Thing {}\n" {
+		t.Fatalf("organized source = %q", contents)
+	}
+	if !containsString(session.methods, "textDocument/codeAction") {
+		t.Fatalf("codeAction was not requested: %v", session.methods)
+	}
+}
+
+func TestJavaVerifyNoOpPreservesFileAndDoesNotNotifyMutation(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	before, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uri := (&url.URL{Scheme: "file", Path: file}).String()
+	session := &fakeJavaSession{
+		formatting:  json.RawMessage(`[ {"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"newText":"class"} ]`),
+		codeAction:  json.RawMessage(fmt.Sprintf(`[ {"kind":"source.organizeImports","edit":{"changes":{%q:[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"newText":"class"}]}}} ]`, uri)),
+		diagnostics: []backend.Diagnostic{{Message: "warning", Severity: 2}},
+	}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+		return session, nil
+	})
+	result, err := underTest.Verify(context.Background(), backend.VerifyRequest{
+		Project:            trustedJavaProject(root, file),
+		FormatSelectedFile: true,
+		OrganizeImports:    true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("no-op formatting changed mtime from %v to %v", before.ModTime(), after.ModTime())
+	}
+	if containsString(session.methods, "textDocument/didChange") || containsString(session.methods, "textDocument/didSave") {
+		t.Fatalf("no-op formatting fabricated mutation notification: %v", session.methods)
+	}
+	if session.diagnosticsVersion != 1 {
+		t.Fatalf("diagnostics readiness version = %d, want 1", session.diagnosticsVersion)
+	}
+	if params, ok := session.requests["textDocument/codeAction"].(map[string]any); !ok || params["textDocument"].(map[string]any)["version"] != 1 {
+		t.Fatalf("no-op codeAction did not target version 1: %#v", session.requests["textDocument/codeAction"])
+	}
+	if len(result) != 1 || result[0].Message != "warning" {
+		t.Fatalf("diagnostics = %#v", result)
+	}
+}
+
+func TestJavaVerifySurfacesCloseFailureAfterSuccess(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	session := &fakeJavaSession{
+		formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":""}]`),
+		closeErr:   errors.New("close failed"),
+	}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	_, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true})
+	if err == nil || !strings.Contains(err.Error(), "close Java session") {
+		t.Fatalf("close error = %v", err)
+	}
+}
+
+func TestJavaVerifyCombinedActionsSynchronizeFormattingVersion(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	uri := (&url.URL{Scheme: "file", Path: file}).String()
+	session := &fakeJavaSession{
+		formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"// formatted\n"}]`),
+		codeAction: json.RawMessage(fmt.Sprintf(`[{"kind":"source.organizeImports","edit":{"documentChanges":[{"textDocument":{"uri":%q,"version":2},"edits":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"import x.Y;\n"}]}]}}]`, uri)),
+	}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true, OrganizeImports: true}); err != nil {
+		t.Fatal(err)
+	}
+	params, ok := session.requests["textDocument/codeAction"].(map[string]any)
+	if !ok || params["textDocument"].(map[string]any)["version"] != 2 {
+		t.Fatalf("codeAction did not target synchronized version 2: %#v", session.requests["textDocument/codeAction"])
+	}
+}
+
+func TestJavaVerifyInvalidFormatterEditClosesSession(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	session := &fakeJavaSession{formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":99},"end":{"line":0,"character":100}},"newText":"x"}]`)}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true}); err == nil {
+		t.Fatal("invalid formatting edit unexpectedly succeeded")
+	}
+	if session.closed != 1 {
+		t.Fatalf("invalid edit closed session %d times, want 1", session.closed)
+	}
+}
+
+func TestJavaVerifyDiagnosticsTimeoutIsDistinct(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	session := &fakeJavaSession{
+		formatting:       json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":""}]`),
+		blockDiagnostics: true,
+	}
+	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	_, err := underTest.Verify(ctx, backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true})
+	if !errors.Is(err, backend.ErrJavaDiagnosticsTimeout) {
+		t.Fatalf("timeout error = %v", err)
+	}
+}
+
+func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
+	tests := []struct {
+		name       string
+		project    func(root, file string) backend.ProjectContext
+		formatting json.RawMessage
+		codeAction json.RawMessage
+		format     bool
+		organize   bool
+	}{
+		{name: "no actions", project: trustedJavaProject},
+		{name: "untrusted", project: func(root, file string) backend.ProjectContext {
+			return backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageJava}
+		}, format: true},
+		{name: "non java", project: func(root, file string) backend.ProjectContext {
+			p := trustedJavaProject(root, file)
+			p.File = filepath.Join(root, "Thing.txt")
+			return p
+		}, format: true},
+		{name: "overlap formatting", project: trustedJavaProject, formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":6}},"newText":"x"},{"range":{"start":{"line":0,"character":5},"end":{"line":0,"character":11}},"newText":"y"}]`), format: true},
+		{name: "organize command", project: trustedJavaProject, codeAction: json.RawMessage(`[{"kind":"source.organizeImports","command":{"title":"run"}}]`), organize: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			root, file := javaFixture(t, "class Thing {}\n")
+			original, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			started := false
+			session := &fakeJavaSession{formatting: tc.formatting, codeAction: tc.codeAction}
+			underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+				started = true
+				return session, nil
+			})
+			_, err = underTest.Verify(context.Background(), backend.VerifyRequest{Project: tc.project(root, file), FormatSelectedFile: tc.format, OrganizeImports: tc.organize})
+			if err == nil {
+				t.Fatal("Verify unexpectedly succeeded")
+			}
+			contents, readErr := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(contents) != string(original) {
+				t.Fatalf("unsafe request changed file to %q", contents)
+			}
+			if tc.name == "no actions" || tc.name == "untrusted" || tc.name == "non java" {
+				if started {
+					t.Fatal("unsafe request started a Java session")
+				}
+			}
+		})
+	}
+}
+
+func containsString(values []string, want string) bool {
+	return slices.Contains(values, want)
 }

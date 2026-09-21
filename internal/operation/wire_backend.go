@@ -44,8 +44,10 @@ func (r *RenameReq) SetProjectContext(project backend.ProjectContext) { r.Projec
 
 // VerifyReq requests formatting and diagnostics through the selected language backend.
 type VerifyReq struct {
-	Project backend.ProjectContext
-	Path    string
+	Project            backend.ProjectContext
+	Path               string
+	FormatSelectedFile bool
+	OrganizeImports    bool
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -73,6 +75,7 @@ var lookupParams = []ParameterContract{
 	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
 	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
+	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
 	{Name: "metals_home", CLIName: "metals-home", JSONName: "metals_home", Description: "Explicit preinstalled pinned Metals distribution home required for Scala lookup", Type: ParamString},
 	{Name: "metals_bin", CLIName: "metals-bin", JSONName: "metals_bin", Description: "Direct pinned Metals executable, alternative to metals_home", Type: ParamString},
 	{Name: "java_version", CLIName: "java-version", JSONName: "java_version", Description: "Recorded Java major version required for Scala lookup", Type: ParamString},
@@ -91,13 +94,20 @@ var renameParams = []ParameterContract{
 	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
 	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
+	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
 	{Name: "auto_organize_imports", CLIName: "", JSONName: "auto_organize_imports", Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
 }
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional file or directory path to check and format", Type: ParamString, Default: "."},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java source file; required for Java verification", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
 	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
+	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
+	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: "format_selected_file", CLIName: "format-selected-file", JSONName: "format_selected_file", Description: "Apply JDT LS formatting to the selected Java file", Type: ParamBoolean, Default: false},
+	{Name: "organize_imports", CLIName: "organize-imports", JSONName: "organize_imports", Description: "Apply bounded JDT LS source.organizeImports to the selected Java file", Type: ParamBoolean, Default: false},
 }
 
 func parseLookup(raw map[string]any) (LookupReq, error) {
@@ -125,6 +135,10 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 		return LookupReq{}, err
 	}
 	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
+	if err != nil {
+		return LookupReq{}, err
+	}
+	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
 	if err != nil {
 		return LookupReq{}, err
 	}
@@ -165,7 +179,7 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 			File:           file,
 			Language:       backend.LanguageID(language),
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
+			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
 			Scala: backend.ScalaConfig{
 				MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion,
 			},
@@ -210,6 +224,10 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 	if err != nil {
 		return RenameReq{}, err
 	}
+	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
+	if err != nil {
+		return RenameReq{}, err
+	}
 	organizeImports, err := ParseBool(raw, "auto_organize_imports", "", true)
 	if err != nil {
 		return RenameReq{}, err
@@ -219,7 +237,7 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 			File:           file,
 			Language:       backend.LanguageID(language),
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin},
+			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
 		},
 		Symbol:          backend.NormalizeRenameInput(symbol),
 		To:              backend.NormalizeRenameInput(to),
@@ -235,6 +253,13 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	file, err := ParseString(raw, "file", "file", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	if file != "" {
+		path = file
+	}
 	language, err := ParseEnum(raw, "language", "language", languageEnums, false, "")
 	if err != nil {
 		return VerifyReq{}, err
@@ -243,13 +268,36 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	jdtlsHome, err := ParseString(raw, "jdtls_home", "jdtls-home", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	formatSelected, err := ParseBool(raw, "format_selected_file", "format-selected-file", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	organizeImports, err := ParseBool(raw, "organize_imports", "organize-imports", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
 	return VerifyReq{
 		Project: backend.ProjectContext{
 			File:           path,
 			Language:       backend.LanguageID(language),
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
+			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
 		},
-		Path: path,
+		Path:               path,
+		FormatSelectedFile: formatSelected,
+		OrganizeImports:    organizeImports,
 	}, nil
 }
 
@@ -291,15 +339,19 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 	if strings.TrimSpace(path) == "" {
 		path = "."
 	}
-	formatted, err := gofmtListsFiles(ctx, project.RootDir, path)
-	if err != nil {
-		return VerifyRes{}, err
+	formatted := false
+	if project.Language != backend.LanguageJava && (project.Language != backend.LanguageAuto || !strings.HasSuffix(strings.ToLower(path), ".java")) {
+		var err error
+		formatted, err = gofmtListsFiles(ctx, project.RootDir, path)
+		if err != nil {
+			return VerifyRes{}, err
+		}
 	}
 	service := cc.Service
 	if service == nil {
 		service = backend.NewDefaultService()
 	}
-	result, err := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path})
+	result, err := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path, FormatSelectedFile: request.FormatSelectedFile, OrganizeImports: request.OrganizeImports})
 	if err != nil {
 		return VerifyRes{}, err
 	}
@@ -406,14 +458,15 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 func verifyDef() Def[VerifyReq, VerifyRes] {
 	return Def[VerifyReq, VerifyRes]{
 		Key:     capability.OpVerify,
-		Summary: "Format Go sources with gofmt -w then report go vet ./... diagnostics at the module root without rolling back.",
+		Summary: "Verify Go sources or apply bounded trusted Java JDT LS formatting/import actions and report diagnostics without Maven/Gradle execution.",
 		Params:  verifyParams,
 		Level:   LevelBuild,
 		CLIName: "verify",
 		MCPName: "semantic_verify",
 		Parse:   parseVerify,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, VerifyReq) (VerifyRes, error){
-			backend.LanguageGo: verifyRun,
+			backend.LanguageGo:   verifyRun,
+			backend.LanguageJava: verifyRun,
 		},
 		Format: formatVerify,
 		ExampleRaw: map[string]any{

@@ -175,7 +175,8 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 }
 
 // Verify delegates formatting and diagnostics to the existing Go pipeline.
-func (GoBackend) Verify(ctx context.Context, project ProjectContext, path string) ([]Diagnostic, error) {
+func (GoBackend) Verify(ctx context.Context, request VerifyRequest) ([]Diagnostic, error) {
+	project, path := request.Project, request.Path
 	if path == "" {
 		path = "."
 	}

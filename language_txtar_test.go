@@ -65,6 +65,7 @@ func fakeRange(start, end int) fakeLSPRange {
 func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 	reader := lsp.NewFrameReader(os.Stdin, 0)
 	writer := lsp.NewFrameWriter(os.Stdout, 0)
+	formattingSeen, codeActionSeen := false, false
 	for {
 		payload, err := reader.ReadMessage()
 		if errors.Is(err, io.EOF) {
@@ -82,6 +83,24 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			continue
 		}
 		if len(request.ID) == 0 {
+			if request.Method == "textDocument/didChange" {
+				var change struct {
+					TextDocument struct {
+						URI     string `json:"uri"`
+						Version int    `json:"version"`
+					} `json:"textDocument"`
+				}
+				_ = json.Unmarshal(request.Params, &change)
+				if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!formattingSeen || !codeActionSeen) {
+					return
+				}
+				if change.TextDocument.Version <= 2 {
+					continue
+				}
+				params, _ := json.Marshal(map[string]any{"uri": change.TextDocument.URI, "version": change.TextDocument.Version, "diagnostics": []any{}})
+				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+				_ = writer.WriteMessage(notification)
+			}
 			if request.Method == "workspace/didChangeConfiguration" && os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
 				return
 			}
@@ -102,6 +121,18 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			result = []fakeDocumentSymbol{symbol}
 		case "textDocument/prepareRename":
 			result = symbol.SelectionRange
+		case "textDocument/formatting":
+			formattingSeen = true
+			result = []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 2}}, "newText": "class Widget {}\n"}}
+		case "textDocument/codeAction":
+			codeActionSeen = true
+			var params struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			result = []map[string]any{{"kind": "source.organizeImports", "edit": map[string]any{"changes": map[string]any{params.TextDocument.URI: []map[string]any{{"range": fakeLSPRange{}, "newText": ""}}}}}}
 		case "textDocument/rename":
 			var params struct {
 				TextDocument struct {

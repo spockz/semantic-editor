@@ -24,7 +24,7 @@ func (b testBackend) Lookup(context.Context, backend.ProjectContext, string) (*b
 func (b testBackend) Rename(context.Context, backend.RenameRequest) (*backend.RenameResult, error) {
 	return &backend.RenameResult{}, nil
 }
-func (b testBackend) Verify(context.Context, backend.ProjectContext, string) ([]backend.Diagnostic, error) {
+func (b testBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.Diagnostic, error) {
 	return nil, nil
 }
 

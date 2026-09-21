@@ -265,7 +265,7 @@ func (*HaskellBackend) Rename(context.Context, RenameRequest) (*RenameResult, er
 }
 
 // Verify is intentionally unavailable for the Haskell lookup-only slice.
-func (*HaskellBackend) Verify(context.Context, ProjectContext, string) ([]Diagnostic, error) {
+func (*HaskellBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
 	return nil, &Error{Operation: OperationVerify, Language: LanguageHaskell, Err: ErrUnsupportedOperation}
 }
 
