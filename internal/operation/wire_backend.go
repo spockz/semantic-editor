@@ -495,5 +495,8 @@ func DefaultRegistry() *Registry {
 	if err := registerWorkspaceOps(registry); err != nil {
 		panic(err)
 	}
+	if err := registerMavenOps(registry); err != nil {
+		panic(err)
+	}
 	return registry
 }

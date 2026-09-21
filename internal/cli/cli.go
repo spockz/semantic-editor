@@ -14,6 +14,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/maven"
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
@@ -160,6 +161,22 @@ func stdoutJSON(value any) error {
 	}
 	fmt.Println(string(data))
 	return nil
+}
+
+func handleMavenError(op string, err error) error {
+	var mavenErr *maven.Error
+	if errors.As(err, &mavenErr) && mavenErr.MavenResult() != nil {
+		payload := struct {
+			Error  string        `json:"error"`
+			Result *maven.Result `json:"result"`
+		}{Error: err.Error(), Result: mavenErr.MavenResult()}
+		if formatted, formatErr := json.MarshalIndent(payload, "", "  "); formatErr == nil {
+			fmt.Fprintln(os.Stderr, string(formatted))
+			return ErrCommandFailed
+		}
+	}
+	FormatCLIError(op, err)
+	return ErrCommandFailed
 }
 
 // fileEdit renders FileEditRes with a caller-supplied detail template.
@@ -433,6 +450,28 @@ func specs() map[string]commandSpec {
 				return ErrCommandFailed
 			},
 		},
+		"maven_compile": {
+			use: "maven-compile", short: "Run fixed Maven test-compile for a trusted Java root POM",
+			output: func(entry operation.Entry, _ *flagValues, result any) error {
+				text, err := entry.Format(result)
+				if err == nil {
+					fmt.Println(text)
+				}
+				return err
+			},
+			handleErr: func(_ *flagValues, err error) error { return handleMavenError("maven-compile", err) },
+		},
+		"maven_test": {
+			use: "maven-test", short: "Run fixed Maven test for a trusted Java root POM",
+			output: func(entry operation.Entry, _ *flagValues, result any) error {
+				text, err := entry.Format(result)
+				if err == nil {
+					fmt.Println(text)
+				}
+				return err
+			},
+			handleErr: func(_ *flagValues, err error) error { return handleMavenError("maven-test", err) },
+		},
 		"add_build_dependency": {
 			use:   "add-build-dependency <package>",
 			short: "Add external module to the build and tidy go.mod",
@@ -534,7 +573,7 @@ func specs() map[string]commandSpec {
 
 // commandOrder fixes help listing and generation order.
 var commandOrder = []string{
-	"lookup", "rename", "verify",
+	"lookup", "rename", "verify", "maven_compile", "maven_test",
 	"insert_declaration", "insert_function", "insert_type", "insert_decl",
 	"organize_imports", "add_build_dependency",
 	"replace_body", "scaffold_file", "insert_case",

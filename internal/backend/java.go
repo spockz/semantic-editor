@@ -272,7 +272,7 @@ func (*JavaBackend) CapabilityMatrix() LanguageMatrix {
 			},
 			{
 				Title:       "Trusted Explicit Workspace",
-				Description: "Lookup requires a selected .java file, an explicit or Maven-reactor-aware workspace root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked. Maven import is opt-in and Gradle import remains disabled.",
+				Description: "JDT LS lookup and edits remain selected-file operations with explicit trust and a preinstalled distribution; Maven process actions are registered separately and are not JDT LS capabilities. Gradle import remains disabled.",
 				Severity:    "error",
 			},
 			{

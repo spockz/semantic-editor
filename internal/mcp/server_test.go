@@ -242,6 +242,40 @@ func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
 	}
 }
 
+func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mavenBin := filepath.Join(root, "mvn-fail")
+	if err := os.WriteFile(mavenBin, []byte("#!/bin/sh\necho failure-log >&2\nexit 7\n"), 0o700); err != nil { // #nosec G306 -- test-controlled executable fixture.
+		t.Fatal(err)
+	}
+	args := fmt.Sprintf(`{"language":"java","root":%q,"trust_workspace":true,"maven_tool":"system","maven_bin":%q}`, root, mavenBin)
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_maven_test","arguments":%s}}`+"\n", args)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Result map[string]any `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.IsError {
+		t.Fatal("MCP Maven failure must set isError")
+	}
+	if response.Result.StructuredContent.Result == nil {
+		t.Fatal("MCP Maven failure must include structuredContent.result")
+	}
+}
+
 func TestMCPMutationsOnlyProfile(t *testing.T) {
 	t.Parallel()
 

@@ -58,6 +58,24 @@ func runFakeHLS() {
 	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 20), fakeRange(5, 11)})
 }
 
+func runFakeMaven() {
+	found := false
+	for _, arg := range os.Args[1:] {
+		if arg == "-o" {
+			found = true
+		}
+	}
+	if os.Getenv("SEMEDIT_ASSERT_MAVEN_NETWORK") == "1" && found {
+		os.Exit(23)
+	}
+	if !found {
+		if os.Getenv("SEMEDIT_ASSERT_MAVEN_NETWORK") != "1" {
+			os.Exit(19)
+		}
+	}
+	_, _ = os.Stdout.WriteString("fake-maven-ok\n")
+}
+
 func fakeRange(start, end int) fakeLSPRange {
 	return fakeLSPRange{Start: fakeLSPPosition{Character: start}, End: fakeLSPPosition{Character: end}}
 }
