@@ -27,6 +27,21 @@ invoke repository-specific build targets. That breaks the intended division of
 labor: an agent plans semantic intent, while the host makes deterministic
 source transformations.
 
+Quality checks have historically belonged to the project's build entry points,
+such as `make check`, rather than to an editor. That remains the source of
+project policy: the repository chooses its linters, rules, exclusions, and
+versions through files such as `.golangci.yml` and
+`.markdownlint-cli2.yaml`. The question is not whether `semedit` should own or
+replace those policies. It is whether a caller who has deliberately edited the
+project should be able to invoke the same configured normalization boundary
+without leaving the semantic operation surface.
+
+Connecting editing and checking does not remove user control. The user retains
+control by changing the repository configuration, choosing when to call
+`check` or `fix`, and reviewing the receipt and diff. `semedit` should never
+invent lint rules or treat a linter's advisory diagnostic as authorization to
+rewrite code.
+
 ## 3. Proposed Model
 
 Investigate two explicitly separate operations:
@@ -92,6 +107,16 @@ cross-file quality tools. This is the current leading hypothesis because it
 preserves predictable edit scope while offering an agent-native path to a
 normalized workspace.
 
+### D. Delegate to the Project Build Target
+
+Expose a registry operation that invokes a configured, project-owned command
+such as `make check` or a dedicated `make fix`. This follows existing policy
+exactly and naturally honors `golangci` and Markdown configuration. It also
+raises portability, trust, output-structure, and broad-side-effect questions:
+arbitrary build targets can download tools, mutate dependencies, generate
+assets, or run unrelated tests. The prototype must compare this delegation
+model with backend-owned normalizers and make all extra authority visible.
+
 ## 6. Evaluation Plan
 
 1. Define a language-neutral result schema for diagnostics, changed files,
@@ -123,6 +148,8 @@ normalized workspace.
    explicit batch entry, or support both modes with distinct receipts?
 6. Where should repository policy live: backend capability metadata, project
    configuration, or caller arguments?
+7. Can a project-declared check/fix target be exposed safely enough to preserve
+   existing build policy without granting unbounded build-script authority?
 
 ## 8. Next Steps
 
