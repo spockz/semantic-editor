@@ -18,6 +18,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/maven"
 	"semedit/internal/operation"
 	"semedit/internal/symbol"
 )
@@ -295,6 +296,10 @@ func (s *Server) sendToolSuccess(id json.RawMessage, text string) {
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
 	if len(errs) > 0 && errs[0] != nil {
+		var mavenErr *maven.Error
+		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
+			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}
+		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			result["location"] = loc
 		}

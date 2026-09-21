@@ -310,8 +310,10 @@ type RenameResult struct {
 
 // VerifyRequest describes a verification operation.
 type VerifyRequest struct {
-	Project ProjectContext
-	Path    string
+	Project            ProjectContext
+	Path               string
+	FormatSelectedFile bool
+	OrganizeImports    bool
 }
 
 // VerifyResult contains diagnostics in their protocol-neutral form.
@@ -325,7 +327,7 @@ type Backend interface {
 	Capabilities() Capabilities
 	Lookup(context.Context, ProjectContext, string) (*LookupResult, error)
 	Rename(context.Context, RenameRequest) (*RenameResult, error)
-	Verify(context.Context, ProjectContext, string) ([]Diagnostic, error)
+	Verify(context.Context, VerifyRequest) ([]Diagnostic, error)
 }
 
 type trustedWorkspaceRootProvider interface {
@@ -526,7 +528,7 @@ func (s *Service) Verify(ctx context.Context, request VerifyRequest) (*VerifyRes
 	if err != nil {
 		return nil, err
 	}
-	returnResult, err := b.Verify(ctx, request.Project, request.Path)
+	returnResult, err := b.Verify(ctx, request)
 	if err != nil {
 		return nil, err
 	}

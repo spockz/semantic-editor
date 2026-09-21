@@ -99,7 +99,7 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 				},
 				{
 					Title:       "Trusted Explicit Workspace",
-					Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.",
+					Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; JDT LS operations never invoke build tools. Bounded Maven process actions are exposed separately by the central operation registry.",
 					Severity:    "error",
 				},
 				{

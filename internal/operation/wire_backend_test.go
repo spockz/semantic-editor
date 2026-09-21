@@ -10,6 +10,21 @@ import (
 	"semedit/internal/operation"
 )
 
+func TestJavaVerifyRegistryRequestAndDispatch(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("verify")
+	if !ok {
+		t.Fatal("verify registry entry missing")
+	}
+	request, err := entry.Parse(map[string]any{"file": "src/Widget.java", "language": "java", "trust_workspace": true, "jdtls_home": "/jdtls", "java_bin": "/java", "import_maven": true, "format_selected_file": true, "organize_imports": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	verify, ok := request.(operation.VerifyReq)
+	if !ok || verify.Path != "src/Widget.java" || !verify.FormatSelectedFile || !verify.OrganizeImports || !verify.Project.Java.ImportMaven {
+		t.Fatalf("parsed Java verify request = %#v", request)
+	}
+}
+
 func cloneExample(raw map[string]any) map[string]any {
 	cloned := make(map[string]any, len(raw))
 	maps.Copy(cloned, raw)
@@ -21,8 +36,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 15 {
-		t.Errorf("registered operations = %d, want 15", len(entries))
+	if len(entries) != 17 {
+		t.Errorf("registered operations = %d, want 17", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {

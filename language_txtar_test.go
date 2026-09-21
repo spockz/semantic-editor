@@ -58,6 +58,24 @@ func runFakeHLS() {
 	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 20), fakeRange(5, 11)})
 }
 
+func runFakeMaven() {
+	found := false
+	for _, arg := range os.Args[1:] {
+		if arg == "-o" {
+			found = true
+		}
+	}
+	if os.Getenv("SEMEDIT_ASSERT_MAVEN_NETWORK") == "1" && found {
+		os.Exit(23)
+	}
+	if !found {
+		if os.Getenv("SEMEDIT_ASSERT_MAVEN_NETWORK") != "1" {
+			os.Exit(19)
+		}
+	}
+	_, _ = os.Stdout.WriteString("fake-maven-ok\n")
+}
+
 func fakeRange(start, end int) fakeLSPRange {
 	return fakeLSPRange{Start: fakeLSPPosition{Character: start}, End: fakeLSPPosition{Character: end}}
 }
@@ -65,6 +83,7 @@ func fakeRange(start, end int) fakeLSPRange {
 func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 	reader := lsp.NewFrameReader(os.Stdin, 0)
 	writer := lsp.NewFrameWriter(os.Stdout, 0)
+	formattingSeen, codeActionSeen := false, false
 	for {
 		payload, err := reader.ReadMessage()
 		if errors.Is(err, io.EOF) {
@@ -78,17 +97,60 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			Method string          `json:"method"`
 			Params json.RawMessage `json:"params"`
 		}
-		if json.Unmarshal(payload, &request) != nil || len(request.ID) == 0 {
+		if json.Unmarshal(payload, &request) != nil {
+			continue
+		}
+		if len(request.ID) == 0 {
+			if request.Method == "textDocument/didChange" {
+				var change struct {
+					TextDocument struct {
+						URI     string `json:"uri"`
+						Version int    `json:"version"`
+					} `json:"textDocument"`
+				}
+				_ = json.Unmarshal(request.Params, &change)
+				if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!formattingSeen || !codeActionSeen) {
+					return
+				}
+				if change.TextDocument.Version <= 2 {
+					continue
+				}
+				params, _ := json.Marshal(map[string]any{"uri": change.TextDocument.URI, "version": change.TextDocument.Version, "diagnostics": []any{}})
+				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+				_ = writer.WriteMessage(notification)
+			}
+			if request.Method == "workspace/didChangeConfiguration" && os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 			continue
 		}
 		var result any
 		switch request.Method {
 		case "initialize":
+			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 			result = map[string]any{"capabilities": map[string]any{}}
+		case "workspace/didChangeConfiguration":
+			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
+				return
+			}
 		case "textDocument/documentSymbol":
 			result = []fakeDocumentSymbol{symbol}
 		case "textDocument/prepareRename":
 			result = symbol.SelectionRange
+		case "textDocument/formatting":
+			formattingSeen = true
+			result = []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 2}}, "newText": "class Widget {}\n"}}
+		case "textDocument/codeAction":
+			codeActionSeen = true
+			var params struct {
+				TextDocument struct {
+					URI string `json:"uri"`
+				} `json:"textDocument"`
+			}
+			_ = json.Unmarshal(request.Params, &params)
+			result = []map[string]any{{"kind": "source.organizeImports", "edit": map[string]any{"changes": map[string]any{params.TextDocument.URI: []map[string]any{{"range": fakeLSPRange{}, "newText": ""}}}}}}
 		case "textDocument/rename":
 			var params struct {
 				TextDocument struct {
@@ -116,4 +178,30 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			return
 		}
 	}
+}
+
+func assertJavaSettings(raw json.RawMessage, expected string) bool {
+	var params struct {
+		Settings map[string]any `json:"settings"`
+	}
+	if json.Unmarshal(raw, &params) != nil {
+		return false
+	}
+	readBool := func(name string) (bool, bool) {
+		value, ok := params.Settings[name]
+		if !ok {
+			return false, false
+		}
+		boolean, ok := value.(bool)
+		return boolean, ok
+	}
+	maven, mavenOK := readBool("java.import.maven.enabled")
+	gradle, gradleOK := readBool("java.import.gradle.enabled")
+	autobuild, autobuildOK := readBool("java.autobuild.enabled")
+	metadata, metadataOK := readBool("java.import.generatesMetadataFilesAtProjectRoot")
+	if !mavenOK || !gradleOK || !autobuildOK || !metadataOK {
+		return false
+	}
+	wantMaven := expected == "enabled"
+	return maven == wantMaven && !gradle && !autobuild && !metadata
 }

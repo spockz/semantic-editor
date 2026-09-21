@@ -11,8 +11,59 @@ import (
 	"strings"
 	"testing"
 
+	"semedit/internal/backend"
 	"semedit/internal/mcp"
 )
+
+type mcpJavaSession struct{}
+
+func (mcpJavaSession) Request(_ context.Context, method string, params any) (json.RawMessage, error) {
+	switch method {
+	case "initialize":
+		return json.RawMessage(`{}`), nil
+	case "textDocument/documentSymbol":
+		return json.RawMessage(`[{"name":"Widget","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}}]`), nil
+	case "textDocument/prepareRename":
+		return json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}`), nil
+	case "textDocument/rename":
+		p := params.(map[string]any)
+		doc := p["textDocument"].(map[string]string)
+		uri := doc["uri"]
+		return json.RawMessage(fmt.Sprintf(`{"changes":{%q:[{"range":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}},"newText":"Gadget"}]}}`, uri)), nil
+	default:
+		return json.RawMessage(`{}`), nil
+	}
+}
+func (mcpJavaSession) Notify(context.Context, string, any) error { return nil }
+func (mcpJavaSession) WaitDiagnostics(context.Context, string, int) ([]backend.Diagnostic, error) {
+	return nil, nil
+}
+func (mcpJavaSession) Close() error { return nil }
+
+var _ backend.JavaSession = mcpJavaSession{}
+
+type mcpVerifySession struct{ methods []string }
+
+func (s *mcpVerifySession) Request(_ context.Context, method string, _ any) (json.RawMessage, error) {
+	s.methods = append(s.methods, method)
+	switch method {
+	case "initialize":
+		return json.RawMessage(`{}`), nil
+	case "textDocument/formatting":
+		return json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":""}]`), nil
+	case "textDocument/codeAction":
+		return json.RawMessage(`[]`), nil
+	default:
+		return json.RawMessage(`{}`), nil
+	}
+}
+func (*mcpVerifySession) Notify(context.Context, string, any) error { return nil }
+func (*mcpVerifySession) WaitDiagnostics(context.Context, string, int) ([]backend.Diagnostic, error) {
+	return nil, nil
+}
+func (*mcpVerifySession) Close() error { return nil }
+
+var _ backend.JavaSession = (*mcpVerifySession)(nil)
 
 func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
@@ -97,6 +148,131 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
 		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	}
+}
+
+func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", ".", &out)
+	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(out.String(), `"import_maven"`) < 2 {
+		t.Fatalf("MCP schemas must expose import_maven for lookup and rename: %s", out.String())
+	}
+}
+
+func TestMCPForwardsJavaMavenImportToLookupAndRename(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.java")
+	if err := os.WriteFile(file, []byte("class Widget {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range []string{"lookup", "rename"} {
+		t.Run(operation, func(t *testing.T) {
+			var got backend.JavaConfig
+			java := backend.NewJavaBackendWithFactory(func(_ context.Context, _ string, config backend.JavaConfig) (backend.JavaSession, error) {
+				got = config
+				return mcpJavaSession{}, nil
+			})
+			registry, err := backend.NewRegistry(java)
+			if err != nil {
+				t.Fatal(err)
+			}
+			service := backend.NewService(registry)
+			var out bytes.Buffer
+			args := fmt.Sprintf(`{"file":%q,"symbol":"Widget","language":"java","trust_workspace":true,"import_maven":true`, file)
+			method := "semantic_lookup"
+			if operation == "rename" {
+				args += `,"to":"Gadget"`
+				method = "semantic_rename"
+			}
+			args += `}`
+			input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":%q,"arguments":%s}}`+"\n", method, args)
+			if err := mcp.NewServer("full", root, &out, mcp.WithService(service)).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+				t.Fatal(err)
+			}
+			if !got.ImportMaven {
+				t.Fatalf("ImportMaven was not forwarded for %s", operation)
+			}
+		})
+	}
+}
+
+func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.java")
+	if err := os.WriteFile(file, []byte("class Widget {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var config backend.JavaConfig
+	var session *mcpVerifySession
+	java := backend.NewJavaBackendWithFactory(func(_ context.Context, _ string, got backend.JavaConfig) (backend.JavaSession, error) {
+		config = got
+		session = &mcpVerifySession{}
+		return session, nil
+	})
+	registry, err := backend.NewRegistry(java)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := backend.NewService(registry)
+	args := fmt.Sprintf(`{"file":%q,"language":"java","trust_workspace":true,"jdtls_home":"/jdtls","java_bin":"/java","import_maven":true,"format_selected_file":true,"organize_imports":true}`, file)
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":%s}}`+"\n", args)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out, mcp.WithService(service)).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), `"isError":true`) {
+		t.Fatalf("semantic_verify failed: %s", out.String())
+	}
+	if !config.ImportMaven || config.JDTLSHome != "/jdtls" || config.JavaBin != "/java" {
+		t.Fatalf("Java config not forwarded: %#v", config)
+	}
+	for _, want := range []string{"textDocument/formatting", "textDocument/codeAction"} {
+		found := false
+		for _, got := range session.methods {
+			if got == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("missing %s request: %v", want, session.methods)
+		}
+	}
+}
+
+func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "pom.xml"), []byte("<project/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mavenBin := filepath.Join(root, "mvn-fail")
+	if err := os.WriteFile(mavenBin, []byte("#!/bin/sh\necho failure-log >&2\nexit 7\n"), 0o700); err != nil { // #nosec G306 -- test-controlled executable fixture.
+		t.Fatal(err)
+	}
+	args := fmt.Sprintf(`{"language":"java","root":%q,"trust_workspace":true,"maven_tool":"system","maven_bin":%q}`, root, mavenBin)
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_maven_test","arguments":%s}}`+"\n", args)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Result map[string]any `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.IsError {
+		t.Fatal("MCP Maven failure must set isError")
+	}
+	if response.Result.StructuredContent.Result == nil {
+		t.Fatal("MCP Maven failure must include structuredContent.result")
 	}
 }
 

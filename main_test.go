@@ -22,6 +22,7 @@ func TestMain(m *testing.M) {
 		"metals":                          runFakeMetals,
 		"ghc":                             runFakeGHC,
 		"haskell-language-server-wrapper": runFakeHLS,
+		"maven":                           runFakeMaven,
 	})
 }
 
@@ -54,6 +55,7 @@ func TestScripts(t *testing.T) {
 				"SEMEDIT_TEST_GHC":    "ghc",
 				"SEMEDIT_TEST_HLS":    "haskell-language-server-wrapper",
 				"SEMEDIT_TEST_METALS": "metals",
+				"SEMEDIT_TEST_MAVEN":  "maven",
 			} {
 				path, err := exec.LookPath(command)
 				if err != nil {

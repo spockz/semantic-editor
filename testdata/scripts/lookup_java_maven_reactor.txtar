@@ -1,0 +1,18 @@
+# Java lookup discovers the Maven reactor root without invoking Maven.
+env SEMEDIT_ASSERT_JAVA_SETTINGS=enabled
+exec semedit lookup --language java --trust-workspace --import-maven --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file module/src/Widget.java --symbol Widget
+stdout '"file":\s*"module/src/Widget.java"'
+stdout '"kind":\s*"class"'
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+
+-- tools/jdtls/config_mac/.keep --
+
+-- pom.xml --
+<project><packaging>pom</packaging><modules><module>module</module></modules></project>
+
+-- module/pom.xml --
+<project><parent><relativePath>../pom.xml</relativePath></parent></project>
+
+-- module/src/Widget.java --
+class Widget {}

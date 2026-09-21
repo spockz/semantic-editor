@@ -1,0 +1,13 @@
+# Wrapper selection remains root-local and uses the fixed test goal.
+exec chmod +x mvnw
+exec semedit maven-test --trust-workspace --maven-tool wrapper
+stdout '"goal":"test"'
+stdout '"tool":"wrapper"'
+stdout '"exit_code":0'
+
+-- pom.xml --
+<project/>
+
+-- mvnw --
+#!/bin/sh
+exec "$SEMEDIT_TEST_MAVEN" "$@"

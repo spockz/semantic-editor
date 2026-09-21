@@ -1,0 +1,13 @@
+# Nonzero Maven exits surface the structured result and bounded log tail.
+exec chmod +x mvn-fail
+! exec semedit maven-test --trust-workspace --maven-tool system --maven-bin $WORK/mvn-fail
+stderr '"exit_code": 7'
+stderr 'failure-log'
+
+-- pom.xml --
+<project/>
+
+-- mvn-fail --
+#!/bin/sh
+echo failure-log >&2
+exit 7

@@ -278,7 +278,7 @@ func (*ScalaBackend) Rename(context.Context, RenameRequest) (*RenameResult, erro
 }
 
 // Verify is intentionally unavailable for the Scala lookup-only slice.
-func (*ScalaBackend) Verify(context.Context, ProjectContext, string) ([]Diagnostic, error) {
+func (*ScalaBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
 	return nil, &Error{Operation: OperationVerify, Language: LanguageScala, Err: ErrUnsupportedOperation}
 }
 

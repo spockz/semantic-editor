@@ -1,0 +1,14 @@
+# Maven output is bounded and reports explicit truncation metadata.
+exec chmod +x mvn-large
+! exec semedit maven-test --trust-workspace --maven-tool system --maven-bin $WORK/mvn-large
+stderr '"stderr_truncated": true'
+stderr '"log_tail"'
+
+-- pom.xml --
+<project/>
+
+-- mvn-large --
+#!/bin/sh
+i=0
+while [ "$i" -lt 70000 ]; do printf x >&2; i=$((i + 1)); done
+exit 9

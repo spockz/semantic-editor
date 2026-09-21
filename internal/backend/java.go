@@ -1,11 +1,13 @@
-// Package backend keeps Java lookup read-only and file-scoped behind one trusted JDT LS session.
+// Package backend keeps Java operations file-scoped behind one trusted JDT LS session.
 package backend
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"semedit/internal/lsp"
@@ -53,6 +56,8 @@ var (
 	ErrJavaRenameInvalidEdit = errors.New("invalid Java rename edit")
 	// ErrJavaRenameStaleEdit indicates that an edit preimage differs from source.
 	ErrJavaRenameStaleEdit = errors.New("stale Java rename edit")
+	// ErrJavaDiagnosticsTimeout indicates that JDT LS did not publish readiness diagnostics in time.
+	ErrJavaDiagnosticsTimeout = errors.New("java diagnostics readiness timed out")
 )
 
 // JavaConfig contains only explicit external-tool paths. An empty JavaBin uses
@@ -60,9 +65,23 @@ var (
 type JavaConfig struct {
 	JDTLSHome string `json:"jdtls_home,omitempty"`
 	JavaBin   string `json:"java_bin,omitempty"`
+	// ImportMaven enables JDT LS Maven project import after explicit trust.
+	// Gradle import is never enabled by this option.
+	ImportMaven bool `json:"import_maven,omitempty"`
 }
 
-// JavaError identifies a failure in the read-only Java lookup adapter.
+func effectiveJavaConfig(project ProjectContext) JavaConfig {
+	config := project.Java
+	if config.JDTLSHome == "" {
+		config.JDTLSHome = project.JDTLSHome
+	}
+	if config.JavaBin == "" {
+		config.JavaBin = project.JavaBin
+	}
+	return config
+}
+
+// JavaError identifies a failure in the Java language-server adapter.
 type JavaError struct {
 	Op        string
 	File      string
@@ -93,7 +112,71 @@ func (e *JavaError) Unwrap() error { return e.Err }
 type JavaSession interface {
 	Request(context.Context, string, any) (json.RawMessage, error)
 	Notify(context.Context, string, any) error
+	WaitDiagnostics(context.Context, string, int) ([]Diagnostic, error)
 	Close() error
+}
+
+type javaDiagnosticsSelector interface {
+	SelectDiagnosticsURI(string)
+}
+
+type javaProcessSession struct {
+	client      *lsp.Client
+	mu          sync.Mutex
+	diagnostics map[string]javaDiagnosticReceipt
+	wake        chan struct{}
+	selectedURI string
+}
+type javaDiagnosticReceipt struct {
+	version     int
+	diagnostics []Diagnostic
+}
+
+func (s *javaProcessSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	return s.client.Request(ctx, method, params)
+}
+func (s *javaProcessSession) Notify(ctx context.Context, method string, params any) error {
+	return s.client.Notify(ctx, method, params)
+}
+func (s *javaProcessSession) Close() error { return s.client.Close() }
+func (s *javaProcessSession) WaitDiagnostics(ctx context.Context, uri string, version int) ([]Diagnostic, error) {
+	s.SelectDiagnosticsURI(uri)
+	for {
+		s.mu.Lock()
+		receipt, ok := s.diagnostics[uri]
+		s.mu.Unlock()
+		if ok && receipt.version >= version {
+			return receipt.diagnostics, nil
+		}
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("%w: %w", ErrJavaDiagnosticsTimeout, ctx.Err())
+			}
+			return nil, ctx.Err()
+		case <-s.wake:
+		}
+	}
+}
+
+func (s *javaProcessSession) SelectDiagnosticsURI(uri string) {
+	s.mu.Lock()
+	s.selectedURI = uri
+	s.mu.Unlock()
+}
+
+func (s *javaProcessSession) recordDiagnostics(uri string, version int, diagnostics []Diagnostic) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if receipt, ok := s.diagnostics[uri]; ok && receipt.version > version {
+		return
+	}
+	s.diagnostics[uri] = javaDiagnosticReceipt{version: version, diagnostics: diagnostics}
+}
+
+func newJavaProcessSession(client *lsp.Client) *javaProcessSession {
+	s := &javaProcessSession{client: client, diagnostics: make(map[string]javaDiagnosticReceipt), wake: make(chan struct{}, 1)}
+	return s
 }
 
 // JavaSessionFactory allows hermetic tests to replace the process-backed session.
@@ -122,10 +205,11 @@ func WithJavaSessionFactory(factory JavaSessionFactory) JavaBackendOption {
 
 // JavaBackend provides trusted, file-scoped lookup and rename through JDT LS.
 type JavaBackend struct {
-	mu      sync.Mutex
-	factory javaSessionFactory
-	root    string
-	session JavaSession
+	mu          sync.Mutex
+	factory     javaSessionFactory
+	root        string
+	fingerprint string
+	session     JavaSession
 }
 
 // TrustedWorkspaceRoot discovers the workspace used for trust comparison.
@@ -152,9 +236,9 @@ func NewJavaBackendWithFactory(factory JavaSessionFactory) *JavaBackend {
 // Language returns the Java language identifier.
 func (*JavaBackend) Language() LanguageID { return LanguageJava }
 
-// Capabilities declares Java's trusted read-only lookup capability.
+// Capabilities declares Java's trusted, file-scoped capabilities.
 func (*JavaBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
+	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename, OperationVerify)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Java backend.
@@ -164,6 +248,7 @@ func (*JavaBackend) CapabilityMatrix() LanguageMatrix {
 		DisplayName: "Java",
 		Maturity:    "Selected-file refactoring preview",
 		Operations: map[string]OpCapability{
+			"verify": {Supported: true, Description: "Trusted selected-file Java formatting and source.organizeImports through JDT LS; Maven/Gradle are never executed.", MCPTool: "semantic_verify"},
 			"rename": {
 				Supported:    true,
 				Description:  "Trusted JDT LS semantic rename confined to one selected canonical Java file; workspace-wide edits are rejected.",
@@ -182,12 +267,12 @@ func (*JavaBackend) CapabilityMatrix() LanguageMatrix {
 		Limitations: []Constraint{
 			{
 				Title:       "Selected-File Rename Only",
-				Description: "Java supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and hierarchy refactoring capabilities are unavailable.",
+				Description: "Java supports selected-file rename, formatting, source.organizeImports, and diagnostics; extraction, inline, move, and hierarchy refactoring remain unavailable.",
 				Severity:    "error",
 			},
 			{
 				Title:       "Trusted Explicit Workspace",
-				Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; build tools are never invoked.",
+				Description: "JDT LS lookup and edits remain selected-file operations with explicit trust and a preinstalled distribution; Maven process actions are registered separately and are not JDT LS capabilities. Gradle import remains disabled.",
 				Severity:    "error",
 			},
 			{
@@ -212,6 +297,7 @@ func (b *JavaBackend) Close() error {
 	err := b.session.Close()
 	b.session = nil
 	b.root = ""
+	b.fingerprint = ""
 	return err
 }
 
@@ -227,6 +313,11 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	if !project.WorkspaceTrust.Allows(root) {
 		return nil, &WorkspaceTrustError{Operation: OperationLookup, Language: LanguageJava, Workspace: root}
 	}
+	javaConfig := effectiveJavaConfig(project)
+	fingerprint, fingerprintErr := javaImportFingerprint(root, javaConfig)
+	if fingerprintErr != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &JavaError{Op: "lookup", File: file, Symbol: query, Err: ErrJavaMalformedResponse}
 	}
@@ -236,16 +327,15 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	if b.session != nil && b.root != root {
 		return nil, &JavaError{Op: "lookup", Workspace: root, Err: ErrJavaSessionConflict}
 	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		if err := b.session.Close(); err != nil {
+			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
+		}
+		b.session, b.root, b.fingerprint = nil, "", ""
+	}
 	if b.session == nil {
 		if b.factory == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		javaConfig := project.Java
-		if javaConfig.JDTLSHome == "" {
-			javaConfig.JDTLSHome = project.JDTLSHome
-		}
-		if javaConfig.JavaBin == "" {
-			javaConfig.JavaBin = project.JavaBin
 		}
 		session, factoryErr := b.factory(ctx, root, javaConfig)
 		if factoryErr != nil {
@@ -254,10 +344,10 @@ func (b *JavaBackend) Lookup(ctx context.Context, project ProjectContext, query 
 		if session == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
-		b.session, b.root = session, root
-		if err := initializeJavaSession(ctx, session, root); err != nil {
+		b.session, b.root, b.fingerprint = session, root, fingerprint
+		if err := initializeJavaSession(ctx, session, root, javaConfig); err != nil {
 			_ = session.Close()
-			b.session, b.root = nil, ""
+			b.session, b.root, b.fingerprint = nil, "", ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: err}
 		}
 	}
@@ -289,6 +379,11 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if !request.Project.WorkspaceTrust.Allows(root) {
 		return nil, &WorkspaceTrustError{Operation: OperationRename, Language: LanguageJava, Workspace: root}
 	}
+	config := effectiveJavaConfig(request.Project)
+	fingerprint, fingerprintErr := javaImportFingerprint(root, config)
+	if fingerprintErr != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	}
 	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
 		return nil, &Error{Operation: OperationRename, Language: LanguageJava, Err: ErrJavaRenameInvalidEdit}
 	}
@@ -297,14 +392,13 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if b.session != nil && b.root != root {
 		return nil, &JavaError{Op: "rename", Workspace: root, Err: ErrJavaSessionConflict}
 	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		if err := b.session.Close(); err != nil {
+			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
+		}
+		b.session, b.root, b.fingerprint = nil, "", ""
+	}
 	if b.session == nil {
-		config := request.Project.Java
-		if config.JDTLSHome == "" {
-			config.JDTLSHome = request.Project.JDTLSHome
-		}
-		if config.JavaBin == "" {
-			config.JavaBin = request.Project.JavaBin
-		}
 		if b.factory == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
@@ -315,10 +409,10 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 		if s == nil {
 			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
 		}
-		b.session, b.root = s, root
-		if initErr := initializeJavaSession(ctx, s, root); initErr != nil {
+		b.session, b.root, b.fingerprint = s, root, fingerprint
+		if initErr := initializeJavaSession(ctx, s, root, config); initErr != nil {
 			_ = s.Close()
-			b.session, b.root = nil, ""
+			b.session, b.root, b.fingerprint = nil, "", ""
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: initErr}
 		}
 	}
@@ -362,6 +456,7 @@ func (b *JavaBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	}
 	_ = session.Close()
 	b.session, b.root = nil, ""
+	b.fingerprint = ""
 	return &RenameResult{Lookup: lookup}, nil
 }
 
@@ -403,8 +498,10 @@ func decodeJavaTextEdits(raw json.RawMessage) ([]javaTextEdit, error) {
 		if json.Unmarshal(value, &object) != nil || object == nil {
 			return nil, ErrJavaRenameInvalidEdit
 		}
-		if _, ok := object["annotationId"]; ok {
-			return nil, ErrJavaRenameInvalidEdit
+		for key := range object {
+			if key != "range" && key != "newText" {
+				return nil, ErrJavaRenameInvalidEdit
+			}
 		}
 		if json.Unmarshal(value, &edits[i]) != nil {
 			return nil, ErrJavaRenameInvalidEdit
@@ -459,6 +556,15 @@ func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			ResourceOperations json.RawMessage `json:"resourceOperations"`
 			AnnotationID       json.RawMessage `json:"annotationId"`
 		}
+		var docObject map[string]json.RawMessage
+		if json.Unmarshal(docs[0], &docObject) != nil || docObject == nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		for key := range docObject {
+			if key != "textDocument" && key != "edits" {
+				return nil, ErrJavaRenameInvalidEdit
+			}
+		}
 		if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
 			return nil, ErrJavaRenameInvalidEdit
 		}
@@ -506,38 +612,335 @@ func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 	return updated, nil
 }
 
-// Verify is intentionally unavailable for the Java lookup-only slice.
-func (*JavaBackend) Verify(context.Context, ProjectContext, string) ([]Diagnostic, error) {
-	return nil, &Error{Operation: OperationVerify, Language: LanguageJava, Err: ErrUnsupportedOperation}
+const javaDiagnosticsTimeout = 5 * time.Second
+
+// Verify applies only validated selected-file edits and collects bounded diagnostics.
+func (b *JavaBackend) Verify(ctx context.Context, request VerifyRequest) (diagnostics []Diagnostic, retErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	root, file, source, err := resolveJavaProject(request.Project)
+	if err != nil {
+		return nil, err
+	}
+	if !request.Project.WorkspaceTrust.Allows(root) {
+		return nil, &WorkspaceTrustError{Operation: OperationVerify, Language: LanguageJava, Workspace: root}
+	}
+	if !request.FormatSelectedFile && !request.OrganizeImports {
+		return nil, &Error{Operation: OperationVerify, Language: LanguageJava, Err: ErrUnsupportedOperation}
+	}
+	config := effectiveJavaConfig(request.Project)
+	fingerprint, err := javaImportFingerprint(root, config)
+	if err != nil {
+		return nil, fmt.Errorf("verify fingerprint: %w", err)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	cleanupOnError := false
+	defer func() {
+		if !cleanupOnError || retErr == nil || b.session == nil {
+			return
+		}
+		closeErr := b.session.Close()
+		b.session, b.root, b.fingerprint = nil, "", ""
+		if closeErr != nil && retErr == nil {
+			retErr = fmt.Errorf("close Java session after failure: %w", closeErr)
+		}
+	}()
+	if b.session != nil && b.root != root {
+		return nil, &JavaError{Op: "verify", Workspace: root, Err: ErrJavaSessionConflict}
+	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		if err := b.session.Close(); err != nil {
+			return nil, fmt.Errorf("close stale Java session: %w", err)
+		}
+		b.session, b.root, b.fingerprint = nil, "", ""
+	}
+	if b.session == nil {
+		if b.factory == nil {
+			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+		}
+		session, err := b.factory(ctx, root, config)
+		if err != nil {
+			return nil, err
+		}
+		b.session, b.root, b.fingerprint = session, root, fingerprint
+		cleanupOnError = true
+		if err := initializeJavaSession(ctx, session, root, config); err != nil {
+			return nil, err
+		}
+	}
+	cleanupOnError = true
+	if selector, ok := b.session.(javaDiagnosticsSelector); ok {
+		selector.SelectDiagnosticsURI(fileURI(file))
+	}
+	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+		return nil, err
+	}
+	updated := source
+	version := 1
+	formattingChanged := false
+	if request.FormatSelectedFile {
+		raw, err := b.session.Request(ctx, "textDocument/formatting", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
+		if err != nil {
+			return nil, err
+		}
+		updated, err = applyJavaFormattingEdits(updated, raw)
+		if err != nil {
+			return nil, err
+		}
+		formattingChanged = !bytes.Equal(updated, source)
+	}
+	if request.OrganizeImports {
+		if formattingChanged {
+			version = 2
+			if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+				return nil, err
+			}
+		}
+		raw, err := b.session.Request(ctx, "textDocument/codeAction", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
+		if err != nil {
+			return nil, err
+		}
+		updated, err = applyJavaOrganizeImportsEditVersion(file, updated, raw, version)
+		if err != nil {
+			return nil, err
+		}
+	}
+	diagnosticsVersion := 1
+	if !bytes.Equal(updated, source) {
+		if err := pipeline.WriteAtomic(file, updated); err != nil {
+			return nil, err
+		}
+		version++
+		if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+			return nil, err
+		}
+		if err := b.session.Notify(ctx, "textDocument/didSave", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}}); err != nil {
+			return nil, err
+		}
+		diagnosticsVersion = version
+	}
+	diagnosticCtx, cancelDiagnostics := context.WithTimeout(ctx, javaDiagnosticsTimeout)
+	diagnostics, err = b.session.WaitDiagnostics(diagnosticCtx, fileURI(file), diagnosticsVersion)
+	cancelDiagnostics()
+	if errors.Is(err, context.DeadlineExceeded) {
+		err = fmt.Errorf("%w: %w", ErrJavaDiagnosticsTimeout, err)
+	}
+	closeErr := b.session.Close()
+	b.session, b.root, b.fingerprint = nil, "", ""
+	if err == nil && closeErr != nil {
+		return diagnostics, fmt.Errorf("close Java session: %w", closeErr)
+	}
+	return diagnostics, err
 }
 
-var javaJDTLSSettings = map[string]any{
-	"java.autobuild.enabled":                      false,
-	"java.import.maven.enabled":                   false,
-	"java.import.gradle.enabled":                  false,
-	"java.configuration.updateBuildConfiguration": "disabled",
-	"java": map[string]any{
-		"autobuild": map[string]any{"enabled": false},
-		"import": map[string]any{
-			"maven":  map[string]any{"enabled": false},
-			"gradle": map[string]any{"enabled": false},
+func applyJavaFormattingEdits(source []byte, raw json.RawMessage) ([]byte, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if bytes.Equal(trimmed, []byte("null")) || bytes.Equal(trimmed, []byte("[]")) {
+		return append([]byte(nil), source...), nil
+	}
+	edits, err := decodeJavaTextEdits(raw)
+	if err != nil {
+		return nil, err
+	}
+	spans := make([]javaEditSpan, 0, len(edits))
+	for _, edit := range edits {
+		start, err := javaByteOffset(source, edit.Range.Start)
+		if err != nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		end, err := javaByteOffset(source, edit.Range.End)
+		if err != nil || end < start {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		spans = append(spans, javaEditSpan{start: start, end: end, text: edit.NewText})
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start > spans[j].start })
+	for i := 1; i < len(spans); i++ {
+		if spans[i].end > spans[i-1].start {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+	}
+	updated := append([]byte(nil), source...)
+	for _, span := range spans {
+		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
+	}
+	return updated, nil
+}
+
+// applyJavaOrganizeImportsEdit validates one bounded JDT LS source action and
+// applies its selected-file edits. Callers own the atomic write.
+func applyJavaOrganizeImportsEdit(file string, source []byte, raw json.RawMessage) ([]byte, error) {
+	return applyJavaOrganizeImportsEditVersion(file, source, raw, 1)
+}
+
+func applyJavaOrganizeImportsEditVersion(file string, source []byte, raw json.RawMessage, expectedVersion int) ([]byte, error) {
+	var actions []json.RawMessage
+	if json.Unmarshal(raw, &actions) != nil || len(actions) > 1 {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if len(actions) == 0 {
+		return append([]byte(nil), source...), nil
+	}
+	var action map[string]json.RawMessage
+	if json.Unmarshal(actions[0], &action) != nil || action == nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	var kind string
+	if json.Unmarshal(action["kind"], &kind) != nil || kind != "source.organizeImports" {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if _, ok := action["command"]; ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if disabled, ok := action["disabled"]; ok && string(disabled) != "null" {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	editRaw, ok := action["edit"]
+	if !ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	var edit map[string]json.RawMessage
+	if json.Unmarshal(editRaw, &edit) != nil || edit == nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if _, ok := edit["changeAnnotations"]; ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	if _, ok := edit["resourceOperations"]; ok {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	_, hasChanges := edit["changes"]
+	_, hasDocuments := edit["documentChanges"]
+	if hasChanges == hasDocuments {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	var textEdits []javaTextEdit
+	if changes, ok := edit["changes"]; ok {
+		var files map[string]json.RawMessage
+		if json.Unmarshal(changes, &files) != nil || len(files) != 1 {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		for uri, encoded := range files {
+			path, err := filePathFromURI(uri)
+			if err != nil || canonicalJavaFilePath(path) != canonicalJavaFilePath(file) {
+				return nil, ErrJavaRenameInvalidEdit
+			}
+			textEdits, err = decodeJavaTextEdits(encoded)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else if docs, ok := edit["documentChanges"]; ok {
+		var values []json.RawMessage
+		if json.Unmarshal(docs, &values) != nil || len(values) != 1 {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		var valueObject map[string]json.RawMessage
+		if json.Unmarshal(values[0], &valueObject) != nil || valueObject == nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		for key := range valueObject {
+			if key != "textDocument" && key != "edits" {
+				return nil, ErrJavaRenameInvalidEdit
+			}
+		}
+		var doc struct {
+			TextDocument struct {
+				URI     string `json:"uri"`
+				Version *int   `json:"version"`
+			} `json:"textDocument"`
+			Edits json.RawMessage `json:"edits"`
+		}
+		if json.Unmarshal(values[0], &doc) != nil || doc.TextDocument.Version == nil || *doc.TextDocument.Version != expectedVersion {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		path, err := filePathFromURI(doc.TextDocument.URI)
+		if err != nil || canonicalJavaFilePath(path) != canonicalJavaFilePath(file) {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		textEdits, err = decodeJavaTextEdits(doc.Edits)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	spans := make([]javaEditSpan, 0, len(textEdits))
+	for _, item := range textEdits {
+		start, err := javaByteOffset(source, item.Range.Start)
+		if err != nil {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		end, err := javaByteOffset(source, item.Range.End)
+		if err != nil || end < start {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+		spans = append(spans, javaEditSpan{start: start, end: end, text: item.NewText})
+	}
+	sort.Slice(spans, func(i, j int) bool { return spans[i].start > spans[j].start })
+	for i := 1; i < len(spans); i++ {
+		if spans[i].end > spans[i-1].start {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+	}
+	updated := append([]byte(nil), source...)
+	for _, span := range spans {
+		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
+	}
+	return updated, nil
+}
+
+func canonicalJavaFilePath(path string) string {
+	absolute, err := filepath.Abs(path)
+	if err == nil {
+		path = absolute
+	}
+	path = filepath.Clean(path)
+	if evaluated, err := filepath.EvalSymlinks(path); err == nil {
+		path = evaluated
+	}
+	return path
+}
+
+func javaJDTLSSettings(config JavaConfig) map[string]any {
+	mavenImport := config.ImportMaven
+	return map[string]any{
+		"java.autobuild.enabled":                          false,
+		"java.import.maven.enabled":                       mavenImport,
+		"java.import.gradle.enabled":                      false,
+		"java.import.generatesMetadataFilesAtProjectRoot": false,
+		"java.configuration.updateBuildConfiguration":     "disabled",
+		"java": map[string]any{
+			"autobuild": map[string]any{"enabled": false},
+			"import": map[string]any{
+				"maven":                               map[string]any{"enabled": mavenImport},
+				"gradle":                              map[string]any{"enabled": false},
+				"generatesMetadataFilesAtProjectRoot": false,
+			},
+			"configuration": map[string]any{"updateBuildConfiguration": "disabled"},
 		},
-		"configuration": map[string]any{"updateBuildConfiguration": "disabled"},
-	},
+	}
 }
 
-func initializeJavaSession(ctx context.Context, session JavaSession, root string) error {
+func initializeJavaSession(ctx context.Context, session JavaSession, root string, config JavaConfig) error {
+	settings := javaJDTLSSettings(config)
 	params := map[string]any{
 		"processId":        nil,
 		"rootUri":          fileURI(root),
 		"workspaceFolders": []map[string]string{{"uri": fileURI(root), "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
-			"general":      map[string]any{"positionEncodings": []string{"utf-16"}},
-			"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
-			"workspace":    map[string]any{"workspaceFolders": true, "configuration": true},
+			"general": map[string]any{"positionEncodings": []string{"utf-16"}},
+			"textDocument": map[string]any{
+				"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true},
+				"formatting":     map[string]any{"dynamicRegistration": false},
+				"codeAction":     map[string]any{"dynamicRegistration": false, "codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{"valueSet": []string{"source.organizeImports"}}}},
+			},
+			"workspace": map[string]any{"workspaceFolders": true, "configuration": true},
 		},
 		"initializationOptions": map[string]any{"bundles": []string{}},
-		"settings":              javaJDTLSSettings,
+		"settings":              settings,
 	}
 	if _, err := session.Request(ctx, "initialize", params); err != nil {
 		return err
@@ -545,7 +948,7 @@ func initializeJavaSession(ctx context.Context, session JavaSession, root string
 	if err := session.Notify(ctx, "initialized", map[string]any{}); err != nil {
 		return err
 	}
-	return session.Notify(ctx, "workspace/didChangeConfiguration", map[string]any{"settings": javaJDTLSSettings})
+	return session.Notify(ctx, "workspace/didChangeConfiguration", map[string]any{"settings": settings})
 }
 
 func defaultJavaSessionFactory(ctx context.Context, root string, config JavaConfig) (JavaSession, error) {
@@ -582,11 +985,52 @@ func defaultJavaSessionFactory(ctx context.Context, root string, config JavaConf
 		"-jar", launcher, "-configuration", configuration, "-data", dataPath,
 	)
 	cmd.Dir = root
-	client, err := lsp.NewProcessClient(cmd)
+	processSession := newJavaProcessSession(nil)
+	client, err := lsp.NewProcessClient(cmd, lsp.WithNotificationHandler(func(notification lsp.Notification) {
+		if notification.Method != "textDocument/publishDiagnostics" {
+			return
+		}
+		var params struct {
+			URI         string `json:"uri"`
+			Version     int    `json:"version"`
+			Diagnostics []struct {
+				Message  string    `json:"message"`
+				Severity int       `json:"severity"`
+				Range    javaRange `json:"range"`
+			} `json:"diagnostics"`
+		}
+		if json.Unmarshal(notification.Params, &params) != nil {
+			return
+		}
+		uriPath, err := filePathFromURI(params.URI)
+		if err != nil {
+			return
+		}
+		uri := fileURI(uriPath)
+		if uri != fileURI(root) && !pathWithin(root, uriPath) {
+			return
+		}
+		processSession.mu.Lock()
+		selectedURI := processSession.selectedURI
+		processSession.mu.Unlock()
+		if selectedURI != "" && selectedURI != uri {
+			return
+		}
+		diagnostics := make([]Diagnostic, 0, len(params.Diagnostics))
+		for _, diagnostic := range params.Diagnostics {
+			diagnostics = append(diagnostics, Diagnostic{Message: diagnostic.Message, Severity: diagnostic.Severity, Location: &SourceLocation{URI: uri, Range: Range{Start: Position(diagnostic.Range.Start), End: Position(diagnostic.Range.End)}}})
+		}
+		processSession.recordDiagnostics(uri, params.Version, diagnostics)
+		select {
+		case processSession.wake <- struct{}{}:
+		default:
+		}
+	}))
 	if err != nil {
 		return nil, err
 	}
-	return client, nil
+	processSession.client = client
+	return processSession, nil
 }
 
 func validateJavaRuntime(ctx context.Context, javaBin string) error {
@@ -721,6 +1165,9 @@ func discoverJavaWorkspaceRoot(file string) (string, error) {
 			if hasMaven && hasGradle {
 				return "", ErrJavaWorkspaceAmbiguous
 			}
+			if hasMaven {
+				return discoverMavenReactorRoot(dir)
+			}
 			return CanonicalWorkspaceRoot(dir), nil
 		}
 		parent := filepath.Dir(dir)
@@ -730,6 +1177,95 @@ func discoverJavaWorkspaceRoot(file string) (string, error) {
 		dir = parent
 	}
 	return "", ErrJavaWorkspaceRequired
+}
+
+// discoverMavenReactorRoot follows only explicit POM parent/module relationships.
+// It never invokes Maven or reads user settings, so discovery remains side-effect free.
+func discoverMavenReactorRoot(module string) (string, error) {
+	current := CanonicalWorkspaceRoot(module)
+	ancestor := filepath.Dir(current)
+	for ancestor != filepath.Dir(ancestor) {
+		pom := filepath.Join(ancestor, "pom.xml")
+		if fileExists(pom) {
+			if mavenPOMListsModule(pom, current) {
+				if fileExists(filepath.Join(ancestor, "build.gradle")) || fileExists(filepath.Join(ancestor, "build.gradle.kts")) {
+					return "", ErrJavaWorkspaceAmbiguous
+				}
+				current = ancestor
+			}
+		}
+		ancestor = filepath.Dir(ancestor)
+	}
+	return current, nil
+}
+
+type mavenPOM struct {
+	Parent struct {
+		RelativePath string `xml:"relativePath"`
+	} `xml:"parent"`
+	Modules struct {
+		Module []string `xml:"module"`
+	} `xml:"modules"`
+}
+
+func mavenPOMListsModule(parentPom, childDir string) bool {
+	data, err := os.ReadFile(parentPom) // #nosec G304 -- parentPom is derived from canonical workspace traversal.
+	if err != nil {
+		return false
+	}
+	var pom mavenPOM
+	if xml.Unmarshal(data, &pom) != nil {
+		return false
+	}
+	parentDir := filepath.Dir(parentPom)
+	for _, module := range pom.Modules.Module {
+		if CanonicalWorkspaceRoot(filepath.Join(parentDir, filepath.Clean(module))) == CanonicalWorkspaceRoot(childDir) {
+			return true
+		}
+	}
+	return false
+}
+
+// javaImportFingerprint identifies the selected Maven reactor descriptors and
+// import-related runtime configuration without invoking any build tool.
+func javaImportFingerprint(root string, config JavaConfig) (string, error) {
+	hash := sha256.New()
+	_, _ = fmt.Fprintf(hash, "jdtls=%s\njava=%s\nimport_maven=%t\n", config.JDTLSHome, config.JavaBin, config.ImportMaven)
+	paths := []string{filepath.Join(CanonicalWorkspaceRoot(root), "pom.xml")}
+	seen := make(map[string]bool)
+	for len(paths) > 0 {
+		path := paths[0]
+		paths = paths[1:]
+		path = CanonicalWorkspaceRoot(path)
+		if seen[path] {
+			continue
+		}
+		seen[path] = true
+		if !pathWithin(CanonicalWorkspaceRoot(root), path) {
+			return "", fmt.Errorf("java project descriptor %s is outside workspace root %s: %w", path, root, ErrJavaFileOutsideWorkspace)
+		}
+		data, err := os.ReadFile(path) // #nosec G304 -- path is derived from the trusted workspace and POM modules.
+		if os.IsNotExist(err) && path == CanonicalWorkspaceRoot(filepath.Join(root, "pom.xml")) {
+			continue
+		}
+		if err != nil {
+			return "", fmt.Errorf("read Java project descriptor %s: %w", path, err)
+		}
+		_, _ = fmt.Fprintf(hash, "%s\x00", path)
+		_, _ = hash.Write(data)
+		if len(strings.TrimSpace(string(data))) == 0 {
+			continue
+		}
+		var pom mavenPOM
+		if err := xml.Unmarshal(data, &pom); err != nil {
+			return "", fmt.Errorf("parse Java project descriptor %s: %w", path, err)
+		}
+		base := filepath.Dir(path)
+		for _, module := range pom.Modules.Module {
+			paths = append(paths, filepath.Join(base, filepath.Clean(module), "pom.xml"))
+		}
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func fileExists(path string) bool { info, err := os.Stat(path); return err == nil && !info.IsDir() }

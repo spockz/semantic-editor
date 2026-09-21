@@ -2,13 +2,15 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"io"
 
 	"github.com/spf13/cobra"
 
 	"semedit/internal/backend"
+	"semedit/internal/maven"
 	"semedit/internal/operation"
 )
 
@@ -77,6 +79,25 @@ func rawParams(entry operation.Entry, values *flagValues) map[string]any {
 	return raw
 }
 
+func writeMavenFailure(stderr io.Writer, err error) (bool, error) {
+	var mavenErr *maven.Error
+	if !errors.As(err, &mavenErr) || mavenErr.MavenResult() == nil {
+		return false, nil
+	}
+	payload := struct {
+		Error  string        `json:"error"`
+		Result *maven.Result `json:"result"`
+	}{Error: err.Error(), Result: mavenErr.MavenResult()}
+	data, marshalErr := json.MarshalIndent(payload, "", "  ")
+	if marshalErr != nil {
+		return false, nil
+	}
+	if _, writeErr := fmt.Fprintln(stderr, string(data)); writeErr != nil {
+		return true, fmt.Errorf("write Maven failure: %w", writeErr)
+	}
+	return true, nil
+}
+
 // Commands builds one Cobra command for every registry operation with a CLI name.
 func Commands(workDir string) []*cobra.Command {
 	registry := operation.DefaultRegistry()
@@ -104,12 +125,22 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 			cc.Ctx = cmd.Context()
 			result, err := registry.Dispatch(cc, entry.Key, rawParams(entry, values))
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: %v\n", entry.CLIName, err)
+				written, writeErr := writeMavenFailure(cmd.ErrOrStderr(), err)
+				if writeErr != nil {
+					return writeErr
+				}
+				if !written {
+					if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", entry.CLIName, err); writeErr != nil {
+						return fmt.Errorf("write %s error: %w", entry.CLIName, writeErr)
+					}
+				}
 				return ErrCommandFailed
 			}
 			text, err := entry.Format(result)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "%s: format result: %v\n", entry.CLIName, err)
+				if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: format result: %v\n", entry.CLIName, err); writeErr != nil {
+					return fmt.Errorf("write %s format error: %w", entry.CLIName, writeErr)
+				}
 				return ErrCommandFailed
 			}
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {

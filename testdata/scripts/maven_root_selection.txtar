@@ -1,0 +1,10 @@
+# A nested root is accepted only when it remains within the trusted cwd.
+exec mkdir -p nested
+! exec semedit maven-test --root ../ --trust-workspace --maven-tool system --maven-bin $SEMEDIT_TEST_MAVEN
+stderr 'outside the trusted workspace'
+
+-- pom.xml --
+<project/>
+
+-- nested/pom.xml --
+<project/>
