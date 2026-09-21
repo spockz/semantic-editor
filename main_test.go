@@ -99,3 +99,32 @@ func TestRootCommandWithoutArgumentsRendersHelp(t *testing.T) {
 		t.Errorf("root help = %q, want command description", output.String())
 	}
 }
+
+func TestHarnessInstallationPublicCLI(t *testing.T) {
+	t.Parallel()
+	workspace := t.TempDir()
+	binary := filepath.Join(workspace, "semedit")
+	if err := os.WriteFile(binary, []byte("#!/bin/sh\n"), 0o755); err != nil { // #nosec G306 -- executable fixture.
+		t.Fatal(err)
+	}
+	cmd := newRootCmd(workspace)
+	cmd.SetArgs([]string{"install", "copilot", "--scope", "workspace", "--binary", binary, "--profile", "mutations-only"})
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("install command failed: %v", err)
+	}
+	if !strings.Contains(output.String(), `"status": "installed"`) || !strings.Contains(output.String(), `"target": "copilot"`) {
+		t.Fatalf("install output = %s", output.String())
+	}
+	status := newRootCmd(workspace)
+	status.SetArgs([]string{"integration", "status", "copilot", "--scope", "workspace"})
+	output.Reset()
+	status.SetOut(&output)
+	if err := status.Execute(); err != nil {
+		t.Fatalf("status command failed: %v", err)
+	}
+	if !strings.Contains(output.String(), `"profile": "mutations-only"`) || !strings.Contains(output.String(), binary) {
+		t.Fatalf("status output = %s", output.String())
+	}
+}
