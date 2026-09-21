@@ -37,6 +37,8 @@ func run() int {
 	var timeout time.Duration
 	var concurrency int
 	var listMode bool
+	var mcpServerInstructionsRaw string
+	var provenance ProvenanceSet
 
 	flag.StringVar(&taskID, "task", "", "Specific benchmark task ID to run (e.g. 'task-01-rename-local', empty for all)")
 	flag.StringVar(&tasksFlag, "tasks", "", "Comma-separated list of task base names to run in matrix mode")
@@ -52,7 +54,10 @@ func run() int {
 	flag.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Output directory to store individual benchmark results JSON and MD")
 	flag.StringVar(&extractTo, "extract-to", "", "Extract fixture to target directory and exit (for agent eval trials)")
 	flag.StringVar(&evalDir, "eval-dir", "", "Evaluate target directory with task oracle (for agent eval trials)")
-	flag.DurationVar(&timeout, "timeout", 180*time.Second, "Timeout per benchmark task")
+	flag.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark task")
+	flag.StringVar(&mcpServerInstructionsRaw, "mcp-server-instructions", "none", "Server-wide semedit MCP instruction mode (none, descriptive, prescriptive; Codex only)")
+	flag.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable; does not group results)")
+	flag.Var(&provenance, "classifier", "Deprecated alias for -provenance")
 	flag.BoolVar(&listMode, "list", false, "List all available benchmark tasks and their prompt variants")
 	flag.Parse()
 
@@ -92,8 +97,14 @@ func run() int {
 		return 0
 	}
 
+	mcpServerInstructions, err := ParseMCPServerInstructionMode(mcpServerInstructionsRaw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid -mcp-server-instructions: %v\n", err)
+		return 1
+	}
+
 	scratchDir := filepath.Join(".scratch", "benchmarks")
-	runner := NewRunner(scratchDir)
+	runner := NewRunner(scratchDir, WithMCPServerInstructions(mcpServerInstructions), WithProvenance(provenance))
 
 	if matrixMode || len(targets) > 0 {
 		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, outJSON, outMD, timeout, concurrency)
@@ -154,6 +165,11 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 	fmt.Printf("    Tasks:    %v\n", taskBases)
 	fmt.Printf("    Variants: %v\n", variants)
 	fmt.Printf("    Arms:     %v\n\n", arms)
+	fmt.Printf("    MCP server instructions: %s\n", runner.mcpServerInstructionsMode)
+	if runner.provenance.String() != "" {
+		fmt.Printf("    Provenance: %s\n", runner.provenance)
+	}
+	fmt.Println()
 
 	type matrixJob struct {
 		taskBase string
@@ -180,19 +196,16 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 				continue
 			}
 
-			promptVarKeys := make([]string, 0, len(task.Metadata.PromptVariants))
-			for k := range task.Metadata.PromptVariants {
-				promptVarKeys = append(promptVarKeys, k)
+			if len(declaredPromptVariants(task)) == 0 {
+				fmt.Printf("Skipping benchmark %s: no non-empty prompt_variants declared in its txtar fixture\n", task.Metadata.TaskID)
+				continue
 			}
-			sort.Strings(promptVarKeys)
 
 			for _, variant := range variants {
-				effectiveVariants := []string{variant}
-				if len(promptVarKeys) > 0 && !strings.Contains(variant, ":") {
-					effectiveVariants = make([]string, 0, len(promptVarKeys))
-					for _, pv := range promptVarKeys {
-						effectiveVariants = append(effectiveVariants, variant+":"+pv)
-					}
+				effectiveVariants := matrixPromptVariants(task, variant)
+				if len(effectiveVariants) == 0 {
+					fmt.Printf("Skipping benchmark %s variant %s: prompt variant is not declared in its txtar fixture\n", task.Metadata.TaskID, variant)
+					continue
 				}
 
 				for _, effVar := range effectiveVariants {
@@ -262,13 +275,14 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 	if outDir != "" {
 		repoRoot, _ := os.Getwd()
 		type benchKey struct {
-			taskBase string
-			target   string
+			taskBase              string
+			target                string
+			mcpServerInstructions MCPServerInstructionMode
 		}
 		benchGroups := make(map[benchKey][]*RunResult)
 		for _, r := range allRuns {
 			base := normalizeTaskBase(r.TaskID)
-			k := benchKey{taskBase: base, target: r.Target.String()}
+			k := benchKey{taskBase: base, target: r.Target.String(), mcpServerInstructions: r.MCPServerInstructions}
 			benchGroups[k] = append(benchGroups[k], r)
 		}
 
@@ -281,6 +295,9 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 			provenance := ResolveTxtarProvenance(repoRoot, relFixture)
 
 			targetSlug := strings.ReplaceAll(k.target, "/", "-")
+			if instructionMode := normalizeMCPServerInstructions(k.mcpServerInstructions); instructionMode != MCPServerInstructionsNone {
+				targetSlug += "-mcp-server-instructions-" + string(instructionMode)
+			}
 			taskOutDir := filepath.Join(outDir, k.taskBase)
 			if err := os.MkdirAll(taskOutDir, 0o750); err != nil {
 				fmt.Printf("❌ Failed to create task out dir %s: %v\n", taskOutDir, err)
@@ -358,24 +375,35 @@ func runSingle(runner *Runner, benchDir, taskSelector, harnessStr, armStr, outJS
 			continue
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		var res *RunResult
-		if harness == HarnessControl || arm == ArmControl {
-			res, err = runner.ExecuteControl(ctx, task)
-		} else {
-			variant := "small"
-			if strings.Contains(task.Metadata.TaskID, "large") {
-				variant = "large"
+		variant := "small"
+		if strings.Contains(task.Metadata.TaskID, "large") {
+			variant = "large"
+		}
+		variants := []string{variant}
+		if harness != HarnessControl && arm != ArmControl {
+			variants = matrixPromptVariants(task, variant)
+			if len(variants) == 0 {
+				fmt.Printf("Skipping benchmark %s: no non-empty prompt_variants declared in its txtar fixture\n", task.Metadata.TaskID)
+				continue
 			}
-			res, err = runner.ExecuteAgentDriver(ctx, task, target, arm, variant)
 		}
-		cancel()
 
-		if err != nil {
-			fmt.Printf("❌ Task %s failed: %v\n", task.Metadata.TaskID, err)
-			continue
+		for _, variant := range variants {
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			var res *RunResult
+			if harness == HarnessControl || arm == ArmControl {
+				res, err = runner.ExecuteControl(ctx, task)
+			} else {
+				res, err = runner.ExecuteAgentDriver(ctx, task, target, arm, variant)
+			}
+			cancel()
+
+			if err != nil {
+				fmt.Printf("❌ Task %s failed: %v\n", task.Metadata.TaskID, err)
+				continue
+			}
+			reportRuns = append(reportRuns, res)
 		}
-		reportRuns = append(reportRuns, res)
 	}
 
 	if outJSON != "" || outMD != "" {
@@ -425,6 +453,41 @@ func resolveFixturePath(benchDir, taskBase, _ string) string {
 	}
 
 	return filepath.Join(benchDir, taskBase+".txtar")
+}
+
+func declaredPromptVariants(task *Task) []string {
+	if task == nil {
+		return nil
+	}
+
+	variants := make([]string, 0, len(task.Metadata.PromptVariants))
+	for name, prompt := range task.Metadata.PromptVariants {
+		if strings.TrimSpace(name) != "" && strings.TrimSpace(prompt) != "" {
+			variants = append(variants, name)
+		}
+	}
+	sort.Strings(variants)
+	return variants
+}
+
+func matrixPromptVariants(task *Task, contextVariant string) []string {
+	declared := declaredPromptVariants(task)
+	if len(declared) == 0 {
+		return nil
+	}
+
+	if _, promptVariant, explicit := strings.Cut(contextVariant, ":"); explicit {
+		if slices.Contains(declared, promptVariant) {
+			return []string{contextVariant}
+		}
+		return nil
+	}
+
+	variants := make([]string, 0, len(declared))
+	for _, promptVariant := range declared {
+		variants = append(variants, contextVariant+":"+promptVariant)
+	}
+	return variants
 }
 
 // BenchmarkInfo summarizes an available benchmark task fixture.

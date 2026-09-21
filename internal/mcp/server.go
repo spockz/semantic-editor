@@ -14,25 +14,37 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf16"
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/gocache"
 	"semedit/internal/maven"
 	"semedit/internal/operation"
 	"semedit/internal/symbol"
+	"semedit/internal/telemetry"
 )
 
 // Server handles MCP JSON-RPC requests over stdio streams.
 type Server struct {
-	profile    string
-	workDir    string
-	service    *backend.Service
-	registry   *operation.Registry
-	liveReload bool
-	outMu      sync.Mutex
-	out        io.Writer
+	profile      string
+	workDir      string
+	service      *backend.Service
+	registry     *operation.Registry
+	liveReload   bool
+	instructions string
+	goBaseDir    string
+	outMu        sync.Mutex
+	out          io.Writer
 }
+
+const (
+	// DescriptiveInstructions advertises semantic operations without requiring their use.
+	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
+	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
+	PrescriptiveInstructions = "Use semedit semantic tools as the default for source-code mutations. Use direct file edits only when no semantic operation applies or the semantic operation fails, is unsupported, or is ambiguous."
+)
 
 // Option configures a Server instance.
 type Option func(*Server)
@@ -40,6 +52,20 @@ type Option func(*Server)
 // WithLiveReload enables in-place re-exec and dynamic tool updates.
 func WithLiveReload(enabled bool) Option {
 	return func(s *Server) { s.liveReload = enabled }
+}
+
+// WithInstructions sets optional server-wide guidance returned during MCP initialization.
+func WithInstructions(instructions string) Option {
+	return func(s *Server) { s.instructions = strings.TrimSpace(instructions) }
+}
+
+// WithGoBaseDir configures the directory used for Go subprocess state.
+func WithGoBaseDir(baseDir string) Option {
+	return func(s *Server) {
+		if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
+			s.goBaseDir = baseDir
+		}
+	}
 }
 
 // WithService injects the language service used by registry dispatch.
@@ -65,11 +91,12 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 		}
 	}
 	s := &Server{
-		profile:  profile,
-		workDir:  workDir,
-		service:  backend.NewDefaultService(),
-		registry: operation.DefaultRegistry(),
-		out:      out,
+		profile:   profile,
+		workDir:   workDir,
+		service:   backend.NewDefaultService(),
+		registry:  operation.DefaultRegistry(),
+		goBaseDir: filepath.Join(workDir, ".scratch", "go"),
+		out:       out,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -98,6 +125,11 @@ type jsonRPCError struct {
 
 // Serve reads newline-delimited JSON-RPC requests from in and writes responses to out.
 func (s *Server) Serve(ctx context.Context, in io.Reader) error {
+	ctx = gocache.WithBaseDir(ctx, s.goBaseDir)
+	if _, err := gocache.Environment(ctx, s.workDir); err != nil {
+		return fmt.Errorf("prepare MCP Go base directory: %w", err)
+	}
+
 	reader := bufio.NewReader(in)
 	for {
 		select {
@@ -146,11 +178,15 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 				s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
 			}
 		}
-		s.sendResult(req.ID, map[string]any{
+		result := map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			"serverInfo":      map[string]any{"name": "semedit", "version": "0.1.0"},
-		})
+		}
+		if s.instructions != "" {
+			result["instructions"] = s.instructions
+		}
+		s.sendResult(req.ID, result)
 	case "notifications/initialized":
 		if s.liveReload {
 			s.notifyToolsListChanged()
@@ -258,24 +294,33 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
 		return
 	}
+	timing := newToolRequestTiming(ctx)
+	ctx = timing.Context(ctx)
 	raw := map[string]any{}
+	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
 	if len(params.Arguments) > 0 && string(params.Arguments) != "null" {
 		if err := json.Unmarshal(params.Arguments, &raw); err != nil {
-			s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err), err)
+			finishArguments()
+			s.sendToolErrorWithTiming(id, fmt.Sprintf("invalid arguments: %v", err), timing, err)
 			return
 		}
 	}
+	finishArguments()
+	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	result, err := s.registry.Dispatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Registry: s.registry, Service: s.service}, entry.Key, raw)
+	finishDispatch()
 	if err != nil {
-		s.sendToolError(id, err.Error(), err)
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
+	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 	text, err := entry.Format(result)
+	finishResponse()
 	if err != nil {
-		s.sendToolError(id, err.Error(), err)
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
-	s.sendToolSuccess(id, text)
+	s.sendToolSuccessWithTiming(id, text, timing)
 }
 
 func (s *Server) handleReload(id json.RawMessage) {
@@ -293,6 +338,14 @@ func (s *Server) sendToolSuccess(id json.RawMessage, text string) {
 	s.sendResult(id, map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": false})
 }
 
+func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timing *toolRequestTiming) {
+	s.sendResult(id, map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": text}},
+		"isError":           false,
+		"structuredContent": map[string]any{"metrics": timing.Snapshot()},
+	})
+}
+
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
 	if len(errs) > 0 && errs[0] != nil {
@@ -305,6 +358,42 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 		}
 	}
 	s.sendResult(id, result)
+}
+
+func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, errs ...error) {
+	result := map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": text}},
+		"isError":           true,
+		"structuredContent": map[string]any{"metrics": timing.Snapshot()},
+	}
+	if len(errs) > 0 && errs[0] != nil {
+		var mavenErr *maven.Error
+		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
+			result["structuredContent"].(map[string]any)["error"] = text
+			result["structuredContent"].(map[string]any)["result"] = mavenErr.MavenResult()
+		}
+		if loc := s.extractLocation(errs[0]); loc != nil {
+			result["location"] = loc
+		}
+	}
+	s.sendResult(id, result)
+}
+
+type toolRequestTiming struct {
+	metrics *telemetry.Metrics
+	started time.Time
+}
+
+func newToolRequestTiming(_ context.Context) *toolRequestTiming {
+	return &toolRequestTiming{metrics: telemetry.NewMetrics(), started: time.Now()}
+}
+
+func (t *toolRequestTiming) Context(ctx context.Context) context.Context {
+	return telemetry.WithMetrics(ctx, t.metrics)
+}
+
+func (t *toolRequestTiming) Snapshot() telemetry.Snapshot {
+	return t.metrics.Snapshot(time.Since(t.started))
 }
 
 func (s *Server) extractLocation(err error) map[string]any {

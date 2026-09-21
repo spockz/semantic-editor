@@ -1,0 +1,241 @@
+task_id: task-11-mixed-sink-api-migration
+category: semantic_routing
+instruction: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+verification_constraint: "Run go test ./... before concluding."
+prompt_variants:
+  default: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+      - "audit/event_test.go"
+      - "audit/summary_test.go"
+      - "service/dispatch_test.go"
+      - "metrics/writer_test.go"
+      - "legacy/export_test.go"
+  level_2_ast:
+    file: "audit/normalize.go"
+    must_contain_symbols:
+      - "NormalizeKind"
+    must_contain_imports:
+      - "strings"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+    hidden_test_dir: "testdata/bench-oracles/task-11-mixed-sink-api-migration"
+-- go.mod --
+module example.com/auditapp
+
+go 1.23
+-- audit/event.go --
+// Package audit defines the event delivery boundary used by the fixture.
+package audit
+
+type Event struct {
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+}
+-- audit/sink.go --
+// Package audit exposes the established event sink contract and a memory implementation.
+package audit
+
+type Sink interface {
+	Write(Event) error
+}
+
+type TransactionalSink interface {
+	Sink
+	Begin() error
+	Commit() error
+}
+
+type MemorySink struct {
+	Events []Event
+}
+
+func NewMemorySink() *MemorySink {
+	return &MemorySink{}
+}
+
+func (m *MemorySink) Write(event Event) error {
+	m.Events = append(m.Events, event)
+	return nil
+}
+-- audit/normalize.go --
+// Package audit leaves room for normalization rules owned by the delivery boundary.
+package audit
+-- audit/event_test.go --
+// Package audit verifies stable event data independent of delivery rules.
+package audit
+
+import "testing"
+
+func TestEventRetainsKind(t *testing.T) {
+	event := Event{ID: "evt-1", Kind: "audit"}
+	if event.ID != "evt-1" || event.Kind != "audit" {
+		t.Fatalf("event = %#v", event)
+	}
+}
+-- audit/summary.go --
+// Package audit groups delivery kinds for operational reporting.
+package audit
+
+func Classify(kind string) string {
+	switch kind {
+	case "health":
+		return "control"
+	default:
+		return "data"
+	}
+}
+-- audit/summary_test.go --
+// Package audit verifies stable reporting categories.
+package audit
+
+import "testing"
+
+func TestClassifyHealth(t *testing.T) {
+	if got := Classify("health"); got != "control" {
+		t.Fatalf("classification = %q, want control", got)
+	}
+}
+-- service/dispatch.go --
+// Package service coordinates application work with the configured audit sink.
+package service
+
+import "example.com/auditapp/audit"
+
+type Dispatcher struct {
+	sink audit.Sink
+}
+
+func NewDispatcher(sink audit.Sink) *Dispatcher {
+	return &Dispatcher{sink: sink}
+}
+
+func (d *Dispatcher) Record(event audit.Event) error {
+	return d.sink.Write(event)
+}
+
+func DispatchAll(sink audit.Sink, events []audit.Event) error {
+	writeEvent := audit.Sink.Write
+	for _, event := range events {
+		if err := writeEvent(sink, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+-- service/dispatch_test.go --
+// Package service verifies ordinary event delivery.
+package service
+
+import (
+	"testing"
+
+	"example.com/auditapp/audit"
+)
+
+func TestRecordDeliversEvent(t *testing.T) {
+	sink := audit.NewMemorySink()
+	dispatcher := NewDispatcher(sink)
+	if err := dispatcher.Record(audit.Event{ID: "evt-1", Kind: "audit"}); err != nil {
+		t.Fatalf("record event: %v", err)
+	}
+	if len(sink.Events) != 1 || sink.Events[0].Kind != "audit" {
+		t.Fatalf("events = %#v, want delivered audit event", sink.Events)
+	}
+}
+-- metrics/writer.go --
+// Package metrics owns unrelated classification and writer protocols.
+package metrics
+
+type Writer struct {
+	Total int
+}
+
+func (w *Writer) Write(delta int) {
+	w.Total += delta
+}
+
+func Classify(name string) string {
+	if name == "probe" {
+		return "sample"
+	}
+	return "measurement"
+}
+-- metrics/writer_test.go --
+// Package metrics protects its writer and classification protocols from audit changes.
+package metrics
+
+import "testing"
+
+func TestWriterAndClassification(t *testing.T) {
+	writer := &Writer{}
+	writer.Write(3)
+	if writer.Total != 3 || Classify("probe") != "sample" {
+		t.Fatalf("metrics protocol changed unexpectedly: %#v", writer)
+	}
+}
+-- legacy/export.go --
+// Package legacy retains byte export and archival classifications outside audit delivery.
+package legacy
+
+import "io"
+
+type Exporter struct {
+	Output io.Writer
+}
+
+func (e Exporter) Write(data []byte) error {
+	_, err := e.Output.Write(data)
+	return err
+}
+
+func Classify(kind string) string {
+	if kind == "probe" {
+		return "archive"
+	}
+	return "record"
+}
+-- legacy/export_test.go --
+// Package legacy protects its exporter and classification from audit changes.
+package legacy
+
+import (
+	"bytes"
+	"testing"
+)
+
+func TestExporterAndClassification(t *testing.T) {
+	var output bytes.Buffer
+	if err := (Exporter{Output: &output}).Write([]byte("archive")); err != nil {
+		t.Fatalf("write export: %v", err)
+	}
+	if output.String() != "archive" || Classify("probe") != "archive" {
+		t.Fatal("legacy protocol changed unexpectedly")
+	}
+}
+-- cmd/migrate/main.go --
+// Command migrate demonstrates the established service dispatch path.
+package main
+
+import (
+	"os"
+
+	"example.com/auditapp/audit"
+	"example.com/auditapp/service"
+)
+
+func main() {
+	dispatcher := service.NewDispatcher(audit.NewMemorySink())
+	_ = dispatcher.Record(audit.Event{ID: "startup", Kind: os.Getenv("AUDIT_KIND")})
+}
+-- docs/audit-sinks.md --
+# Audit delivery
+
+The service records operational events at a package boundary so deployments can choose an appropriate destination. Event labels arrive from command-line flags, hooks, and external integrations, so they are not always formatted consistently.
+
+Metrics collection and archival export use separate protocols. Changes to the audit boundary should avoid coupling those components to event persistence details.

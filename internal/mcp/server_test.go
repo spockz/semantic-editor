@@ -140,6 +140,43 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 }
 
+func TestMCPServerReturnsConfiguredInstructions(t *testing.T) {
+	t.Parallel()
+
+	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", ".", &out, mcp.WithInstructions("Prefer semantic operations.")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			Instructions string `json:"instructions"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := response.Result.Instructions, "Prefer semantic operations."; got != want {
+		t.Errorf("initialize instructions = %q, want %q", got, want)
+	}
+}
+
+func TestMCPServerRejectsUnusableGoBaseDir(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(baseDir, []byte("occupied"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	err := mcp.NewServer("full", t.TempDir(), &out, mcp.WithGoBaseDir(baseDir)).Serve(t.Context(), strings.NewReader(""))
+	if err == nil {
+		t.Fatal("Serve succeeded with an unusable Go base directory")
+	}
+	if !strings.Contains(err.Error(), "prepare MCP Go base directory") {
+		t.Errorf("Serve error = %v, want Go base directory context", err)
+	}
+}
+
 func TestSemanticRenameAdvertisesRust(t *testing.T) {
 	var out bytes.Buffer
 	srv := mcp.NewServer("full", ".", &out)
@@ -261,7 +298,11 @@ func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
 		Result struct {
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
-				Result map[string]any `json:"result"`
+				Result  map[string]any `json:"result"`
+				Metrics struct {
+					SchemaVersion int `json:"schema_version"`
+					TotalMS       int `json:"total_ms"`
+				} `json:"metrics"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
@@ -273,6 +314,9 @@ func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
 	}
 	if response.Result.StructuredContent.Result == nil {
 		t.Fatal("MCP Maven failure must include structuredContent.result")
+	}
+	if response.Result.StructuredContent.Metrics.SchemaVersion != 1 {
+		t.Fatalf("MCP Maven failure metrics schema = %d, want 1", response.Result.StructuredContent.Metrics.SchemaVersion)
 	}
 }
 
@@ -335,6 +379,32 @@ func Existing() {}
 
 	if err := srv.Serve(ctx, inBuf); err != nil {
 		t.Fatalf("Serve failed: %v", err)
+	}
+	type timingResponse struct {
+		Result struct {
+			StructuredContent struct {
+				Metrics struct {
+					SchemaVersion int `json:"schema_version"`
+					Phases        map[string]struct {
+						Count int `json:"count"`
+					} `json:"phases"`
+				} `json:"metrics"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	responses := make([]timingResponse, 0, len(messages))
+	for line := range strings.SplitSeq(strings.TrimSpace(outBuf.String()), "\n") {
+		var response timingResponse
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			t.Fatalf("unmarshal MCP response: %v", err)
+		}
+		responses = append(responses, response)
+	}
+	if len(responses) != len(messages) {
+		t.Fatalf("MCP response count = %d, want %d", len(responses), len(messages))
+	}
+	if got := responses[0].Result.StructuredContent.Metrics; got.SchemaVersion != 1 || got.Phases["verification.before_diagnostics"].Count != 1 || got.Phases["verification.after_diagnostics"].Count != 1 {
+		t.Errorf("first mutation metrics = %#v, want request metrics with before/after diagnostics", got)
 	}
 
 	data, err := os.ReadFile(filepath.Clean(filePath))

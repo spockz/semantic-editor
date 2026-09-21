@@ -10,6 +10,7 @@ import (
 	"semedit/internal/astedit"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
+	"semedit/internal/telemetry"
 )
 
 // GoBackend adapts the existing Go resolver, gopls rename, and diagnostic pipeline.
@@ -158,7 +159,7 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 	if lookup.Ambiguous {
 		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
 	}
-	before, err := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	before, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +175,7 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 			return nil, fmt.Errorf("format after rename: %w", err)
 		}
 	}
-	after, err := pipeline.CheckDiagnostics(ctx, request.Project.RootDir)
+	after, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), request.Project.RootDir)
 	if err != nil {
 		return nil, err
 	}

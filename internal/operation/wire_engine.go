@@ -11,6 +11,7 @@ import (
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
 	"semedit/internal/pipeline"
+	"semedit/internal/telemetry"
 )
 
 var (
@@ -69,9 +70,9 @@ func effectiveAutoOrganize(cc CallContext, parsed bool) bool {
 }
 
 func surroundingDelta(ctx context.Context, workDir string) ([]string, func() pipeline.DiagnosticDelta) {
-	before, _ := pipeline.CheckDiagnostics(ctx, workDir)
+	before, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), workDir)
 	return before, func() pipeline.DiagnosticDelta {
-		after, _ := pipeline.CheckDiagnostics(ctx, workDir)
+		after, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
 		return pipeline.ComputeDelta(before, after)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +66,8 @@ type BuildConfig struct {
 
 // TestConfig specifies test suite requirements.
 type TestConfig struct {
-	PassTests bool `json:"pass_tests"`
+	PassTests     bool   `json:"pass_tests"`
+	HiddenTestDir string `json:"hidden_test_dir"`
 }
 
 // OracleResult records evaluation outcomes across all validation levels.
@@ -197,6 +199,8 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 		case "oracle.level_4_test.pass_tests":
 			b, _ := strconv.ParseBool(val)
 			meta.Oracle.Test.PassTests = b
+		case "oracle.level_4_test.hidden_test_dir":
+			meta.Oracle.Test.HiddenTestDir = val
 		}
 	}
 
@@ -228,7 +232,7 @@ func (t *Task) ExtractVariantTo(targetDir, variant string) error {
 	}
 
 	if strings.Contains(strings.ToLower(variant), "large") {
-		for relPath, content := range LargeContextOverlayFiles() {
+		for relPath, content := range LargeContextOverlayFiles(t.Metadata.TaskID) {
 			destPath := filepath.Join(targetDir, filepath.FromSlash(relPath))
 			// #nosec G703 -- checking if overlay file already exists in targetDir
 			if _, err := os.Stat(destPath); err == nil {
@@ -295,6 +299,12 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 
 	// Level 4: Hidden Tests
 	if task.Metadata.Oracle.Test.PassTests {
+		if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
+			res.FailureStage = "level_4_test"
+			res.ErrorMessage = fmt.Sprintf("install hidden tests: %v", err)
+			res.Duration = time.Since(start)
+			return res, nil
+		}
 		cmd := exec.CommandContext(ctx, "go", "test", "./...")
 		cmd.Dir = workDir
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -309,6 +319,56 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	res.Passed = true
 	res.Duration = time.Since(start)
 	return res, nil
+}
+
+// installHiddenTests copies task-owned acceptance tests only after the agent has finished.
+func installHiddenTests(workDir, sourceDir string) error {
+	if sourceDir == "" {
+		return nil
+	}
+	sourceRoot, err := filepath.Abs(sourceDir)
+	if err != nil {
+		return fmt.Errorf("resolve hidden test directory: %w", err)
+	}
+	sourceFS, err := os.OpenRoot(sourceRoot)
+	if err != nil {
+		return fmt.Errorf("open hidden test directory: %w", err)
+	}
+	defer func() {
+		_ = sourceFS.Close()
+	}()
+
+	workFS, err := os.OpenRoot(workDir)
+	if err != nil {
+		return fmt.Errorf("open benchmark workspace: %w", err)
+	}
+	defer func() {
+		_ = workFS.Close()
+	}()
+
+	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return fmt.Errorf("relativize hidden test %s: %w", path, err)
+		}
+		if err := workFS.MkdirAll(filepath.Dir(rel), 0o750); err != nil {
+			return fmt.Errorf("create hidden test directory for %s: %w", rel, err)
+		}
+		data, err := sourceFS.ReadFile(rel)
+		if err != nil {
+			return fmt.Errorf("read hidden test %s: %w", rel, err)
+		}
+		if err := workFS.WriteFile(rel, data, 0o600); err != nil {
+			return fmt.Errorf("write hidden test %s: %w", rel, err)
+		}
+		return nil
+	})
 }
 
 func evaluateAST(cfg ASTConfig, workDir string) error {

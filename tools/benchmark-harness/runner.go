@@ -4,8 +4,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"semedit/internal/adapters/golang"
@@ -26,6 +29,116 @@ const (
 	ArmControl ArmType = "control"
 )
 
+// MCPServerInstructionMode identifies the server-wide instruction policy for a benchmark cell.
+type MCPServerInstructionMode string
+
+const (
+	// MCPServerInstructionsNone keeps the MCP server neutral so prompt wording is the only intervention.
+	MCPServerInstructionsNone MCPServerInstructionMode = "none"
+	// MCPServerInstructionsDescriptive advertises semantic operations without directing their use.
+	MCPServerInstructionsDescriptive MCPServerInstructionMode = "descriptive"
+	// MCPServerInstructionsPrescriptive directs the model to prefer semantic source mutations.
+	MCPServerInstructionsPrescriptive MCPServerInstructionMode = "prescriptive"
+)
+
+// ParseMCPServerInstructionMode validates a CLI-supplied server instruction experiment mode.
+func ParseMCPServerInstructionMode(raw string) (MCPServerInstructionMode, error) {
+	mode := MCPServerInstructionMode(strings.ToLower(strings.TrimSpace(raw)))
+	switch mode {
+	case "", MCPServerInstructionsNone:
+		return MCPServerInstructionsNone, nil
+	case MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive:
+		return mode, nil
+	case "directive":
+		return MCPServerInstructionsPrescriptive, nil
+	default:
+		return "", fmt.Errorf("unsupported MCP instruction mode %q (want none, descriptive, or prescriptive)", raw)
+	}
+}
+
+// ProvenanceSet records technical execution context without defining a benchmark comparison cell.
+type ProvenanceSet map[string]string
+
+// Set parses a repeatable key=value provenance entry while preventing ambiguous duplicates.
+func (c *ProvenanceSet) Set(raw string) error {
+	key, value, ok := strings.Cut(raw, "=")
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if !ok || key == "" || value == "" {
+		return fmt.Errorf("provenance must use key=value form, got %q", raw)
+	}
+	if strings.ContainsAny(key, "=,\t\n") || strings.ContainsAny(value, "\t\n") {
+		return fmt.Errorf("invalid provenance %q", raw)
+	}
+	if *c == nil {
+		*c = make(ProvenanceSet)
+	}
+	if existing, exists := (*c)[key]; exists && existing != value {
+		return fmt.Errorf("provenance %q already has value %q", key, existing)
+	}
+	(*c)[key] = value
+	return nil
+}
+
+// String returns a stable representation suitable for logs and presentation.
+func (c ProvenanceSet) String() string {
+	if len(c) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(c))
+	for key := range c {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+c[key])
+	}
+	return strings.Join(parts, ",")
+}
+
+// Clone returns an independent provenance set so every result snapshots its execution context.
+func (c ProvenanceSet) Clone() ProvenanceSet {
+	if len(c) == 0 {
+		return nil
+	}
+	clone := make(ProvenanceSet, len(c))
+	maps.Copy(clone, c)
+	return clone
+}
+
+// ToolCallStatus distinguishes confirmed outcomes from harnesses that expose only a planned tool call.
+type ToolCallStatus string
+
+const (
+	ToolCallStatusSucceeded ToolCallStatus = "succeeded"
+	ToolCallStatusFailed    ToolCallStatus = "failed"
+	ToolCallStatusUnknown   ToolCallStatus = "unknown"
+)
+
+// ToolCall captures the transport and functional outcome of one tool invocation.
+type ToolCall struct {
+	Name             string         `json:"name"`
+	Server           string         `json:"server,omitempty"`
+	TransportStatus  ToolCallStatus `json:"transport_status"`
+	FunctionalStatus ToolCallStatus `json:"functional_status"`
+	Failure          string         `json:"failure,omitempty"`
+	MCPMetrics       *MCPMetrics    `json:"mcp_metrics,omitempty"`
+}
+
+// MCPMetrics records server-observed latency returned in an MCP tool response.
+type MCPMetrics struct {
+	SchemaVersion int                       `json:"schema_version"`
+	TotalMS       int64                     `json:"total_ms"`
+	Phases        map[string]MCPPhaseMetric `json:"phases,omitempty"`
+}
+
+// MCPPhaseMetric aggregates one instrumented server phase.
+type MCPPhaseMetric struct {
+	Count      int   `json:"count"`
+	DurationMS int64 `json:"duration_ms"`
+}
+
 // RunConfig configures a benchmark execution run.
 type RunConfig struct {
 	Arm        ArmType
@@ -36,49 +149,76 @@ type RunConfig struct {
 
 // RunResult aggregates telemetry, performance metrics, and oracle outcomes.
 type RunResult struct {
-	TaskID               string        `json:"task_id"`
-	Variant              string        `json:"variant,omitempty"` // "small", "large"
-	PromptVariant        string        `json:"prompt_variant,omitempty"`
-	Target               Target        `json:"target"`
-	Arm                  ArmType       `json:"arm"`
-	Success              bool          `json:"success"`
-	Turns                int           `json:"turns"`
-	InitialLoadTurns     int           `json:"initial_load_turns"`
-	MCPLoadTurns         int           `json:"mcp_load_turns"`
-	InternalTurns        int           `json:"internal_turns"`
-	ToolCount            int           `json:"tool_count"`
-	WallClock            time.Duration `json:"wall_clock_ms"`
-	InitialContextTokens int           `json:"initial_context_tokens"`
-	PromptTokens         int           `json:"prompt_tokens"`
-	CachedPromptTokens   int           `json:"cached_prompt_tokens"`
-	UncachedPromptTokens int           `json:"uncached_prompt_tokens"`
-	OutputTokens         int           `json:"output_tokens"`
-	ReasoningTokens      int           `json:"reasoning_tokens"`
-	Oracle               *OracleResult `json:"oracle"`
-	Prompt               string        `json:"prompt,omitempty"`
-	BeforeState          string        `json:"before_state,omitempty"`
-	Diff                 string        `json:"diff,omitempty"`
-	ToolsUsed            []string      `json:"tools_used,omitempty"`
-	MCPVerified          bool          `json:"mcp_verified"`
-	Error                string        `json:"error,omitempty"`
+	TaskID                string                   `json:"task_id"`
+	Variant               string                   `json:"variant,omitempty"` // "small", "large"
+	PromptVariant         string                   `json:"prompt_variant,omitempty"`
+	MCPServerInstructions MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
+	Provenance            ProvenanceSet            `json:"provenance,omitempty"`
+	Target                Target                   `json:"target"`
+	Arm                   ArmType                  `json:"arm"`
+	Success               bool                     `json:"success"`
+	Turns                 int                      `json:"turns"`
+	InitialLoadTurns      int                      `json:"initial_load_turns"`
+	MCPLoadTurns          int                      `json:"mcp_load_turns"`
+	InternalTurns         int                      `json:"internal_turns"`
+	ToolCount             int                      `json:"tool_count"`
+	WallClock             time.Duration            `json:"wall_clock_ms"`
+	InitialContextTokens  int                      `json:"initial_context_tokens"`
+	PromptTokens          int                      `json:"prompt_tokens"`
+	CachedPromptTokens    int                      `json:"cached_prompt_tokens"`
+	UncachedPromptTokens  int                      `json:"uncached_prompt_tokens"`
+	OutputTokens          int                      `json:"output_tokens"`
+	ReasoningTokens       int                      `json:"reasoning_tokens"`
+	Oracle                *OracleResult            `json:"oracle"`
+	Prompt                string                   `json:"prompt,omitempty"`
+	BeforeState           string                   `json:"before_state,omitempty"`
+	Diff                  string                   `json:"diff,omitempty"`
+	ToolsUsed             []string                 `json:"tools_used,omitempty"`
+	ToolCalls             []ToolCall               `json:"tool_calls,omitempty"`
+	MCPVerified           bool                     `json:"mcp_verified"`
+	Error                 string                   `json:"error,omitempty"`
 }
 
 // Runner coordinates execution across evaluation arms and benchmarks.
 type Runner struct {
-	baseScratchDir string
+	baseScratchDir            string
+	mcpServerInstructionsMode MCPServerInstructionMode
+	provenance                ProvenanceSet
+}
+
+// RunnerOption configures one benchmark runner without adding global process state.
+type RunnerOption func(*Runner)
+
+// WithMCPServerInstructions selects the server instruction experiment mode for all runs made by a runner.
+func WithMCPServerInstructions(mode MCPServerInstructionMode) RunnerOption {
+	return func(r *Runner) { r.mcpServerInstructionsMode = mode }
+}
+
+// WithProvenance attaches immutable execution provenance to every benchmark result.
+func WithProvenance(provenance ProvenanceSet) RunnerOption {
+	return func(r *Runner) { r.provenance = provenance.Clone() }
 }
 
 // NewRunner initializes a benchmark runner.
-func NewRunner(scratchDir string) *Runner {
+func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	if scratchDir == "" {
 		scratchDir = filepath.Join(".scratch", "benchmarks")
 	}
 	if abs, err := filepath.Abs(scratchDir); err == nil {
 		scratchDir = abs
 	}
-	return &Runner{
-		baseScratchDir: scratchDir,
+	runner := &Runner{
+		baseScratchDir:            scratchDir,
+		mcpServerInstructionsMode: MCPServerInstructionsNone,
 	}
+	for _, option := range options {
+		option(runner)
+	}
+	return runner
+}
+
+func (r *Runner) provenanceFor() ProvenanceSet {
+	return r.provenance.Clone()
 }
 
 // ExecuteControl runs a benchmark task using deterministic semedit operations directly.
@@ -189,10 +329,12 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	}
 
 	res := &RunResult{
-		TaskID:    task.Metadata.TaskID,
-		Arm:       ArmControl,
-		WallClock: time.Since(start),
-		Turns:     1,
+		TaskID:                task.Metadata.TaskID,
+		MCPServerInstructions: MCPServerInstructionsNone,
+		Provenance:            r.provenanceFor(),
+		Arm:                   ArmControl,
+		WallClock:             time.Since(start),
+		Turns:                 1,
 	}
 
 	if execErr != nil {

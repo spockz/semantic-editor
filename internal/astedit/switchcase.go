@@ -15,6 +15,7 @@ import (
 
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
+	"semedit/internal/telemetry"
 )
 
 // CasePlacement specifies relative placement for a newly inserted switch case.
@@ -135,7 +136,9 @@ func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource st
 	newContent.WriteString("\n")
 	newContent.Write(content[offset:])
 
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
 	formatted, err := format.Source(newContent.Bytes())
+	finishFormatting()
 	if err != nil {
 		return "", &SyntaxError{
 			File:    cleanPath,

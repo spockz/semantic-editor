@@ -1,50 +1,85 @@
-// Package gocache selects a verified writable Go build cache for subprocesses.
+// Package gocache creates project-local Go tool state for semantic subprocesses.
 package gocache
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-// Environment returns an environment with a verified writable GOCACHE.
-func Environment(workDir string) ([]string, error) {
-	env := os.Environ()
-	candidate := os.Getenv("GOCACHE")
-	if !writable(candidate) {
-		if workDir == "" {
-			return nil, fmt.Errorf("GOCACHE is unusable and work directory is empty")
-		}
-		candidate = filepath.Join(workDir, ".scratch", "go-cache")
-		if err := os.MkdirAll(candidate, 0o750); err != nil {
-			return nil, fmt.Errorf("create fallback GOCACHE %q: %w", candidate, err)
-		}
-		if !writable(candidate) {
-			return nil, fmt.Errorf("fallback GOCACHE %q is not writable", candidate)
-		}
-	}
-	filtered := make([]string, 0, len(env)+1)
-	for _, value := range env {
-		if !strings.HasPrefix(value, "GOCACHE=") {
-			filtered = append(filtered, value)
-		}
-	}
-	return append(filtered, "GOCACHE="+candidate), nil
+type baseDirContextKey struct{}
+
+// WithBaseDir selects the directory holding Go subprocess state for one request tree.
+func WithBaseDir(ctx context.Context, baseDir string) context.Context {
+	return context.WithValue(ctx, baseDirContextKey{}, strings.TrimSpace(baseDir))
 }
 
-func writable(dir string) bool {
-	// #nosec G703 -- dir is the caller-selected GOCACHE candidate; no path outside it is targeted.
-	if dir == "" || os.MkdirAll(dir, 0o750) != nil {
-		return false
+// Environment returns an environment whose Go state remains below the workspace scratch directory.
+func Environment(ctx context.Context, workDir string) ([]string, error) {
+	baseDir, _ := ctx.Value(baseDirContextKey{}).(string)
+	var err error
+	if baseDir == "" {
+		if workDir == "" {
+			return nil, fmt.Errorf("go workspace directory is empty")
+		}
+		root, err := filepath.Abs(workDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Go workspace directory: %w", err)
+		}
+		baseDir = filepath.Join(root, ".scratch", "go")
+	} else {
+		baseDir, err = filepath.Abs(baseDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Go base directory: %w", err)
+		}
 	}
-	probe, err := os.CreateTemp(dir, ".semedit-cache-")
-	if err != nil {
-		return false
+
+	cacheDir := filepath.Join(baseDir, "build")
+	moduleCacheDir := filepath.Join(baseDir, "mod")
+	tempDir := filepath.Join(baseDir, "tmp")
+	binDir := filepath.Join(baseDir, "bin")
+	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return nil, fmt.Errorf("create Go state directory %q: %w", dir, err)
+		}
+		if _, err := os.ReadDir(dir); err != nil {
+			return nil, fmt.Errorf("read Go state directory %q: %w", dir, err)
+		}
+		probe, err := os.CreateTemp(dir, ".semedit-go-state-")
+		if err != nil {
+			return nil, fmt.Errorf("write Go state directory %q: %w", dir, err)
+		}
+		name := probe.Name()
+		if err := probe.Close(); err != nil {
+			_ = os.Remove(name)
+			return nil, fmt.Errorf("close Go state probe %q: %w", name, err)
+		}
+		if err := os.Remove(name); err != nil {
+			return nil, fmt.Errorf("remove Go state probe %q: %w", name, err)
+		}
 	}
-	name := probe.Name()
-	_ = probe.Close()
-	// #nosec G703 -- name is returned by CreateTemp in the verified cache directory.
-	_ = os.Remove(name)
-	return true
+
+	managed := map[string]struct{}{
+		"GOENV":      {},
+		"GOCACHE":    {},
+		"GOMODCACHE": {},
+		"GOTMPDIR":   {},
+		"GOBIN":      {},
+	}
+	env := make([]string, 0, len(os.Environ())+len(managed))
+	for _, value := range os.Environ() {
+		key, _, _ := strings.Cut(value, "=")
+		if _, ok := managed[key]; !ok {
+			env = append(env, value)
+		}
+	}
+	return append(env,
+		"GOENV="+filepath.Join(baseDir, "env"),
+		"GOCACHE="+cacheDir,
+		"GOMODCACHE="+moduleCacheDir,
+		"GOTMPDIR="+tempDir,
+		"GOBIN="+binDir,
+	), nil
 }

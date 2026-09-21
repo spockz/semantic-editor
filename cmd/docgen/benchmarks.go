@@ -35,31 +35,59 @@ func (t BenchTarget) String() string {
 
 // BenchRunResult captures telemetry for a single trial.
 type BenchRunResult struct {
-	TaskID               string             `json:"task_id"`
-	Variant              string             `json:"variant,omitempty"`
-	PromptVariant        string             `json:"prompt_variant,omitempty"`
-	Target               BenchTarget        `json:"target"`
-	Arm                  string             `json:"arm"`
-	Success              bool               `json:"success"`
-	Turns                int                `json:"turns"`
-	InitialLoadTurns     int                `json:"initial_load_turns"`
-	MCPLoadTurns         int                `json:"mcp_load_turns"`
-	InternalTurns        int                `json:"internal_turns"`
-	ToolCount            int                `json:"tool_count"`
-	WallClock            time.Duration      `json:"wall_clock_ms"`
-	InitialContextTokens int                `json:"initial_context_tokens"`
-	PromptTokens         int                `json:"prompt_tokens"`
-	CachedPromptTokens   int                `json:"cached_prompt_tokens"`
-	UncachedPromptTokens int                `json:"uncached_prompt_tokens"`
-	OutputTokens         int                `json:"output_tokens"`
-	ReasoningTokens      int                `json:"reasoning_tokens"`
-	Oracle               *BenchOracleResult `json:"oracle"`
-	Prompt               string             `json:"prompt,omitempty"`
-	BeforeState          string             `json:"before_state,omitempty"`
-	Diff                 string             `json:"diff,omitempty"`
-	ToolsUsed            []string           `json:"tools_used,omitempty"`
-	MCPVerified          bool               `json:"mcp_verified"`
-	Error                string             `json:"error,omitempty"`
+	TaskID                string             `json:"task_id"`
+	Variant               string             `json:"variant,omitempty"`
+	PromptVariant         string             `json:"prompt_variant,omitempty"`
+	MCPServerInstructions string             `json:"mcp_server_instructions,omitempty"`
+	LegacyMCPInstructions string             `json:"mcp_instructions,omitempty"`
+	Provenance            map[string]string  `json:"provenance,omitempty"`
+	LegacyClassifiers     map[string]string  `json:"classifiers,omitempty"`
+	Target                BenchTarget        `json:"target"`
+	Arm                   string             `json:"arm"`
+	Success               bool               `json:"success"`
+	Turns                 int                `json:"turns"`
+	InitialLoadTurns      int                `json:"initial_load_turns"`
+	MCPLoadTurns          int                `json:"mcp_load_turns"`
+	InternalTurns         int                `json:"internal_turns"`
+	ToolCount             int                `json:"tool_count"`
+	WallClock             time.Duration      `json:"wall_clock_ms"`
+	InitialContextTokens  int                `json:"initial_context_tokens"`
+	PromptTokens          int                `json:"prompt_tokens"`
+	CachedPromptTokens    int                `json:"cached_prompt_tokens"`
+	UncachedPromptTokens  int                `json:"uncached_prompt_tokens"`
+	OutputTokens          int                `json:"output_tokens"`
+	ReasoningTokens       int                `json:"reasoning_tokens"`
+	Oracle                *BenchOracleResult `json:"oracle"`
+	Prompt                string             `json:"prompt,omitempty"`
+	BeforeState           string             `json:"before_state,omitempty"`
+	Diff                  string             `json:"diff,omitempty"`
+	ToolsUsed             []string           `json:"tools_used,omitempty"`
+	ToolCalls             []BenchToolCall    `json:"tool_calls,omitempty"`
+	MCPVerified           bool               `json:"mcp_verified"`
+	Error                 string             `json:"error,omitempty"`
+}
+
+// BenchToolCall captures a tool outcome from a benchmark report without importing the harness package.
+type BenchToolCall struct {
+	Name             string           `json:"name"`
+	Server           string           `json:"server,omitempty"`
+	TransportStatus  string           `json:"transport_status"`
+	FunctionalStatus string           `json:"functional_status"`
+	Failure          string           `json:"failure,omitempty"`
+	MCPMetrics       *BenchMCPMetrics `json:"mcp_metrics,omitempty"`
+}
+
+// BenchMCPMetrics records MCP server latency without importing the benchmark harness package.
+type BenchMCPMetrics struct {
+	SchemaVersion int                            `json:"schema_version"`
+	TotalMS       int64                          `json:"total_ms"`
+	Phases        map[string]BenchMCPPhaseMetric `json:"phases,omitempty"`
+}
+
+// BenchMCPPhaseMetric aggregates an instrumented MCP server phase.
+type BenchMCPPhaseMetric struct {
+	Count      int   `json:"count"`
+	DurationMS int64 `json:"duration_ms"`
 }
 
 // BenchOracleResult records oracle outcomes across evaluation levels.
@@ -76,24 +104,28 @@ type BenchOracleResult struct {
 
 // BenchComparisonSummary bundles Baseline vs MCP runs for a task and target.
 type BenchComparisonSummary struct {
-	TaskID                string          `json:"task_id"`
-	PromptVariant         string          `json:"prompt_variant,omitempty"`
-	TxtarPath             string          `json:"txtar_path,omitempty"`
-	TxtarProvenance       string          `json:"txtar_provenance,omitempty"`
-	Target                BenchTarget     `json:"target"`
-	VanillaPrompt         string          `json:"vanilla_prompt,omitempty"`
-	MCPPrompt             string          `json:"mcp_prompt,omitempty"`
-	VanillaVerifiedPrompt string          `json:"vanilla_verified_prompt,omitempty"`
-	MCPVerifiedPrompt     string          `json:"mcp_verified_prompt,omitempty"`
-	BeforeState           string          `json:"before_state,omitempty"`
-	SmallBaseline         *BenchRunResult `json:"small_baseline,omitempty"`
-	SmallSemedit          *BenchRunResult `json:"small_semedit,omitempty"`
-	SmallVerifiedBaseline *BenchRunResult `json:"small_verified_baseline,omitempty"`
-	SmallVerifiedSemedit  *BenchRunResult `json:"small_verified_semedit,omitempty"`
-	LargeBaseline         *BenchRunResult `json:"large_baseline,omitempty"`
-	LargeSemedit          *BenchRunResult `json:"large_semedit,omitempty"`
-	LargeVerifiedBaseline *BenchRunResult `json:"large_verified_baseline,omitempty"`
-	LargeVerifiedSemedit  *BenchRunResult `json:"large_verified_semedit,omitempty"`
+	TaskID                string            `json:"task_id"`
+	PromptVariant         string            `json:"prompt_variant,omitempty"`
+	MCPServerInstructions string            `json:"mcp_server_instructions,omitempty"`
+	LegacyMCPInstructions string            `json:"mcp_instructions,omitempty"`
+	Provenance            map[string]string `json:"provenance,omitempty"`
+	LegacyClassifiers     map[string]string `json:"classifiers,omitempty"`
+	TxtarPath             string            `json:"txtar_path,omitempty"`
+	TxtarProvenance       string            `json:"txtar_provenance,omitempty"`
+	Target                BenchTarget       `json:"target"`
+	VanillaPrompt         string            `json:"vanilla_prompt,omitempty"`
+	MCPPrompt             string            `json:"mcp_prompt,omitempty"`
+	VanillaVerifiedPrompt string            `json:"vanilla_verified_prompt,omitempty"`
+	MCPVerifiedPrompt     string            `json:"mcp_verified_prompt,omitempty"`
+	BeforeState           string            `json:"before_state,omitempty"`
+	SmallBaseline         *BenchRunResult   `json:"small_baseline,omitempty"`
+	SmallSemedit          *BenchRunResult   `json:"small_semedit,omitempty"`
+	SmallVerifiedBaseline *BenchRunResult   `json:"small_verified_baseline,omitempty"`
+	SmallVerifiedSemedit  *BenchRunResult   `json:"small_verified_semedit,omitempty"`
+	LargeBaseline         *BenchRunResult   `json:"large_baseline,omitempty"`
+	LargeSemedit          *BenchRunResult   `json:"large_semedit,omitempty"`
+	LargeVerifiedBaseline *BenchRunResult   `json:"large_verified_baseline,omitempty"`
+	LargeVerifiedSemedit  *BenchRunResult   `json:"large_verified_semedit,omitempty"`
 }
 
 // BenchReport captures an empirical report file.
@@ -130,6 +162,10 @@ func loadAllBenchmarkComparisons(rootDir string) ([]*BenchComparisonSummary, err
 		}
 
 		for _, comp := range report.Comparisons {
+			comp = filterPublishableBenchmarkComparison(comp)
+			if comp == nil {
+				continue
+			}
 			if comp.TxtarPath != "" {
 				comp.TxtarProvenance = resolveTxtarProvenance(rootDir, comp.TxtarPath)
 			}
@@ -152,6 +188,37 @@ func loadAllBenchmarkComparisons(rootDir string) ([]*BenchComparisonSummary, err
 	})
 
 	return comparisons, nil
+}
+
+func filterPublishableBenchmarkComparison(comp *BenchComparisonSummary) *BenchComparisonSummary {
+	if comp == nil {
+		return nil
+	}
+
+	filtered := *comp
+	filtered.SmallBaseline = publishableBenchmarkRun(comp.SmallBaseline)
+	filtered.SmallSemedit = publishableBenchmarkRun(comp.SmallSemedit)
+	filtered.SmallVerifiedBaseline = publishableBenchmarkRun(comp.SmallVerifiedBaseline)
+	filtered.SmallVerifiedSemedit = publishableBenchmarkRun(comp.SmallVerifiedSemedit)
+	filtered.LargeBaseline = publishableBenchmarkRun(comp.LargeBaseline)
+	filtered.LargeSemedit = publishableBenchmarkRun(comp.LargeSemedit)
+	filtered.LargeVerifiedBaseline = publishableBenchmarkRun(comp.LargeVerifiedBaseline)
+	filtered.LargeVerifiedSemedit = publishableBenchmarkRun(comp.LargeVerifiedSemedit)
+
+	if filtered.SmallBaseline == nil && filtered.SmallSemedit == nil &&
+		filtered.SmallVerifiedBaseline == nil && filtered.SmallVerifiedSemedit == nil &&
+		filtered.LargeBaseline == nil && filtered.LargeSemedit == nil &&
+		filtered.LargeVerifiedBaseline == nil && filtered.LargeVerifiedSemedit == nil {
+		return nil
+	}
+	return &filtered
+}
+
+func publishableBenchmarkRun(run *BenchRunResult) *BenchRunResult {
+	if run == nil || run.Error != "" || run.Oracle == nil {
+		return nil
+	}
+	return run
 }
 
 func resolveTxtarProvenance(repoRoot, txtarRelPath string) string {
@@ -230,6 +297,10 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 		} else {
 			fmt.Fprintf(&sb, "## Task: `%s` | Target: `%s`\n\n", comp.TaskID, targetStr)
 		}
+		fmt.Fprintf(&sb, "* **MCP Server Instructions**: `%s`\n\n", displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
+		if provenance := displayProvenance(comp.Provenance, comp.LegacyClassifiers); provenance != "" {
+			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
+		}
 
 		switch {
 		case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
@@ -282,22 +353,55 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 				sb.WriteString("### Standard Directive Comparison\n\n")
 			}
 			renderDocComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDocDiffSection(&sb, "Small Context Edit Summary", comp.SmallBaseline, comp.SmallSemedit)
-			renderDocDiffSection(&sb, "Large Context Edit Summary", comp.LargeBaseline, comp.LargeSemedit)
+			renderDocRunSummary(&sb, "Standard / Small Context", comp.SmallBaseline, comp.SmallSemedit)
+			renderDocRunSummary(&sb, "Standard / Large Context", comp.LargeBaseline, comp.LargeSemedit)
 		}
 
 		// 2. Verified Directive Comparison Table
 		if hasVerified {
 			sb.WriteString("### Verified Directive Comparison (+Self-Correction Loop)\n\n")
 			renderDocComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDocDiffSection(&sb, "Small (+Verified) Context Edit Summary", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDocDiffSection(&sb, "Large (+Verified) Context Edit Summary", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderDocRunSummary(&sb, "Verified / Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+			renderDocRunSummary(&sb, "Verified / Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
 		}
 
 		sb.WriteString("\n---\n\n")
 	}
 
 	return sb.String(), nil
+}
+
+func displayMCPServerInstructions(mode, legacyMode string) string {
+	if strings.TrimSpace(mode) == "" {
+		mode = legacyMode
+	}
+	switch strings.TrimSpace(mode) {
+	case "", "none":
+		return "none"
+	case "directive":
+		return "prescriptive"
+	default:
+		return mode
+	}
+}
+
+func displayProvenance(provenance, legacyClassifiers map[string]string) string {
+	if len(provenance) == 0 {
+		provenance = legacyClassifiers
+	}
+	if len(provenance) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(provenance))
+	for key := range provenance {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+provenance[key])
+	}
+	return strings.Join(parts, ",")
 }
 
 func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
@@ -324,7 +428,7 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) int { return r.MCPLoadTurns }))
 
-	sb.WriteString(formatDocMetricRowInt("Total Tool Invocations",
+	sb.WriteString(formatDocMetricRowInt("Tool Invocations (per run)",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) int { return r.ToolCount }))
 
@@ -364,34 +468,98 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 		sbRun, smRun, lbRun, lmRun,
 		func(o *BenchOracleResult) bool { return o.Level4Test }))
 
-	sb.WriteString(formatDocMCPVerifiedRow("MCP Tools Invocation Verified",
+	sb.WriteString(formatDocMCPVerifiedRow("Semantic Tool Invocation Verified (per run)",
 		sbRun, smRun, lbRun, lmRun))
 
 	sb.WriteString("\n")
 }
 
-func renderDocDiffSection(sb *strings.Builder, title string, base, mcp *BenchRunResult) {
-	if (base == nil || (base.Diff == "" && len(base.ToolsUsed) == 0)) && (mcp == nil || (mcp.Diff == "" && len(mcp.ToolsUsed) == 0)) {
-		return
-	}
-	fmt.Fprintf(sb, "#### %s\n", title)
-	if base != nil {
-		if base.Diff != "" {
-			fmt.Fprintf(sb, "* **Vanilla Edit**: %s\n", base.Diff)
-		}
-		if len(base.ToolsUsed) > 0 {
-			fmt.Fprintf(sb, "* **Vanilla Tools**: `%s`\n", strings.Join(base.ToolsUsed, "`, `"))
-		}
-	}
-	if mcp != nil {
-		if mcp.Diff != "" {
-			fmt.Fprintf(sb, "* **MCP Edit**: %s\n", mcp.Diff)
-		}
-		if len(mcp.ToolsUsed) > 0 {
-			fmt.Fprintf(sb, "* **MCP Tools**: `%s`\n", strings.Join(mcp.ToolsUsed, "`, `"))
-		}
-	}
+func renderDocRunSummary(sb *strings.Builder, variantLabel string, base, mcp *BenchRunResult) {
+	fmt.Fprintf(sb, "#### Variant: %s\n", variantLabel)
+	renderDocEditSummary(sb, "Vanilla", variantLabel, base)
+	renderDocEditSummary(sb, "Semedit MCP", variantLabel, mcp)
 	sb.WriteString("\n")
+	renderDocToolCallComparison(sb, base, mcp)
+	sb.WriteString("\n")
+}
+
+func renderDocEditSummary(sb *strings.Builder, arm, contextLabel string, run *BenchRunResult) {
+	if run != nil && run.Diff != "" {
+		fmt.Fprintf(sb, "* **%s (%s) Edit**: %s\n", arm, contextLabel, run.Diff)
+	}
+}
+
+func renderDocToolCallComparison(sb *strings.Builder, base, mcp *BenchRunResult) {
+	sb.WriteString("| # | Vanilla | Semedit MCP |\n")
+	sb.WriteString("| :--- | :--- | :--- |\n")
+	rows := max(docToolCallCount(base), docToolCallCount(mcp), 1)
+	for index := range rows {
+		fmt.Fprintf(sb, "| %d | %s | %s |\n", index+1, docToolCallAt(base, index), docToolCallAt(mcp, index))
+	}
+}
+
+func docToolCallCount(run *BenchRunResult) int {
+	if run == nil {
+		return 0
+	}
+	return max(len(run.ToolCalls), len(run.ToolsUsed))
+}
+
+func docToolCallAt(run *BenchRunResult, index int) string {
+	if run == nil {
+		return "not published"
+	}
+	if index < len(run.ToolCalls) {
+		call := run.ToolCalls[index]
+		server := ""
+		if call.Server != "" {
+			server = call.Server + "/"
+		}
+		entry := fmt.Sprintf("`%s%s` (transport: %s; functional: %s)", server, call.Name, call.TransportStatus, call.FunctionalStatus)
+		if call.Failure != "" {
+			entry += fmt.Sprintf(": %s", call.Failure)
+		}
+		entry += formatDocMCPMetrics(call.MCPMetrics)
+		return escapeDocTableCell(entry)
+	}
+	if index < len(run.ToolsUsed) {
+		return fmt.Sprintf("`%s` (outcome unavailable)", run.ToolsUsed[index])
+	}
+	if docToolCallCount(run) == 0 {
+		return "none recorded"
+	}
+	return "—"
+}
+
+func formatDocMCPMetrics(metrics *BenchMCPMetrics) string {
+	if metrics == nil {
+		return ""
+	}
+	var verificationMS, formattingMS int64
+	for phase, metric := range metrics.Phases {
+		switch {
+		case strings.HasPrefix(phase, "verification."):
+			verificationMS += metric.DurationMS
+		case strings.HasPrefix(phase, "formatting."):
+			formattingMS += metric.DurationMS
+		}
+	}
+	entry := fmt.Sprintf("; server: %s", time.Duration(metrics.TotalMS)*time.Millisecond)
+	if verificationMS > 0 || formattingMS > 0 {
+		parts := make([]string, 0, 2)
+		if verificationMS > 0 {
+			parts = append(parts, fmt.Sprintf("verification: %s", time.Duration(verificationMS)*time.Millisecond))
+		}
+		if formattingMS > 0 {
+			parts = append(parts, fmt.Sprintf("formatting: %s", time.Duration(formattingMS)*time.Millisecond))
+		}
+		entry += " (" + strings.Join(parts, "; ") + ")"
+	}
+	return entry
+}
+
+func escapeDocTableCell(value string) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(value), " "), "|", "\\|")
 }
 
 func formatDocMetricRowInt(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) int) string {

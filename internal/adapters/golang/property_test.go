@@ -10,10 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"pgregory.net/rapid"
 	"semedit/internal/adapters/golang"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
+
+	"pgregory.net/rapid"
 )
 
 func configureRapidChecks(t *testing.T, shortChecks int, defaultChecks int) {

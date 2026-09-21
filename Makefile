@@ -43,12 +43,12 @@ tools: ## Install development tools (linters, formatters, scanners)
 ## Formatting, Refactoring & Imports
 ## ---------------------------------------------------------
 .PHONY: fix
-fix: lint-fix ## Apply automatic Go fixes and standard library modernizations
+fix: lint-fix ## Apply automatic Go and Markdown fixes and standard library modernizations
 	@echo "==> Running go fix..."
 	go fix ./...
 
 .PHONY: lint-fix
-lint-fix: ## Apply unambiguous fixes supplied by configured Go linters
+lint-fix: fix-markdown ## Apply unambiguous fixes supplied by configured Go and Markdown linters
 	@echo "==> Applying Go linter fixes..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run --fix ./...; \
@@ -95,6 +95,16 @@ lint-markdown: ## Run markdownlint-cli2
 	@echo "==> Running markdownlint-cli2..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
 		markdownlint-cli2 "**/*.md"; \
+	else \
+		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
+		exit 1; \
+	fi
+
+.PHONY: fix-markdown
+fix-markdown: ## Apply automatic markdownlint-cli2 fixes
+	@echo "==> Applying Markdown linter fixes..."
+	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
+		markdownlint-cli2 --fix "**/*.md"; \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
 		exit 1; \

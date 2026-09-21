@@ -1,9 +1,10 @@
 package main
 
-// LargeContextOverlayFiles returns synthetic sibling packages to scale up context size
-// dynamically at extraction time, keeping the golden txtar files as the single source of truth.
-func LargeContextOverlayFiles() map[string]string {
-	return map[string]string{
+import "maps"
+
+// LargeContextOverlayFiles returns shared and task-specific sibling code for large-context trials.
+func LargeContextOverlayFiles(taskID string) map[string]string {
+	files := map[string]string{
 		"api/router.go": `package api
 
 type Route struct {
@@ -119,6 +120,99 @@ type Status struct {
 
 func Check() Status {
 	return Status{Alive: true}
+}
+`,
+	}
+
+	if taskID == "task-11-mixed-sink-api-migration" {
+		maps.Copy(files, mixedSinkMigrationOverlayFiles())
+	}
+
+	return files
+}
+
+// mixedSinkMigrationOverlayFiles adds real API consumers for the task-11 large variant.
+func mixedSinkMigrationOverlayFiles() map[string]string {
+	return map[string]string{
+		"audit/fanout.go": `// FanoutSink delivers an event to each configured audit destination.
+package audit
+
+type FanoutSink struct {
+	First  Sink
+	Second Sink
+}
+
+func (f FanoutSink) Write(event Event) error {
+	if err := f.First.Write(event); err != nil {
+		return err
+	}
+	return f.Second.Write(event)
+}
+`,
+		"audit/transaction.go": `// BufferedSink exposes transactional delivery without owning the persistence protocol.
+package audit
+
+type BufferedSink struct {
+	Sink
+	queue []Event
+}
+
+func (b *BufferedSink) Begin() error {
+	b.queue = b.queue[:0]
+	return nil
+}
+
+func (b *BufferedSink) Commit() error {
+	for _, event := range b.queue {
+		if err := b.Sink.Write(event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+`,
+		"journal/file.go": `// Package journal contains a separate audit implementation used by batch jobs.
+package journal
+
+import "example.com/auditapp/audit"
+
+type JournalSink struct {
+	Entries []audit.Event
+}
+
+func (j *JournalSink) Write(event audit.Event) error {
+	j.Entries = append(j.Entries, event)
+	return nil
+}
+
+var _ audit.Sink = (*JournalSink)(nil)
+`,
+		"service/replay.go": `// Package service contains replay helpers for previously captured audit events.
+package service
+
+import "example.com/auditapp/audit"
+
+func Replay(sink audit.Sink, events []audit.Event) error {
+	writeEvent := audit.Sink.Write
+	for _, event := range events {
+		if err := writeEvent(sink, event); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+`,
+		"cmd/replay/main.go": `// Command replay demonstrates the default audit delivery path.
+package main
+
+import (
+	"example.com/auditapp/audit"
+	"example.com/auditapp/service"
+)
+
+func main() {
+	sink := service.NewDispatcher(audit.NewMemorySink())
+	_ = sink.Record(audit.Event{ID: "replay", Kind: "replayed"})
 }
 `,
 	}

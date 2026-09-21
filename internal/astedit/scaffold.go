@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/telemetry"
 )
 
 // ScaffoldOptions configures new file scaffolding behavior.
@@ -21,7 +22,7 @@ type ScaffoldOptions struct {
 }
 
 // ScaffoldFile creates a new Go source file initialized with a package clause.
-func ScaffoldFile(_ context.Context, filePath, packageName string, opts ScaffoldOptions) (string, error) {
+func ScaffoldFile(ctx context.Context, filePath, packageName string, opts ScaffoldOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
 	if cleanPath == "" || cleanPath == "." {
 		return "", fmt.Errorf("invalid file path: %q", filePath)
@@ -69,7 +70,9 @@ func ScaffoldFile(_ context.Context, filePath, packageName string, opts Scaffold
 	}
 
 	src := fmt.Sprintf("package %s\n", resolvedPkg)
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
 	formatted, err := format.Source([]byte(src))
+	finishFormatting()
 	if err != nil {
 		return "", fmt.Errorf("format scaffold: %w", err)
 	}

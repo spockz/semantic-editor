@@ -10,43 +10,64 @@ import (
 	"semedit/internal/gocache"
 )
 
-func TestCommandEnvPreservesUsableCache(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("GOCACHE", dir)
-	env, err := gocache.Environment(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !containsEnv(env, "GOCACHE="+dir) {
-		t.Fatalf("environment did not preserve cache: %v", env)
-	}
-}
-
-func TestCommandEnvFallsBackToWorkspaceScratch(t *testing.T) {
+func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 	root := t.TempDir()
-	bad := filepath.Join(root, "not-a-directory")
-	if err := os.WriteFile(bad, []byte("occupied"), 0o600); err != nil {
-		t.Fatal(err)
+	for key, value := range map[string]string{
+		"GOENV":      filepath.Join(t.TempDir(), "env"),
+		"GOCACHE":    t.TempDir(),
+		"GOMODCACHE": t.TempDir(),
+		"GOTMPDIR":   t.TempDir(),
+		"GOBIN":      t.TempDir(),
+	} {
+		t.Setenv(key, value)
 	}
-	t.Setenv("GOCACHE", bad)
-	env, err := gocache.Environment(root)
+	env, err := gocache.Environment(t.Context(), root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := filepath.Join(root, ".scratch", "go-cache")
-	if !containsEnv(env, "GOCACHE="+want) {
-		t.Fatalf("environment cache = %v, want %q", env, want)
+	want := map[string]string{
+		"GOENV":      filepath.Join(root, ".scratch", "go", "env"),
+		"GOCACHE":    filepath.Join(root, ".scratch", "go", "build"),
+		"GOMODCACHE": filepath.Join(root, ".scratch", "go", "mod"),
+		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
+		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
 	}
-	if _, err := os.Stat(want); err != nil {
-		t.Fatalf("fallback cache was not created: %v", err)
-	}
-}
-
-func containsEnv(env []string, want string) bool {
-	for _, value := range env {
-		if strings.HasPrefix(value, "GOCACHE=") {
-			return value == want
+	for key, path := range want {
+		if got := envValue(env, key); got != path {
+			t.Errorf("%s = %q, want %q", key, got, path)
 		}
 	}
-	return false
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN"} {
+		if _, err := os.Stat(want[key]); err != nil {
+			t.Errorf("%s directory was not created: %v", key, err)
+		}
+	}
+}
+
+func TestCommandEnvRequiresWorkspace(t *testing.T) {
+	if _, err := gocache.Environment(t.Context(), ""); err == nil {
+		t.Fatal("Environment(\"\") succeeded, want error")
+	}
+}
+
+func TestCommandEnvUsesConfiguredBaseDir(t *testing.T) {
+	root := t.TempDir()
+	baseDir := filepath.Join(t.TempDir(), "go-state")
+	env, err := gocache.Environment(gocache.WithBaseDir(t.Context(), baseDir), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := envValue(env, "GOCACHE"); got != filepath.Join(baseDir, "build") {
+		t.Errorf("GOCACHE = %q, want %q", got, filepath.Join(baseDir, "build"))
+	}
+}
+
+func envValue(env []string, key string) string {
+	for _, value := range env {
+		candidate, value, found := strings.Cut(value, "=")
+		if found && candidate == key {
+			return value
+		}
+	}
+	return ""
 }

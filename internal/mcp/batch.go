@@ -9,6 +9,7 @@ import (
 
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
+	"semedit/internal/telemetry"
 )
 
 // BatchEntry represents a single tool execution request within a batch.
@@ -103,31 +104,40 @@ func resultForBatch(result any) BatchResult {
 }
 
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
+	timing := newToolRequestTiming(ctx)
+	ctx = timing.Context(ctx)
 	var request struct {
 		Edits               []BatchEntry `json:"edits"`
 		AutoOrganizeImports bool         `json:"auto_organize_imports"`
 	}
+	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
 	if err := json.Unmarshal(raw, &request); err != nil {
-		s.sendToolError(id, fmt.Sprintf("invalid arguments: %v", err), err)
+		finishArguments()
+		s.sendToolErrorWithTiming(id, fmt.Sprintf("invalid arguments: %v", err), timing, err)
 		return
 	}
+	finishArguments()
 	if len(request.Edits) == 0 {
-		s.sendToolError(id, "semantic_batch requires non-empty 'edits' list")
+		s.sendToolErrorWithTiming(id, "semantic_batch requires non-empty 'edits' list", timing)
 		return
 	}
+	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	response, err := s.ExecuteBatch(ctx, request.Edits, request.AutoOrganizeImports)
+	finishDispatch()
 	if err != nil {
-		s.sendToolError(id, fmt.Sprintf("batch execution error: %v", err), err)
+		s.sendToolErrorWithTiming(id, fmt.Sprintf("batch execution error: %v", err), timing, err)
 		return
 	}
+	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 	text, err := json.MarshalIndent(response, "", "  ")
+	finishResponse()
 	if err != nil {
-		s.sendToolError(id, fmt.Sprintf("serialization error: %v", err), err)
+		s.sendToolErrorWithTiming(id, fmt.Sprintf("serialization error: %v", err), timing, err)
 		return
 	}
 	if response.Status == "error" {
-		s.sendToolError(id, string(text))
+		s.sendToolErrorWithTiming(id, string(text), timing)
 		return
 	}
-	s.sendToolSuccess(id, string(text))
+	s.sendToolSuccessWithTiming(id, string(text), timing)
 }

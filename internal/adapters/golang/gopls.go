@@ -64,7 +64,7 @@ func Rename(ctx context.Context, workDir string, file string, line int, col int,
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	cmd.Env, err = gocache.Environment(workDir)
+	cmd.Env, err = gocache.Environment(ctx, workDir)
 	if err != nil {
 		return fmt.Errorf("prepare gopls environment: %w", err)
 	}

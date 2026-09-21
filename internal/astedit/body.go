@@ -15,6 +15,7 @@ import (
 
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
+	"semedit/internal/telemetry"
 )
 
 // BodyOptions configures function and method body replacement behavior.
@@ -113,7 +114,9 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 	newContent.WriteString("\n")
 	newContent.Write(content[rbraceOffset:])
 
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
 	formatted, err := format.Source(newContent.Bytes())
+	finishFormatting()
 	if err != nil {
 		return "", &SyntaxError{
 			File:    cleanPath,

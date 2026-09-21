@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"semedit/internal/gocache"
+	"semedit/internal/telemetry"
 
 	"golang.org/x/tools/imports"
 )
@@ -92,6 +93,9 @@ func WriteAtomic(targetPath string, data []byte) error {
 
 // Format runs gofmt on the specified paths or directories.
 func Format(ctx context.Context, workDir string, paths ...string) error {
+	finish := telemetry.Start(ctx, telemetry.PhaseFormattingGofmt)
+	defer finish()
+
 	args := append([]string{"-w"}, paths...)
 	// #nosec G204 -- canonical formatter invocation
 	cmd := exec.CommandContext(ctx, "gofmt", args...)
@@ -187,7 +191,10 @@ func OrganizeImports(ctx context.Context, workDir string, paths ...string) error
 }
 
 // OrganizeImportsWithOptions adjusts imports and formats using explicit additions/removals and imports.Process.
-func OrganizeImportsWithOptions(_ context.Context, workDir string, opts ImportOptions, paths ...string) error {
+func OrganizeImportsWithOptions(ctx context.Context, workDir string, opts ImportOptions, paths ...string) error {
+	finish := telemetry.Start(ctx, telemetry.PhaseFormattingImports)
+	defer finish()
+
 	if len(paths) == 0 {
 		paths = []string{"."}
 	}
@@ -395,6 +402,9 @@ func FindModuleRoot(dir string) string {
 
 // CheckDiagnostics collects compiler/linter diagnostics without rolling back intermediate states (ADR-0004).
 func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
+	finish := telemetry.Start(ctx, telemetry.PhaseVerificationDiagnostics)
+	defer finish()
+
 	effectiveDir := FindModuleRoot(workDir)
 
 	cmd := exec.CommandContext(ctx, "go", "vet", "./...")
@@ -402,7 +412,7 @@ func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
 		cmd.Dir = effectiveDir
 	}
 	var err error
-	cmd.Env, err = gocache.Environment(effectiveDir)
+	cmd.Env, err = gocache.Environment(ctx, effectiveDir)
 	if err != nil {
 		return nil, fmt.Errorf("prepare go diagnostics environment: %w", err)
 	}

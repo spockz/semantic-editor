@@ -2,14 +2,21 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"semedit/internal/mcp"
 )
 
 // HarnessType represents the execution harness (codex, agy, control).
@@ -25,9 +32,15 @@ const (
 type CodexEvent struct {
 	Type string `json:"type"`
 	Item *struct {
-		Type    string `json:"type"`
-		Command string `json:"command,omitempty"`
-		Text    string `json:"text,omitempty"`
+		ID      string          `json:"id,omitempty"`
+		Type    string          `json:"type"`
+		Command string          `json:"command,omitempty"`
+		Text    string          `json:"text,omitempty"`
+		Server  string          `json:"server,omitempty"`
+		Tool    string          `json:"tool,omitempty"`
+		Status  string          `json:"status,omitempty"`
+		Result  json.RawMessage `json:"result,omitempty"`
+		Error   json.RawMessage `json:"error,omitempty"`
 	} `json:"item,omitempty"`
 	Usage *struct {
 		InputTokens           int `json:"input_tokens"`
@@ -72,6 +85,10 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return nil, fmt.Errorf("extract task fixture: %w", err)
 	}
+	beforeFiles, err := snapshotWorkspaceFiles(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot benchmark workspace: %w", err)
+	}
 
 	targetFile := task.Metadata.Oracle.AST.File
 	if targetFile == "" {
@@ -85,12 +102,19 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		beforeContent = strings.TrimSpace(string(data))
 	}
 
+	mcpServerInstructions := MCPServerInstructionsNone
+	if target.Harness == string(HarnessCodex) {
+		mcpServerInstructions = r.mcpServerInstructionsMode
+	}
+
 	res := &RunResult{
-		TaskID:      task.Metadata.TaskID,
-		Variant:     variant,
-		Target:      target,
-		Arm:         arm,
-		BeforeState: beforeContent,
+		TaskID:                task.Metadata.TaskID,
+		Variant:               variant,
+		MCPServerInstructions: mcpServerInstructions,
+		Provenance:            r.provenanceFor(),
+		Target:                target,
+		Arm:                   arm,
+		BeforeState:           beforeContent,
 	}
 
 	baseInstruction := task.Metadata.Instruction
@@ -149,7 +173,12 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		res.Diff = formatDiffSummary(targetFile, beforeContent, afterContent)
 	}
 
-	oracleRes, err := Evaluate(ctx, task, workDir, []string{targetFile})
+	modifiedFiles, err := changedWorkspaceFiles(workDir, beforeFiles)
+	if err != nil {
+		res.Error = fmt.Sprintf("snapshot benchmark workspace changes: %v", err)
+		return res, nil
+	}
+	oracleRes, err := Evaluate(ctx, task, workDir, modifiedFiles)
 	if err != nil {
 		res.Error = fmt.Sprintf("oracle evaluation: %v", err)
 		return res, nil
@@ -160,10 +189,308 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	return res, nil
 }
 
+type workspaceSnapshot map[string][sha256.Size]byte
+
+func snapshotWorkspaceFiles(root string) (workspaceSnapshot, error) {
+	files := make(workspaceSnapshot)
+	workspaceFS, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open benchmark workspace: %w", err)
+	}
+	defer func() {
+		_ = workspaceFS.Close()
+	}()
+
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == ".scratch" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return fmt.Errorf("relativize %s: %w", path, err)
+		}
+		data, err := workspaceFS.ReadFile(rel)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		files[filepath.ToSlash(rel)] = sha256.Sum256(data)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func changedWorkspaceFiles(root string, before workspaceSnapshot) ([]string, error) {
+	after, err := snapshotWorkspaceFiles(root)
+	if err != nil {
+		return nil, err
+	}
+	paths := make(map[string]struct{}, len(before)+len(after))
+	for path, hash := range before {
+		if afterHash, found := after[path]; !found || afterHash != hash {
+			paths[path] = struct{}{}
+		}
+	}
+	for path := range after {
+		if _, found := before[path]; !found {
+			paths[path] = struct{}{}
+		}
+	}
+	modified := make([]string, 0, len(paths))
+	for path := range paths {
+		modified = append(modified, path)
+	}
+	sort.Strings(modified)
+	return modified, nil
+}
+
 func formatDiffSummary(filename, before, after string) string {
 	bLines := strings.Split(before, "\n")
 	aLines := strings.Split(after, "\n")
 	return fmt.Sprintf("File %s modified (%d lines -> %d lines)", filename, len(bLines), len(aLines))
+}
+
+type codexToolTracker struct {
+	calls            map[string]int
+	internalTurns    int
+	initialLoadTurns int
+	mcpLoadTurns     int
+	mutatingSeen     bool
+}
+
+func (t *codexToolTracker) observe(res *RunResult, item *struct {
+	ID      string          `json:"id,omitempty"`
+	Type    string          `json:"type"`
+	Command string          `json:"command,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Server  string          `json:"server,omitempty"`
+	Tool    string          `json:"tool,omitempty"`
+	Status  string          `json:"status,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   json.RawMessage `json:"error,omitempty"`
+}) {
+	if item == nil || !isCodexToolItem(item.Type) {
+		return
+	}
+
+	name := codexToolName(item)
+	if name == "" {
+		return
+	}
+
+	if item.Status == "in_progress" {
+		if _, alreadyRecorded := t.calls[item.ID]; alreadyRecorded {
+			return
+		}
+		t.record(res, item.ID, ToolCall{
+			Name:             name,
+			Server:           item.Server,
+			TransportStatus:  ToolCallStatusUnknown,
+			FunctionalStatus: ToolCallStatusUnknown,
+		})
+		return
+	}
+
+	call := codexToolOutcome(name, item.Server, item.Status, item.Result, item.Error)
+	if callIndex, ok := t.calls[item.ID]; ok {
+		res.ToolCalls[callIndex] = call
+		refreshMCPVerified(res)
+		return
+	}
+	t.record(res, item.ID, call)
+}
+
+func (t *codexToolTracker) record(res *RunResult, id string, call ToolCall) {
+	callIndex := appendToolCall(res, call)
+	if id != "" {
+		if t.calls == nil {
+			t.calls = make(map[string]int)
+		}
+		t.calls[id] = callIndex
+	}
+	t.internalTurns++
+	if isSemanticTool(call.Name, call.Server) || isMutatingTool(call.Name) {
+		t.mutatingSeen = true
+		return
+	}
+	if !t.mutatingSeen {
+		t.initialLoadTurns++
+		if call.Server != "" || isMCPDiscoveryTool(call.Name) {
+			t.mcpLoadTurns++
+		}
+	}
+}
+
+func isCodexToolItem(itemType string) bool {
+	switch itemType {
+	case "tool_call", "mcp_tool_call", "function_call", "command_execution":
+		return true
+	default:
+		return false
+	}
+}
+
+func codexToolName(item *struct {
+	ID      string          `json:"id,omitempty"`
+	Type    string          `json:"type"`
+	Command string          `json:"command,omitempty"`
+	Text    string          `json:"text,omitempty"`
+	Server  string          `json:"server,omitempty"`
+	Tool    string          `json:"tool,omitempty"`
+	Status  string          `json:"status,omitempty"`
+	Result  json.RawMessage `json:"result,omitempty"`
+	Error   json.RawMessage `json:"error,omitempty"`
+}) string {
+	for _, name := range []string{item.Tool, item.Command, item.Text} {
+		if clean := strings.TrimSpace(name); clean != "" {
+			return clean
+		}
+	}
+	return ""
+}
+
+func codexToolOutcome(name, server, status string, result, toolErr json.RawMessage) ToolCall {
+	call := ToolCall{
+		Name:             name,
+		Server:           server,
+		TransportStatus:  ToolCallStatusUnknown,
+		FunctionalStatus: ToolCallStatusUnknown,
+		MCPMetrics:       codexMCPMetrics(result),
+	}
+	hasResult := hasJSONValue(result)
+	hasError := hasJSONValue(toolErr)
+
+	switch strings.ToLower(status) {
+	case "completed":
+		if hasError {
+			call.TransportStatus = ToolCallStatusFailed
+			call.Failure = jsonToolFailure(toolErr)
+			return call
+		}
+		call.TransportStatus = ToolCallStatusSucceeded
+		call.FunctionalStatus = ToolCallStatusSucceeded
+	case "failed":
+		if hasResult {
+			call.TransportStatus = ToolCallStatusSucceeded
+			call.FunctionalStatus = ToolCallStatusFailed
+			call.Failure = jsonToolFailure(result)
+			return call
+		}
+		if hasError {
+			call.TransportStatus = ToolCallStatusFailed
+			call.Failure = jsonToolFailure(toolErr)
+			return call
+		}
+		call.FunctionalStatus = ToolCallStatusFailed
+	default:
+		if hasError {
+			call.TransportStatus = ToolCallStatusFailed
+			call.Failure = jsonToolFailure(toolErr)
+		}
+	}
+	return call
+}
+
+func codexMCPMetrics(result json.RawMessage) *MCPMetrics {
+	if !hasJSONValue(result) {
+		return nil
+	}
+	var envelope struct {
+		StructuredContent struct {
+			Metrics *MCPMetrics `json:"metrics"`
+		} `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return nil
+	}
+	return envelope.StructuredContent.Metrics
+}
+
+func appendToolCall(res *RunResult, call ToolCall) int {
+	res.ToolCalls = append(res.ToolCalls, call)
+	res.ToolsUsed = append(res.ToolsUsed, call.Name)
+	return len(res.ToolCalls) - 1
+}
+
+func refreshMCPVerified(res *RunResult) {
+	res.MCPVerified = false
+	for _, call := range res.ToolCalls {
+		if isSemanticTool(call.Name, call.Server) && call.TransportStatus == ToolCallStatusSucceeded {
+			res.MCPVerified = true
+			return
+		}
+	}
+}
+
+func isSemanticTool(name, server string) bool {
+	cleanName := strings.ToLower(strings.Trim(name, "\""))
+	cleanServer := strings.ToLower(strings.Trim(server, "\""))
+	return cleanServer == "semedit" || strings.HasPrefix(cleanName, "semantic_") || strings.HasPrefix(cleanName, "semedit/") || strings.HasPrefix(cleanName, "mcp__semedit__")
+}
+
+func hasJSONValue(raw json.RawMessage) bool {
+	value := strings.TrimSpace(string(raw))
+	return value != "" && value != "null"
+}
+
+func jsonToolFailure(raw json.RawMessage) string {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return compactToolFailure(string(raw))
+	}
+	return compactToolFailure(toolFailureText(value))
+}
+
+func toolFailureText(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []any:
+		for _, item := range typed {
+			if text := toolFailureText(item); text != "" {
+				return text
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"error", "message", "text", "content", "result"} {
+			if item, ok := typed[key]; ok {
+				if text := toolFailureText(item); text != "" {
+					return text
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func compactToolFailure(message string) string {
+	message = strings.Join(strings.Fields(message), " ")
+	if len(message) > 512 {
+		return message[:512]
+	}
+	return message
+}
+
+func agyToolFunctionalStatus(status string) ToolCallStatus {
+	switch strings.ToLower(status) {
+	case "done", "success", "completed":
+		return ToolCallStatusSucceeded
+	case "failed", "error", "cancelled", "canceled":
+		return ToolCallStatusFailed
+	default:
+		return ToolCallStatusUnknown
+	}
 }
 
 func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, prompt string, res *RunResult) error {
@@ -174,61 +501,41 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	if target.Effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", target.Effort))
 	}
+	if override, err := r.codexMCPServerInstructionsOverride(); err != nil {
+		return err
+	} else if override != "" {
+		args = append(args, "-c", override)
+	}
 	args = append(args, prompt)
 
 	// #nosec G204 -- external driver invocation controlled by benchmark harness
 	cmd := exec.CommandContext(ctx, "codex", args...)
+	cmd.Dir = workDir
 	cmd.Env = os.Environ()
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return fmt.Errorf("stdout pipe: %w", err)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
+			return fmt.Errorf("run codex: %w: %s", err, diagnostic)
+		}
+		return fmt.Errorf("run codex: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start codex: %w", err)
-	}
-
-	scanner := bufio.NewScanner(stdout)
+	scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	turns := 0
-	internalTurns := 0
-	initialLoadTurns := 0
-	mcpLoadTurns := 0
-	mutatingSeen := false
-
+	tracker := codexToolTracker{}
 	for scanner.Scan() {
-		line := scanner.Bytes()
 		var ev CodexEvent
-		if err := json.Unmarshal(line, &ev); err != nil {
+		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
 			continue
 		}
 		if ev.Type == "turn.started" {
 			turns++
 		}
-		if ev.Item != nil && ev.Item.Type == "tool_call" {
-			internalTurns++
-			toolName := ev.Item.Command
-			if toolName == "" {
-				toolName = ev.Item.Text
-			}
-			if toolName != "" {
-				res.ToolsUsed = append(res.ToolsUsed, toolName)
-				isMCP := strings.HasPrefix(toolName, "semantic_") || strings.Contains(toolName, "semedit")
-				if isMCP {
-					res.MCPVerified = true
-				}
-
-				isMutating := isMCP || isMutatingTool(toolName)
-				if isMutating {
-					mutatingSeen = true
-				} else if !mutatingSeen {
-					initialLoadTurns++
-					if isMCPDiscoveryTool(toolName) {
-						mcpLoadTurns++
-					}
-				}
-			}
-		}
+		tracker.observe(res, ev.Item)
 		if ev.Usage != nil {
 			res.PromptTokens = ev.Usage.InputTokens
 			res.CachedPromptTokens = ev.Usage.CachedInputTokens
@@ -237,19 +544,38 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 			res.ReasoningTokens = ev.Usage.ReasoningOutputTokens
 		}
 	}
-
 	res.Turns = 1
 	if turns > 0 {
 		res.Turns = turns
 	}
-	res.InternalTurns = internalTurns
-	res.InitialLoadTurns = initialLoadTurns
-	res.MCPLoadTurns = mcpLoadTurns
-	res.ToolCount = len(res.ToolsUsed)
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("wait codex: %w", err)
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scan codex output: %w", err)
 	}
+	res.InternalTurns = tracker.internalTurns
+	res.InitialLoadTurns = tracker.initialLoadTurns
+	res.MCPLoadTurns = tracker.mcpLoadTurns
+	res.ToolCount = len(res.ToolCalls)
 	return nil
+}
+
+func (r *Runner) codexMCPServerInstructionsOverride() (string, error) {
+	switch r.mcpServerInstructionsMode {
+	case MCPServerInstructionsNone:
+		return "", nil
+	case MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive:
+		instructions := mcp.DescriptiveInstructions
+		if r.mcpServerInstructionsMode == MCPServerInstructionsPrescriptive {
+			instructions = mcp.PrescriptiveInstructions
+		}
+		args := []string{"mcp", "--profile", "full", "--instructions", instructions}
+		quoted := make([]string, len(args))
+		for index, arg := range args {
+			quoted[index] = strconv.Quote(arg)
+		}
+		return "mcp_servers.semedit.args=[" + strings.Join(quoted, ",") + "]", nil
+	default:
+		return "", fmt.Errorf("unsupported MCP server instruction mode %q", r.mcpServerInstructionsMode)
+	}
 }
 
 func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult) error {
@@ -310,6 +636,8 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 
 type agyTranscriptStep struct {
 	Type      string `json:"type"`
+	Status    string `json:"status"`
+	Content   string `json:"content"`
 	ToolCalls []struct {
 		Name string `json:"name"`
 		Args any    `json:"args"`
@@ -352,54 +680,73 @@ func extractAgyTools(convID string, res *RunResult) {
 		if err != nil {
 			continue
 		}
-		scanner := bufio.NewScanner(strings.NewReader(string(data)))
-		internalTurns := 0
-		initialLoadTurns := 0
-		mcpLoadTurns := 0
-		mutatingSeen := false
-
-		for scanner.Scan() {
-			var step agyTranscriptStep
-			if err := json.Unmarshal(scanner.Bytes(), &step); err != nil {
-				continue
-			}
-			if step.Type == "PLANNER_RESPONSE" {
-				internalTurns++
-			}
-			for _, tc := range step.ToolCalls {
-				toolName := strings.Trim(strings.TrimSpace(tc.Name), "\"")
-				isMCPCall := toolName == "call_mcp_tool"
-				if isMCPCall {
-					if argsMap, ok := tc.Args.(map[string]any); ok {
-						if t, ok := argsMap["ToolName"].(string); ok {
-							toolName = strings.Trim(strings.TrimSpace(t), "\"")
-						}
-					}
-				}
-				res.ToolsUsed = append(res.ToolsUsed, toolName)
-				cleanName := strings.Trim(toolName, "\"")
-				if strings.HasPrefix(cleanName, "semantic_") || strings.Contains(cleanName, "semedit") {
-					res.MCPVerified = true
-				}
-
-				isMutating := strings.HasPrefix(cleanName, "semantic_") || strings.Contains(cleanName, "semedit") || isMutatingTool(cleanName)
-				if isMutating {
-					mutatingSeen = true
-				} else if !mutatingSeen {
-					initialLoadTurns++
-					if isMCPCall || isMCPDiscoveryTool(cleanName) {
-						mcpLoadTurns++
-					}
-				}
-			}
-		}
-
-		if internalTurns > 0 {
-			res.InternalTurns = internalTurns
-		}
-		res.InitialLoadTurns = initialLoadTurns
-		res.MCPLoadTurns = mcpLoadTurns
-		res.ToolCount = len(res.ToolsUsed)
+		parseAgyTranscript(data, res)
 		break
 	}
+}
+
+func parseAgyTranscript(data []byte, res *RunResult) {
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	internalTurns := 0
+	initialLoadTurns := 0
+	mcpLoadTurns := 0
+	mutatingSeen := false
+	var pending []int
+
+	for scanner.Scan() {
+		var step agyTranscriptStep
+		if err := json.Unmarshal(scanner.Bytes(), &step); err != nil {
+			continue
+		}
+		if step.Type == "PLANNER_RESPONSE" {
+			internalTurns++
+		}
+		for _, tc := range step.ToolCalls {
+			toolName := strings.Trim(strings.TrimSpace(tc.Name), "\"")
+			serverName := ""
+			isMCPCall := toolName == "call_mcp_tool"
+			if isMCPCall {
+				if argsMap, ok := tc.Args.(map[string]any); ok {
+					if t, ok := argsMap["ToolName"].(string); ok {
+						toolName = strings.Trim(strings.TrimSpace(t), "\"")
+					}
+					if s, ok := argsMap["ServerName"].(string); ok {
+						serverName = strings.Trim(strings.TrimSpace(s), "\"")
+					}
+				}
+			}
+			cleanName := strings.Trim(toolName, "\"")
+			callIndex := appendToolCall(res, ToolCall{Name: cleanName, Server: serverName, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
+			pending = append(pending, callIndex)
+
+			isMutating := isSemanticTool(cleanName, serverName) || isMutatingTool(cleanName)
+			if isMutating {
+				mutatingSeen = true
+			} else if !mutatingSeen {
+				initialLoadTurns++
+				if isMCPCall || isMCPDiscoveryTool(cleanName) {
+					mcpLoadTurns++
+				}
+			}
+		}
+		if step.Type == "GENERIC" && len(pending) > 0 {
+			for _, callIndex := range pending {
+				res.ToolCalls[callIndex].TransportStatus = ToolCallStatusSucceeded
+				res.ToolCalls[callIndex].FunctionalStatus = agyToolFunctionalStatus(step.Status)
+				if res.ToolCalls[callIndex].FunctionalStatus == ToolCallStatusFailed {
+					res.ToolCalls[callIndex].Failure = compactToolFailure(step.Content)
+				}
+			}
+			pending = nil
+			refreshMCPVerified(res)
+		}
+	}
+
+	if internalTurns > 0 {
+		res.InternalTurns = internalTurns
+	}
+	res.InitialLoadTurns = initialLoadTurns
+	res.MCPLoadTurns = mcpLoadTurns
+	res.ToolCount = len(res.ToolCalls)
+	refreshMCPVerified(res)
 }

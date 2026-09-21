@@ -164,7 +164,14 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 			Prompt:    "Rename Server.oldName to newName. Verify with go test.",
 			Diff:      "api/server.go: semantic_rename Server.oldName -> newName",
 			ToolsUsed: []string{"semantic_rename"},
-			Oracle:    &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
+			ToolCalls: []ToolCall{{
+				Name:             "semantic_rename",
+				Server:           "semedit",
+				TransportStatus:  ToolCallStatusSucceeded,
+				FunctionalStatus: ToolCallStatusFailed,
+				Failure:          "symbol not found",
+			}},
+			Oracle: &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
 		},
 	)
 
@@ -177,7 +184,74 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	if !strings.Contains(mdVerified, "Verified Directive Comparison (+Self-Correction Loop)") {
 		t.Errorf("markdown missing Verified Directive Comparison table")
 	}
-	if !strings.Contains(mdVerified, "Small (+Verified) Context Edit Summary") {
-		t.Errorf("markdown missing Small (+Verified) Context Edit Summary")
+	if !strings.Contains(mdVerified, "Variant: Verified / Small Context") {
+		t.Errorf("markdown missing verified small-context variant")
+	}
+	if !strings.Contains(mdVerified, "| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (transport: succeeded; functional: failed): symbol not found |") {
+		t.Errorf("markdown missing tool call outcome: %s", mdVerified)
+	}
+}
+
+func TestBuildComparisonsSeparatesMCPServerInstructionModes(t *testing.T) {
+	t.Parallel()
+
+	target := Target{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"}
+	runs := []*RunResult{
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmBaseline, MCPServerInstructions: MCPServerInstructionsNone},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmSemedit, MCPServerInstructions: MCPServerInstructionsNone},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmBaseline, MCPServerInstructions: MCPServerInstructionsDescriptive},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmSemedit, MCPServerInstructions: MCPServerInstructionsDescriptive},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmBaseline, MCPServerInstructions: MCPServerInstructionsPrescriptive},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmSemedit, MCPServerInstructions: MCPServerInstructionsPrescriptive},
+	}
+
+	comparisons := BuildComparisons(runs)
+	if len(comparisons) != 3 {
+		t.Fatalf("comparison count = %d, want 3", len(comparisons))
+	}
+	for _, comparison := range comparisons {
+		if comparison.SmallBaseline == nil || comparison.SmallSemedit == nil {
+			t.Errorf("incomplete comparison for instruction mode %q", comparison.MCPServerInstructions)
+		}
+	}
+}
+
+func TestBuildComparisonsDoesNotGroupByProvenance(t *testing.T) {
+	t.Parallel()
+
+	target := Target{Harness: "codex"}
+	runs := []*RunResult{
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmBaseline, Provenance: ProvenanceSet{"parser-limit": "16MiB"}},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmSemedit, Provenance: ProvenanceSet{"parser-limit": "16MiB"}},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmBaseline, Provenance: ProvenanceSet{"parser-limit": "32MiB"}},
+		{TaskID: "task-11-mixed-sink-api-migration", Variant: "small", Target: target, Arm: ArmSemedit, Provenance: ProvenanceSet{"parser-limit": "32MiB"}},
+	}
+
+	comparisons := BuildComparisons(runs)
+	if got := len(comparisons); got != 1 {
+		t.Fatalf("comparison count = %d, want one result cell", got)
+	}
+	if got := comparisons[0].Provenance["parser-limit"]; got != "" {
+		t.Errorf("comparison retained differing parser limit %q", got)
+	}
+}
+
+func TestEscapeToolCallTableCell(t *testing.T) {
+	t.Parallel()
+
+	if got, want := escapeToolCallTableCell("`rg one |\nrg two`"), "`rg one \\| rg two`"; got != want {
+		t.Errorf("escaped table cell = %q, want %q", got, want)
+	}
+}
+
+func TestFormatMCPMetrics(t *testing.T) {
+	t.Parallel()
+
+	got := formatMCPMetrics(&MCPMetrics{TotalMS: 1250, Phases: map[string]MCPPhaseMetric{
+		"verification.before_diagnostics": {DurationMS: 700},
+		"formatting.gofmt":                {DurationMS: 300},
+	}})
+	if want := "; server: 1.25s (verification: 700ms; formatting: 300ms)"; got != want {
+		t.Errorf("MCP timing summary = %q, want %q", got, want)
 	}
 }

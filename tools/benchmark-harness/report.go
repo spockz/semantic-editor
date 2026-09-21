@@ -23,24 +23,26 @@ type BenchmarkReport struct {
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
 type ComparisonSummary struct {
-	TaskID                string     `json:"task_id"`
-	PromptVariant         string     `json:"prompt_variant,omitempty"`
-	TxtarPath             string     `json:"txtar_path,omitempty"`
-	TxtarProvenance       string     `json:"txtar_provenance,omitempty"`
-	Target                Target     `json:"target"`
-	VanillaPrompt         string     `json:"vanilla_prompt,omitempty"`
-	MCPPrompt             string     `json:"mcp_prompt,omitempty"`
-	VanillaVerifiedPrompt string     `json:"vanilla_verified_prompt,omitempty"`
-	MCPVerifiedPrompt     string     `json:"mcp_verified_prompt,omitempty"`
-	BeforeState           string     `json:"before_state,omitempty"`
-	SmallBaseline         *RunResult `json:"small_baseline,omitempty"`
-	SmallSemedit          *RunResult `json:"small_semedit,omitempty"`
-	SmallVerifiedBaseline *RunResult `json:"small_verified_baseline,omitempty"`
-	SmallVerifiedSemedit  *RunResult `json:"small_verified_semedit,omitempty"`
-	LargeBaseline         *RunResult `json:"large_baseline,omitempty"`
-	LargeSemedit          *RunResult `json:"large_semedit,omitempty"`
-	LargeVerifiedBaseline *RunResult `json:"large_verified_baseline,omitempty"`
-	LargeVerifiedSemedit  *RunResult `json:"large_verified_semedit,omitempty"`
+	TaskID                string                   `json:"task_id"`
+	PromptVariant         string                   `json:"prompt_variant,omitempty"`
+	MCPServerInstructions MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
+	Provenance            ProvenanceSet            `json:"provenance,omitempty"`
+	TxtarPath             string                   `json:"txtar_path,omitempty"`
+	TxtarProvenance       string                   `json:"txtar_provenance,omitempty"`
+	Target                Target                   `json:"target"`
+	VanillaPrompt         string                   `json:"vanilla_prompt,omitempty"`
+	MCPPrompt             string                   `json:"mcp_prompt,omitempty"`
+	VanillaVerifiedPrompt string                   `json:"vanilla_verified_prompt,omitempty"`
+	MCPVerifiedPrompt     string                   `json:"mcp_verified_prompt,omitempty"`
+	BeforeState           string                   `json:"before_state,omitempty"`
+	SmallBaseline         *RunResult               `json:"small_baseline,omitempty"`
+	SmallSemedit          *RunResult               `json:"small_semedit,omitempty"`
+	SmallVerifiedBaseline *RunResult               `json:"small_verified_baseline,omitempty"`
+	SmallVerifiedSemedit  *RunResult               `json:"small_verified_semedit,omitempty"`
+	LargeBaseline         *RunResult               `json:"large_baseline,omitempty"`
+	LargeSemedit          *RunResult               `json:"large_semedit,omitempty"`
+	LargeVerifiedBaseline *RunResult               `json:"large_verified_baseline,omitempty"`
+	LargeVerifiedSemedit  *RunResult               `json:"large_verified_semedit,omitempty"`
 }
 
 // normalizeTaskBase maps variant names (e.g. task-01b-rename-local-large-context) to their logical base name (task-01-rename-local).
@@ -54,25 +56,31 @@ func normalizeTaskBase(taskID string) string {
 // BuildComparisons pairs corresponding baseline and semedit runs into structured comparison sets.
 func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 	type key struct {
-		baseTask      string
-		target        string
-		promptVariant string
+		baseTask              string
+		target                string
+		promptVariant         string
+		mcpServerInstructions MCPServerInstructionMode
 	}
 
 	grouped := make(map[key]*ComparisonSummary)
 
 	for _, r := range runs {
 		baseTask := normalizeTaskBase(r.TaskID)
-		k := key{baseTask: baseTask, target: r.Target.String(), promptVariant: r.PromptVariant}
+		mcpServerInstructions := normalizeMCPServerInstructions(r.MCPServerInstructions)
+		k := key{baseTask: baseTask, target: r.Target.String(), promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions}
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
-				TaskID:        baseTask,
-				PromptVariant: r.PromptVariant,
-				Target:        r.Target,
-				BeforeState:   r.BeforeState,
+				TaskID:                baseTask,
+				PromptVariant:         r.PromptVariant,
+				MCPServerInstructions: mcpServerInstructions,
+				Provenance:            r.Provenance.Clone(),
+				Target:                r.Target,
+				BeforeState:           r.BeforeState,
 			}
 			grouped[k] = comp
+		} else {
+			comp.Provenance = commonProvenance(comp.Provenance, r.Provenance)
 		}
 
 		if comp.BeforeState == "" && r.BeforeState != "" {
@@ -150,10 +158,38 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		if result[i].PromptVariant != result[j].PromptVariant {
 			return result[i].PromptVariant < result[j].PromptVariant
 		}
+		if result[i].MCPServerInstructions != result[j].MCPServerInstructions {
+			return result[i].MCPServerInstructions < result[j].MCPServerInstructions
+		}
 		return result[i].Target.String() < result[j].Target.String()
 	})
 
 	return result
+}
+
+// commonProvenance retains only technical context shared by all runs in a comparison.
+func commonProvenance(current, next ProvenanceSet) ProvenanceSet {
+	if len(current) == 0 || len(next) == 0 {
+		return nil
+	}
+	common := make(ProvenanceSet)
+	for key, value := range current {
+		if next[key] == value {
+			common[key] = value
+		}
+	}
+	return common
+}
+
+func normalizeMCPServerInstructions(mode MCPServerInstructionMode) MCPServerInstructionMode {
+	switch mode {
+	case "", MCPServerInstructionsNone:
+		return MCPServerInstructionsNone
+	case "directive":
+		return MCPServerInstructionsPrescriptive
+	default:
+		return mode
+	}
 }
 
 // ResolveTxtarProvenance resolves the provenance link for a benchmark fixture file.
@@ -200,6 +236,10 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 			fmt.Fprintf(&sb, "## Task: `%s` (Prompt: `%s`) | Target: `%s`\n\n", comp.TaskID, comp.PromptVariant, targetStr)
 		} else {
 			fmt.Fprintf(&sb, "## Task: `%s` | Target: `%s`\n\n", comp.TaskID, targetStr)
+		}
+		fmt.Fprintf(&sb, "* **MCP Server Instructions**: `%s`\n\n", normalizeMCPServerInstructions(comp.MCPServerInstructions))
+		if provenance := comp.Provenance.String(); provenance != "" {
+			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
 		}
 
 		switch {
@@ -253,16 +293,16 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 				sb.WriteString("### Standard Directive Comparison\n\n")
 			}
 			renderComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDiffSection(&sb, "Small Context Edit Summary", comp.SmallBaseline, comp.SmallSemedit)
-			renderDiffSection(&sb, "Large Context Edit Summary", comp.LargeBaseline, comp.LargeSemedit)
+			renderDiffSection(&sb, "Variant: Standard / Small Context", comp.SmallBaseline, comp.SmallSemedit)
+			renderDiffSection(&sb, "Variant: Standard / Large Context", comp.LargeBaseline, comp.LargeSemedit)
 		}
 
 		// 2. Verified Directive Comparison Table
 		if hasVerified {
 			sb.WriteString("### Verified Directive Comparison (+Self-Correction Loop)\n\n")
 			renderComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDiffSection(&sb, "Small (+Verified) Context Edit Summary", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDiffSection(&sb, "Large (+Verified) Context Edit Summary", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderDiffSection(&sb, "Variant: Verified / Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+			renderDiffSection(&sb, "Variant: Verified / Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
 		}
 
 		sb.WriteString("\n---\n\n")
@@ -354,7 +394,7 @@ func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunR
 }
 
 func renderDiffSection(sb *strings.Builder, title string, base, mcp *RunResult) {
-	if (base == nil || (base.Diff == "" && len(base.ToolsUsed) == 0)) && (mcp == nil || (mcp.Diff == "" && len(mcp.ToolsUsed) == 0)) {
+	if (base == nil || (base.Diff == "" && len(base.ToolsUsed) == 0 && len(base.ToolCalls) == 0)) && (mcp == nil || (mcp.Diff == "" && len(mcp.ToolsUsed) == 0 && len(mcp.ToolCalls) == 0)) {
 		return
 	}
 	fmt.Fprintf(sb, "#### %s\n", title)
@@ -362,19 +402,89 @@ func renderDiffSection(sb *strings.Builder, title string, base, mcp *RunResult) 
 		if base.Diff != "" {
 			fmt.Fprintf(sb, "* **Vanilla Edit**: %s\n", base.Diff)
 		}
-		if len(base.ToolsUsed) > 0 {
-			fmt.Fprintf(sb, "* **Vanilla Tools**: `%s`\n", strings.Join(base.ToolsUsed, "`, `"))
-		}
 	}
 	if mcp != nil {
 		if mcp.Diff != "" {
 			fmt.Fprintf(sb, "* **MCP Edit**: %s\n", mcp.Diff)
 		}
-		if len(mcp.ToolsUsed) > 0 {
-			fmt.Fprintf(sb, "* **MCP Tools**: `%s`\n", strings.Join(mcp.ToolsUsed, "`, `"))
-		}
 	}
 	sb.WriteString("\n")
+	renderToolCallComparison(sb, base, mcp)
+	sb.WriteString("\n")
+}
+
+func renderToolCallComparison(sb *strings.Builder, base, mcp *RunResult) {
+	sb.WriteString("| # | Vanilla | Semedit MCP |\n")
+	sb.WriteString("| :--- | :--- | :--- |\n")
+	rows := max(toolCallCount(base), toolCallCount(mcp), 1)
+	for index := range rows {
+		fmt.Fprintf(sb, "| %d | %s | %s |\n", index+1, toolCallAt(base, index), toolCallAt(mcp, index))
+	}
+}
+
+func toolCallCount(run *RunResult) int {
+	if run == nil {
+		return 0
+	}
+	return max(len(run.ToolCalls), len(run.ToolsUsed))
+}
+
+func toolCallAt(run *RunResult, index int) string {
+	if run == nil {
+		return "not published"
+	}
+	if index < len(run.ToolCalls) {
+		call := run.ToolCalls[index]
+		server := ""
+		if call.Server != "" {
+			server = call.Server + "/"
+		}
+		entry := fmt.Sprintf("`%s%s` (transport: %s; functional: %s)", server, call.Name, call.TransportStatus, call.FunctionalStatus)
+		if call.Failure != "" {
+			entry += fmt.Sprintf(": %s", call.Failure)
+		}
+		entry += formatMCPMetrics(call.MCPMetrics)
+		return escapeToolCallTableCell(entry)
+	}
+	if index < len(run.ToolsUsed) {
+		return fmt.Sprintf("`%s` (outcome unavailable)", run.ToolsUsed[index])
+	}
+	if toolCallCount(run) == 0 {
+		return "none recorded"
+	}
+	return "—"
+}
+
+func formatMCPMetrics(metrics *MCPMetrics) string {
+	if metrics == nil {
+		return ""
+	}
+	var verificationMS, formattingMS int64
+	for phase, metric := range metrics.Phases {
+		switch {
+		case strings.HasPrefix(phase, "verification."):
+			verificationMS += metric.DurationMS
+		case strings.HasPrefix(phase, "formatting."):
+			formattingMS += metric.DurationMS
+		}
+	}
+	entry := fmt.Sprintf("; server: %s", time.Duration(metrics.TotalMS)*time.Millisecond)
+	if verificationMS > 0 || formattingMS > 0 {
+		entry += " ("
+		parts := make([]string, 0, 2)
+		if verificationMS > 0 {
+			parts = append(parts, fmt.Sprintf("verification: %s", time.Duration(verificationMS)*time.Millisecond))
+		}
+		if formattingMS > 0 {
+			parts = append(parts, fmt.Sprintf("formatting: %s", time.Duration(formattingMS)*time.Millisecond))
+		}
+		entry += strings.Join(parts, "; ") + ")"
+	}
+	return entry
+}
+
+func escapeToolCallTableCell(value string) string {
+	return strings.ReplaceAll(strings.Join(strings.Fields(value), " "), "|", "\\|")
 }
 
 func formatMetricRowInt(name string, sb, sm, lb, lm *RunResult, get func(*RunResult) int) string {

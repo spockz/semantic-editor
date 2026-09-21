@@ -6,10 +6,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
+	"semedit/internal/gocache"
 	"semedit/internal/pipeline"
 )
 
@@ -35,11 +35,15 @@ func AddDependency(ctx context.Context, workDir string, pkg string) error {
 	if modRoot == "" {
 		return ErrNoModuleRoot
 	}
+	env, err := gocache.Environment(ctx, modRoot)
+	if err != nil {
+		return fmt.Errorf("prepare Go dependency environment: %w", err)
+	}
 
 	// #nosec G204 -- trimmedPkg is an explicit package identifier
 	getCmd := exec.CommandContext(ctx, "go", "get", trimmedPkg)
 	getCmd.Dir = modRoot
-	getCmd.Env = os.Environ()
+	getCmd.Env = env
 
 	var getErr bytes.Buffer
 	getCmd.Stderr = &getErr
@@ -50,7 +54,7 @@ func AddDependency(ctx context.Context, workDir string, pkg string) error {
 
 	tidyCmd := exec.CommandContext(ctx, "go", "mod", "tidy")
 	tidyCmd.Dir = modRoot
-	tidyCmd.Env = os.Environ()
+	tidyCmd.Env = env
 
 	var tidyErr bytes.Buffer
 	tidyCmd.Stderr = &tidyErr
