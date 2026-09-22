@@ -6,9 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -44,6 +47,51 @@ type ComparisonSummary struct {
 	LargeVerifiedBaseline *RunResult               `json:"large_verified_baseline,omitempty"`
 	LargeVerifiedSemedit  *RunResult               `json:"large_verified_semedit,omitempty"`
 }
+
+var noSemanticToolsAvailablePattern = regexp.MustCompile(`(?i)\bno\b(?:\W+\w+)*\W+\btools?\b(?:\W+\w+)*\W+\bavailable\b`)
+
+const benchmarkReportCSS = `<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+`
 
 // normalizeTaskBase maps variant names (e.g. task-01b-rename-local-large-context) to their logical base name (task-01-rename-local).
 func normalizeTaskBase(taskID string) string {
@@ -155,13 +203,16 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		if result[i].TaskID != result[j].TaskID {
 			return result[i].TaskID < result[j].TaskID
 		}
+		if result[i].Target.String() != result[j].Target.String() {
+			return result[i].Target.String() < result[j].Target.String()
+		}
 		if result[i].PromptVariant != result[j].PromptVariant {
 			return result[i].PromptVariant < result[j].PromptVariant
 		}
 		if result[i].MCPServerInstructions != result[j].MCPServerInstructions {
 			return result[i].MCPServerInstructions < result[j].MCPServerInstructions
 		}
-		return result[i].Target.String() < result[j].Target.String()
+		return false
 	})
 
 	return result
@@ -228,16 +279,27 @@ func ResolveTxtarProvenance(repoRoot, txtarRelPath string) string {
 func (rep *BenchmarkReport) RenderMarkdown() string {
 	var sb strings.Builder
 	sb.WriteString("# Empirical Benchmark Report: Vanilla LLM vs. Semedit MCP\n\n")
+	sb.WriteString(benchmarkReportCSS)
 	fmt.Fprintf(&sb, "* **Date**: %s\n\n", rep.Timestamp.Format("2006-01-02 15:04:05 MST"))
 
+	currentTaskID := ""
+	currentTarget := ""
 	for _, comp := range rep.Comparisons {
-		targetStr := comp.Target.String()
-		if comp.PromptVariant != "" {
-			fmt.Fprintf(&sb, "## Task: `%s` (Prompt: `%s`) | Target: `%s`\n\n", comp.TaskID, comp.PromptVariant, targetStr)
-		} else {
-			fmt.Fprintf(&sb, "## Task: `%s` | Target: `%s`\n\n", comp.TaskID, targetStr)
+		if comp.TaskID != currentTaskID {
+			if currentTaskID != "" {
+				sb.WriteString("---\n\n")
+			}
+			fmt.Fprintf(&sb, "## Test case: `%s`\n\n", comp.TaskID)
+			currentTaskID = comp.TaskID
+			currentTarget = ""
 		}
-		fmt.Fprintf(&sb, "* **MCP Server Instructions**: `%s`\n\n", normalizeMCPServerInstructions(comp.MCPServerInstructions))
+
+		targetStr := comp.Target.String()
+		if targetStr != currentTarget {
+			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
+			currentTarget = targetStr
+		}
+		fmt.Fprintf(&sb, "#### Configuration: %s\n\n", formatConfiguration(comp))
 		if provenance := comp.Provenance.String(); provenance != "" {
 			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
 		}
@@ -252,13 +314,13 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 		}
 
 		if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
-			fmt.Fprintf(&sb, "**LLM Prompt**:\n> %s\n\n", comp.VanillaPrompt)
+			writePrompt(&sb, "LLM Prompt", comp.VanillaPrompt)
 		} else {
 			if comp.VanillaPrompt != "" {
-				fmt.Fprintf(&sb, "**Vanilla LLM Prompt**:\n> %s\n\n", comp.VanillaPrompt)
+				writePrompt(&sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
 			}
 			if comp.MCPPrompt != "" {
-				fmt.Fprintf(&sb, "**Semedit MCP Prompt**:\n> %s\n\n", comp.MCPPrompt)
+				writePrompt(&sb, "Semedit MCP Prompt", comp.MCPPrompt)
 			}
 		}
 
@@ -267,13 +329,13 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 
 		if hasVerified {
 			if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
-				fmt.Fprintf(&sb, "**Verified Prompt**:\n> %s\n\n", comp.VanillaVerifiedPrompt)
+				writePrompt(&sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
 			} else {
 				if comp.VanillaVerifiedPrompt != "" {
-					fmt.Fprintf(&sb, "**Vanilla (Verified) Prompt**:\n> %s\n\n", comp.VanillaVerifiedPrompt)
+					writePrompt(&sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
 				}
 				if comp.MCPVerifiedPrompt != "" {
-					fmt.Fprintf(&sb, "**Semedit MCP (Verified) Prompt**:\n> %s\n\n", comp.MCPVerifiedPrompt)
+					writePrompt(&sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
 				}
 			}
 		}
@@ -289,36 +351,129 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 			comp.LargeBaseline != nil || comp.LargeSemedit != nil
 
 		if hasStandard {
-			if hasVerified {
-				sb.WriteString("### Standard Directive Comparison\n\n")
-			}
 			renderComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDiffSection(&sb, "Variant: Standard / Small Context", comp.SmallBaseline, comp.SmallSemedit)
-			renderDiffSection(&sb, "Variant: Standard / Large Context", comp.LargeBaseline, comp.LargeSemedit)
+			renderDiffSection(&sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
+			renderDiffSection(&sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+			renderSemanticToolReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+			renderSemanticToolReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 		}
 
 		// 2. Verified Directive Comparison Table
 		if hasVerified {
-			sb.WriteString("### Verified Directive Comparison (+Self-Correction Loop)\n\n")
+			sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
 			renderComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDiffSection(&sb, "Variant: Verified / Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDiffSection(&sb, "Variant: Verified / Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderDiffSection(&sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+			renderDiffSection(&sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderSemanticToolReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+			renderSemanticToolReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
+			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 		}
-
-		sb.WriteString("\n---\n\n")
 	}
 
 	return sb.String()
 }
 
+func writePrompt(sb *strings.Builder, label, prompt string) {
+	fmt.Fprintf(sb, "**%s**:\n%s\n\n", label, formatPromptBlockquote(prompt))
+}
+
+func formatPromptBlockquote(prompt string) string {
+	lines := strings.Split(prompt, "\n")
+	for index, line := range lines {
+		if line == "" {
+			lines[index] = ">"
+			continue
+		}
+		lines[index] = "> " + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatConfiguration(comp *ComparisonSummary) string {
+	promptVariant := strings.TrimSpace(comp.PromptVariant)
+	if promptVariant == "" {
+		promptVariant = "default"
+	}
+	return fmt.Sprintf("%s prompt · %s MCP instructions", promptVariant, normalizeMCPServerInstructions(comp.MCPServerInstructions))
+}
+
+func renderSemanticToolReflection(sb *strings.Builder, title string, run *RunResult) {
+	if run == nil || run.SemanticToolReflection == nil {
+		return
+	}
+	reflection := run.SemanticToolReflection
+	fmt.Fprintf(sb, "#### %s: Semedit Tool-Use Reflection\n\n", title)
+	sb.WriteString("No semantic MCP invocation was confirmed during the task. This diagnostic follow-up is excluded from one-shot, interactive-recovery, correctness, tool-use, token, turn, and latency metrics.\n\n")
+	if reflection.Response != "" {
+		renderSemanticToolCallout(sb, reflection.Response)
+	}
+	sb.WriteString("<details><summary>Session reflection</summary>\n\n")
+	fmt.Fprintf(sb, "<p><strong>Prompt:</strong></p><pre>%s</pre>\n", html.EscapeString(reflection.Prompt))
+	if reflection.Error != "" {
+		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
+	}
+	fmt.Fprintf(sb, "<p>Reflection wall-clock: %.2fs; turns: %d; tool calls: %d.</p>\n", reflection.WallClock.Seconds(), reflection.Turns, len(reflection.ToolCalls))
+	sb.WriteString("</details>\n\n")
+}
+
+func renderSemanticBatchReflection(sb *strings.Builder, title string, run *RunResult) {
+	if run == nil || run.SemanticBatchReflection == nil {
+		return
+	}
+	reflection := run.SemanticBatchReflection
+	fmt.Fprintf(sb, "#### %s: Semedit Batch-Use Reflection\n\n", title)
+	sb.WriteString("Consecutive semantic MCP calls were detected without `semantic_batch`. This diagnostic follow-up is excluded from one-shot, interactive-recovery, correctness, tool-use, token, turn, and latency metrics.\n\n")
+	if reflection.Response != "" {
+		renderSemanticBatchCallout(sb, reflection.Response)
+	}
+	sb.WriteString("<details><summary>Session reflection</summary>\n\n")
+	fmt.Fprintf(sb, "<p><strong>Prompt:</strong></p><pre>%s</pre>\n", html.EscapeString(reflection.Prompt))
+	if reflection.Error != "" {
+		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
+	}
+	fmt.Fprintf(sb, "<p>Reflection wall-clock: %.2fs; turns: %d; tool calls: %d.</p>\n", reflection.WallClock.Seconds(), reflection.Turns, len(reflection.ToolCalls))
+	sb.WriteString("</details>\n\n")
+}
+
+func renderSemanticToolCallout(sb *strings.Builder, response string) {
+	calloutClass, icon := "callout-warning", "⚠"
+	if noSemanticToolsAvailablePattern.MatchString(response) {
+		calloutClass, icon = "callout-error", "✕"
+	}
+	fmt.Fprintf(sb, "<div class=\"callout %s\"><div class=\"callout-title\"><span>%s</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">%s</div></div>\n\n", calloutClass, icon, html.EscapeString(response))
+}
+
+func renderSemanticBatchCallout(sb *strings.Builder, response string) {
+	fmt.Fprintf(sb, "<div class=\"callout callout-warning\"><div class=\"callout-title\"><span>⚠</span> Why semantic edits were not batched</div><div class=\"callout-desc\">%s</div></div>\n\n", html.EscapeString(response))
+}
+
 func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunResult) {
-	sb.WriteString("| Metric | Vanilla (Small) | MCP (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |\n")
+	fmt.Fprintf(sb, "| Metric | Vanilla (Small) | %s | Δ (Small) | Vanilla (Large) | %s | Δ (Large) |\n", mcpColumnHeader("Small", smRun), mcpColumnHeader("Large", lmRun))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	// 1. Wall-Clock Latency
 	sb.WriteString(formatMetricRowDuration("Wall-Clock Latency",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *RunResult) time.Duration { return r.WallClock }))
+
+	sb.WriteString(formatMetricRowOptionalDuration("Process Start → First Event",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *RunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
+
+	sb.WriteString(formatMetricRowOptionalDuration("First Event → First Tool Call",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *RunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
+
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *RunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
+
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Server Start → Initialize",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *RunResult) *time.Duration { return r.MCPServerStartToInitialize }))
 
 	// 2. Interaction Turns & Cycles Breakdown
 	sb.WriteString(formatMetricRowInt("Top-Level User Turns",
@@ -357,14 +512,16 @@ func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunR
 		func(r *RunResult) int { return r.PromptTokens }))
 
 	// 6. Cached Input Tokens
-	sb.WriteString(formatMetricRowInt("Cached Input Tokens",
+	sb.WriteString(formatMetricRowIntWithDirection("Cached Input Tokens",
 		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.CachedPromptTokens }))
+		func(r *RunResult) int { return r.CachedPromptTokens }, deltaHigherIsBetter))
 
 	// 7. Uncached Input Tokens
 	sb.WriteString(formatMetricRowInt("Uncached Input Tokens",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *RunResult) int { return r.UncachedPromptTokens }))
+
+	sb.WriteString(formatCachedToUncachedRatioRow(sbRun, smRun, lbRun, lmRun))
 
 	// 8. Oracle L1: Mutation Policy
 	sb.WriteString(formatOracleRow("Oracle L1: Mutation Policy",
@@ -393,11 +550,19 @@ func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunR
 	sb.WriteString("\n")
 }
 
-func renderDiffSection(sb *strings.Builder, title string, base, mcp *RunResult) {
+func mcpColumnHeader(context string, run *RunResult) string {
+	label := fmt.Sprintf("MCP (%s)", context)
+	if run == nil || run.MCPVerified {
+		return label
+	}
+	return fmt.Sprintf("<span role=\"img\" aria-label=\"Semantic tool invocation not verified\" title=\"Semantic tool invocation not verified\">⚠</span> %s", label)
+}
+
+func renderDiffSection(sb *strings.Builder, headingLevel int, title string, base, mcp *RunResult) {
 	if (base == nil || (base.Diff == "" && len(base.ToolsUsed) == 0 && len(base.ToolCalls) == 0)) && (mcp == nil || (mcp.Diff == "" && len(mcp.ToolsUsed) == 0 && len(mcp.ToolCalls) == 0)) {
 		return
 	}
-	fmt.Fprintf(sb, "#### %s\n", title)
+	fmt.Fprintf(sb, "%s %s\n", strings.Repeat("#", headingLevel), title)
 	if base != nil {
 		if base.Diff != "" {
 			fmt.Fprintf(sb, "* **Vanilla Edit**: %s\n", base.Diff)
@@ -414,12 +579,35 @@ func renderDiffSection(sb *strings.Builder, title string, base, mcp *RunResult) 
 }
 
 func renderToolCallComparison(sb *strings.Builder, base, mcp *RunResult) {
+	if runNeedsHTMLTable(base) || runNeedsHTMLTable(mcp) {
+		renderToolCallHTMLTable(sb, base, mcp)
+		return
+	}
+
 	sb.WriteString("| # | Vanilla | Semedit MCP |\n")
 	sb.WriteString("| :--- | :--- | :--- |\n")
 	rows := max(toolCallCount(base), toolCallCount(mcp), 1)
 	for index := range rows {
 		fmt.Fprintf(sb, "| %d | %s | %s |\n", index+1, toolCallAt(base, index), toolCallAt(mcp, index))
 	}
+}
+
+func runNeedsHTMLTable(run *RunResult) bool {
+	if run == nil {
+		return false
+	}
+	return slices.ContainsFunc(run.ToolCalls, func(call ToolCall) bool {
+		return toolCallIsShellCommand(call) || len(call.Arguments) > 0
+	})
+}
+
+func renderToolCallHTMLTable(sb *strings.Builder, base, mcp *RunResult) {
+	sb.WriteString("<table class=\"benchmark-tool-calls\">\n<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>\n<tbody>\n")
+	rows := max(toolCallCount(base), toolCallCount(mcp), 1)
+	for index := range rows {
+		fmt.Fprintf(sb, "<tr><td>%d</td><td>%s</td><td>%s</td></tr>\n", index+1, toolCallHTMLCell(base, index), toolCallHTMLCell(mcp, index))
+	}
+	sb.WriteString("</tbody>\n</table>\n")
 }
 
 func toolCallCount(run *RunResult) int {
@@ -435,15 +623,14 @@ func toolCallAt(run *RunResult, index int) string {
 	}
 	if index < len(run.ToolCalls) {
 		call := run.ToolCalls[index]
+		if toolCallIsShellCommand(call) {
+			return formatShellCommandCell(call)
+		}
 		server := ""
 		if call.Server != "" {
 			server = call.Server + "/"
 		}
-		entry := fmt.Sprintf("`%s%s` (transport: %s; functional: %s)", server, call.Name, call.TransportStatus, call.FunctionalStatus)
-		if call.Failure != "" {
-			entry += fmt.Sprintf(": %s", call.Failure)
-		}
-		entry += formatMCPMetrics(call.MCPMetrics)
+		entry := fmt.Sprintf("`%s%s` (%s)%s", server, call.Name, toolCallStatusSummary(call), html.EscapeString(toolCallDetails(call)))
 		return escapeToolCallTableCell(entry)
 	}
 	if index < len(run.ToolsUsed) {
@@ -453,6 +640,99 @@ func toolCallAt(run *RunResult, index int) string {
 		return "none recorded"
 	}
 	return "—"
+}
+
+func toolCallIsShellCommand(call ToolCall) bool {
+	return call.Server == "" && (strings.HasPrefix(call.Name, "/bin/") || strings.HasPrefix(call.Name, "bash ") || strings.HasPrefix(call.Name, "zsh "))
+}
+
+func formatShellCommandCell(call ToolCall) string {
+	command := html.EscapeString(formatShellCommand(call.Name))
+	return fmt.Sprintf("%s%s<pre class=\"benchmark-shell-command\"><code class=\"language-shell\">%s</code></pre>%s", toolCallStatusSummary(call), html.EscapeString(toolCallDetails(call)), command, formatToolArguments(call.Arguments))
+}
+
+func toolCallHTMLCell(run *RunResult, index int) string {
+	if run == nil {
+		return "not published"
+	}
+	if index < len(run.ToolCalls) {
+		call := run.ToolCalls[index]
+		if toolCallIsShellCommand(call) {
+			return formatShellCommandCell(call)
+		}
+		name := call.Name
+		if call.Server != "" {
+			name = call.Server + "/" + name
+		}
+		return fmt.Sprintf("<code>%s</code> (%s)%s%s", html.EscapeString(name), toolCallStatusSummary(call), html.EscapeString(toolCallDetails(call)), formatToolArguments(call.Arguments))
+	}
+	if index < len(run.ToolsUsed) {
+		return fmt.Sprintf("<code>%s</code> (outcome unavailable)", html.EscapeString(run.ToolsUsed[index]))
+	}
+	if toolCallCount(run) == 0 {
+		return "none recorded"
+	}
+	return "—"
+}
+
+func formatToolArguments(arguments json.RawMessage) string {
+	arguments = bytes.TrimSpace(arguments)
+	if len(arguments) == 0 || bytes.Equal(arguments, []byte("null")) {
+		return ""
+	}
+
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, arguments, "", "  "); err != nil {
+		formatted.Write(arguments)
+	}
+	return fmt.Sprintf("<pre class=\"benchmark-tool-arguments\"><code class=\"language-json\">%s</code></pre>", html.EscapeString(formatted.String()))
+}
+
+func toolCallStatusSummary(call ToolCall) string {
+	return fmt.Sprintf("%s %s", formatToolCallStatus("Transport", call.TransportStatus), formatToolCallStatus("Functional", call.FunctionalStatus))
+}
+
+func toolCallDetails(call ToolCall) string {
+	entry := ""
+	if call.Failure != "" {
+		entry += fmt.Sprintf(": %s", call.Failure)
+	}
+	return entry + formatMCPMetrics(call.MCPMetrics)
+}
+
+func formatToolCallStatus(kind string, status ToolCallStatus) string {
+	normalized := strings.ToLower(strings.TrimSpace(string(status)))
+	glyph := "?"
+	switch normalized {
+	case "succeeded", "success", "completed":
+		glyph = "✓"
+	case "failed", "failure", "error":
+		glyph = "✗"
+	case "timeout", "timed_out", "timed out":
+		glyph = "⏱"
+	}
+	if normalized == "" {
+		normalized = "unknown"
+	}
+	description := kind + " " + normalized
+	return fmt.Sprintf("<span role=\"img\" aria-label=\"%s\" title=\"%s\">%s</span>", html.EscapeString(description), html.EscapeString(description), glyph)
+}
+
+func formatShellCommand(command string) string {
+	for _, operator := range []string{"&&", "||"} {
+		parts := strings.Split(command, operator)
+		if len(parts) == 1 {
+			continue
+		}
+		var formatted strings.Builder
+		formatted.WriteString(parts[0])
+		for _, part := range parts[1:] {
+			formatted.WriteString(operator + " \\\n")
+			formatted.WriteString(strings.TrimLeft(part, " \t"))
+		}
+		command = formatted.String()
+	}
+	return command
 }
 
 func formatMCPMetrics(metrics *MCPMetrics) string {
@@ -488,19 +768,39 @@ func escapeToolCallTableCell(value string) string {
 }
 
 func formatMetricRowInt(name string, sb, sm, lb, lm *RunResult, get func(*RunResult) int) string {
-	valSB, valSM, deltaS := computeIntDelta(sb, sm, get)
-	valLB, valLM, deltaL := computeIntDelta(lb, lm, get)
+	return formatMetricRowIntWithDirection(name, sb, sm, lb, lm, get, deltaLowerIsBetter)
+}
+
+func formatMetricRowIntWithDirection(name string, sb, sm, lb, lm *RunResult, get func(*RunResult) int, direction deltaDirection) string {
+	valSB, valSM, deltaS := computeIntDelta(sb, sm, get, direction)
+	valLB, valLM, deltaL := computeIntDelta(lb, lm, get, direction)
 
 	return fmt.Sprintf("| **%s** | %s | %s | %s | %s | %s | %s |\n",
 		name, valSB, valSM, deltaS, valLB, valLM, deltaL)
 }
 
+func formatCachedToUncachedRatioRow(sb, sm, lb, lm *RunResult) string {
+	valSB, valSM, deltaS := computeCachedToUncachedRatioDelta(sb, sm)
+	valLB, valLM, deltaL := computeCachedToUncachedRatioDelta(lb, lm)
+	return fmt.Sprintf("| **Cached vs Uncached Token Ratio** | %s | %s | %s | %s | %s | %s |\n", valSB, valSM, deltaS, valLB, valLM, deltaL)
+}
+
 func formatMetricRowDuration(name string, sb, sm, lb, lm *RunResult, get func(*RunResult) time.Duration) string {
-	valSB, valSM, deltaS := computeDurationDelta(sb, sm, get)
-	valLB, valLM, deltaL := computeDurationDelta(lb, lm, get)
+	valSB, valSM, deltaS := computeDurationDelta(sb, sm, get, deltaLowerIsBetter)
+	valLB, valLM, deltaL := computeDurationDelta(lb, lm, get, deltaLowerIsBetter)
 
 	return fmt.Sprintf("| **%s** | %s | %s | %s | %s | %s | %s |\n",
 		name, valSB, valSM, deltaS, valLB, valLM, deltaL)
+}
+
+func formatMetricRowOptionalDuration(name string, sb, sm, lb, lm *RunResult, get func(*RunResult) *time.Duration) string {
+	format := func(run *RunResult) string {
+		if run == nil || get(run) == nil {
+			return "—"
+		}
+		return fmt.Sprintf("%.2fs", get(run).Seconds())
+	}
+	return fmt.Sprintf("| **%s** | %s | %s | — | %s | %s | — |\n", name, format(sb), format(sm), format(lb), format(lm))
 }
 
 func formatOracleRow(name string, sb, sm, lb, lm *RunResult, get func(*OracleResult) bool) string {
@@ -539,7 +839,14 @@ func formatMCPVerifiedRow(name string, sb, sm, lb, lm *RunResult) string {
 		name, render(sb), render(sm), render(lb), render(lm))
 }
 
-func computeIntDelta(base, mcp *RunResult, get func(*RunResult) int) (string, string, string) {
+type deltaDirection bool
+
+const (
+	deltaLowerIsBetter  deltaDirection = false
+	deltaHigherIsBetter deltaDirection = true
+)
+
+func computeIntDelta(base, mcp *RunResult, get func(*RunResult) int, direction deltaDirection) (string, string, string) {
 	if base == nil && mcp == nil {
 		return "—", "—", "—"
 	}
@@ -559,24 +866,49 @@ func computeIntDelta(base, mcp *RunResult, get func(*RunResult) int) (string, st
 		if mVal == 0 {
 			return bStr, mStr, "0%"
 		}
-		return bStr, mStr, "+100%"
+		return bStr, mStr, formatDelta(100, float64(mVal), direction, mcp.MCPVerified)
 	}
 
 	diff := mVal - bVal
 	pct := float64(diff) / float64(bVal) * 100.0
-	var delta string
-	switch {
-	case diff < 0:
-		delta = fmt.Sprintf("**%.1f%%**", pct)
-	case diff > 0:
-		delta = fmt.Sprintf("+%.1f%%", pct)
-	default:
-		delta = "0%"
-	}
-	return bStr, mStr, delta
+	return bStr, mStr, formatDelta(pct, float64(diff), direction, mcp.MCPVerified)
 }
 
-func computeDurationDelta(base, mcp *RunResult, get func(*RunResult) time.Duration) (string, string, string) {
+func computeCachedToUncachedRatioDelta(base, mcp *RunResult) (string, string, string) {
+	if base == nil && mcp == nil {
+		return "—", "—", "—"
+	}
+	if base == nil {
+		_, value, _ := cachedToUncachedRatio(mcp)
+		return "—", value, "—"
+	}
+	if mcp == nil {
+		_, value, _ := cachedToUncachedRatio(base)
+		return value, "—", "—"
+	}
+
+	baseRatio, baseText, baseComparable := cachedToUncachedRatio(base)
+	mcpRatio, mcpText, mcpComparable := cachedToUncachedRatio(mcp)
+	if !baseComparable || !mcpComparable || baseRatio == 0 {
+		return baseText, mcpText, "—"
+	}
+	diff := mcpRatio - baseRatio
+	pct := diff / baseRatio * 100
+	return baseText, mcpText, formatDelta(pct, diff, deltaHigherIsBetter, mcp.MCPVerified)
+}
+
+func cachedToUncachedRatio(run *RunResult) (float64, string, bool) {
+	if run.UncachedPromptTokens <= 0 {
+		if run.CachedPromptTokens > 0 {
+			return 0, "∞:1", false
+		}
+		return 0, "—", false
+	}
+	ratio := float64(run.CachedPromptTokens) / float64(run.UncachedPromptTokens)
+	return ratio, fmt.Sprintf("%.2f:1", ratio), true
+}
+
+func computeDurationDelta(base, mcp *RunResult, get func(*RunResult) time.Duration, direction deltaDirection) (string, string, string) {
 	if base == nil && mcp == nil {
 		return "—", "—", "—"
 	}
@@ -598,16 +930,25 @@ func computeDurationDelta(base, mcp *RunResult, get func(*RunResult) time.Durati
 
 	diff := mSec - bSec
 	pct := (diff / bSec) * 100.0
-	var delta string
-	switch {
-	case diff < 0:
-		delta = fmt.Sprintf("**%.1f%%**", pct)
-	case diff > 0:
-		delta = fmt.Sprintf("+%.1f%%", pct)
-	default:
-		delta = "0%"
+	return bStr, mStr, formatDelta(pct, diff, direction, mcp.MCPVerified)
+}
+
+func formatDelta(pct, diff float64, direction deltaDirection, mcpVerified bool) string {
+	if !mcpVerified {
+		return "N/A"
 	}
-	return bStr, mStr, delta
+	if diff == 0 {
+		return "0%"
+	}
+	delta := fmt.Sprintf("%+.1f%%", pct)
+	mcpBenefits := (direction == deltaLowerIsBetter && diff < 0) || (direction == deltaHigherIsBetter && diff > 0)
+	if mcpBenefits {
+		return fmt.Sprintf("<span class=\"benchmark-delta-positive\">%s</span>", delta)
+	}
+	if !mcpBenefits {
+		return fmt.Sprintf("<span class=\"benchmark-delta-negative\">%s</span>", delta)
+	}
+	return delta
 }
 
 // SaveReport writes telemetry stats as JSON and a rendered Markdown table.

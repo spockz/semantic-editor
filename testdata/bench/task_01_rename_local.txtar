@@ -2,11 +2,16 @@ task_id: task-01-rename-local
 category: mechanics
 instruction: "Rename the unexported method Server.oldName to Server.newName and update all call-sites."
 verification_constraint: "Verify your changes and ensure 'go test ./...' passes with zero errors before concluding."
+interactive_followups:
+  - "Inspect the declaration of the requested method and correct its API name if it still differs from the task."
+  - "Inspect every caller of that method in the fixture and make their invocation consistent with its requested API."
+  - "In api/server.go, rename the Server.oldName declaration to newName and change Run to call s.newName(), then run go test ./...."
 oracle:
   level_1_mutation_policy:
     disallowed_files:
       - "go.mod"
       - "go.sum"
+      - "api/server_test.go"
   level_2_ast:
     file: "api/server.go"
     must_contain_symbols:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +51,18 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 				Level2AST:    true,
 				Level3Build:  true,
 				Level4Test:   true,
+			},
+			SemanticToolReflection: &SemanticToolReflection{
+				Prompt:    "Why did you not use semantic_* tools?",
+				Response:  "Ordinary editing seemed simpler.",
+				WallClock: time.Second,
+				Turns:     1,
+			},
+			SemanticBatchReflection: &SemanticToolReflection{
+				Prompt:    "Why did you not use semantic_batch?",
+				Response:  "The operations were planned separately.",
+				WallClock: time.Second,
+				Turns:     1,
 			},
 		},
 		{
@@ -113,8 +126,14 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	}
 
 	md := report.RenderMarkdown()
-	if !strings.Contains(md, "Task: `task-01-rename-local`") {
-		t.Errorf("markdown missing task title")
+	if !strings.Contains(md, "## Test case: `task-01-rename-local`") {
+		t.Errorf("markdown missing testcase heading")
+	}
+	if !strings.Contains(md, "### Target: `agy/gemini-3.8-flash-low`") {
+		t.Errorf("markdown missing target heading")
+	}
+	if !strings.Contains(md, "#### Configuration: default prompt · none MCP instructions") {
+		t.Errorf("markdown missing configuration heading")
 	}
 	if !strings.Contains(md, "Top-Level User Turns") {
 		t.Errorf("markdown missing Top-Level User Turns row")
@@ -136,6 +155,12 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(md, "Oracle L4: Verification Test") {
 		t.Errorf("markdown missing Oracle L4 row")
+	}
+	if !strings.Contains(md, "Semedit Tool-Use Reflection") || !strings.Contains(md, "Ordinary editing seemed simpler.") {
+		t.Errorf("markdown missing semantic tool-use reflection: %s", md)
+	}
+	if !strings.Contains(md, "Semedit Batch-Use Reflection") || !strings.Contains(md, "The operations were planned separately.") {
+		t.Errorf("markdown missing semantic batch-use reflection: %s", md)
 	}
 
 	// Add verified runs to assert verified rendering
@@ -181,14 +206,136 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 		Comparisons: BuildComparisons(runs),
 	}
 	mdVerified := reportVerified.RenderMarkdown()
-	if !strings.Contains(mdVerified, "Verified Directive Comparison (+Self-Correction Loop)") {
+	if !strings.Contains(mdVerified, "##### Verified Directive Comparison (+Self-Correction Loop)") {
 		t.Errorf("markdown missing Verified Directive Comparison table")
 	}
-	if !strings.Contains(mdVerified, "Variant: Verified / Small Context") {
+	if !strings.Contains(mdVerified, "###### Verified vs Semedit in Small Context") {
 		t.Errorf("markdown missing verified small-context variant")
 	}
-	if !strings.Contains(mdVerified, "| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (transport: succeeded; functional: failed): symbol not found |") {
+	if !strings.Contains(mdVerified, "<div class=\"callout callout-warning\"><div class=\"callout-title\"><span>⚠</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">Ordinary editing seemed simpler.</div></div>") {
+		t.Errorf("markdown missing semantic tool-use diagnostic reason: %s", mdVerified)
+	}
+	if !strings.Contains(mdVerified, "| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (<span role=\"img\" aria-label=\"Transport succeeded\" title=\"Transport succeeded\">✓</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span>): symbol not found |") {
 		t.Errorf("markdown missing tool call outcome: %s", mdVerified)
+	}
+}
+
+func TestRenderSemanticToolCalloutReportsUnavailableToolsAsError(t *testing.T) {
+	t.Parallel()
+
+	var rendered strings.Builder
+	renderSemanticToolCallout(&rendered, "No Semedit MCP tools were available to the agent.")
+
+	if !strings.Contains(rendered.String(), "callout callout-error") {
+		t.Errorf("unavailable semantic tools must render an error callout: %s", rendered.String())
+	}
+}
+
+func TestFormatDeltaColorsVerifiedMCPBenefits(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name      string
+		pct       float64
+		diff      float64
+		direction deltaDirection
+		verified  bool
+		want      string
+	}{
+		{name: "verified lower metric", pct: -25, diff: -25, direction: deltaLowerIsBetter, verified: true, want: "benchmark-delta-positive"},
+		{name: "unverified lower metric", pct: -25, diff: -25, direction: deltaLowerIsBetter, want: "N/A"},
+		{name: "unverified baseline advantage", pct: 25, diff: 25, direction: deltaLowerIsBetter, want: "N/A"},
+		{name: "baseline lower metric", pct: 25, diff: 25, direction: deltaLowerIsBetter, verified: true, want: "benchmark-delta-negative"},
+		{name: "verified cached-token gain", pct: 25, diff: 25, direction: deltaHigherIsBetter, verified: true, want: "benchmark-delta-positive"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := formatDelta(test.pct, test.diff, test.direction, test.verified); !strings.Contains(got, test.want) {
+				t.Errorf("delta = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestMCPColumnHeaderQualifiesOnlyUnverifiedRuns(t *testing.T) {
+	t.Parallel()
+
+	if got, want := mcpColumnHeader("Small", &RunResult{}), `<span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> MCP (Small)`; got != want {
+		t.Errorf("unverified MCP header = %q, want %q", got, want)
+	}
+	if got, want := mcpColumnHeader("Large", &RunResult{MCPVerified: true}), "MCP (Large)"; got != want {
+		t.Errorf("verified MCP header = %q, want %q", got, want)
+	}
+	if got, want := mcpColumnHeader("Large", nil), "MCP (Large)"; got != want {
+		t.Errorf("missing MCP header = %q, want %q", got, want)
+	}
+}
+
+func TestCachedToUncachedTokenRatioFavorsHigherCachedShare(t *testing.T) {
+	t.Parallel()
+
+	base := &RunResult{CachedPromptTokens: 136192, UncachedPromptTokens: 31107}
+	mcp := &RunResult{CachedPromptTokens: 161536, UncachedPromptTokens: 27570, MCPVerified: true}
+	row := formatCachedToUncachedRatioRow(base, mcp, nil, nil)
+	for _, want := range []string{"**Cached vs Uncached Token Ratio**", "4.38:1", "5.86:1", "benchmark-delta-positive"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("ratio row = %q, want %q", row, want)
+		}
+	}
+}
+
+func TestRenderToolCallComparisonRendersShellCommandsAsCopyableBlocks(t *testing.T) {
+	t.Parallel()
+
+	var rendered strings.Builder
+	renderToolCallComparison(&rendered,
+		&RunResult{ToolCalls: []ToolCall{{Name: "/bin/zsh -lc 'make check && go test ./... || true'", TransportStatus: ToolCallStatus("timeout"), FunctionalStatus: ToolCallStatusFailed}}},
+		nil,
+	)
+
+	for _, want := range []string{
+		"<table class=\"benchmark-tool-calls\">\n<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>",
+		"<tr><td>1</td><td><span role=\"img\" aria-label=\"Transport timeout\" title=\"Transport timeout\">⏱</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span><pre class=\"benchmark-shell-command\"><code class=\"language-shell\">/bin/zsh -lc &#39;make check &amp;&amp; \\\ngo test ./... || \\\ntrue&#39;</code></pre></td><td>not published</td></tr>",
+	} {
+		if !strings.Contains(rendered.String(), want) {
+			t.Errorf("rendered shell command missing %q", want)
+		}
+	}
+	if strings.Contains(rendered.String(), "```shell") {
+		t.Error("shell command must remain inside its table cell")
+	}
+}
+
+func TestRenderToolCallComparisonRendersToolArguments(t *testing.T) {
+	t.Parallel()
+
+	var rendered strings.Builder
+	renderToolCallComparison(&rendered, nil, &RunResult{ToolCalls: []ToolCall{{
+		Name:             "semantic_rename",
+		Server:           "semedit",
+		Arguments:        json.RawMessage(`{"symbol":"Old","to":"New"}`),
+		TransportStatus:  ToolCallStatusSucceeded,
+		FunctionalStatus: ToolCallStatusSucceeded,
+	}}})
+
+	for _, want := range []string{
+		"<code>semedit/semantic_rename</code>",
+		"<pre class=\"benchmark-tool-arguments\"><code class=\"language-json\">{\n  &#34;symbol&#34;: &#34;Old&#34;,\n  &#34;to&#34;: &#34;New&#34;\n}</code></pre>",
+	} {
+		if !strings.Contains(rendered.String(), want) {
+			t.Errorf("rendered tool arguments missing %q", want)
+		}
+	}
+}
+
+func TestWritePromptQuotesEveryLine(t *testing.T) {
+	t.Parallel()
+
+	var rendered strings.Builder
+	writePrompt(&rendered, "Vanilla LLM Prompt", "First paragraph.\n\nSecond paragraph.")
+
+	const want = "**Vanilla LLM Prompt**:\n> First paragraph.\n>\n> Second paragraph.\n\n"
+	if got := rendered.String(); got != want {
+		t.Errorf("quoted prompt = %q, want %q", got, want)
 	}
 }
 
@@ -213,6 +360,14 @@ func TestBuildComparisonsSeparatesMCPServerInstructionModes(t *testing.T) {
 		if comparison.SmallBaseline == nil || comparison.SmallSemedit == nil {
 			t.Errorf("incomplete comparison for instruction mode %q", comparison.MCPServerInstructions)
 		}
+	}
+
+	markdown := (&BenchmarkReport{Comparisons: comparisons}).RenderMarkdown()
+	if got := strings.Count(markdown, "### Target:"); got != 1 {
+		t.Errorf("target heading count = %d, want 1", got)
+	}
+	if got := strings.Count(markdown, "#### Configuration:"); got != 3 {
+		t.Errorf("configuration heading count = %d, want 3", got)
 	}
 }
 

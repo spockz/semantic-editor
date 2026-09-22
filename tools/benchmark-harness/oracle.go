@@ -27,6 +27,7 @@ type TaskMetadata struct {
 	Instruction            string            `json:"instruction"`
 	VerificationConstraint string            `json:"verification_constraint,omitempty"`
 	PromptVariants         map[string]string `json:"prompt_variants,omitempty"`
+	InteractiveFollowups   []string          `json:"interactive_followups,omitempty"`
 	Oracle                 OracleConfig      `json:"oracle"`
 }
 
@@ -143,6 +144,8 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 			itemVal := strings.Trim(after, `"'`)
 			targetSlice := strings.Join(currentPath, ".")
 			switch targetSlice {
+			case "interactive_followups":
+				meta.InteractiveFollowups = append(meta.InteractiveFollowups, itemVal)
 			case "oracle.level_1_mutation_policy.disallowed_files":
 				meta.Oracle.MutationPolicy.DisallowedFiles = append(meta.Oracle.MutationPolicy.DisallowedFiles, itemVal)
 			case "oracle.level_2_ast.must_contain_symbols":

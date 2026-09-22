@@ -1,18 +1,25 @@
 task_id: task-04-insert-public
 category: mechanics
 instruction: "Add public constructor func InitServer() *Server placed before private helpers."
+prompt_variants:
+  default: "Add public constructor func InitServer() *Server placed before private helpers."
+interactive_followups:
+  - "Add the requested exported constructor if api/server.go still lacks it; ensure it returns a usable server instance."
+  - "Review declaration placement and move the constructor into the public section before private helpers."
+  - "In api/server.go, insert func InitServer() *Server { return &Server{} } before func (s *Server) internalRun(), then run go test ./...."
 oracle:
   level_1_mutation_policy:
     disallowed_files:
       - "go.mod"
       - "go.sum"
+      - "api/server_test.go"
   level_2_ast:
     file: "api/server.go"
     must_contain_symbols:
       - "InitServer"
     symbol_before:
       first: "InitServer"
-      second: "internalRun"
+      second: "Server.internalRun"
   level_3_build:
     clean_compile: true
   level_4_test:

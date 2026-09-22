@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -118,12 +119,35 @@ const (
 
 // ToolCall captures the transport and functional outcome of one tool invocation.
 type ToolCall struct {
-	Name             string         `json:"name"`
-	Server           string         `json:"server,omitempty"`
-	TransportStatus  ToolCallStatus `json:"transport_status"`
-	FunctionalStatus ToolCallStatus `json:"functional_status"`
-	Failure          string         `json:"failure,omitempty"`
-	MCPMetrics       *MCPMetrics    `json:"mcp_metrics,omitempty"`
+	Name              string             `json:"name"`
+	Server            string             `json:"server,omitempty"`
+	Arguments         json.RawMessage    `json:"arguments,omitempty"`
+	TransportStatus   ToolCallStatus     `json:"transport_status"`
+	FunctionalStatus  ToolCallStatus     `json:"functional_status"`
+	Failure           string             `json:"failure,omitempty"`
+	MCPMetrics        *MCPMetrics        `json:"mcp_metrics,omitempty"`
+	MCPStartupMetrics *MCPStartupMetrics `json:"mcp_startup_metrics,omitempty"`
+}
+
+// InteractionStep preserves the independent outcome of one turn in a continued agent session.
+type InteractionStep struct {
+	Step      int           `json:"step"`
+	Prompt    string        `json:"prompt"`
+	WallClock time.Duration `json:"wall_clock_ms"`
+	Turns     int           `json:"turns"`
+	ToolCalls []ToolCall    `json:"tool_calls,omitempty"`
+	Oracle    *OracleResult `json:"oracle,omitempty"`
+	Error     string        `json:"error,omitempty"`
+}
+
+// SemanticToolReflection records a diagnostic-only follow-up after semantic tool-use behavior needs explanation.
+type SemanticToolReflection struct {
+	Prompt    string        `json:"prompt"`
+	Response  string        `json:"response,omitempty"`
+	WallClock time.Duration `json:"wall_clock_ms"`
+	Turns     int           `json:"turns"`
+	ToolCalls []ToolCall    `json:"tool_calls,omitempty"`
+	Error     string        `json:"error,omitempty"`
 }
 
 // MCPMetrics records server-observed latency returned in an MCP tool response.
@@ -139,6 +163,12 @@ type MCPPhaseMetric struct {
 	DurationMS int64 `json:"duration_ms"`
 }
 
+// MCPStartupMetrics records server-session timing reported with the first semantic call.
+type MCPStartupMetrics struct {
+	ServerStartToInitializeMS       int64 `json:"server_start_to_initialize_ms"`
+	InitializeToFirstSemanticCallMS int64 `json:"initialize_to_first_semantic_call_ms"`
+}
+
 // RunConfig configures a benchmark execution run.
 type RunConfig struct {
 	Arm        ArmType
@@ -149,36 +179,44 @@ type RunConfig struct {
 
 // RunResult aggregates telemetry, performance metrics, and oracle outcomes.
 type RunResult struct {
-	TaskID                string                   `json:"task_id"`
-	Variant               string                   `json:"variant,omitempty"` // "small", "large"
-	PromptVariant         string                   `json:"prompt_variant,omitempty"`
-	MCPServerInstructions MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
-	Provenance            ProvenanceSet            `json:"provenance,omitempty"`
-	Target                Target                   `json:"target"`
-	Arm                   ArmType                  `json:"arm"`
-	Success               bool                     `json:"success"`
-	Turns                 int                      `json:"turns"`
-	InitialLoadTurns      int                      `json:"initial_load_turns"`
-	MCPLoadTurns          int                      `json:"mcp_load_turns"`
-	InternalTurns         int                      `json:"internal_turns"`
-	ToolCount             int                      `json:"tool_count"`
-	WallClock             time.Duration            `json:"wall_clock_ms"`
-	InitialContextTokens  int                      `json:"initial_context_tokens"`
-	PromptTokens          int                      `json:"prompt_tokens"`
-	CachedPromptTokens    int                      `json:"cached_prompt_tokens"`
-	UncachedPromptTokens  int                      `json:"uncached_prompt_tokens"`
-	OutputTokens          int                      `json:"output_tokens"`
-	ReasoningTokens       int                      `json:"reasoning_tokens"`
-	Oracle                *OracleResult            `json:"oracle"`
-	Prompt                string                   `json:"prompt,omitempty"`
-	BeforeState           string                   `json:"before_state,omitempty"`
-	Diff                  string                   `json:"diff,omitempty"`
-	ToolsUsed             []string                 `json:"tools_used,omitempty"`
-	ToolCalls             []ToolCall               `json:"tool_calls,omitempty"`
-	MCPVerified           bool                     `json:"mcp_verified"`
-	Error                 string                   `json:"error,omitempty"`
-	CodexExitCode         *int                     `json:"codex_exit_code,omitempty"`
-	CodexStderr           string                   `json:"codex_stderr,omitempty"`
+	TaskID                           string                   `json:"task_id"`
+	Variant                          string                   `json:"variant,omitempty"` // "small", "large"
+	PromptVariant                    string                   `json:"prompt_variant,omitempty"`
+	MCPServerInstructions            MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
+	Provenance                       ProvenanceSet            `json:"provenance,omitempty"`
+	Target                           Target                   `json:"target"`
+	Arm                              ArmType                  `json:"arm"`
+	Success                          bool                     `json:"success"`
+	Turns                            int                      `json:"turns"`
+	InitialLoadTurns                 int                      `json:"initial_load_turns"`
+	MCPLoadTurns                     int                      `json:"mcp_load_turns"`
+	InternalTurns                    int                      `json:"internal_turns"`
+	ToolCount                        int                      `json:"tool_count"`
+	WallClock                        time.Duration            `json:"wall_clock_ms"`
+	ProcessStartToFirstEvent         *time.Duration           `json:"process_start_to_first_event_ms,omitempty"`
+	FirstEventToFirstToolCall        *time.Duration           `json:"first_event_to_first_tool_call_ms,omitempty"`
+	MCPInitializeToFirstSemanticCall *time.Duration           `json:"mcp_initialize_to_first_semantic_call_ms,omitempty"`
+	MCPServerStartToInitialize       *time.Duration           `json:"mcp_server_start_to_initialize_ms,omitempty"`
+	InitialContextTokens             int                      `json:"initial_context_tokens"`
+	PromptTokens                     int                      `json:"prompt_tokens"`
+	CachedPromptTokens               int                      `json:"cached_prompt_tokens"`
+	UncachedPromptTokens             int                      `json:"uncached_prompt_tokens"`
+	OutputTokens                     int                      `json:"output_tokens"`
+	ReasoningTokens                  int                      `json:"reasoning_tokens"`
+	Oracle                           *OracleResult            `json:"oracle"`
+	Prompt                           string                   `json:"prompt,omitempty"`
+	BeforeState                      string                   `json:"before_state,omitempty"`
+	Diff                             string                   `json:"diff,omitempty"`
+	ToolsUsed                        []string                 `json:"tools_used,omitempty"`
+	ToolCalls                        []ToolCall               `json:"tool_calls,omitempty"`
+	InteractionSteps                 []InteractionStep        `json:"interaction_steps,omitempty"`
+	SemanticToolReflection           *SemanticToolReflection  `json:"semantic_tool_reflection,omitempty"`
+	SemanticBatchReflection          *SemanticToolReflection  `json:"semantic_batch_reflection,omitempty"`
+	MCPVerified                      bool                     `json:"mcp_verified"`
+	Error                            string                   `json:"error,omitempty"`
+	CodexExitCode                    *int                     `json:"codex_exit_code,omitempty"`
+	CodexStderr                      string                   `json:"codex_stderr,omitempty"`
+	agentResponse                    string
 }
 
 // Runner coordinates execution across evaluation arms and benchmarks.

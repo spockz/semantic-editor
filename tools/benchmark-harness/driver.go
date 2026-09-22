@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -17,7 +16,9 @@ import (
 	"strings"
 	"time"
 
+	"semedit/internal/gocache"
 	"semedit/internal/mcp"
+	"semedit/internal/pipeline"
 )
 
 const maxCodexStderrBytes = 64 * 1024
@@ -38,26 +39,43 @@ const (
 	HarnessControl HarnessType = "control"
 )
 
+const benchmarkAGENTSOverride = `# Benchmark fixture instruction override
+
+This directory is a synthetic benchmark fixture and is the complete benchmark
+workspace.
+
+Follow the benchmark user prompt. You may inspect and use any file in this
+directory, including documentation. Do not inspect, read, or use paths outside
+this directory. Run only checks that the user prompt or files in this directory
+require.
+
+Do not modify this AGENTS.override.md file.
+`
+
 // CodexEvent represents a line from codex exec --json.
 type CodexEvent struct {
-	Type string `json:"type"`
-	Item *struct {
-		ID      string          `json:"id,omitempty"`
-		Type    string          `json:"type"`
-		Command string          `json:"command,omitempty"`
-		Text    string          `json:"text,omitempty"`
-		Server  string          `json:"server,omitempty"`
-		Tool    string          `json:"tool,omitempty"`
-		Status  string          `json:"status,omitempty"`
-		Result  json.RawMessage `json:"result,omitempty"`
-		Error   json.RawMessage `json:"error,omitempty"`
-	} `json:"item,omitempty"`
-	Usage *struct {
+	Type     string     `json:"type"`
+	ThreadID string     `json:"thread_id,omitempty"`
+	Item     *codexItem `json:"item,omitempty"`
+	Usage    *struct {
 		InputTokens           int `json:"input_tokens"`
 		CachedInputTokens     int `json:"cached_input_tokens"`
 		OutputTokens          int `json:"output_tokens"`
 		ReasoningOutputTokens int `json:"reasoning_output_tokens"`
 	} `json:"usage,omitempty"`
+}
+
+type codexItem struct {
+	ID        string          `json:"id,omitempty"`
+	Type      string          `json:"type"`
+	Command   string          `json:"command,omitempty"`
+	Text      string          `json:"text,omitempty"`
+	Server    string          `json:"server,omitempty"`
+	Tool      string          `json:"tool,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	Status    string          `json:"status,omitempty"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     json.RawMessage `json:"error,omitempty"`
 }
 
 // AgyResponse represents the JSON output from agy --output-format json -p.
@@ -80,7 +98,7 @@ type AgyResponse struct {
 // ExecuteAgentDriver runs a task via an external harness (codex or agy) and captures telemetry.
 func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Target, arm ArmType, variant string) (*RunResult, error) {
 	start := time.Now()
-	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, variant, task.Metadata.TaskID, time.Now().UnixNano())
+	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
 
 	// #nosec G703,G301 -- ephemeral test harness work directory
@@ -94,6 +112,11 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return nil, fmt.Errorf("extract task fixture: %w", err)
+	}
+	if target.Harness == string(HarnessCodex) {
+		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
+			return nil, fmt.Errorf("prepare Codex fixture instructions: %w", err)
+		}
 	}
 	beforeFiles, err := snapshotWorkspaceFiles(workDir)
 	if err != nil {
@@ -144,6 +167,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
 		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
 	}
+	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
 
 	var prompt string
 	switch arm {
@@ -156,47 +180,220 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	}
 	res.Prompt = prompt
 
+	var sessionID string
 	switch target.Harness {
 	case string(HarnessCodex):
-		if err := r.runCodex(ctx, workDir, target, prompt, res); err != nil {
-			res.Error = fmt.Sprintf("codex execution: %v", err)
+		var runErr error
+		sessionID, runErr = r.runCodex(ctx, workDir, target, prompt, res, "")
+		if runErr != nil {
+			res.Error = fmt.Sprintf("codex execution: %v", runErr)
 			return res, nil
 		}
 	case string(HarnessAgy):
-		if err := r.runAgy(ctx, workDir, target, prompt, res); err != nil {
-			res.Error = fmt.Sprintf("agy execution: %v", err)
+		var runErr error
+		sessionID, runErr = r.runAgy(ctx, workDir, target, prompt, res, "")
+		if runErr != nil {
+			res.Error = fmt.Sprintf("agy execution: %v", runErr)
 			return res, nil
 		}
 	default:
 		return nil, fmt.Errorf("unsupported harness: %s", target.Harness)
 	}
-
 	res.WallClock = time.Since(start)
 
-	// Capture resulting diff
-	afterContent := ""
-	// #nosec G304,G703 -- reading final state file inside isolated benchmark workspace
-	if data, err := os.ReadFile(initialPath); err == nil {
-		afterContent = strings.TrimSpace(string(data))
-	}
-	if beforeContent != "" && afterContent != "" && beforeContent != afterContent {
-		res.Diff = formatDiffSummary(targetFile, beforeContent, afterContent)
-	}
-
-	modifiedFiles, err := changedWorkspaceFiles(workDir, beforeFiles)
-	if err != nil {
-		res.Error = fmt.Sprintf("snapshot benchmark workspace changes: %v", err)
+	if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, res); err != nil {
+		res.Error = err.Error()
 		return res, nil
 	}
-	oracleRes, err := Evaluate(ctx, task, workDir, modifiedFiles)
-	if err != nil {
-		res.Error = fmt.Sprintf("oracle evaluation: %v", err)
-		return res, nil
+	res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
+	for index, followup := range task.Metadata.InteractiveFollowups {
+		if res.Success {
+			break
+		}
+		followup = withMutationPolicyGuidance(followup, task, true)
+		turn := &RunResult{Target: target, Arm: arm, Prompt: followup}
+		turnStarted := time.Now()
+		var runErr error
+		switch target.Harness {
+		case string(HarnessCodex):
+			sessionID, runErr = r.runCodex(ctx, workDir, target, followup, turn, sessionID)
+		case string(HarnessAgy):
+			sessionID, runErr = r.runAgy(ctx, workDir, target, followup, turn, sessionID)
+		}
+		if runErr != nil {
+			res.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
+			break
+		}
+		turn.WallClock = time.Since(turnStarted)
+		if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, turn); err != nil {
+			res.Error = err.Error()
+			break
+		}
+		res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
+		mergeTurn(res, turn)
 	}
-	res.Oracle = oracleRes
-	res.Success = oracleRes.Passed
+	res.WallClock = time.Since(start)
+	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
+		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticBatchReflectionPrompt)
+	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {
+		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticToolReflectionPrompt)
+	}
 
 	return res, nil
+}
+
+// writeBenchmarkAGENTSOverride confines inherited Codex instructions to the synthetic fixture.
+func writeBenchmarkAGENTSOverride(workDir string) error {
+	path := filepath.Join(workDir, "AGENTS.override.md")
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("fixture already defines reserved %s", filepath.Base(path))
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect fixture instruction override: %w", err)
+	}
+	if err := pipeline.WriteAtomic(path, []byte(benchmarkAGENTSOverride)); err != nil {
+		return fmt.Errorf("write fixture instruction override: %w", err)
+	}
+	return nil
+}
+
+const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
+
+const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
+
+func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
+	return arm == ArmSemedit && sessionID != "" && result != nil && !result.MCPVerified
+}
+
+func shouldRequestSemanticBatchReflection(arm ArmType, sessionID string, result *RunResult) bool {
+	return arm == ArmSemedit && sessionID != "" && result != nil && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
+}
+
+func hasConsecutiveUnbatchedSemanticToolCalls(calls []ToolCall) bool {
+	for _, call := range calls {
+		if semanticToolBaseName(call.Name) == "semantic_batch" {
+			return false
+		}
+	}
+
+	consecutive := 0
+	for _, call := range calls {
+		if isSemanticTool(call.Name, call.Server) {
+			consecutive++
+			if consecutive >= 2 {
+				return true
+			}
+			continue
+		}
+		consecutive = 0
+	}
+	return false
+}
+
+func semanticToolBaseName(name string) string {
+	clean := strings.ToLower(strings.Trim(name, "\""))
+	for _, prefix := range []string{"semedit/", "mcp__semedit__"} {
+		if after, found := strings.CutPrefix(clean, prefix); found {
+			return after
+		}
+	}
+	return clean
+}
+
+func (r *Runner) requestSemanticToolReflection(ctx context.Context, workDir string, target Target, sessionID, prompt string) *SemanticToolReflection {
+	turn := &RunResult{Target: target, Arm: ArmSemedit, Prompt: prompt}
+	started := time.Now()
+	var runErr error
+	switch target.Harness {
+	case string(HarnessCodex):
+		_, runErr = r.runCodex(ctx, workDir, target, prompt, turn, sessionID)
+	case string(HarnessAgy):
+		_, runErr = r.runAgy(ctx, workDir, target, prompt, turn, sessionID)
+	default:
+		runErr = fmt.Errorf("unsupported harness: %s", target.Harness)
+	}
+	reflection := &SemanticToolReflection{
+		Prompt:    prompt,
+		Response:  turn.agentResponse,
+		WallClock: time.Since(started),
+		Turns:     turn.Turns,
+		ToolCalls: turn.ToolCalls,
+	}
+	if runErr != nil {
+		reflection.Error = runErr.Error()
+	} else if reflection.Response == "" {
+		reflection.Error = "harness did not expose an assistant reflection response"
+	}
+	return reflection
+}
+
+func safePathFragment(value string) string {
+	return strings.NewReplacer(":", "-", "/", "-", `\`, "-").Replace(value)
+}
+
+func withMutationPolicyGuidance(prompt string, task *Task, remediate bool) string {
+	protected := append([]string(nil), task.Metadata.Oracle.MutationPolicy.DisallowedFiles...)
+	if len(protected) == 0 {
+		return prompt
+	}
+	sort.Strings(protected)
+	hasTests := false
+	otherFiles := make([]string, 0, len(protected))
+	for _, path := range protected {
+		if strings.HasSuffix(path, "_test.go") {
+			hasTests = true
+			continue
+		}
+		otherFiles = append(otherFiles, strconv.Quote(path))
+	}
+	parts := make([]string, 0, 2)
+	if hasTests {
+		parts = append(parts, "Do not edit tests.")
+	}
+	if len(otherFiles) > 0 {
+		parts = append(parts, fmt.Sprintf("You are forbidden to modify protected files: %s.", strings.Join(otherFiles, ", ")))
+	}
+	guidance := strings.Join(parts, " ")
+	if remediate {
+		guidance += " If an earlier turn changed any protected file, restore its original contents before continuing."
+	}
+	return fmt.Sprintf("%s\n\n%s", guidance, prompt)
+}
+
+func evaluateAgentResult(ctx context.Context, task *Task, workDir string, before workspaceSnapshot, initialPath, beforeContent string, res *RunResult) error {
+	// #nosec G304 -- initialPath is derived from the selected fixture oracle path.
+	if data, err := os.ReadFile(initialPath); err == nil && beforeContent != "" && strings.TrimSpace(string(data)) != beforeContent {
+		res.Diff = formatDiffSummary(task.Metadata.Oracle.AST.File, beforeContent, strings.TrimSpace(string(data)))
+	}
+	modified, err := changedWorkspaceFiles(workDir, before)
+	if err != nil {
+		return fmt.Errorf("snapshot benchmark workspace changes: %w", err)
+	}
+	oracle, err := Evaluate(ctx, task, workDir, modified)
+	if err != nil {
+		return fmt.Errorf("oracle evaluation: %w", err)
+	}
+	res.Oracle, res.Success = oracle, oracle.Passed
+	return nil
+}
+
+func interactionStep(step int, prompt string, res *RunResult) InteractionStep {
+	return InteractionStep{Step: step, Prompt: prompt, WallClock: res.WallClock, Turns: res.Turns, ToolCalls: res.ToolCalls, Oracle: res.Oracle, Error: res.Error}
+}
+
+func mergeTurn(total, turn *RunResult) {
+	total.Turns += turn.Turns
+	total.InitialLoadTurns += turn.InitialLoadTurns
+	total.MCPLoadTurns += turn.MCPLoadTurns
+	total.InternalTurns += turn.InternalTurns
+	total.ToolCalls = append(total.ToolCalls, turn.ToolCalls...)
+	total.ToolsUsed = append(total.ToolsUsed, turn.ToolsUsed...)
+	total.ToolCount = len(total.ToolCalls)
+	total.PromptTokens += turn.PromptTokens
+	total.CachedPromptTokens += turn.CachedPromptTokens
+	total.UncachedPromptTokens += turn.UncachedPromptTokens
+	total.OutputTokens += turn.OutputTokens
+	total.ReasoningTokens += turn.ReasoningTokens
+	total.Oracle, total.Success = turn.Oracle, turn.Success
 }
 
 type workspaceSnapshot map[string][sha256.Size]byte
@@ -277,19 +474,10 @@ type codexToolTracker struct {
 	initialLoadTurns int
 	mcpLoadTurns     int
 	mutatingSeen     bool
+	firstToolCallAt  time.Time
 }
 
-func (t *codexToolTracker) observe(res *RunResult, item *struct {
-	ID      string          `json:"id,omitempty"`
-	Type    string          `json:"type"`
-	Command string          `json:"command,omitempty"`
-	Text    string          `json:"text,omitempty"`
-	Server  string          `json:"server,omitempty"`
-	Tool    string          `json:"tool,omitempty"`
-	Status  string          `json:"status,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   json.RawMessage `json:"error,omitempty"`
-}) {
+func (t *codexToolTracker) observe(res *RunResult, item *codexItem, observedAt time.Time) {
 	if item == nil || !isCodexToolItem(item.Type) {
 		return
 	}
@@ -306,22 +494,31 @@ func (t *codexToolTracker) observe(res *RunResult, item *struct {
 		t.record(res, item.ID, ToolCall{
 			Name:             name,
 			Server:           item.Server,
+			Arguments:        item.Arguments,
 			TransportStatus:  ToolCallStatusUnknown,
 			FunctionalStatus: ToolCallStatusUnknown,
-		})
+		}, observedAt)
 		return
 	}
 
-	call := codexToolOutcome(name, item.Server, item.Status, item.Result, item.Error)
+	call := codexToolOutcome(name, item.Server, item.Arguments, item.Status, item.Result, item.Error)
 	if callIndex, ok := t.calls[item.ID]; ok {
+		if len(call.Arguments) == 0 {
+			call.Arguments = res.ToolCalls[callIndex].Arguments
+		}
 		res.ToolCalls[callIndex] = call
+		applyMCPStartupMetrics(res, call.MCPStartupMetrics)
 		refreshMCPVerified(res)
 		return
 	}
-	t.record(res, item.ID, call)
+	t.record(res, item.ID, call, observedAt)
 }
 
-func (t *codexToolTracker) record(res *RunResult, id string, call ToolCall) {
+func (t *codexToolTracker) record(res *RunResult, id string, call ToolCall, observedAt time.Time) {
+	if t.firstToolCallAt.IsZero() {
+		t.firstToolCallAt = observedAt
+	}
+	applyMCPStartupMetrics(res, call.MCPStartupMetrics)
 	callIndex := appendToolCall(res, call)
 	if id != "" {
 		if t.calls == nil {
@@ -351,17 +548,7 @@ func isCodexToolItem(itemType string) bool {
 	}
 }
 
-func codexToolName(item *struct {
-	ID      string          `json:"id,omitempty"`
-	Type    string          `json:"type"`
-	Command string          `json:"command,omitempty"`
-	Text    string          `json:"text,omitempty"`
-	Server  string          `json:"server,omitempty"`
-	Tool    string          `json:"tool,omitempty"`
-	Status  string          `json:"status,omitempty"`
-	Result  json.RawMessage `json:"result,omitempty"`
-	Error   json.RawMessage `json:"error,omitempty"`
-}) string {
+func codexToolName(item *codexItem) string {
 	for _, name := range []string{item.Tool, item.Command, item.Text} {
 		if clean := strings.TrimSpace(name); clean != "" {
 			return clean
@@ -370,13 +557,15 @@ func codexToolName(item *struct {
 	return ""
 }
 
-func codexToolOutcome(name, server, status string, result, toolErr json.RawMessage) ToolCall {
+func codexToolOutcome(name, server string, arguments json.RawMessage, status string, result, toolErr json.RawMessage) ToolCall {
 	call := ToolCall{
-		Name:             name,
-		Server:           server,
-		TransportStatus:  ToolCallStatusUnknown,
-		FunctionalStatus: ToolCallStatusUnknown,
-		MCPMetrics:       codexMCPMetrics(result),
+		Name:              name,
+		Server:            server,
+		Arguments:         arguments,
+		TransportStatus:   ToolCallStatusUnknown,
+		FunctionalStatus:  ToolCallStatusUnknown,
+		MCPMetrics:        codexMCPMetrics(result),
+		MCPStartupMetrics: codexMCPStartupMetrics(result),
 	}
 	hasResult := hasJSONValue(result)
 	hasError := hasJSONValue(toolErr)
@@ -427,10 +616,39 @@ func codexMCPMetrics(result json.RawMessage) *MCPMetrics {
 	return envelope.StructuredContent.Metrics
 }
 
+func codexMCPStartupMetrics(result json.RawMessage) *MCPStartupMetrics {
+	if !hasJSONValue(result) {
+		return nil
+	}
+	var envelope struct {
+		StructuredContent struct {
+			SessionMetrics *MCPStartupMetrics `json:"session_metrics"`
+		} `json:"structuredContent"`
+	}
+	if err := json.Unmarshal(result, &envelope); err != nil {
+		return nil
+	}
+	return envelope.StructuredContent.SessionMetrics
+}
+
 func appendToolCall(res *RunResult, call ToolCall) int {
 	res.ToolCalls = append(res.ToolCalls, call)
 	res.ToolsUsed = append(res.ToolsUsed, call.Name)
 	return len(res.ToolCalls) - 1
+}
+
+func applyMCPStartupMetrics(res *RunResult, metrics *MCPStartupMetrics) {
+	if metrics == nil {
+		return
+	}
+	if res.MCPServerStartToInitialize == nil {
+		value := time.Duration(metrics.ServerStartToInitializeMS) * time.Millisecond
+		res.MCPServerStartToInitialize = &value
+	}
+	if res.MCPInitializeToFirstSemanticCall == nil {
+		value := time.Duration(metrics.InitializeToFirstSemanticCallMS) * time.Millisecond
+		res.MCPInitializeToFirstSemanticCall = &value
+	}
 }
 
 func refreshMCPVerified(res *RunResult) {
@@ -503,59 +721,74 @@ func agyToolFunctionalStatus(status string) ToolCallStatus {
 	}
 }
 
-func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, prompt string, res *RunResult) error {
-	args := []string{"exec", "--json", "--ephemeral", "-s", "workspace-write", "-C", workDir}
+func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
+	args := []string{"exec"}
+	if resumeID == "" {
+		args = append(args, "--json", "-s", "workspace-write", "-C", workDir)
+	} else {
+		args = append(args, "resume", "--json", resumeID)
+	}
 	if target.Model != "" {
 		args = append(args, "--model", target.Model)
 	}
 	if target.Effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", target.Effort))
 	}
-	if override, err := r.codexMCPServerInstructionsOverride(); err != nil {
-		return err
+	if override, err := r.codexMCPOverride(res.Arm); err != nil {
+		return "", err
 	} else if override != "" {
 		args = append(args, "-c", override)
+	}
+	if res.Arm == ArmSemedit {
+		args = append(args, "-c", r.codexMCPBinaryOverride())
+		args = append(args, "-c", codexMCPEnabledOverride())
+		args = append(args, "-c", codexMCPGoEnvironmentOverride())
 	}
 	args = append(args, prompt)
 
 	// #nosec G204 -- external driver invocation controlled by benchmark harness
 	cmd := exec.CommandContext(ctx, "codex", args...)
 	cmd.Dir = workDir
-	cmd.Env = os.Environ()
+	env, err := fixtureGoEnvironment(ctx, workDir)
+	if err != nil {
+		return "", fmt.Errorf("prepare Codex Go environment: %w", err)
+	}
+	cmd.Env = env
 
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("open codex stdout: %w", err)
+	}
+	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	exitErr := &exec.ExitError{}
-	if errors.As(runErr, &exitErr) {
-		code := exitErr.ExitCode()
-		res.CodexExitCode = &code
-	} else if runErr == nil {
-		code := 0
-		res.CodexExitCode = &code
-	}
-	res.CodexStderr = boundedDiagnostic(stderr.Bytes(), maxCodexStderrBytes)
-	if runErr != nil {
-		if diagnostic := strings.TrimSpace(res.CodexStderr); diagnostic != "" {
-			return fmt.Errorf("run codex: %w: %s", runErr, diagnostic)
-		}
-		return fmt.Errorf("run codex: %w", runErr)
+	processStartedAt := time.Now()
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start codex: %w", err)
 	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
+	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	turns := 0
 	tracker := codexToolTracker{}
+	var firstEventAt time.Time
+	threadID := resumeID
 	for scanner.Scan() {
 		var ev CodexEvent
 		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
 			continue
 		}
+		observedAt := time.Now()
+		if firstEventAt.IsZero() {
+			firstEventAt = observedAt
+		}
 		if ev.Type == "turn.started" {
 			turns++
 		}
-		tracker.observe(res, ev.Item)
+		if ev.Type == "thread.started" && ev.ThreadID != "" {
+			threadID = ev.ThreadID
+		}
+		appendCodexAgentResponse(res, ev.Item)
+		tracker.observe(res, ev.Item, observedAt)
 		if ev.Usage != nil {
 			res.PromptTokens = ev.Usage.InputTokens
 			res.CachedPromptTokens = ev.Usage.CachedInputTokens
@@ -564,24 +797,90 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 			res.ReasoningTokens = ev.Usage.ReasoningOutputTokens
 		}
 	}
+	scanErr := scanner.Err()
+	waitErr := cmd.Wait()
+	if cmd.ProcessState != nil {
+		code := cmd.ProcessState.ExitCode()
+		res.CodexExitCode = &code
+	}
+	res.CodexStderr = boundedDiagnostic(stderr.Bytes(), maxCodexStderrBytes)
 	res.Turns = 1
 	if turns > 0 {
 		res.Turns = turns
-	}
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("scan codex output: %w", err)
 	}
 	res.InternalTurns = tracker.internalTurns
 	res.InitialLoadTurns = tracker.initialLoadTurns
 	res.MCPLoadTurns = tracker.mcpLoadTurns
 	res.ToolCount = len(res.ToolCalls)
-	return nil
+	if !firstEventAt.IsZero() {
+		value := firstEventAt.Sub(processStartedAt)
+		res.ProcessStartToFirstEvent = &value
+	}
+	if !firstEventAt.IsZero() && !tracker.firstToolCallAt.IsZero() {
+		value := tracker.firstToolCallAt.Sub(firstEventAt)
+		res.FirstEventToFirstToolCall = &value
+	}
+	if scanErr != nil {
+		return threadID, fmt.Errorf("scan codex output: %w", scanErr)
+	}
+	if waitErr != nil {
+		if diagnostic := strings.TrimSpace(res.CodexStderr); diagnostic != "" {
+			return threadID, fmt.Errorf("run codex: %w: %s", waitErr, diagnostic)
+		}
+		return threadID, fmt.Errorf("run codex: %w", waitErr)
+	}
+	if threadID == "" {
+		return "", fmt.Errorf("codex did not emit a thread ID")
+	}
+	return threadID, nil
+}
+
+func appendCodexAgentResponse(res *RunResult, item *codexItem) {
+	if res == nil || item == nil || item.Type != "agent_message" {
+		return
+	}
+	text := strings.TrimSpace(item.Text)
+	if text == "" {
+		return
+	}
+	if res.agentResponse != "" {
+		res.agentResponse += "\n"
+	}
+	res.agentResponse += text
+}
+
+func (r *Runner) codexMCPOverride(arm ArmType) (string, error) {
+	switch arm {
+	case ArmBaseline:
+		return "mcp_servers.semedit.enabled=false", nil
+	case ArmSemedit:
+		return r.codexMCPServerInstructionsOverride()
+	default:
+		return "", fmt.Errorf("unsupported Codex benchmark arm %q", arm)
+	}
+}
+
+func fixtureGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
+	return gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
+}
+
+func codexMCPGoEnvironmentOverride() string {
+	return `mcp_servers.semedit.env_vars=["GOENV","GOCACHE","GOMODCACHE","GOTMPDIR","GOBIN","GOPATH","GOFLAGS","GOWORK"]`
+}
+
+func codexMCPEnabledOverride() string {
+	return "mcp_servers.semedit.enabled=true"
+}
+
+func (r *Runner) codexMCPBinaryOverride() string {
+	repositoryRoot := filepath.Dir(filepath.Dir(r.baseScratchDir))
+	return "mcp_servers.semedit.command=" + strconv.Quote(filepath.Join(repositoryRoot, "bin", "semedit-next"))
 }
 
 func (r *Runner) codexMCPServerInstructionsOverride() (string, error) {
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
-		return "", nil
+		return `mcp_servers.semedit.args=["mcp","--profile","full"]`, nil
 	case MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive:
 		instructions := mcp.DescriptiveInstructions
 		if r.mcpServerInstructionsMode == MCPServerInstructionsPrescriptive {
@@ -598,7 +897,7 @@ func (r *Runner) codexMCPServerInstructionsOverride() (string, error) {
 	}
 }
 
-func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult) error {
+func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
 	agyBin := "/Users/alessandro/.local/bin/agy"
 	if _, err := os.Stat(agyBin); err != nil {
 		agyBin = "agy"
@@ -606,6 +905,9 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 
 	absWorkDir, _ := filepath.Abs(workDir)
 	args := []string{"--output-format", "json", "--dangerously-skip-permissions", "--add-dir", absWorkDir}
+	if resumeID != "" {
+		args = append(args, "--conversation", resumeID)
+	}
 	if target.Model != "" {
 		args = append(args, "--model", target.Model)
 	}
@@ -623,16 +925,16 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 
 	out, err := cmd.Output()
 	if err != nil {
-		return fmt.Errorf("agy exec error: %w (output: %s)", err, string(out))
+		return "", fmt.Errorf("agy exec error: %w (output: %s)", err, string(out))
 	}
 
 	var resp AgyResponse
 	if err := json.Unmarshal(out, &resp); err != nil {
-		return fmt.Errorf("unmarshal agy json response: %w (raw: %s)", err, string(out))
+		return "", fmt.Errorf("unmarshal agy json response: %w (raw: %s)", err, string(out))
 	}
 
 	if resp.Status != "SUCCESS" && resp.Error != "" {
-		return fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error)
+		return "", fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error)
 	}
 
 	res.Turns = resp.NumTurns
@@ -645,13 +947,17 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	res.UncachedPromptTokens = uncached
 	res.OutputTokens = resp.Usage.OutputTokens
 	res.ReasoningTokens = resp.Usage.ThinkingTokens
+	res.agentResponse = strings.TrimSpace(resp.Response)
 
 	// Inspect transcript for tools used
 	if resp.ConversationID != "" {
 		extractAgyTools(resp.ConversationID, res)
 	}
 
-	return nil
+	if resp.ConversationID == "" {
+		return "", fmt.Errorf("agy did not emit a conversation ID")
+	}
+	return resp.ConversationID, nil
 }
 
 type agyTranscriptStep struct {
@@ -736,7 +1042,11 @@ func parseAgyTranscript(data []byte, res *RunResult) {
 				}
 			}
 			cleanName := strings.Trim(toolName, "\"")
-			callIndex := appendToolCall(res, ToolCall{Name: cleanName, Server: serverName, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
+			arguments, err := json.Marshal(tc.Args)
+			if err != nil {
+				arguments = nil
+			}
+			callIndex := appendToolCall(res, ToolCall{Name: cleanName, Server: serverName, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
 			pending = append(pending, callIndex)
 
 			isMutating := isSemanticTool(cleanName, serverName) || isMutatingTool(cleanName)

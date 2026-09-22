@@ -3,11 +3,17 @@ category: composition
 instruction: "In config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports."
 prompt_variants:
   default: "In config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports."
+interactive_followups:
+  - "Review the Config field migration and make the requested field name consistent at its declaration and uses."
+  - "Add the requested default-config helper if it is absent, choosing values that make the package's visible configuration behavior usable."
+  - "Review config/config.go imports and remove dependencies that the completed implementation no longer uses."
+  - "In config/config.go, rename Config.Port and c.Port to ListenPort, add DefaultConfig returning &Config{Host: \"localhost\", ListenPort: 8080}, remove archive/tar, and run go test ./...."
 oracle:
   level_1_mutation_policy:
     disallowed_files:
       - "go.mod"
       - "go.sum"
+      - "config/config_test.go"
   level_2_ast:
     file: "config/config.go"
     must_contain_symbols:

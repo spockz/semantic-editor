@@ -18,9 +18,9 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 	t.Parallel()
 
 	lines := []string{
-		`{"type":"item.started","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"in_progress"}}`,
+		`{"type":"item.started","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","arguments":{"file":"api/server.go"},"status":"in_progress"}}`,
 		`{"type":"item.completed","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"failed","result":{"content":[{"type":"text","text":"language could not be detected"}]},"error":null}}`,
-		`{"type":"item.completed","item":{"id":"rename","type":"mcp_tool_call","server":"semedit","tool":"semantic_rename","status":"completed","result":{"content":[{"type":"text","text":"renamed"}],"structuredContent":{"metrics":{"schema_version":1,"total_ms":1250,"phases":{"verification.before_diagnostics":{"count":1,"duration_ms":700}}}}},"error":null}}`,
+		`{"type":"item.completed","item":{"id":"rename","type":"mcp_tool_call","server":"semedit","tool":"semantic_rename","status":"completed","result":{"content":[{"type":"text","text":"renamed"}],"structuredContent":{"metrics":{"schema_version":1,"total_ms":1250,"phases":{"verification.before_diagnostics":{"count":1,"duration_ms":700}}},"session_metrics":{"server_start_to_initialize_ms":125,"initialize_to_first_semantic_call_ms":875}}},"error":null}}`,
 		`{"type":"item.completed","item":{"id":"unavailable","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"failed","result":null,"error":{"message":"MCP server unavailable"}}}`,
 	}
 
@@ -31,7 +31,7 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
 			t.Fatalf("unmarshal Codex event: %v", err)
 		}
-		tracker.observe(res, event.Item)
+		tracker.observe(res, event.Item, time.Now())
 	}
 
 	if len(res.ToolCalls) != 3 {
@@ -40,11 +40,17 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 	if got := res.ToolCalls[0]; got.TransportStatus != ToolCallStatusSucceeded || got.FunctionalStatus != ToolCallStatusFailed || !strings.Contains(got.Failure, "language could not be detected") {
 		t.Errorf("semantic_verify outcome = %#v, want transport success and functional failure", got)
 	}
+	if got, want := string(res.ToolCalls[0].Arguments), `{"file":"api/server.go"}`; got != want {
+		t.Errorf("semantic_verify arguments = %s, want %s", got, want)
+	}
 	if got := res.ToolCalls[1]; got.TransportStatus != ToolCallStatusSucceeded || got.FunctionalStatus != ToolCallStatusSucceeded {
 		t.Errorf("semantic_rename outcome = %#v, want full success", got)
 	}
 	if got := res.ToolCalls[1].MCPMetrics; got == nil || got.TotalMS != 1250 || got.Phases["verification.before_diagnostics"].DurationMS != 700 {
 		t.Errorf("semantic_rename MCP metrics = %#v, want structured server timing", got)
+	}
+	if got := res.MCPInitializeToFirstSemanticCall; got == nil || *got != 875*time.Millisecond {
+		t.Errorf("MCP initialize-to-first-semantic timing = %v, want 875ms", got)
 	}
 	if got := res.ToolCalls[2]; got.TransportStatus != ToolCallStatusFailed || got.FunctionalStatus != ToolCallStatusUnknown || !strings.Contains(got.Failure, "unavailable") {
 		t.Errorf("unavailable semantic_verify outcome = %#v, want transport failure and unknown function result", got)
@@ -55,22 +61,23 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 }
 
 func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
+	const threadStarted = "{\"type\":\"thread.started\",\"thread_id\":\"thread-123\"}\\n"
 	cases := []struct {
 		name, stderr, stdout string
 		exit, wantStatus     int
 		wantErr              bool
 	}{
-		{name: "success with stderr", stderr: "MCP startup warning\n", stdout: "not-json\n"},
-		{name: "success empty stderr", stdout: "not-json\n"},
-		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: "not-json\n"},
-		{name: "failure retains stderr", stderr: "server failed to start", exit: 7, wantErr: true, wantStatus: 7},
-		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n"},
+		{name: "success with stderr", stderr: "MCP startup warning\n", stdout: threadStarted},
+		{name: "success empty stderr", stdout: threadStarted},
+		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: threadStarted},
+		{name: "failure retains stderr", stderr: "server failed to start", stdout: threadStarted, exit: 7, wantErr: true, wantStatus: 7},
+		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n" + threadStarted},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			binDir := t.TempDir()
 			script := filepath.Join(binDir, "codex")
-			content := fmt.Sprintf("#!/bin/sh\nprintf '%%s' %q >&2\nprintf '%%s' %q\nexit %d\n", tc.stderr, tc.stdout, tc.exit)
+			content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q >&2\nprintf '%%b' %q\nexit %d\n", tc.stderr, tc.stdout, tc.exit)
 			if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
 				t.Fatal(err)
 			}
@@ -79,8 +86,8 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			res := &RunResult{}
-			err := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", res)
+			res := &RunResult{Arm: ArmBaseline}
+			_, err := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", res, "")
 			if (err != nil) != tc.wantErr {
 				t.Fatalf("runCodex error = %v, want error=%t", err, tc.wantErr)
 			}
@@ -104,7 +111,7 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 			if tc.name == "malformed stdout" && res.Turns != 1 {
 				t.Fatalf("malformed stdout changed turns to %d", res.Turns)
 			}
-			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0) {
+			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0 || res.agentResponse != "") {
 				t.Fatalf("malformed stdout contaminated metrics: %#v", res)
 			}
 			if tc.name == "success with stderr" {
@@ -120,6 +127,79 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 				}
 			}
 		})
+	}
+
+}
+
+func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
+	t.Parallel()
+
+	if !shouldRequestSemanticToolReflection(ArmSemedit, "thread-123", &RunResult{}) {
+		t.Fatal("unverified semantic run should request a reflection")
+	}
+	for _, test := range []struct {
+		name      string
+		arm       ArmType
+		sessionID string
+		result    *RunResult
+	}{
+		{name: "baseline", arm: ArmBaseline, sessionID: "thread-123", result: &RunResult{}},
+		{name: "no session", arm: ArmSemedit, result: &RunResult{}},
+		{name: "semantic confirmed", arm: ArmSemedit, sessionID: "thread-123", result: &RunResult{MCPVerified: true}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if shouldRequestSemanticToolReflection(test.arm, test.sessionID, test.result) {
+				t.Fatal("unexpected semantic-tool reflection")
+			}
+		})
+	}
+	for _, expected := range []string{"do not make further file changes", "do not run tools", "semantic_*", "Do not retry"} {
+		if !strings.Contains(semanticToolReflectionPrompt, expected) {
+			t.Errorf("reflection prompt missing %q", expected)
+		}
+	}
+
+	var event CodexEvent
+	if err := json.Unmarshal([]byte(`{"type":"item.completed","item":{"type":"agent_message","text":"Ordinary editing seemed simpler."}}`), &event); err != nil {
+		t.Fatal(err)
+	}
+	result := &RunResult{}
+	appendCodexAgentResponse(result, event.Item)
+	if got, want := result.agentResponse, "Ordinary editing seemed simpler."; got != want {
+		t.Errorf("captured reflection = %q, want %q", got, want)
+	}
+}
+
+func TestSemanticBatchReflectionRequiresConsecutiveUnbatchedCalls(t *testing.T) {
+	t.Parallel()
+
+	result := &RunResult{MCPVerified: true, ToolCalls: []ToolCall{
+		{Name: "semantic_rename", Server: "semedit"},
+		{Name: "semantic_insert_function", Server: "semedit"},
+	}}
+	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", result) {
+		t.Fatal("consecutive unbatched semantic calls should request a reflection")
+	}
+	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{ToolCalls: result.ToolCalls}) {
+		t.Fatal("attempted consecutive semantic calls should request a reflection even when transport was not confirmed")
+	}
+	for _, test := range []struct {
+		name   string
+		arm    ArmType
+		result *RunResult
+	}{
+		{name: "baseline", arm: ArmBaseline, result: result},
+		{name: "separated", arm: ArmSemedit, result: &RunResult{MCPVerified: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "shell", Server: "local"}, {Name: "semantic_insert_function", Server: "semedit"}}}},
+		{name: "batch", arm: ArmSemedit, result: &RunResult{MCPVerified: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "semantic_insert_function", Server: "semedit"}, {Name: "mcp__semedit__semantic_batch"}}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if shouldRequestSemanticBatchReflection(test.arm, "thread-123", test.result) {
+				t.Fatal("unexpected semantic batch reflection")
+			}
+		})
+	}
+	if !strings.Contains(semanticBatchReflectionPrompt, "semantic_batch") || !strings.Contains(semanticBatchReflectionPrompt, "do not run tools") {
+		t.Errorf("batch reflection prompt lacks its constraints: %q", semanticBatchReflectionPrompt)
 	}
 }
 
@@ -139,6 +219,9 @@ func TestAgyToolCallOutcomes(t *testing.T) {
 	}
 	if got := res.ToolCalls[0]; got.TransportStatus != ToolCallStatusSucceeded || got.FunctionalStatus != ToolCallStatusSucceeded {
 		t.Errorf("semantic_rename outcome = %#v, want full success", got)
+	}
+	if got := string(res.ToolCalls[0].Arguments); !strings.Contains(got, `"ToolName":"\"semantic_rename\""`) {
+		t.Errorf("semantic_rename arguments = %s, want the recorded Agy arguments", got)
 	}
 	if got := res.ToolCalls[1]; got.TransportStatus != ToolCallStatusSucceeded || got.FunctionalStatus != ToolCallStatusFailed || !strings.Contains(got.Failure, "rejected") {
 		t.Errorf("semantic_verify outcome = %#v, want transport success and functional failure", got)
@@ -175,20 +258,101 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 	}
 
 	for mode, want := range map[MCPServerInstructionMode]string{
+		MCPServerInstructionsNone:         "mcp_servers.semedit.args=[\"mcp\",\"--profile\",\"full\"]",
 		MCPServerInstructionsDescriptive:  "Semedit semantic tools are available",
-		MCPServerInstructionsPrescriptive: "inspect the complete tool inventory",
+		MCPServerInstructionsPrescriptive: "Inspect the complete tool inventory",
 	} {
 		runner := NewRunner(t.TempDir(), WithMCPServerInstructions(mode))
 		override, err := runner.codexMCPServerInstructionsOverride()
 		if err != nil {
 			t.Fatalf("build %s override: %v", mode, err)
 		}
-		for _, part := range []string{"mcp_servers.semedit.args=", "--instructions", want} {
+		parts := []string{"mcp_servers.semedit.args=", want}
+		if mode != MCPServerInstructionsNone {
+			parts = append(parts, "--instructions")
+		}
+		for _, part := range parts {
 			if !strings.Contains(override, part) {
 				t.Errorf("%s Codex MCP override %q missing %q", mode, override, part)
 			}
 		}
 	}
+	if got, err := NewRunner(t.TempDir(), WithMCPServerInstructions(MCPServerInstructionsPrescriptive)).codexMCPOverride(ArmBaseline); err != nil || got != "mcp_servers.semedit.enabled=false" {
+		t.Errorf("baseline Codex MCP override = %q, %v; want semedit disabled", got, err)
+	}
+	for _, key := range []string{"GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN", "GOPATH", "GOFLAGS", "GOWORK"} {
+		if !strings.Contains(codexMCPGoEnvironmentOverride(), `"`+key+`"`) {
+			t.Errorf("Codex MCP environment override missing %s", key)
+		}
+	}
+	runner := NewRunner(t.TempDir())
+	if got, want := runner.codexMCPBinaryOverride(), `mcp_servers.semedit.command="`+filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")+`"`; got != want {
+		t.Errorf("Codex MCP binary override = %q, want %q", got, want)
+	}
+	if got, want := codexMCPEnabledOverride(), "mcp_servers.semedit.enabled=true"; got != want {
+		t.Errorf("Codex MCP enabled override = %q, want %q", got, want)
+	}
+}
+
+func TestFixtureGoEnvironmentIsWorkspaceLocal(t *testing.T) {
+	root := t.TempDir()
+	for _, key := range []string{"GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN", "GOPATH", "GOFLAGS", "GOWORK"} {
+		t.Setenv(key, filepath.Join(t.TempDir(), key))
+	}
+	env, err := fixtureGoEnvironment(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		"GOENV":      filepath.Join(root, ".scratch", "go", "env"),
+		"GOCACHE":    filepath.Join(root, ".scratch", "go", "build"),
+		"GOMODCACHE": filepath.Join(root, ".scratch", "go", "mod"),
+		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
+		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
+		"GOPATH":     filepath.Join(root, ".scratch", "go"),
+		"GOFLAGS":    "",
+		"GOWORK":     "off",
+	}
+	for key, path := range want {
+		got := environmentValue(env, key)
+		if got != path {
+			t.Errorf("%s = %q, want %q", key, got, path)
+		}
+		if key == "GOCACHE" || key == "GOMODCACHE" || key == "GOTMPDIR" || key == "GOBIN" || key == "GOPATH" {
+			if _, err := os.Stat(path); err != nil {
+				t.Errorf("%s directory was not created: %v", key, err)
+			}
+		}
+	}
+}
+
+func TestWriteBenchmarkAGENTSOverride(t *testing.T) {
+	workDir := t.TempDir()
+	if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(workDir, "AGENTS.override.md")
+	// #nosec G304 -- path is a harness-generated file inside the test temp directory
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != benchmarkAGENTSOverride {
+		t.Errorf("fixture AGENTS override = %q, want %q", got, benchmarkAGENTSOverride)
+	}
+	if err := writeBenchmarkAGENTSOverride(workDir); err == nil {
+		t.Fatal("second fixture AGENTS override write unexpectedly succeeded")
+	}
+}
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		candidate, value, found := strings.Cut(entry, "=")
+		if found && candidate == key {
+			return value
+		}
+	}
+	return ""
 }
 
 func TestProvenanceSetSnapshotsExecutionContext(t *testing.T) {
@@ -474,6 +638,54 @@ func TestPromptVariantsParsing(t *testing.T) {
 	}
 	if !strings.Contains(task.Metadata.PromptVariants["crypto_rand"], "crypto/rand") {
 		t.Errorf("expected crypto/rand in crypto_rand variant, got: %s", task.Metadata.PromptVariants["crypto_rand"])
+	}
+}
+
+func TestInteractiveFollowupLaddersAreParsed(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]int{
+		"task_01_rename_local.txtar":             3,
+		"task_04_insert_public.txtar":            3,
+		"task_09_composite_refactor.txtar":       4,
+		"task_11_mixed_sink_api_migration.txtar": 4,
+	}
+	for fixture, wantSteps := range tests {
+		// #nosec G304 -- fixture name comes from this static test map.
+		data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", fixture))
+		if err != nil {
+			t.Fatalf("read %s: %v", fixture, err)
+		}
+		task, err := ParseTask(data)
+		if err != nil {
+			t.Fatalf("parse %s: %v", fixture, err)
+		}
+		if got := len(task.Metadata.InteractiveFollowups); got != wantSteps {
+			t.Errorf("%s follow-up steps = %d, want %d", fixture, got, wantSteps)
+		}
+	}
+}
+
+func TestMutationPolicyGuidance(t *testing.T) {
+	t.Parallel()
+
+	task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{MutationPolicy: MutationPolicyConfig{
+		DisallowedFiles: []string{"go.sum", "api/server_test.go", "go.mod"},
+	}}}}
+	const prompt = "Continue the refactor."
+
+	initial := withMutationPolicyGuidance(prompt, task, false)
+	if want := "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nContinue the refactor."; initial != want {
+		t.Fatalf("initial policy guidance = %q, want %q", initial, want)
+	}
+	followup := withMutationPolicyGuidance(prompt, task, true)
+	if !strings.Contains(followup, "If an earlier turn changed any protected file, restore its original contents before continuing.") {
+		t.Fatalf("follow-up policy guidance does not request remediation: %q", followup)
+	}
+
+	withoutPolicy := &Task{}
+	if got := withMutationPolicyGuidance(prompt, withoutPolicy, true); got != prompt {
+		t.Fatalf("guidance without protected files = %q, want original prompt", got)
 	}
 }
 
