@@ -23,8 +23,9 @@ go run ./tools/benchmark-harness --matrix \
 An explicit model target has the form
 `opencode/openrouter/<provider>/<model>:free`. OpenCode receives
 `OPENROUTER_API_KEY` through its child-process environment. The generated
-fixture configuration contains only an environment reference, and the key is
-redacted from captured OpenCode diagnostics.
+fixture configuration uses OpenCode's native OpenRouter provider and contains
+no endpoint or credential override; the key is redacted from captured
+OpenCode diagnostics.
 
 Every repeat is recorded with a `repeat` field. Per-target reports use a
 `-repeat-N` suffix, and comparison grouping includes the repeat index, so

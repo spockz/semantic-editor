@@ -44,7 +44,6 @@ const (
 	openCodeDefaultModel   = "amdbeast/qwen36-coder"
 	openCodeQwenBaseURL    = "http://192.168.1.122:1234/v1"
 	openCodeQwenBaseURLEnv = "SEMEDIT_OPENCODE_QWEN_BASE_URL"
-	openRouterBaseURL      = "https://openrouter.ai/api/v1"
 	openRouterAPIKeyEnv    = "OPENROUTER_API_KEY" //nolint:gosec // environment variable name, never a credential value
 	maxOpenCodeStderrBytes = 64 * 1024
 )
@@ -1127,12 +1126,6 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	switch provider {
 	case "openrouter":
 		providerConfig = map[string]any{
-			"name": "OpenRouter",
-			"npm":  "@ai-sdk/openai-compatible",
-			"options": map[string]any{
-				"baseURL": openRouterBaseURL,
-				"apiKey":  "{env:" + openRouterAPIKeyEnv + "}",
-			},
 			"models": map[string]any{
 				providerModel: map[string]any{"name": providerModel},
 			},

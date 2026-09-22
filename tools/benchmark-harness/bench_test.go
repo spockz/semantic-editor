@@ -197,10 +197,8 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 		t.Fatal(err)
 	}
 	var config struct {
-		Provider map[string]struct {
-			Options map[string]string `json:"options"`
-		} `json:"provider"`
-		MCP struct {
+		Provider map[string]map[string]any `json:"provider"`
+		MCP      struct {
 			Servers map[string]struct {
 				Command     []string          `json:"command"`
 				CWD         string            `json:"cwd"`
@@ -212,11 +210,22 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if got := config.Provider["openrouter"].Options["baseURL"]; got != openRouterBaseURL {
-		t.Errorf("OpenRouter base URL = %q, want %q", got, openRouterBaseURL)
+	openRouterProvider, found := config.Provider["openrouter"]
+	if !found {
+		t.Fatal("OpenRouter provider is absent")
 	}
-	if got := config.Provider["openrouter"].Options["apiKey"]; got != "{env:"+openRouterAPIKeyEnv+"}" {
-		t.Errorf("OpenRouter API key config = %q, want environment reference", got)
+	if _, found := openRouterProvider["npm"]; found {
+		t.Error("OpenRouter config overrides the native runtime with npm")
+	}
+	if _, found := openRouterProvider["options"]; found {
+		t.Error("OpenRouter config overrides native endpoint or credentials")
+	}
+	models, found := openRouterProvider["models"].(map[string]any)
+	if !found {
+		t.Fatal("OpenRouter model registration is absent")
+	}
+	if _, found := models["free"]; !found {
+		t.Errorf("OpenRouter model registration = %#v, want free", models)
 	}
 	if strings.Contains(string(data), "secret-test-key") {
 		t.Fatal("OpenRouter credential was serialized into OpenCode configuration")
