@@ -947,23 +947,31 @@ enableRobotsTXT = true
 
 [menu]
   [[menu.main]]
-    name = "Docs"
-    pageRef = "/docs"
+    name = "Get started"
+    pageRef = "/docs/getting-started"
     weight = 1
   [[menu.main]]
-    name = "Search"
+    name = "Reference"
+    pageRef = "/docs/reference"
     weight = 2
+  [[menu.main]]
+    name = "Benchmarks"
+    pageRef = "/docs/benchmarks"
+    weight = 3
+  [[menu.main]]
+    name = "Search"
+    weight = 4
     [menu.main.params]
       type = "search"
   [[menu.main]]
     name = "GitHub"
     url = "https://github.com/spockz/semantic-editor"
-    weight = 3
+    weight = 5
     [menu.main.params]
       icon = "github"
   [[menu.main]]
     name = "Theme Toggle"
-    weight = 4
+    weight = 6
     [menu.main.params]
       type = "theme-toggle"
       label = true
