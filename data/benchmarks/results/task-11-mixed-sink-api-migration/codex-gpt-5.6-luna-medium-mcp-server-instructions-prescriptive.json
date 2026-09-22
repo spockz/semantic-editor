@@ -1,0 +1,1640 @@
+{
+  "timestamp": "2026-09-22T12:08:49.38568+02:00",
+  "runs": [
+    {
+      "task_id": "task-11-mixed-sink-api-migration",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "prescriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 1,
+      "mcp_load_turns": 0,
+      "internal_turns": 8,
+      "tool_count": 8,
+      "wall_clock_ms": 83817627834,
+      "process_start_to_first_event_ms": 292945375,
+      "first_event_to_first_tool_call_ms": 7760043750,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 231438,
+      "cached_prompt_tokens": 197120,
+      "uncached_prompt_tokens": 34318,
+      "output_tokens": 3357,
+      "reasoning_tokens": 1363,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1432354167
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+        "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+        "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+        "/bin/zsh -lc 'make check'",
+        "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+        "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+        "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 82383686667,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1432354167
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-11-mixed-sink-api-migration",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "prescriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 1,
+      "mcp_load_turns": 0,
+      "internal_turns": 14,
+      "tool_count": 14,
+      "wall_clock_ms": 141177066000,
+      "process_start_to_first_event_ms": 148051792,
+      "first_event_to_first_tool_call_ms": 7886281708,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 348487,
+      "cached_prompt_tokens": 292608,
+      "uncached_prompt_tokens": 55879,
+      "output_tokens": 3601,
+      "reasoning_tokens": 1743,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1630716958
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+        "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+        "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+        "semantic_insert_function",
+        "semantic_replace_body",
+        "semantic_replace_body",
+        "semantic_replace_body",
+        "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+        "semantic_verify",
+        "/bin/zsh -lc 'make check'",
+        "/bin/zsh -lc 'go test ./...'",
+        "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+        "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+        "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "arguments": {
+            "file": "audit/normalize.go",
+            "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}",
+            "placement": "file_end",
+            "auto_organize_imports": true
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "arguments": {
+            "file": "audit/summary.go",
+            "symbol": "Classify",
+            "body": "kind = NormalizeKind(kind)\n\tswitch kind {\n\tcase \"health\", \"probe\":\n\t\treturn \"control\"\n\tdefault:\n\t\treturn \"data\"\n\t}"
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "arguments": {
+            "file": "service/dispatch.go",
+            "symbol": "(*Dispatcher).Record",
+            "body": "event.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "arguments": {
+            "file": "service/dispatch.go",
+            "symbol": "DispatchAll",
+            "body": "writeEvent := audit.Sink.Write\n\tfor _, event := range events {\n\t\tevent.Kind = audit.NormalizeKind(event.Kind)\n\t\tif err := writeEvent(sink, event); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\treturn nil"
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_verify",
+          "server": "semedit",
+          "arguments": {
+            "path": "."
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 139544900500,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "arguments": {
+                "file": "audit/normalize.go",
+                "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}",
+                "placement": "file_end",
+                "auto_organize_imports": true
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "arguments": {
+                "file": "audit/summary.go",
+                "symbol": "Classify",
+                "body": "kind = NormalizeKind(kind)\n\tswitch kind {\n\tcase \"health\", \"probe\":\n\t\treturn \"control\"\n\tdefault:\n\t\treturn \"data\"\n\t}"
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "arguments": {
+                "file": "service/dispatch.go",
+                "symbol": "(*Dispatcher).Record",
+                "body": "event.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "arguments": {
+                "file": "service/dispatch.go",
+                "symbol": "DispatchAll",
+                "body": "writeEvent := audit.Sink.Write\n\tfor _, event := range events {\n\t\tevent.Kind = audit.NormalizeKind(event.Kind)\n\t\tif err := writeEvent(sink, event); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\treturn nil"
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_verify",
+              "server": "semedit",
+              "arguments": {
+                "path": "."
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1630716958
+          }
+        }
+      ],
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not use `semantic_batch` because I treated the independent function insert and body replacements as simpler sequential operations, despite batching being available. Batching was suitable but not chosen.",
+        "wall_clock_ms": 8210389417,
+        "turns": 1
+      },
+      "mcp_verified": true
+    },
+    {
+      "task_id": "task-11-mixed-sink-api-migration",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "prescriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 3,
+      "mcp_load_turns": 0,
+      "internal_turns": 16,
+      "tool_count": 16,
+      "wall_clock_ms": 147078606041,
+      "process_start_to_first_event_ms": 185101292,
+      "first_event_to_first_tool_call_ms": 6901053333,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 451592,
+      "cached_prompt_tokens": 420608,
+      "uncached_prompt_tokens": 30984,
+      "output_tokens": 6732,
+      "reasoning_tokens": 2128,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1749758625
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 17 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+        "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+        "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+        "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+        "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+        "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+        "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+        "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+        "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+        "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+        "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+        "/bin/zsh -lc 'go test ./...'",
+        "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+        "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+        "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+        "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'"
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 145324195000,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1749758625
+          }
+        }
+      ],
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the session. I therefore used ordinary repository editing and verification.",
+        "wall_clock_ms": 4361777750,
+        "turns": 1
+      },
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-11-mixed-sink-api-migration",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "prescriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 2,
+      "mcp_load_turns": 0,
+      "internal_turns": 7,
+      "tool_count": 7,
+      "wall_clock_ms": 215446998334,
+      "process_start_to_first_event_ms": 163216417,
+      "first_event_to_first_tool_call_ms": 11929139708,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 305758,
+      "cached_prompt_tokens": 275456,
+      "uncached_prompt_tokens": 30302,
+      "output_tokens": 4601,
+      "reasoning_tokens": 1818,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1944933000
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 13 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+        "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+        "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+        "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+        "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 213498715209,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1944933000
+          }
+        }
+      ],
+      "mcp_verified": false
+    }
+  ],
+  "comparisons": [
+    {
+      "task_id": "task-11-mixed-sink-api-migration",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "prescriptive",
+      "txtar_path": "testdata/bench/task_11_mixed_sink_api_migration.txtar",
+      "txtar_provenance": "sha256:ac52f8e94dba22fb0aea5899 (uncommitted)",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "small_baseline": {
+        "task_id": "task-11-mixed-sink-api-migration",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "prescriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 1,
+        "mcp_load_turns": 0,
+        "internal_turns": 8,
+        "tool_count": 8,
+        "wall_clock_ms": 83817627834,
+        "process_start_to_first_event_ms": 292945375,
+        "first_event_to_first_tool_call_ms": 7760043750,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 231438,
+        "cached_prompt_tokens": 197120,
+        "uncached_prompt_tokens": 34318,
+        "output_tokens": 3357,
+        "reasoning_tokens": 1363,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1432354167
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+          "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+          "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+          "/bin/zsh -lc 'make check'",
+          "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+          "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+          "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 82383686667,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' | sort \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- docs/brief ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"for f in audit/event.go audit/normalize.go audit/sink.go audit/summary.go service/dispatch.go metrics/writer.go legacy/export.go docs/audit-sinks.md cmd/migrate/main.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,260p' \\\"\"'$f\"; done'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"for f in audit/event_test.go audit/summary_test.go service/dispatch_test.go metrics/writer_test.go legacy/export_test.go; do printf '\\\\n--- %s ---\\\\n' \\\"\"'$f\"; sed -n '\"'1,280p' \\\"\"'$f\"; done \u0026\u0026 printf '\"'\\\\n--- module ---\\\\n' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '\\\\n--- all references ---\\\\n' \u0026\u0026 rg -n 'Normalize|Classify|Write\\\\(|Record\\\\(|DispatchAll|probe|health|Kind' .\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./...'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git diff --check \u0026\u0026 printf '\\\\n--- fixture diff ---\\\\n' \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 printf '\\\\n--- protected-file diff ---\\\\n' \u0026\u0026 git diff --quiet -- go.mod go.sum; printf 'protected_diff_exit=%s\\\\n' \\\"\"'$?\" \u0026\u0026 printf '\"'\\\\n--- fixture status ---\\\\n' \u0026\u0026 git status --short -- audit service metrics legacy cmd go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- git root ---' \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 printf '%s\\\\n' '--- files ---' \u0026\u0026 ls -l audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum 2\u003e\u00261 || true \u0026\u0026 printf '%s\\\\n' '--- contents ---' \u0026\u0026 sed -n '1,100p' audit/normalize.go \u0026\u0026 sed -n '1,100p' audit/summary.go \u0026\u0026 sed -n '1,100p' service/dispatch.go \u0026\u0026 printf '%s\\\\n' '--- local status ---' \u0026\u0026 git status --short --untracked-files=all -- . \u0026\u0026 printf '%s\\\\n' '--- tracked ---' \u0026\u0026 git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'go vet ./... \u0026\u0026 gofmt -l audit service metrics legacy cmd \u0026\u0026 git diff --check -- audit/normalize.go audit/summary.go service/dispatch.go; test ! -e go.sum \u0026\u0026 printf '\"'go.sum absent and untouched\\\\n'; grep -qx 'module example.com/auditapp' go.mod \u0026\u0026 printf 'go.mod preserved\\\\n'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1432354167
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "small_semedit": {
+        "task_id": "task-11-mixed-sink-api-migration",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "prescriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 1,
+        "mcp_load_turns": 0,
+        "internal_turns": 14,
+        "tool_count": 14,
+        "wall_clock_ms": 141177066000,
+        "process_start_to_first_event_ms": 148051792,
+        "first_event_to_first_tool_call_ms": 7886281708,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 348487,
+        "cached_prompt_tokens": 292608,
+        "uncached_prompt_tokens": 55879,
+        "output_tokens": 3601,
+        "reasoning_tokens": 1743,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1630716958
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+          "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+          "semantic_insert_function",
+          "semantic_replace_body",
+          "semantic_replace_body",
+          "semantic_replace_body",
+          "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+          "semantic_verify",
+          "/bin/zsh -lc 'make check'",
+          "/bin/zsh -lc 'go test ./...'",
+          "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+          "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+          "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "arguments": {
+              "file": "audit/normalize.go",
+              "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}",
+              "placement": "file_end",
+              "auto_organize_imports": true
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "arguments": {
+              "file": "audit/summary.go",
+              "symbol": "Classify",
+              "body": "kind = NormalizeKind(kind)\n\tswitch kind {\n\tcase \"health\", \"probe\":\n\t\treturn \"control\"\n\tdefault:\n\t\treturn \"data\"\n\t}"
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "arguments": {
+              "file": "service/dispatch.go",
+              "symbol": "(*Dispatcher).Record",
+              "body": "event.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "arguments": {
+              "file": "service/dispatch.go",
+              "symbol": "DispatchAll",
+              "body": "writeEvent := audit.Sink.Write\n\tfor _, event := range events {\n\t\tevent.Kind = audit.NormalizeKind(event.Kind)\n\t\tif err := writeEvent(sink, event); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\treturn nil"
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_verify",
+            "server": "semedit",
+            "arguments": {
+              "path": "."
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 139544900500,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go; sed -n '1,240p' audit/normalize.go; sed -n '1,240p' audit/sink.go; sed -n '1,260p' service/dispatch.go; sed -n '1,240p' docs/audit-sinks.md; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,260p' audit/summary.go; sed -n '1,260p' legacy/export.go; sed -n '1,260p' metrics/writer.go; sed -n '1,260p' cmd/migrate/main.go; sed -n '1,260p' audit/event_test.go; sed -n '1,260p' audit/summary_test.go; sed -n '1,260p' service/dispatch_test.go; sed -n '1,240p' legacy/export_test.go; sed -n '1,220p' metrics/writer_test.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "arguments": {
+                  "file": "audit/normalize.go",
+                  "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}",
+                  "placement": "file_end",
+                  "auto_organize_imports": true
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "arguments": {
+                  "file": "audit/summary.go",
+                  "symbol": "Classify",
+                  "body": "kind = NormalizeKind(kind)\n\tswitch kind {\n\tcase \"health\", \"probe\":\n\t\treturn \"control\"\n\tdefault:\n\t\treturn \"data\"\n\t}"
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "symbol": "(*Dispatcher).Record",
+                  "body": "event.Kind = audit.NormalizeKind(event.Kind)\n\treturn d.sink.Write(event)"
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "arguments": {
+                  "file": "service/dispatch.go",
+                  "symbol": "DispatchAll",
+                  "body": "writeEvent := audit.Sink.Write\n\tfor _, event := range events {\n\t\tevent.Kind = audit.NormalizeKind(event.Kind)\n\t\tif err := writeEvent(sink, event); err != nil {\n\t\t\treturn err\n\t\t}\n\t}\n\treturn nil"
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git diff -- audit service; git status --short; sed -n '1,120p' audit/normalize.go; sed -n '1,120p' service/dispatch.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_verify",
+                "server": "semedit",
+                "arguments": {
+                  "path": "."
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'git diff -- audit/normalize.go audit/summary.go service/dispatch.go audit/sink.go audit/event.go metrics/writer.go legacy/export.go go.mod go.sum; git diff --name-only -- audit service legacy metrics go.mod go.sum; git status --short -- audit service legacy metrics go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go service/dispatch.go go.mod; git check-ignore -v audit/normalize.go audit/summary.go service/dispatch.go go.mod || true; sed -n '1,100p' audit/summary.go; sed -n '1,100p' go.mod\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"gofmt -d audit/normalize.go audit/summary.go service/dispatch.go; rg -n 'NormalizeKind|case \\\"health\\\"|case \\\"probe\\\"|Classify\\\\(' audit service metrics legacy; test \"'! -e Makefile \u0026\u0026 echo '\"'no Makefile in fixture'; go test ./...\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1630716958
+            }
+          }
+        ],
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not use `semantic_batch` because I treated the independent function insert and body replacements as simpler sequential operations, despite batching being available. Batching was suitable but not chosen.",
+          "wall_clock_ms": 8210389417,
+          "turns": 1
+        },
+        "mcp_verified": true
+      },
+      "large_baseline": {
+        "task_id": "task-11-mixed-sink-api-migration",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "prescriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 2,
+        "mcp_load_turns": 0,
+        "internal_turns": 7,
+        "tool_count": 7,
+        "wall_clock_ms": 215446998334,
+        "process_start_to_first_event_ms": 163216417,
+        "first_event_to_first_tool_call_ms": 11929139708,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 305758,
+        "cached_prompt_tokens": 275456,
+        "uncached_prompt_tokens": 30302,
+        "output_tokens": 4601,
+        "reasoning_tokens": 1818,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1944933000
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 13 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+          "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+          "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+          "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+          "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 213498715209,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd; rg --files -g '\"'!AGENTS.override.md'\"' | sed -n '1,160p'; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- brief ---\\\\n'; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- audit/event.go ---'; sed -n '1,240p' audit/event.go; printf '%s\\\\n' '--- audit/normalize.go ---'; sed -n '1,240p' audit/normalize.go; printf '%s\\\\n' '--- audit/fanout.go ---'; sed -n '1,280p' audit/fanout.go; printf '%s\\\\n' '--- audit/sink.go ---'; sed -n '1,240p' audit/sink.go; printf '%s\\\\n' '--- audit/transaction.go ---'; sed -n '1,260p' audit/transaction.go; printf '%s\\\\n' '--- docs ---'; sed -n '1,260p' docs/audit-sinks.md\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- references ---'; rg -n \\\"audit|Event|Probe|probe|Kind|Fanout|Buffered|MemorySink|Write\\\\(\\\" --glob '*.go' --glob '*.md' .; printf '%s\\\\n' '--- service dispatch ---'; sed -n '1,280p' service/dispatch.go; printf '%s\\\\n' '--- service replay ---'; sed -n '1,240p' service/replay.go; printf '%s\\\\n' '--- db ---'; sed -n '1,240p' db/db.go; printf '%s\\\\n' '--- journal ---'; sed -n '1,240p' journal/file.go; printf '%s\\\\n' '--- legacy ---'; sed -n '1,240p' legacy/export.go; printf '%s\\\\n' '--- metrics ---'; sed -n '1,240p' metrics/writer.go; sed -n '1,220p' metrics/metrics.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,240p' audit/summary.go; sed -n '1,220p' audit/summary_test.go; sed -n '1,220p' audit/event_test.go; sed -n '1,220p' audit/transaction.go; sed -n '1,160p' journal/file.go; sed -n '1,120p' go.mod; rg -n \\\"delivery|control|persist|normalize|probe|sink\\\" . --glob '\"'!**/*_test.go'\"'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; git diff -- audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go; printf '\\\\n--- protected diff ---\\\\n'; git diff -- go.mod go.sum; printf '\\\\n--- test files changed in fixture ---\\\\n'; git status --short -- audit '*_test.go'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"ls -la; git rev-parse --show-toplevel; git ls-files -- audit/normalize.go audit/summary.go journal/file.go; if [ -f Makefile ]; then make check; else echo 'make check unavailable: no Makefile'; fi; go test ./...\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"gofmt -w audit/normalize.go audit/summary.go audit/fanout.go audit/sink.go audit/transaction.go journal/file.go service/dispatch.go service/replay.go; go test ./...; go vet ./...; printf '\\\\n--- protected files ---\\\\n'; ls go.mod go.sum 2\u003e/dev/null || true; printf '\\\\n--- changed source excerpts ---\\\\n'; sed -n '1,120p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,100p' audit/transaction.go; sed -n '1,100p' service/dispatch.go; sed -n '1,80p' service/replay.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1944933000
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "large_semedit": {
+        "task_id": "task-11-mixed-sink-api-migration",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "prescriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 3,
+        "mcp_load_turns": 0,
+        "internal_turns": 16,
+        "tool_count": 16,
+        "wall_clock_ms": 147078606041,
+        "process_start_to_first_event_ms": 185101292,
+        "first_event_to_first_tool_call_ms": 6901053333,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 451592,
+        "cached_prompt_tokens": 420608,
+        "uncached_prompt_tokens": 30984,
+        "output_tokens": 6732,
+        "reasoning_tokens": 2128,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1749758625
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 17 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+          "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+          "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+          "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+          "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+          "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+          "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+          "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+          "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+          "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+          "/bin/zsh -lc 'go test ./...'",
+          "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+          "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+          "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+          "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'"
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 145324195000,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'docs/**' -g '*.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' | sed -n '1,160p'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,240p' audit/event.go \u0026\u0026 sed -n '1,240p' audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/fanout.go \u0026\u0026 sed -n '1,220p' audit/sink.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git status --short \u0026\u0026 sed -n '1,240p' docs/audit-sinks.md\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,280p' service/dispatch.go \u0026\u0026 sed -n '1,220p' db/db.go \u0026\u0026 sed -n '1,220p' journal/file.go \u0026\u0026 sed -n '1,220p' metrics/writer.go \u0026\u0026 sed -n '1,220p' legacy/export.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n \\\"audit|probe|Kind|Record|DispatchAll|Sink|normalize\\\" --glob '*.go' --glob '*.md' --glob '*.txtar' . | sed -n '1,260p' \u0026\u0026 sed -n '1,260p' audit/event_test.go \u0026\u0026 sed -n '1,260p' audit/summary.go \u0026\u0026 sed -n '1,240p' audit/summary_test.go \u0026\u0026 sed -n '1,240p' audit/transaction.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,260p' service/replay.go \u0026\u0026 sed -n '1,260p' testdata/bench/task_11_mixed_sink_api_migration.txtar 2\u003e/dev/null || true \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n \\\"\\\\.Write\\\\(|Write\\\\(\\\" --glob '*.go' . \u0026\u0026 rg -n \\\"semedit|semantic_\\\" . --hidden -g '\"'!/.git/**'\"' | sed -n '1,120p' \u0026\u0026 find . -maxdepth 2 -type f -name 'Makefile' -o -name '*.sh' -print\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"command -v semedit || true; command -v semantic-editor || true; rg -n \\\"func .*Normalize|Normaliz|probe\\\" audit service journal docs --glob '*.go' --glob '*.md'\"",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'cat go.mod; find . -maxdepth 2 -type f | sort; git diff -- audit service journal metrics legacy go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go \u0026\u0026 git diff --check \u0026\u0026 go test ./...'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'git diff -- audit journal service metrics legacy go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git rev-parse --show-toplevel; git status --short -- audit service journal metrics legacy go.mod go.sum; sed -n '1,160p' audit/normalize.go; sed -n '1,100p' audit/summary.go; sed -n '1,120p' audit/transaction.go; git diff --no-index /dev/null audit/normalize.go || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -d audit/normalize.go audit/summary.go audit/sink.go audit/fanout.go audit/transaction.go service/dispatch.go service/replay.go journal/file.go'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git status --short --untracked-files=all -- audit service journal metrics legacy go.mod go.sum; rg -n \\\"probe|strings|Normalize|audit\\\\.Deliver\\\" audit service journal metrics legacy --glob '*.go'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'go test ./... \u0026\u0026 go vet ./...'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1749758625
+            }
+          }
+        ],
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the session. I therefore used ordinary repository editing and verification.",
+          "wall_clock_ms": 4361777750,
+          "turns": 1
+        },
+        "mcp_verified": false
+      }
+    }
+  ]
+}

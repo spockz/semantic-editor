@@ -1,0 +1,1170 @@
+{
+  "timestamp": "2026-09-22T12:02:22.410125+02:00",
+  "runs": [
+    {
+      "task_id": "task-09-composite-refactor",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "descriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 5,
+      "mcp_load_turns": 0,
+      "internal_turns": 5,
+      "tool_count": 5,
+      "wall_clock_ms": 42438802667,
+      "process_start_to_first_event_ms": 158749708,
+      "first_event_to_first_tool_call_ms": 7428258625,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 144959,
+      "cached_prompt_tokens": 129280,
+      "uncached_prompt_tokens": 15679,
+      "output_tokens": 1536,
+      "reasoning_tokens": 473,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 898082875
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+        "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+        "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 41539699250,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 898082875
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-09-composite-refactor",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "descriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 7,
+      "mcp_load_turns": 0,
+      "internal_turns": 7,
+      "tool_count": 7,
+      "wall_clock_ms": 53603910667,
+      "process_start_to_first_event_ms": 446454708,
+      "first_event_to_first_tool_call_ms": 7230535208,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 211595,
+      "cached_prompt_tokens": 194048,
+      "uncached_prompt_tokens": 17547,
+      "output_tokens": 1747,
+      "reasoning_tokens": 501,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1143964875
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+        "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+        "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+        "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+        "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+        "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 52456764709,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1143964875
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-09-composite-refactor",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "descriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 3,
+      "mcp_load_turns": 0,
+      "internal_turns": 7,
+      "tool_count": 7,
+      "wall_clock_ms": 67371076541,
+      "process_start_to_first_event_ms": 155170125,
+      "first_event_to_first_tool_call_ms": 8242264333,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 215922,
+      "cached_prompt_tokens": 194304,
+      "uncached_prompt_tokens": 21618,
+      "output_tokens": 1753,
+      "reasoning_tokens": 729,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 945725958
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "diff": "File config/config.go modified (15 lines -\u003e 18 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+        "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+        "semantic_rename",
+        "semantic_insert_function",
+        "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+        "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'"
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_rename",
+          "server": "semedit",
+          "arguments": {
+            "language": "go",
+            "file": "config/config.go",
+            "symbol": "Config.Port",
+            "to": "ListenPort",
+            "auto_organize_imports": true
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "arguments": {
+            "file": "config/config.go",
+            "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{Host: \"localhost\", ListenPort: 8080}\n}",
+            "placement": "public_end",
+            "access_modifier": "public",
+            "auto_organize_imports": true
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 66422784000,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_rename",
+              "server": "semedit",
+              "arguments": {
+                "language": "go",
+                "file": "config/config.go",
+                "symbol": "Config.Port",
+                "to": "ListenPort",
+                "auto_organize_imports": true
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "arguments": {
+                "file": "config/config.go",
+                "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{Host: \"localhost\", ListenPort: 8080}\n}",
+                "placement": "public_end",
+                "access_modifier": "public",
+                "auto_organize_imports": true
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 945725958
+          }
+        }
+      ],
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not combine the operations because `semantic_batch`’s edit schema was not clear from the available tool documentation, while the individual semantic operations were directly applicable and self-verifying. Batching was therefore unsuitable under the time and correctness constraints.",
+        "wall_clock_ms": 6082443333,
+        "turns": 1
+      },
+      "mcp_verified": true
+    },
+    {
+      "task_id": "task-09-composite-refactor",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "descriptive",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 2,
+      "mcp_load_turns": 0,
+      "internal_turns": 7,
+      "tool_count": 7,
+      "wall_clock_ms": 110231184791,
+      "process_start_to_first_event_ms": 181723625,
+      "first_event_to_first_tool_call_ms": 12767787958,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 186851,
+      "cached_prompt_tokens": 156416,
+      "uncached_prompt_tokens": 30435,
+      "output_tokens": 1995,
+      "reasoning_tokens": 710,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1158767292
+      },
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+        "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+        "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+        "/bin/zsh -lc 'make check'",
+        "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+        "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+        "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 109068621250,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1158767292
+          }
+        }
+      ],
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in this session. I therefore used a direct focused source edit instead.",
+        "wall_clock_ms": 9756139000,
+        "turns": 1
+      },
+      "mcp_verified": false
+    }
+  ],
+  "comparisons": [
+    {
+      "task_id": "task-09-composite-refactor",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "descriptive",
+      "txtar_path": "testdata/bench/task_09_composite_refactor.txtar",
+      "txtar_provenance": "sha256:56702db0bd2306695e2f66f5 (uncommitted)",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "small_baseline": {
+        "task_id": "task-09-composite-refactor",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "descriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 5,
+        "mcp_load_turns": 0,
+        "internal_turns": 5,
+        "tool_count": 5,
+        "wall_clock_ms": 42438802667,
+        "process_start_to_first_event_ms": 158749708,
+        "first_event_to_first_tool_call_ms": 7428258625,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 144959,
+        "cached_prompt_tokens": 129280,
+        "uncached_prompt_tokens": 15679,
+        "output_tokens": 1536,
+        "reasoning_tokens": 473,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 898082875
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+          "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+          "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 41539699250,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 sed -n '1,220p' config/config.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- files ---' \u0026\u0026 rg --files -g '\"'!tests/**'\"' -g '\"'!testdata/**'\"' | sort \u0026\u0026 printf '%s\\\\n' '--- references ---' \u0026\u0026 rg -n --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!**/*_test.go'\"' '\\\\bPort\\\\b|DefaultConfig|\\\\.Port' .\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,220p' config/config_test.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- git status ---' \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 if [ -f Makefile ]; then make check; else go test ./...; fi \u0026\u0026 git diff -- config/config.go \u0026\u0026 git diff --name-only -- config/config.go config/config_test.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go config/config_test.go go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,160p' config/config.go \u0026\u0026 git status --short \u0026\u0026 git ls-files --stage config/config.go \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 898082875
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "small_semedit": {
+        "task_id": "task-09-composite-refactor",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "descriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 3,
+        "mcp_load_turns": 0,
+        "internal_turns": 7,
+        "tool_count": 7,
+        "wall_clock_ms": 67371076541,
+        "process_start_to_first_event_ms": 155170125,
+        "first_event_to_first_tool_call_ms": 8242264333,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 215922,
+        "cached_prompt_tokens": 194304,
+        "uncached_prompt_tokens": 21618,
+        "output_tokens": 1753,
+        "reasoning_tokens": 729,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 945725958
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "diff": "File config/config.go modified (15 lines -\u003e 18 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+          "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+          "semantic_rename",
+          "semantic_insert_function",
+          "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+          "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'"
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_rename",
+            "server": "semedit",
+            "arguments": {
+              "language": "go",
+              "file": "config/config.go",
+              "symbol": "Config.Port",
+              "to": "ListenPort",
+              "auto_organize_imports": true
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "arguments": {
+              "file": "config/config.go",
+              "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{Host: \"localhost\", ListenPort: 8080}\n}",
+              "placement": "public_end",
+              "access_modifier": "public",
+              "auto_organize_imports": true
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 66422784000,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,240p' config/config.go; printf '\\\\n--- go.mod ---\\\\n'; sed -n '1,120p' go.mod; printf '\\\\n--- files ---\\\\n'; rg --files | head -80\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,240p' config/config_test.go; rg -n '\\\\bPort\\\\b|DefaultConfig|Config\\\\{' . --glob '\"'!AGENTS.override.md'\"'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_rename",
+                "server": "semedit",
+                "arguments": {
+                  "language": "go",
+                  "file": "config/config.go",
+                  "symbol": "Config.Port",
+                  "to": "ListenPort",
+                  "auto_organize_imports": true
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "arguments": {
+                  "file": "config/config.go",
+                  "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{Host: \"localhost\", ListenPort: 8080}\n}",
+                  "placement": "public_end",
+                  "access_modifier": "public",
+                  "auto_organize_imports": true
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,200p' config/config.go; printf '\\\\n--- status ---\\\\n'; git status --short; printf '\\\\n--- diff ---\\\\n'; git diff -- config/config.go config/config_test.go go.mod go.sum; printf '\\\\n--- make check availability ---\\\\n'; if [ -f Makefile ]; then make check; else echo 'no Makefile'; fi; printf '\\\\n--- go test ---\\\\n'; go test ./...\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'git status --short -- config/config.go config/config_test.go go.mod go.sum; git ls-files --stage -- config/config.go config/config_test.go go.mod go.sum; git diff --no-index /dev/null config/config.go || true'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 945725958
+            }
+          }
+        ],
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not combine the operations because `semantic_batch`’s edit schema was not clear from the available tool documentation, while the individual semantic operations were directly applicable and self-verifying. Batching was therefore unsuitable under the time and correctness constraints.",
+          "wall_clock_ms": 6082443333,
+          "turns": 1
+        },
+        "mcp_verified": true
+      },
+      "large_baseline": {
+        "task_id": "task-09-composite-refactor",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "descriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 7,
+        "mcp_load_turns": 0,
+        "internal_turns": 7,
+        "tool_count": 7,
+        "wall_clock_ms": 53603910667,
+        "process_start_to_first_event_ms": 446454708,
+        "first_event_to_first_tool_call_ms": 7230535208,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 211595,
+        "cached_prompt_tokens": 194048,
+        "uncached_prompt_tokens": 17547,
+        "output_tokens": 1747,
+        "reasoning_tokens": 501,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1143964875
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+          "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+          "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+          "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+          "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+          "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 52456764709,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS.md' -g 'AGENTS.override.md' \u0026\u0026 sed -n '1,220p' config/config.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n --glob '\"'!AGENTS.override.md'\"' '\\\\b(Config|Port|ListenPort|DefaultConfig)\\\\b|config\\\\.' . \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,160p' config/config_test.go \u0026\u0026 find . -maxdepth 2 -type f -not -path './.git/*' -print | sort | head -80\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n 'localhost|8080|ListenPort|DefaultConfig|Config\\\\{' --glob '\"'!config/config.go'\"' --glob '\"'!config/config_test.go'\"' .\"",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'go test ./config \u0026\u0026 git diff -- config/config.go go.mod go.sum \u0026\u0026 git status --short -- config/config.go go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go \u0026\u0026 git ls-files -v -- config/config.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff -- config/config.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1143964875
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "large_semedit": {
+        "task_id": "task-09-composite-refactor",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "descriptive",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 2,
+        "mcp_load_turns": 0,
+        "internal_turns": 7,
+        "tool_count": 7,
+        "wall_clock_ms": 110231184791,
+        "process_start_to_first_event_ms": 181723625,
+        "first_event_to_first_tool_call_ms": 12767787958,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 186851,
+        "cached_prompt_tokens": 156416,
+        "uncached_prompt_tokens": 30435,
+        "output_tokens": 1995,
+        "reasoning_tokens": 710,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1158767292
+        },
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+          "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+          "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+          "/bin/zsh -lc 'make check'",
+          "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+          "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+          "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 109068621250,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'docs/adr/README.md' -g 'docs/research/README.md' -g 'config/config.go' -g 'Makefile' -g 'AGENTS*' | sort \u0026\u0026 printf '\\\\n--- config/config.go ---\\\\n' \u0026\u0026 sed -n '1,240p' config/config.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n \\\"Config\\\\{|\\\\.Port\\\\b|DefaultConfig|Addr\\\\(|Host:\\\" . -g '\"'!AGENTS.override.md'\"' -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' \u0026\u0026 printf '\\\\n--- files ---\\\\n' \u0026\u0026 rg --files | sort | sed -n '1,160p'\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"command -v semedit || true; command -v gofmt || true; sed -n '1,120p' config/config_test.go; sed -n '1,200p' Makefile 2\u003e/dev/null || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w config/config.go \u0026\u0026 git diff --check \u0026\u0026 go test ./... \u0026\u0026 git diff -- config/config.go \u0026\u0026 git status --short -- go.mod go.sum config/config.go config/config_test.go'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc \"git status --short \u0026\u0026 printf '\\\\n--- config diff ---\\\\n' \u0026\u0026 git diff -- config/config.go \u0026\u0026 printf '\\\\n--- go test ---\\\\n' \u0026\u0026 go test ./...\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' config/config.go; printf '\\\\n--- git metadata ---\\\\n'; git rev-parse --show-toplevel; git ls-files --stage -- config/config.go; git status --short --untracked-files=all -- config/config.go config/config_test.go go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1158767292
+            }
+          }
+        ],
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in this session. I therefore used a direct focused source edit instead.",
+          "wall_clock_ms": 9756139000,
+          "turns": 1
+        },
+        "mcp_verified": false
+      }
+    }
+  ]
+}

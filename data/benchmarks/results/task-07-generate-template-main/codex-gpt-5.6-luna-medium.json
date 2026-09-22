@@ -1,0 +1,1909 @@
+{
+  "timestamp": "2026-09-22T11:55:01.533677+02:00",
+  "runs": [
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 3,
+      "mcp_load_turns": 0,
+      "internal_turns": 3,
+      "tool_count": 3,
+      "wall_clock_ms": 34872749875,
+      "process_start_to_first_event_ms": 1372586292,
+      "first_event_to_first_tool_call_ms": 8138403000,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 99406,
+      "cached_prompt_tokens": 81664,
+      "uncached_prompt_tokens": 17742,
+      "output_tokens": 987,
+      "reasoning_tokens": 348,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 396856208
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+        "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+        "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'"
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 34475081959,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 396856208
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "small:crypto_rand",
+      "prompt_variant": "crypto_rand",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 6,
+      "mcp_load_turns": 0,
+      "internal_turns": 6,
+      "tool_count": 6,
+      "wall_clock_ms": 45320236792,
+      "process_start_to_first_event_ms": 1235161208,
+      "first_event_to_first_tool_call_ms": 7973287417,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 163039,
+      "cached_prompt_tokens": 148480,
+      "uncached_prompt_tokens": 14559,
+      "output_tokens": 1458,
+      "reasoning_tokens": 573,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 340248125
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+        "/bin/zsh -lc 'gofmt -w main.go'",
+        "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+        "/bin/zsh -lc 'go test ./...'",
+        "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+        "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w main.go'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 44976933292,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w main.go'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 340248125
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "large:crypto_rand",
+      "prompt_variant": "crypto_rand",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 2,
+      "mcp_load_turns": 0,
+      "internal_turns": 2,
+      "tool_count": 2,
+      "wall_clock_ms": 38793715500,
+      "process_start_to_first_event_ms": 1043391166,
+      "first_event_to_first_tool_call_ms": 9665376417,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 80317,
+      "cached_prompt_tokens": 71680,
+      "uncached_prompt_tokens": 8637,
+      "output_tokens": 1191,
+      "reasoning_tokens": 582,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1411289125
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 21 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+        "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'"
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 37379650583,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1411289125
+          }
+        }
+      ],
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not call a `semantic_*` tool because no semedit MCP server tools were available in the tool context. I therefore used ordinary editing, which was sufficient for this small change.",
+        "wall_clock_ms": 9338767333,
+        "turns": 1
+      },
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 4,
+      "mcp_load_turns": 0,
+      "internal_turns": 4,
+      "tool_count": 4,
+      "wall_clock_ms": 50649982875,
+      "process_start_to_first_event_ms": 868378250,
+      "first_event_to_first_tool_call_ms": 8538478750,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 123448,
+      "cached_prompt_tokens": 100864,
+      "uncached_prompt_tokens": 22584,
+      "output_tokens": 1693,
+      "reasoning_tokens": 871,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1005342500
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+        "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+        "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 49643441584,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1005342500
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "small:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 1,
+      "mcp_load_turns": 0,
+      "internal_turns": 5,
+      "tool_count": 5,
+      "wall_clock_ms": 48941226125,
+      "process_start_to_first_event_ms": 1141159458,
+      "first_event_to_first_tool_call_ms": 8976787958,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 146024,
+      "cached_prompt_tokens": 135424,
+      "uncached_prompt_tokens": 10600,
+      "output_tokens": 1806,
+      "reasoning_tokens": 710,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 495329459
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 15 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+        "/bin/zsh -lc 'make check'",
+        "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+        "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 48445209667,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 495329459
+          }
+        }
+      ],
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the task environment. I therefore used ordinary editing, which was sufficient for this single-file change.",
+        "wall_clock_ms": 5300419458,
+        "turns": 1
+      },
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "large:crypto_rand",
+      "prompt_variant": "crypto_rand",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "baseline-diff",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 3,
+      "mcp_load_turns": 0,
+      "internal_turns": 3,
+      "tool_count": 3,
+      "wall_clock_ms": 69480514667,
+      "process_start_to_first_event_ms": 870949333,
+      "first_event_to_first_tool_call_ms": 15536027334,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 101837,
+      "cached_prompt_tokens": 83712,
+      "uncached_prompt_tokens": 18125,
+      "output_tokens": 1152,
+      "reasoning_tokens": 484,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 946489583
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 21 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+        "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "wall_clock_ms": 68531596250,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 946489583
+          }
+        }
+      ],
+      "mcp_verified": false
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "large:default",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 1,
+      "mcp_load_turns": 0,
+      "internal_turns": 7,
+      "tool_count": 7,
+      "wall_clock_ms": 74535614792,
+      "process_start_to_first_event_ms": 1087403042,
+      "first_event_to_first_tool_call_ms": 11560500292,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 220074,
+      "cached_prompt_tokens": 180992,
+      "uncached_prompt_tokens": 39082,
+      "output_tokens": 2084,
+      "reasoning_tokens": 1021,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 1075124166
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 16 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+        "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+        "semantic_replace_body",
+        "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+        "semantic_organize_imports",
+        "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+        "/bin/zsh -lc 'go run .'"
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "arguments": {
+            "file": "main.go",
+            "symbol": "main",
+            "body": "const source = \"Hello World {{.}}\\n\"\n\ttmpl := template.Must(template.New(\"hello\").Parse(source))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\t\tlog.Fatal(err)\n\t}",
+            "auto_organize_imports": true
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "arguments": {
+            "file": "main.go",
+            "add": [
+              "math/rand"
+            ],
+            "remove": [
+              "crypto/rand"
+            ]
+          },
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'go run .'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 73458706625,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "arguments": {
+                "file": "main.go",
+                "symbol": "main",
+                "body": "const source = \"Hello World {{.}}\\n\"\n\ttmpl := template.Must(template.New(\"hello\").Parse(source))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\t\tlog.Fatal(err)\n\t}",
+                "auto_organize_imports": true
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "arguments": {
+                "file": "main.go",
+                "add": [
+                  "math/rand"
+                ],
+                "remove": [
+                  "crypto/rand"
+                ]
+              },
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'go run .'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 1075124166
+          }
+        }
+      ],
+      "mcp_verified": true
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "variant": "small:crypto_rand",
+      "prompt_variant": "crypto_rand",
+      "mcp_server_instructions": "none",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "arm": "semedit",
+      "success": true,
+      "turns": 1,
+      "initial_load_turns": 6,
+      "mcp_load_turns": 0,
+      "internal_turns": 6,
+      "tool_count": 6,
+      "wall_clock_ms": 106622197667,
+      "process_start_to_first_event_ms": 885655875,
+      "first_event_to_first_tool_call_ms": 18279922459,
+      "initial_context_tokens": 0,
+      "prompt_tokens": 145420,
+      "cached_prompt_tokens": 116992,
+      "uncached_prompt_tokens": 28428,
+      "output_tokens": 2015,
+      "reasoning_tokens": 893,
+      "oracle": {
+        "passed": true,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "duration_ms": 360135958
+      },
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+        "/bin/zsh -lc 'gofmt -w main.go'",
+        "/bin/zsh -lc 'make check'",
+        "/bin/zsh -lc 'GO111MODULE=off go test .'",
+        "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\""
+      ],
+      "tool_calls": [
+        {
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'gofmt -w main.go'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc 'make check'",
+          "transport_status": "unknown",
+          "functional_status": "failed"
+        },
+        {
+          "name": "/bin/zsh -lc 'GO111MODULE=off go test .'",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        },
+        {
+          "name": "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\"",
+          "transport_status": "succeeded",
+          "functional_status": "succeeded"
+        }
+      ],
+      "interaction_steps": [
+        {
+          "step": 1,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "wall_clock_ms": 106259503583,
+          "turns": 1,
+          "tool_calls": [
+            {
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'gofmt -w main.go'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc 'make check'",
+              "transport_status": "unknown",
+              "functional_status": "failed"
+            },
+            {
+              "name": "/bin/zsh -lc 'GO111MODULE=off go test .'",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            },
+            {
+              "name": "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\"",
+              "transport_status": "succeeded",
+              "functional_status": "succeeded"
+            }
+          ],
+          "oracle": {
+            "passed": true,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "duration_ms": 360135958
+          }
+        }
+      ],
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the tool context. Ordinary editing was therefore used instead.",
+        "wall_clock_ms": 6192609792,
+        "turns": 1
+      },
+      "mcp_verified": false
+    }
+  ],
+  "comparisons": [
+    {
+      "task_id": "task-07-generate-template-main",
+      "prompt_variant": "crypto_rand",
+      "mcp_server_instructions": "none",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/e16932220de9afe14201fa4af671d1db244f3ca3/testdata/scripts/generate_template_main.txtar",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "small_baseline": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "small:crypto_rand",
+        "prompt_variant": "crypto_rand",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 6,
+        "mcp_load_turns": 0,
+        "internal_turns": 6,
+        "tool_count": 6,
+        "wall_clock_ms": 45320236792,
+        "process_start_to_first_event_ms": 1235161208,
+        "first_event_to_first_tool_call_ms": 7973287417,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 163039,
+        "cached_prompt_tokens": 148480,
+        "uncached_prompt_tokens": 14559,
+        "output_tokens": 1458,
+        "reasoning_tokens": 573,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 340248125
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+          "/bin/zsh -lc 'gofmt -w main.go'",
+          "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+          "/bin/zsh -lc 'go test ./...'",
+          "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+          "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w main.go'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 44976933292,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 sed -n '1,200p' main.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w main.go'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"if [ -f Makefile ]; then make check; else printf '%s\\\\n' 'No Makefile; skipped make check'; fi\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'git diff -- main.go go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 340248125
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "small_semedit": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "small:crypto_rand",
+        "prompt_variant": "crypto_rand",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 6,
+        "mcp_load_turns": 0,
+        "internal_turns": 6,
+        "tool_count": 6,
+        "wall_clock_ms": 106622197667,
+        "process_start_to_first_event_ms": 885655875,
+        "first_event_to_first_tool_call_ms": 18279922459,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 145420,
+        "cached_prompt_tokens": 116992,
+        "uncached_prompt_tokens": 28428,
+        "output_tokens": 2015,
+        "reasoning_tokens": 893,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 360135958
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+          "/bin/zsh -lc 'gofmt -w main.go'",
+          "/bin/zsh -lc 'make check'",
+          "/bin/zsh -lc 'GO111MODULE=off go test .'",
+          "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w main.go'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'GO111MODULE=off go test .'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 106259503583,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!AGENTS.override.md'\"' -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- project docs ---\\\\n' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '\\\\n--- make targets ---\\\\n' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w main.go'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'GO111MODULE=off go test .'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"go run main.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"git ls-files --error-unmatch -- main.go \u003e/dev/null 2\u003e\u00261; printf 'tracked=%s\\\\n' \\\"\"'$?\"; sed -n '\"'1,120p' main.go; git check-ignore -v main.go || true; git diff --no-index /dev/null main.go || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 360135958
+            }
+          }
+        ],
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the tool context. Ordinary editing was therefore used instead.",
+          "wall_clock_ms": 6192609792,
+          "turns": 1
+        },
+        "mcp_verified": false
+      },
+      "large_baseline": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "large:crypto_rand",
+        "prompt_variant": "crypto_rand",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 3,
+        "mcp_load_turns": 0,
+        "internal_turns": 3,
+        "tool_count": 3,
+        "wall_clock_ms": 69480514667,
+        "process_start_to_first_event_ms": 870949333,
+        "first_event_to_first_tool_call_ms": 15536027334,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 101837,
+        "cached_prompt_tokens": 83712,
+        "uncached_prompt_tokens": 18125,
+        "output_tokens": 1152,
+        "reasoning_tokens": 484,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 946489583
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 21 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 68531596250,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-ext-diff --no-index /dev/null main.go || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 946489583
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "large_semedit": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "large:crypto_rand",
+        "prompt_variant": "crypto_rand",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 2,
+        "mcp_load_turns": 0,
+        "internal_turns": 2,
+        "tool_count": 2,
+        "wall_clock_ms": 38793715500,
+        "process_start_to_first_event_ms": 1043391166,
+        "first_event_to_first_tool_call_ms": 9665376417,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 80317,
+        "cached_prompt_tokens": 71680,
+        "uncached_prompt_tokens": 8637,
+        "output_tokens": 1191,
+        "reasoning_tokens": 582,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1411289125
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 21 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+          "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'"
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 37379650583,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'AGENTS*' -g 'docs/**' | sort \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,220p' PROJECT_BRIEF.md; fi \u0026\u0026 sed -n '1,220p' main.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run main.go \u0026\u0026 git diff -- main.go go.mod go.sum \u0026\u0026 git status --short'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1411289125
+            }
+          }
+        ],
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not call a `semantic_*` tool because no semedit MCP server tools were available in the tool context. I therefore used ordinary editing, which was sufficient for this small change.",
+          "wall_clock_ms": 9338767333,
+          "turns": 1
+        },
+        "mcp_verified": false
+      }
+    },
+    {
+      "task_id": "task-07-generate-template-main",
+      "prompt_variant": "default",
+      "mcp_server_instructions": "none",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/e16932220de9afe14201fa4af671d1db244f3ca3/testdata/scripts/generate_template_main.txtar",
+      "target": {
+        "harness": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "medium"
+      },
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "small_baseline": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 3,
+        "mcp_load_turns": 0,
+        "internal_turns": 3,
+        "tool_count": 3,
+        "wall_clock_ms": 34872749875,
+        "process_start_to_first_event_ms": 1372586292,
+        "first_event_to_first_tool_call_ms": 8138403000,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 99406,
+        "cached_prompt_tokens": 81664,
+        "uncached_prompt_tokens": 17742,
+        "output_tokens": 987,
+        "reasoning_tokens": 348,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 396856208
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'"
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 34475081959,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'Makefile' -g 'go.mod' -g 'go.sum' \u0026\u0026 sed -n '1,200p' main.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' go.mod \u0026\u0026 rg -n \\\"Hello World|random|template\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go run . \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 396856208
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "small_semedit": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "small:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 1,
+        "mcp_load_turns": 0,
+        "internal_turns": 5,
+        "tool_count": 5,
+        "wall_clock_ms": 48941226125,
+        "process_start_to_first_event_ms": 1141159458,
+        "first_event_to_first_tool_call_ms": 8976787958,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 146024,
+        "cached_prompt_tokens": 135424,
+        "uncached_prompt_tokens": 10600,
+        "output_tokens": 1806,
+        "reasoning_tokens": 710,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 495329459
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 15 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+          "/bin/zsh -lc 'make check'",
+          "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'make check'",
+            "transport_status": "unknown",
+            "functional_status": "failed"
+          },
+          {
+            "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 48445209667,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '\\\\n--- docs ---\\\\n' \u0026\u0026 for f in PROJECT_BRIEF.md docs/adr/README.md docs/research/README.md; do if [ -f \\\"\"'$f\" ]; then echo \"### $f\"; sed -n '\"'1,160p' \\\"\"'$f\"; fi; done'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- go.mod (read-only) ---' \u0026\u0026 sed -n '1,120p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short \u0026\u0026 printf '%s\\\\n' '--- available checks ---' \u0026\u0026 (command -v make || true) \u0026\u0026 (command -v go || true) \u0026\u0026 (command -v semedit || true) \u0026\u0026 (test -f Makefile \u0026\u0026 sed -n '1,160p' Makefile || true)\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'make check'",
+                "transport_status": "unknown",
+                "functional_status": "failed"
+              },
+              {
+                "name": "/bin/zsh -lc 'gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 output=$(go run .) \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" \u0026\u0026 printf '\"'%s\\\\n' \\\"\"'$output\" | rg -q '\"'\"'^Hello World -?[0-9]+$'\"' \u0026\u0026 git diff --check \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- fixture status ---' \u0026\u0026 git status --short --untracked-files=all -- main.go go.mod go.sum \u0026\u0026 printf '%s\\\\n' '--- protected file hashes ---' \u0026\u0026 shasum go.mod go.sum 2\u003e/dev/null || true\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 495329459
+            }
+          }
+        ],
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not discover any callable `semantic_*` tools from the available semedit MCP server in the task environment. I therefore used ordinary editing, which was sufficient for this single-file change.",
+          "wall_clock_ms": 5300419458,
+          "turns": 1
+        },
+        "mcp_verified": false
+      },
+      "large_baseline": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "baseline-diff",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 4,
+        "mcp_load_turns": 0,
+        "internal_turns": 4,
+        "tool_count": 4,
+        "wall_clock_ms": 50649982875,
+        "process_start_to_first_event_ms": 868378250,
+        "first_event_to_first_tool_call_ms": 8538478750,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 123448,
+        "cached_prompt_tokens": 100864,
+        "uncached_prompt_tokens": 22584,
+        "output_tokens": 1693,
+        "reasoning_tokens": 871,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1005342500
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+          "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+          "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+          "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\""
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "wall_clock_ms": 49643441584,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | sort \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 sed -n '1,200p' main.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"printf '%s\\\\n' '--- AGENTS.override.md ---' \u0026\u0026 sed -n '1,240p' AGENTS.override.md \u0026\u0026 printf '%s\\\\n' '--- related Go files ---' \u0026\u0026 sed -n '1,160p' api/router.go \u0026\u0026 sed -n '1,120p' api/router_test.go\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"gofmt -w main.go \u0026\u0026 go test ./... \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- main.go \u0026\u0026 printf '\\\\n--- protected files status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '\\\\n--- status ---\\\\n' \u0026\u0026 git status --short \u0026\u0026 printf '\\\\n--- tracked state ---\\\\n' \u0026\u0026 git ls-files -v main.go go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1005342500
+            }
+          }
+        ],
+        "mcp_verified": false
+      },
+      "large_semedit": {
+        "task_id": "task-07-generate-template-main",
+        "variant": "large:default",
+        "prompt_variant": "default",
+        "mcp_server_instructions": "none",
+        "target": {
+          "harness": "codex",
+          "model": "gpt-5.6-luna",
+          "effort": "medium"
+        },
+        "arm": "semedit",
+        "success": true,
+        "turns": 1,
+        "initial_load_turns": 1,
+        "mcp_load_turns": 0,
+        "internal_turns": 7,
+        "tool_count": 7,
+        "wall_clock_ms": 74535614792,
+        "process_start_to_first_event_ms": 1087403042,
+        "first_event_to_first_tool_call_ms": 11560500292,
+        "initial_context_tokens": 0,
+        "prompt_tokens": 220074,
+        "cached_prompt_tokens": 180992,
+        "uncached_prompt_tokens": 39082,
+        "output_tokens": 2084,
+        "reasoning_tokens": 1021,
+        "oracle": {
+          "passed": true,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "duration_ms": 1075124166
+        },
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "diff": "File main.go modified (4 lines -\u003e 16 lines)",
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+          "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+          "semantic_replace_body",
+          "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+          "semantic_organize_imports",
+          "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+          "/bin/zsh -lc 'go run .'"
+        ],
+        "tool_calls": [
+          {
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "arguments": {
+              "file": "main.go",
+              "symbol": "main",
+              "body": "const source = \"Hello World {{.}}\\n\"\n\ttmpl := template.Must(template.New(\"hello\").Parse(source))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\t\tlog.Fatal(err)\n\t}",
+              "auto_organize_imports": true
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "arguments": {
+              "file": "main.go",
+              "add": [
+                "math/rand"
+              ],
+              "remove": [
+                "crypto/rand"
+              ]
+            },
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          },
+          {
+            "name": "/bin/zsh -lc 'go run .'",
+            "transport_status": "succeeded",
+            "functional_status": "succeeded"
+          }
+        ],
+        "interaction_steps": [
+          {
+            "step": 1,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "wall_clock_ms": 73458706625,
+            "turns": 1,
+            "tool_calls": [
+              {
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*go.mod'\"' -g '\"'!*go.sum'\"' | head -80 \u0026\u0026 printf '%s\\\\n' '--- main.go ---' \u0026\u0026 sed -n '1,200p' main.go \u0026\u0026 printf '%s\\\\n' '--- project brief ---' \u0026\u0026 if [ -f PROJECT_BRIEF.md ]; then sed -n '1,240p' PROJECT_BRIEF.md; fi \u0026\u0026 printf '%s\\\\n' '--- make targets ---' \u0026\u0026 if [ -f Makefile ]; then sed -n '1,220p' Makefile; fi\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"rg -n \\\"semantic_(replace_body|insert|organize|verify)|semedit\\\" . --glob '\"'!AGENTS.override.md'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' | head -120; command -v semedit || true; find . -maxdepth 2 -type f -not -path './.git/*' -print | sort\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "arguments": {
+                  "file": "main.go",
+                  "symbol": "main",
+                  "body": "const source = \"Hello World {{.}}\\n\"\n\ttmpl := template.Must(template.New(\"hello\").Parse(source))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\t\tlog.Fatal(err)\n\t}",
+                  "auto_organize_imports": true
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 printf '%s\\\\n' '--- go.mod ---' \u0026\u0026 sed -n '1,80p' go.mod \u0026\u0026 printf '%s\\\\n' '--- status ---' \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "arguments": {
+                  "file": "main.go",
+                  "add": [
+                    "math/rand"
+                  ],
+                  "remove": [
+                    "crypto/rand"
+                  ]
+                },
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc \"sed -n '1,120p' main.go \u0026\u0026 if [ -f Makefile ]; then make check; else gofmt -d main.go \u0026\u0026 go test ./...; fi \u0026\u0026 git diff -- main.go go.mod go.sum\"",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              },
+              {
+                "name": "/bin/zsh -lc 'go run .'",
+                "transport_status": "succeeded",
+                "functional_status": "succeeded"
+              }
+            ],
+            "oracle": {
+              "passed": true,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "duration_ms": 1075124166
+            }
+          }
+        ],
+        "mcp_verified": true
+      }
+    }
+  ]
+}
