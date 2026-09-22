@@ -84,6 +84,9 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	if err := writeHugoConfig(outputDir); err != nil {
 		t.Fatalf("write Hugo config: %v", err)
 	}
+	if err := writeLandingAssets(outputDir); err != nil {
+		t.Fatalf("write landing assets: %v", err)
+	}
 	config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml")) //nolint:gosec // outputDir is a test-owned temporary directory.
 	if err != nil {
 		t.Fatalf("read Hugo config: %v", err)
@@ -137,12 +140,26 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		`hextra/hero-badge`,
 		`hextra/hero-button`,
 		`hextra/feature-grid`,
-		`hextra/feature-card`,
 		`Get started`,
 		`View on GitHub`,
+		`semantic-workflow-banner.png`,
+		`deterministic-edits.png`,
+		`symbol-intent.png`,
+		`structured-feedback.png`,
+		`agent-contract.png`,
 	} {
 		if !strings.Contains(landingText, want) {
 			t.Errorf("Hugo landing page does not contain %q", want)
+		}
+	}
+	for _, name := range landingAssetNames {
+		info, err := os.Stat(filepath.Join(outputDir, "static", "images", "landing", name)) //nolint:gosec // outputDir is a test-owned temporary directory.
+		if err != nil {
+			t.Errorf("stat generated landing asset %q: %v", name, err)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("generated landing asset %q is empty", name)
 		}
 	}
 }

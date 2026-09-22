@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -28,6 +29,19 @@ const (
 	githubRawSourceBaseURL = "https://raw.githubusercontent.com/spockz/semantic-editor/main"
 	hextraModuleVersion    = "v0.12.3"
 )
+
+var landingAssetNames = []string{
+	"semantic-workflow-banner.png",
+	"deterministic-edits.png",
+	"symbol-intent.png",
+	"structured-feedback.png",
+	"agent-contract.png",
+}
+
+// landingAssets keeps the marketing imagery with the generator so a documentation build needs no runtime asset fetches.
+//
+//go:embed assets/landing/*.png
+var landingAssets embed.FS
 
 // CodeCapability represents extracted language capability metadata.
 type CodeCapability struct {
@@ -175,6 +189,10 @@ func main() {
 	}
 	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing benchmark shortcode: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeLandingAssets(outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing landing assets: %v\n", err)
 		os.Exit(1)
 	}
 	if err := writeHugoConfig(outputDir); err != nil {
@@ -975,6 +993,10 @@ Compiler-backed semantic editing <span aria-hidden="true">→</span>
 LLMs plan the change. Compilers and language servers apply it precisely.
 </p>
 
+<figure class="hx:mt-10 hx:mb-10 hx:overflow-hidden hx:rounded-2xl hx:border hx:border-gray-200 hx:shadow-xl hx:dark:border-neutral-800">
+  <img src="/images/landing/semantic-workflow-banner.png" alt="An abstract code editor flowing into a precise compiler syntax tree" style="display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover;" />
+</figure>
+
 <div class="hx:mt-8 hx:flex hx:flex-wrap hx:justify-center hx:gap-3">
 {{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/spockz/semantic-editor" style="background-color: transparent; color: inherit; border: 1px solid currentColor;" >}}
@@ -988,10 +1010,22 @@ LLMs plan the change. Compilers and language servers apply it precisely.
 semedit separates semantic intent from syntax transformation, so agents can ask for the change while local tooling handles the mechanical work.
 
 {{< hextra/feature-grid cols="2" >}}
-{{< hextra/feature-card title="Deterministic edits" icon="shield-check" link="/docs/reference/" subtitle="Use compiler-backed transformations that preserve syntax and eliminate fragile line-based patching." >}}
-{{< hextra/feature-card title="Symbol-based intent" icon="cursor-click" link="/docs/getting-started/" subtitle="Ask for **Server.Start** instead of hunting for a byte offset or line number." >}}
-{{< hextra/feature-card title="Structured feedback" icon="chart-bar" link="/docs/reference/" subtitle="Receive formatting, diagnostics, and compiler evidence as structured results." >}}
-{{< hextra/feature-card title="One contract for agents" icon="terminal" link="/docs/reference/" subtitle="Use the same semantic operations through the CLI or MCP." >}}
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/deterministic-edits.png" alt="A compiler shield protecting a structured code module" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Deterministic edits</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use compiler-backed transformations that preserve syntax and eliminate fragile line-based patching.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/getting-started/">
+  <img src="/images/landing/symbol-intent.png" alt="A target resolved within a connected graph of symbols" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Symbol-based intent</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Ask for <strong>Server.Start</strong> instead of hunting for a byte offset or line number.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/structured-feedback.png" alt="Diagnostics resolving into a clear evidence graph" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Structured feedback</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Receive formatting, diagnostics, and compiler evidence as structured results.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/agent-contract.png" alt="Connected modules sharing one central contract" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">One contract for agents</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use the same semantic operations through the CLI or MCP.</span></span>
+</a>
 {{< /hextra/feature-grid >}}
 
 ## A tighter editing loop
@@ -1019,6 +1053,26 @@ Browse the generated installation guide, capability reference, and benchmark res
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
 		return fmt.Errorf("write Hugo docs section: %w", err)
+	}
+	return nil
+}
+
+func writeLandingAssets(outputDir string) error {
+	assetsDir := filepath.Join(outputDir, "static", "images", "landing")
+	if err := os.RemoveAll(assetsDir); err != nil {
+		return fmt.Errorf("remove stale landing assets: %w", err)
+	}
+	if err := os.MkdirAll(assetsDir, 0o750); err != nil {
+		return fmt.Errorf("create landing assets directory: %w", err)
+	}
+	for _, name := range landingAssetNames {
+		asset, err := landingAssets.ReadFile(filepath.ToSlash(filepath.Join("assets", "landing", name)))
+		if err != nil {
+			return fmt.Errorf("read embedded landing asset %q: %w", name, err)
+		}
+		if err := writeGeneratedFile(filepath.Join(assetsDir, name), asset); err != nil {
+			return fmt.Errorf("write landing asset %q: %w", name, err)
+		}
 	}
 	return nil
 }
