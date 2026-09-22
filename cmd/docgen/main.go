@@ -116,6 +116,15 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error creating Hugo data directory: %v\n", err)
 		os.Exit(1)
 	}
+	shortcodesDir := filepath.Join(outputDir, "layouts", "shortcodes")
+	if err := os.RemoveAll(shortcodesDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error removing stale generated shortcodes: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(shortcodesDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating Hugo shortcode directory: %v\n", err)
+		os.Exit(1)
+	}
 	for _, stalePath := range []string{
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
@@ -162,6 +171,10 @@ func main() {
 	benchmarksFile := filepath.Join(outputDir, "content", "docs", "benchmarks.md")
 	if err := writeGeneratedFile(benchmarksFile, []byte(benchmarksContent)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing benchmarks output: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmark shortcode: %v\n", err)
 		os.Exit(1)
 	}
 	if err := writeHugoConfig(outputDir); err != nil {

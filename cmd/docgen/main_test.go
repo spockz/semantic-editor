@@ -147,6 +147,27 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	}
 }
 
+func TestBenchmarkCodeShortcodeUsesHextraPartialsAndSafeDecoding(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		`{{- $encoded := .Get "content" -}}`,
+		`{{- $content := $encoded | base64Decode -}}`,
+		`partial "components/codeblock"`,
+		`partialCached "components/codeblock-copy-button"`,
+		`site.Params.highlight.copy.enable`,
+	} {
+		if !strings.Contains(benchmarkCodeShortcode, want) {
+			t.Errorf("benchmark shortcode source missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"benchmark-shell-command", "benchmark-tool-arguments", "hextra-code-copy-btn"} {
+		if strings.Contains(benchmarkCodeShortcode, forbidden) {
+			t.Errorf("benchmark shortcode must not duplicate theme implementation %q", forbidden)
+		}
+	}
+}
+
 func TestParseTxtarExpectedOutputState(t *testing.T) {
 	t.Parallel()
 

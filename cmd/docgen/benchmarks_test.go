@@ -125,7 +125,7 @@ func TestRenderDocRunSummaryRendersShellCommandsAsCopyableBlocks(t *testing.T) {
 
 	for _, want := range []string{
 		"<table class=\"benchmark-tool-calls\">\n<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>",
-		"<tr><td>1</td><td><span role=\"img\" aria-label=\"Transport timeout\" title=\"Transport timeout\">⏱</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span><pre class=\"benchmark-shell-command\"><code class=\"language-shell\">/bin/zsh -lc &#39;make check &amp;&amp; \\\ngo test ./... || \\\ntrue&#39;</code></pre></td><td>not published</td></tr>",
+		"<tr><td>1</td><td><span role=\"img\" aria-label=\"Transport timeout\" title=\"Transport timeout\">⏱</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span>{{< benchmark-code lang=\"shell\" content=\"L2Jpbi96c2ggLWxjICdtYWtlIGNoZWNrICYmIFwKZ28gdGVzdCAuLy4uLiB8fCBcCnRydWUn\" >}}</td><td>not published</td></tr>",
 	} {
 		if !strings.Contains(rendered.String(), want) {
 			t.Errorf("rendered shell command missing %q", want)
@@ -133,6 +133,9 @@ func TestRenderDocRunSummaryRendersShellCommandsAsCopyableBlocks(t *testing.T) {
 	}
 	if strings.Contains(rendered.String(), "```shell") {
 		t.Error("shell command must remain inside its table cell")
+	}
+	if strings.Contains(rendered.String(), "benchmark-shell-command") {
+		t.Error("shell command must not use the legacy manual pre class")
 	}
 }
 
@@ -152,11 +155,14 @@ func TestRenderDocRunSummaryRendersToolArguments(t *testing.T) {
 
 	for _, want := range []string{
 		"<code>semedit/semantic_rename</code>",
-		"<pre class=\"benchmark-tool-arguments\"><code class=\"language-json\">{\n  &#34;symbol&#34;: &#34;Old&#34;,\n  &#34;to&#34;: &#34;New&#34;\n}</code></pre>",
+		"{{< benchmark-code lang=\"json\" content=\"ewogICJzeW1ib2wiOiAiT2xkIiwKICAidG8iOiAiTmV3Igp9\" >}}",
 	} {
 		if !strings.Contains(rendered.String(), want) {
 			t.Errorf("rendered tool arguments missing %q", want)
 		}
+	}
+	if strings.Contains(rendered.String(), "benchmark-tool-arguments") {
+		t.Error("tool arguments must not use the legacy manual pre class")
 	}
 }
 
@@ -214,7 +220,7 @@ func TestRenderDocRunSummaryUsesTheOrderedReasoningChain(t *testing.T) {
 	}
 
 	previous := -1
-	for _, want := range []string{"semedit/semantic_rename", "make check", "semedit/semantic_verify"} {
+	for _, want := range []string{"semedit/semantic_rename", "L2Jpbi96c2ggLWxjICdtYWtlIGNoZWNrJw==", "semedit/semantic_verify"} {
 		position := strings.Index(page, want)
 		if position < 0 {
 			t.Errorf("rendered tool chain missing %q", want)
@@ -242,7 +248,7 @@ func TestWriteDocPromptQuotesEveryLine(t *testing.T) {
 func TestBenchmarkToolCallCSSWrapsShellCommandsWithinTableCells(t *testing.T) {
 	t.Parallel()
 
-	for _, want := range []string{"table-layout: fixed", "benchmark-tool-arguments", "max-width: 32rem", "white-space: pre-wrap", "overflow-wrap: anywhere", "word-break: break-word", ".benchmark-delta-positive", ".benchmark-delta-negative"} {
+	for _, want := range []string{"table-layout: fixed", "benchmark-code-block", "max-width: 32rem", "white-space: pre-wrap", "overflow-wrap: anywhere", "word-break: break-word", ".benchmark-delta-positive", ".benchmark-delta-negative"} {
 		if !strings.Contains(benchmarkToolCallCSS, want) {
 			t.Errorf("benchmark tool-call CSS missing %q", want)
 		}
