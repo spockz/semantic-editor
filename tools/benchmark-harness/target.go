@@ -8,7 +8,7 @@ import (
 
 // Target models a benchmark execution target: harness, model, and reasoning effort.
 type Target struct {
-	Harness string `json:"harness"` // "codex", "agy", or "control"
+	Harness string `json:"harness"` // "codex", "agy", "opencode", or "control"
 	Model   string `json:"model,omitempty"`
 	Effort  string `json:"effort,omitempty"` // "low", "medium", "high"
 }
@@ -33,6 +33,7 @@ func (t Target) String() string {
 // - "harness" (e.g. "codex", "agy", "control")
 // - "harness/model" (e.g. "agy/gemini-3.8-flash-high")
 // - "harness/model/effort" (e.g. "codex/gpt-5.6-luna/high")
+// - "opencode/provider/model[/effort]" (e.g. "opencode/amdbeast/qwen36-coder")
 func ParseTarget(raw string) (Target, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -40,6 +41,18 @@ func ParseTarget(raw string) (Target, error) {
 	}
 
 	parts := strings.Split(raw, "/")
+	if strings.EqualFold(parts[0], string(HarnessOpenCode)) {
+		switch len(parts) {
+		case 1:
+			return Target{Harness: string(HarnessOpenCode)}, nil
+		case 3:
+			return Target{Harness: string(HarnessOpenCode), Model: parts[1] + "/" + parts[2]}, nil
+		case 4:
+			return Target{Harness: string(HarnessOpenCode), Model: parts[1] + "/" + parts[2], Effort: strings.ToLower(parts[3])}, nil
+		default:
+			return Target{}, fmt.Errorf("invalid OpenCode target specification %q: expected opencode[/provider/model[/effort]]", raw)
+		}
+	}
 	switch len(parts) {
 	case 1:
 		harness := strings.ToLower(parts[0])

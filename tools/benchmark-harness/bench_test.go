@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"semedit/internal/mcp"
 )
 
 func TestCodexToolCallOutcomes(t *testing.T) {
@@ -129,6 +131,123 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 		})
 	}
 
+}
+
+func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "opencode")
+	stdout := strings.Join([]string{
+		`{"type":"session.created","properties":{"info":{"id":"ses-123"}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"tool-1","type":"tool","tool":"semantic_rename","server":"semedit","state":{"status":"running","input":{"symbol":"old"}}}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"id":"tool-1","type":"tool","tool":"semantic_rename","server":"semedit","state":{"status":"completed","input":{"symbol":"old"},"output":{"structuredContent":{"metrics":{"schema_version":1,"total_ms":17}}}}}}}`,
+		`{"type":"message.part.updated","properties":{"part":{"type":"text","text":"DONE"}}}`,
+	}, "\n") + "\n"
+	content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q\n", stdout)
+	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G302 -- the temporary test command must be executable.
+	if err := os.Chmod(script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	workDir := t.TempDir()
+	res := &RunResult{Arm: ArmSemedit}
+	sessionID, err := NewRunner(t.TempDir()).runOpenCode(t.Context(), workDir, Target{Harness: string(HarnessOpenCode)}, "prompt", res, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionID != "ses-123" {
+		t.Fatalf("session ID = %q, want ses-123", sessionID)
+	}
+	if res.OpenCodeExitCode == nil || *res.OpenCodeExitCode != 0 {
+		t.Fatalf("OpenCode exit status = %v, want 0", res.OpenCodeExitCode)
+	}
+	if got := len(res.ToolCalls); got != 1 {
+		t.Fatalf("tool calls = %d, want 1", got)
+	}
+	call := res.ToolCalls[0]
+	if call.TransportStatus != ToolCallStatusSucceeded || call.FunctionalStatus != ToolCallStatusSucceeded {
+		t.Errorf("tool outcome = %#v, want full success", call)
+	}
+	if call.MCPMetrics == nil || call.MCPMetrics.TotalMS != 17 {
+		t.Errorf("MCP metrics = %#v, want total_ms=17", call.MCPMetrics)
+	}
+	if !res.MCPVerified {
+		t.Error("MCPVerified = false, want true")
+	}
+	if got := res.agentResponse; got != "DONE" {
+		t.Errorf("agent response = %q, want DONE", got)
+	}
+}
+
+func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
+	workDir := t.TempDir()
+	runner := NewRunner(filepath.Join(t.TempDir(), "benchmarks"), WithMCPServerInstructions(MCPServerInstructionsPrescriptive))
+	configPath, env, err := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G304 -- config path is constructed by the harness inside the temporary fixture.
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Provider map[string]struct {
+			Options map[string]string `json:"options"`
+		} `json:"provider"`
+		MCP struct {
+			Servers map[string]struct {
+				Command     []string          `json:"command"`
+				CWD         string            `json:"cwd"`
+				Environment map[string]string `json:"environment"`
+				CodeMode    bool              `json:"codemode"`
+			} `json:"servers"`
+		} `json:"mcp"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	if got := config.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
+		t.Errorf("Qwen base URL = %q, want %q", got, openCodeQwenBaseURL)
+	}
+	server, found := config.MCP.Servers["semedit"]
+	if !found {
+		t.Fatal("semedit MCP server is absent")
+	}
+	if got, want := server.Command[len(server.Command)-2:], []string{"--instructions", mcp.PrescriptiveInstructions}; !slices.Equal(got, want) {
+		t.Errorf("MCP command suffix = %#v, want %#v", got, want)
+	}
+	if server.CWD != workDir || server.CodeMode {
+		t.Errorf("MCP server = %#v, want fixture cwd and direct tool exposure", server)
+	}
+	if got := server.Environment["GOCACHE"]; got != filepath.Join(workDir, ".scratch", "go", "build") {
+		t.Errorf("MCP GOCACHE = %q, want fixture-local cache", got)
+	}
+	if got := environmentValue(env, "HOME"); got == "" || !strings.HasPrefix(got, filepath.Join(workDir, ".scratch", "opencode")) {
+		t.Errorf("OpenCode HOME = %q, want fixture-local state", got)
+	}
+	if got := environmentValue(env, "OPENCODE_DISABLE_PROJECT_CONFIG"); got != "1" {
+		t.Errorf("OPENCODE_DISABLE_PROJECT_CONFIG = %q, want 1", got)
+	}
+	if got := environmentValue(env, "OPENCODE_CONFIG"); got != configPath {
+		t.Errorf("OPENCODE_CONFIG = %q, want %q", got, configPath)
+	}
+
+	baselinePath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G304 -- config path is constructed by the harness inside the temporary fixture.
+	baseline, err := os.ReadFile(baselinePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(baseline), `"mcp"`) {
+		t.Errorf("baseline config unexpectedly enables MCP: %s", baseline)
+	}
 }
 
 func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
@@ -621,6 +740,33 @@ func TestTask11MixedSinkFixtureExtractsCompilingSmallAndLargeWorkspaces(t *testi
 	}
 }
 
+func TestTask11MixedSinkControlPassesOracle(t *testing.T) {
+	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_11_mixed_sink_api_migration.txtar"))
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+	hiddenTestDir, err := filepath.Abs(filepath.Join("..", "..", task.Metadata.Oracle.Test.HiddenTestDir))
+	if err != nil {
+		t.Fatalf("resolve hidden test directory: %v", err)
+	}
+	task.Metadata.Oracle.Test.HiddenTestDir = hiddenTestDir
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	result, err := NewRunner(t.TempDir()).ExecuteControl(ctx, task)
+	if err != nil {
+		t.Fatalf("execute control: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("task-11 control oracle = %#v, error = %q, want passing oracle", result.Oracle, result.Error)
+	}
+}
+
 func TestPromptVariantsParsing(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "scripts", "generate_template_main.txtar"))
 	data, err := os.ReadFile(fixturePath)
@@ -633,11 +779,40 @@ func TestPromptVariantsParsing(t *testing.T) {
 		t.Fatalf("parse task: %v", err)
 	}
 
-	if len(task.Metadata.PromptVariants) != 2 {
-		t.Fatalf("expected 2 prompt variants, got %d (%v)", len(task.Metadata.PromptVariants), task.Metadata.PromptVariants)
+	if len(task.Metadata.PromptVariants) != 3 {
+		t.Fatalf("expected 3 prompt variants, got %d (%v)", len(task.Metadata.PromptVariants), task.Metadata.PromptVariants)
 	}
 	if !strings.Contains(task.Metadata.PromptVariants["crypto_rand"], "crypto/rand") {
 		t.Errorf("expected crypto/rand in crypto_rand variant, got: %s", task.Metadata.PromptVariants["crypto_rand"])
+	}
+	if got := task.Metadata.PromptVariants["prefer_discover_semedit"]; !strings.Contains(got, "complete available tool inventory") || !strings.Contains(got, "semantic editing tools") {
+		t.Errorf("prefer-discover-semedit prompt = %q, want discovery and semantic-tool guidance", got)
+	}
+}
+
+func TestDiscoveryPromptVariantsRequireToolInventoryInspection(t *testing.T) {
+	t.Parallel()
+
+	fixtures := []string{
+		filepath.Join("..", "..", "testdata", "scripts", "generate_template_main.txtar"),
+		filepath.Join("..", "..", "testdata", "bench", "task_11_mixed_sink_api_migration.txtar"),
+	}
+	for _, fixturePath := range fixtures {
+		// #nosec G304 -- fixture path comes from the static list above.
+		data, err := os.ReadFile(fixturePath)
+		if err != nil {
+			t.Fatalf("read fixture %s: %v", fixturePath, err)
+		}
+		task, err := ParseTask(data)
+		if err != nil {
+			t.Fatalf("parse fixture %s: %v", fixturePath, err)
+		}
+		prompt := task.Metadata.PromptVariants["prefer_discover_semedit"]
+		for _, phrase := range []string{"complete available tool inventory", "semantic editing tools"} {
+			if !strings.Contains(prompt, phrase) {
+				t.Errorf("%s discovery prompt = %q, missing %q", fixturePath, prompt, phrase)
+			}
+		}
 	}
 }
 
@@ -712,6 +887,28 @@ func TestMatrixPromptVariantsRequiresDeclaredPrompts(t *testing.T) {
 	}
 }
 
+func TestCreateBenchmarkRunDir(t *testing.T) {
+	root := t.TempDir()
+	runDir, err := createBenchmarkRunDir(root, "run-20260922T120000Z")
+	if err != nil {
+		t.Fatalf("create benchmark run directory: %v", err)
+	}
+	if want := filepath.Join(root, "run-20260922T120000Z"); runDir != want {
+		t.Fatalf("run directory = %q, want %q", runDir, want)
+	}
+	if _, err := os.Stat(runDir); err != nil {
+		t.Fatalf("stat run directory: %v", err)
+	}
+	if _, err := createBenchmarkRunDir(root, "run-20260922T120000Z"); err == nil {
+		t.Fatal("duplicate run id unexpectedly overwrote an existing run")
+	}
+	for _, runID := range []string{"", ".", "..", "run/next", "run next", "run:next"} {
+		if _, err := createBenchmarkRunDir(root, runID); err == nil {
+			t.Errorf("invalid run id %q unexpectedly accepted", runID)
+		}
+	}
+}
+
 func TestCollectAvailableBenchmarks(t *testing.T) {
 	benchDir := filepath.Clean(filepath.Join("..", "..", "testdata", "bench"))
 	benchmarks, err := CollectAvailableBenchmarks(benchDir)
@@ -728,13 +925,13 @@ func TestCollectAvailableBenchmarks(t *testing.T) {
 	for _, b := range benchmarks {
 		if b.TaskID == "task-07-generate-template-main" {
 			foundGenerateTemplate = true
-			if len(b.PromptVariants) != 2 {
-				t.Errorf("expected 2 prompt variants for task-07-generate-template-main, got %d", len(b.PromptVariants))
+			if len(b.PromptVariants) != 3 {
+				t.Errorf("expected 3 prompt variants for task-07-generate-template-main, got %d", len(b.PromptVariants))
 			}
 		}
 		if b.TaskID == "task-11-mixed-sink-api-migration" {
 			foundMixedSinkMigration = true
-			if got, want := b.PromptVariants, []string{"default"}; !slices.Equal(got, want) {
+			if got, want := b.PromptVariants, []string{"default", "prefer_discover_semedit"}; !slices.Equal(got, want) {
 				t.Errorf("unexpected task-11 prompt variants: got %v, want %v", got, want)
 			}
 		}

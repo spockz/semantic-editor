@@ -5,6 +5,7 @@ SHELL := /bin/bash
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null || pwd)
 BENCH_DIR ?= $(REPO_ROOT)/testdata/bench
 OUT_DIR ?= $(REPO_ROOT)/data/benchmarks/results
+RUN_ID ?= run-$(shell date -u '+%Y%m%dT%H%M%SZ')
 
 TARGET ?= codex/gpt-5.6-luna/medium
 VARIANTS ?= small,large
@@ -28,6 +29,7 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "Examples:"
 	@echo "  make bench TASK=generate_template_main"
 	@echo "  make bench TASK=task-01-rename-local TARGET=codex/gpt-5.6-luna/medium"
+	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/amdbeast/qwen36-coder"
 	@echo "  make bench-all"
 	@echo "  make docgen"
 
@@ -67,7 +69,8 @@ bench-all: ## Run all benchmarks in small and large context with all prompt vari
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
-		--out-dir "$(OUT_DIR)"
+		--out-dir "$(OUT_DIR)" \
+		--run-id "$(RUN_ID)"
 
 .PHONY: bench
 bench: ## Run a specific benchmark in small and large context (e.g. make bench TASK=generate_template_main)
@@ -86,4 +89,5 @@ bench: ## Run a specific benchmark in small and large context (e.g. make bench T
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
-		--out-dir "$(OUT_DIR)"
+		--out-dir "$(OUT_DIR)" \
+		--run-id "$(RUN_ID)"

@@ -31,6 +31,14 @@ func TestParseTarget(t *testing.T) {
 			want:  Target{Harness: "agy", Model: "gemini-3.8-flash-low", Effort: "low"},
 		},
 		{
+			input: "opencode/amdbeast/qwen36-coder",
+			want:  Target{Harness: "opencode", Model: "amdbeast/qwen36-coder"},
+		},
+		{
+			input: "opencode/amdbeast/qwen36-coder/high",
+			want:  Target{Harness: "opencode", Model: "amdbeast/qwen36-coder", Effort: "high"},
+		},
+		{
 			input:   "",
 			wantErr: true,
 		},

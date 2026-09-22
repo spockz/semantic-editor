@@ -19,9 +19,88 @@ import (
 
 // BenchmarkReport captures empirical comparison results across targets, tasks, variants, and arms.
 type BenchmarkReport struct {
-	Timestamp   time.Time            `json:"timestamp"`
-	Runs        []*RunResult         `json:"runs"`
-	Comparisons []*ComparisonSummary `json:"comparisons,omitempty"`
+	FormatVersion int                  `json:"format_version"`
+	DurationUnit  string               `json:"duration_unit"`
+	Timestamp     time.Time            `json:"timestamp"`
+	Runs          []*RunResult         `json:"runs"`
+	Comparisons   []*ComparisonSummary `json:"comparisons,omitempty"`
+}
+
+const (
+	benchmarkReportFormatVersion = 2
+	benchmarkReportDurationUnit  = "milliseconds"
+)
+
+// MarshalJSON writes benchmark durations as milliseconds, matching their public JSON field names.
+func (rep BenchmarkReport) MarshalJSON() ([]byte, error) {
+	type reportAlias BenchmarkReport
+	wire := reportAlias(rep)
+	wire.FormatVersion = benchmarkReportFormatVersion
+	wire.DurationUnit = benchmarkReportDurationUnit
+
+	data, err := json.Marshal(wire)
+	if err != nil {
+		return nil, err
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return nil, err
+	}
+	if err := convertBenchmarkDurationsToMilliseconds(value); err != nil {
+		return nil, err
+	}
+	return json.Marshal(value)
+}
+
+func convertBenchmarkDurationsToMilliseconds(value any) error {
+	switch value := value.(type) {
+	case []any:
+		for _, item := range value {
+			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, item := range value {
+			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
+				return err
+			}
+		}
+
+		for _, key := range []string{
+			"wall_clock_ms",
+			"process_start_to_first_event_ms",
+			"first_event_to_first_tool_call_ms",
+			"mcp_initialize_to_first_semantic_call_ms",
+			"mcp_server_start_to_initialize_ms",
+		} {
+			if raw, ok := value[key]; ok {
+				milliseconds, err := durationNanosecondsToMilliseconds(raw)
+				if err != nil {
+					return fmt.Errorf("convert %s: %w", key, err)
+				}
+				value[key] = milliseconds
+			}
+		}
+		if _, isOracle := value["level_1_policy"]; isOracle {
+			if raw, ok := value["duration_ms"]; ok {
+				milliseconds, err := durationNanosecondsToMilliseconds(raw)
+				if err != nil {
+					return fmt.Errorf("convert oracle duration_ms: %w", err)
+				}
+				value["duration_ms"] = milliseconds
+			}
+		}
+	}
+	return nil
+}
+
+func durationNanosecondsToMilliseconds(raw any) (int64, error) {
+	nanoseconds, ok := raw.(float64)
+	if !ok || nanoseconds != float64(int64(nanoseconds)) {
+		return 0, fmt.Errorf("expected integral duration, got %T (%v)", raw, raw)
+	}
+	return int64(nanoseconds) / int64(time.Millisecond), nil
 }
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.

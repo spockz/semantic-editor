@@ -30,6 +30,11 @@ consuming the event stream. The semedit server attaches server-start-to-initiali
 initialize-to-first-semantic-call latency to its first semantic response. These boundaries
 separate agent/session startup from semantic-tool execution.
 
+Benchmark report format version 2 serializes every harness and oracle duration field as an
+integral number of milliseconds, matching its `*_ms` field name. It declares
+`duration_unit: "milliseconds"`; documentation loading recognizes unversioned legacy reports as
+nanosecond-encoded Go durations so historical observations remain comparable.
+
 Generated documentation publishes a comparison only when it has at least one
 run with an oracle result and no harness execution error. A completed agent
 attempt that fails its oracle remains publishable data; a run that never
@@ -50,6 +55,8 @@ present a task-level tool list as evidence for every underlying run.
 - Published tool-call tables are qualified by their run variant and arm.
 - Missing structured MCP response content remains an unavailable observation, not a measured
   zero-duration startup boundary.
+- Versioned report duration values and their `*_ms` JSON field names use the same milliseconds
+  unit; legacy unversioned reports retain their historical nanosecond interpretation.
 
 ## Consequences
 

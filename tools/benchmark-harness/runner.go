@@ -216,6 +216,8 @@ type RunResult struct {
 	Error                            string                   `json:"error,omitempty"`
 	CodexExitCode                    *int                     `json:"codex_exit_code,omitempty"`
 	CodexStderr                      string                   `json:"codex_stderr,omitempty"`
+	OpenCodeExitCode                 *int                     `json:"opencode_exit_code,omitempty"`
+	OpenCodeStderr                   string                   `json:"opencode_stderr,omitempty"`
 	agentResponse                    string
 }
 
@@ -363,6 +365,25 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 			break
 		}
 		modifiedFiles = append(modifiedFiles, "api/server.go")
+
+	case "task-11-mixed-sink-api-migration":
+		normalizePath := filepath.Join(workDir, "audit", "normalize.go")
+		if err := astedit.InsertFunction(ctx, normalizePath, "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}", astedit.FunctionOptions{
+			Placement:           astedit.PlacementFileEnd,
+			AutoOrganizeImports: true,
+		}); err != nil {
+			execErr = fmt.Errorf("insert audit NormalizeKind: %w", err)
+			break
+		}
+		if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "audit", "summary.go"), "Classify", "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}", astedit.BodyOptions{}); err != nil {
+			execErr = fmt.Errorf("replace audit Classify body: %w", err)
+			break
+		}
+		if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "service", "dispatch.go"), "(*Dispatcher).Record", "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)", astedit.BodyOptions{}); err != nil {
+			execErr = fmt.Errorf("replace Dispatcher.Record body: %w", err)
+			break
+		}
+		modifiedFiles = append(modifiedFiles, "audit/normalize.go", "audit/summary.go", "service/dispatch.go")
 
 	default:
 		execErr = fmt.Errorf("task %s has no registered control transformation", task.Metadata.TaskID)

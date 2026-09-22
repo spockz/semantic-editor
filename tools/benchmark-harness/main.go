@@ -32,6 +32,7 @@ func run() int {
 	var outJSON string
 	var outMD string
 	var outDir string
+	var runID string
 	var extractTo string
 	var evalDir string
 	var timeout time.Duration
@@ -44,18 +45,19 @@ func run() int {
 	flag.StringVar(&tasksFlag, "tasks", "", "Comma-separated list of task base names to run in matrix mode")
 	flag.StringVar(&benchDir, "dir", "testdata/bench", "Path to benchmark fixtures directory containing txtar archives")
 	flag.StringVar(&arm, "arm", "control", "Evaluation arm to execute (control, semedit, baseline-diff)")
-	flag.StringVar(&harness, "harness", "control", "Agent harness to drive (control, codex, agy)")
+	flag.StringVar(&harness, "harness", "control", "Agent harness to drive (control, codex, agy, opencode)")
 	flag.Var(&targets, "target", "Execution target harness[/model[/effort]] (repeatable, e.g. -target codex/gpt-5.6-luna/high)")
 	flag.StringVar(&variantsFlag, "variants", "small,large", "Comma-separated context variants to run in matrix mode (small, large)")
 	flag.BoolVar(&matrixMode, "matrix", false, "Execute full combinatorial matrix across targets, tasks, variants, and arms")
 	flag.IntVar(&concurrency, "concurrency", 4, "Number of concurrent matrix benchmark workers")
 	flag.StringVar(&outJSON, "out-json", "", "Optional path to save telemetry stats JSON")
 	flag.StringVar(&outMD, "out-md", "", "Optional path to save rendered Markdown report")
-	flag.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Output directory to store individual benchmark results JSON and MD")
+	flag.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped benchmark results JSON and MD")
+	flag.StringVar(&runID, "run-id", "", "Required identifier for a matrix result directory below -out-dir")
 	flag.StringVar(&extractTo, "extract-to", "", "Extract fixture to target directory and exit (for agent eval trials)")
 	flag.StringVar(&evalDir, "eval-dir", "", "Evaluate target directory with task oracle (for agent eval trials)")
 	flag.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark task")
-	flag.StringVar(&mcpServerInstructionsRaw, "mcp-server-instructions", "none", "Server-wide semedit MCP instruction mode (none, descriptive, prescriptive; Codex only)")
+	flag.StringVar(&mcpServerInstructionsRaw, "mcp-server-instructions", "none", "Server-wide semedit MCP instruction mode (none, descriptive, prescriptive; Codex and OpenCode)")
 	flag.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable; does not group results)")
 	flag.Var(&provenance, "classifier", "Deprecated alias for -provenance")
 	flag.BoolVar(&listMode, "list", false, "List all available benchmark tasks and their prompt variants")
@@ -107,14 +109,14 @@ func run() int {
 	runner := NewRunner(scratchDir, WithMCPServerInstructions(mcpServerInstructions), WithProvenance(provenance))
 
 	if matrixMode || len(targets) > 0 {
-		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, outJSON, outMD, timeout, concurrency)
+		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, runID, outJSON, outMD, timeout, concurrency)
 	}
 
 	// Legacy single-run path
 	return runSingle(runner, benchDir, taskID, harness, arm, outJSON, outMD, timeout)
 }
 
-func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, singleTask, variantsFlag, outDir, outJSON, outMD string, timeout time.Duration, concurrency int) int {
+func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, singleTask, variantsFlag, outDir, runID, outJSON, outMD string, timeout time.Duration, concurrency int) int {
 	if len(targets) == 0 {
 		targets = []Target{{Harness: "codex"}, {Harness: "agy"}}
 	}
@@ -160,12 +162,25 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 		concurrency = 1
 	}
 
+	resultDir := ""
+	if outDir != "" {
+		var err error
+		resultDir, err = createBenchmarkRunDir(outDir, runID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid benchmark result directory: %v\n", err)
+			return 1
+		}
+	}
+
 	fmt.Printf("==> Starting Matrix Benchmark (Concurrency: %d)\n", concurrency)
 	fmt.Printf("    Targets:  %v\n", targets)
 	fmt.Printf("    Tasks:    %v\n", taskBases)
 	fmt.Printf("    Variants: %v\n", variants)
 	fmt.Printf("    Arms:     %v\n\n", arms)
 	fmt.Printf("    MCP server instructions: %s\n", runner.mcpServerInstructionsMode)
+	if resultDir != "" {
+		fmt.Printf("    Result run: %s\n", resultDir)
+	}
 	if runner.provenance.String() != "" {
 		fmt.Printf("    Provenance: %s\n", runner.provenance)
 	}
@@ -272,7 +287,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 		Comparisons: BuildComparisons(allRuns),
 	}
 
-	if outDir != "" {
+	if resultDir != "" {
 		repoRoot, _ := os.Getwd()
 		type benchKey struct {
 			taskBase              string
@@ -298,7 +313,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 			if instructionMode := normalizeMCPServerInstructions(k.mcpServerInstructions); instructionMode != MCPServerInstructionsNone {
 				targetSlug += "-mcp-server-instructions-" + string(instructionMode)
 			}
-			taskOutDir := filepath.Join(outDir, k.taskBase)
+			taskOutDir := filepath.Join(resultDir, k.taskBase)
 			if err := os.MkdirAll(taskOutDir, 0o750); err != nil {
 				fmt.Printf("❌ Failed to create task out dir %s: %v\n", taskOutDir, err)
 				continue
@@ -337,6 +352,38 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 	}
 
 	return 0
+}
+
+func createBenchmarkRunDir(outDir, runID string) (string, error) {
+	if err := validateBenchmarkRunID(runID); err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
+		return "", fmt.Errorf("create results parent directory: %w", err)
+	}
+	runDir := filepath.Join(outDir, runID)
+	if err := os.Mkdir(runDir, 0o750); err != nil {
+		if os.IsExist(err) {
+			return "", fmt.Errorf("run id %q already exists", runID)
+		}
+		return "", fmt.Errorf("create run directory: %w", err)
+	}
+	return runDir, nil
+}
+
+func validateBenchmarkRunID(runID string) error {
+	if runID == "" {
+		return fmt.Errorf("-run-id is required when -out-dir is set")
+	}
+	if runID == "." || runID == ".." || strings.ContainsAny(runID, "/\\") {
+		return fmt.Errorf("invalid run id %q", runID)
+	}
+	for _, char := range runID {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '-' && char != '_' && char != '.' {
+			return fmt.Errorf("invalid run id %q", runID)
+		}
+	}
+	return nil
 }
 
 func runSingle(runner *Runner, benchDir, taskSelector, harnessStr, armStr, outJSON, outMD string, timeout time.Duration) int {

@@ -10,6 +10,48 @@ import (
 	"time"
 )
 
+func TestUnmarshalBenchmarkReportNormalizesVersionedMillisecondsAndLegacyNanoseconds(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		data string
+		want time.Duration
+	}{
+		{
+			name: "versioned milliseconds",
+			data: `{"format_version":2,"duration_unit":"milliseconds","runs":[{"wall_clock_ms":1500,"process_start_to_first_event_ms":250,"oracle":{"level_1_policy":false,"duration_ms":1750}}]}`,
+			want: 1500 * time.Millisecond,
+		},
+		{
+			name: "legacy nanoseconds",
+			data: `{"runs":[{"wall_clock_ms":1500000000,"process_start_to_first_event_ms":250000000,"oracle":{"level_1_policy":false,"duration_ms":1750000000}}]}`,
+			want: 1500 * time.Millisecond,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var report BenchReport
+			if err := unmarshalBenchmarkReport([]byte(tc.data), &report); err != nil {
+				t.Fatalf("unmarshal benchmark report: %v", err)
+			}
+			if len(report.Runs) != 1 {
+				t.Fatalf("runs = %d, want 1", len(report.Runs))
+			}
+			run := report.Runs[0]
+			if got := run.WallClock; got != tc.want {
+				t.Errorf("wall clock = %v, want %v", got, tc.want)
+			}
+			if got, want := *run.ProcessStartToFirstEvent, 250*time.Millisecond; got != want {
+				t.Errorf("process start to first event = %v, want %v", got, want)
+			}
+			if got, want := run.Oracle.Duration, 1750*time.Millisecond; got != want {
+				t.Errorf("oracle duration = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 func TestLoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
 	t.Parallel()
 

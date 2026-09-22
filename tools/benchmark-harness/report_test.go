@@ -2,10 +2,81 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
+	firstEvent := 250 * time.Millisecond
+	firstTool := 1250 * time.Millisecond
+	report := &BenchmarkReport{Runs: []*RunResult{{
+		WallClock:                 1500 * time.Millisecond,
+		ProcessStartToFirstEvent:  &firstEvent,
+		FirstEventToFirstToolCall: &firstTool,
+		InteractionSteps: []InteractionStep{{
+			WallClock: 1750 * time.Millisecond,
+		}},
+		SemanticToolReflection: &SemanticToolReflection{WallClock: 2 * time.Second},
+		Oracle: &OracleResult{
+			Level1Policy: true,
+			Duration:     1750 * time.Millisecond,
+		},
+		ToolCalls: []ToolCall{{
+			MCPMetrics: &MCPMetrics{
+				TotalMS: 1250,
+				Phases:  map[string]MCPPhaseMetric{"formatting": {DurationMS: 700}},
+			},
+		}},
+	}}}
+	jsonPath := filepath.Join(t.TempDir(), "report.json")
+	if err := SaveReport(report, jsonPath, ""); err != nil {
+		t.Fatalf("save report: %v", err)
+	}
+	// #nosec G304 -- jsonPath is created beneath this test's temporary directory.
+	data, err := os.ReadFile(jsonPath)
+	if err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal report: %v", err)
+	}
+	if got, want := raw["format_version"], float64(benchmarkReportFormatVersion); got != want {
+		t.Errorf("format_version = %v, want %v", got, want)
+	}
+	if got, want := raw["duration_unit"], benchmarkReportDurationUnit; got != want {
+		t.Errorf("duration_unit = %v, want %q", got, want)
+	}
+	run := raw["runs"].([]any)[0].(map[string]any)
+	for key, want := range map[string]float64{
+		"wall_clock_ms":                     1500,
+		"process_start_to_first_event_ms":   250,
+		"first_event_to_first_tool_call_ms": 1250,
+	} {
+		if got := run[key]; got != want {
+			t.Errorf("%s = %v, want %v", key, got, want)
+		}
+	}
+	if got, want := run["interaction_steps"].([]any)[0].(map[string]any)["wall_clock_ms"], float64(1750); got != want {
+		t.Errorf("interaction wall_clock_ms = %v, want %v", got, want)
+	}
+	if got, want := run["semantic_tool_reflection"].(map[string]any)["wall_clock_ms"], float64(2000); got != want {
+		t.Errorf("reflection wall_clock_ms = %v, want %v", got, want)
+	}
+	if got, want := run["oracle"].(map[string]any)["duration_ms"], float64(1750); got != want {
+		t.Errorf("oracle duration_ms = %v, want %v", got, want)
+	}
+	metrics := run["tool_calls"].([]any)[0].(map[string]any)["mcp_metrics"].(map[string]any)
+	if got, want := metrics["total_ms"], float64(1250); got != want {
+		t.Errorf("MCP total_ms = %v, want %v", got, want)
+	}
+	if got, want := metrics["phases"].(map[string]any)["formatting"].(map[string]any)["duration_ms"], float64(700); got != want {
+		t.Errorf("MCP phase duration_ms = %v, want %v", got, want)
+	}
+}
 
 func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	target := Target{Harness: "agy", Model: "gemini-3.8-flash-low"}
