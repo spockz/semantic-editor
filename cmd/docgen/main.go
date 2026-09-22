@@ -950,50 +950,47 @@ description: "Intent-driven code editing for AI agents."
 draft: false
 ---
 
-# Intent-driven code editing for AI agents
+<div class="hx:mt-16 hx:mb-16 hx:text-center">
 
-LLMs plan intent. Host compilers execute zero-token AST refactorings.
+{{< hextra/hero-badge link="/docs/" >}}
+Compiler-backed semantic editing <span aria-hidden="true">→</span>
+{{< /hextra/hero-badge >}}
 
-[Get started](/docs/getting-started/)
+# Intent-driven code editing<br/>for **AI agents**
 
-[View on GitHub](https://github.com/spockz/semantic-editor)
+<p class="hx:mt-6 hx:text-xl hx:text-gray-600 hx:dark:text-gray-400">
+LLMs plan the change. Compilers and language servers apply it precisely.
+</p>
 
-Open source and MIT licensed.
+<div class="hx:mt-8 hx:flex hx:flex-wrap hx:justify-center hx:gap-3">
+{{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
+{{< hextra/hero-button text="View on GitHub" link="https://github.com/spockz/semantic-editor" style="background-color: transparent; color: inherit; border: 1px solid currentColor;" >}}
+</div>
 
-## Why semedit?
+<p class="hx:mt-6 hx:text-sm hx:text-gray-500 hx:dark:text-gray-400">Open source and MIT licensed.</p>
+</div>
 
-semedit separates semantic intent, decided by the LLM, from mechanical syntax transformation, executed by local host CPUs, compilers, language servers, and AST tools.
+## Make intent the interface
 
-### Deterministic edits
+semedit separates semantic intent from syntax transformation, so agents can ask for the change while local tooling handles the mechanical work.
 
-Compiler-backed transformations preserve syntactic validity across state transitions and eliminate fragile line-based patching.
+{{< hextra/feature-grid cols="2" >}}
+{{< hextra/feature-card title="Deterministic edits" icon="shield-check" link="/docs/reference/" subtitle="Use compiler-backed transformations that preserve syntax and eliminate fragile line-based patching." >}}
+{{< hextra/feature-card title="Symbol-based intent" icon="cursor-click" link="/docs/getting-started/" subtitle="Ask for **Server.Start** instead of hunting for a byte offset or line number." >}}
+{{< hextra/feature-card title="Structured feedback" icon="chart-bar" link="/docs/reference/" subtitle="Receive formatting, diagnostics, and compiler evidence as structured results." >}}
+{{< hextra/feature-card title="One contract for agents" icon="terminal" link="/docs/reference/" subtitle="Use the same semantic operations through the CLI or MCP." >}}
+{{< /hextra/feature-grid >}}
 
-### Symbol-based intent
+## A tighter editing loop
 
-Ask for Server.Start instead of hunting for a byte offset or line number. The symbol resolver finds the exact declaration before the host engine edits it.
-
-### Structured feedback
-
-The execution pipeline formats changes, checks diagnostics, and returns structured results so an agent can continue from compiler evidence.
-
-### One contract for agents
-
-Use the same semantic operations through the CLI or MCP, including rename, declaration insertion, function insertion, type insertion, and import organization.
-
-## How it works
-
-1. The LLM plans a high-level intent.
-2. semedit resolves symbols and dispatches to the compiler or language server.
+1. An LLM plans a high-level intent.
+2. semedit resolves the target symbol and selects the compiler or language server.
 3. The host applies and formats the change deterministically.
-4. Diagnostics return to the agent without re-emitting a full file diff.
+4. Diagnostics return as evidence for the next decision.
 
 ## Explore the documentation
 
-[Read the capability reference](/docs/reference/)
-
-[View empirical benchmarks](/docs/benchmarks/)
-
-The reference is generated from compiler capability declarations and executable txtar regression tests, so examples stay aligned with the implementation.
+[Read the capability reference](/docs/reference/) to see the available operations and executable examples, or [view empirical benchmarks](/docs/benchmarks/) for measured results.
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(landing)); err != nil {
 		return fmt.Errorf("write Hugo landing page: %w", err)

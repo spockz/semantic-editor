@@ -127,6 +127,24 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 			t.Errorf("Hugo module contains obsolete dependency %q", obsolete)
 		}
 	}
+
+	landing, err := os.ReadFile(filepath.Join(outputDir, "content", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo landing page: %v", err)
+	}
+	landingText := string(landing)
+	for _, want := range []string{
+		`hextra/hero-badge`,
+		`hextra/hero-button`,
+		`hextra/feature-grid`,
+		`hextra/feature-card`,
+		`Get started`,
+		`View on GitHub`,
+	} {
+		if !strings.Contains(landingText, want) {
+			t.Errorf("Hugo landing page does not contain %q", want)
+		}
+	}
 }
 
 func TestParseTxtarExpectedOutputState(t *testing.T) {
