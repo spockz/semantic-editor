@@ -181,6 +181,7 @@ type RunConfig struct {
 type RunResult struct {
 	TaskID                           string                   `json:"task_id"`
 	Variant                          string                   `json:"variant,omitempty"` // "small", "large"
+	Repeat                           int                      `json:"repeat,omitempty"`
 	PromptVariant                    string                   `json:"prompt_variant,omitempty"`
 	MCPServerInstructions            MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
 	Provenance                       ProvenanceSet            `json:"provenance,omitempty"`

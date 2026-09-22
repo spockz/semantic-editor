@@ -134,6 +134,7 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 }
 
 func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
+	t.Setenv(openRouterAPIKeyEnv, "test-key")
 	binDir := t.TempDir()
 	script := filepath.Join(binDir, "opencode")
 	stdout := strings.Join([]string{
@@ -154,7 +155,7 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 
 	workDir := t.TempDir()
 	res := &RunResult{Arm: ArmSemedit}
-	sessionID, err := NewRunner(t.TempDir()).runOpenCode(t.Context(), workDir, Target{Harness: string(HarnessOpenCode)}, "prompt", res, "")
+	sessionID, err := NewRunner(t.TempDir()).runOpenCode(t.Context(), workDir, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"}, "prompt", res, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,9 +184,10 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 }
 
 func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
+	t.Setenv(openRouterAPIKeyEnv, "secret-test-key")
 	workDir := t.TempDir()
 	runner := NewRunner(filepath.Join(t.TempDir(), "benchmarks"), WithMCPServerInstructions(MCPServerInstructionsPrescriptive))
-	configPath, env, err := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit)
+	configPath, env, err := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,8 +212,14 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	if got := config.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
-		t.Errorf("Qwen base URL = %q, want %q", got, openCodeQwenBaseURL)
+	if got := config.Provider["openrouter"].Options["baseURL"]; got != openRouterBaseURL {
+		t.Errorf("OpenRouter base URL = %q, want %q", got, openRouterBaseURL)
+	}
+	if got := config.Provider["openrouter"].Options["apiKey"]; got != "{env:"+openRouterAPIKeyEnv+"}" {
+		t.Errorf("OpenRouter API key config = %q, want environment reference", got)
+	}
+	if strings.Contains(string(data), "secret-test-key") {
+		t.Fatal("OpenRouter credential was serialized into OpenCode configuration")
 	}
 	server, found := config.MCP.Servers["semedit"]
 	if !found {
@@ -236,7 +244,7 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 		t.Errorf("OPENCODE_CONFIG = %q, want %q", got, configPath)
 	}
 
-	baselinePath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline)
+	baselinePath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,6 +39,14 @@ func TestParseTarget(t *testing.T) {
 			want:  Target{Harness: "opencode", Model: "amdbeast/qwen36-coder", Effort: "high"},
 		},
 		{
+			input: "opencode/openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+			want:  Target{Harness: "opencode", Model: "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free"},
+		},
+		{
+			input: "opencode/openrouter/cohere/north-mini-code:free/medium",
+			want:  Target{Harness: "opencode", Model: "openrouter/cohere/north-mini-code:free", Effort: "medium"},
+		},
+		{
 			input:   "",
 			wantErr: true,
 		},

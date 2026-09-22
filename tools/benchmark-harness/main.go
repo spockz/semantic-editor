@@ -37,7 +37,10 @@ func run() int {
 	var evalDir string
 	var timeout time.Duration
 	var concurrency int
+	var repeats int
 	var listMode bool
+	var listOpenRouterFree bool
+	var openRouterFreeTop10 bool
 	var mcpServerInstructionsRaw string
 	var provenance ProvenanceSet
 
@@ -47,6 +50,7 @@ func run() int {
 	flag.StringVar(&arm, "arm", "control", "Evaluation arm to execute (control, semedit, baseline-diff)")
 	flag.StringVar(&harness, "harness", "control", "Agent harness to drive (control, codex, agy, opencode)")
 	flag.Var(&targets, "target", "Execution target harness[/model[/effort]] (repeatable, e.g. -target codex/gpt-5.6-luna/high)")
+	flag.IntVar(&repeats, "repeats", 1, "Number of independent trials for each selected target/task/variant/arm")
 	flag.StringVar(&variantsFlag, "variants", "small,large", "Comma-separated context variants to run in matrix mode (small, large)")
 	flag.BoolVar(&matrixMode, "matrix", false, "Execute full combinatorial matrix across targets, tasks, variants, and arms")
 	flag.IntVar(&concurrency, "concurrency", 4, "Number of concurrent matrix benchmark workers")
@@ -61,8 +65,13 @@ func run() int {
 	flag.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable; does not group results)")
 	flag.Var(&provenance, "classifier", "Deprecated alias for -provenance")
 	flag.BoolVar(&listMode, "list", false, "List all available benchmark tasks and their prompt variants")
+	flag.BoolVar(&listOpenRouterFree, "list-openrouter-free", false, "List the pinned top coding-oriented OpenRouter free-model catalog")
+	flag.BoolVar(&openRouterFreeTop10, "openrouter-free-top10", false, "Add the pinned top 10 coding-oriented OpenRouter free models to the matrix")
 	flag.Parse()
 
+	if listOpenRouterFree {
+		return listOpenRouterFreeModels()
+	}
 	if listMode || (len(flag.Args()) > 0 && flag.Args()[0] == "list") {
 		return listBenchmarks(benchDir)
 	}
@@ -108,18 +117,26 @@ func run() int {
 	scratchDir := filepath.Join(".scratch", "benchmarks")
 	runner := NewRunner(scratchDir, WithMCPServerInstructions(mcpServerInstructions), WithProvenance(provenance))
 
+	if openRouterFreeTop10 {
+		targets = append(targets, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free-top10"})
+	}
 	if matrixMode || len(targets) > 0 {
-		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, runID, outJSON, outMD, timeout, concurrency)
+		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, runID, outJSON, outMD, timeout, concurrency, repeats)
 	}
 
 	// Legacy single-run path
 	return runSingle(runner, benchDir, taskID, harness, arm, outJSON, outMD, timeout)
 }
 
-func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, singleTask, variantsFlag, outDir, runID, outJSON, outMD string, timeout time.Duration, concurrency int) int {
+func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, singleTask, variantsFlag, outDir, runID, outJSON, outMD string, timeout time.Duration, concurrency, repeats int) int {
+	if repeats < 1 {
+		fmt.Fprintln(os.Stderr, "-repeats must be at least 1")
+		return 1
+	}
 	if len(targets) == 0 {
 		targets = []Target{{Harness: "codex"}, {Harness: "agy"}}
 	}
+	targets = expandOpenRouterFreeTargets(targets)
 
 	var taskBases []string
 	switch {
@@ -177,6 +194,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 	fmt.Printf("    Tasks:    %v\n", taskBases)
 	fmt.Printf("    Variants: %v\n", variants)
 	fmt.Printf("    Arms:     %v\n\n", arms)
+	fmt.Printf("    Repeats:  %d\n", repeats)
 	fmt.Printf("    MCP server instructions: %s\n", runner.mcpServerInstructionsMode)
 	if resultDir != "" {
 		fmt.Printf("    Result run: %s\n", resultDir)
@@ -192,6 +210,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 		target   Target
 		arm      ArmType
 		task     *Task
+		repeat   int
 	}
 
 	var jobs []matrixJob
@@ -224,14 +243,17 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 				}
 
 				for _, effVar := range effectiveVariants {
-					for _, arm := range arms {
-						jobs = append(jobs, matrixJob{
-							taskBase: taskBase,
-							variant:  effVar,
-							target:   target,
-							arm:      arm,
-							task:     task,
-						})
+					for repeat := 1; repeat <= repeats; repeat++ {
+						for _, arm := range arms {
+							jobs = append(jobs, matrixJob{
+								taskBase: taskBase,
+								variant:  effVar,
+								target:   target,
+								arm:      arm,
+								task:     task,
+								repeat:   repeat,
+							})
+						}
 					}
 				}
 			}
@@ -264,6 +286,17 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 				}
 
 				res.Variant = j.variant
+				res.Repeat = j.repeat
+				if strings.HasPrefix(j.target.Model, "openrouter/") {
+					if res.Provenance == nil {
+						res.Provenance = make(ProvenanceSet)
+					}
+					res.Provenance["openrouter_auth"] = "environment"
+					if strings.HasSuffix(j.target.Model, ":free") {
+						res.Provenance["openrouter_catalog_as_of"] = openRouterFreeCatalogAsOf
+						res.Provenance["openrouter_catalog_source"] = openRouterFreeCatalogURL
+					}
+				}
 				status := "PASS"
 				if !res.Success {
 					status = "FAIL"
@@ -292,12 +325,13 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 		type benchKey struct {
 			taskBase              string
 			target                string
+			repeat                int
 			mcpServerInstructions MCPServerInstructionMode
 		}
 		benchGroups := make(map[benchKey][]*RunResult)
 		for _, r := range allRuns {
 			base := normalizeTaskBase(r.TaskID)
-			k := benchKey{taskBase: base, target: r.Target.String(), mcpServerInstructions: r.MCPServerInstructions}
+			k := benchKey{taskBase: base, target: r.Target.String(), repeat: r.Repeat, mcpServerInstructions: r.MCPServerInstructions}
 			benchGroups[k] = append(benchGroups[k], r)
 		}
 
@@ -310,6 +344,9 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 			provenance := ResolveTxtarProvenance(repoRoot, relFixture)
 
 			targetSlug := strings.ReplaceAll(k.target, "/", "-")
+			if k.repeat > 0 {
+				targetSlug += fmt.Sprintf("-repeat-%d", k.repeat)
+			}
 			if instructionMode := normalizeMCPServerInstructions(k.mcpServerInstructions); instructionMode != MCPServerInstructionsNone {
 				targetSlug += "-mcp-server-instructions-" + string(instructionMode)
 			}
@@ -369,6 +406,35 @@ func createBenchmarkRunDir(outDir, runID string) (string, error) {
 		return "", fmt.Errorf("create run directory: %w", err)
 	}
 	return runDir, nil
+}
+
+func expandOpenRouterFreeTargets(targets []Target) []Target {
+	expanded := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		if target.Harness == string(HarnessOpenCode) && target.Model == "openrouter/free-top10" {
+			for _, catalogTarget := range openRouterTopTargets() {
+				catalogTarget.Effort = target.Effort
+				expanded = append(expanded, catalogTarget)
+			}
+			continue
+		}
+		expanded = append(expanded, target)
+	}
+	return expanded
+}
+
+func listOpenRouterFreeModels() int {
+	fmt.Printf("OpenRouter free coding-oriented catalog (as of %s)\n", openRouterFreeCatalogAsOf)
+	fmt.Printf("Source: %s\n", openRouterFreeCatalogURL)
+	fmt.Println("Rank\tModel ID\tProgramming rank\tTool calling\tOpenCode target")
+	for _, model := range openRouterFreeCatalog {
+		programmingRank := "-"
+		if model.ProgrammingRank > 0 {
+			programmingRank = fmt.Sprintf("#%d", model.ProgrammingRank)
+		}
+		fmt.Printf("%d\t%s\t%s\t%t\topencode/openrouter/%s\n", model.Rank, model.ID, programmingRank, model.SupportsToolCall, model.ID)
+	}
+	return 0
 }
 
 func validateBenchmarkRunID(runID string) error {

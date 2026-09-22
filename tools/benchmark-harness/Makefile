@@ -10,6 +10,7 @@ RUN_ID ?= run-$(shell date -u '+%Y%m%dT%H%M%SZ')
 TARGET ?= codex/gpt-5.6-luna/medium
 VARIANTS ?= small,large
 CONCURRENCY ?= 2
+REPEATS ?= 1
 MCP_SERVER_INSTRUCTIONS ?= none
 # PROVENANCE records technical execution context without creating comparison cells.
 PROVENANCE ?=
@@ -29,7 +30,10 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "Examples:"
 	@echo "  make bench TASK=generate_template_main"
 	@echo "  make bench TASK=task-01-rename-local TARGET=codex/gpt-5.6-luna/medium"
-	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/amdbeast/qwen36-coder"
+	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/free-top10"
+	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/cohere/north-mini-code:free REPEATS=3"
+	@echo "  make bench-all TARGET=opencode/openrouter/free-top10 REPEATS=2"
+	@echo "  go run ./tools/benchmark-harness --list-openrouter-free"
 	@echo "  make bench-all"
 	@echo "  make docgen"
 
@@ -65,6 +69,7 @@ bench-all: ## Run all benchmarks in small and large context with all prompt vari
 		--tasks all \
 		--variants "$(VARIANTS)" \
 		--concurrency "$(CONCURRENCY)" \
+		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
@@ -85,6 +90,7 @@ bench: ## Run a specific benchmark in small and large context (e.g. make bench T
 		--task "$(TASK)" \
 		--variants "$(VARIANTS)" \
 		--concurrency "$(CONCURRENCY)" \
+		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \

@@ -33,7 +33,7 @@ func (t Target) String() string {
 // - "harness" (e.g. "codex", "agy", "control")
 // - "harness/model" (e.g. "agy/gemini-3.8-flash-high")
 // - "harness/model/effort" (e.g. "codex/gpt-5.6-luna/high")
-// - "opencode/provider/model[/effort]" (e.g. "opencode/amdbeast/qwen36-coder")
+// - "opencode/provider/model[/effort]" (e.g. "opencode/openrouter/cohere/north-mini-code:free")
 func ParseTarget(raw string) (Target, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -42,16 +42,27 @@ func ParseTarget(raw string) (Target, error) {
 
 	parts := strings.Split(raw, "/")
 	if strings.EqualFold(parts[0], string(HarnessOpenCode)) {
-		switch len(parts) {
-		case 1:
+		if len(parts) == 1 {
 			return Target{Harness: string(HarnessOpenCode)}, nil
-		case 3:
-			return Target{Harness: string(HarnessOpenCode), Model: parts[1] + "/" + parts[2]}, nil
-		case 4:
-			return Target{Harness: string(HarnessOpenCode), Model: parts[1] + "/" + parts[2], Effort: strings.ToLower(parts[3])}, nil
-		default:
+		}
+		if len(parts) < 3 {
 			return Target{}, fmt.Errorf("invalid OpenCode target specification %q: expected opencode[/provider/model[/effort]]", raw)
 		}
+		effort := ""
+		modelEnd := len(parts)
+		switch strings.ToLower(parts[len(parts)-1]) {
+		case "low", "medium", "high", "xhigh", "max", "ultra", "none":
+			if len(parts) < 4 {
+				return Target{}, fmt.Errorf("invalid OpenCode target specification %q: model is missing", raw)
+			}
+			effort = strings.ToLower(parts[len(parts)-1])
+			modelEnd--
+		}
+		model := strings.Join(parts[1:modelEnd], "/")
+		if model == "" {
+			return Target{}, fmt.Errorf("invalid OpenCode target specification %q: model is missing", raw)
+		}
+		return Target{Harness: string(HarnessOpenCode), Model: model, Effort: effort}, nil
 	}
 	switch len(parts) {
 	case 1:

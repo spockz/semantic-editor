@@ -15,6 +15,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"semedit/internal/pipeline"
 )
 
 // BenchmarkReport captures empirical comparison results across targets, tasks, variants, and arms.
@@ -106,6 +108,7 @@ func durationNanosecondsToMilliseconds(raw any) (int64, error) {
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
 type ComparisonSummary struct {
 	TaskID                string                   `json:"task_id"`
+	Repeat                int                      `json:"repeat,omitempty"`
 	PromptVariant         string                   `json:"prompt_variant,omitempty"`
 	MCPServerInstructions MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
 	Provenance            ProvenanceSet            `json:"provenance,omitempty"`
@@ -185,6 +188,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 	type key struct {
 		baseTask              string
 		target                string
+		repeat                int
 		promptVariant         string
 		mcpServerInstructions MCPServerInstructionMode
 	}
@@ -194,11 +198,12 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 	for _, r := range runs {
 		baseTask := normalizeTaskBase(r.TaskID)
 		mcpServerInstructions := normalizeMCPServerInstructions(r.MCPServerInstructions)
-		k := key{baseTask: baseTask, target: r.Target.String(), promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions}
+		k := key{baseTask: baseTask, target: r.Target.String(), repeat: r.Repeat, promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions}
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
 				TaskID:                baseTask,
+				Repeat:                k.repeat,
 				PromptVariant:         r.PromptVariant,
 				MCPServerInstructions: mcpServerInstructions,
 				Provenance:            r.Provenance.Clone(),
@@ -284,6 +289,9 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		}
 		if result[i].Target.String() != result[j].Target.String() {
 			return result[i].Target.String() < result[j].Target.String()
+		}
+		if result[i].Repeat != result[j].Repeat {
+			return result[i].Repeat < result[j].Repeat
 		}
 		if result[i].PromptVariant != result[j].PromptVariant {
 			return result[i].PromptVariant < result[j].PromptVariant
@@ -374,6 +382,9 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 		}
 
 		targetStr := comp.Target.String()
+		if comp.Repeat > 0 {
+			targetStr = fmt.Sprintf("%s (repeat %d)", targetStr, comp.Repeat)
+		}
 		if targetStr != currentTarget {
 			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
 			currentTarget = targetStr
@@ -1044,7 +1055,7 @@ func SaveReport(report *BenchmarkReport, outJSONPath, outMDPath string) error {
 		if err != nil {
 			return fmt.Errorf("marshal report json: %w", err)
 		}
-		if err := os.WriteFile(outJSONPath, jsonData, 0o600); err != nil {
+		if err := pipeline.WriteAtomic(outJSONPath, jsonData); err != nil {
 			return fmt.Errorf("write report json: %w", err)
 		}
 	}
@@ -1054,7 +1065,7 @@ func SaveReport(report *BenchmarkReport, outJSONPath, outMDPath string) error {
 			return fmt.Errorf("mkdir md: %w", err)
 		}
 		md := report.RenderMarkdown()
-		if err := os.WriteFile(outMDPath, []byte(md), 0o600); err != nil {
+		if err := pipeline.WriteAtomic(outMDPath, []byte(md)); err != nil {
 			return fmt.Errorf("write report md: %w", err)
 		}
 	}

@@ -41,9 +41,9 @@ const (
 )
 
 const (
-	openCodeDefaultModel   = "amdbeast/qwen36-coder"
-	openCodeQwenBaseURL    = "http://192.168.1.122:1234/v1"
-	openCodeQwenBaseURLEnv = "SEMEDIT_OPENCODE_QWEN_BASE_URL"
+	openCodeDefaultModel   = "openrouter/free"
+	openRouterBaseURL      = "https://openrouter.ai/api/v1"
+	openRouterAPIKeyEnv    = "OPENROUTER_API_KEY" //nolint:gosec // environment variable name, never a credential value
 	maxOpenCodeStderrBytes = 64 * 1024
 )
 
@@ -980,9 +980,12 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 }
 
 func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
-	configPath, env, err := r.openCodeEnvironment(ctx, workDir, res.Arm)
+	configPath, env, err := r.openCodeEnvironment(ctx, workDir, res.Arm, target)
 	if err != nil {
 		return "", fmt.Errorf("prepare OpenCode environment: %w", err)
+	}
+	if strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
+		return "", fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
 	}
 	args := []string{"run", "--format", "json", "--auto", "--dir", workDir}
 	if resumeID != "" {
@@ -1040,7 +1043,7 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 		code := cmd.ProcessState.ExitCode()
 		res.OpenCodeExitCode = &code
 	}
-	res.OpenCodeStderr = boundedDiagnostic(stderr.Bytes(), maxOpenCodeStderrBytes)
+	res.OpenCodeStderr = sanitizeOpenRouterDiagnostic(boundedDiagnostic(stderr.Bytes(), maxOpenCodeStderrBytes), env)
 	res.Turns = 1
 	res.InternalTurns = tracker.internalTurns
 	res.InitialLoadTurns = tracker.initialLoadTurns
@@ -1069,7 +1072,7 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	return sessionID, nil
 }
 
-func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm ArmType) (string, []string, error) {
+func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm ArmType, target Target) (string, []string, error) {
 	goEnv, err := fixtureGoEnvironment(ctx, workDir)
 	if err != nil {
 		return "", nil, err
@@ -1079,7 +1082,7 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	if err := os.MkdirAll(configRoot, 0o750); err != nil {
 		return "", nil, fmt.Errorf("create OpenCode fixture state: %w", err)
 	}
-	config, err := r.openCodeConfig(workDir, arm, goEnv)
+	config, err := r.openCodeConfig(workDir, arm, target, goEnv)
 	if err != nil {
 		return "", nil, err
 	}
@@ -1109,22 +1112,27 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	return configPath, env, nil
 }
 
-func (r *Runner) openCodeConfig(workDir string, arm ArmType, env []string) (map[string]any, error) {
-	baseURL := openCodeQwenBaseURL
-	if override := strings.TrimSpace(os.Getenv(openCodeQwenBaseURLEnv)); override != "" {
-		baseURL = override
+func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env []string) (map[string]any, error) {
+	model := target.Model
+	if model == "" {
+		model = openCodeDefaultModel
+	}
+	provider, providerModel, found := strings.Cut(model, "/")
+	if !found || provider != "openrouter" || providerModel == "" {
+		return nil, fmt.Errorf("OpenCode target %q must use an OpenRouter model ID", model)
 	}
 	config := map[string]any{
 		"$schema": "https://opencode.ai/config.json",
 		"provider": map[string]any{
-			"amdbeast": map[string]any{
-				"name": "AMD Beast",
+			"openrouter": map[string]any{
+				"name": "OpenRouter",
 				"npm":  "@ai-sdk/openai-compatible",
 				"options": map[string]any{
-					"baseURL": baseURL,
+					"baseURL": openRouterBaseURL,
+					"apiKey":  "{env:" + openRouterAPIKeyEnv + "}",
 				},
 				"models": map[string]any{
-					"qwen36-coder": map[string]any{"name": "QWen 3.6 Coder"},
+					providerModel: map[string]any{"name": providerModel},
 				},
 			},
 		},
@@ -1168,14 +1176,41 @@ func (r *Runner) openCodeMCPArguments() ([]string, error) {
 }
 
 func environmentMap(env []string) map[string]string {
-	values := make(map[string]string, len(env))
+	values := make(map[string]string, 8)
+	allowed := map[string]struct{}{
+		"GOENV": {}, "GOCACHE": {}, "GOMODCACHE": {}, "GOTMPDIR": {},
+		"GOBIN": {}, "GOPATH": {}, "GOFLAGS": {}, "GOWORK": {},
+	}
 	for _, entry := range env {
 		key, value, found := strings.Cut(entry, "=")
 		if found {
+			if _, ok := allowed[key]; !ok {
+				continue
+			}
 			values[key] = value
 		}
 	}
 	return values
+}
+
+func environmentLookup(env []string, key string) string {
+	for _, entry := range env {
+		entryKey, value, found := strings.Cut(entry, "=")
+		if found && entryKey == key {
+			return value
+		}
+	}
+	return ""
+}
+
+func sanitizeOpenRouterDiagnostic(diagnostic string, env []string) string {
+	for _, entry := range env {
+		key, value, found := strings.Cut(entry, "=")
+		if found && key == openRouterAPIKeyEnv && value != "" {
+			diagnostic = strings.ReplaceAll(diagnostic, value, "[REDACTED]")
+		}
+	}
+	return diagnostic
 }
 
 func replaceEnvironment(env []string, replacements map[string]string) []string {

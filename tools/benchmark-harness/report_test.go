@@ -291,6 +291,27 @@ func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	}
 }
 
+func TestBuildComparisonsPreservesIndependentRepeats(t *testing.T) {
+	target := Target{Harness: string(HarnessOpenCode), Model: "openrouter/cohere/north-mini-code:free"}
+	runs := []*RunResult{
+		{TaskID: "task-01-rename-local", Variant: "small", Target: target, Repeat: 1, Arm: ArmBaseline},
+		{TaskID: "task-01-rename-local", Variant: "small", Target: target, Repeat: 1, Arm: ArmSemedit},
+		{TaskID: "task-01-rename-local", Variant: "small", Target: target, Repeat: 2, Arm: ArmBaseline},
+		{TaskID: "task-01-rename-local", Variant: "small", Target: target, Repeat: 2, Arm: ArmSemedit},
+	}
+	comparisons := BuildComparisons(runs)
+	if got, want := len(comparisons), 2; got != want {
+		t.Fatalf("comparison count = %d, want %d", got, want)
+	}
+	if comparisons[0].Repeat != 1 || comparisons[1].Repeat != 2 {
+		t.Fatalf("repeat identities = %d, %d; want 1, 2", comparisons[0].Repeat, comparisons[1].Repeat)
+	}
+	markdown := (&BenchmarkReport{Comparisons: comparisons}).RenderMarkdown()
+	if !strings.Contains(markdown, "repeat 1") || !strings.Contains(markdown, "repeat 2") {
+		t.Fatalf("markdown does not identify repeats: %s", markdown)
+	}
+}
+
 func TestRenderSemanticToolCalloutReportsUnavailableToolsAsError(t *testing.T) {
 	t.Parallel()
 
