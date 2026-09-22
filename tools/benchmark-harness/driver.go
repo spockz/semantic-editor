@@ -41,7 +41,9 @@ const (
 )
 
 const (
-	openCodeDefaultModel   = "openrouter/free"
+	openCodeDefaultModel   = "amdbeast/qwen36-coder"
+	openCodeQwenBaseURL    = "http://192.168.1.122:1234/v1"
+	openCodeQwenBaseURLEnv = "SEMEDIT_OPENCODE_QWEN_BASE_URL"
 	openRouterBaseURL      = "https://openrouter.ai/api/v1"
 	openRouterAPIKeyEnv    = "OPENROUTER_API_KEY" //nolint:gosec // environment variable name, never a credential value
 	maxOpenCodeStderrBytes = 64 * 1024
@@ -984,16 +986,16 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	if err != nil {
 		return "", fmt.Errorf("prepare OpenCode environment: %w", err)
 	}
-	if strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
+	model := target.Model
+	if model == "" {
+		model = openCodeDefaultModel
+	}
+	if strings.HasPrefix(model, "openrouter/") && strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
 		return "", fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
 	}
 	args := []string{"run", "--format", "json", "--auto", "--dir", workDir}
 	if resumeID != "" {
 		args = append(args, "--session", resumeID)
-	}
-	model := target.Model
-	if model == "" {
-		model = openCodeDefaultModel
 	}
 	args = append(args, "--model", model)
 	if target.Effort != "" {
@@ -1118,23 +1120,45 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 		model = openCodeDefaultModel
 	}
 	provider, providerModel, found := strings.Cut(model, "/")
-	if !found || provider != "openrouter" || providerModel == "" {
-		return nil, fmt.Errorf("OpenCode target %q must use an OpenRouter model ID", model)
+	if !found || providerModel == "" {
+		return nil, fmt.Errorf("OpenCode target %q must use provider/model form", model)
+	}
+	var providerConfig map[string]any
+	switch provider {
+	case "openrouter":
+		providerConfig = map[string]any{
+			"name": "OpenRouter",
+			"npm":  "@ai-sdk/openai-compatible",
+			"options": map[string]any{
+				"baseURL": openRouterBaseURL,
+				"apiKey":  "{env:" + openRouterAPIKeyEnv + "}",
+			},
+			"models": map[string]any{
+				providerModel: map[string]any{"name": providerModel},
+			},
+		}
+	case "amdbeast":
+		baseURL := openCodeQwenBaseURL
+		if override := strings.TrimSpace(os.Getenv(openCodeQwenBaseURLEnv)); override != "" {
+			baseURL = override
+		}
+		providerConfig = map[string]any{
+			"name": "AMD Beast",
+			"npm":  "@ai-sdk/openai-compatible",
+			"options": map[string]any{
+				"baseURL": baseURL,
+			},
+			"models": map[string]any{
+				providerModel: map[string]any{"name": "QWen 3.6 Coder"},
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unsupported OpenCode provider %q", provider)
 	}
 	config := map[string]any{
 		"$schema": "https://opencode.ai/config.json",
 		"provider": map[string]any{
-			"openrouter": map[string]any{
-				"name": "OpenRouter",
-				"npm":  "@ai-sdk/openai-compatible",
-				"options": map[string]any{
-					"baseURL": openRouterBaseURL,
-					"apiKey":  "{env:" + openRouterAPIKeyEnv + "}",
-				},
-				"models": map[string]any{
-					providerModel: map[string]any{"name": providerModel},
-				},
-			},
+			provider: providerConfig,
 		},
 	}
 	if arm == ArmBaseline {

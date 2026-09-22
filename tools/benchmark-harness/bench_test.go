@@ -256,6 +256,30 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if strings.Contains(string(baseline), `"mcp"`) {
 		t.Errorf("baseline config unexpectedly enables MCP: %s", baseline)
 	}
+
+	legacyPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/qwen36-coder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G304 -- the path is returned by the fixture-scoped harness setup.
+	legacy, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacyConfig struct {
+		Provider map[string]struct {
+			Options map[string]string `json:"options"`
+		} `json:"provider"`
+	}
+	if err := json.Unmarshal(legacy, &legacyConfig); err != nil {
+		t.Fatal(err)
+	}
+	if got := legacyConfig.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
+		t.Errorf("legacy AMD Beast base URL = %q, want %q", got, openCodeQwenBaseURL)
+	}
+	if _, found := legacyConfig.Provider["openrouter"]; found {
+		t.Error("legacy AMD Beast config unexpectedly includes OpenRouter")
+	}
 }
 
 func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
