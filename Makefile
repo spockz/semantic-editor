@@ -204,6 +204,7 @@ verify-docs: docgen ## Generate the site and assert its published files exist
 	@test -f "$(CURDIR)/dist/docs/docs/getting-started/index.html"
 	@test -f "$(CURDIR)/dist/docs/docs/reference/index.html"
 	@test -f "$(CURDIR)/dist/docs/docs/benchmarks/index.html"
+	@test -f "$(CURDIR)/dist/docs/docs/benchmarks/aggregates/index.html"
 	@test -f "$(CURDIR)/dist/docs/.nojekyll"
 
 ## ---------------------------------------------------------

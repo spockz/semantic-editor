@@ -143,6 +143,8 @@ func main() {
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
 		filepath.Join(outputDir, "content", "docs", "reference"),
+		filepath.Join(outputDir, "content", "docs", "benchmarks.md"),
+		filepath.Join(outputDir, "content", "docs", "benchmarks"),
 		filepath.Join(outputDir, "data", "landing.yaml"),
 	} {
 		if err := os.RemoveAll(stalePath); err != nil {
@@ -177,15 +179,55 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error writing getting started output: %v\n", err)
 		os.Exit(1)
 	}
-	benchmarksContent, err := renderBenchmarksDoc(rootDir)
+	benchmarkDocumentation, err := renderBenchmarkDocumentation(rootDir)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error rendering benchmarks output: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error rendering benchmark documentation: %v\n", err)
 		os.Exit(1)
 	}
-	benchmarksFile := filepath.Join(outputDir, "content", "docs", "benchmarks.md")
-	if err := writeGeneratedFile(benchmarksFile, []byte(benchmarksContent)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing benchmarks output: %v\n", err)
+	benchmarksDir := filepath.Join(outputDir, "content", "docs", "benchmarks")
+	if err := os.MkdirAll(benchmarksDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating benchmarks documentation directory: %v\n", err)
 		os.Exit(1)
+	}
+	if err := writeGeneratedFile(filepath.Join(benchmarksDir, "_index.md"), []byte(benchmarkDocumentation.Index)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmarks index: %v\n", err)
+		os.Exit(1)
+	}
+	aggregatesDir := filepath.Join(benchmarksDir, "aggregates")
+	if err := os.MkdirAll(aggregatesDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating benchmark aggregate directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeGeneratedFile(filepath.Join(aggregatesDir, "index.md"), []byte(benchmarkDocumentation.Aggregates)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmark aggregates: %v\n", err)
+		os.Exit(1)
+	}
+	runsDir := filepath.Join(benchmarksDir, "runs")
+	if err := os.MkdirAll(runsDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating benchmark runs directory: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeGeneratedFile(filepath.Join(runsDir, "_index.md"), []byte(`---
+title: "Benchmark runs"
+draft: false
+weight: 22
+---
+
+Individual benchmark observations are linked from the [empirical benchmark overview](/docs/benchmarks/).
+`)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmark runs index: %v\n", err)
+		os.Exit(1)
+	}
+	for _, run := range benchmarkDocumentation.Runs {
+		runDir := filepath.Join(runsDir, run.ID)
+		if err := os.MkdirAll(runDir, 0o750); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating benchmark run directory: %v\n", err)
+			os.Exit(1)
+		}
+		if err := writeGeneratedFile(filepath.Join(runDir, "index.md"), []byte(renderBenchmarkRunDoc(run))); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing benchmark run %s: %v\n", run.ID, err)
+			os.Exit(1)
+		}
 	}
 	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing benchmark shortcode: %v\n", err)

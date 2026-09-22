@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
@@ -78,6 +79,186 @@ func TestLoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
 	}
 	if comparison.LargeBaseline == nil || comparison.LargeBaseline.Success {
 		t.Fatal("expected evaluated oracle failure to remain publishable")
+	}
+}
+
+func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	writeBenchmarkDocumentationReport(t, rootDir, "run-a", &BenchComparisonSummary{
+		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
+		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+800*time.Millisecond, 1000, 0),
+	})
+	writeBenchmarkDocumentationReport(t, rootDir, "run-b", &BenchComparisonSummary{
+		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
+		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+500*time.Millisecond, 300, 0),
+	})
+
+	documentation, err := renderBenchmarkDocumentation(rootDir)
+	if err != nil {
+		t.Fatalf("render benchmark documentation: %v", err)
+	}
+	if len(documentation.Runs) != 2 {
+		t.Fatalf("got %d run pages, want 2", len(documentation.Runs))
+	}
+	for _, want := range []string{
+		"## Best measured improvements",
+		"| Best speed increase | 5.0% faster |",
+		"| Best token reduction | 70.0% fewer cache-adjusted token units |",
+		"| MCP first-time-right edits | MCP 2/2 (100.0%) vs Vanilla 2/2 (100.0%), +0.0 pp |",
+		"## Required corrective turns",
+		"| 0 | 2 | 2 |",
+		"best-case evidence, not an average",
+		"MCP (Small) | Δ (Small)",
+		"9.50s",
+		"/docs/benchmarks/aggregates/",
+		"/docs/benchmarks/runs/run-a/",
+		"/docs/benchmarks/runs/run-b/",
+	} {
+		if !strings.Contains(documentation.Index, want) {
+			t.Errorf("best-case index missing %q", want)
+		}
+	}
+	if strings.Index(documentation.Index, "## Best measured improvements") > strings.Index(documentation.Index, "## Benchmark Methodology & Transparency") {
+		t.Fatal("headline table must appear before the benchmark methodology")
+	}
+	if strings.Contains(documentation.Index, "9.80s") {
+		t.Fatal("best-case index must use the lower-cost run when speeds are comparable")
+	}
+	if !strings.Contains(documentation.Aggregates, "| Wall-clock latency | 2 | 9.50s | 9.80s | 9.65s |") {
+		t.Errorf("aggregate page does not contain run range: %s", documentation.Aggregates)
+	}
+	if !strings.Contains(documentation.Aggregates, "| Cost | 2 | 0.0015 | 0.0050 | 0.0033 |") {
+		t.Errorf("aggregate page does not contain model cost range: %s", documentation.Aggregates)
+	}
+	if got := renderBenchmarkRunDoc(documentation.Runs[0]); !strings.Contains(got, "9.80s") {
+		t.Errorf("run-a page must retain its unaggregated observation: %s", got)
+	}
+}
+
+func TestBestBenchmarkPairPrefersMCPSuccessOverSpeed(t *testing.T) {
+	t.Parallel()
+
+	passingMCP := bestBenchmarkPair{
+		runID: "slow-success", baseline: benchmarkDocumentationRunResult(false, time.Second, 100, 0), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100, 0),
+	}
+	fastFailure := bestBenchmarkPair{
+		runID: "fast-failure", baseline: benchmarkDocumentationRunResult(true, time.Second, 100, 0), semedit: benchmarkDocumentationRunResult(false, time.Millisecond, 100, 0),
+	}
+	if !passingMCP.preferredTo(fastFailure) {
+		t.Fatal("MCP oracle success must outrank a faster MCP oracle failure")
+	}
+}
+
+func TestBestBenchmarkPreambleOffsetsFirstTimeRightAgainstVanilla(t *testing.T) {
+	t.Parallel()
+
+	firstTurnBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
+	firstTurnMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
+	laterBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
+	laterBaseline.Turns = 2
+	laterBaseline.InteractionSteps = []BenchInteractionStep{{Step: 1, Oracle: &BenchOracleResult{Passed: false}}}
+	laterMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
+	laterMCP.InteractionSteps = []BenchInteractionStep{{Step: 1, Oracle: &BenchOracleResult{Passed: true}}}
+	pairs := []bestBenchmarkPair{
+		{runID: "run-a", comparison: &BenchComparisonSummary{TaskID: "task-a"}, context: benchmarkPairSmall, baseline: firstTurnBaseline, semedit: firstTurnMCP},
+		{runID: "run-b", comparison: &BenchComparisonSummary{TaskID: "task-b"}, context: benchmarkPairSmall, baseline: laterBaseline, semedit: laterMCP},
+	}
+	runs := []benchmarkDocumentationRun{{ID: "run-a", Comparisons: []*BenchComparisonSummary{
+		{
+			SmallBaseline:         firstTurnBaseline,
+			SmallSemedit:          firstTurnMCP,
+			SmallVerifiedBaseline: benchmarkDocumentationRunResult(false, time.Second, 100, 0),
+			SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100, 0),
+		},
+		{SmallBaseline: laterBaseline, SmallSemedit: laterMCP},
+	}}}
+
+	preamble := renderBestBenchmarkPreamble(pairs, runs)
+	if !strings.Contains(preamble, "MCP 2/2 (100.0%) vs Vanilla 1/2 (50.0%), +50.0 pp") {
+		t.Errorf("first-time-right headline = %q", preamble)
+	}
+}
+
+func TestCorrectiveTurnHistogramSeparatesArmsAndExcludesVerifiedContexts(t *testing.T) {
+	t.Parallel()
+
+	baseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
+	baseline.InteractionSteps = []BenchInteractionStep{{Step: 1}, {Step: 2}, {Step: 3}}
+	semedit := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
+	semedit.InteractionSteps = []BenchInteractionStep{{Step: 1}}
+	runs := []benchmarkDocumentationRun{{Comparisons: []*BenchComparisonSummary{{
+		SmallBaseline:         baseline,
+		SmallSemedit:          semedit,
+		SmallVerifiedBaseline: benchmarkDocumentationRunResult(true, time.Second, 100, 0),
+		SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100, 0),
+	}}}}
+
+	histogram := renderCorrectiveTurnHistogram(runs)
+	for _, want := range []string{
+		"| 0 | 0 | 1 |",
+		"| 2 | 1 | 0 |",
+		"| 5 | 0 | 0 |",
+	} {
+		if !strings.Contains(histogram, want) {
+			t.Errorf("histogram missing %q: %s", want, histogram)
+		}
+	}
+}
+
+func TestBestBenchmarkPairPrefersOneShotWhenCostsAreComparable(t *testing.T) {
+	t.Parallel()
+
+	oneShot := bestBenchmarkPair{
+		runID: "one-shot", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1020, 0),
+	}
+	oneShot.semedit.Turns = 1
+	multipleTurns := bestBenchmarkPair{
+		runID: "multiple-turns", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+	}
+	multipleTurns.semedit.Turns = 2
+	if !oneShot.preferredTo(multipleTurns) {
+		t.Fatal("one-shot MCP completion must win when model costs are within five percent")
+	}
+}
+
+func TestBestBenchmarkPairAllowsTenfoldCostGainToOverrideSpeed(t *testing.T) {
+	t.Parallel()
+
+	slowerCheaper := bestBenchmarkPair{
+		runID: "slower-cheaper", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100, 0),
+	}
+	fasterExpensive := bestBenchmarkPair{
+		runID: "faster-expensive", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+	}
+	if !slowerCheaper.preferredTo(fasterExpensive) {
+		t.Fatal("a tenfold model-cost reduction must override a non-comparable speed regression")
+	}
+}
+
+func benchmarkDocumentationRunResult(passed bool, wallClock time.Duration, uncached, cached int) *BenchRunResult {
+	return &BenchRunResult{
+		Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"}, Arm: "baseline-diff", Success: passed,
+		Turns: 1, WallClock: wallClock, PromptTokens: uncached + cached, UncachedPromptTokens: uncached, CachedPromptTokens: cached,
+		Oracle: &BenchOracleResult{Passed: passed, Level1Policy: passed, Level2AST: passed, Level3Build: passed, Level4Test: passed},
+	}
+}
+
+func writeBenchmarkDocumentationReport(t *testing.T, rootDir, runID string, comparison *BenchComparisonSummary) {
+	t.Helper()
+	directory := filepath.Join(rootDir, "data", "benchmarks", "results", runID)
+	if err := os.MkdirAll(directory, 0o750); err != nil {
+		t.Fatalf("create run result directory: %v", err)
+	}
+	data, err := json.Marshal(BenchReport{Comparisons: []*BenchComparisonSummary{comparison}})
+	if err != nil {
+		t.Fatalf("marshal run report: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "report.json"), data, 0o600); err != nil {
+		t.Fatalf("write run report: %v", err)
 	}
 }
 
@@ -303,6 +484,79 @@ func TestDocCachedToUncachedTokenRatioFavorsHigherCachedShare(t *testing.T) {
 	for _, want := range []string{"**Cached vs Uncached Token Ratio**", "4.38:1", "5.86:1", "benchmark-delta-positive"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("ratio row = %q, want %q", row, want)
+		}
+	}
+}
+
+func TestBenchmarkCostUsesDeclaredModelRatesWithoutUnit(t *testing.T) {
+	t.Parallel()
+
+	run := &BenchRunResult{
+		Target:               BenchTarget{Model: "gpt-5.6-luna"},
+		UncachedPromptTokens: 100,
+		CachedPromptTokens:   20,
+		OutputTokens:         3,
+		ReasoningTokens:      2,
+		MCPVerified:          true,
+	}
+	cost, available := benchmarkCost(run)
+	if !available {
+		t.Fatal("Luna cost must be available")
+	}
+	if want := 0.00066; cost != want {
+		t.Errorf("Luna cost = %v, want %v", cost, want)
+	}
+
+	if _, available := benchmarkCost(&BenchRunResult{Target: BenchTarget{Model: "unpriced-model"}}); available {
+		t.Fatal("unknown model cost must remain unavailable")
+	}
+
+	row := formatDocCostRow(run, run, nil, nil)
+	if !strings.Contains(row, "| **Cost** | 0.0007 | 0.0007 | 0% |") {
+		t.Errorf("cost row = %q, want unitless cost values", row)
+	}
+}
+
+func TestBestBenchmarkPairUsesModelCostInsteadOfCacheAdjustedTokenUnits(t *testing.T) {
+	t.Parallel()
+
+	lowerModelCost := bestBenchmarkPair{
+		runID:    "lower-model-cost",
+		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+	}
+	lowerCacheAdjustedUnits := bestBenchmarkPair{
+		runID:    "lower-cache-adjusted-units",
+		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 500, 0),
+	}
+	lowerCacheAdjustedUnits.semedit.OutputTokens = 400
+
+	if !lowerModelCost.preferredTo(lowerCacheAdjustedUnits) {
+		t.Fatal("lower model cost must outrank lower cache-adjusted token units when speed is comparable")
+	}
+}
+
+func TestBenchmarkCostRatesMatchDeclaredModelSchedule(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]benchmarkCostRates{
+		"Luna":                  {input: 5, cached: 0.5, output: 30},
+		"Gemini 3.5 Flash-Lite": {input: 7.5, cached: 0.75, output: 62.5},
+		"Gemini 3.6 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
+		"Gemini 3.7 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
+		"Gemini 3.8 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
+		"Terra":                 {input: 50, cached: 5, output: 300},
+		"Sol":                   {input: 100, cached: 10, output: 500},
+	}
+	for model, want := range tests {
+		got, available := benchmarkCostRatesForModel(model)
+		if !available {
+			t.Errorf("rates for %q are unavailable", model)
+			continue
+		}
+		if got != want {
+			t.Errorf("rates for %q = %#v, want %#v", model, got, want)
 		}
 	}
 }
