@@ -92,17 +92,40 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	for _, want := range []string{
 		`baseURL = "/"`,
 		`endLevel = 4`,
-		`google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]`,
-		`sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,
-		`secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,
-		`mono_font = "'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace"`,
+		`path = "github.com/imfing/hextra"`,
+		`name = "Docs"`,
+		`pageRef = "/docs"`,
+		`type = "search"`,
+		`url = "https://github.com/spockz/semantic-editor"`,
+		`type = "theme-toggle"`,
+		`default = "system"`,
+		`displayToggle = true`,
 	} {
 		if !strings.Contains(configText, want) {
 			t.Errorf("Hugo config does not contain %q", want)
 		}
 	}
+	for _, obsolete := range []string{"lotusdocs", "bootstrap", "menu.primary", "prismTheme"} {
+		if strings.Contains(strings.ToLower(configText), strings.ToLower(obsolete)) {
+			t.Errorf("Hugo config contains obsolete Lotus/Bootstrap setting %q", obsolete)
+		}
+	}
 	if strings.Contains(configText, "spockz.github.io/semantic-editor") {
 		t.Fatal("Hugo config must not hardcode the GitHub Pages deployment URL")
+	}
+
+	module, err := os.ReadFile(filepath.Join(outputDir, "go.mod")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo module go.mod: %v", err)
+	}
+	moduleText := string(module)
+	if !strings.Contains(moduleText, "github.com/imfing/hextra v0.12.3") {
+		t.Errorf("Hugo module does not pin Hextra v0.12.3")
+	}
+	for _, obsolete := range []string{"lotusdocs", "bootstrap"} {
+		if strings.Contains(strings.ToLower(moduleText), obsolete) {
+			t.Errorf("Hugo module contains obsolete dependency %q", obsolete)
+		}
 	}
 }
 

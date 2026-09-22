@@ -26,8 +26,7 @@ const (
 	githubRepositoryURL    = "https://github.com/spockz/semantic-editor"
 	githubSourceBaseURL    = githubRepositoryURL + "/blob/main"
 	githubRawSourceBaseURL = "https://raw.githubusercontent.com/spockz/semantic-editor/main"
-	lotusDocsModuleVersion = "v0.3.0"
-	bootstrapModuleVersion = "v5.20300.20800"
+	hextraModuleVersion    = "v0.12.3"
 )
 
 // CodeCapability represents extracted language capability metadata.
@@ -121,6 +120,7 @@ func main() {
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
 		filepath.Join(outputDir, "content", "docs", "reference"),
+		filepath.Join(outputDir, "data", "landing.yaml"),
 	} {
 		if err := os.RemoveAll(stalePath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error removing stale documentation output: %v\n", err)
@@ -611,7 +611,6 @@ func renderMarkdown(caps []CodeCapability, placements []string, examples []Txtar
 	buf.WriteString(`---
 title: "Automated Capability Documentation"
 description: "Deterministic, zero-token refactoring capabilities and executable examples."
-icon: "code"
 draft: false
 toc: true
 weight: 10
@@ -807,7 +806,6 @@ func renderGettingStarted() string {
 	return `---
 title: "Getting Started"
 description: "Install semedit on macOS or Linux and run your first semantic edit."
-icon: "rocket_launch"
 draft: false
 weight: 1
 ---
@@ -880,14 +878,11 @@ languageCode = "en-us"
 title = "semedit"
 contentDir = "content"
 enableEmoji = true
+enableRobotsTXT = true
 
 [module]
   [[module.imports]]
-    path = "github.com/colinwilson/lotusdocs"
-    disable = false
-  [[module.imports]]
-    path = "github.com/gohugoio/hugo-mod-bootstrap-scss/v5"
-    disable = false
+    path = "github.com/imfing/hextra"
 
 [markup]
   [markup.tableOfContents]
@@ -898,57 +893,60 @@ enableEmoji = true
       unsafe = true
 
 [params]
-  google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]
-  sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-  secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-  mono_font = "'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+  description = "Intent-driven code editing for AI agents."
 
-[params.docs]
-  title = "semedit"
-  themeColor = "blue"
-  darkMode = true
-  prism = true
-  prismTheme = "lotusdocs"
-  repoURL = "https://github.com/spockz/semantic-editor"
-  repoBranch = "main"
-  breadcrumbs = true
-  toc = true
-  tocMobile = true
-  scrollSpy = true
-  backToTop = true
-  extLinkNewTab = true
+[params.navbar]
+  displayTitle = true
+  displayLogo = false
 
-[params.social]
-  github = "spockz"
+[params.theme]
+  default = "system"
+  displayToggle = true
+
+[params.search]
+  enable = true
+  type = "flexsearch"
+
+[params.editURL]
+  enable = true
+  base = "https://github.com/spockz/semantic-editor/edit/main"
+
+[params.page]
+  displayPagination = true
 
 [menu]
-  [[menu.primary]]
-    name = "Getting Started"
-    url = "/docs/getting-started/"
-    identifier = "getting-started"
+  [[menu.main]]
+    name = "Docs"
+    pageRef = "/docs"
     weight = 1
-  [[menu.primary]]
-    name = "Documentation"
-    url = "/docs/"
-    identifier = "docs"
-    weight = 10
-  [[menu.primary]]
-    name = "Benchmarks"
-    url = "/docs/benchmarks/"
-    identifier = "benchmarks"
-    weight = 20
+  [[menu.main]]
+    name = "Search"
+    weight = 2
+    [menu.main.params]
+      type = "search"
+  [[menu.main]]
+    name = "GitHub"
+    url = "https://github.com/spockz/semantic-editor"
+    weight = 3
+    [menu.main.params]
+      icon = "github"
+  [[menu.main]]
+    name = "Theme Toggle"
+    weight = 4
+    [menu.main.params]
+      type = "theme-toggle"
+      label = true
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(config)); err != nil {
 		return fmt.Errorf("write hugo.toml: %w", err)
 	}
-	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire (\n\tgithub.com/colinwilson/lotusdocs %s\n\tgithub.com/gohugoio/hugo-mod-bootstrap-scss/v5 %s\n)\n", lotusDocsModuleVersion, bootstrapModuleVersion)
+	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire github.com/imfing/hextra %s\n", hextraModuleVersion)
 	if err := writeGeneratedFile(filepath.Join(outputDir, "go.mod"), []byte(module)); err != nil {
 		return fmt.Errorf("write Hugo module go.mod: %w", err)
 	}
 	landing := `---
 title: "semedit"
 description: "Intent-driven code editing for AI agents."
-icon: "rocket_launch"
 draft: false
 ---
 
@@ -956,7 +954,7 @@ draft: false
 
 LLMs plan intent. Host compilers execute zero-token AST refactorings.
 
-[Get started](docs/getting-started/)
+[Get started](/docs/getting-started/)
 
 [View on GitHub](https://github.com/spockz/semantic-editor)
 
@@ -991,9 +989,9 @@ Use the same semantic operations through the CLI or MCP, including rename, decla
 
 ## Explore the documentation
 
-[Read the capability reference](docs/reference/)
+[Read the capability reference](/docs/reference/)
 
-[View empirical benchmarks](docs/benchmarks/)
+[View empirical benchmarks](/docs/benchmarks/)
 
 The reference is generated from compiler capability declarations and executable txtar regression tests, so examples stay aligned with the implementation.
 `
@@ -1004,60 +1002,13 @@ The reference is generated from compiler capability declarations and executable 
 title: "Documentation"
 description: "semedit installation and compiler-backed capability reference."
 draft: false
-weight: 10
+weight: 1
 ---
+
+Browse the generated installation guide, capability reference, and benchmark results.
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
 		return fmt.Errorf("write Hugo docs section: %w", err)
-	}
-	landingData := `hero:
-  enable: true
-  weight: 10
-  template: hero
-  badge:
-    text: "semedit"
-    color: primary
-    pill: false
-    soft: true
-  title: "Intent-driven code editing for AI agents"
-  subtitle: "LLMs plan intent. Host compilers execute zero-token AST refactorings."
-  ctaButton:
-    icon: rocket_launch
-    btnText: "Get Started"
-    url: "/docs/getting-started/"
-  cta2Button:
-    icon: code
-    btnText: "View on GitHub"
-    url: "https://github.com/spockz/semantic-editor"
-  info: "**Open Source** MIT Licensed."
-
-featureGrid:
-  enable: true
-  weight: 20
-  template: feature grid
-  title: "Why semedit?"
-  subtitle: "semedit separates semantic intent from mechanical syntax transformation, so agents can ask for a change and let local compiler tooling execute it precisely."
-  items:
-    - title: "Deterministic edits"
-      icon: lock
-      description: "Compiler-backed transformations preserve syntactic validity and eliminate fragile line-based patching."
-    - title: "Symbol-based intent"
-      icon: search
-      description: "Ask for Server.Start instead of hunting for byte offsets or line numbers."
-    - title: "Structured feedback"
-      icon: speed
-      description: "Formatting, diagnostics, and compiler evidence return to the agent as structured results."
-    - title: "One contract for agents"
-      icon: settings
-      description: "Use the same semantic operations through the CLI or MCP, including rename and declaration insertion."
-
-imageCompare:
-  enable: false
-  weight: 30
-  template: image compare
-`
-	if err := writeGeneratedFile(filepath.Join(outputDir, "data", "landing.yaml"), []byte(landingData)); err != nil {
-		return fmt.Errorf("write Hugo landing data: %w", err)
 	}
 	return nil
 }
