@@ -84,6 +84,9 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	if err := writeHugoConfig(outputDir); err != nil {
 		t.Fatalf("write Hugo config: %v", err)
 	}
+	if err := writeLandingAssets(outputDir); err != nil {
+		t.Fatalf("write landing assets: %v", err)
+	}
 	config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml")) //nolint:gosec // outputDir is a test-owned temporary directory.
 	if err != nil {
 		t.Fatalf("read Hugo config: %v", err)
@@ -92,17 +95,114 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	for _, want := range []string{
 		`baseURL = "/"`,
 		`endLevel = 4`,
-		`google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]`,
-		`sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,
-		`secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,
-		`mono_font = "'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace"`,
+		`path = "github.com/imfing/hextra"`,
+		`name = "Get started"`,
+		`pageRef = "/docs/getting-started"`,
+		`name = "Reference"`,
+		`pageRef = "/docs/reference"`,
+		`name = "Benchmarks"`,
+		`pageRef = "/docs/benchmarks"`,
+		`type = "search"`,
+		`url = "https://github.com/spockz/semantic-editor"`,
+		`type = "theme-toggle"`,
+		`default = "system"`,
+		`displayToggle = true`,
 	} {
 		if !strings.Contains(configText, want) {
 			t.Errorf("Hugo config does not contain %q", want)
 		}
 	}
+	for _, obsolete := range []string{"lotusdocs", "bootstrap", "menu.primary", "prismTheme"} {
+		if strings.Contains(strings.ToLower(configText), strings.ToLower(obsolete)) {
+			t.Errorf("Hugo config contains obsolete Lotus/Bootstrap setting %q", obsolete)
+		}
+	}
 	if strings.Contains(configText, "spockz.github.io/semantic-editor") {
 		t.Fatal("Hugo config must not hardcode the GitHub Pages deployment URL")
+	}
+
+	module, err := os.ReadFile(filepath.Join(outputDir, "go.mod")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo module go.mod: %v", err)
+	}
+	moduleText := string(module)
+	if !strings.Contains(moduleText, "github.com/imfing/hextra v0.12.3") {
+		t.Errorf("Hugo module does not pin Hextra v0.12.3")
+	}
+	for _, obsolete := range []string{"lotusdocs", "bootstrap"} {
+		if strings.Contains(strings.ToLower(moduleText), obsolete) {
+			t.Errorf("Hugo module contains obsolete dependency %q", obsolete)
+		}
+	}
+
+	landing, err := os.ReadFile(filepath.Join(outputDir, "content", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo landing page: %v", err)
+	}
+	landingText := string(landing)
+	for _, want := range []string{
+		`hextra/hero-badge`,
+		`hextra/hero-button`,
+		`hextra/feature-grid`,
+		`Get started`,
+		`View on GitHub`,
+		`semantic-workflow-banner.png`,
+		`deterministic-edits.png`,
+		`symbol-intent.png`,
+		`structured-feedback.png`,
+		`agent-contract.png`,
+	} {
+		if !strings.Contains(landingText, want) {
+			t.Errorf("Hugo landing page does not contain %q", want)
+		}
+	}
+	for _, name := range landingAssetNames {
+		info, err := os.Stat(filepath.Join(outputDir, "static", "images", "landing", name)) //nolint:gosec // outputDir is a test-owned temporary directory.
+		if err != nil {
+			t.Errorf("stat generated landing asset %q: %v", name, err)
+			continue
+		}
+		if info.Size() == 0 {
+			t.Errorf("generated landing asset %q is empty", name)
+		}
+	}
+	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo documentation section: %v", err)
+	}
+	for _, want := range []string{
+		`hextra/feature-grid`,
+		`title="Get started"`,
+		`link="/docs/getting-started/"`,
+		`title="Reference"`,
+		`link="/docs/reference/"`,
+		`title="Benchmarks"`,
+		`link="/docs/benchmarks/"`,
+	} {
+		if !strings.Contains(string(docsSection), want) {
+			t.Errorf("Hugo documentation section does not contain %q", want)
+		}
+	}
+}
+
+func TestBenchmarkCodeShortcodeUsesHextraPartialsAndSafeDecoding(t *testing.T) {
+	t.Parallel()
+
+	for _, want := range []string{
+		`{{- $encoded := .Get "content" -}}`,
+		`{{- $content := $encoded | base64Decode -}}`,
+		`partial "components/codeblock"`,
+		`partialCached "components/codeblock-copy-button"`,
+		`site.Params.highlight.copy.enable`,
+	} {
+		if !strings.Contains(benchmarkCodeShortcode, want) {
+			t.Errorf("benchmark shortcode source missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"benchmark-shell-command", "benchmark-tool-arguments", "hextra-code-copy-btn"} {
+		if strings.Contains(benchmarkCodeShortcode, forbidden) {
+			t.Errorf("benchmark shortcode must not duplicate theme implementation %q", forbidden)
+		}
 	}
 }
 

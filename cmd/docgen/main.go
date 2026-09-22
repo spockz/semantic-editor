@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -26,9 +27,21 @@ const (
 	githubRepositoryURL    = "https://github.com/spockz/semantic-editor"
 	githubSourceBaseURL    = githubRepositoryURL + "/blob/main"
 	githubRawSourceBaseURL = "https://raw.githubusercontent.com/spockz/semantic-editor/main"
-	lotusDocsModuleVersion = "v0.3.0"
-	bootstrapModuleVersion = "v5.20300.20800"
+	hextraModuleVersion    = "v0.12.3"
 )
+
+var landingAssetNames = []string{
+	"semantic-workflow-banner.png",
+	"deterministic-edits.png",
+	"symbol-intent.png",
+	"structured-feedback.png",
+	"agent-contract.png",
+}
+
+// landingAssets keeps the marketing imagery with the generator so a documentation build needs no runtime asset fetches.
+//
+//go:embed assets/landing/*.png
+var landingAssets embed.FS
 
 // CodeCapability represents extracted language capability metadata.
 type CodeCapability struct {
@@ -117,10 +130,20 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error creating Hugo data directory: %v\n", err)
 		os.Exit(1)
 	}
+	shortcodesDir := filepath.Join(outputDir, "layouts", "shortcodes")
+	if err := os.RemoveAll(shortcodesDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error removing stale generated shortcodes: %v\n", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(shortcodesDir, 0o750); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating Hugo shortcode directory: %v\n", err)
+		os.Exit(1)
+	}
 	for _, stalePath := range []string{
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
 		filepath.Join(outputDir, "content", "docs", "reference"),
+		filepath.Join(outputDir, "data", "landing.yaml"),
 	} {
 		if err := os.RemoveAll(stalePath); err != nil {
 			fmt.Fprintf(os.Stderr, "Error removing stale documentation output: %v\n", err)
@@ -162,6 +185,14 @@ func main() {
 	benchmarksFile := filepath.Join(outputDir, "content", "docs", "benchmarks.md")
 	if err := writeGeneratedFile(benchmarksFile, []byte(benchmarksContent)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing benchmarks output: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing benchmark shortcode: %v\n", err)
+		os.Exit(1)
+	}
+	if err := writeLandingAssets(outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing landing assets: %v\n", err)
 		os.Exit(1)
 	}
 	if err := writeHugoConfig(outputDir); err != nil {
@@ -611,7 +642,6 @@ func renderMarkdown(caps []CodeCapability, placements []string, examples []Txtar
 	buf.WriteString(`---
 title: "Automated Capability Documentation"
 description: "Deterministic, zero-token refactoring capabilities and executable examples."
-icon: "code"
 draft: false
 toc: true
 weight: 10
@@ -807,7 +837,6 @@ func renderGettingStarted() string {
 	return `---
 title: "Getting Started"
 description: "Install semedit on macOS or Linux and run your first semantic edit."
-icon: "rocket_launch"
 draft: false
 weight: 1
 ---
@@ -880,14 +909,11 @@ languageCode = "en-us"
 title = "semedit"
 contentDir = "content"
 enableEmoji = true
+enableRobotsTXT = true
 
 [module]
   [[module.imports]]
-    path = "github.com/colinwilson/lotusdocs"
-    disable = false
-  [[module.imports]]
-    path = "github.com/gohugoio/hugo-mod-bootstrap-scss/v5"
-    disable = false
+    path = "github.com/imfing/hextra"
 
 [markup]
   [markup.tableOfContents]
@@ -898,104 +924,128 @@ enableEmoji = true
       unsafe = true
 
 [params]
-  google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]
-  sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-  secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-  mono_font = "'Fira Code', SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+  description = "Intent-driven code editing for AI agents."
 
-[params.docs]
-  title = "semedit"
-  themeColor = "blue"
-  darkMode = true
-  prism = true
-  prismTheme = "lotusdocs"
-  repoURL = "https://github.com/spockz/semantic-editor"
-  repoBranch = "main"
-  breadcrumbs = true
-  toc = true
-  tocMobile = true
-  scrollSpy = true
-  backToTop = true
-  extLinkNewTab = true
+[params.navbar]
+  displayTitle = true
+  displayLogo = false
 
-[params.social]
-  github = "spockz"
+[params.theme]
+  default = "system"
+  displayToggle = true
+
+[params.search]
+  enable = true
+  type = "flexsearch"
+
+[params.editURL]
+  enable = true
+  base = "https://github.com/spockz/semantic-editor/edit/main"
+
+[params.page]
+  displayPagination = true
 
 [menu]
-  [[menu.primary]]
-    name = "Getting Started"
-    url = "/docs/getting-started/"
-    identifier = "getting-started"
+  [[menu.main]]
+    name = "Get started"
+    pageRef = "/docs/getting-started"
     weight = 1
-  [[menu.primary]]
-    name = "Documentation"
-    url = "/docs/"
-    identifier = "docs"
-    weight = 10
-  [[menu.primary]]
+  [[menu.main]]
+    name = "Reference"
+    pageRef = "/docs/reference"
+    weight = 2
+  [[menu.main]]
     name = "Benchmarks"
-    url = "/docs/benchmarks/"
-    identifier = "benchmarks"
-    weight = 20
+    pageRef = "/docs/benchmarks"
+    weight = 3
+  [[menu.main]]
+    name = "Search"
+    weight = 4
+    [menu.main.params]
+      type = "search"
+  [[menu.main]]
+    name = "GitHub"
+    url = "https://github.com/spockz/semantic-editor"
+    weight = 5
+    [menu.main.params]
+      icon = "github"
+  [[menu.main]]
+    name = "Theme Toggle"
+    weight = 6
+    [menu.main.params]
+      type = "theme-toggle"
+      label = true
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(config)); err != nil {
 		return fmt.Errorf("write hugo.toml: %w", err)
 	}
-	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire (\n\tgithub.com/colinwilson/lotusdocs %s\n\tgithub.com/gohugoio/hugo-mod-bootstrap-scss/v5 %s\n)\n", lotusDocsModuleVersion, bootstrapModuleVersion)
+	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire github.com/imfing/hextra %s\n", hextraModuleVersion)
 	if err := writeGeneratedFile(filepath.Join(outputDir, "go.mod"), []byte(module)); err != nil {
 		return fmt.Errorf("write Hugo module go.mod: %w", err)
 	}
 	landing := `---
 title: "semedit"
 description: "Intent-driven code editing for AI agents."
-icon: "rocket_launch"
 draft: false
 ---
 
-# Intent-driven code editing for AI agents
+<div class="hx:mt-16 hx:mb-16 hx:text-center">
 
-LLMs plan intent. Host compilers execute zero-token AST refactorings.
+{{< hextra/hero-badge link="/docs/" >}}
+Compiler-backed semantic editing <span aria-hidden="true">→</span>
+{{< /hextra/hero-badge >}}
 
-[Get started](docs/getting-started/)
+# Intent-driven code editing<br/>for **AI agents**
 
-[View on GitHub](https://github.com/spockz/semantic-editor)
+<p class="hx:mt-6 hx:text-xl hx:text-gray-600 hx:dark:text-gray-400">
+LLMs plan the change. Compilers and language servers apply it precisely.
+</p>
 
-Open source and MIT licensed.
+<figure class="hx:mt-10 hx:mb-10 hx:overflow-hidden hx:rounded-2xl hx:border hx:border-gray-200 hx:shadow-xl hx:dark:border-neutral-800">
+  <img src="/images/landing/semantic-workflow-banner.png" alt="An abstract code editor flowing into a precise compiler syntax tree" style="display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover;" />
+</figure>
 
-## Why semedit?
+<div class="hx:mt-8 hx:flex hx:flex-wrap hx:justify-center hx:gap-3">
+{{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
+{{< hextra/hero-button text="View on GitHub" link="https://github.com/spockz/semantic-editor" style="background-color: transparent; color: inherit; border: 1px solid currentColor;" >}}
+</div>
 
-semedit separates semantic intent, decided by the LLM, from mechanical syntax transformation, executed by local host CPUs, compilers, language servers, and AST tools.
+<p class="hx:mt-6 hx:text-sm hx:text-gray-500 hx:dark:text-gray-400">Open source and MIT licensed.</p>
+</div>
 
-### Deterministic edits
+## Make intent the interface
 
-Compiler-backed transformations preserve syntactic validity across state transitions and eliminate fragile line-based patching.
+semedit separates semantic intent from syntax transformation, so agents can ask for the change while local tooling handles the mechanical work.
 
-### Symbol-based intent
+{{< hextra/feature-grid cols="2" >}}
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/deterministic-edits.png" alt="A compiler shield protecting a structured code module" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Deterministic edits</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use compiler-backed transformations that preserve syntax and eliminate fragile line-based patching.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/getting-started/">
+  <img src="/images/landing/symbol-intent.png" alt="A target resolved within a connected graph of symbols" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Symbol-based intent</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Ask for <strong>Server.Start</strong> instead of hunting for a byte offset or line number.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/structured-feedback.png" alt="Diagnostics resolving into a clear evidence graph" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Structured feedback</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Receive formatting, diagnostics, and compiler evidence as structured results.</span></span>
+</a>
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
+  <img src="/images/landing/agent-contract.png" alt="Connected modules sharing one central contract" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+  <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">One contract for agents</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use the same semantic operations through the CLI or MCP.</span></span>
+</a>
+{{< /hextra/feature-grid >}}
 
-Ask for Server.Start instead of hunting for a byte offset or line number. The symbol resolver finds the exact declaration before the host engine edits it.
+## A tighter editing loop
 
-### Structured feedback
-
-The execution pipeline formats changes, checks diagnostics, and returns structured results so an agent can continue from compiler evidence.
-
-### One contract for agents
-
-Use the same semantic operations through the CLI or MCP, including rename, declaration insertion, function insertion, type insertion, and import organization.
-
-## How it works
-
-1. The LLM plans a high-level intent.
-2. semedit resolves symbols and dispatches to the compiler or language server.
+1. An LLM plans a high-level intent.
+2. semedit resolves the target symbol and selects the compiler or language server.
 3. The host applies and formats the change deterministically.
-4. Diagnostics return to the agent without re-emitting a full file diff.
+4. Diagnostics return as evidence for the next decision.
 
 ## Explore the documentation
 
-[Read the capability reference](docs/reference/)
-
-[View empirical benchmarks](docs/benchmarks/)
-
-The reference is generated from compiler capability declarations and executable txtar regression tests, so examples stay aligned with the implementation.
+[Read the capability reference](/docs/reference/) to see the available operations and executable examples, or [view empirical benchmarks](/docs/benchmarks/) for measured results.
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(landing)); err != nil {
 		return fmt.Errorf("write Hugo landing page: %w", err)
@@ -1004,60 +1054,39 @@ The reference is generated from compiler capability declarations and executable 
 title: "Documentation"
 description: "semedit installation and compiler-backed capability reference."
 draft: false
-weight: 10
+weight: 1
 ---
+
+Start with the installation guide, then use the reference when you need a specific semantic operation. The benchmark report documents the measured results behind the workflow.
+
+{{< hextra/feature-grid cols="3" >}}
+{{< hextra/feature-card title="Get started" icon="terminal" link="/docs/getting-started/" subtitle="Install semedit and run your first compiler-backed edit." >}}
+{{< hextra/feature-card title="Reference" icon="shield-check" link="/docs/reference/" subtitle="Browse the generated capability and CLI reference." >}}
+{{< hextra/feature-card title="Benchmarks" icon="chart-bar" link="/docs/benchmarks/" subtitle="Review empirical latency, token, and correctness results." >}}
+{{< /hextra/feature-grid >}}
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
 		return fmt.Errorf("write Hugo docs section: %w", err)
 	}
-	landingData := `hero:
-  enable: true
-  weight: 10
-  template: hero
-  badge:
-    text: "semedit"
-    color: primary
-    pill: false
-    soft: true
-  title: "Intent-driven code editing for AI agents"
-  subtitle: "LLMs plan intent. Host compilers execute zero-token AST refactorings."
-  ctaButton:
-    icon: rocket_launch
-    btnText: "Get Started"
-    url: "/docs/getting-started/"
-  cta2Button:
-    icon: code
-    btnText: "View on GitHub"
-    url: "https://github.com/spockz/semantic-editor"
-  info: "**Open Source** MIT Licensed."
+	return nil
+}
 
-featureGrid:
-  enable: true
-  weight: 20
-  template: feature grid
-  title: "Why semedit?"
-  subtitle: "semedit separates semantic intent from mechanical syntax transformation, so agents can ask for a change and let local compiler tooling execute it precisely."
-  items:
-    - title: "Deterministic edits"
-      icon: lock
-      description: "Compiler-backed transformations preserve syntactic validity and eliminate fragile line-based patching."
-    - title: "Symbol-based intent"
-      icon: search
-      description: "Ask for Server.Start instead of hunting for byte offsets or line numbers."
-    - title: "Structured feedback"
-      icon: speed
-      description: "Formatting, diagnostics, and compiler evidence return to the agent as structured results."
-    - title: "One contract for agents"
-      icon: settings
-      description: "Use the same semantic operations through the CLI or MCP, including rename and declaration insertion."
-
-imageCompare:
-  enable: false
-  weight: 30
-  template: image compare
-`
-	if err := writeGeneratedFile(filepath.Join(outputDir, "data", "landing.yaml"), []byte(landingData)); err != nil {
-		return fmt.Errorf("write Hugo landing data: %w", err)
+func writeLandingAssets(outputDir string) error {
+	assetsDir := filepath.Join(outputDir, "static", "images", "landing")
+	if err := os.RemoveAll(assetsDir); err != nil {
+		return fmt.Errorf("remove stale landing assets: %w", err)
+	}
+	if err := os.MkdirAll(assetsDir, 0o750); err != nil {
+		return fmt.Errorf("create landing assets directory: %w", err)
+	}
+	for _, name := range landingAssetNames {
+		asset, err := landingAssets.ReadFile(filepath.ToSlash(filepath.Join("assets", "landing", name)))
+		if err != nil {
+			return fmt.Errorf("read embedded landing asset %q: %w", name, err)
+		}
+		if err := writeGeneratedFile(filepath.Join(assetsDir, name), asset); err != nil {
+			return fmt.Errorf("write landing asset %q: %w", name, err)
+		}
 	}
 	return nil
 }

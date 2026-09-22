@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -129,19 +130,23 @@ table.benchmark-tool-calls td {
   min-width: 0;
 }
 
-table.benchmark-tool-calls pre.benchmark-shell-command,
-table.benchmark-tool-calls pre.benchmark-tool-arguments {
-  width: 100%;
-  max-width: 32rem;
-  margin: 0.5rem 0 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  overflow-x: auto;
+table.benchmark-tool-calls .benchmark-code-block {
+	width: 100%;
+	max-width: 32rem;
+	margin: 0.5rem 0 0;
+	min-width: 0;
+	overflow: hidden;
 }
 
-table.benchmark-tool-calls pre.benchmark-shell-command code {
-  white-space: inherit;
+table.benchmark-tool-calls .benchmark-code-block pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+	overflow-x: auto;
+}
+
+table.benchmark-tool-calls .benchmark-code-block code {
+	white-space: inherit;
 }
 
 .benchmark-delta-positive {
@@ -155,6 +160,19 @@ table.benchmark-tool-calls pre.benchmark-shell-command code {
 }
 </style>
 
+`
+
+const benchmarkCodeShortcode = `{{- $lang := .Get "lang" | default "text" -}}
+{{- $encoded := .Get "content" -}}
+{{- $content := $encoded | base64Decode -}}
+<div class="benchmark-code-block">
+  <div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
+    {{- partial "components/codeblock" (dict "lang" $lang "content" $content "options" (dict)) -}}
+    {{- if or (eq site.Params.highlight.copy.enable nil) (site.Params.highlight.copy.enable) -}}
+      {{- partialCached "components/codeblock-copy-button" (dict "filename" "") "" -}}
+    {{- end -}}
+  </div>
+</div>
 `
 
 // BenchOracleResult records oracle outcomes across evaluation levels.
@@ -735,8 +753,8 @@ func docToolCallIsShellCommand(call BenchToolCall) bool {
 }
 
 func formatDocShellCommandCell(call BenchToolCall) string {
-	command := html.EscapeString(formatDocShellCommand(call.Name))
-	return fmt.Sprintf("%s%s<pre class=\"benchmark-shell-command\"><code class=\"language-shell\">%s</code></pre>%s", docToolCallStatusSummary(call), html.EscapeString(docToolCallDetails(call)), command, formatDocToolArguments(call.Arguments))
+	command := formatDocCodeShortcode("shell", formatDocShellCommand(call.Name))
+	return fmt.Sprintf("%s%s%s%s", docToolCallStatusSummary(call), html.EscapeString(docToolCallDetails(call)), command, formatDocToolArguments(call.Arguments))
 }
 
 func docToolCallHTMLCell(run *BenchRunResult, index int) string {
@@ -774,7 +792,12 @@ func formatDocToolArguments(arguments json.RawMessage) string {
 	if err := json.Indent(&formatted, arguments, "", "  "); err != nil {
 		formatted.Write(arguments)
 	}
-	return fmt.Sprintf("<pre class=\"benchmark-tool-arguments\"><code class=\"language-json\">%s</code></pre>", html.EscapeString(formatted.String()))
+	return formatDocCodeShortcode("json", formatted.String())
+}
+
+func formatDocCodeShortcode(language, content string) string {
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+	return fmt.Sprintf(`{{< benchmark-code lang="%s" content="%s" >}}`, language, encoded)
 }
 
 func docReasoningToolCalls(run *BenchRunResult) []BenchToolCall {
