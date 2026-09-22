@@ -1057,7 +1057,13 @@ draft: false
 weight: 1
 ---
 
-Browse the generated installation guide, capability reference, and benchmark results.
+Start with the installation guide, then use the reference when you need a specific semantic operation. The benchmark report documents the measured results behind the workflow.
+
+{{< hextra/feature-grid cols="3" >}}
+{{< hextra/feature-card title="Get started" icon="terminal" link="/docs/getting-started/" subtitle="Install semedit and run your first compiler-backed edit." >}}
+{{< hextra/feature-card title="Reference" icon="shield-check" link="/docs/reference/" subtitle="Browse the generated capability and CLI reference." >}}
+{{< hextra/feature-card title="Benchmarks" icon="chart-bar" link="/docs/benchmarks/" subtitle="Review empirical latency, token, and correctness results." >}}
+{{< /hextra/feature-grid >}}
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
 		return fmt.Errorf("write Hugo docs section: %w", err)

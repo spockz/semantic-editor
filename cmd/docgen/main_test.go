@@ -166,6 +166,23 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 			t.Errorf("generated landing asset %q is empty", name)
 		}
 	}
+	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	if err != nil {
+		t.Fatalf("read Hugo documentation section: %v", err)
+	}
+	for _, want := range []string{
+		`hextra/feature-grid`,
+		`title="Get started"`,
+		`link="/docs/getting-started/"`,
+		`title="Reference"`,
+		`link="/docs/reference/"`,
+		`title="Benchmarks"`,
+		`link="/docs/benchmarks/"`,
+	} {
+		if !strings.Contains(string(docsSection), want) {
+			t.Errorf("Hugo documentation section does not contain %q", want)
+		}
+	}
 }
 
 func TestBenchmarkCodeShortcodeUsesHextraPartialsAndSafeDecoding(t *testing.T) {
