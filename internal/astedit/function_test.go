@@ -88,6 +88,54 @@ func (s *Service) stop() {
 	}
 }
 
+func TestInsertFunction_PointerReceiverAnchor(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "transaction.go")
+	initial := `package audit
+
+type Event struct{}
+
+type BufferedSink struct {
+	queue []Event
+}
+
+func (b *BufferedSink) Begin() error {
+	b.queue = b.queue[:0]
+	return nil
+}
+
+func (b *BufferedSink) Commit() error {
+	return nil
+}
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	err := InsertFunction(context.Background(), file, `func (b *BufferedSink) Write(event Event) error {
+	b.queue = append(b.queue, event)
+	return nil
+}`, FunctionOptions{
+		Placement:    PlacementAfterSymbol,
+		TargetSymbol: "(*BufferedSink).Begin",
+	})
+	if err != nil {
+		t.Fatalf("insert after pointer receiver anchor: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	content := string(data)
+	begin := strings.Index(content, "func (b *BufferedSink) Begin()")
+	write := strings.Index(content, "func (b *BufferedSink) Write(event Event)")
+	commit := strings.Index(content, "func (b *BufferedSink) Commit()")
+	if begin == -1 || write == -1 || commit == -1 || begin >= write || write >= commit {
+		t.Fatalf("Write was not inserted after Begin and before Commit:\n%s", content)
+	}
+}
+
 func TestInsertFunction_SectionViolationAndValidation(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "util.go")

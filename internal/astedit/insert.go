@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/symbol"
 )
 
 // Placement specifies where in the file or relative to declarations an insertion occurs.
@@ -340,13 +341,12 @@ func offsetAfterImports(fset *token.FileSet, fileNode *ast.File) int {
 }
 
 func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
-	parts := strings.Split(targetSymbol, ".")
-	var targetReceiver, targetName string
-	if len(parts) == 2 {
-		targetReceiver = parts[0]
-		targetName = parts[1]
-	} else {
-		targetName = parts[0]
+	targetReceiver, targetName, err := symbol.ParseIdentifier(targetSymbol)
+	if err != nil {
+		return nil, &PlacementError{
+			TargetSymbol: targetSymbol,
+			Err:          err,
+		}
 	}
 
 	for _, decl := range fileNode.Decls {
