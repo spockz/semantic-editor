@@ -1154,6 +1154,10 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 			provider: providerConfig,
 		},
 	}
+	if provider == "openrouter" {
+		config["model"] = model
+		config["small_model"] = model
+	}
 	if arm == ArmBaseline {
 		return config, nil
 	}

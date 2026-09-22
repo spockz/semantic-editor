@@ -991,3 +991,17 @@ func TestCollectAvailableBenchmarks(t *testing.T) {
 		t.Errorf("expected task-01-rename-local in formatted output")
 	}
 }
+
+func TestOpenCodeOpenRouterSmallModelUsesBenchmarkTarget(t *testing.T) {
+	target := Target{Harness: string(HarnessOpenCode), Model: "openrouter/nvidia/nemotron-3-ultra:free"}
+	config, err := NewRunner(t.TempDir()).openCodeConfig(t.TempDir(), ArmBaseline, target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := config["model"]; got != target.Model {
+		t.Errorf("default model = %v, want %q", got, target.Model)
+	}
+	if got := config["small_model"]; got != target.Model {
+		t.Errorf("small model = %v, want %q", got, target.Model)
+	}
+}
