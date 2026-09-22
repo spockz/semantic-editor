@@ -185,7 +185,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 		}
 		s.markInitialized(time.Now())
 		result := map[string]any{
-			"protocolVersion": "2024-11-05",
+			"protocolVersion": "2025-06-18",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			"serverInfo":      map[string]any{"name": "semedit", "version": "0.1.0"},
 		}
@@ -228,14 +228,114 @@ func (s *Server) listTools() []map[string]any {
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", "description": "Reload the semedit MCP server after promotion and announce updated tools.",
-			"inputSchema": map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+			"inputSchema":  map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+			"outputSchema": reloadOutputSchema(),
 		})
 	}
 	return tools
 }
 
 func toolSchema(entry operation.Entry) map[string]any {
-	return map[string]any{"name": entry.MCPName, "description": entry.Summary, "inputSchema": operationInputSchema(entry)}
+	return map[string]any{
+		"name":         entry.MCPName,
+		"description":  entry.Summary,
+		"inputSchema":  operationInputSchema(entry),
+		"outputSchema": standardOutputSchema(map[string]any{"type": "string"}),
+	}
+}
+
+func standardOutputSchema(resultSchema map[string]any) map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"result":          resultSchema,
+			"metrics":         metricsOutputSchema(),
+			"session_metrics": sessionMetricsOutputSchema(),
+		},
+		"required": []string{"result", "metrics"},
+	}
+}
+
+func metricsOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"schema_version": map[string]any{"type": "integer"},
+			"total_ms":       map[string]any{"type": "integer"},
+			"phases": map[string]any{
+				"type":                 "object",
+				"additionalProperties": map[string]any{"type": "object", "properties": map[string]any{"count": map[string]any{"type": "integer"}, "duration_ms": map[string]any{"type": "integer"}}},
+			},
+		},
+	}
+}
+
+func sessionMetricsOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"server_start_to_initialize_ms":        map[string]any{"type": "integer"},
+			"initialize_to_first_semantic_call_ms": map[string]any{"type": "integer"},
+		},
+	}
+}
+
+func batchOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"results": map[string]any{
+				"type":  "array",
+				"items": batchResultSchema(),
+			},
+			"diagnostic_delta": diagnosticDeltaSchema(),
+		},
+		"required": []string{"status", "results"},
+	}
+}
+
+func batchResultSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"tool":   map[string]any{"type": "string"},
+			"symbol": map[string]any{"type": "string"},
+			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"diff":   map[string]any{"type": "string"},
+			"error":  map[string]any{"type": "string"},
+		},
+		"required": []string{"tool", "status"},
+	}
+}
+
+func diagnosticDeltaSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"before":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"after":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"net_delta":   map[string]any{"type": "integer"},
+			"introduced":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"resolved":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"suggestions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+		"required": []string{"before", "after", "net_delta", "introduced", "resolved"},
+	}
+}
+
+func reloadOutputSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"result": map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"status": map[string]any{"const": "reloading"}},
+				"required":   []string{"status"},
+			},
+		},
+		"required": []string{"result"},
+	}
 }
 
 func operationInputSchema(entry operation.Entry) map[string]any {
@@ -293,6 +393,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 			},
 			"required": []string{"edits"},
 		},
+		"outputSchema": standardOutputSchema(batchOutputSchema()),
 	}
 }
 
@@ -354,21 +455,29 @@ func (s *Server) handleReload(id json.RawMessage) {
 		s.sendError(id, -32601, "Unknown tool: semantic_reload")
 		return
 	}
-	s.sendToolSuccess(id, `{"status":"reloading"}`)
+	s.sendToolSuccessWithStructuredContent(id, `{"status":"reloading"}`, map[string]any{"result": map[string]any{"status": "reloading"}})
 	if err := execReload(); err != nil {
 		s.sendToolError(id, fmt.Sprintf("reload error: %v", err), err)
 	}
 }
 
-func (s *Server) sendToolSuccess(id json.RawMessage, text string) {
-	s.sendResult(id, map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": false})
-}
-
-func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timing *toolRequestTiming) {
+func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text string, structuredContent map[string]any) {
 	s.sendResult(id, map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": text}},
 		"isError":           false,
-		"structuredContent": timing.structuredContent(),
+		"structuredContent": structuredContent,
+	})
+}
+
+func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timing *toolRequestTiming) {
+	s.sendToolSuccessWithTimingAndResult(id, text, text, timing)
+}
+
+func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {
+	s.sendResult(id, map[string]any{
+		"content":           []map[string]any{{"type": "text", "text": text}},
+		"isError":           false,
+		"structuredContent": timing.structuredContentWithResult(result),
 	})
 }
 
@@ -428,6 +537,12 @@ func (t *toolRequestTiming) structuredContent() map[string]any {
 	if t.session != nil {
 		content["session_metrics"] = t.session
 	}
+	return content
+}
+
+func (t *toolRequestTiming) structuredContentWithResult(result any) map[string]any {
+	content := t.structuredContent()
+	content["result"] = result
 	return content
 }
 

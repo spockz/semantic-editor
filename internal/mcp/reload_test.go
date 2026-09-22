@@ -13,7 +13,7 @@ import (
 func TestMCPLiveReloadCapabilities(t *testing.T) {
 	t.Parallel()
 
-	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
 
 	t.Run("default advertisement", func(t *testing.T) {
 		t.Parallel()
@@ -123,7 +123,7 @@ func TestMCPLiveReloadInitializedNotification(t *testing.T) {
 	t.Parallel()
 
 	input := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 	}, "\n") + "\n"
 

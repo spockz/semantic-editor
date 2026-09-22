@@ -26,6 +26,7 @@ func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 			if !ok {
 				t.Fatal("tools/list omitted semantic_batch")
 			}
+			assertBatchOutputSchema(t, batch["outputSchema"])
 			description := batch["description"].(string)
 			if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "semantic_verify") {
 				t.Fatalf("batch description = %q, want final diagnostic_delta and semantic_verify guidance", description)
@@ -149,6 +150,7 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	if !ok {
 		t.Fatal("tools/list omitted custom batchable operation")
 	}
+	assertStandardOutputSchema(t, customBatch["outputSchema"], "string")
 	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
 	branches := edits["items"].(map[string]any)["oneOf"].([]any)
 	if len(branches) != 1 {
@@ -170,6 +172,94 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	}
 }
 
+func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
+	for _, profile := range []string{"full", "mutations-only"} {
+		t.Run(profile, func(t *testing.T) {
+			for _, tool := range listTools(t, profile) {
+				name, ok := tool["name"].(string)
+				if !ok {
+					t.Fatalf("tool has invalid name: %#v", tool["name"])
+				}
+				if tool["outputSchema"] == nil {
+					t.Fatalf("%s omitted outputSchema", name)
+				}
+				switch name {
+				case "semantic_batch":
+					assertBatchOutputSchema(t, tool["outputSchema"])
+				default:
+					assertStandardOutputSchema(t, tool["outputSchema"], "string")
+				}
+			}
+		})
+	}
+}
+
+func TestMCPLiveReloadAdvertisesStructuredOutputSchema(t *testing.T) {
+	tools := listToolsWithLiveReload(t)
+	for _, tool := range tools {
+		if tool["name"] != "semantic_reload" {
+			continue
+		}
+		output, ok := tool["outputSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("semantic_reload outputSchema = %#v, want object", tool["outputSchema"])
+		}
+		if got := output["required"]; !reflect.DeepEqual(got, []any{"result"}) {
+			t.Fatalf("semantic_reload outputSchema required = %#v", got)
+		}
+		result := output["properties"].(map[string]any)["result"].(map[string]any)
+		status := result["properties"].(map[string]any)["status"].(map[string]any)
+		if status["const"] != "reloading" {
+			t.Fatalf("semantic_reload status schema = %#v, want reloading", status)
+		}
+		return
+	}
+	t.Fatal("live-reload tools/list omitted semantic_reload")
+}
+
+func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
+	t.Helper()
+	schema, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("outputSchema = %#v, want object", raw)
+	}
+	if schema["type"] != "object" {
+		t.Fatalf("outputSchema type = %#v, want object", schema["type"])
+	}
+	if got := schema["required"]; !reflect.DeepEqual(got, []any{"result", "metrics"}) {
+		t.Fatalf("outputSchema required = %#v, want result and metrics", got)
+	}
+	properties := schema["properties"].(map[string]any)
+	if got := properties["result"].(map[string]any)["type"]; got != resultType {
+		t.Fatalf("outputSchema result type = %#v, want %s", got, resultType)
+	}
+	if properties["metrics"].(map[string]any)["type"] != "object" {
+		t.Fatalf("outputSchema metrics = %#v, want object", properties["metrics"])
+	}
+}
+
+func assertBatchOutputSchema(t *testing.T, raw any) {
+	t.Helper()
+	schema := raw.(map[string]any)
+	assertStandardOutputSchema(t, schema, "object")
+	result := schema["properties"].(map[string]any)["result"].(map[string]any)
+	if got := result["required"]; !reflect.DeepEqual(got, []any{"status", "results"}) {
+		t.Fatalf("batch result required = %#v", got)
+	}
+	properties := result["properties"].(map[string]any)
+	items := properties["results"].(map[string]any)["items"].(map[string]any)
+	if got := items["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
+		t.Fatalf("batch result item required = %#v", got)
+	}
+	delta, ok := properties["diagnostic_delta"].(map[string]any)
+	if !ok {
+		t.Fatal("batch result omitted diagnostic_delta schema")
+	}
+	if got := delta["required"]; !reflect.DeepEqual(got, []any{"before", "after", "net_delta", "introduced", "resolved"}) {
+		t.Fatalf("diagnostic_delta required = %#v", got)
+	}
+}
+
 func listTools(t *testing.T, profile string) []map[string]any {
 	t.Helper()
 	return listToolsWithRegistry(t, profile, nil)
@@ -183,6 +273,23 @@ func listToolsWithRegistry(t *testing.T, profile string, registry *operation.Reg
 		opts = append(opts, mcp.WithRegistry(registry))
 	}
 	if err := mcp.NewServer(profile, ".", &out, opts...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+		t.Fatalf("tools/list failed: %v", err)
+	}
+	var response struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode tools/list response: %v", err)
+	}
+	return response.Result.Tools
+}
+
+func listToolsWithLiveReload(t *testing.T) []map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", ".", &out, mcp.WithLiveReload(true)).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {

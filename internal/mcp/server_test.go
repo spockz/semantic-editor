@@ -69,7 +69,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
 
 	input := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"ping"}`,
 		`{"jsonrpc":"2.0","id":3,"method":"tools/list"}`,
 	}, "\n") + "\n"
@@ -93,7 +93,8 @@ func TestMCPServerLifecycle(t *testing.T) {
 	var initResp struct {
 		ID     int `json:"id"`
 		Result struct {
-			ServerInfo struct {
+			ProtocolVersion string `json:"protocolVersion"`
+			ServerInfo      struct {
 				Name string `json:"name"`
 			} `json:"serverInfo"`
 		} `json:"result"`
@@ -103,6 +104,9 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 	if initResp.Result.ServerInfo.Name != "semedit" {
 		t.Errorf("expected server name 'semedit', got %q", initResp.Result.ServerInfo.Name)
+	}
+	if initResp.Result.ProtocolVersion != "2025-06-18" {
+		t.Errorf("expected protocol version 2025-06-18, got %q", initResp.Result.ProtocolVersion)
 	}
 
 	// Verify tools/list response
@@ -143,7 +147,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 func TestMCPServerReturnsConfiguredInstructions(t *testing.T) {
 	t.Parallel()
 
-	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}` + "\n"
+	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
 	var out bytes.Buffer
 	if err := mcp.NewServer("full", ".", &out, mcp.WithInstructions("Prefer semantic operations.")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
@@ -181,6 +185,8 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	var response struct {
 		Result struct {
 			StructuredContent struct {
+				Result         string              `json:"result"`
+				Metrics        map[string]any      `json:"metrics"`
 				SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
 			} `json:"structuredContent"`
 		} `json:"result"`
@@ -190,6 +196,12 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	if response.Result.StructuredContent.SessionMetrics == nil {
 		t.Fatalf("first semantic response missing session_metrics: %s", lines[1])
+	}
+	if response.Result.StructuredContent.Result == "" {
+		t.Fatalf("first semantic response missing structured result: %s", lines[1])
+	}
+	if response.Result.StructuredContent.Metrics == nil {
+		t.Fatalf("first semantic response missing structured metrics: %s", lines[1])
 	}
 	if got := response.Result.StructuredContent.SessionMetrics; got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)

@@ -81,6 +81,55 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	}
 }
 
+func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batchstructured\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(tmpDir, "file.go")
+	if err := os.WriteFile(file, []byte("package batchstructured\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 2"}}]}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Result  mcp.BatchResponse `json:"result"`
+				Metrics map[string]any    `json:"metrics"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.IsError {
+		t.Fatalf("batch call failed: %#v", response.Result.Content)
+	}
+	if response.Result.StructuredContent.Result.Status != "ok" {
+		t.Fatalf("structured batch status = %q", response.Result.StructuredContent.Result.Status)
+	}
+	if len(response.Result.StructuredContent.Result.Results) != 1 || response.Result.StructuredContent.Result.Results[0].Status != "ok" {
+		t.Fatalf("structured batch results = %#v", response.Result.StructuredContent.Result.Results)
+	}
+	if response.Result.StructuredContent.Result.DiagnosticDelta == nil {
+		t.Fatal("structured batch response omitted diagnostic_delta")
+	}
+	if response.Result.StructuredContent.Metrics == nil {
+		t.Fatal("structured batch response omitted metrics")
+	}
+	if len(response.Result.Content) != 1 || !strings.Contains(response.Result.Content[0].Text, "diagnostic_delta") {
+		t.Fatalf("batch content lost human-readable response: %#v", response.Result.Content)
+	}
+}
+
 func TestBatch_FailFast(t *testing.T) {
 	tmpDir := t.TempDir()
 

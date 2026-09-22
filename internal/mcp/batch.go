@@ -195,5 +195,5 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		s.sendToolErrorWithTiming(id, string(text), timing)
 		return
 	}
-	s.sendToolSuccessWithTiming(id, string(text), timing)
+	s.sendToolSuccessWithTimingAndResult(id, string(text), response, timing)
 }
