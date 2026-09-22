@@ -214,13 +214,17 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 
 func (s *Server) listTools() []map[string]any {
 	tools := make([]map[string]any, 0, len(s.registry.All())+2)
+	batchable := make([]operation.Entry, 0)
 	for _, entry := range s.registry.All() {
 		if entry.MCPName == "" || (s.profile == "mutations-only" && entry.ReadOnly) {
 			continue
 		}
 		tools = append(tools, toolSchema(entry))
+		if entry.Batchable {
+			batchable = append(batchable, entry)
+		}
 	}
-	tools = append(tools, batchToolSchema())
+	tools = append(tools, batchToolSchema(batchable))
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", "description": "Reload the semedit MCP server after promotion and announce updated tools.",
@@ -231,6 +235,10 @@ func (s *Server) listTools() []map[string]any {
 }
 
 func toolSchema(entry operation.Entry) map[string]any {
+	return map[string]any{"name": entry.MCPName, "description": entry.Summary, "inputSchema": operationInputSchema(entry)}
+}
+
+func operationInputSchema(entry operation.Entry) map[string]any {
 	properties := make(map[string]any, len(entry.Params))
 	required := make([]string, 0, len(entry.Params))
 	for _, param := range entry.Params {
@@ -259,16 +267,28 @@ func toolSchema(entry operation.Entry) map[string]any {
 	if len(required) > 0 {
 		schema["required"] = required
 	}
-	return map[string]any{"name": entry.MCPName, "description": entry.Summary, "inputSchema": schema}
+	return schema
 }
 
-func batchToolSchema() map[string]any {
+func batchToolSchema(entries []operation.Entry) map[string]any {
+	branches := make([]any, 0, len(entries))
+	for _, entry := range entries {
+		branches = append(branches, map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"tool":   map[string]any{"const": entry.MCPName},
+				"params": operationInputSchema(entry),
+			},
+			"required":             []string{"tool", "params"},
+			"additionalProperties": false,
+		})
+	}
 	return map[string]any{
-		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Successful batches automatically perform one final diagnostic check; a separate semantic_verify call is not needed.",
+		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Successful batches return one final diagnostic_delta; a separate semantic_verify call is not needed.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"edits":                 map[string]any{"type": "array", "items": map[string]any{"type": "object"}},
+				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 			},
 			"required": []string{"edits"},
