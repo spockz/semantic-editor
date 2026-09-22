@@ -9,6 +9,8 @@ Compilers and Language Server Protocol methods often require exact file coordina
 
 In current agent-LSP setups, the model must spend 2–3 preliminary turns querying symbols and reading lines just to pass coordinates to a rename or code-action command.
 
+This semantic-editing layer lets the model name the intended symbol directly instead of computing the location offsets required by a raw LSP request. It removes a separate coordinate-calculation step and a common source of location and line-drift mistakes.
+
 ## Decision
 
 `semedit` decouples the agent from file coordinates where the active backend supports symbol addressing:

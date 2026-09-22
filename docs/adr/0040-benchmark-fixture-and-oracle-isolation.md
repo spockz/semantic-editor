@@ -19,8 +19,12 @@ and ordinary unit tests model the working repository, but must not encode the
 solution or act as a direct acceptance oracle.
 
 The harness executes an agent inside a fresh extracted fixture. It does not
-add task-aware overlays or attempt to constrain the agent beyond that fixture
-boundary. The oracle enforces a mutation policy, structural postconditions,
+add task-aware source overlays or runtime restrictions beyond that fixture
+boundary. It presents the fixture-declared protected-file list as a static
+prompt guardrail, using a generic instruction not to edit tests and including
+recovery guidance to restore a protected file if an earlier turn changed it.
+This exposes a task constraint, not the oracle's observed result. The oracle
+enforces mutation policy, structural postconditions,
 clean compilation, and behavioral verification. Hidden acceptance tests are
 stored outside the extracted fixture and copied only after the agent exits.
 The copy path is root-scoped so an agent-created symlink cannot redirect a
@@ -37,6 +41,8 @@ across small and large variants without revealing a symbol-by-symbol plan.
 - Every runnable task has a non-empty txtar prompt variant.
 - The model cannot inspect or alter hidden acceptance tests before execution
   completes.
+- The prompt may state fixture-declared protected files, but never reveals an
+  oracle result, a failed condition, or hidden-test output.
 - Visible tests may represent existing behavior but must not be a solution
   checklist.
 - The oracle rejects disallowed mutation, validates semantic postconditions,

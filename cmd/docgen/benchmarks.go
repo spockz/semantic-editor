@@ -7,9 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -35,47 +38,68 @@ func (t BenchTarget) String() string {
 
 // BenchRunResult captures telemetry for a single trial.
 type BenchRunResult struct {
-	TaskID                string             `json:"task_id"`
-	Variant               string             `json:"variant,omitempty"`
-	PromptVariant         string             `json:"prompt_variant,omitempty"`
-	MCPServerInstructions string             `json:"mcp_server_instructions,omitempty"`
-	LegacyMCPInstructions string             `json:"mcp_instructions,omitempty"`
-	Provenance            map[string]string  `json:"provenance,omitempty"`
-	LegacyClassifiers     map[string]string  `json:"classifiers,omitempty"`
-	Target                BenchTarget        `json:"target"`
-	Arm                   string             `json:"arm"`
-	Success               bool               `json:"success"`
-	Turns                 int                `json:"turns"`
-	InitialLoadTurns      int                `json:"initial_load_turns"`
-	MCPLoadTurns          int                `json:"mcp_load_turns"`
-	InternalTurns         int                `json:"internal_turns"`
-	ToolCount             int                `json:"tool_count"`
-	WallClock             time.Duration      `json:"wall_clock_ms"`
-	InitialContextTokens  int                `json:"initial_context_tokens"`
-	PromptTokens          int                `json:"prompt_tokens"`
-	CachedPromptTokens    int                `json:"cached_prompt_tokens"`
-	UncachedPromptTokens  int                `json:"uncached_prompt_tokens"`
-	OutputTokens          int                `json:"output_tokens"`
-	ReasoningTokens       int                `json:"reasoning_tokens"`
-	Oracle                *BenchOracleResult `json:"oracle"`
-	Prompt                string             `json:"prompt,omitempty"`
-	BeforeState           string             `json:"before_state,omitempty"`
-	Diff                  string             `json:"diff,omitempty"`
-	ToolsUsed             []string           `json:"tools_used,omitempty"`
-	ToolCalls             []BenchToolCall    `json:"tool_calls,omitempty"`
-	MCPVerified           bool               `json:"mcp_verified"`
-	Error                 string             `json:"error,omitempty"`
+	TaskID                           string                       `json:"task_id"`
+	Variant                          string                       `json:"variant,omitempty"`
+	PromptVariant                    string                       `json:"prompt_variant,omitempty"`
+	MCPServerInstructions            string                       `json:"mcp_server_instructions,omitempty"`
+	LegacyMCPInstructions            string                       `json:"mcp_instructions,omitempty"`
+	Provenance                       map[string]string            `json:"provenance,omitempty"`
+	LegacyClassifiers                map[string]string            `json:"classifiers,omitempty"`
+	Target                           BenchTarget                  `json:"target"`
+	Arm                              string                       `json:"arm"`
+	Success                          bool                         `json:"success"`
+	Turns                            int                          `json:"turns"`
+	InitialLoadTurns                 int                          `json:"initial_load_turns"`
+	MCPLoadTurns                     int                          `json:"mcp_load_turns"`
+	InternalTurns                    int                          `json:"internal_turns"`
+	ToolCount                        int                          `json:"tool_count"`
+	WallClock                        time.Duration                `json:"wall_clock_ms"`
+	ProcessStartToFirstEvent         *time.Duration               `json:"process_start_to_first_event_ms,omitempty"`
+	FirstEventToFirstToolCall        *time.Duration               `json:"first_event_to_first_tool_call_ms,omitempty"`
+	MCPInitializeToFirstSemanticCall *time.Duration               `json:"mcp_initialize_to_first_semantic_call_ms,omitempty"`
+	MCPServerStartToInitialize       *time.Duration               `json:"mcp_server_start_to_initialize_ms,omitempty"`
+	InitialContextTokens             int                          `json:"initial_context_tokens"`
+	PromptTokens                     int                          `json:"prompt_tokens"`
+	CachedPromptTokens               int                          `json:"cached_prompt_tokens"`
+	UncachedPromptTokens             int                          `json:"uncached_prompt_tokens"`
+	OutputTokens                     int                          `json:"output_tokens"`
+	ReasoningTokens                  int                          `json:"reasoning_tokens"`
+	Oracle                           *BenchOracleResult           `json:"oracle"`
+	Prompt                           string                       `json:"prompt,omitempty"`
+	BeforeState                      string                       `json:"before_state,omitempty"`
+	Diff                             string                       `json:"diff,omitempty"`
+	ToolsUsed                        []string                     `json:"tools_used,omitempty"`
+	ToolCalls                        []BenchToolCall              `json:"tool_calls,omitempty"`
+	InteractionSteps                 []BenchInteractionStep       `json:"interaction_steps,omitempty"`
+	SemanticToolReflection           *BenchSemanticToolReflection `json:"semantic_tool_reflection,omitempty"`
+	MCPVerified                      bool                         `json:"mcp_verified"`
+	Error                            string                       `json:"error,omitempty"`
 }
 
 // BenchToolCall captures a tool outcome from a benchmark report without importing the harness package.
 type BenchToolCall struct {
 	Name             string           `json:"name"`
 	Server           string           `json:"server,omitempty"`
+	Arguments        json.RawMessage  `json:"arguments,omitempty"`
 	TransportStatus  string           `json:"transport_status"`
 	FunctionalStatus string           `json:"functional_status"`
 	Failure          string           `json:"failure,omitempty"`
 	MCPMetrics       *BenchMCPMetrics `json:"mcp_metrics,omitempty"`
 }
+
+// BenchInteractionStep preserves the tool-call order from one continued reasoning turn.
+type BenchInteractionStep struct {
+	Step      int             `json:"step"`
+	ToolCalls []BenchToolCall `json:"tool_calls,omitempty"`
+}
+
+// BenchSemanticToolReflection records the diagnostic reason an unverified semantic run did not use a semantic edit tool.
+type BenchSemanticToolReflection struct {
+	Response string `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+var noSemanticToolsAvailablePattern = regexp.MustCompile(`(?i)\bno\b(?:\W+\w+)*\W+\btools?\b(?:\W+\w+)*\W+\bavailable\b`)
 
 // BenchMCPMetrics records MCP server latency without importing the benchmark harness package.
 type BenchMCPMetrics struct {
@@ -89,6 +113,49 @@ type BenchMCPPhaseMetric struct {
 	Count      int   `json:"count"`
 	DurationMS int64 `json:"duration_ms"`
 }
+
+const benchmarkToolCallCSS = `<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+`
 
 // BenchOracleResult records oracle outcomes across evaluation levels.
 type BenchOracleResult struct {
@@ -181,10 +248,14 @@ func loadAllBenchmarkComparisons(rootDir string) ([]*BenchComparisonSummary, err
 		if comparisons[i].TaskID != comparisons[j].TaskID {
 			return comparisons[i].TaskID < comparisons[j].TaskID
 		}
+		if comparisons[i].Target.String() != comparisons[j].Target.String() {
+			return comparisons[i].Target.String() < comparisons[j].Target.String()
+		}
 		if comparisons[i].PromptVariant != comparisons[j].PromptVariant {
 			return comparisons[i].PromptVariant < comparisons[j].PromptVariant
 		}
-		return comparisons[i].Target.String() < comparisons[j].Target.String()
+		return displayMCPServerInstructions(comparisons[i].MCPServerInstructions, comparisons[i].LegacyMCPInstructions) <
+			displayMCPServerInstructions(comparisons[j].MCPServerInstructions, comparisons[j].LegacyMCPInstructions)
 	})
 
 	return comparisons, nil
@@ -265,12 +336,13 @@ draft: false
 weight: 20
 ---
 
-# Empirical Benchmarks
-
 Empirical telemetry measuring wall-clock latency, token usage, tool turns, and compiler correctness when AI coding agents perform code modifications.
 
 Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Semedit MCP** (deterministic AST compiler operations).
 
+`)
+	sb.WriteString(benchmarkToolCallCSS)
+	sb.WriteString(`
 ## Benchmark Methodology & Transparency
 
 * **Reproducibility & Provenance**: Test scenarios are defined in self-contained txtar archives. Links below resolve to commit-anchored GitHub source files for published commits, or cryptographic SHA-256 fingerprints for uncommitted local fixtures.
@@ -290,35 +362,34 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 		return sb.String(), nil
 	}
 
+	currentTaskID := ""
+	currentTarget := ""
 	for _, comp := range comparisons {
-		targetStr := comp.Target.String()
-		if comp.PromptVariant != "" {
-			fmt.Fprintf(&sb, "## Task: `%s` (Prompt: `%s`) | Target: `%s`\n\n", comp.TaskID, comp.PromptVariant, targetStr)
-		} else {
-			fmt.Fprintf(&sb, "## Task: `%s` | Target: `%s`\n\n", comp.TaskID, targetStr)
-		}
-		fmt.Fprintf(&sb, "* **MCP Server Instructions**: `%s`\n\n", displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
-		if provenance := displayProvenance(comp.Provenance, comp.LegacyClassifiers); provenance != "" {
-			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
+		if comp.TaskID != currentTaskID {
+			if currentTaskID != "" {
+				sb.WriteString("---\n\n")
+			}
+			fmt.Fprintf(&sb, "## Test case: `%s`\n\n", comp.TaskID)
+			currentTaskID = comp.TaskID
+			currentTarget = ""
 		}
 
-		switch {
-		case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
-			fmt.Fprintf(&sb, "* **Fixture**: [%s](%s)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarProvenance != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s` (`%s`)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarPath != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s`\n\n", comp.TxtarPath)
+		targetStr := comp.Target.String()
+		if targetStr != currentTarget {
+			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
+			currentTarget = targetStr
 		}
+		fmt.Fprintf(&sb, "#### %s\n\n", formatDocConfiguration(comp))
+		writeDocConfigurationDetails(&sb, comp)
 
 		if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
-			fmt.Fprintf(&sb, "**LLM Prompt**:\n> %s\n\n", comp.VanillaPrompt)
+			writeDocPrompt(&sb, "LLM Prompt", comp.VanillaPrompt)
 		} else {
 			if comp.VanillaPrompt != "" {
-				fmt.Fprintf(&sb, "**Vanilla LLM Prompt**:\n> %s\n\n", comp.VanillaPrompt)
+				writeDocPrompt(&sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
 			}
 			if comp.MCPPrompt != "" {
-				fmt.Fprintf(&sb, "**Semedit MCP Prompt**:\n> %s\n\n", comp.MCPPrompt)
+				writeDocPrompt(&sb, "Semedit MCP Prompt", comp.MCPPrompt)
 			}
 		}
 
@@ -327,13 +398,13 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 
 		if hasVerified {
 			if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
-				fmt.Fprintf(&sb, "**Verified Prompt**:\n> %s\n\n", comp.VanillaVerifiedPrompt)
+				writeDocPrompt(&sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
 			} else {
 				if comp.VanillaVerifiedPrompt != "" {
-					fmt.Fprintf(&sb, "**Vanilla (Verified) Prompt**:\n> %s\n\n", comp.VanillaVerifiedPrompt)
+					writeDocPrompt(&sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
 				}
 				if comp.MCPVerifiedPrompt != "" {
-					fmt.Fprintf(&sb, "**Semedit MCP (Verified) Prompt**:\n> %s\n\n", comp.MCPVerifiedPrompt)
+					writeDocPrompt(&sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
 				}
 			}
 		}
@@ -349,26 +420,83 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 			comp.LargeBaseline != nil || comp.LargeSemedit != nil
 
 		if hasStandard {
-			if hasVerified {
-				sb.WriteString("### Standard Directive Comparison\n\n")
-			}
 			renderDocComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDocRunSummary(&sb, "Standard / Small Context", comp.SmallBaseline, comp.SmallSemedit)
-			renderDocRunSummary(&sb, "Standard / Large Context", comp.LargeBaseline, comp.LargeSemedit)
+			renderDocRunSummary(&sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
+			renderDocSemanticToolDiagnostic(&sb, comp.SmallSemedit)
+			renderDocRunSummary(&sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+			renderDocSemanticToolDiagnostic(&sb, comp.LargeSemedit)
 		}
 
 		// 2. Verified Directive Comparison Table
 		if hasVerified {
-			sb.WriteString("### Verified Directive Comparison (+Self-Correction Loop)\n\n")
+			sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
 			renderDocComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDocRunSummary(&sb, "Verified / Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDocRunSummary(&sb, "Verified / Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderDocRunSummary(&sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+			renderDocSemanticToolDiagnostic(&sb, comp.SmallVerifiedSemedit)
+			renderDocRunSummary(&sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+			renderDocSemanticToolDiagnostic(&sb, comp.LargeVerifiedSemedit)
 		}
-
-		sb.WriteString("\n---\n\n")
 	}
 
 	return sb.String(), nil
+}
+
+func writeDocPrompt(sb *strings.Builder, label, prompt string) {
+	fmt.Fprintf(sb, "**%s**:\n%s\n\n", label, formatDocPromptBlockquote(prompt))
+}
+
+func formatDocPromptBlockquote(prompt string) string {
+	lines := strings.Split(prompt, "\n")
+	for index, line := range lines {
+		if line == "" {
+			lines[index] = ">"
+			continue
+		}
+		lines[index] = "> " + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func formatDocConfiguration(comp *BenchComparisonSummary) string {
+	promptVariant := strings.TrimSpace(comp.PromptVariant)
+	if promptVariant == "" {
+		promptVariant = "default"
+	}
+	return fmt.Sprintf("%s prompt · %s MCP instructions", promptVariant, displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
+}
+
+func writeDocConfigurationDetails(sb *strings.Builder, comp *BenchComparisonSummary) {
+	promptVariant := strings.TrimSpace(comp.PromptVariant)
+	if promptVariant == "" {
+		promptVariant = "default"
+	}
+
+	sb.WriteString("| Setting | Value |\n")
+	sb.WriteString("| :--- | :--- |\n")
+	fmt.Fprintf(sb, "| Test case | `%s` |\n", comp.TaskID)
+	fmt.Fprintf(sb, "| Target | `%s` |\n", comp.Target.String())
+	fmt.Fprintf(sb, "| Prompt variant | `%s` |\n", promptVariant)
+	fmt.Fprintf(sb, "| MCP server instructions | `%s` |\n", displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
+	if provenance := displayProvenance(comp.Provenance, comp.LegacyClassifiers); provenance != "" {
+		fmt.Fprintf(sb, "| Run provenance | `%s` |\n", provenance)
+	}
+	if fixture := formatDocFixture(comp); fixture != "" {
+		fmt.Fprintf(sb, "| Fixture | %s |\n", fixture)
+	}
+	sb.WriteString("\n")
+}
+
+func formatDocFixture(comp *BenchComparisonSummary) string {
+	switch {
+	case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
+		return fmt.Sprintf("[%s](%s)", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarProvenance != "":
+		return fmt.Sprintf("`%s` (`%s`)", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarPath != "":
+		return fmt.Sprintf("`%s`", comp.TxtarPath)
+	default:
+		return ""
+	}
 }
 
 func displayMCPServerInstructions(mode, legacyMode string) string {
@@ -405,12 +533,28 @@ func displayProvenance(provenance, legacyClassifiers map[string]string) string {
 }
 
 func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
-	sb.WriteString("| Metric | Vanilla (Small) | MCP (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |\n")
+	fmt.Fprintf(sb, "| Metric | Vanilla (Small) | %s | Δ (Small) | Vanilla (Large) | %s | Δ (Large) |\n", docMCPColumnHeader("Small", smRun), docMCPColumnHeader("Large", lmRun))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
 
 	sb.WriteString(formatDocMetricRowDuration("Wall-Clock Latency",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) time.Duration { return r.WallClock }))
+
+	sb.WriteString(formatDocMetricRowOptionalDuration("Process Start → First Event",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *BenchRunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
+
+	sb.WriteString(formatDocMetricRowOptionalDuration("First Event → First Tool Call",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *BenchRunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
+
+	sb.WriteString(formatDocMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *BenchRunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
+
+	sb.WriteString(formatDocMetricRowOptionalDuration("MCP Server Start → Initialize",
+		sbRun, smRun, lbRun, lmRun,
+		func(r *BenchRunResult) *time.Duration { return r.MCPServerStartToInitialize }))
 
 	sb.WriteString(formatDocMetricRowInt("Top-Level User Turns",
 		sbRun, smRun, lbRun, lmRun,
@@ -444,13 +588,15 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) int { return r.PromptTokens }))
 
-	sb.WriteString(formatDocMetricRowInt("Cached Input Tokens",
+	sb.WriteString(formatDocMetricRowIntWithDirection("Cached Input Tokens",
 		sbRun, smRun, lbRun, lmRun,
-		func(r *BenchRunResult) int { return r.CachedPromptTokens }))
+		func(r *BenchRunResult) int { return r.CachedPromptTokens }, docDeltaHigherIsBetter))
 
 	sb.WriteString(formatDocMetricRowInt("Uncached Input Tokens",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) int { return r.UncachedPromptTokens }))
+
+	sb.WriteString(formatDocCachedToUncachedRatioRow(sbRun, smRun, lbRun, lmRun))
 
 	sb.WriteString(formatDocOracleRow("Oracle L1: Mutation Policy",
 		sbRun, smRun, lbRun, lmRun,
@@ -474,10 +620,18 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 	sb.WriteString("\n")
 }
 
-func renderDocRunSummary(sb *strings.Builder, variantLabel string, base, mcp *BenchRunResult) {
-	fmt.Fprintf(sb, "#### Variant: %s\n", variantLabel)
-	renderDocEditSummary(sb, "Vanilla", variantLabel, base)
-	renderDocEditSummary(sb, "Semedit MCP", variantLabel, mcp)
+func docMCPColumnHeader(context string, run *BenchRunResult) string {
+	label := fmt.Sprintf("MCP (%s)", context)
+	if run == nil || run.MCPVerified {
+		return label
+	}
+	return fmt.Sprintf("<span role=\"img\" aria-label=\"Semantic tool invocation not verified\" title=\"Semantic tool invocation not verified\">⚠</span> %s", label)
+}
+
+func renderDocRunSummary(sb *strings.Builder, headingLevel int, comparisonLabel string, base, mcp *BenchRunResult) {
+	fmt.Fprintf(sb, "%s %s\n", strings.Repeat("#", headingLevel), comparisonLabel)
+	renderDocEditSummary(sb, "Vanilla", comparisonLabel, base)
+	renderDocEditSummary(sb, "Semedit MCP", comparisonLabel, mcp)
 	sb.WriteString("\n")
 	renderDocToolCallComparison(sb, base, mcp)
 	sb.WriteString("\n")
@@ -489,7 +643,34 @@ func renderDocEditSummary(sb *strings.Builder, arm, contextLabel string, run *Be
 	}
 }
 
+func renderDocSemanticToolDiagnostic(sb *strings.Builder, run *BenchRunResult) {
+	if run == nil || run.SemanticToolReflection == nil {
+		return
+	}
+	reflection := run.SemanticToolReflection
+	if reflection.Response != "" {
+		renderDocSemanticToolCallout(sb, reflection.Response)
+		return
+	}
+	if reflection.Error != "" {
+		fmt.Fprintf(sb, "<p><strong>Semantic tool-use diagnostic unavailable:</strong> %s</p>\n\n", html.EscapeString(reflection.Error))
+	}
+}
+
+func renderDocSemanticToolCallout(sb *strings.Builder, response string) {
+	calloutClass, icon := "callout-warning", "⚠"
+	if noSemanticToolsAvailablePattern.MatchString(response) {
+		calloutClass, icon = "callout-error", "✕"
+	}
+	fmt.Fprintf(sb, "<div class=\"callout %s\"><div class=\"callout-title\"><span>%s</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">%s</div></div>\n\n", calloutClass, icon, html.EscapeString(response))
+}
+
 func renderDocToolCallComparison(sb *strings.Builder, base, mcp *BenchRunResult) {
+	if docRunNeedsHTMLTable(base) || docRunNeedsHTMLTable(mcp) {
+		renderDocToolCallHTMLTable(sb, base, mcp)
+		return
+	}
+
 	sb.WriteString("| # | Vanilla | Semedit MCP |\n")
 	sb.WriteString("| :--- | :--- | :--- |\n")
 	rows := max(docToolCallCount(base), docToolCallCount(mcp), 1)
@@ -498,28 +679,46 @@ func renderDocToolCallComparison(sb *strings.Builder, base, mcp *BenchRunResult)
 	}
 }
 
+func docRunNeedsHTMLTable(run *BenchRunResult) bool {
+	if run == nil {
+		return false
+	}
+	return slices.ContainsFunc(docReasoningToolCalls(run), func(call BenchToolCall) bool {
+		return docToolCallIsShellCommand(call) || len(call.Arguments) > 0
+	})
+}
+
+func renderDocToolCallHTMLTable(sb *strings.Builder, base, mcp *BenchRunResult) {
+	sb.WriteString("<table class=\"benchmark-tool-calls\">\n<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>\n<tbody>\n")
+	rows := max(docToolCallCount(base), docToolCallCount(mcp), 1)
+	for index := range rows {
+		fmt.Fprintf(sb, "<tr><td>%d</td><td>%s</td><td>%s</td></tr>\n", index+1, docToolCallHTMLCell(base, index), docToolCallHTMLCell(mcp, index))
+	}
+	sb.WriteString("</tbody>\n</table>\n")
+}
+
 func docToolCallCount(run *BenchRunResult) int {
 	if run == nil {
 		return 0
 	}
-	return max(len(run.ToolCalls), len(run.ToolsUsed))
+	return max(len(docReasoningToolCalls(run)), len(run.ToolsUsed))
 }
 
 func docToolCallAt(run *BenchRunResult, index int) string {
 	if run == nil {
 		return "not published"
 	}
-	if index < len(run.ToolCalls) {
-		call := run.ToolCalls[index]
+	calls := docReasoningToolCalls(run)
+	if index < len(calls) {
+		call := calls[index]
+		if docToolCallIsShellCommand(call) {
+			return formatDocShellCommandCell(call)
+		}
 		server := ""
 		if call.Server != "" {
 			server = call.Server + "/"
 		}
-		entry := fmt.Sprintf("`%s%s` (transport: %s; functional: %s)", server, call.Name, call.TransportStatus, call.FunctionalStatus)
-		if call.Failure != "" {
-			entry += fmt.Sprintf(": %s", call.Failure)
-		}
-		entry += formatDocMCPMetrics(call.MCPMetrics)
+		entry := fmt.Sprintf("`%s%s` (%s)%s", server, call.Name, docToolCallStatusSummary(call), html.EscapeString(docToolCallDetails(call)))
 		return escapeDocTableCell(entry)
 	}
 	if index < len(run.ToolsUsed) {
@@ -529,6 +728,127 @@ func docToolCallAt(run *BenchRunResult, index int) string {
 		return "none recorded"
 	}
 	return "—"
+}
+
+func docToolCallIsShellCommand(call BenchToolCall) bool {
+	return call.Server == "" && (strings.HasPrefix(call.Name, "/bin/") || strings.HasPrefix(call.Name, "bash ") || strings.HasPrefix(call.Name, "zsh "))
+}
+
+func formatDocShellCommandCell(call BenchToolCall) string {
+	command := html.EscapeString(formatDocShellCommand(call.Name))
+	return fmt.Sprintf("%s%s<pre class=\"benchmark-shell-command\"><code class=\"language-shell\">%s</code></pre>%s", docToolCallStatusSummary(call), html.EscapeString(docToolCallDetails(call)), command, formatDocToolArguments(call.Arguments))
+}
+
+func docToolCallHTMLCell(run *BenchRunResult, index int) string {
+	if run == nil {
+		return "not published"
+	}
+	calls := docReasoningToolCalls(run)
+	if index < len(calls) {
+		call := calls[index]
+		if docToolCallIsShellCommand(call) {
+			return formatDocShellCommandCell(call)
+		}
+		name := call.Name
+		if call.Server != "" {
+			name = call.Server + "/" + name
+		}
+		return fmt.Sprintf("<code>%s</code> (%s)%s%s", html.EscapeString(name), docToolCallStatusSummary(call), html.EscapeString(docToolCallDetails(call)), formatDocToolArguments(call.Arguments))
+	}
+	if index < len(run.ToolsUsed) {
+		return fmt.Sprintf("<code>%s</code> (outcome unavailable)", html.EscapeString(run.ToolsUsed[index]))
+	}
+	if docToolCallCount(run) == 0 {
+		return "none recorded"
+	}
+	return "—"
+}
+
+func formatDocToolArguments(arguments json.RawMessage) string {
+	arguments = bytes.TrimSpace(arguments)
+	if len(arguments) == 0 || bytes.Equal(arguments, []byte("null")) {
+		return ""
+	}
+
+	var formatted bytes.Buffer
+	if err := json.Indent(&formatted, arguments, "", "  "); err != nil {
+		formatted.Write(arguments)
+	}
+	return fmt.Sprintf("<pre class=\"benchmark-tool-arguments\"><code class=\"language-json\">%s</code></pre>", html.EscapeString(formatted.String()))
+}
+
+func docReasoningToolCalls(run *BenchRunResult) []BenchToolCall {
+	if run == nil {
+		return nil
+	}
+	if len(run.InteractionSteps) == 0 {
+		return run.ToolCalls
+	}
+
+	steps := slices.Clone(run.InteractionSteps)
+	slices.SortStableFunc(steps, func(a, b BenchInteractionStep) int {
+		switch {
+		case a.Step < b.Step:
+			return -1
+		case a.Step > b.Step:
+			return 1
+		default:
+			return 0
+		}
+	})
+
+	var calls []BenchToolCall
+	for _, step := range steps {
+		calls = append(calls, step.ToolCalls...)
+	}
+	return calls
+}
+
+func docToolCallStatusSummary(call BenchToolCall) string {
+	return fmt.Sprintf("%s %s", formatDocToolCallStatus("Transport", call.TransportStatus), formatDocToolCallStatus("Functional", call.FunctionalStatus))
+}
+
+func docToolCallDetails(call BenchToolCall) string {
+	entry := ""
+	if call.Failure != "" {
+		entry += fmt.Sprintf(": %s", call.Failure)
+	}
+	return entry + formatDocMCPMetrics(call.MCPMetrics)
+}
+
+func formatDocToolCallStatus(kind, status string) string {
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	glyph := "?"
+	switch normalized {
+	case "succeeded", "success", "completed":
+		glyph = "✓"
+	case "failed", "failure", "error":
+		glyph = "✗"
+	case "timeout", "timed_out", "timed out":
+		glyph = "⏱"
+	}
+	if normalized == "" {
+		normalized = "unknown"
+	}
+	description := kind + " " + normalized
+	return fmt.Sprintf("<span role=\"img\" aria-label=\"%s\" title=\"%s\">%s</span>", html.EscapeString(description), html.EscapeString(description), glyph)
+}
+
+func formatDocShellCommand(command string) string {
+	for _, operator := range []string{"&&", "||"} {
+		parts := strings.Split(command, operator)
+		if len(parts) == 1 {
+			continue
+		}
+		var formatted strings.Builder
+		formatted.WriteString(parts[0])
+		for _, part := range parts[1:] {
+			formatted.WriteString(operator + " \\\n")
+			formatted.WriteString(strings.TrimLeft(part, " \t"))
+		}
+		command = formatted.String()
+	}
+	return command
 }
 
 func formatDocMCPMetrics(metrics *BenchMCPMetrics) string {
@@ -563,19 +883,39 @@ func escapeDocTableCell(value string) string {
 }
 
 func formatDocMetricRowInt(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) int) string {
-	valSB, valSM, deltaS := computeDocIntDelta(sb, sm, get)
-	valLB, valLM, deltaL := computeDocIntDelta(lb, lm, get)
+	return formatDocMetricRowIntWithDirection(name, sb, sm, lb, lm, get, docDeltaLowerIsBetter)
+}
+
+func formatDocMetricRowIntWithDirection(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) int, direction docDeltaDirection) string {
+	valSB, valSM, deltaS := computeDocIntDelta(sb, sm, get, direction)
+	valLB, valLM, deltaL := computeDocIntDelta(lb, lm, get, direction)
 
 	return fmt.Sprintf("| **%s** | %s | %s | %s | %s | %s | %s |\n",
 		name, valSB, valSM, deltaS, valLB, valLM, deltaL)
 }
 
+func formatDocCachedToUncachedRatioRow(sb, sm, lb, lm *BenchRunResult) string {
+	valSB, valSM, deltaS := computeDocCachedToUncachedRatioDelta(sb, sm)
+	valLB, valLM, deltaL := computeDocCachedToUncachedRatioDelta(lb, lm)
+	return fmt.Sprintf("| **Cached vs Uncached Token Ratio** | %s | %s | %s | %s | %s | %s |\n", valSB, valSM, deltaS, valLB, valLM, deltaL)
+}
+
 func formatDocMetricRowDuration(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) time.Duration) string {
-	valSB, valSM, deltaS := computeDocDurationDelta(sb, sm, get)
-	valLB, valLM, deltaL := computeDocDurationDelta(lb, lm, get)
+	valSB, valSM, deltaS := computeDocDurationDelta(sb, sm, get, docDeltaLowerIsBetter)
+	valLB, valLM, deltaL := computeDocDurationDelta(lb, lm, get, docDeltaLowerIsBetter)
 
 	return fmt.Sprintf("| **%s** | %s | %s | %s | %s | %s | %s |\n",
 		name, valSB, valSM, deltaS, valLB, valLM, deltaL)
+}
+
+func formatDocMetricRowOptionalDuration(name string, sb, sm, lb, lm *BenchRunResult, get func(*BenchRunResult) *time.Duration) string {
+	format := func(run *BenchRunResult) string {
+		if run == nil || get(run) == nil {
+			return "—"
+		}
+		return fmt.Sprintf("%.2fs", get(run).Seconds())
+	}
+	return fmt.Sprintf("| **%s** | %s | %s | — | %s | %s | — |\n", name, format(sb), format(sm), format(lb), format(lm))
 }
 
 func formatDocOracleRow(name string, sb, sm, lb, lm *BenchRunResult, check func(*BenchOracleResult) bool) string {
@@ -612,7 +952,14 @@ func formatDocMCPVerifiedRow(name string, sb, sm, lb, lm *BenchRunResult) string
 		name, render(sb), render(sm), render(lb), render(lm))
 }
 
-func computeDocIntDelta(base, mcp *BenchRunResult, get func(*BenchRunResult) int) (string, string, string) {
+type docDeltaDirection bool
+
+const (
+	docDeltaLowerIsBetter  docDeltaDirection = false
+	docDeltaHigherIsBetter docDeltaDirection = true
+)
+
+func computeDocIntDelta(base, mcp *BenchRunResult, get func(*BenchRunResult) int, direction docDeltaDirection) (string, string, string) {
 	if base == nil && mcp == nil {
 		return "—", "—", "—"
 	}
@@ -634,19 +981,44 @@ func computeDocIntDelta(base, mcp *BenchRunResult, get func(*BenchRunResult) int
 
 	diff := mVal - bVal
 	pct := (float64(diff) / float64(bVal)) * 100.0
-	var delta string
-	switch {
-	case diff < 0:
-		delta = fmt.Sprintf("**%.1f%%**", pct)
-	case diff > 0:
-		delta = fmt.Sprintf("+%.1f%%", pct)
-	default:
-		delta = "0%"
-	}
-	return bStr, mStr, delta
+	return bStr, mStr, formatDocDelta(pct, float64(diff), direction, mcp.MCPVerified)
 }
 
-func computeDocDurationDelta(base, mcp *BenchRunResult, get func(*BenchRunResult) time.Duration) (string, string, string) {
+func computeDocCachedToUncachedRatioDelta(base, mcp *BenchRunResult) (string, string, string) {
+	if base == nil && mcp == nil {
+		return "—", "—", "—"
+	}
+	if base == nil {
+		_, value, _ := docCachedToUncachedRatio(mcp)
+		return "—", value, "—"
+	}
+	if mcp == nil {
+		_, value, _ := docCachedToUncachedRatio(base)
+		return value, "—", "—"
+	}
+
+	baseRatio, baseText, baseComparable := docCachedToUncachedRatio(base)
+	mcpRatio, mcpText, mcpComparable := docCachedToUncachedRatio(mcp)
+	if !baseComparable || !mcpComparable || baseRatio == 0 {
+		return baseText, mcpText, "—"
+	}
+	diff := mcpRatio - baseRatio
+	pct := diff / baseRatio * 100
+	return baseText, mcpText, formatDocDelta(pct, diff, docDeltaHigherIsBetter, mcp.MCPVerified)
+}
+
+func docCachedToUncachedRatio(run *BenchRunResult) (float64, string, bool) {
+	if run.UncachedPromptTokens <= 0 {
+		if run.CachedPromptTokens > 0 {
+			return 0, "∞:1", false
+		}
+		return 0, "—", false
+	}
+	ratio := float64(run.CachedPromptTokens) / float64(run.UncachedPromptTokens)
+	return ratio, fmt.Sprintf("%.2f:1", ratio), true
+}
+
+func computeDocDurationDelta(base, mcp *BenchRunResult, get func(*BenchRunResult) time.Duration, direction docDeltaDirection) (string, string, string) {
 	if base == nil && mcp == nil {
 		return "—", "—", "—"
 	}
@@ -668,14 +1040,23 @@ func computeDocDurationDelta(base, mcp *BenchRunResult, get func(*BenchRunResult
 
 	diff := mSec - bSec
 	pct := (diff / bSec) * 100.0
-	var delta string
-	switch {
-	case diff < 0:
-		delta = fmt.Sprintf("**%.1f%%**", pct)
-	case diff > 0:
-		delta = fmt.Sprintf("+%.1f%%", pct)
-	default:
-		delta = "0%"
+	return bStr, mStr, formatDocDelta(pct, diff, direction, mcp.MCPVerified)
+}
+
+func formatDocDelta(pct float64, diff float64, direction docDeltaDirection, mcpVerified bool) string {
+	if !mcpVerified {
+		return "N/A"
 	}
-	return bStr, mStr, delta
+	if diff == 0 {
+		return "0%"
+	}
+	delta := fmt.Sprintf("%+.1f%%", pct)
+	mcpBenefits := (direction == docDeltaLowerIsBetter && diff < 0) || (direction == docDeltaHigherIsBetter && diff > 0)
+	if mcpBenefits {
+		return fmt.Sprintf("<span class=\"benchmark-delta-positive\">%s</span>", delta)
+	}
+	if !mcpBenefits {
+		return fmt.Sprintf("<span class=\"benchmark-delta-negative\">%s</span>", delta)
+	}
+	return delta
 }

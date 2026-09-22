@@ -891,7 +891,7 @@ enableEmoji = true
 
 [markup]
   [markup.tableOfContents]
-    endLevel = 3
+    endLevel = 4
     startLevel = 1
   [markup.goldmark]
     [markup.goldmark.renderer]
@@ -1320,6 +1320,7 @@ table {
   border-collapse: collapse;
   font-size: 0.9rem;
   text-align: left;
+  margin: auto;
 }
 
 th {
@@ -1377,6 +1378,11 @@ tr:hover td {
   background: rgba(56, 189, 248, 0.05);
 }
 
+.callout-warning {
+  border-left-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.05);
+}
+
 .callout-title {
   font-weight: 700;
   font-size: 0.95rem;
@@ -1388,6 +1394,7 @@ tr:hover td {
 
 .callout-error .callout-title { color: var(--accent-rose); }
 .callout-info .callout-title { color: var(--accent-blue); }
+.callout-warning .callout-title { color: #f59e0b; }
 
 .callout-desc {
   font-size: 0.9rem;

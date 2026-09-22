@@ -91,6 +91,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	configText := string(config)
 	for _, want := range []string{
 		`baseURL = "/"`,
+		`endLevel = 4`,
 		`google_fonts = [["Inter", "300, 400, 600, 700"], ["Fira Code", "400, 500, 600, 700"]]`,
 		`sans_serif_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,
 		`secondary_font = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"`,

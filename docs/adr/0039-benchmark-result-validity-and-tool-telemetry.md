@@ -25,6 +25,11 @@ explicit state when a transcript lacks enough evidence. MCP latency metrics
 include total server time and phase totals so validation and formatting cost
 can be separated from the edit path.
 
+Codex runs record process-start-to-first-event and first-event-to-first-tool-call latency while
+consuming the event stream. The semedit server attaches server-start-to-initialize and
+initialize-to-first-semantic-call latency to its first semantic response. These boundaries
+separate agent/session startup from semantic-tool execution.
+
 Generated documentation publishes a comparison only when it has at least one
 run with an oracle result and no harness execution error. A completed agent
 attempt that fails its oracle remains publishable data; a run that never
@@ -43,6 +48,8 @@ present a task-level tool list as evidence for every underlying run.
   tool identity rather than a display label alone.
 - Documentation excludes incomplete harness records before aggregation.
 - Published tool-call tables are qualified by their run variant and arm.
+- Missing structured MCP response content remains an unavailable observation, not a measured
+  zero-duration startup boundary.
 
 ## Consequences
 

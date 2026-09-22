@@ -71,7 +71,7 @@ Existing language servers and CLI tools were built for **interactive human IDE s
 
 | Gap / Missing Capability | Why Existing Tools Fall Short | Solution Layer in `semedit` | Implementation Mechanism |
 | :--- | :--- | :--- | :--- |
-| **1. Intent Addressing (The Coordinate Tax)** | LSPs strictly require exact byte offsets or line/col numbers (`foo.go:42:15`). Models waste 2–3 turns hunting coordinates. | **Symbol Resolver** | Local Tree-sitter AST queries resolve symbol identifiers (`User.SetName`) into precise byte/line/col offsets. |
+| **1. Intent Addressing (The Coordinate Tax)** | LSPs strictly require exact byte offsets or line/col numbers (`foo.go:42:15`). Models waste 2–3 turns hunting coordinates. | **Symbol Resolver** | Agents name symbols (`User.SetName`) directly, so local Tree-sitter AST queries perform the offset calculation and remove a source of location mistakes. |
 | **2. Unified Agent Contract** | Each language exposes different CLIs and RPC mechanisms (`gopls` vs `rust-analyzer` vs `tsserver`). | **Broker API / MCP** | One consistent intent schema (CLI & MCP) across Go, Rust, TS, Java, Haskell, Elixir, and Elm. |
 | **3. Broken-Code Resilience** | LSPs refuse to start or drop type tables when code has syntax errors, locking the agent out. | **Dual-Engine Dispatcher** | Hierarchical routing: routes to LSP when healthy, drops down to CST pattern tools (`ast-grep`) when uncompilable. |
 | **4. Staged Execution & Feedback Loop** | Raw CLI tools mutate files without running formatters or returning unified diagnostic feedback. | **Execution Pipeline** | Stages edits, runs auto-formatters (`gofmt`, `rustfmt`), runs compiler checks, and returns structured diagnostics to the agent. |
