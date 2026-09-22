@@ -67,6 +67,9 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"GOMODCACHE": {},
 		"GOTMPDIR":   {},
 		"GOBIN":      {},
+		"GOPATH":     {},
+		"GOFLAGS":    {},
+		"GOWORK":     {},
 	}
 	env := make([]string, 0, len(os.Environ())+len(managed))
 	for _, value := range os.Environ() {
@@ -81,5 +84,8 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"GOMODCACHE="+moduleCacheDir,
 		"GOTMPDIR="+tempDir,
 		"GOBIN="+binDir,
+		"GOPATH="+baseDir,
+		"GOFLAGS=",
+		"GOWORK=off",
 	), nil
 }

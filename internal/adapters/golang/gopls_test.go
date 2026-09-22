@@ -18,6 +18,9 @@ func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 		"GOMODCACHE": t.TempDir(),
 		"GOTMPDIR":   t.TempDir(),
 		"GOBIN":      t.TempDir(),
+		"GOPATH":     t.TempDir(),
+		"GOFLAGS":    "-mod=readonly",
+		"GOWORK":     filepath.Join(t.TempDir(), "go.work"),
 	} {
 		t.Setenv(key, value)
 	}
@@ -31,13 +34,16 @@ func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 		"GOMODCACHE": filepath.Join(root, ".scratch", "go", "mod"),
 		"GOTMPDIR":   filepath.Join(root, ".scratch", "go", "tmp"),
 		"GOBIN":      filepath.Join(root, ".scratch", "go", "bin"),
+		"GOPATH":     filepath.Join(root, ".scratch", "go"),
+		"GOFLAGS":    "",
+		"GOWORK":     "off",
 	}
 	for key, path := range want {
 		if got := envValue(env, key); got != path {
 			t.Errorf("%s = %q, want %q", key, got, path)
 		}
 	}
-	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN"} {
+	for _, key := range []string{"GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN", "GOPATH"} {
 		if _, err := os.Stat(want[key]); err != nil {
 			t.Errorf("%s directory was not created: %v", key, err)
 		}

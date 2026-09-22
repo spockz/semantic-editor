@@ -323,10 +323,12 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 		service = backend.NewDefaultService()
 	}
 	return service.Rename(ctx, backend.RenameRequest{
-		Project:         project,
-		Symbol:          request.Symbol,
-		To:              request.To,
-		OrganizeImports: request.OrganizeImports,
+		Project:           project,
+		Symbol:            request.Symbol,
+		To:                request.To,
+		OrganizeImports:   effectiveAutoOrganize(cc, request.OrganizeImports),
+		DeferFormatting:   cc.DeferVerification,
+		DeferVerification: cc.DeferVerification,
 	})
 }
 
@@ -433,7 +435,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
 	return Def[RenameReq, *backend.RenameResult]{
 		Key:       capability.OpRename,
-		Summary:   "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only.",
+		Summary:   "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
 		Params:    renameParams,
 		Level:     LevelSymbol,
 		CLIName:   "rename",

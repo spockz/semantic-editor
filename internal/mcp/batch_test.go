@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"semedit/internal/mcp"
+	"semedit/internal/telemetry"
 )
 
 func TestBatch_SuccessfulExecution(t *testing.T) {
@@ -28,6 +29,7 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 
 	var out bytes.Buffer
 	srv := mcp.NewServer("full", tmpDir, &out)
+	metrics := telemetry.NewMetrics()
 
 	edits := []mcp.BatchEntry{
 		{
@@ -40,7 +42,7 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 		},
 	}
 
-	resp, err := srv.ExecuteBatch(context.Background(), edits, false)
+	resp, err := srv.ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), edits, false)
 	if err != nil {
 		t.Fatalf("ExecuteBatch failed: %v", err)
 	}
@@ -50,6 +52,13 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	}
 	if len(resp.Results) != 2 {
 		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	}
+	if resp.DiagnosticDelta == nil {
+		t.Fatal("successful batch omitted diagnostic delta")
+	}
+	snapshot := metrics.Snapshot(0)
+	if before, after := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationAfter)].Count; before != 1 || after != 1 {
+		t.Fatalf("diagnostic invocation counts = before:%d after:%d, want 1 each", before, after)
 	}
 	if resp.Results[0].Status != "ok" || resp.Results[1].Status != "ok" {
 		t.Errorf("expected all results ok: %+v", resp.Results)
@@ -114,6 +123,9 @@ func TestBatch_FailFast(t *testing.T) {
 
 	if resp.Status != "error" {
 		t.Errorf("expected status error, got %s", resp.Status)
+	}
+	if resp.DiagnosticDelta != nil {
+		t.Errorf("failed batch unexpectedly reported diagnostic delta: %+v", resp.DiagnosticDelta)
 	}
 	if len(resp.Results) != 2 {
 		t.Fatalf("expected 2 results (first ok, second error, third skipped), got %d", len(resp.Results))
@@ -196,5 +208,39 @@ func Sub(a, b int) int {
 	str := string(content)
 	if !strings.Contains(str, "return a + b") || !strings.Contains(str, "return a - b") {
 		t.Errorf("expected both bodies replaced in calc.go, got:\n%s", str)
+	}
+}
+
+func TestBatch_RenameDefersWorkspacePostProcess(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	file := filepath.Join(tmpDir, "calc.go")
+	if err := os.WriteFile(file, []byte("package calc\n\nfunc Add() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatalf("write calc.go: %v", err)
+	}
+
+	srv := mcp.NewServer("full", tmpDir, nil)
+	metrics := telemetry.NewMetrics()
+	resp, err := srv.ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
+		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"calc.go","symbol":"Add","to":"Sum","auto_organize_imports":true}`)},
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"calc.go","symbol":"Sum","body":"return 2"}`)},
+	}, true)
+	if err != nil || resp.Status != "ok" {
+		t.Fatalf("batch rename failed: resp=%+v err=%v", resp, err)
+	}
+	if resp.DiagnosticDelta == nil {
+		t.Fatal("successful batch omitted diagnostic delta")
+	}
+	if got := metrics.Snapshot(0).Phases[string(telemetry.PhaseFormattingImports)].Count; got != 1 {
+		t.Fatalf("workspace import post-process count = %d, want 1", got)
+	}
+	content, err := os.ReadFile(file) // #nosec G304 -- test reads its own TempDir fixture.
+	if err != nil {
+		t.Fatalf("read calc.go: %v", err)
+	}
+	if !strings.Contains(string(content), "func Sum()") || !strings.Contains(string(content), "return 2") {
+		t.Fatalf("rename and replacement not applied:\n%s", content)
 	}
 }

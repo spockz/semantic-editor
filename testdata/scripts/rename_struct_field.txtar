@@ -1,0 +1,36 @@
+# A qualified struct-field rename updates selector uses through the Go compiler.
+exec semedit rename --file config/config.go --symbol Config.Port --to ListenPort
+cmp config/config.go want/config/config.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- config/config.go --
+package config
+
+import "fmt"
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+
+-- want/config/config.go --
+package config
+
+import "fmt"
+
+type Config struct {
+	Host       string
+	ListenPort int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.ListenPort)
+}

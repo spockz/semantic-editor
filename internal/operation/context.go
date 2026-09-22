@@ -9,13 +9,14 @@ import (
 
 // CallContext carries request-scoped state shared by every operation invocation.
 type CallContext struct {
-	Ctx          context.Context
-	WorkDir      string
-	Project      backend.ProjectContext
-	Registry     *Registry
-	Service      *backend.Service
-	InBatch      bool
-	DeferImports bool
+	Ctx               context.Context
+	WorkDir           string
+	Project           backend.ProjectContext
+	Registry          *Registry
+	Service           *backend.Service
+	InBatch           bool
+	DeferImports      bool
+	DeferVerification bool
 }
 
 // NewCallContext builds the shared call context for one ingress request.

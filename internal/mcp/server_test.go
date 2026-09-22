@@ -161,6 +161,41 @@ func TestMCPServerReturnsConfiguredInstructions(t *testing.T) {
 	}
 }
 
+func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/sessiontiming\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sessiontiming\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_verify\",\"arguments\":{\"path\":\".\",\"language\":\"go\"}}}\n", root)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("response lines = %d, want 2: %s", len(lines), out.String())
+	}
+	var response struct {
+		Result struct {
+			StructuredContent struct {
+				SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.StructuredContent.SessionMetrics == nil {
+		t.Fatalf("first semantic response missing session_metrics: %s", lines[1])
+	}
+	if got := response.Result.StructuredContent.SessionMetrics; got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
+		t.Errorf("session metrics = %#v, want non-negative durations", got)
+	}
+}
+
 func TestMCPServerRejectsUnusableGoBaseDir(t *testing.T) {
 	baseDir := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(baseDir, []byte("occupied"), 0o600); err != nil {

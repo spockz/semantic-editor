@@ -4,6 +4,7 @@ package operation_test
 import (
 	"errors"
 	"maps"
+	"strings"
 	"testing"
 
 	"semedit/internal/backend"
@@ -22,6 +23,30 @@ func TestJavaVerifyRegistryRequestAndDispatch(t *testing.T) {
 	verify, ok := request.(operation.VerifyReq)
 	if !ok || verify.Path != "src/Widget.java" || !verify.FormatSelectedFile || !verify.OrganizeImports || !verify.Project.Java.ImportMaven {
 		t.Fatalf("parsed Java verify request = %#v", request)
+	}
+}
+
+func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing.T) {
+	t.Parallel()
+
+	registry := operation.DefaultRegistry()
+	for _, name := range []string{
+		"semantic_rename",
+		"semantic_insert_declaration",
+		"semantic_insert_function",
+		"semantic_insert_type",
+		"semantic_insert_decl",
+		"semantic_organize_imports",
+		"semantic_replace_body",
+	} {
+		entry, ok := registry.LookupMCP(name)
+		if !ok {
+			t.Errorf("missing %s", name)
+			continue
+		}
+		if !strings.Contains(entry.Summary, "do not call semantic_verify separately") {
+			t.Errorf("%s does not discourage redundant verification: %q", name, entry.Summary)
+		}
 	}
 }
 

@@ -223,12 +223,15 @@ func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol,
 				}
 			}
 		case *ast.GenDecl:
-			if targetRecv != "" {
-				continue
-			}
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
 				case *ast.TypeSpec:
+					if targetRecv != "" && s.Name.Name == targetRecv {
+						results = append(results, findStructFields(fset, filePath, s, targetName)...)
+					}
+					if targetRecv != "" {
+						continue
+					}
 					if s.Name.Name == targetName {
 						pos := fset.Position(s.Name.Pos())
 						results = append(results, &Symbol{
@@ -241,6 +244,9 @@ func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol,
 						})
 					}
 				case *ast.ValueSpec:
+					if targetRecv != "" {
+						continue
+					}
 					for _, ident := range s.Names {
 						if ident.Name == targetName {
 							pos := fset.Position(ident.Pos())
@@ -260,6 +266,34 @@ func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol,
 	}
 
 	return results, nil
+}
+
+// findStructFields returns fields declared directly by the requested named struct.
+func findStructFields(fset *token.FileSet, filePath string, spec *ast.TypeSpec, targetName string) []*Symbol {
+	structType, ok := spec.Type.(*ast.StructType)
+	if !ok {
+		return nil
+	}
+
+	var results []*Symbol
+	for _, field := range structType.Fields.List {
+		for _, ident := range field.Names {
+			if ident.Name != targetName {
+				continue
+			}
+			pos := fset.Position(ident.Pos())
+			results = append(results, &Symbol{
+				Name:     ident.Name,
+				Receiver: spec.Name.Name,
+				Kind:     "field",
+				File:     filePath,
+				Line:     pos.Line,
+				Column:   pos.Column,
+				Offset:   pos.Offset,
+			})
+		}
+	}
+	return results
 }
 
 func extractReceiver(recv *ast.FieldList) string {

@@ -69,7 +69,12 @@ func effectiveAutoOrganize(cc CallContext, parsed bool) bool {
 	return parsed
 }
 
-func surroundingDelta(ctx context.Context, workDir string) ([]string, func() pipeline.DiagnosticDelta) {
+const automaticVerificationGuidance = " This standalone operation automatically verifies diagnostics and has no verification opt-out; do not call semantic_verify separately."
+
+func surroundingDelta(ctx context.Context, workDir string, deferVerification bool) ([]string, func() pipeline.DiagnosticDelta) {
+	if deferVerification {
+		return nil, func() pipeline.DiagnosticDelta { return pipeline.DiagnosticDelta{} }
+	}
 	before, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), workDir)
 	return before, func() pipeline.DiagnosticDelta {
 		after, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
@@ -158,7 +163,7 @@ func parseInsertDeclaration(raw map[string]any) (InsertDeclarationReq, error) {
 
 func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclarationReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	opts := astedit.Options{
 		Placement:           astedit.Placement(req.Placement),
 		TargetSymbol:        req.TargetSymbol,
@@ -174,7 +179,7 @@ func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclara
 func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 	return Def[InsertDeclarationReq, FileEditRes]{
 		Key:     "insert_declaration",
-		Summary: "Use this tool instead of replace_file_content or write_to_file whenever adding a new top-level function, method, type, or constant to an existing Go file. Accurately places declarations at file boundaries, public/private sections, or relative to existing symbols without coordinate hunting.",
+		Summary: "Use this tool instead of replace_file_content or write_to_file whenever adding a new top-level function, method, type, or constant to an existing Go file. Accurately places declarations at file boundaries, public/private sections, or relative to existing symbols without coordinate hunting." + automaticVerificationGuidance,
 		Params:  insertDeclarationParams,
 		Level:   LevelFile,
 		CLIName: "insert",
@@ -247,7 +252,7 @@ func parseInsertFunction(raw map[string]any) (InsertFunctionReq, error) {
 
 func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertFunction(ctx, targetPath, req.Source, astedit.FunctionOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Placement:           astedit.Placement(req.Placement),
@@ -263,7 +268,7 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 	return Def[InsertFunctionReq, FileEditRes]{
 		Key:     "insert_function",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Automatically clusters methods near their receiver types and enforces public vs private section partitioning.",
+		Summary: "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",
@@ -336,7 +341,7 @@ func parseInsertType(raw map[string]any) (InsertTypeReq, error) {
 
 func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertType(ctx, targetPath, req.Source, astedit.TypeOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Placement:           astedit.Placement(req.Placement),
@@ -352,7 +357,7 @@ func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (File
 func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 	return Def[InsertTypeReq, FileEditRes]{
 		Key:     "insert_type",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Automatically anchors types within the appropriate section and resolves package imports.",
+		Summary: "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
 		Params:  insertTypeParams,
 		Level:   LevelFile,
 		CLIName: "insert-type",
@@ -429,7 +434,7 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 
 func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertDecl(ctx, targetPath, req.Source, astedit.DeclOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Group:               req.Group,
@@ -446,7 +451,7 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 	return Def[InsertDeclReq, FileEditRes]{
 		Key:     "insert_decl",
-		Summary: "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging.",
+		Summary: "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
 		Params:  insertDeclParams,
 		Level:   LevelFile,
 		CLIName: "insert-decl",
@@ -506,7 +511,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 	if req.File != "" {
 		paths = []string{resolveWorkPath(cc.WorkDir, req.File)}
 	}
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := pipeline.OrganizeImportsWithOptions(ctx, cc.WorkDir, pipeline.ImportOptions{
 		Add:    req.Add,
 		Remove: req.Remove,
@@ -524,7 +529,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 	return Def[OrganizeImportsReq, FileEditRes]{
 		Key:     "organize_imports",
-		Summary: "Use this tool to format imports, resolve missing package imports, and strip unused imports across specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals.",
+		Summary: "Use this tool to format imports, resolve missing package imports, and strip unused imports across specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals." + automaticVerificationGuidance,
 		Params:  organizeImportsParams,
 		Level:   LevelFile,
 		CLIName: "imports",
@@ -654,7 +659,7 @@ func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
 
 func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir)
+	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.ReplaceBody(ctx, targetPath, req.Symbol, req.Body, astedit.BodyOptions{
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
@@ -667,7 +672,7 @@ func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (Fi
 func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 	return Def[ReplaceBodyReq, FileEditRes]{
 		Key:     "replace_body",
-		Summary: "Replace the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error.",
+		Summary: "Replace the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",

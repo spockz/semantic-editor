@@ -79,6 +79,38 @@ func (s *Server) Start() {}
 	}
 }
 
+func TestResolveStructFieldCoordinates(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	source := `package config
+
+type Config struct {
+	Host string
+	Port int
+}
+`
+	filePath := filepath.Join(dir, "config.go")
+	if err := os.WriteFile(filePath, []byte(source), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	res, err := symbol.Resolve(dir, "config.go", "Config.Port")
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	if res.Symbol != "Config.Port" {
+		t.Errorf("expected Symbol Config.Port, got %q", res.Symbol)
+	}
+	if res.Line != 5 || res.Column != 2 {
+		t.Errorf("expected Port at 5:2, got %d:%d", res.Line, res.Column)
+	}
+	if res.Kind != "field" {
+		t.Errorf("expected Kind field, got %q", res.Kind)
+	}
+}
+
 func TestResolveNotFound_StructuredError(t *testing.T) {
 	t.Parallel()
 

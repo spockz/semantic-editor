@@ -73,7 +73,7 @@ func runSnapshot(ctx context.Context, cc CallContext, req SnapshotReq) (Snapshot
 func snapshotDef() Def[SnapshotReq, SnapshotRes] {
 	return Def[SnapshotReq, SnapshotRes]{
 		Key:     "snapshot",
-		Summary: "Capture a pre-edit transactional snapshot of specified files or the workspace root, creating an immutable journal under .scratch/snapshots/<id>/ for subsequent conflict-checked undo.",
+		Summary: "Capture a pre-edit transactional snapshot only when a later semantic_undo may be needed, creating an immutable journal under .scratch/snapshots/<id>/ for conflict-checked rollback. Do not use it for routine one-way edits, batches, or verification.",
 		Params:  snapshotParams,
 		Level:   LevelWorkspace,
 		CLIName: "snapshot",

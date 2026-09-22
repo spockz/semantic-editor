@@ -28,22 +28,26 @@ import (
 
 // Server handles MCP JSON-RPC requests over stdio streams.
 type Server struct {
-	profile      string
-	workDir      string
-	service      *backend.Service
-	registry     *operation.Registry
-	liveReload   bool
-	instructions string
-	goBaseDir    string
-	outMu        sync.Mutex
-	out          io.Writer
+	profile             string
+	workDir             string
+	service             *backend.Service
+	registry            *operation.Registry
+	liveReload          bool
+	instructions        string
+	goBaseDir           string
+	startedAt           time.Time
+	sessionMu           sync.Mutex
+	initializedAt       time.Time
+	firstSemanticCallAt time.Time
+	outMu               sync.Mutex
+	out                 io.Writer
 }
 
 const (
 	// DescriptiveInstructions advertises semantic operations without requiring their use.
 	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
 	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
-	PrescriptiveInstructions = "Before editing, inspect the complete tool inventory provided by the current environment, including deferred or lazy discovery mechanisms. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
+	PrescriptiveInstructions = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
 )
 
 // Option configures a Server instance.
@@ -96,6 +100,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 		service:   backend.NewDefaultService(),
 		registry:  operation.DefaultRegistry(),
 		goBaseDir: filepath.Join(workDir, ".scratch", "go"),
+		startedAt: time.Now(),
 		out:       out,
 	}
 	for _, opt := range opts {
@@ -178,6 +183,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 				s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
 			}
 		}
+		s.markInitialized(time.Now())
 		result := map[string]any{
 			"protocolVersion": "2024-11-05",
 			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
@@ -258,7 +264,7 @@ func toolSchema(entry operation.Entry) map[string]any {
 
 func batchToolSchema() map[string]any {
 	return map[string]any{
-		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure.",
+		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Successful batches automatically perform one final diagnostic check; a separate semantic_verify call is not needed.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -294,7 +300,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
 		return
 	}
-	timing := newToolRequestTiming(ctx)
+	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
 	ctx = timing.Context(ctx)
 	raw := map[string]any{}
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
@@ -342,7 +348,7 @@ func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timi
 	s.sendResult(id, map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": text}},
 		"isError":           false,
-		"structuredContent": map[string]any{"metrics": timing.Snapshot()},
+		"structuredContent": timing.structuredContent(),
 	})
 }
 
@@ -364,7 +370,7 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 	result := map[string]any{
 		"content":           []map[string]any{{"type": "text", "text": text}},
 		"isError":           true,
-		"structuredContent": map[string]any{"metrics": timing.Snapshot()},
+		"structuredContent": timing.structuredContent(),
 	}
 	if len(errs) > 0 && errs[0] != nil {
 		var mavenErr *maven.Error
@@ -382,10 +388,11 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 type toolRequestTiming struct {
 	metrics *telemetry.Metrics
 	started time.Time
+	session *StartupMetrics
 }
 
-func newToolRequestTiming(_ context.Context) *toolRequestTiming {
-	return &toolRequestTiming{metrics: telemetry.NewMetrics(), started: time.Now()}
+func newToolRequestTiming(_ context.Context, session *StartupMetrics) *toolRequestTiming {
+	return &toolRequestTiming{metrics: telemetry.NewMetrics(), started: time.Now(), session: session}
 }
 
 func (t *toolRequestTiming) Context(ctx context.Context) context.Context {
@@ -394,6 +401,41 @@ func (t *toolRequestTiming) Context(ctx context.Context) context.Context {
 
 func (t *toolRequestTiming) Snapshot() telemetry.Snapshot {
 	return t.metrics.Snapshot(time.Since(t.started))
+}
+
+func (t *toolRequestTiming) structuredContent() map[string]any {
+	content := map[string]any{"metrics": t.Snapshot()}
+	if t.session != nil {
+		content["session_metrics"] = t.session
+	}
+	return content
+}
+
+// StartupMetrics records one server session's initialization and first semantic request delays.
+type StartupMetrics struct {
+	ServerStartToInitializeMS       int64 `json:"server_start_to_initialize_ms"`
+	InitializeToFirstSemanticCallMS int64 `json:"initialize_to_first_semantic_call_ms"`
+}
+
+func (s *Server) markInitialized(at time.Time) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	if s.initializedAt.IsZero() {
+		s.initializedAt = at
+	}
+}
+
+func (s *Server) firstSemanticCallMetrics(at time.Time) *StartupMetrics {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	if s.initializedAt.IsZero() || !s.firstSemanticCallAt.IsZero() {
+		return nil
+	}
+	s.firstSemanticCallAt = at
+	return &StartupMetrics{
+		ServerStartToInitializeMS:       s.initializedAt.Sub(s.startedAt).Milliseconds(),
+		InitializeToFirstSemanticCallMS: at.Sub(s.initializedAt).Milliseconds(),
+	}
 }
 
 func (s *Server) extractLocation(err error) map[string]any {

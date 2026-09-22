@@ -45,7 +45,7 @@ func (GoBackend) CapabilityMatrix() LanguageMatrix {
 		Operations: map[string]OpCapability{
 			"rename": {
 				Supported:    true,
-				Description:  "Compiler-backed symbol renaming across identifiers, methods, interfaces, and packages with automatic import tidying.",
+				Description:  "Compiler-backed symbol renaming across identifiers, struct fields, methods, interfaces, and packages with automatic import tidying.",
 				CLICommand:   "semedit rename --file <path> --symbol <sym> --to <name>",
 				MCPTool:      "semantic_rename",
 				PlacementKey: false,
@@ -159,32 +159,40 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 	if lookup.Ambiguous {
 		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
 	}
-	before, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
-	if err != nil {
-		return nil, err
+	var before []string
+	if !request.DeferVerification {
+		before, err = pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := golang.Rename(ctx, request.Project.RootDir, lookup.File, lookup.Line, lookup.Column, request.To); err != nil {
 		return nil, err
 	}
-	if request.OrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, "."); err != nil {
-			return nil, fmt.Errorf("organize imports after rename: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, request.Project.RootDir, "."); err != nil {
-			return nil, fmt.Errorf("format after rename: %w", err)
+	if !request.DeferFormatting {
+		if request.OrganizeImports {
+			if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, "."); err != nil {
+				return nil, fmt.Errorf("organize imports after rename: %w", err)
+			}
+		} else {
+			if err := pipeline.Format(ctx, request.Project.RootDir, "."); err != nil {
+				return nil, fmt.Errorf("format after rename: %w", err)
+			}
 		}
 	}
-	after, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), request.Project.RootDir)
-	if err != nil {
-		return nil, err
+	var after []string
+	if !request.DeferVerification {
+		after, err = pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), request.Project.RootDir)
+		if err != nil {
+			return nil, err
+		}
 	}
 	delta := pipeline.ComputeDelta(before, after)
 	result := &RenameResult{Lookup: lookup, Diagnostics: DiagnosticDelta{
 		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
 		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
 	}, Active: after}
-	if len(result.Diagnostics.Introduced) > 0 {
+	if !request.DeferVerification && len(result.Diagnostics.Introduced) > 0 {
 		return result, &RenameDiagnosticsError{Result: result}
 	}
 	return result, nil

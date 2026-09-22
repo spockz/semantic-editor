@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"time"
 
+	"semedit/internal/backend"
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/telemetry"
@@ -29,14 +32,20 @@ type BatchResult struct {
 
 // BatchResponse aggregates the outcomes of a semantic batch execution.
 type BatchResponse struct {
-	Status  string        `json:"status"`
-	Results []BatchResult `json:"results"`
+	Status          string                    `json:"status"`
+	Results         []BatchResult             `json:"results"`
+	DiagnosticDelta *pipeline.DiagnosticDelta `json:"diagnostic_delta,omitempty"`
 }
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	before, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("batch diagnostics before: %w", err)
+	}
 	writtenFiles := make(map[string]struct{})
+	workspaceScope := false
 	for _, batchEntry := range edits {
 		result, writtenFile, err := s.executeBatchEdit(ctx, batchEntry)
 		if err != nil {
@@ -45,21 +54,38 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			return response, nil
 		}
 		if writtenFile != "" {
-			writtenFiles[writtenFile] = struct{}{}
+			if filepath.Clean(writtenFile) == filepath.Clean(s.workDir) {
+				workspaceScope = true
+			} else {
+				writtenFiles[writtenFile] = struct{}{}
+			}
 		}
 		response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Symbol: result.Symbol, Status: "ok", Diff: result.Diff})
+	}
+	if workspaceScope {
+		writtenFiles = map[string]struct{}{s.workDir: {}}
 	}
 	for file := range writtenFiles {
 		var err error
 		if autoOrganizeImports {
 			err = pipeline.OrganizeImports(ctx, s.workDir, file)
 		} else {
-			err = pipeline.Format(ctx, s.workDir, file)
+			if filepath.Clean(file) == filepath.Clean(s.workDir) {
+				err = formatWorkspace(ctx, s.workDir)
+			} else {
+				err = pipeline.Format(ctx, s.workDir, file)
+			}
 		}
 		if err != nil {
 			return response, fmt.Errorf("post-process %s: %w", file, err)
 		}
 	}
+	after, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), s.workDir)
+	if err != nil {
+		return response, fmt.Errorf("batch diagnostics after: %w", err)
+	}
+	delta := pipeline.ComputeDelta(before, after)
+	response.DiagnosticDelta = &delta
 	return response, nil
 }
 
@@ -73,21 +99,51 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		return BatchResult{}, "", fmt.Errorf("invalid arguments: %w", err)
 	}
 	result, err := s.registry.Dispatch(operation.CallContext{
-		Ctx:          ctx,
-		WorkDir:      s.workDir,
-		Registry:     s.registry,
-		Service:      s.service,
-		InBatch:      true,
-		DeferImports: true,
+		Ctx:               ctx,
+		WorkDir:           s.workDir,
+		Registry:          s.registry,
+		Service:           s.service,
+		InBatch:           true,
+		DeferImports:      true,
+		DeferVerification: true,
 	}, entry.Key, raw)
 	if err != nil {
 		return BatchResult{}, "", err
 	}
 	batchResult := resultForBatch(result)
+	if _, ok := result.(*backend.RenameResult); ok {
+		return batchResult, s.workDir, nil
+	}
 	if outcome, ok := result.(operation.FileOutcome); ok {
 		return batchResult, filepath.Clean(outcome.WrittenFile()), nil
 	}
 	return batchResult, "", nil
+}
+
+func formatWorkspace(ctx context.Context, workDir string) error {
+	paths := make([]string, 0)
+	err := filepath.Walk(workDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.IsDir() {
+			if info.Name() == ".git" || info.Name() == ".scratch" || info.Name() == "vendor" || info.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) == ".go" {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk workspace for formatting: %w", err)
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return pipeline.Format(ctx, workDir, paths...)
 }
 
 func resultForBatch(result any) BatchResult {
@@ -104,7 +160,7 @@ func resultForBatch(result any) BatchResult {
 }
 
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
-	timing := newToolRequestTiming(ctx)
+	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
 	ctx = timing.Context(ctx)
 	var request struct {
 		Edits               []BatchEntry `json:"edits"`

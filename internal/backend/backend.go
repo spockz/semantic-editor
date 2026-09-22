@@ -282,10 +282,12 @@ type LookupResult struct {
 
 // RenameRequest describes a semantic rename without language-specific coordinates.
 type RenameRequest struct {
-	Project         ProjectContext
-	Symbol          string
-	To              string
-	OrganizeImports bool
+	Project           ProjectContext
+	Symbol            string
+	To                string
+	OrganizeImports   bool
+	DeferFormatting   bool
+	DeferVerification bool
 }
 
 // NormalizeRenameInput trims whitespace and removes one matching outer quote pair.
