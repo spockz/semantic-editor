@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,6 +51,75 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 	}
 	if !res.MCPVerified {
 		t.Error("MCPVerified = false, want true after a semedit transport success")
+	}
+}
+
+func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
+	cases := []struct {
+		name, stderr, stdout string
+		exit, wantStatus     int
+		wantErr              bool
+	}{
+		{name: "success with stderr", stderr: "MCP startup warning\n", stdout: "not-json\n"},
+		{name: "success empty stderr", stdout: "not-json\n"},
+		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: "not-json\n"},
+		{name: "failure retains stderr", stderr: "server failed to start", exit: 7, wantErr: true, wantStatus: 7},
+		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			binDir := t.TempDir()
+			script := filepath.Join(binDir, "codex")
+			content := fmt.Sprintf("#!/bin/sh\nprintf '%%s' %q >&2\nprintf '%%s' %q\nexit %d\n", tc.stderr, tc.stdout, tc.exit)
+			if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// #nosec G302 -- the temporary test command must be executable.
+			if err := os.Chmod(script, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			res := &RunResult{}
+			err := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", res)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("runCodex error = %v, want error=%t", err, tc.wantErr)
+			}
+			if res.CodexExitCode == nil || *res.CodexExitCode != tc.wantStatus {
+				t.Fatalf("exit status = %v, want %d", res.CodexExitCode, tc.wantStatus)
+			}
+			if tc.stderr != "" && !strings.Contains(res.CodexStderr, strings.TrimSpace(tc.stderr)[:min(len(strings.TrimSpace(tc.stderr)), 20)]) {
+				t.Fatalf("stderr = %q, missing diagnostic", res.CodexStderr)
+			}
+			if len(res.CodexStderr) > maxCodexStderrBytes+64 {
+				t.Fatalf("stderr retained %d bytes, expected bounded output", len(res.CodexStderr))
+			}
+			if tc.name == "oversized stderr" {
+				if !strings.Contains(res.CodexStderr, "[stderr truncated; retained first 65536 bytes]") {
+					t.Fatal("oversized stderr missing truncation marker")
+				}
+				if !strings.HasPrefix(res.CodexStderr, strings.Repeat("x", maxCodexStderrBytes)) {
+					t.Fatal("oversized stderr payload was not retained up to the boundary")
+				}
+			}
+			if tc.name == "malformed stdout" && res.Turns != 1 {
+				t.Fatalf("malformed stdout changed turns to %d", res.Turns)
+			}
+			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0) {
+				t.Fatalf("malformed stdout contaminated metrics: %#v", res)
+			}
+			if tc.name == "success with stderr" {
+				data, marshalErr := json.Marshal(res)
+				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":0`) {
+					t.Fatalf("successful exit status was not serialized: %s (%v)", data, marshalErr)
+				}
+			}
+			if tc.name == "failure retains stderr" {
+				data, marshalErr := json.Marshal(res)
+				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":7`) {
+					t.Fatalf("failed exit status was not serialized: %s (%v)", data, marshalErr)
+				}
+			}
+		})
 	}
 }
 
@@ -106,7 +176,7 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 
 	for mode, want := range map[MCPServerInstructionMode]string{
 		MCPServerInstructionsDescriptive:  "Semedit semantic tools are available",
-		MCPServerInstructionsPrescriptive: "Use semedit semantic tools",
+		MCPServerInstructionsPrescriptive: "inspect the complete tool inventory",
 	} {
 		runner := NewRunner(t.TempDir(), WithMCPServerInstructions(mode))
 		override, err := runner.codexMCPServerInstructionsOverride()

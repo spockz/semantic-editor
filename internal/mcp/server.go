@@ -43,7 +43,7 @@ const (
 	// DescriptiveInstructions advertises semantic operations without requiring their use.
 	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
 	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
-	PrescriptiveInstructions = "Use semedit semantic tools as the default for source-code mutations. Use direct file edits only when no semantic operation applies or the semantic operation fails, is unsupported, or is ambiguous."
+	PrescriptiveInstructions = "Before editing, inspect the complete tool inventory provided by the current environment, including deferred or lazy discovery mechanisms. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
 )
 
 // Option configures a Server instance.

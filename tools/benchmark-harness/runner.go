@@ -177,6 +177,8 @@ type RunResult struct {
 	ToolCalls             []ToolCall               `json:"tool_calls,omitempty"`
 	MCPVerified           bool                     `json:"mcp_verified"`
 	Error                 string                   `json:"error,omitempty"`
+	CodexExitCode         *int                     `json:"codex_exit_code,omitempty"`
+	CodexStderr           string                   `json:"codex_stderr,omitempty"`
 }
 
 // Runner coordinates execution across evaluation arms and benchmarks.

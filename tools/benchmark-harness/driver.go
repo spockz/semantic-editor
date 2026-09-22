@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -18,6 +19,15 @@ import (
 
 	"semedit/internal/mcp"
 )
+
+const maxCodexStderrBytes = 64 * 1024
+
+func boundedDiagnostic(data []byte, limit int) string {
+	if len(data) <= limit {
+		return string(data)
+	}
+	return string(data[:limit]) + fmt.Sprintf("\n[stderr truncated; retained first %d bytes]", limit)
+}
 
 // HarnessType represents the execution harness (codex, agy, control).
 type HarnessType string
@@ -516,11 +526,21 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		if diagnostic := strings.TrimSpace(stderr.String()); diagnostic != "" {
-			return fmt.Errorf("run codex: %w: %s", err, diagnostic)
+	runErr := cmd.Run()
+	exitErr := &exec.ExitError{}
+	if errors.As(runErr, &exitErr) {
+		code := exitErr.ExitCode()
+		res.CodexExitCode = &code
+	} else if runErr == nil {
+		code := 0
+		res.CodexExitCode = &code
+	}
+	res.CodexStderr = boundedDiagnostic(stderr.Bytes(), maxCodexStderrBytes)
+	if runErr != nil {
+		if diagnostic := strings.TrimSpace(res.CodexStderr); diagnostic != "" {
+			return fmt.Errorf("run codex: %w: %s", runErr, diagnostic)
 		}
-		return fmt.Errorf("run codex: %w", err)
+		return fmt.Errorf("run codex: %w", runErr)
 	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(stdout.Bytes()))
