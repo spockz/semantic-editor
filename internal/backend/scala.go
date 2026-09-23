@@ -258,11 +258,11 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project ProjectContext, query
 		}
 	}
 	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
-		"uri": fileURI(file), "languageId": "scala", "version": 1, "text": string(source),
+		"uri": pathutil.FileURI(file), "languageId": "scala", "version": 1, "text": string(source),
 	}}); err != nil {
 		return nil, &ScalaError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}})
+	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
 		return nil, &ScalaError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
@@ -310,8 +310,8 @@ func rejectScalaServerRequest(_ context.Context, request lsp.Request) (json.RawM
 func initializeScalaSession(ctx context.Context, session ScalaSession, root string) error {
 	params := map[string]any{
 		"processId":        nil,
-		"rootUri":          fileURI(root),
-		"workspaceFolders": []map[string]string{{"uri": fileURI(root), "name": filepath.Base(root)}},
+		"rootUri":          pathutil.FileURI(root),
+		"workspaceFolders": []map[string]string{{"uri": pathutil.FileURI(root), "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
 			"general":      map[string]any{"positionEncodings": []string{"utf-16"}},
 			"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
@@ -469,7 +469,7 @@ func resolveScalaProject(project ProjectContext) (string, string, []byte, error)
 		base = filepath.Dir(file)
 	}
 	root := CanonicalWorkspaceRoot(base)
-	if !pathWithin(root, file) {
+	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &ScalaError{Op: "project", File: file, Workspace: root, Err: ErrScalaFileOutsideWorkspace}
 	}
 	source, err := os.ReadFile(file) // #nosec G304 -- file is explicitly selected by the caller.
@@ -579,8 +579,8 @@ func decodeScalaDocumentSymbol(raw json.RawMessage, root string, source []byte) 
 			return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrScalaMalformedResponse)
 		}
 		if symbol.URI != "" {
-			uriPath, err := filePathFromURI(symbol.URI)
-			if err != nil || !pathWithin(root, uriPath) {
+			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
+			if err != nil || !pathutil.PathWithin(root, uriPath) {
 				return scalaDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside workspace", ErrScalaMalformedResponse)
 			}
 		}
@@ -683,7 +683,7 @@ func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol
 	if err != nil {
 		relative = file
 	}
-	location := SourceLocation{URI: fileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
+	location := SourceLocation{URI: pathutil.FileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
 	return &SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: scalaKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
 }
 

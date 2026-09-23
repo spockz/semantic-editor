@@ -551,7 +551,3 @@ func PositionFromByteOffset(source []byte, offset int) Position {
 	}
 	return Position{Line: line, Character: UTF16Length(string(source[lineStart:offset]))}
 }
-
-func fileURI(path string) string {
-	return pathutil.FileURI(path)
-}

@@ -1,5 +1,5 @@
-// Package backend keeps Rust lookup isolated from mutating Go paths while making LSP lifecycle and trust checks explicit.
-package backend
+// Package rust adapts Rust language-server operations behind the neutral backend contract.
+package rust
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
@@ -99,7 +100,7 @@ type RustBackend struct {
 }
 
 // TrustedWorkspaceRoot discovers the workspace used for trust comparison.
-func (b *RustBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+func (b *RustBackend) TrustedWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	return rustWorkspaceRoot(project)
 }
 
@@ -120,20 +121,20 @@ func NewRustBackendWithFactory(factory RustSessionFactory) *RustBackend {
 }
 
 // Language returns the Rust language identifier.
-func (*RustBackend) Language() LanguageID { return LanguageRust }
+func (*RustBackend) Language() neutralbackend.LanguageID { return neutralbackend.LanguageRust }
 
 // Capabilities declares Rust's read-only lookup capability.
-func (*RustBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup, OperationRename)
+func (*RustBackend) Capabilities() neutralbackend.Capabilities {
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationRename)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Rust backend.
-func (*RustBackend) CapabilityMatrix() LanguageMatrix {
-	return LanguageMatrix{
+func (*RustBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
+	return neutralbackend.LanguageMatrix{
 		Language:    "rust",
 		DisplayName: "Rust",
 		Maturity:    "Selected-file refactoring preview",
-		Operations: map[string]OpCapability{
+		Operations: map[string]neutralbackend.OpCapability{
 			"rename": {
 				Supported:    true,
 				Description:  "Trusted rust-analyzer semantic rename confined to one selected canonical Rust file; workspace-wide edits are rejected.",
@@ -149,7 +150,7 @@ func (*RustBackend) CapabilityMatrix() LanguageMatrix {
 				PlacementKey: false,
 			},
 		},
-		Limitations: []Constraint{
+		Limitations: []neutralbackend.Constraint{
 			{
 				Title:       "Selected-File Rename Only",
 				Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
@@ -186,7 +187,7 @@ func (b *RustBackend) Close() error {
 }
 
 // Lookup resolves one exact hierarchical symbol in the selected Rust file.
-func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query string) (*LookupResult, error) {
+func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.ProjectContext, query string) (*neutralbackend.LookupResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -195,7 +196,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 		return nil, err
 	}
 	if !project.WorkspaceTrust.Allows(root) {
-		return nil, &WorkspaceTrustError{Operation: OperationLookup, Language: LanguageRust, Workspace: root}
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationLookup, Language: neutralbackend.LanguageRust, Workspace: root}
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &RustError{Op: "lookup", File: file, Symbol: query, Err: ErrRustMalformedResponse}
@@ -227,7 +228,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 
 	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{
 		"textDocument": map[string]any{
-			"uri":        fileURI(file),
+			"uri":        pathutil.FileURI(file),
 			"languageId": "rust",
 			"version":    1,
 			"text":       string(source),
@@ -236,7 +237,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 		return nil, &RustError{Op: "didOpen", File: file, Err: err}
 	}
 	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{
-		"textDocument": map[string]string{"uri": fileURI(file)},
+		"textDocument": map[string]string{"uri": pathutil.FileURI(file)},
 	})
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
@@ -249,7 +250,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 }
 
 // Rename executes one trusted, file-scoped rust-analyzer rename transaction.
-func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -258,10 +259,10 @@ func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 		return nil, err
 	}
 	if !request.Project.WorkspaceTrust.Allows(root) {
-		return nil, &WorkspaceTrustError{Operation: OperationRename, Language: LanguageRust, Workspace: root}
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationRename, Language: neutralbackend.LanguageRust, Workspace: root}
 	}
 	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
-		return nil, &Error{Operation: OperationRename, Language: LanguageRust, Err: ErrRustRenameInvalidEdit}
+		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationRename, Language: neutralbackend.LanguageRust, Err: ErrRustRenameInvalidEdit}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -287,10 +288,10 @@ func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 		}
 	}
 	session := b.session
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": fileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
 		return nil, &RustError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}})
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 	}
@@ -302,14 +303,14 @@ func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if err != nil {
 		return nil, err
 	}
-	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start})
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
 	if err != nil {
 		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
 	}
 	if !validPrepareRename(prepRaw) {
 		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
 	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
 	if err != nil {
 		return nil, &RustError{Op: "rename", File: file, Err: err}
 	}
@@ -326,7 +327,7 @@ func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	}
 	_ = session.Close()
 	b.session, b.root = nil, ""
-	return &RenameResult{Lookup: lookup}, nil
+	return &neutralbackend.RenameResult{Lookup: lookup}, nil
 }
 
 type rustTextEdit struct {
@@ -400,8 +401,8 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			return nil, ErrRustRenameInvalidEdit
 		}
 		for uri, encoded := range changes {
-			path, err := filePathFromURI(uri)
-			if err != nil || path != CanonicalWorkspaceRoot(file) {
+			path, err := pathutil.FilePathFromURI(uri)
+			if err != nil || path != neutralbackend.CanonicalWorkspaceRoot(file) {
 				return nil, ErrRustRenameInvalidEdit
 			}
 			edits, err = decodeRustTextEdits(encoded)
@@ -426,8 +427,8 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 		if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
 			return nil, ErrRustRenameInvalidEdit
 		}
-		path, err := filePathFromURI(doc.TextDocument.URI)
-		if err != nil || path != CanonicalWorkspaceRoot(file) {
+		path, err := pathutil.FilePathFromURI(doc.TextDocument.URI)
+		if err != nil || path != neutralbackend.CanonicalWorkspaceRoot(file) {
 			return nil, ErrRustRenameInvalidEdit
 		}
 		edits, err = decodeRustTextEdits(doc.Edits)
@@ -477,8 +478,8 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.
-func (b *RustBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
-	return nil, &Error{Operation: OperationVerify, Language: LanguageRust, Err: ErrUnsupportedOperation}
+func (b *RustBackend) Verify(context.Context, neutralbackend.VerifyRequest) ([]neutralbackend.Diagnostic, error) {
+	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationVerify, Language: neutralbackend.LanguageRust, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
 const rustAnalyzerSettings = `{"cargo":{"buildScripts":{"enable":false}},"procMacro":{"enable":false},"checkOnSave":{"enable":false}}`
@@ -490,9 +491,9 @@ func initializeRustSession(ctx context.Context, session RustSession, root string
 	}
 	params := map[string]any{
 		"processId": nil,
-		"rootUri":   fileURI(root),
+		"rootUri":   pathutil.FileURI(root),
 		"workspaceFolders": []map[string]string{{
-			"uri":  fileURI(root),
+			"uri":  pathutil.FileURI(root),
 			"name": filepath.Base(root),
 		}},
 		"capabilities": map[string]any{
@@ -527,7 +528,7 @@ func defaultRustSessionFactory(ctx context.Context, root string) (RustSession, e
 	return client, nil
 }
 
-func resolveRustProject(project ProjectContext) (string, string, []byte, error) {
+func resolveRustProject(project neutralbackend.ProjectContext) (string, string, []byte, error) {
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".rs") {
 		return "", "", nil, &RustError{Op: "project", File: project.File, Err: ErrRustFileRequired}
 	}
@@ -539,7 +540,7 @@ func resolveRustProject(project ProjectContext) (string, string, []byte, error) 
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(base, file)
 	}
-	file = CanonicalWorkspaceRoot(file)
+	file = neutralbackend.CanonicalWorkspaceRoot(file)
 	if project.RootDir == "" {
 		root, err := discoverCargoRoot(file)
 		if err != nil {
@@ -547,8 +548,8 @@ func resolveRustProject(project ProjectContext) (string, string, []byte, error) 
 		}
 		base = root
 	}
-	root := CanonicalWorkspaceRoot(base)
-	if !pathWithin(root, file) {
+	root := neutralbackend.CanonicalWorkspaceRoot(base)
+	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &RustError{Op: "project", File: file, Workspace: root, Err: ErrRustFileOutsideWorkspace}
 	}
 	source, err := os.ReadFile(file) // #nosec G304 -- file is explicitly selected by the caller.
@@ -558,9 +559,9 @@ func resolveRustProject(project ProjectContext) (string, string, []byte, error) 
 	return root, file, source, nil
 }
 
-func rustWorkspaceRoot(project ProjectContext) (string, error) {
+func rustWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	if project.RootDir != "" {
-		return CanonicalWorkspaceRoot(project.RootDir), nil
+		return neutralbackend.CanonicalWorkspaceRoot(project.RootDir), nil
 	}
 	if project.File == "" {
 		return "", ErrRustFileRequired
@@ -569,7 +570,7 @@ func rustWorkspaceRoot(project ProjectContext) (string, error) {
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(".", file)
 	}
-	return discoverCargoRoot(CanonicalWorkspaceRoot(file))
+	return discoverCargoRoot(neutralbackend.CanonicalWorkspaceRoot(file))
 }
 
 func discoverCargoRoot(file string) (string, error) {
@@ -577,7 +578,7 @@ func discoverCargoRoot(file string) (string, error) {
 	var roots []string
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "Cargo.toml")); err == nil {
-			roots = append(roots, CanonicalWorkspaceRoot(dir))
+			roots = append(roots, neutralbackend.CanonicalWorkspaceRoot(dir))
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -593,14 +594,6 @@ func discoverCargoRoot(file string) (string, error) {
 	default:
 		return "", fmt.Errorf("%w: %s", ErrRustWorkspaceAmbiguous, strings.Join(roots, ", "))
 	}
-}
-
-func pathWithin(root, path string) bool {
-	return pathutil.PathWithin(root, path)
-}
-
-func filePathFromURI(raw string) (string, error) {
-	return pathutil.FilePathFromURI(raw)
 }
 
 type rustDocumentSymbol struct {
@@ -667,8 +660,8 @@ func decodeRustDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 			return rustDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrRustMalformedResponse)
 		}
 		if symbol.URI != "" {
-			uriPath, err := filePathFromURI(symbol.URI)
-			if err != nil || !pathWithin(root, uriPath) {
+			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
+			if err != nil || !pathutil.PathWithin(root, uriPath) {
 				return rustDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside workspace", ErrRustMalformedResponse)
 			}
 		}
@@ -722,7 +715,7 @@ func rustKindName(kind int) string {
 	}
 }
 
-func selectRustSymbol(query, root, file string, source []byte, symbols []rustDocumentSymbol) (*LookupResult, error) {
+func selectRustSymbol(query, root, file string, source []byte, symbols []rustDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), "::")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -749,15 +742,15 @@ func selectRustSymbol(query, root, file string, source []byte, symbols []rustDoc
 	if len(matches) == 0 {
 		return nil, &RustError{Op: "lookup", File: file, Symbol: query, Err: ErrRustSymbolNotFound}
 	}
-	converted := make([]*SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
 	for _, item := range matches {
 		converted = append(converted, rustCandidate(root, file, source, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &LookupResult{
+	return &neutralbackend.LookupResult{
 		Symbol:   candidate.QualifiedName,
 		File:     candidate.File,
 		Line:     candidate.Line,
@@ -769,7 +762,7 @@ func selectRustSymbol(query, root, file string, source []byte, symbols []rustDoc
 	}, nil
 }
 
-func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, path []string) *SymbolCandidate {
+func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
 	start := symbol.SelectionRange.Start
 	offset, _ := rustByteOffset(source, start)
 	receiver := ""
@@ -780,14 +773,14 @@ func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, 
 	if err != nil {
 		relative = file
 	}
-	location := SourceLocation{
-		URI: fileURI(file),
-		Range: Range{
-			Start: Position{Line: symbol.SelectionRange.Start.Line, Character: symbol.SelectionRange.Start.Character},
-			End:   Position{Line: symbol.SelectionRange.End.Line, Character: symbol.SelectionRange.End.Character},
+	location := neutralbackend.SourceLocation{
+		URI: pathutil.FileURI(file),
+		Range: neutralbackend.Range{
+			Start: neutralbackend.Position{Line: symbol.SelectionRange.Start.Line, Character: symbol.SelectionRange.Start.Character},
+			End:   neutralbackend.Position{Line: symbol.SelectionRange.End.Line, Character: symbol.SelectionRange.End.Character},
 		},
 	}
-	return &SymbolCandidate{
+	return &neutralbackend.SymbolCandidate{
 		Name:          symbol.Name,
 		Receiver:      receiver,
 		QualifiedName: strings.Join(path, "::"),

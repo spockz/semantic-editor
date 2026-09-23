@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"semedit/internal/backend"
+	rustbackend "semedit/internal/backend/rust"
 )
 
 type fakeRustSession struct {
@@ -52,8 +53,8 @@ func (f *fakeRustSession) Request(ctx context.Context, method string, params any
 func TestRustRenameRejectsUnsafeWorkspaceEditWithoutWrite(t *testing.T) {
 	root, file := rustProject(t, "fn value() {}\n")
 	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"children":[]}]`), rename: json.RawMessage(`{"changes":{"file:///foreign.rs":[]}}`)}
-	b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
-	if _, err := b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "value", To: "other"}); !errors.Is(err, backend.ErrRustRenameInvalidEdit) {
+	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) { return session, nil })
+	if _, err := b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "value", To: "other"}); !errors.Is(err, rustbackend.ErrRustRenameInvalidEdit) {
 		t.Fatalf("err = %v", err)
 	}
 	got, _ := os.ReadFile(file) // #nosec G304 -- test fixture path is created in t.TempDir.
@@ -88,7 +89,7 @@ func rustProject(t *testing.T, source string) (string, string) {
 func TestRustLookupStreamsInitializeOpenAndSymbolsWithUTF16(t *testing.T) {
 	root, file := rustProject(t, "fn 😀value() {}\n")
 	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"😀value","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":10}},"children":[]}]`)}
-	backendUnderTest := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) {
+	backendUnderTest := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		return session, nil
 	})
 	result, err := backendUnderTest.Lookup(context.Background(), backend.ProjectContext{
@@ -113,7 +114,7 @@ func TestRustLookupStreamsInitializeOpenAndSymbolsWithUTF16(t *testing.T) {
 func TestRustLookupRejectsTrustBeforeStartingTransport(t *testing.T) {
 	root, file := rustProject(t, "fn value() {}\n")
 	started := false
-	backendUnderTest := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) {
+	backendUnderTest := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		started = true
 		return nil, nil
 	})
@@ -126,7 +127,7 @@ func TestRustLookupRejectsTrustBeforeStartingTransport(t *testing.T) {
 func TestRustServiceTrustUsesDiscoveredCargoRoot(t *testing.T) {
 	root, file := rustProject(t, "fn value() {}\n")
 	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":3}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}}}]`)}
-	rendered := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) {
+	rendered := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		return session, nil
 	})
 	registry, err := backend.NewRegistry(rendered)
@@ -147,7 +148,7 @@ func TestRustServiceTrustUsesDiscoveredCargoRoot(t *testing.T) {
 func TestRustLookupReturnsAllHierarchicalAmbiguityCandidates(t *testing.T) {
 	root, file := rustProject(t, "mod a {}\nmod b {}\n")
 	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"a","kind":2,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":8}},"selectionRange":{"start":{"line":0,"character":4},"end":{"line":0,"character":5}},"children":[{"name":"run","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":8}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":3}}}]},{"name":"b","kind":2,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":8}},"selectionRange":{"start":{"line":1,"character":4},"end":{"line":1,"character":5}},"children":[{"name":"run","kind":12,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":8}},"selectionRange":{"start":{"line":1,"character":0},"end":{"line":1,"character":3}}}]}]`)}
-	backendUnderTest := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) {
+	backendUnderTest := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		return session, nil
 	})
 	result, err := backendUnderTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "run")
@@ -166,11 +167,11 @@ func TestRustLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 		response json.RawMessage
 		want     error
 	}{
-		"flat":        {response: json.RawMessage(`[{"name":"value","kind":12,"location":{}}]`), want: backend.ErrRustUnsupportedResponse},
-		"out-of-root": {response: json.RawMessage(`[{"name":"value","kind":12,"uri":"file:///tmp/out.rs","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}]`), want: backend.ErrRustMalformedResponse},
+		"flat":        {response: json.RawMessage(`[{"name":"value","kind":12,"location":{}}]`), want: rustbackend.ErrRustUnsupportedResponse},
+		"out-of-root": {response: json.RawMessage(`[{"name":"value","kind":12,"uri":"file:///tmp/out.rs","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":1}}}]`), want: rustbackend.ErrRustMalformedResponse},
 	} {
 		t.Run(name, func(t *testing.T) {
-			backendUnderTest := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) {
+			backendUnderTest := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 				return &fakeRustSession{symbols: testCase.response}, nil
 			})
 			_, err := backendUnderTest.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "value")
@@ -185,7 +186,7 @@ func TestRustLookupUsesAbsoluteUTF8ByteOffsetOnLaterLine(t *testing.T) {
 	for _, source := range []string{"// é\n// 😀 fn value() {}\n", "// é\n// 😀 fn value() {}"} {
 		root, file := rustProject(t, source)
 		session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"selectionRange":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"children":[]}]`)}
-		b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
+		b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) { return session, nil })
 		result, err := b.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "value")
 		if err != nil {
 			t.Fatal(err)
@@ -212,7 +213,7 @@ func TestRustRenameUsesAbsoluteUTF8ByteOffsetsOnLaterLine(t *testing.T) {
 			t.Fatal(err)
 		}
 		session.rename = encoded
-		b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
+		b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) { return session, nil })
 		_, err = b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "value", To: "renamed"})
 		if err != nil {
 			t.Fatal(err)

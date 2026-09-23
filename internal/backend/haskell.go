@@ -245,11 +245,11 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, que
 		}
 	}
 	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
-		"uri": fileURI(file), "languageId": "haskell", "version": 1, "text": string(source),
+		"uri": pathutil.FileURI(file), "languageId": "haskell", "version": 1, "text": string(source),
 	}}); err != nil {
 		return nil, &HaskellError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": fileURI(file)}})
+	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
 		return nil, &HaskellError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
@@ -294,8 +294,8 @@ var haskellSettings = map[string]any{
 func initializeHaskellSession(ctx context.Context, session HaskellSession, root string) error {
 	params := map[string]any{
 		"processId":        nil,
-		"rootUri":          fileURI(root),
-		"workspaceFolders": []map[string]string{{"uri": fileURI(root), "name": filepath.Base(root)}},
+		"rootUri":          pathutil.FileURI(root),
+		"workspaceFolders": []map[string]string{{"uri": pathutil.FileURI(root), "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
 			"general":      map[string]any{"positionEncodings": []string{"utf-16"}},
 			"textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}},
@@ -453,7 +453,7 @@ func resolveHaskellProject(project ProjectContext) (string, string, []byte, erro
 	}
 	file = CanonicalWorkspaceRoot(file)
 	root := CanonicalWorkspaceRoot(base)
-	if !pathWithin(root, file) {
+	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &HaskellError{Op: "project", File: file, Workspace: root, Err: ErrHaskellFileOutsideWorkspace}
 	}
 	if marker := hasHaskellProjectMarker(root, filepath.Dir(file)); marker != "" {
@@ -483,7 +483,7 @@ func haskellWorkspaceRoot(project ProjectContext) (string, error) {
 func hasHaskellProjectMarker(root, start string) string {
 	dir := CanonicalWorkspaceRoot(start)
 	root = CanonicalWorkspaceRoot(root)
-	for pathWithin(root, dir) {
+	for pathutil.PathWithin(root, dir) {
 		for _, name := range []string{"hie.yaml", "stack.yaml", "cabal.project", "package.yaml"} {
 			if pathutil.FileExists(filepath.Join(dir, name)) {
 				return filepath.Join(dir, name)
@@ -557,8 +557,8 @@ func decodeHaskellDocumentSymbol(raw json.RawMessage, root, file string, source 
 			return haskellDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrHaskellMalformedResponse)
 		}
 		if symbol.URI != "" {
-			uriPath, err := filePathFromURI(symbol.URI)
-			if err != nil || !pathWithin(root, uriPath) || CanonicalWorkspaceRoot(uriPath) != CanonicalWorkspaceRoot(file) {
+			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
+			if err != nil || !pathutil.PathWithin(root, uriPath) || CanonicalWorkspaceRoot(uriPath) != CanonicalWorkspaceRoot(file) {
 				return haskellDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside selected file", ErrHaskellMalformedResponse)
 			}
 		}
@@ -665,7 +665,7 @@ func haskellCandidate(root, file string, source []byte, symbol haskellDocumentSy
 	if err != nil {
 		relative = file
 	}
-	location := SourceLocation{URI: fileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
+	location := SourceLocation{URI: pathutil.FileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
 	selection := Range{Start: Position(symbol.SelectionRange.Start), End: Position(symbol.SelectionRange.End)}
 	return &SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, SelectionRange: &selection, Location: location}
 }
