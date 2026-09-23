@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"semedit/internal/backend"
+	haskellbackend "semedit/internal/backend/haskell"
 	"semedit/internal/backends"
 )
 
@@ -63,7 +64,7 @@ func TestHaskellLookupInitializesUTF16AndHierarchy(t *testing.T) {
 	session := &fakeHaskellSession{symbols: json.RawMessage(`[{
   "name":"M","kind":2,"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":39}},"selectionRange":{"start":{"line":0,"character":7},"end":{"line":0,"character":8}},
   "children":[{"name":"value","kind":12,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":10}},"selectionRange":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}}},{"name":"emoji","kind":12,"range":{"start":{"line":1,"character":8},"end":{"line":1,"character":10}},"selectionRange":{"start":{"line":1,"character":8},"end":{"line":1,"character":10}}},{"name":"Type","kind":5,"range":{"start":{"line":2,"character":0},"end":{"line":2,"character":39}},"selectionRange":{"start":{"line":2,"character":5},"end":{"line":2,"character":9}},"children":[{"name":"Constructor","kind":9,"range":{"start":{"line":2,"character":12},"end":{"line":2,"character":23}},"selectionRange":{"start":{"line":2,"character":12},"end":{"line":2,"character":23}},"children":[{"name":"field","kind":8,"range":{"start":{"line":2,"character":26},"end":{"line":2,"character":39}},"selectionRange":{"start":{"line":2,"character":26},"end":{"line":2,"character":31}}}]}]}]}]`)}
-	underTest := backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) {
+	underTest := haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
 		return session, nil
 	})
 	result, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "M.Type.Constructor.field")
@@ -93,7 +94,7 @@ func TestHaskellLookupInitializesUTF16AndHierarchy(t *testing.T) {
 func TestHaskellLookupRejectsTrustBeforeSessionFactory(t *testing.T) {
 	root, file := haskellFixture(t, "module M where\n")
 	started := false
-	underTest := backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) {
+	underTest := haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
 		started = true
 		return nil, nil
 	})
@@ -108,9 +109,11 @@ func TestHaskellStandaloneRejectsProjectMarkersAndNonHSFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "package.yaml"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	underTest := backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) { return nil, nil })
+	underTest := haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
+		return nil, nil
+	})
 	_, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "M")
-	if !errors.Is(err, backend.ErrHaskellProjectUnsupported) {
+	if !errors.Is(err, haskellbackend.ErrHaskellProjectUnsupported) {
 		t.Fatalf("marker error = %v", err)
 	}
 	for _, name := range []string{"Thing.lhs", "Thing.hs-boot"} {
@@ -119,7 +122,7 @@ func TestHaskellStandaloneRejectsProjectMarkersAndNonHSFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		project := trustedHaskellProject(root, bad)
-		if _, err := underTest.Lookup(context.Background(), project, "M"); !errors.Is(err, backend.ErrHaskellFileRequired) {
+		if _, err := underTest.Lookup(context.Background(), project, "M"); !errors.Is(err, haskellbackend.ErrHaskellFileRequired) {
 			t.Fatalf("%s error = %v", name, err)
 		}
 	}
@@ -130,17 +133,17 @@ func TestHaskellLookupReturnsAmbiguityAndRejectsMalformedResponses(t *testing.T)
 	raw := json.RawMessage(`[{
  "name":"first","kind":12,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":9}},"selectionRange":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}}
 },{"name":"first","kind":12,"range":{"start":{"line":2,"character":0},"end":{"line":2,"character":10}},"selectionRange":{"start":{"line":2,"character":0},"end":{"line":2,"character":5}}}]`)
-	underTest := backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) {
+	underTest := haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
 		return &fakeHaskellSession{symbols: raw}, nil
 	})
 	result, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "first")
 	if err != nil || !result.Ambiguous || len(result.Candidates) != 2 || result.Candidates[0].Location.Range.Start.Character != 0 || result.Candidates[0].SelectionRange == nil {
 		t.Fatalf("ambiguity result=%+v err=%v", result, err)
 	}
-	underTest = backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) {
+	underTest = haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
 		return &fakeHaskellSession{symbols: json.RawMessage(`[ {"name":"first","kind":12,"location":{} } ]`)}, nil
 	})
-	if _, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "first"); !errors.Is(err, backend.ErrHaskellUnsupportedResponse) {
+	if _, err := underTest.Lookup(context.Background(), trustedHaskellProject(root, file), "first"); !errors.Is(err, haskellbackend.ErrHaskellUnsupportedResponse) {
 		t.Fatalf("flat response error = %v", err)
 	}
 }
@@ -148,7 +151,7 @@ func TestHaskellLookupReturnsAmbiguityAndRejectsMalformedResponses(t *testing.T)
 func TestHaskellLookupPropagatesCancellationAndClose(t *testing.T) {
 	root, file := haskellFixture(t, "module M where\n")
 	session := &fakeHaskellSession{cancel: true}
-	underTest := backend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (backend.HaskellSession, error) {
+	underTest := haskellbackend.NewHaskellBackendWithFactory(func(context.Context, string, backend.HaskellConfig) (haskellbackend.HaskellSession, error) {
 		return session, nil
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
@@ -162,7 +165,7 @@ func TestHaskellLookupPropagatesCancellationAndClose(t *testing.T) {
 }
 
 func TestHaskellLookupRejectsUnsupportedOperations(t *testing.T) {
-	underTest := backend.NewHaskellBackend()
+	underTest := haskellbackend.NewHaskellBackend()
 	if _, err := underTest.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{}, To: "Other"}); !errors.Is(err, backend.ErrUnsupportedOperation) {
 		t.Fatalf("rename error = %v", err)
 	}
@@ -179,7 +182,7 @@ func TestHaskellRequiresExplicitStandaloneSelection(t *testing.T) {
 		t.Fatalf("auto Haskell selection error = %v", err)
 	}
 	project.Language = backend.LanguageHaskell
-	if _, err := service.Lookup(context.Background(), project, "M"); !errors.Is(err, backend.ErrHaskellStandaloneRequired) {
+	if _, err := service.Lookup(context.Background(), project, "M"); !errors.Is(err, haskellbackend.ErrHaskellStandaloneRequired) {
 		t.Fatalf("implicit standalone error = %v", err)
 	}
 }

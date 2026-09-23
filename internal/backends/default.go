@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"semedit/internal/backend"
 	gobackend "semedit/internal/backend/golang"
+	haskellbackend "semedit/internal/backend/haskell"
 	javabackend "semedit/internal/backend/java"
 	rustbackend "semedit/internal/backend/rust"
 	scalabackend "semedit/internal/backend/scala"
@@ -17,7 +18,7 @@ func NewDefaultService() *backend.Service {
 		rustbackend.NewRustBackend(),
 		javabackend.NewJavaBackend(),
 		scalabackend.NewScalaBackend(),
-		backend.NewHaskellBackend(),
+		haskellbackend.NewHaskellBackend(),
 	)
 	if err != nil {
 		panic(fmt.Sprintf("register built-in backends: %v", err))

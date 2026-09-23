@@ -1,3 +1,4 @@
+// Package backend keeps Scala request settings neutral so ingress packages do not depend on the Metals implementation.
 package backend
 
 // ScalaConfig carries explicit external-tool paths and runtime metadata in backend requests.

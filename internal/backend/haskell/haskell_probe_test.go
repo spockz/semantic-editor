@@ -1,5 +1,5 @@
-// Package backend tests HLS/GHC version probes without launching real external tools.
-package backend
+// Package haskell tests HLS/GHC version probes without launching real external tools.
+package haskell
 
 import (
 	"context"
@@ -25,7 +25,7 @@ func TestProbeHaskellToolchainRequiresMatchingHLSGHC(t *testing.T) {
 	hls := filepath.Join(root, "hls")
 	writeProbeTool(t, ghc, `printf '9.6.5\n'`)
 	writeProbeTool(t, hls, `if [ "$1" = "--probe-tools" ]; then printf 'haskell-language-server version: 2.10.0.0 (GHC: 9.4.8)\n'; fi`)
-	_, err := probeHaskellToolchain(context.Background(), root, HaskellConfig{GHCBin: ghc, HLSBin: hls})
+	_, err := probeHaskellToolchain(context.Background(), root, haskellRuntimeConfig{GHCBin: ghc, HLSBin: hls})
 	if !errors.Is(err, ErrHaskellVersionMismatch) {
 		t.Fatalf("mismatch error = %v", err)
 	}
@@ -37,7 +37,7 @@ func TestProbeHaskellToolchainRequiresIdentifiableVersions(t *testing.T) {
 	hls := filepath.Join(root, "hls")
 	writeProbeTool(t, ghc, `printf '9.6.5\n'`)
 	writeProbeTool(t, hls, `printf 'unknown\n'`)
-	_, err := probeHaskellToolchain(context.Background(), root, HaskellConfig{GHCBin: ghc, HLSBin: hls})
+	_, err := probeHaskellToolchain(context.Background(), root, haskellRuntimeConfig{GHCBin: ghc, HLSBin: hls})
 	if !errors.Is(err, ErrHaskellVersionUnknown) {
 		t.Fatalf("unknown-version error = %v", err)
 	}

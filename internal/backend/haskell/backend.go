@@ -1,5 +1,5 @@
-// Package backend keeps standalone Haskell lookup bounded to one trusted HLS document session.
-package backend
+// Package haskell adapts trusted standalone lookup through HLS behind the neutral backend contract.
+package haskell
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
 	"semedit/internal/lsp"
 )
@@ -71,16 +72,6 @@ func (e *HaskellError) Error() string {
 
 func (e *HaskellError) Unwrap() error { return e.Err }
 
-// HaskellConfig contains only explicit, preinstalled Haskell tool settings.
-type HaskellConfig struct {
-	Standalone bool   `json:"standalone,omitempty"`
-	GHCBin     string `json:"ghc_bin,omitempty"`
-	HLSBin     string `json:"hls_bin,omitempty"`
-	GHCVersion string `json:"ghc_version,omitempty"`
-	HLSVersion string `json:"hls_version,omitempty"`
-	workingDir string
-}
-
 // HaskellSession is the small part of an HLS session needed by lookup.
 type HaskellSession interface {
 	Request(context.Context, string, any) (json.RawMessage, error)
@@ -91,7 +82,12 @@ type HaskellSession interface {
 // HaskellSessionFactory allows hermetic tests to replace the process-backed session.
 type HaskellSessionFactory any
 
-type haskellSessionFactory func(context.Context, string, HaskellConfig) (HaskellSession, error)
+type haskellRuntimeConfig struct {
+	neutralbackend.HaskellConfig
+	workingDir string
+}
+
+type haskellSessionFactory func(context.Context, string, haskellRuntimeConfig) (HaskellSession, error)
 
 // HaskellBackendOption configures a HaskellBackend.
 type HaskellBackendOption func(*HaskellBackend)
@@ -100,12 +96,14 @@ type HaskellBackendOption func(*HaskellBackend)
 func WithHaskellSessionFactory(factory HaskellSessionFactory) HaskellBackendOption {
 	return func(backend *HaskellBackend) {
 		switch typed := factory.(type) {
-		case func(context.Context, string, HaskellConfig) (HaskellSession, error):
-			backend.factory = haskellSessionFactory(typed)
+		case func(context.Context, string, neutralbackend.HaskellConfig) (HaskellSession, error):
+			backend.factory = func(ctx context.Context, root string, config haskellRuntimeConfig) (HaskellSession, error) {
+				return typed(ctx, root, config.HaskellConfig)
+			}
 		case func(context.Context, string) (HaskellSession, error):
-			backend.factory = haskellSessionFactory(func(ctx context.Context, root string, _ HaskellConfig) (HaskellSession, error) {
+			backend.factory = func(ctx context.Context, root string, _ haskellRuntimeConfig) (HaskellSession, error) {
 				return typed(ctx, root)
-			})
+			}
 		default:
 			backend.factory = nil
 		}
@@ -137,25 +135,25 @@ type HaskellBackend struct {
 }
 
 // TrustedWorkspaceRoot discovers the workspace used for trust comparison.
-func (b *HaskellBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+func (b *HaskellBackend) TrustedWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	return haskellWorkspaceRoot(project)
 }
 
 // Language returns the Haskell language identifier.
-func (*HaskellBackend) Language() LanguageID { return LanguageHaskell }
+func (*HaskellBackend) Language() neutralbackend.LanguageID { return neutralbackend.LanguageHaskell }
 
 // Capabilities declares Haskell's trusted read-only lookup capability.
-func (*HaskellBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup)
+func (*HaskellBackend) Capabilities() neutralbackend.Capabilities {
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Haskell backend.
-func (*HaskellBackend) CapabilityMatrix() LanguageMatrix {
-	return LanguageMatrix{
+func (*HaskellBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
+	return neutralbackend.LanguageMatrix{
 		Language:    "haskell",
 		DisplayName: "Haskell",
 		Maturity:    "Read-only preview",
-		Operations: map[string]OpCapability{
+		Operations: map[string]neutralbackend.OpCapability{
 			"lookup": {
 				Supported:    true,
 				Description:  "Explicit standalone .hs hierarchical symbol lookup through a trusted, preinstalled Haskell Language Server session using UTF-16 LSP positions.",
@@ -164,7 +162,7 @@ func (*HaskellBackend) CapabilityMatrix() LanguageMatrix {
 				PlacementKey: false,
 			},
 		},
-		Limitations: []Constraint{
+		Limitations: []neutralbackend.Constraint{
 			{
 				Title:       "Lookup Only",
 				Description: "Haskell rename, formatting, imports, verification, compilation, diagnostics, and structural edits are unavailable.",
@@ -201,7 +199,7 @@ func (b *HaskellBackend) Close() error {
 }
 
 // Lookup resolves one exact hierarchical symbol in the selected standalone Haskell file.
-func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, query string) (*LookupResult, error) {
+func (b *HaskellBackend) Lookup(ctx context.Context, project neutralbackend.ProjectContext, query string) (*neutralbackend.LookupResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -210,7 +208,7 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, que
 		return nil, err
 	}
 	if !project.WorkspaceTrust.Allows(root) {
-		return nil, &WorkspaceTrustError{Operation: OperationLookup, Language: LanguageHaskell, Workspace: root}
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationLookup, Language: neutralbackend.LanguageHaskell, Workspace: root}
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &HaskellError{Op: "lookup", File: file, Symbol: query, Err: ErrHaskellMalformedResponse}
@@ -229,8 +227,8 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, que
 		if project.HaskellStandalone {
 			config.Standalone = true
 		}
-		config.workingDir = filepath.Dir(file)
-		session, factoryErr := b.factory(ctx, root, config)
+		runtimeConfig := haskellRuntimeConfig{HaskellConfig: config, workingDir: filepath.Dir(file)}
+		session, factoryErr := b.factory(ctx, root, runtimeConfig)
 		if factoryErr != nil {
 			return nil, &HaskellError{Op: "start", Workspace: root, Err: factoryErr}
 		}
@@ -261,13 +259,13 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project ProjectContext, que
 }
 
 // Rename is intentionally unavailable for the Haskell lookup-only slice.
-func (*HaskellBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
-	return nil, &Error{Operation: OperationRename, Language: LanguageHaskell, Err: ErrUnsupportedOperation}
+func (*HaskellBackend) Rename(context.Context, neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
+	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationRename, Language: neutralbackend.LanguageHaskell, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Haskell lookup-only slice.
-func (*HaskellBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
-	return nil, &Error{Operation: OperationVerify, Language: LanguageHaskell, Err: ErrUnsupportedOperation}
+func (*HaskellBackend) Verify(context.Context, neutralbackend.VerifyRequest) ([]neutralbackend.Diagnostic, error) {
+	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationVerify, Language: neutralbackend.LanguageHaskell, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
 var haskellSettings = map[string]any{
@@ -322,7 +320,7 @@ type haskellToolchain struct {
 	hls string
 }
 
-func defaultHaskellSessionFactory(ctx context.Context, root string, config HaskellConfig) (HaskellSession, error) {
+func defaultHaskellSessionFactory(ctx context.Context, root string, config haskellRuntimeConfig) (HaskellSession, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -342,7 +340,7 @@ func defaultHaskellSessionFactory(ctx context.Context, root string, config Haske
 	return client, nil
 }
 
-func probeHaskellToolchain(ctx context.Context, root string, config HaskellConfig) (haskellToolchain, error) {
+func probeHaskellToolchain(ctx context.Context, root string, config haskellRuntimeConfig) (haskellToolchain, error) {
 	ghc, err := resolveHaskellExecutable(config.GHCBin, "ghc")
 	if err != nil {
 		return haskellToolchain{}, err
@@ -436,7 +434,7 @@ func parseHLSProbe(output string) (string, string) {
 	return normalizeVersion(match[1]), normalizeVersion(match[2])
 }
 
-func resolveHaskellProject(project ProjectContext) (string, string, []byte, error) {
+func resolveHaskellProject(project neutralbackend.ProjectContext) (string, string, []byte, error) {
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".hs") || strings.HasSuffix(strings.ToLower(project.File), ".hs-boot") {
 		return "", "", nil, &HaskellError{Op: "project", File: project.File, Err: ErrHaskellFileRequired}
 	}
@@ -451,8 +449,8 @@ func resolveHaskellProject(project ProjectContext) (string, string, []byte, erro
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(base, file)
 	}
-	file = CanonicalWorkspaceRoot(file)
-	root := CanonicalWorkspaceRoot(base)
+	file = neutralbackend.CanonicalWorkspaceRoot(file)
+	root := neutralbackend.CanonicalWorkspaceRoot(base)
 	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &HaskellError{Op: "project", File: file, Workspace: root, Err: ErrHaskellFileOutsideWorkspace}
 	}
@@ -466,9 +464,9 @@ func resolveHaskellProject(project ProjectContext) (string, string, []byte, erro
 	return root, file, source, nil
 }
 
-func haskellWorkspaceRoot(project ProjectContext) (string, error) {
+func haskellWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	if project.RootDir != "" {
-		return CanonicalWorkspaceRoot(project.RootDir), nil
+		return neutralbackend.CanonicalWorkspaceRoot(project.RootDir), nil
 	}
 	if strings.TrimSpace(project.File) == "" {
 		return "", ErrHaskellFileRequired
@@ -477,12 +475,12 @@ func haskellWorkspaceRoot(project ProjectContext) (string, error) {
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(".", file)
 	}
-	return CanonicalWorkspaceRoot(filepath.Dir(CanonicalWorkspaceRoot(file))), nil
+	return neutralbackend.CanonicalWorkspaceRoot(filepath.Dir(neutralbackend.CanonicalWorkspaceRoot(file))), nil
 }
 
 func hasHaskellProjectMarker(root, start string) string {
-	dir := CanonicalWorkspaceRoot(start)
-	root = CanonicalWorkspaceRoot(root)
+	dir := neutralbackend.CanonicalWorkspaceRoot(start)
+	root = neutralbackend.CanonicalWorkspaceRoot(root)
 	for pathutil.PathWithin(root, dir) {
 		for _, name := range []string{"hie.yaml", "stack.yaml", "cabal.project", "package.yaml"} {
 			if pathutil.FileExists(filepath.Join(dir, name)) {
@@ -558,7 +556,7 @@ func decodeHaskellDocumentSymbol(raw json.RawMessage, root, file string, source 
 		}
 		if symbol.URI != "" {
 			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
-			if err != nil || !pathutil.PathWithin(root, uriPath) || CanonicalWorkspaceRoot(uriPath) != CanonicalWorkspaceRoot(file) {
+			if err != nil || !pathutil.PathWithin(root, uriPath) || neutralbackend.CanonicalWorkspaceRoot(uriPath) != neutralbackend.CanonicalWorkspaceRoot(file) {
 				return haskellDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside selected file", ErrHaskellMalformedResponse)
 			}
 		}
@@ -614,7 +612,7 @@ func haskellKindName(kind int, name string) string {
 	}
 }
 
-func selectHaskellSymbol(query, root, file string, source []byte, symbols []haskellDocumentSymbol) (*LookupResult, error) {
+func selectHaskellSymbol(query, root, file string, source []byte, symbols []haskellDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -643,18 +641,18 @@ func selectHaskellSymbol(query, root, file string, source []byte, symbols []hask
 	if len(matches) == 0 {
 		return nil, &HaskellError{Op: "lookup", File: file, Symbol: query, Err: ErrHaskellSymbolNotFound}
 	}
-	converted := make([]*SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
 	for _, item := range matches {
 		converted = append(converted, haskellCandidate(root, file, source, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &neutralbackend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
 }
 
-func haskellCandidate(root, file string, source []byte, symbol haskellDocumentSymbol, path []string) *SymbolCandidate {
+func haskellCandidate(root, file string, source []byte, symbol haskellDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
 	start := symbol.SelectionRange.Start
 	offset, _ := haskellByteOffset(source, start)
 	receiver := ""
@@ -665,9 +663,9 @@ func haskellCandidate(root, file string, source []byte, symbol haskellDocumentSy
 	if err != nil {
 		relative = file
 	}
-	location := SourceLocation{URI: pathutil.FileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
-	selection := Range{Start: Position(symbol.SelectionRange.Start), End: Position(symbol.SelectionRange.End)}
-	return &SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, SelectionRange: &selection, Location: location}
+	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
+	selection := neutralbackend.Range{Start: neutralbackend.Position(symbol.SelectionRange.Start), End: neutralbackend.Position(symbol.SelectionRange.End)}
+	return &neutralbackend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: haskellKindName(symbol.Kind, symbol.Name), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, SelectionRange: &selection, Location: location}
 }
 
 func haskellByteOffset(source []byte, position haskellPosition) (int, error) {
