@@ -3,7 +3,8 @@ package telemetry
 
 import (
 	"context"
-	"sort"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 )
@@ -80,14 +81,10 @@ func (m *Metrics) Snapshot(total time.Duration) Snapshot {
 	if len(m.phases) == 0 {
 		return snapshot
 	}
-	keys := make([]string, 0, len(m.phases))
-	for phase := range m.phases {
-		keys = append(keys, string(phase))
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(m.phases))
 	snapshot.Phases = make(map[string]PhaseMetric, len(keys))
 	for _, key := range keys {
-		snapshot.Phases[key] = m.phases[Phase(key)]
+		snapshot.Phases[string(key)] = m.phases[key]
 	}
 	return snapshot
 }

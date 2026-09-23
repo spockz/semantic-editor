@@ -2,12 +2,12 @@
 package operation
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 
 	"semedit/internal/backend"
 )
@@ -249,12 +249,9 @@ func (r *Registry) All() []Entry {
 	if r == nil {
 		return nil
 	}
-	entries := make([]Entry, 0, len(r.byKey))
-	for _, entry := range r.byKey {
-		entries = append(entries, entry)
-	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Key < entries[j].Key })
-	return entries
+	return slices.SortedFunc(maps.Values(r.byKey), func(a, b Entry) int {
+		return cmp.Compare(a.Key, b.Key)
+	})
 }
 
 func cloneRaw(raw map[string]any) map[string]any {

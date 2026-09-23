@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"embed"
 	"encoding/json"
 	"flag"
@@ -14,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -381,8 +382,8 @@ func extractTxtarExamples(rootDir string) ([]TxtarExample, error) {
 	}
 
 	// Sort examples with specialized and declaration first
-	sort.Slice(examples, func(i, j int) bool {
-		return examples[i].Filename < examples[j].Filename
+	slices.SortFunc(examples, func(a, b TxtarExample) int {
+		return cmp.Compare(a.Filename, b.Filename)
 	})
 
 	return examples, nil
@@ -506,7 +507,7 @@ func parseTxtarFile(filename string, content string) *TxtarExample {
 			wantKeys = append(wantKeys, k)
 		}
 	}
-	sort.Strings(wantKeys)
+	slices.Sort(wantKeys)
 
 	var outputs []TxtarFileOutput
 	for _, wantKey := range wantKeys {
@@ -708,7 +709,7 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 				operations = append(operations, "`"+operation+"`")
 			}
 		}
-		sort.Strings(operations)
+		slices.Sort(operations)
 		fmt.Fprintf(&buf, "| %s | %s | %s | %s |\n",
 			markdownCell(c.DisplayName),
 			markdownCell(c.Maturity),
@@ -1718,7 +1719,7 @@ footer {
 				opNames = append(opNames, op)
 			}
 		}
-		sort.Strings(opNames)
+		slices.Sort(opNames)
 
 		fmt.Fprintf(&buf, `
           <tr>

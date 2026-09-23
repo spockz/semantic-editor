@@ -5,9 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -173,11 +174,7 @@ func finalBatchDiff(root string, before map[string]string) (string, error) {
 			paths[path] = struct{}{}
 		}
 	}
-	ordered := make([]string, 0, len(paths))
-	for path := range paths {
-		ordered = append(ordered, path)
-	}
-	sort.Strings(ordered)
+	ordered := slices.Sorted(maps.Keys(paths))
 	var diff strings.Builder
 	for _, path := range ordered {
 		diff.WriteString(astedit.UnifiedDiff(path, before[path], after[path]))

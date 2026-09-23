@@ -3,12 +3,14 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"html"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -312,7 +314,9 @@ func loadBenchmarkDocumentationRuns(rootDir string) ([]benchmarkDocumentationRun
 		sortBenchmarkComparisons(run.Comparisons)
 		runs = append(runs, *run)
 	}
-	sort.Slice(runs, func(i, j int) bool { return runs[i].ID < runs[j].ID })
+	slices.SortFunc(runs, func(a, b benchmarkDocumentationRun) int {
+		return cmp.Compare(a.ID, b.ID)
+	})
 	return runs, nil
 }
 
@@ -1341,11 +1345,7 @@ func displayProvenance(provenance, legacyClassifiers map[string]string) string {
 	if len(provenance) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(provenance))
-	for key := range provenance {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(provenance))
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
 		parts = append(parts, key+"="+provenance[key])

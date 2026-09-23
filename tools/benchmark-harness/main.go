@@ -2,14 +2,15 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"text/tabwriter"
@@ -150,7 +151,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 			}
 		}
 		taskBases = append(taskBases, "generate_template_main")
-		sort.Strings(taskBases)
+		slices.Sort(taskBases)
 		taskBases = slices.Compact(taskBases)
 	case tasksFlag != "":
 		for t := range strings.SplitSeq(tasksFlag, ",") {
@@ -579,7 +580,7 @@ func declaredPromptVariants(task *Task) []string {
 			variants = append(variants, name)
 		}
 	}
-	sort.Strings(variants)
+	slices.Sort(variants)
 	return variants
 }
 
@@ -652,11 +653,7 @@ func CollectAvailableBenchmarks(benchDir string) ([]BenchmarkInfo, error) {
 			}
 			seen[task.Metadata.TaskID] = true
 
-			promptVars := make([]string, 0, len(task.Metadata.PromptVariants))
-			for k := range task.Metadata.PromptVariants {
-				promptVars = append(promptVars, k)
-			}
-			sort.Strings(promptVars)
+			promptVars := slices.Sorted(maps.Keys(task.Metadata.PromptVariants))
 
 			benchmarks = append(benchmarks, BenchmarkInfo{
 				TaskID:         task.Metadata.TaskID,
@@ -668,8 +665,8 @@ func CollectAvailableBenchmarks(benchDir string) ([]BenchmarkInfo, error) {
 		}
 	}
 
-	sort.Slice(benchmarks, func(i, j int) bool {
-		return benchmarks[i].TaskID < benchmarks[j].TaskID
+	slices.SortFunc(benchmarks, func(a, b BenchmarkInfo) int {
+		return cmp.Compare(a.TaskID, b.TaskID)
 	})
 
 	return benchmarks, nil

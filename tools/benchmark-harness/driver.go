@@ -8,10 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -355,7 +356,7 @@ func withMutationPolicyGuidance(prompt string, task *Task, remediate bool) strin
 	if len(protected) == 0 {
 		return prompt
 	}
-	sort.Strings(protected)
+	slices.Sort(protected)
 	hasTests := false
 	otherFiles := make([]string, 0, len(protected))
 	for _, path := range protected {
@@ -474,11 +475,7 @@ func changedWorkspaceFiles(root string, before workspaceSnapshot) ([]string, err
 			paths[path] = struct{}{}
 		}
 	}
-	modified := make([]string, 0, len(paths))
-	for path := range paths {
-		modified = append(modified, path)
-	}
-	sort.Strings(modified)
+	modified := slices.Sorted(maps.Keys(paths))
 	return modified, nil
 }
 
@@ -1245,11 +1242,7 @@ func replaceEnvironment(env []string, replacements map[string]string) []string {
 			result = append(result, entry)
 		}
 	}
-	keys := make([]string, 0, len(replacements))
-	for key := range replacements {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
+	keys := slices.Sorted(maps.Keys(replacements))
 	for _, key := range keys {
 		result = append(result, key+"="+replacements[key])
 	}

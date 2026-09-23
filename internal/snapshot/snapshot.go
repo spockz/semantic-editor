@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -498,7 +499,7 @@ func collectFilesToCapture(absWorkDir string, paths []string) ([]string, error) 
 		}
 	}
 
-	sort.Strings(results)
+	slices.Sort(results)
 	return results, nil
 }
 
@@ -539,7 +540,7 @@ func scanDirectory(absWorkDir string, rootDir string) ([]string, error) {
 		return nil, err
 	}
 
-	sort.Strings(files)
+	slices.Sort(files)
 	return files, nil
 }
 
