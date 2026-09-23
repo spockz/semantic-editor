@@ -265,7 +265,70 @@ func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol,
 		}
 	}
 
+	for _, decl := range node.Decls {
+		function, ok := decl.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		appendVariables := func(fields *ast.FieldList, kind string) {
+			if fields == nil {
+				return
+			}
+			for _, field := range fields.List {
+				for _, ident := range field.Names {
+					appendLocalVariable(&results, fset, filePath, ident, targetName, kind)
+				}
+			}
+		}
+		appendVariables(function.Recv, "receiver")
+		appendVariables(function.Type.Params, "parameter")
+		appendVariables(function.Type.Results, "result")
+		if function.Body == nil {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			switch declaration := node.(type) {
+			case *ast.AssignStmt:
+				if declaration.Tok == token.DEFINE {
+					for _, lhs := range declaration.Lhs {
+						if ident, ok := lhs.(*ast.Ident); ok {
+							appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
+						}
+					}
+				}
+			case *ast.RangeStmt:
+				if declaration.Tok == token.DEFINE {
+					for _, expr := range []ast.Expr{declaration.Key, declaration.Value} {
+						if ident, ok := expr.(*ast.Ident); ok {
+							appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
+						}
+					}
+				}
+			case *ast.ValueSpec:
+				for _, ident := range declaration.Names {
+					appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
+				}
+			}
+			return true
+		})
+	}
+
 	return results, nil
+}
+
+func appendLocalVariable(results *[]*Symbol, fset *token.FileSet, filePath string, ident *ast.Ident, targetName string, kind string) {
+	if ident == nil || ident.Name == "_" || ident.Name != targetName {
+		return
+	}
+	pos := fset.Position(ident.Pos())
+	*results = append(*results, &Symbol{
+		Name:   ident.Name,
+		Kind:   kind,
+		File:   filePath,
+		Line:   pos.Line,
+		Column: pos.Column,
+		Offset: pos.Offset,
+	})
 }
 
 // findStructFields returns fields declared directly by the requested named struct.

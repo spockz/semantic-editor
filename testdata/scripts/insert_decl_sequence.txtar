@@ -1,0 +1,51 @@
+# Exercise grouped const and var insertion, sentinel ordering, and standalone placement in one Go file.
+exec semedit insert-decl --file api/settings.go --source 'const StatusPaused = "paused"'
+exec semedit insert-decl --file api/settings.go --source 'var ErrMike = errors.New("mike")'
+exec semedit insert-decl --file api/settings.go --source 'var BuildNumber = 3'
+exec semedit insert-decl --file api/settings.go --source 'const BuildLabel = "debug"' --group standalone
+exec semedit insert-decl --file api/settings.go --source 'var privateCache = false' --access private --group standalone
+cmp api/settings.go want/api/settings.go
+exec go test ./...
+
+-- go.mod --
+module example.com/decl
+go 1.23
+
+-- api/settings.go --
+package api
+
+import "errors"
+
+const (
+	StatusReady = "ready"
+)
+
+var (
+	ErrAlpha = errors.New("alpha")
+	ErrZulu  = errors.New("zulu")
+)
+
+var ExistingVersion = "1.0"
+
+-- want/api/settings.go --
+package api
+
+import "errors"
+
+const BuildLabel = "debug"
+
+const (
+	StatusReady  = "ready"
+	StatusPaused = "paused"
+)
+
+var (
+	ErrAlpha    = errors.New("alpha")
+	ErrMike     = errors.New("mike")
+	ErrZulu     = errors.New("zulu")
+	BuildNumber = 3
+)
+
+var ExistingVersion = "1.0"
+
+var privateCache = false

@@ -1,0 +1,64 @@
+# Rename interface, type, method, function, parameters, body local, and loop variables in sequence.
+exec semedit rename --file api/rename_kinds.go --symbol TaskHandler --to Handler
+exec semedit rename --file api/rename_kinds.go --symbol Worker --to Processor
+exec semedit rename --file api/rename_kinds.go --symbol Processor.Handle --to Run
+exec semedit rename --file api/rename_kinds.go --symbol execute --to perform
+exec semedit rename --file api/rename_kinds.go --symbol input --to values
+exec semedit rename --file api/rename_kinds.go --symbol total --to sum
+exec semedit rename --file api/rename_kinds.go --symbol index --to position
+exec semedit rename --file api/rename_kinds.go --symbol sample --to item
+exec semedit rename --file api/rename_kinds.go --symbol limit --to bound
+cmp api/rename_kinds.go want/api/rename_kinds.go
+exec go test ./...
+
+-- go.mod --
+module example.com/rename
+go 1.23
+
+-- api/rename_kinds.go --
+package api
+
+type TaskHandler interface {
+	Process([]int) int
+}
+
+type Worker struct{}
+
+func (Worker) Handle(input []int) int {
+	total := 0
+	for index := 0; index < len(input); index++ {
+		total += input[index]
+	}
+	for _, sample := range input {
+		total += sample
+	}
+	return total
+}
+
+func execute(handler TaskHandler, limit int) int {
+	return handler.Process([]int{limit})
+}
+
+-- want/api/rename_kinds.go --
+package api
+
+type Handler interface {
+	Process([]int) int
+}
+
+type Processor struct{}
+
+func (Processor) Run(values []int) int {
+	sum := 0
+	for position := 0; position < len(values); position++ {
+		sum += values[position]
+	}
+	for _, item := range values {
+		sum += item
+	}
+	return sum
+}
+
+func perform(handler Handler, bound int) int {
+	return handler.Process([]int{bound})
+}

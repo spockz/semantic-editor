@@ -1,0 +1,40 @@
+# Add a local replacement module to go.mod without network access.
+env GOPROXY=off
+env GOSUMDB=off
+exec semedit add-build-dependency --package example.com/localdep
+stdout 'Successfully added dependency example.com/localdep and tidied go.mod.'
+cmp go.mod want/go.mod
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+
+go 1.23
+
+replace example.com/localdep => ./localdep
+
+-- main.go --
+package main
+
+import "example.com/localdep"
+
+func main() { _ = localdep.Value }
+
+-- localdep/go.mod --
+module example.com/localdep
+
+go 1.23
+
+-- localdep/value.go --
+package localdep
+
+const Value = 1
+
+-- want/go.mod --
+module example.com/test
+
+go 1.23
+
+replace example.com/localdep => ./localdep
+
+require example.com/localdep v0.0.0-00010101000000-000000000000

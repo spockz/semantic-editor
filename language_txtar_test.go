@@ -141,7 +141,7 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			result = symbol.SelectionRange
 		case "textDocument/formatting":
 			formattingSeen = true
-			result = []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 2}}, "newText": "class Widget {}\n"}}
+			result = []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 3}}, "newText": "class Widget {}\n"}}
 		case "textDocument/codeAction":
 			codeActionSeen = true
 			var params struct {

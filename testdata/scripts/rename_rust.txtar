@@ -2,14 +2,14 @@
 exec semedit rename --language rust --trust-workspace --file src/lib.rs --symbol Widget --to Gadget
 exec cat src/lib.rs
 stdout 'struct Gadget {}'
+cmp src/lib.rs want.rs
 
 -- Cargo.toml --
 [package]
 name = "example"
 version = "0.1.0"
 
--- src/lib.rs --
-struct Widget {}
-
 -- want.rs --
 struct Gadget {}
+-- src/lib.rs --
+struct Widget {}
