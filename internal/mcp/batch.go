@@ -39,7 +39,7 @@ type BatchResponse struct {
 	Status          string                    `json:"status"`
 	Results         []BatchResult             `json:"results"`
 	DiagnosticDelta *pipeline.DiagnosticDelta `json:"diagnostic_delta,omitempty"`
-	FinalDiff       string                    `json:"final_diff,omitempty"`
+	FinalDiff       string                    `json:"final_diff"`
 }
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.

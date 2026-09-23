@@ -243,8 +243,8 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	schema := raw.(map[string]any)
 	assertStandardOutputSchema(t, schema, "object")
 	result := schema["properties"].(map[string]any)["result"].(map[string]any)
-	if got := result["required"]; !reflect.DeepEqual(got, []any{"status", "results"}) {
-		t.Fatalf("batch result required = %#v", got)
+	if got := result["required"]; !reflect.DeepEqual(got, []any{"status", "results", "final_diff"}) {
+		t.Fatalf("batch result required = %#v, want status, results, and final_diff", got)
 	}
 	properties := result["properties"].(map[string]any)
 	items := properties["results"].(map[string]any)["items"].(map[string]any)

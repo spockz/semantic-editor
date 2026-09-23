@@ -292,7 +292,7 @@ func batchOutputSchema() map[string]any {
 			"diagnostic_delta": diagnosticDeltaSchema(),
 			"final_diff":       map[string]any{"type": "string"},
 		},
-		"required": []string{"status", "results"},
+		"required": []string{"status", "results", "final_diff"},
 	}
 }
 

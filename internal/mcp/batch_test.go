@@ -137,6 +137,45 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 	}
 }
 
+func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
+	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batchemptydiff\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "file.go"), []byte("package batchemptydiff\n\nfunc Value() int {\n\treturn 1\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 1"}}]}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Result struct {
+					Status    string  `json:"status"`
+					FinalDiff *string `json:"final_diff"`
+				} `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	result := response.Result.StructuredContent.Result
+	if response.Result.IsError || result.Status != "ok" {
+		t.Fatalf("batch response failed: error=%v status=%q output=%s", response.Result.IsError, result.Status, out.String())
+	}
+	if result.FinalDiff == nil {
+		t.Fatalf("successful no-change batch omitted final_diff: %s", out.String())
+	}
+	if *result.FinalDiff != "" {
+		t.Fatalf("final_diff = %q, want empty diff", *result.FinalDiff)
+	}
+}
+
 func TestBatch_FailFast(t *testing.T) {
 	tmpDir := t.TempDir()
 
