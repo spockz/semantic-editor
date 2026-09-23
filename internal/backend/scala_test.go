@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"semedit/internal/backend"
+	scalabackend "semedit/internal/backend/scala"
 )
 
 type fakeScalaSession struct {
@@ -54,7 +55,9 @@ func trustedScalaProject(root, file string) backend.ProjectContext {
 func TestScalaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	root, file := scalaFixture(t, "package p;\nclass 😀Thing {\n  int field;\n  void run() {}\n}\n")
 	session := &fakeScalaSession{symbols: json.RawMessage(`[{"name":"p","kind":4,"range":{"start":{"line":0,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":0,"character":8},"end":{"line":0,"character":9}},"children":[{"name":"😀Thing","kind":5,"range":{"start":{"line":1,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":14}},"children":[{"name":"field","kind":8,"range":{"start":{"line":2,"character":2},"end":{"line":2,"character":12}},"selectionRange":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}}}]}]}]`)}
-	underTest := backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) { return session, nil })
+	underTest := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		return session, nil
+	})
 	result, err := underTest.Lookup(context.Background(), trustedScalaProject(root, file), "p.😀Thing.field")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
@@ -79,7 +82,7 @@ func TestScalaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 func TestScalaLookupRejectsTrustBeforeSessionFactory(t *testing.T) {
 	root, file := scalaFixture(t, "class Thing {}\n")
 	started := false
-	underTest := backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) {
+	underTest := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
 		started = true
 		return nil, nil
 	})
@@ -102,12 +105,16 @@ func TestScalaStandaloneRequiresExplicitRootWhenProjectMarkerExists(t *testing.T
 		t.Fatal(err)
 	}
 	session := &fakeScalaSession{symbols: json.RawMessage(`[]`)}
-	service, err := backend.NewRegistry(backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) { return session, nil }))
+	service, err := backend.NewRegistry(scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		return session, nil
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = service
-	if _, err := backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) { return session, nil }).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageScala, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing"); !errors.Is(err, backend.ErrScalaProjectMarkersRequireExplicitRoot) {
+	if _, err := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		return session, nil
+	}).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageScala, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing"); !errors.Is(err, scalabackend.ErrScalaProjectMarkersRequireExplicitRoot) {
 		t.Fatalf("marker error = %v", err)
 	}
 }
@@ -118,11 +125,11 @@ func TestScalaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 		raw  json.RawMessage
 		want error
 	}{
-		"flat":        {raw: json.RawMessage(`[{"name":"Thing","kind":5,"location":{}}]`), want: backend.ErrScalaUnsupportedResponse},
-		"out-of-root": {raw: json.RawMessage(`[{"name":"Thing","kind":5,"uri":"file:///tmp/out.scala","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}]`), want: backend.ErrScalaMalformedResponse},
+		"flat":        {raw: json.RawMessage(`[{"name":"Thing","kind":5,"location":{}}]`), want: scalabackend.ErrScalaUnsupportedResponse},
+		"out-of-root": {raw: json.RawMessage(`[{"name":"Thing","kind":5,"uri":"file:///tmp/out.scala","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}]`), want: scalabackend.ErrScalaMalformedResponse},
 	} {
 		t.Run(name, func(t *testing.T) {
-			underTest := backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) {
+			underTest := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
 				return &fakeScalaSession{symbols: test.raw}, nil
 			})
 			_, err := underTest.Lookup(context.Background(), trustedScalaProject(root, file), "Thing")
@@ -136,7 +143,9 @@ func TestScalaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 func TestScalaLookupPropagatesCancellation(t *testing.T) {
 	root, file := scalaFixture(t, "class Thing {}\n")
 	session := &fakeScalaSession{cancel: true}
-	underTest := backend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (backend.ScalaSession, error) { return session, nil })
+	underTest := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		return session, nil
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	_, err := underTest.Lookup(ctx, trustedScalaProject(root, file), "Thing")
@@ -146,7 +155,7 @@ func TestScalaLookupPropagatesCancellation(t *testing.T) {
 }
 
 func TestScalaLookupRejectsUnsupportedOperations(t *testing.T) {
-	backendUnderTest := backend.NewScalaBackend()
+	backendUnderTest := scalabackend.NewScalaBackend()
 	if _, err := backendUnderTest.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{}, To: "Other"}); !errors.Is(err, backend.ErrUnsupportedOperation) {
 		t.Fatalf("rename error = %v", err)
 	}
@@ -158,7 +167,7 @@ func TestScalaLookupRejectsUnsupportedOperations(t *testing.T) {
 func TestScalaStandaloneFileWithoutMarkersUsesContainingRoot(t *testing.T) {
 	root, file := scalaFixture(t, "object Thing {}\n")
 	session := &fakeScalaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":2,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":14}},"selectionRange":{"start":{"line":0,"character":7},"end":{"line":0,"character":12}}}]`)}
-	underTest := backend.NewScalaBackendWithFactory(func(_ context.Context, gotRoot string, _ backend.ScalaConfig) (backend.ScalaSession, error) {
+	underTest := scalabackend.NewScalaBackendWithFactory(func(_ context.Context, gotRoot string, _ backend.ScalaConfig) (scalabackend.ScalaSession, error) {
 		if gotRoot != backend.CanonicalWorkspaceRoot(root) {
 			t.Fatalf("standalone root = %q, want %q", gotRoot, root)
 		}

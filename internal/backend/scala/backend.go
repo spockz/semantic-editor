@@ -1,5 +1,5 @@
-// Package backend keeps Scala lookup read-only and file-scoped behind one trusted Metals session.
-package backend
+// Package scala adapts trusted, read-only Scala lookup through Metals behind the neutral backend contract.
+package scala
 
 import (
 	"context"
@@ -11,13 +11,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	neutralbackend "semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
+	"semedit/internal/lsp"
 	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
-
-	"semedit/internal/backend/pathutil"
-	"semedit/internal/lsp"
 )
 
 var (
@@ -50,14 +50,6 @@ var (
 	// ErrScalaSymbolNotFound indicates that no exact hierarchical candidate matched.
 	ErrScalaSymbolNotFound = errors.New("scala symbol not found")
 )
-
-// ScalaConfig contains explicit, preinstalled external-tool configuration.
-type ScalaConfig struct {
-	MetalsHome  string `json:"metals_home,omitempty"`
-	MetalsBin   string `json:"metals_bin,omitempty"`
-	JavaBin     string `json:"java_bin,omitempty"`
-	JavaVersion string `json:"java_version,omitempty"`
-}
 
 // ScalaError identifies a failure in the read-only Scala lookup adapter.
 type ScalaError struct {
@@ -95,10 +87,10 @@ type ScalaSession interface {
 
 // ScalaSessionFactory allows hermetic tests to replace the process-backed session.
 // Implementations may accept either (context.Context, string) or
-// (context.Context, string, ScalaConfig); the latter receives request settings.
+// (context.Context, string, neutralbackend.ScalaConfig); the latter receives request settings.
 type ScalaSessionFactory any
 
-type scalaSessionFactory func(context.Context, string, ScalaConfig) (ScalaSession, error)
+type scalaSessionFactory func(context.Context, string, neutralbackend.ScalaConfig) (ScalaSession, error)
 
 // ScalaBackendOption configures a ScalaBackend.
 type ScalaBackendOption func(*ScalaBackend)
@@ -107,10 +99,12 @@ type ScalaBackendOption func(*ScalaBackend)
 func WithScalaSessionFactory(factory ScalaSessionFactory) ScalaBackendOption {
 	return func(backend *ScalaBackend) {
 		switch typed := factory.(type) {
-		case func(context.Context, string, ScalaConfig) (ScalaSession, error):
+		case func(context.Context, string, neutralbackend.ScalaConfig) (ScalaSession, error):
 			backend.factory = scalaSessionFactory(typed)
 		case func(context.Context, string) (ScalaSession, error):
-			backend.factory = scalaSessionFactory(func(ctx context.Context, root string, _ ScalaConfig) (ScalaSession, error) { return typed(ctx, root) })
+			backend.factory = scalaSessionFactory(func(ctx context.Context, root string, _ neutralbackend.ScalaConfig) (ScalaSession, error) {
+				return typed(ctx, root)
+			})
 		default:
 			backend.factory = nil
 		}
@@ -126,7 +120,7 @@ type ScalaBackend struct {
 }
 
 // TrustedWorkspaceRoot discovers the workspace used for trust comparison.
-func (b *ScalaBackend) TrustedWorkspaceRoot(project ProjectContext) (string, error) {
+func (b *ScalaBackend) TrustedWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	return scalaWorkspaceRoot(project)
 }
 
@@ -147,20 +141,20 @@ func NewScalaBackendWithFactory(factory ScalaSessionFactory) *ScalaBackend {
 }
 
 // Language returns the Scala language identifier.
-func (*ScalaBackend) Language() LanguageID { return LanguageScala }
+func (*ScalaBackend) Language() neutralbackend.LanguageID { return neutralbackend.LanguageScala }
 
 // Capabilities declares Scala's trusted read-only lookup capability.
-func (*ScalaBackend) Capabilities() Capabilities {
-	return NewCapabilitiesRequiringWorkspaceTrust(OperationLookup)
+func (*ScalaBackend) Capabilities() neutralbackend.Capabilities {
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Scala backend.
-func (*ScalaBackend) CapabilityMatrix() LanguageMatrix {
-	return LanguageMatrix{
+func (*ScalaBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
+	return neutralbackend.LanguageMatrix{
 		Language:    "scala",
 		DisplayName: "Scala",
 		Maturity:    "Read-only preview",
-		Operations: map[string]OpCapability{
+		Operations: map[string]neutralbackend.OpCapability{
 			"lookup": {
 				Supported:    true,
 				Description:  "File-scoped hierarchical Scala symbol lookup through a trusted, pinned Metals session using UTF-16 LSP positions.",
@@ -169,7 +163,7 @@ func (*ScalaBackend) CapabilityMatrix() LanguageMatrix {
 				PlacementKey: false,
 			},
 		},
-		Limitations: []Constraint{
+		Limitations: []neutralbackend.Constraint{
 			{
 				Title:       "Lookup Only",
 				Description: "Scala rename, formatting, imports, verification, build import, and structural edits are unavailable.",
@@ -206,7 +200,7 @@ func (b *ScalaBackend) Close() error {
 }
 
 // Lookup resolves one exact hierarchical symbol in the selected Scala file.
-func (b *ScalaBackend) Lookup(ctx context.Context, project ProjectContext, query string) (*LookupResult, error) {
+func (b *ScalaBackend) Lookup(ctx context.Context, project neutralbackend.ProjectContext, query string) (*neutralbackend.LookupResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -215,7 +209,7 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project ProjectContext, query
 		return nil, err
 	}
 	if !project.WorkspaceTrust.Allows(root) {
-		return nil, &WorkspaceTrustError{Operation: OperationLookup, Language: LanguageScala, Workspace: root}
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationLookup, Language: neutralbackend.LanguageScala, Workspace: root}
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &ScalaError{Op: "lookup", File: file, Symbol: query, Err: ErrScalaMalformedResponse}
@@ -274,13 +268,13 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project ProjectContext, query
 }
 
 // Rename is intentionally unavailable for the Scala lookup-only slice.
-func (*ScalaBackend) Rename(context.Context, RenameRequest) (*RenameResult, error) {
-	return nil, &Error{Operation: OperationRename, Language: LanguageScala, Err: ErrUnsupportedOperation}
+func (*ScalaBackend) Rename(context.Context, neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
+	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationRename, Language: neutralbackend.LanguageScala, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
 // Verify is intentionally unavailable for the Scala lookup-only slice.
-func (*ScalaBackend) Verify(context.Context, VerifyRequest) ([]Diagnostic, error) {
-	return nil, &Error{Operation: OperationVerify, Language: LanguageScala, Err: ErrUnsupportedOperation}
+func (*ScalaBackend) Verify(context.Context, neutralbackend.VerifyRequest) ([]neutralbackend.Diagnostic, error) {
+	return nil, &neutralbackend.Error{Operation: neutralbackend.OperationVerify, Language: neutralbackend.LanguageScala, Err: neutralbackend.ErrUnsupportedOperation}
 }
 
 var scalaMetalsSettings = map[string]any{
@@ -333,7 +327,7 @@ func initializeScalaSession(ctx context.Context, session ScalaSession, root stri
 	return session.Notify(ctx, "workspace/didChangeConfiguration", map[string]any{"settings": scalaMetalsSettings})
 }
 
-func defaultScalaSessionFactory(ctx context.Context, root string, config ScalaConfig) (ScalaSession, error) {
+func defaultScalaSessionFactory(ctx context.Context, root string, config neutralbackend.ScalaConfig) (ScalaSession, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -416,7 +410,7 @@ func parseScalaJavaMajor(output string) (int, bool) {
 	return 0, false
 }
 
-func resolveMetalsBinary(config ScalaConfig) (string, error) {
+func resolveMetalsBinary(config neutralbackend.ScalaConfig) (string, error) {
 	if config.MetalsBin != "" {
 		path, err := filepath.Abs(config.MetalsBin)
 		info, statErr := os.Stat(path)
@@ -445,11 +439,11 @@ func resolveMetalsBinary(config ScalaConfig) (string, error) {
 }
 
 func stableScalaRootHash(root string) string {
-	digest := sha256.Sum256([]byte(CanonicalWorkspaceRoot(root)))
+	digest := sha256.Sum256([]byte(neutralbackend.CanonicalWorkspaceRoot(root)))
 	return hex.EncodeToString(digest[:])[:24]
 }
 
-func resolveScalaProject(project ProjectContext) (string, string, []byte, error) {
+func resolveScalaProject(project neutralbackend.ProjectContext) (string, string, []byte, error) {
 	if strings.TrimSpace(project.File) == "" || !strings.EqualFold(filepath.Ext(project.File), ".scala") {
 		return "", "", nil, &ScalaError{Op: "project", File: project.File, Err: ErrScalaFileRequired}
 	}
@@ -461,14 +455,14 @@ func resolveScalaProject(project ProjectContext) (string, string, []byte, error)
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(base, file)
 	}
-	file = CanonicalWorkspaceRoot(file)
+	file = neutralbackend.CanonicalWorkspaceRoot(file)
 	if project.RootDir == "" {
 		if hasScalaProjectMarker(file) {
 			return "", "", nil, &ScalaError{Op: "project", File: file, Err: ErrScalaProjectMarkersRequireExplicitRoot}
 		}
 		base = filepath.Dir(file)
 	}
-	root := CanonicalWorkspaceRoot(base)
+	root := neutralbackend.CanonicalWorkspaceRoot(base)
 	if !pathutil.PathWithin(root, file) {
 		return "", "", nil, &ScalaError{Op: "project", File: file, Workspace: root, Err: ErrScalaFileOutsideWorkspace}
 	}
@@ -479,9 +473,9 @@ func resolveScalaProject(project ProjectContext) (string, string, []byte, error)
 	return root, file, source, nil
 }
 
-func scalaWorkspaceRoot(project ProjectContext) (string, error) {
+func scalaWorkspaceRoot(project neutralbackend.ProjectContext) (string, error) {
 	if project.RootDir != "" {
-		return CanonicalWorkspaceRoot(project.RootDir), nil
+		return neutralbackend.CanonicalWorkspaceRoot(project.RootDir), nil
 	}
 	if project.File == "" {
 		return "", ErrScalaFileRequired
@@ -490,11 +484,11 @@ func scalaWorkspaceRoot(project ProjectContext) (string, error) {
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(".", file)
 	}
-	file = CanonicalWorkspaceRoot(file)
+	file = neutralbackend.CanonicalWorkspaceRoot(file)
 	if hasScalaProjectMarker(file) {
 		return "", ErrScalaProjectMarkersRequireExplicitRoot
 	}
-	return CanonicalWorkspaceRoot(filepath.Dir(file)), nil
+	return neutralbackend.CanonicalWorkspaceRoot(filepath.Dir(file)), nil
 }
 
 func hasScalaProjectMarker(file string) bool {
@@ -634,7 +628,7 @@ func scalaKindName(kind int) string {
 }
 func scalaKindSupported(kind int) bool { return scalaKindName(kind) != "" }
 
-func selectScalaSymbol(query, root, file string, source []byte, symbols []scalaDocumentSymbol) (*LookupResult, error) {
+func selectScalaSymbol(query, root, file string, source []byte, symbols []scalaDocumentSymbol) (*neutralbackend.LookupResult, error) {
 	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
 	for i := range parts {
 		parts[i] = strings.TrimSpace(parts[i])
@@ -661,18 +655,18 @@ func selectScalaSymbol(query, root, file string, source []byte, symbols []scalaD
 	if len(matches) == 0 {
 		return nil, &ScalaError{Op: "lookup", File: file, Symbol: query, Err: ErrScalaSymbolNotFound}
 	}
-	converted := make([]*SymbolCandidate, 0, len(matches))
+	converted := make([]*neutralbackend.SymbolCandidate, 0, len(matches))
 	for _, item := range matches {
 		converted = append(converted, scalaCandidate(root, file, source, item.symbol, item.path))
 	}
 	if len(converted) > 1 {
-		return &LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
+		return &neutralbackend.LookupResult{Symbol: query, File: filepath.Clean(file), Ambiguous: true, Candidates: converted}, nil
 	}
 	candidate := converted[0]
-	return &LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
+	return &neutralbackend.LookupResult{Symbol: candidate.QualifiedName, File: candidate.File, Line: candidate.Line, Column: candidate.Column, Offset: candidate.Offset, Kind: candidate.Kind, Receiver: candidate.Receiver, Location: candidate.Location}, nil
 }
 
-func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol, path []string) *SymbolCandidate {
+func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol, path []string) *neutralbackend.SymbolCandidate {
 	start := symbol.SelectionRange.Start
 	offset, _ := scalaByteOffset(source, start)
 	receiver := ""
@@ -683,8 +677,8 @@ func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol
 	if err != nil {
 		relative = file
 	}
-	location := SourceLocation{URI: pathutil.FileURI(file), Range: Range{Start: Position(start), End: Position(symbol.SelectionRange.End)}}
-	return &SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: scalaKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
+	location := neutralbackend.SourceLocation{URI: pathutil.FileURI(file), Range: neutralbackend.Range{Start: neutralbackend.Position(start), End: neutralbackend.Position(symbol.SelectionRange.End)}}
+	return &neutralbackend.SymbolCandidate{Name: symbol.Name, Receiver: receiver, QualifiedName: strings.Join(path, "."), Kind: scalaKindName(symbol.Kind), File: relative, Line: start.Line + 1, Column: start.Character + 1, Offset: offset, Location: location}
 }
 
 func scalaByteOffset(source []byte, position scalaPosition) (int, error) {
