@@ -1,3 +1,4 @@
+// driver.go coordinates benchmark task setup, provider dispatch, and result evaluation.
 package main
 
 import (
