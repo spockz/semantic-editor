@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +56,9 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	}
 	if resp.DiagnosticDelta == nil {
 		t.Fatal("successful batch omitted diagnostic delta")
+	}
+	if !strings.Contains(resp.FinalDiff, "file1.go") || !strings.Contains(resp.FinalDiff, `return "new"`) || !strings.Contains(resp.FinalDiff, "file2.go") {
+		t.Fatalf("final workspace diff omitted batch edits: %s", resp.FinalDiff)
 	}
 	snapshot := metrics.Snapshot(0)
 	if before, after := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationAfter)].Count; before != 1 || after != 1 {
@@ -121,6 +125,9 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 	}
 	if response.Result.StructuredContent.Result.DiagnosticDelta == nil {
 		t.Fatal("structured batch response omitted diagnostic_delta")
+	}
+	if !strings.Contains(response.Result.StructuredContent.Result.FinalDiff, "file.go") {
+		t.Fatalf("structured batch response omitted final_diff: %+v", response.Result.StructuredContent.Result)
 	}
 	if response.Result.StructuredContent.Metrics == nil {
 		t.Fatal("structured batch response omitted metrics")
@@ -291,5 +298,77 @@ func TestBatch_RenameDefersWorkspacePostProcess(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "func Sum()") || !strings.Contains(string(content), "return 2") {
 		t.Fatalf("rename and replacement not applied:\n%s", content)
+	}
+}
+
+func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
+	goPath, err := exec.LookPath("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(goPath, filepath.Join(bin, "go")); err != nil {
+		t.Fatal(err)
+	}
+	realGofmt, err := exec.LookPath("gofmt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "gofmt-called")
+	wrapper := filepath.Join(root, "gofmt-wrapper.sh")
+	script := "#!/bin/sh\nif [ -e '" + marker + "' ]; then echo injected-gofmt-failure >&2; exit 1; fi\n: > '" + marker + "'\nexec '" + realGofmt + "' \"$@\"\n"
+	if err := os.WriteFile(wrapper, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The test needs an executable formatter shim to fail only during deferred processing.
+	// #nosec G302
+	if err := os.Chmod(wrapper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(wrapper, filepath.Join(bin, "gofmt")); err != nil {
+		t.Fatal(err)
+	}
+	module := t.TempDir()
+	if err := os.WriteFile(filepath.Join(module, "go.mod"), []byte("module example.com/batchfailure\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(module, "file.go"), []byte("package batchfailure\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	originalPath := os.Getenv("PATH")
+	if err := os.Setenv("PATH", bin); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.Setenv("PATH", originalPath) }()
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", module, &out)
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 2"}}]}}}` + "\n"
+	if err := srv.Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Result struct {
+			IsError           bool `json:"isError"`
+			StructuredContent struct {
+				Result mcp.BatchResponse `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	response := envelope.Result.StructuredContent.Result
+	if !envelope.Result.IsError || response.Status != "error" || len(response.Results) != 2 || response.Results[1].Tool != "post_process" {
+		t.Fatalf("partial response = %+v; wire output: %s", envelope.Result, out.String())
+	}
+	if !strings.Contains(response.FinalDiff, "return 2") {
+		t.Fatalf("partial final_diff omitted applied edit: %s", response.FinalDiff)
+	}
+	if !strings.Contains(response.Results[1].Error, "injected-gofmt-failure") {
+		t.Fatalf("post-process error = %+v", response.Results[1])
 	}
 }

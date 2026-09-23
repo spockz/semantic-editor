@@ -28,8 +28,8 @@ func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 			}
 			assertBatchOutputSchema(t, batch["outputSchema"])
 			description := batch["description"].(string)
-			if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "semantic_verify") {
-				t.Fatalf("batch description = %q, want final diagnostic_delta and semantic_verify guidance", description)
+			if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "final_diff") {
+				t.Fatalf("batch description = %q, want final_diff and diagnostic_delta guidance", description)
 			}
 
 			inputSchema := batch["inputSchema"].(map[string]any)
@@ -250,6 +250,9 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	items := properties["results"].(map[string]any)["items"].(map[string]any)
 	if got := items["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
 		t.Fatalf("batch result item required = %#v", got)
+	}
+	if diff, ok := properties["final_diff"].(map[string]any); !ok || diff["type"] != "string" {
+		t.Fatalf("batch final_diff schema = %#v", properties["final_diff"])
 	}
 	delta, ok := properties["diagnostic_delta"].(map[string]any)
 	if !ok {

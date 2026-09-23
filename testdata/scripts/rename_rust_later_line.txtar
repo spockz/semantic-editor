@@ -1,0 +1,18 @@
+# Later-line Rust rename validates UTF-16 coordinates and writes the selected file.
+env SEMEDIT_RUST_SYMBOL_LINE=1
+env SEMEDIT_RUST_SYMBOL_START=6
+exec semedit rename --language rust --trust-workspace --file src/lib.rs --symbol Widget --to Gadget
+stdout 'Successfully renamed Widget.'
+cmp src/lib.rs want.rs
+
+-- Cargo.toml --
+[package]
+name = "example"
+version = "0.1.0"
+
+-- want.rs --
+// é
+// 😀 Gadget {}
+-- src/lib.rs --
+// é
+// 😀 Widget {}

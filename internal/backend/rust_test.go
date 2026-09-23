@@ -15,6 +15,7 @@ import (
 type fakeRustSession struct {
 	symbols json.RawMessage
 	rename  json.RawMessage
+	prepare json.RawMessage
 	calls   []string
 	init    map[string]any
 	closed  bool
@@ -34,6 +35,9 @@ func (f *fakeRustSession) Request(ctx context.Context, method string, params any
 		return json.RawMessage(`{"capabilities":{}}`), json.Unmarshal(encoded, &f.init)
 	}
 	if method == "textDocument/prepareRename" {
+		if f.prepare != nil {
+			return f.prepare, nil
+		}
 		return json.RawMessage(`{"start":{"line":0,"character":3},"end":{"line":0,"character":8}}`), nil
 	}
 	if method == "textDocument/rename" && f.rename != nil {
@@ -174,5 +178,60 @@ func TestRustLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 				t.Fatalf("error = %v, want %v", err, testCase.want)
 			}
 		})
+	}
+}
+
+func TestRustLookupUsesAbsoluteUTF8ByteOffsetOnLaterLine(t *testing.T) {
+	for _, source := range []string{"// é\n// 😀 fn value() {}\n", "// é\n// 😀 fn value() {}"} {
+		root, file := rustProject(t, source)
+		session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"selectionRange":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"children":[]}]`)}
+		b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
+		result, err := b.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "value")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Offset != 17 {
+			t.Fatalf("offset = %d for %q, want 17", result.Offset, source)
+		}
+	}
+}
+
+func TestRustRenameUsesAbsoluteUTF8ByteOffsetsOnLaterLine(t *testing.T) {
+	for _, terminated := range []bool{true, false} {
+		source := "// é\n// 😀 fn value() {}"
+		if terminated {
+			source += "\n"
+		}
+		root, file := rustProject(t, source)
+		session := &fakeRustSession{
+			symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"selectionRange":{"start":{"line":1,"character":9},"end":{"line":1,"character":14}},"children":[]}]`),
+			prepare: json.RawMessage(`{"start":{"line":1,"character":9},"end":{"line":1,"character":14}}`),
+		}
+		encoded, err := json.Marshal(map[string]any{"changes": map[string]any{"file://" + filepath.ToSlash(file): []any{map[string]any{"range": map[string]any{"start": map[string]int{"line": 1, "character": 9}, "end": map[string]int{"line": 1, "character": 14}}, "newText": "renamed"}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		session.rename = encoded
+		b := backend.NewRustBackendWithFactory(func(context.Context, string) (backend.RustSession, error) { return session, nil })
+		_, err = b.Rename(context.Background(), backend.RenameRequest{Project: backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, Symbol: "value", To: "renamed"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fileRoot, err := os.OpenRoot(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := fileRoot.ReadFile(filepath.Base(file))
+		_ = fileRoot.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := "// é\n// 😀 fn renamed() {}"
+		if terminated {
+			want += "\n"
+		}
+		if string(got) != want {
+			t.Fatalf("renamed source = %q, want %q", got, want)
+		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"strconv"
 
 	"semedit/internal/lsp"
 )
@@ -29,7 +30,20 @@ type fakeDocumentSymbol struct {
 }
 
 func runFakeRustAnalyzer() {
-	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 23, fakeRange(0, 15), fakeRange(7, 13)})
+	symbol := fakeDocumentSymbol{"Widget", 23, fakeRange(0, 15), fakeRange(7, 13)}
+	if rawLine := os.Getenv("SEMEDIT_RUST_SYMBOL_LINE"); rawLine != "" {
+		line, err := strconv.Atoi(rawLine)
+		if err != nil {
+			return
+		}
+		start, err := strconv.Atoi(os.Getenv("SEMEDIT_RUST_SYMBOL_START"))
+		if err != nil {
+			return
+		}
+		symbol.Range = fakeRangeAt(line, start-1, start+6)
+		symbol.SelectionRange = fakeRangeAt(line, start, start+6)
+	}
+	runFakeLanguageServer(symbol)
 }
 
 func runFakeJava() {
@@ -77,7 +91,11 @@ func runFakeMaven() {
 }
 
 func fakeRange(start, end int) fakeLSPRange {
-	return fakeLSPRange{Start: fakeLSPPosition{Character: start}, End: fakeLSPPosition{Character: end}}
+	return fakeRangeAt(0, start, end)
+}
+
+func fakeRangeAt(line, start, end int) fakeLSPRange {
+	return fakeLSPRange{Start: fakeLSPPosition{Line: line, Character: start}, End: fakeLSPPosition{Line: line, Character: end}}
 }
 
 func runFakeLanguageServer(symbol fakeDocumentSymbol) {

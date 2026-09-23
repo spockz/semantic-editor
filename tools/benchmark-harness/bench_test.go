@@ -1005,3 +1005,62 @@ func TestOpenCodeOpenRouterSmallModelUsesBenchmarkTarget(t *testing.T) {
 		t.Errorf("small model = %v, want %q", got, target.Model)
 	}
 }
+
+func TestParseTaskRejectsMalformedAndMissingOracleSettings(t *testing.T) {
+	fixture, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ name, old, replacement, field string }{
+		{"invalid clean_compile", "clean_compile: true", "clean_compile: tru", "oracle.level_3_build.clean_compile"},
+		{"invalid pass_tests", "pass_tests: true", "pass_tests: tru", "oracle.level_4_test.pass_tests"},
+		{"missing clean_compile", "    clean_compile: true\n", "", "oracle.level_3_build.clean_compile"},
+		{"missing pass_tests", "    pass_tests: true\n", "", "oracle.level_4_test.pass_tests"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := strings.Replace(string(fixture), tc.old, tc.replacement, 1)
+			if data == string(fixture) {
+				t.Fatalf("fixture did not contain %q", tc.old)
+			}
+			_, err := ParseTask([]byte(data))
+			if err == nil || !strings.Contains(err.Error(), tc.field) {
+				t.Fatalf("ParseTask error = %v, want field %s", err, tc.field)
+			}
+		})
+	}
+}
+
+func TestEvaluateKeepsHiddenTestsOutOfAgentWorkspace(t *testing.T) {
+	for _, pass := range []bool{true, false} {
+		t.Run(fmt.Sprintf("oracle_passes_%v", pass), func(t *testing.T) {
+			workDir, hiddenDir := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte("module private-oracle\n\ngo 1.23\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package main\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			testBody := "package main\nimport \"testing\"\nfunc TestHidden(t *testing.T) { t.Fatal(\"hidden-failure\") }\n"
+			if pass {
+				testBody = "package main\nimport \"testing\"\nfunc TestHidden(t *testing.T) { if Value() != 1 { t.Fatal(\"wrong value\") } }\n"
+			}
+			if err := os.WriteFile(filepath.Join(hiddenDir, "acceptance_test.go"), []byte(testBody), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{Test: TestConfig{PassTests: true, HiddenTestDir: hiddenDir}}}}
+			result, err := Evaluate(context.Background(), task, workDir, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Passed != pass {
+				t.Fatalf("oracle passed = %v, want %v (%+v)", result.Passed, pass, result)
+			}
+			if _, err := os.Stat(filepath.Join(workDir, "acceptance_test.go")); !os.IsNotExist(err) {
+				t.Fatalf("hidden test visible to resumed agent: stat error = %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(workDir, ".scratch")); !os.IsNotExist(err) {
+				t.Fatalf("private oracle workspace remains before resumed turn: stat error = %v", err)
+			}
+		})
+	}
+}

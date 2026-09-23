@@ -290,6 +290,7 @@ func batchOutputSchema() map[string]any {
 				"items": batchResultSchema(),
 			},
 			"diagnostic_delta": diagnosticDeltaSchema(),
+			"final_diff":       map[string]any{"type": "string"},
 		},
 		"required": []string{"status", "results"},
 	}
@@ -384,7 +385,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 		})
 	}
 	return map[string]any{
-		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Successful batches return one final diagnostic_delta; a separate semantic_verify call is not needed.",
+		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{

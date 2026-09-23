@@ -204,3 +204,161 @@ func TestMalformedJSONAndStderrCapture(t *testing.T) {
 		t.Fatalf("capture = %q truncated=%v", capture.Bytes(), capture.Truncated())
 	}
 }
+
+func TestRequestCancellationReturnsWhenPeerStopsReading(t *testing.T) {
+	clientToPeerR, clientToPeerW := io.Pipe()
+	peerToClientR, peerToClientW := io.Pipe()
+	client := lsp.NewClient(peerToClientR, clientToPeerW, lsp.WithCloser(clientToPeerW))
+	client.Start()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := client.Request(ctx, "slow", nil); done <- err }()
+	if _, err := lsp.NewFrameReader(clientToPeerR, 1<<20).ReadMessage(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Request error = %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Request remained blocked while cancel notification could not be written")
+	}
+	_ = client.Close()
+	_ = peerToClientR.Close()
+	_ = client.Wait()
+	_ = peerToClientW.Close()
+	_ = peerToClientR.Close()
+	_ = clientToPeerR.Close()
+}
+
+type blockingWriter struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (w blockingWriter) Write(p []byte) (int, error) {
+	select {
+	case w.started <- struct{}{}:
+	default:
+	}
+	<-w.release
+	return len(p), nil
+}
+
+func TestRequestContextCancelsWhileInitialWriteIsBlocked(t *testing.T) {
+	writer := blockingWriter{started: make(chan struct{}, 1), release: make(chan struct{})}
+	peerToClientR, peerToClientW := io.Pipe()
+	client := lsp.NewClient(peerToClientR, writer)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := client.Request(ctx, "slow", nil); done <- err }()
+	select {
+	case <-writer.started:
+	case <-time.After(time.Second):
+		t.Fatal("initial write did not start")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Request error = %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Request remained blocked in initial write")
+	}
+	_ = client.Close()
+	close(writer.release)
+	_ = peerToClientW.Close()
+}
+
+type firstWriteGate struct {
+	once    sync.Once
+	started chan struct{}
+	release chan struct{}
+	mu      sync.Mutex
+	data    bytes.Buffer
+}
+
+func (w *firstWriteGate) Write(p []byte) (int, error) {
+	w.once.Do(func() { close(w.started); <-w.release })
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.data.Write(p)
+}
+
+func (w *firstWriteGate) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.data.String()
+}
+
+func TestCanceledQueuedRequestIsSkippedBeforeWrite(t *testing.T) {
+	peerR, peerW := io.Pipe()
+	writer := &firstWriteGate{started: make(chan struct{}), release: make(chan struct{})}
+	client := lsp.NewClient(peerR, writer)
+	firstDone := make(chan error, 1)
+	go func() { _, err := client.Request(context.Background(), "first", nil); firstDone <- err }()
+	select {
+	case <-writer.started:
+	case <-time.After(time.Second):
+		t.Fatal("first outbound write did not start")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	queuedDone := make(chan error, 1)
+	go func() { _, err := client.Request(ctx, "queued", nil); queuedDone <- err }()
+	select {
+	case err := <-queuedDone:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("queued Request error = %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("queued Request did not honor its deadline")
+	}
+	close(writer.release)
+	if err := client.Notify(context.Background(), "barrier", nil); err != nil {
+		t.Fatal(err)
+	}
+	if output := writer.String(); strings.Contains(output, "queued") || strings.Contains(output, "$/cancelRequest") || !strings.Contains(output, "barrier") {
+		t.Fatalf("outbound frames = %q", output)
+	}
+	_ = client.Close()
+	_ = peerW.Close()
+	if err := <-firstDone; !errors.Is(err, lsp.ErrClosed) {
+		t.Fatalf("first Request error = %v", err)
+	}
+}
+
+func TestInitialWriteCancellationQueuesBestEffortCancel(t *testing.T) {
+	peerR, peerW := io.Pipe()
+	writer := &firstWriteGate{started: make(chan struct{}), release: make(chan struct{})}
+	client := lsp.NewClient(peerR, writer)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { _, err := client.Request(ctx, "partially_sent", nil); done <- err }()
+	select {
+	case <-writer.started:
+	case <-time.After(time.Second):
+		t.Fatal("initial outbound write did not start")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Request error = %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("initial write cancellation did not return promptly")
+	}
+	close(writer.release)
+	if err := client.Notify(context.Background(), "barrier", nil); err != nil {
+		t.Fatal(err)
+	}
+	if output := writer.String(); !strings.Contains(output, "$/cancelRequest") || !strings.Contains(output, "barrier") {
+		t.Fatalf("outbound frames = %q", output)
+	}
+	_ = client.Close()
+	_ = peerW.Close()
+}

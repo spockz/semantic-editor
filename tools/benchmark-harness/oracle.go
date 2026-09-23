@@ -117,6 +117,7 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 	scanner := bufio.NewScanner(bytes.NewReader(comment))
 
 	var currentPath []string
+	var cleanCompileSeen, passTestsSeen bool
 
 	for scanner.Scan() {
 		rawLine := scanner.Text()
@@ -197,17 +198,34 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 		case "oracle.level_2_ast.symbol_before.second":
 			meta.Oracle.AST.SymbolBefore.Second = val
 		case "oracle.level_3_build.clean_compile":
-			b, _ := strconv.ParseBool(val)
+			b, err := strconv.ParseBool(val)
+			if err != nil {
+				return TaskMetadata{}, fmt.Errorf("oracle.level_3_build.clean_compile: %w", err)
+			}
+			cleanCompileSeen = true
 			meta.Oracle.Build.CleanCompile = b
 		case "oracle.level_4_test.pass_tests":
-			b, _ := strconv.ParseBool(val)
+			b, err := strconv.ParseBool(val)
+			if err != nil {
+				return TaskMetadata{}, fmt.Errorf("oracle.level_4_test.pass_tests: %w", err)
+			}
+			passTestsSeen = true
 			meta.Oracle.Test.PassTests = b
 		case "oracle.level_4_test.hidden_test_dir":
 			meta.Oracle.Test.HiddenTestDir = val
 		}
 	}
 
-	return meta, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return TaskMetadata{}, err
+	}
+	if !cleanCompileSeen {
+		return TaskMetadata{}, errors.New("missing required oracle.level_3_build.clean_compile")
+	}
+	if !passTestsSeen {
+		return TaskMetadata{}, errors.New("missing required oracle.level_4_test.pass_tests")
+	}
+	return meta, nil
 }
 
 // ExtractTo extracts all non-golden archive files to target directory.
@@ -257,7 +275,7 @@ func (t *Task) ExtractVariantTo(targetDir, variant string) error {
 }
 
 // Evaluate runs the multi-level correctness oracle against the target workspace directory.
-func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []string) (*OracleResult, error) {
+func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []string) (result *OracleResult, retErr error) {
 	start := time.Now()
 	res := &OracleResult{
 		Passed: false,
@@ -277,8 +295,18 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	}
 	res.Level1Policy = true
 
+	evalDir, cleanup, err := copyWorkspaceForOracle(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare private oracle workspace: %w", err)
+	}
+	defer func() {
+		if err := cleanup(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("cleanup private oracle workspace: %w", err))
+		}
+	}()
+
 	// Level 2: AST Invariants
-	if err := evaluateAST(task.Metadata.Oracle.AST, workDir); err != nil {
+	if err := evaluateAST(task.Metadata.Oracle.AST, evalDir); err != nil {
 		res.FailureStage = "level_2_ast"
 		res.ErrorMessage = err.Error()
 		res.Duration = time.Since(start)
@@ -289,7 +317,7 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	// Level 3: Isolated Compilation
 	if task.Metadata.Oracle.Build.CleanCompile {
 		cmd := exec.CommandContext(ctx, "go", "build", "./...")
-		cmd.Dir = workDir
+		cmd.Dir = evalDir
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			res.FailureStage = "level_3_build"
@@ -302,14 +330,14 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 
 	// Level 4: Hidden Tests
 	if task.Metadata.Oracle.Test.PassTests {
-		if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
+		if err := installHiddenTests(evalDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
 			res.FailureStage = "level_4_test"
 			res.ErrorMessage = fmt.Sprintf("install hidden tests: %v", err)
 			res.Duration = time.Since(start)
 			return res, nil
 		}
 		cmd := exec.CommandContext(ctx, "go", "test", "./...")
-		cmd.Dir = workDir
+		cmd.Dir = evalDir
 		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			res.FailureStage = "level_4_test"
@@ -322,6 +350,100 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	res.Passed = true
 	res.Duration = time.Since(start)
 	return res, nil
+}
+
+func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
+	sourceRoot, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve workspace: %w", err)
+	}
+	sourceFS, err := os.OpenRoot(sourceRoot)
+	if err != nil {
+		return "", nil, fmt.Errorf("open workspace: %w", err)
+	}
+	scratchDir := filepath.Join(sourceRoot, ".scratch")
+	scratchCreated := false
+	if info, statErr := os.Lstat(scratchDir); errors.Is(statErr, os.ErrNotExist) {
+		if err := os.Mkdir(scratchDir, 0o700); err != nil {
+			_ = sourceFS.Close()
+			return "", nil, fmt.Errorf("create workspace scratch directory: %w", err)
+		}
+		scratchCreated = true
+	} else if statErr != nil {
+		_ = sourceFS.Close()
+		return "", nil, fmt.Errorf("inspect workspace scratch directory: %w", statErr)
+	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		_ = sourceFS.Close()
+		return "", nil, errors.New("workspace .scratch is not a regular directory")
+	}
+	removeScratch := func() error {
+		if scratchCreated {
+			if err := os.Remove(scratchDir); !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+		}
+		return nil
+	}
+	target, err := os.MkdirTemp(scratchDir, "oracle-*")
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("create private workspace: %w", err), sourceFS.Close(), removeScratch())
+	}
+	targetFS, err := os.OpenRoot(target)
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", err), sourceFS.Close(), os.RemoveAll(target), removeScratch())
+	}
+	cleanup := func() error {
+		closeSourceErr, closeTargetErr := sourceFS.Close(), targetFS.Close()
+		removeErr := os.RemoveAll(target)
+		var scratchErr error
+		if scratchCreated {
+			scratchErr = os.Remove(scratchDir)
+			if errors.Is(scratchErr, os.ErrNotExist) {
+				scratchErr = nil
+			}
+		}
+		return errors.Join(closeSourceErr, closeTargetErr, removeErr, scratchErr)
+	}
+	err = filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == sourceRoot {
+			return nil
+		}
+		rel, err := filepath.Rel(sourceRoot, path)
+		if err != nil {
+			return fmt.Errorf("relativize %s: %w", path, err)
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == ".scratch" {
+				return filepath.SkipDir
+			}
+			return targetFS.MkdirAll(rel, 0o750)
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		data, err := sourceFS.ReadFile(rel)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", rel, err)
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("stat %s: %w", rel, err)
+		}
+		if err := targetFS.MkdirAll(filepath.Dir(rel), 0o750); err != nil {
+			return fmt.Errorf("create parent for %s: %w", rel, err)
+		}
+		if err := targetFS.WriteFile(rel, data, info.Mode().Perm()); err != nil {
+			return fmt.Errorf("write %s: %w", rel, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", err), cleanup())
+	}
+	return target, cleanup, nil
 }
 
 // installHiddenTests copies task-owned acceptance tests only after the agent has finished.

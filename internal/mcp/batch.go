@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
+
+	"semedit/internal/astedit"
 
 	"semedit/internal/backend"
 	"semedit/internal/operation"
@@ -35,11 +39,16 @@ type BatchResponse struct {
 	Status          string                    `json:"status"`
 	Results         []BatchResult             `json:"results"`
 	DiagnosticDelta *pipeline.DiagnosticDelta `json:"diagnostic_delta,omitempty"`
+	FinalDiff       string                    `json:"final_diff,omitempty"`
 }
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	workspaceBefore, err := snapshotBatchWorkspace(s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot workspace before batch: %w", err)
+	}
 	before, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), s.workDir)
 	if err != nil {
 		return nil, fmt.Errorf("batch diagnostics before: %w", err)
@@ -51,6 +60,7 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		if err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Symbol: result.Symbol, Status: "error", Error: err.Error()})
+			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 			return response, nil
 		}
 		if writtenFile != "" {
@@ -77,16 +87,102 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			}
 		}
 		if err != nil {
-			return response, fmt.Errorf("post-process %s: %w", file, err)
+			response.Status = "error"
+			message := fmt.Errorf("post-process %s: %w", file, err)
+			response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
+			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+			return response, nil
 		}
 	}
 	after, err := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), s.workDir)
 	if err != nil {
-		return response, fmt.Errorf("batch diagnostics after: %w", err)
+		response.Status = "error"
+		message := fmt.Errorf("batch diagnostics after: %w", err)
+		response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
 	}
 	delta := pipeline.ComputeDelta(before, after)
 	response.DiagnosticDelta = &delta
+	if err := captureBatchDiff(response, s.workDir, workspaceBefore); err != nil {
+		response.Status = "error"
+		return response, nil
+	}
 	return response, nil
+}
+
+func snapshotBatchWorkspace(root string) (map[string]string, error) {
+	files := make(map[string]string)
+	workspace, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open workspace root: %w", err)
+	}
+	defer func() { _ = workspace.Close() }()
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path != root && (entry.Name() == ".git" || entry.Name() == ".scratch" || entry.Name() == "vendor" || entry.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return fmt.Errorf("relativize %s: %w", path, err)
+		}
+		data, err := workspace.ReadFile(rel)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", rel, err)
+		}
+		files[filepath.ToSlash(rel)] = string(data)
+		return nil
+	})
+	return files, err
+}
+
+func captureBatchDiff(response *BatchResponse, root string, before map[string]string) error {
+	diff, err := finalBatchDiff(root, before)
+	if err != nil {
+		message := fmt.Errorf("capture final batch diff: %w", err)
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "final_diff", Status: "error", Error: message.Error()})
+		return message
+	}
+	response.FinalDiff = diff
+	return nil
+}
+
+func finalBatchDiff(root string, before map[string]string) (string, error) {
+	after, err := snapshotBatchWorkspace(root)
+	if err != nil {
+		return "", err
+	}
+	paths := make(map[string]struct{}, len(before)+len(after))
+	for path, content := range before {
+		if next, ok := after[path]; !ok || next != content {
+			paths[path] = struct{}{}
+		}
+	}
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			paths[path] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(paths))
+	for path := range paths {
+		ordered = append(ordered, path)
+	}
+	sort.Strings(ordered)
+	var diff strings.Builder
+	for _, path := range ordered {
+		diff.WriteString(astedit.UnifiedDiff(path, before[path], after[path]))
+	}
+	return diff.String(), nil
 }
 
 func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, string, error) {
@@ -192,7 +288,11 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		return
 	}
 	if response.Status == "error" {
-		s.sendToolErrorWithTiming(id, string(text), timing)
+		s.sendResult(id, map[string]any{
+			"content":           []map[string]any{{"type": "text", "text": string(text)}},
+			"isError":           true,
+			"structuredContent": timing.structuredContentWithResult(response),
+		})
 		return
 	}
 	s.sendToolSuccessWithTimingAndResult(id, string(text), response, timing)

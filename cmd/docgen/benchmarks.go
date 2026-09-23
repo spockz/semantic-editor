@@ -851,14 +851,14 @@ func benchmarkAggregateIdentity(comp *BenchComparisonSummary) string {
 func renderBestBenchmarksDoc(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) string {
 	comparisons := make([]*BenchComparisonSummary, 0, len(best))
 	for _, pair := range best {
-		copy := *pair.comparison
-		copy.SelectedRunID = pair.runID
-		copy.SmallBaseline, copy.SmallSemedit = nil, nil
-		copy.LargeBaseline, copy.LargeSemedit = nil, nil
-		copy.SmallVerifiedBaseline, copy.SmallVerifiedSemedit = nil, nil
-		copy.LargeVerifiedBaseline, copy.LargeVerifiedSemedit = nil, nil
-		setBenchmarkPairRuns(&copy, pair.context, pair.baseline, pair.semedit)
-		comparisons = append(comparisons, &copy)
+		comparison := *pair.comparison
+		comparison.SelectedRunID = pair.runID
+		comparison.SmallBaseline, comparison.SmallSemedit = nil, nil
+		comparison.LargeBaseline, comparison.LargeSemedit = nil, nil
+		comparison.SmallVerifiedBaseline, comparison.SmallVerifiedSemedit = nil, nil
+		comparison.LargeVerifiedBaseline, comparison.LargeVerifiedSemedit = nil, nil
+		setBenchmarkPairRuns(&comparison, pair.context, pair.baseline, pair.semedit)
+		comparisons = append(comparisons, &comparison)
 	}
 
 	preamble := renderBestBenchmarkPreamble(best, runs)

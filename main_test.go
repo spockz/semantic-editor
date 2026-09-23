@@ -146,7 +146,7 @@ func TestTxtarsCoverRegistryCommandsByLanguage(t *testing.T) {
 		for _, language := range registered.Languages {
 			matched := false
 			for _, candidate := range fixtures {
-				for _, commandLine := range strings.Split(candidate.comment, "\n") {
+				for commandLine := range strings.SplitSeq(candidate.comment, "\n") {
 					if command.MatchString(commandLine) && supportsLanguage(candidate, commandLine, language) {
 						matched = true
 						break
@@ -221,14 +221,19 @@ func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
 		if entry.IsDir() || filepath.Ext(path) != ".txtar" {
 			return nil
 		}
-		data, err := os.ReadFile(path)
+		root, err := os.OpenRoot(filepath.Dir(path))
+		if err != nil {
+			return fmt.Errorf("open txtar directory %s: %w", path, err)
+		}
+		data, err := root.ReadFile(filepath.Base(path))
+		_ = root.Close()
 		if err != nil {
 			return fmt.Errorf("read txtar %s: %w", path, err)
 		}
 		archive := txtar.Parse(data)
 		hasWantedFile := false
 		for _, file := range archive.Files {
-			for _, component := range strings.Split(filepath.ToSlash(file.Name), "/") {
+			for component := range strings.SplitSeq(filepath.ToSlash(file.Name), "/") {
 				if component == "want" || strings.HasPrefix(component, "want.") || strings.HasPrefix(component, "want_") {
 					hasWantedFile = true
 					break

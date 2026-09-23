@@ -818,7 +818,8 @@ func rustByteOffset(source []byte, position rustPosition) (int, error) {
 	for i, b := range source {
 		if b == '\n' {
 			if line == position.Line {
-				return rustCharacterOffset(source[start:i], position.Character)
+				offset, err := rustCharacterOffset(source[start:i], position.Character)
+				return start + offset, err
 			}
 			line++
 			start = i + 1
