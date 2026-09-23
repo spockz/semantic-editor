@@ -1,4 +1,5 @@
-package backend
+// Package gobackend adapts the established Go resolver and diagnostics behind the neutral contract.
+package gobackend
 
 import (
 	"context"
@@ -8,6 +9,8 @@ import (
 
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
+	backend "semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
@@ -21,15 +24,15 @@ type GoBackend struct{}
 func NewGoBackend() *GoBackend { return &GoBackend{} }
 
 // Language returns the adapter language ID.
-func (GoBackend) Language() LanguageID { return LanguageGo }
+func (GoBackend) Language() backend.LanguageID { return backend.LanguageGo }
 
 // Capabilities returns operations supported by the Go adapter.
-func (GoBackend) Capabilities() Capabilities {
-	return NewCapabilities(OperationLookup, OperationRename, OperationVerify)
+func (GoBackend) Capabilities() backend.Capabilities {
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Go backend.
-func (GoBackend) CapabilityMatrix() LanguageMatrix {
+func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 	// Derive supported access modifiers from the astedit backend to keep them in sync.
 	raw := astedit.GolangBackend{}.SupportedAccessModifiers()
 	mods := make([]string, len(raw))
@@ -37,12 +40,12 @@ func (GoBackend) CapabilityMatrix() LanguageMatrix {
 		mods[i] = string(m)
 	}
 
-	return LanguageMatrix{
+	return backend.LanguageMatrix{
 		Language:           "go",
 		DisplayName:        "Go (Golang)",
 		Maturity:           "Production",
 		SupportedModifiers: mods,
-		Operations: map[string]OpCapability{
+		Operations: map[string]backend.OpCapability{
 			"rename": {
 				Supported:    true,
 				Description:  "Compiler-backed symbol renaming across identifiers, struct fields, methods, interfaces, and packages with automatic import tidying.",
@@ -93,7 +96,7 @@ func (GoBackend) CapabilityMatrix() LanguageMatrix {
 				PlacementKey: false,
 			},
 		},
-		Limitations: []Constraint{
+		Limitations: []backend.Constraint{
 			{
 				Title:       "Unsupported Modifiers Rejection",
 				Description: "Go lacks 'protected' and 'package-private' scopes. The engine rejects these modifiers with ErrUnsupportedModifier.",
@@ -124,12 +127,12 @@ func (GoBackend) CapabilityMatrix() LanguageMatrix {
 }
 
 // Lookup resolves a Go symbol and converts its location to the neutral contract.
-func (GoBackend) Lookup(_ context.Context, project ProjectContext, query string) (*LookupResult, error) {
+func (GoBackend) Lookup(_ context.Context, project backend.ProjectContext, query string) (*backend.LookupResult, error) {
 	result, err := symbol.Resolve(project.RootDir, project.File, query)
 	if err != nil {
 		return nil, err
 	}
-	converted := &LookupResult{
+	converted := &backend.LookupResult{
 		Symbol:    result.Symbol,
 		File:      result.File,
 		Line:      result.Line,
@@ -140,7 +143,7 @@ func (GoBackend) Lookup(_ context.Context, project ProjectContext, query string)
 		Ambiguous: result.Ambiguous,
 	}
 	if result.Ambiguous {
-		converted.Candidates = make([]*SymbolCandidate, 0, len(result.Candidates))
+		converted.Candidates = make([]*backend.SymbolCandidate, 0, len(result.Candidates))
 		for _, candidate := range result.Candidates {
 			converted.Candidates = append(converted.Candidates, convertCandidate(project.RootDir, candidate))
 		}
@@ -151,13 +154,13 @@ func (GoBackend) Lookup(_ context.Context, project ProjectContext, query string)
 }
 
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
-func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResult, error) {
+func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*backend.RenameResult, error) {
 	lookup, err := (GoBackend{}).Lookup(ctx, request.Project, request.Symbol)
 	if err != nil {
 		return nil, err
 	}
 	if lookup.Ambiguous {
-		return nil, &Error{Operation: OperationRename, Err: ErrAmbiguous}
+		return nil, &backend.Error{Operation: backend.OperationRename, Err: backend.ErrAmbiguous}
 	}
 	var before []string
 	if !request.DeferVerification {
@@ -188,18 +191,18 @@ func (GoBackend) Rename(ctx context.Context, request RenameRequest) (*RenameResu
 		}
 	}
 	delta := pipeline.ComputeDelta(before, after)
-	result := &RenameResult{Lookup: lookup, Diagnostics: DiagnosticDelta{
+	result := &backend.RenameResult{Lookup: lookup, Diagnostics: backend.DiagnosticDelta{
 		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
 		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
 	}, Active: after}
 	if !request.DeferVerification && len(result.Diagnostics.Introduced) > 0 {
-		return result, &RenameDiagnosticsError{Result: result}
+		return result, &backend.RenameDiagnosticsError{Result: result}
 	}
 	return result, nil
 }
 
 // Verify delegates formatting and diagnostics to the existing Go pipeline.
-func (GoBackend) Verify(ctx context.Context, request VerifyRequest) ([]Diagnostic, error) {
+func (GoBackend) Verify(ctx context.Context, request backend.VerifyRequest) ([]backend.Diagnostic, error) {
 	project, path := request.Project, request.Path
 	if path == "" {
 		path = "."
@@ -211,15 +214,15 @@ func (GoBackend) Verify(ctx context.Context, request VerifyRequest) ([]Diagnosti
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Diagnostic, 0, len(diagnostics))
+	result := make([]backend.Diagnostic, 0, len(diagnostics))
 	for _, message := range diagnostics {
-		result = append(result, Diagnostic{Message: message, Severity: 1})
+		result = append(result, backend.Diagnostic{Message: message, Severity: 1})
 	}
 	return result, nil
 }
 
-func convertCandidate(root string, candidate *symbol.Symbol) *SymbolCandidate {
-	converted := &SymbolCandidate{
+func convertCandidate(root string, candidate *symbol.Symbol) *backend.SymbolCandidate {
+	converted := &backend.SymbolCandidate{
 		Name:          candidate.Name,
 		Receiver:      candidate.Receiver,
 		QualifiedName: candidate.QualifiedName,
@@ -233,7 +236,7 @@ func convertCandidate(root string, candidate *symbol.Symbol) *SymbolCandidate {
 	return converted
 }
 
-func sourceLocation(root, file string, offset int) SourceLocation {
+func sourceLocation(root, file string, offset int) backend.SourceLocation {
 	path := file
 	if !filepath.IsAbs(path) && root != "" {
 		path = filepath.Join(root, path)
@@ -241,11 +244,11 @@ func sourceLocation(root, file string, offset int) SourceLocation {
 	// #nosec G304 -- path is derived from the selected project and resolved symbol.
 	source, err := os.ReadFile(path)
 	if err != nil {
-		return SourceLocation{URI: fileURI(path)}
+		return backend.SourceLocation{URI: pathutil.FileURI(path)}
 	}
-	position := PositionFromByteOffset(source, offset)
-	return SourceLocation{
-		URI:   fileURI(path),
-		Range: Range{Start: position, End: position},
+	position := backend.PositionFromByteOffset(source, offset)
+	return backend.SourceLocation{
+		URI:   pathutil.FileURI(path),
+		Range: backend.Range{Start: position, End: position},
 	}
 }

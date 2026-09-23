@@ -4,13 +4,14 @@ package backends
 import (
 	"fmt"
 	"semedit/internal/backend"
+	gobackend "semedit/internal/backend/golang"
 	javabackend "semedit/internal/backend/java"
 )
 
 // NewDefaultService assembles the built-in language implementations behind the shared service boundary.
 func NewDefaultService() *backend.Service {
 	registry, err := backend.NewRegistry(
-		backend.NewGoBackend(),
+		gobackend.NewGoBackend(),
 		backend.NewRustBackend(),
 		javabackend.NewJavaBackend(),
 		backend.NewScalaBackend(),

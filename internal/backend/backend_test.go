@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"semedit/internal/backend"
+	gobackend "semedit/internal/backend/golang"
 	"semedit/internal/backends"
 )
 
@@ -39,7 +40,7 @@ func (b testBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.D
 }
 
 func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
-	registry, err := backend.NewRegistry(backend.NewGoBackend())
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
 	if err != nil {
 		t.Fatalf("NewRegistry failed: %v", err)
 	}
