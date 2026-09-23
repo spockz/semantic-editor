@@ -205,6 +205,7 @@ func main() {
 	fmt.Println("hello")
 	var _ = crand.Reader
 }
+
 `
 	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
 		t.Fatalf("write file failed: %v", err)
@@ -239,5 +240,37 @@ func main() {
 	}
 	if strings.Contains(content, `"net/http"`) && !strings.Contains(content, `"net/http/pprof"`) {
 		t.Errorf("expected removed net/http to be absent, got:\n%s", content)
+	}
+}
+
+func TestOrganizeImportsWithOptions_UpdatesExistingAlias(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.go")
+	src := `package main
+
+import old "strings"
+
+func main() {
+	_ = stringutil.TrimSpace(" x ")
+}
+`
+	if err := os.WriteFile(file, []byte(src), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	opts := pipeline.ImportOptions{Add: []string{`stringutil "strings"`}}
+	if err := pipeline.OrganizeImportsWithOptions(context.Background(), dir, opts, file); err != nil {
+		t.Fatalf("OrganizeImportsWithOptions: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, `stringutil "strings"`) || strings.Contains(content, `old "strings"`) {
+		t.Fatalf("existing import alias was not updated:\n%s", content)
 	}
 }

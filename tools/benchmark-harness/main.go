@@ -613,7 +613,7 @@ type BenchmarkInfo struct {
 }
 
 // CollectAvailableBenchmarks scans fixture directories and returns sorted benchmark metadata.
-func CollectAvailableBenchmarks(benchDir string) []BenchmarkInfo {
+func CollectAvailableBenchmarks(benchDir string) ([]BenchmarkInfo, error) {
 	var benchmarks []BenchmarkInfo
 	seen := make(map[string]bool)
 
@@ -622,10 +622,13 @@ func CollectAvailableBenchmarks(benchDir string) []BenchmarkInfo {
 	if scriptsDir != benchDir {
 		dirs = append(dirs, scriptsDir)
 	}
-	for _, dir := range dirs {
+	for i, dir := range dirs {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			continue
+			if i > 0 && os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("read benchmark directory %s: %w", dir, err)
 		}
 		for _, entry := range entries {
 			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txtar") {
@@ -635,11 +638,14 @@ func CollectAvailableBenchmarks(benchDir string) []BenchmarkInfo {
 			// #nosec G304 -- reading benchmark fixture for listing
 			data, err := os.ReadFile(filepath.Clean(fixturePath))
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("read benchmark fixture %s: %w", fixturePath, err)
 			}
 			task, err := ParseTask(data)
-			if err != nil || task.Metadata.TaskID == "" {
-				continue
+			if err != nil {
+				if i > 0 {
+					continue // The optional scripts directory contains non-benchmark CLI archives.
+				}
+				return nil, fmt.Errorf("parse benchmark fixture %s: %w", fixturePath, err)
 			}
 			if seen[task.Metadata.TaskID] {
 				continue
@@ -666,7 +672,7 @@ func CollectAvailableBenchmarks(benchDir string) []BenchmarkInfo {
 		return benchmarks[i].TaskID < benchmarks[j].TaskID
 	})
 
-	return benchmarks
+	return benchmarks, nil
 }
 
 // PrintBenchmarksList outputs a formatted table of available benchmarks to the given writer.
@@ -685,7 +691,11 @@ func PrintBenchmarksList(out io.Writer, benchmarks []BenchmarkInfo) {
 }
 
 func listBenchmarks(benchDir string) int {
-	benchmarks := CollectAvailableBenchmarks(benchDir)
+	benchmarks, err := CollectAvailableBenchmarks(benchDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error listing benchmarks: %v\n", err)
+		return 1
+	}
 	PrintBenchmarksList(os.Stdout, benchmarks)
 	return 0
 }

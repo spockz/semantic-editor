@@ -302,7 +302,7 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 					newSpecs = append(newSpecs, spec)
 					continue
 				}
-				impPath := strings.Trim(imp.Path.Value, `\"'`)
+				impPath := strings.Trim(imp.Path.Value, `"'`)
 				if slices.Contains(opts.Remove, impPath) {
 					continue
 				}
@@ -330,12 +330,17 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 				}
 				for _, spec := range gen.Specs {
 					imp, ok := spec.(*ast.ImportSpec)
-					if !ok || strings.Trim(imp.Path.Value, `\"'`) != pkgPath {
+					if !ok || strings.Trim(imp.Path.Value, `"'`) != pkgPath {
 						continue
 					}
-					if alias == "" || (imp.Name != nil && imp.Name.Name == alias) {
-						found = true
+					if alias != "" {
+						imp.Name = ast.NewIdent(alias)
 					}
+					found = true
+					break
+				}
+				if found {
+					break
 				}
 			}
 			if found {

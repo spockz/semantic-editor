@@ -33,6 +33,8 @@ The goal is to track:
 | **ST-0017** | 2026-09-23 | `semantic_scaffold_file`, `semantic_replace_body`, `semantic_insert_decl` | `tools/benchmark-harness/` in the requested isolated worktree | Calls reported success but were bound to the primary checkout, so the scaffold landed on `main` and the replacement did not touch the isolated worktree. | Reverted only the accidental primary-checkout files and applied focused patches in the requested worktree. | Semantic MCP calls do not honor the delegated worktree path in this session. | Bind semantic operations to the calling worktree before future delegated edits. |
 | **ST-0018** | 2026-09-23 | `semantic_insert_function` | `tools/benchmark-harness/bench_test.go` | Rejected insertion of an exported Go test function when `access_modifier` was explicitly set to `private`. | Retry using the required `public` access modifier. | The tool validates access modifiers against Go identifier casing and does not infer/override an explicit mismatch. | Use `public` for exported `Test*` functions; report casing mismatch before aborting the insertion. |
 
+| **ST-0019** | 2026-09-23 | `semantic_replace_body` | `internal/pipeline/pipeline.go` | The replacement implementation changed existing import behavior: an explicit alias request did not update the alias of an already imported path and could add a duplicate import. | Restore match-by-path alias updates and add an observable `OrganizeImportsWithOptions` regression test. | The replacement body did not preserve the original existing-import alias update branch. | Preserve alias updates when replacing explicit import handling. |
+
 ---
 
 ## Guidelines for Logging Dogfooding Deficiencies

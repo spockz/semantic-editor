@@ -952,7 +952,10 @@ func TestCreateBenchmarkRunDir(t *testing.T) {
 
 func TestCollectAvailableBenchmarks(t *testing.T) {
 	benchDir := filepath.Clean(filepath.Join("..", "..", "testdata", "bench"))
-	benchmarks := CollectAvailableBenchmarks(benchDir)
+	benchmarks, err := CollectAvailableBenchmarks(benchDir)
+	if err != nil {
+		t.Fatalf("CollectAvailableBenchmarks failed: %v", err)
+	}
 
 	if len(benchmarks) < 10 {
 		t.Fatalf("expected at least 10 benchmarks, got %d", len(benchmarks))
@@ -986,6 +989,24 @@ func TestCollectAvailableBenchmarks(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "task-01-rename-local") {
 		t.Errorf("expected task-01-rename-local in formatted output")
+	}
+}
+
+func TestCollectAvailableBenchmarksReturnsErrorForMissingDirectory(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing")
+	if _, err := CollectAvailableBenchmarks(missing); err == nil {
+		t.Fatal("CollectAvailableBenchmarks accepted a missing required directory")
+	}
+}
+
+func TestCollectAvailableBenchmarksReturnsErrorForMalformedFixture(t *testing.T) {
+	benchDir := t.TempDir()
+	fixture := filepath.Join(benchDir, "malformed.txtar")
+	if err := os.WriteFile(fixture, []byte("not a benchmark fixture"), 0o600); err != nil {
+		t.Fatalf("write malformed fixture: %v", err)
+	}
+	if _, err := CollectAvailableBenchmarks(benchDir); err == nil {
+		t.Fatal("CollectAvailableBenchmarks accepted a malformed fixture")
 	}
 }
 
