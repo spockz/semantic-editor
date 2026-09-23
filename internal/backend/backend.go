@@ -463,15 +463,6 @@ type Service struct {
 // NewService constructs the shared ingress-facing service.
 func NewService(registry *Registry) *Service { return &Service{Registry: registry} }
 
-// NewDefaultService constructs a service with the built-in Go, Rust, Java, Scala, and Haskell lookup backends.
-func NewDefaultService() *Service {
-	registry, err := NewRegistry(NewGoBackend(), NewRustBackend(), NewJavaBackend(), NewScalaBackend(), NewHaskellBackend())
-	if err != nil {
-		panic(fmt.Sprintf("register built-in backends: %v", err))
-	}
-	return NewService(registry)
-}
-
 func (s *Service) backendFor(project ProjectContext, operation Operation) (Backend, error) {
 	if s == nil || s.Registry == nil {
 		return nil, &Error{Operation: operation, Err: ErrLanguageUnavailable}

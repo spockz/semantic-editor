@@ -1,4 +1,5 @@
-package backend
+// java_organize_test.go checks the Java adapter rejects unsafe edits and stale diagnostics.
+package java
 
 import (
 	"bytes"
@@ -8,6 +9,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+
+	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 	"time"
 )
 
@@ -58,7 +62,7 @@ func TestApplyJavaFormattingEditsAllowsEmptyOrNull(t *testing.T) {
 
 func TestApplyJavaOrganizeImportsRejectsMixedOrUnsafeWorkspaceEdits(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "Thing.java")
-	uri := fileURI(file)
+	uri := pathutil.FileURI(file)
 	base := `{"kind":"source.organizeImports","edit":%s}`
 	for name, edit := range map[string]string{
 		"mixed":     `{"changes":{"` + uri + `":[]},"documentChanges":[]}`,
@@ -76,7 +80,7 @@ func TestApplyJavaOrganizeImportsRejectsMixedOrUnsafeWorkspaceEdits(t *testing.T
 
 func TestJavaProcessSessionDiagnosticsRejectWrongURIAndVersion(t *testing.T) {
 	session := &javaProcessSession{diagnostics: map[string]javaDiagnosticReceipt{
-		"file:///selected.java": {version: 1, diagnostics: []Diagnostic{{Message: "old"}}},
+		"file:///selected.java": {version: 1, diagnostics: []backend.Diagnostic{{Message: "old"}}},
 	}, wake: make(chan struct{}, 1)}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
@@ -92,8 +96,8 @@ func TestJavaProcessSessionDiagnosticsRejectWrongURIAndVersion(t *testing.T) {
 
 func TestJavaProcessSessionDiagnosticsRetainHighestVersion(t *testing.T) {
 	session := &javaProcessSession{diagnostics: map[string]javaDiagnosticReceipt{}, wake: make(chan struct{}, 1)}
-	session.recordDiagnostics("file:///selected.java", 4, []Diagnostic{{Message: "final"}})
-	session.recordDiagnostics("file:///selected.java", 2, []Diagnostic{{Message: "stale"}})
+	session.recordDiagnostics("file:///selected.java", 4, []backend.Diagnostic{{Message: "final"}})
+	session.recordDiagnostics("file:///selected.java", 2, []backend.Diagnostic{{Message: "stale"}})
 	got, err := session.WaitDiagnostics(context.Background(), "file:///selected.java", 4)
 	if err != nil || len(got) != 1 || got[0].Message != "final" {
 		t.Fatalf("diagnostics=%#v err=%v", got, err)

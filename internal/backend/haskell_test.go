@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"semedit/internal/backend"
+	"semedit/internal/backends"
 )
 
 type fakeHaskellSession struct {
@@ -172,7 +173,7 @@ func TestHaskellLookupRejectsUnsupportedOperations(t *testing.T) {
 
 func TestHaskellRequiresExplicitStandaloneSelection(t *testing.T) {
 	root, file := haskellFixture(t, "module M where\n")
-	service := backend.NewDefaultService()
+	service := backends.NewDefaultService()
 	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
 	if _, err := service.Lookup(context.Background(), project, "M"); !errors.Is(err, backend.ErrLanguageUndetected) {
 		t.Fatalf("auto Haskell selection error = %v", err)

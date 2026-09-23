@@ -15,6 +15,7 @@ import (
 
 	"bytes"
 	"semedit/internal/backend"
+	javabackend "semedit/internal/backend/java"
 )
 
 type fakeJavaSession struct {
@@ -104,7 +105,7 @@ func TestJavaSessionFingerprintReusesAndRestarts(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := make([]*fakeJavaSession, 0, 3)
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
 		created = append(created, session)
 		return session, nil
@@ -153,7 +154,7 @@ func TestJavaSessionFingerprintCloseFailurePreventsReplacement(t *testing.T) {
 	}
 	first := &fakeJavaSession{closeErr: errors.New("close failed"), symbols: json.RawMessage(`[]`)}
 	created := 0
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		created++
 		if created == 1 {
 			return first, nil
@@ -184,12 +185,12 @@ func TestJavaFingerprintRejectsModuleDescriptorOutsideRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	started := false
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		started = true
 		return nil, nil
 	})
 	_, err := underTest.Lookup(context.Background(), trustedJavaProject(root, file), "Thing")
-	if err == nil || !errors.Is(err, backend.ErrJavaFileOutsideWorkspace) || started {
+	if err == nil || !errors.Is(err, javabackend.ErrJavaFileOutsideWorkspace) || started {
 		t.Fatalf("err=%v started=%v", err, started)
 	}
 }
@@ -197,7 +198,9 @@ func TestJavaFingerprintRejectsModuleDescriptorOutsideRoot(t *testing.T) {
 func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 	root, file := javaFixture(t, "package p;\nclass 😀Thing {\n  int field;\n  void run() {}\n}\n")
 	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"p","kind":4,"range":{"start":{"line":0,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":0,"character":8},"end":{"line":0,"character":9}},"children":[{"name":"😀Thing","kind":5,"range":{"start":{"line":1,"character":0},"end":{"line":4,"character":1}},"selectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":14}},"children":[{"name":"field","kind":8,"range":{"start":{"line":2,"character":2},"end":{"line":2,"character":12}},"selectionRange":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}}}]}]}]`)}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	result, err := underTest.Lookup(context.Background(), trustedJavaProject(root, file), "p.😀Thing.field")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
@@ -229,7 +232,7 @@ func TestJavaLookupInitializesUTF16AndHierarchicalSymbols(t *testing.T) {
 func TestJavaLookupRejectsTrustBeforeSessionFactory(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	started := false
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		started = true
 		return nil, nil
 	})
@@ -252,19 +255,23 @@ func TestJavaServiceDiscoversNearestRootAndRejectsSameLevelAmbiguity(t *testing.
 		t.Fatal(err)
 	}
 	session := &fakeJavaSession{symbols: json.RawMessage(`[]`)}
-	service, err := backend.NewRegistry(backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil }))
+	service, err := backend.NewRegistry(javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	result, err := backend.NewService(service).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
-	if err == nil || result != nil || !errors.Is(err, backend.ErrJavaSymbolNotFound) {
+	if err == nil || result != nil || !errors.Is(err, javabackend.ErrJavaSymbolNotFound) {
 		t.Fatalf("nearest root lookup = %#v, %v", result, err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "build.gradle"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil }).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
-	if !errors.Is(err, backend.ErrJavaWorkspaceAmbiguous) {
+	_, err = javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	}).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
+	if !errors.Is(err, javabackend.ErrJavaWorkspaceAmbiguous) {
 		t.Fatalf("ambiguity error = %v", err)
 	}
 }
@@ -287,7 +294,7 @@ func TestJavaMavenReactorDiscoveryAndExplicitImportSetting(t *testing.T) {
 	}
 	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
 	var gotRoot string
-	underTest := backend.NewJavaBackendWithFactory(func(_ context.Context, root string, config backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(_ context.Context, root string, config backend.JavaConfig) (javabackend.JavaSession, error) {
 		gotRoot = root
 		if !config.ImportMaven {
 			t.Fatal("expected explicit Maven import opt-in")
@@ -304,7 +311,7 @@ func TestJavaMavenReactorDiscoveryAndExplicitImportSetting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "build.gradle"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file}); !errors.Is(err, backend.ErrJavaWorkspaceAmbiguous) {
+	if _, err := javabackend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file}); !errors.Is(err, javabackend.ErrJavaWorkspaceAmbiguous) {
 		t.Fatalf("reactor candidate ambiguity = %v", err)
 	}
 	settings := session.initialize["settings"].(map[string]any)
@@ -336,7 +343,7 @@ func TestJavaMavenInheritedParentDoesNotImplyReactorMembership(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	got, err := javabackend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +368,7 @@ func TestJavaMavenReactorDiscoverySkipsNonPOMDirectories(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	got, err := javabackend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,7 +394,7 @@ func TestJavaMavenIgnoresUnrelatedPolyglotAncestor(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	got, err := backend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
+	got, err := javabackend.NewJavaBackend().TrustedWorkspaceRoot(backend.ProjectContext{File: file})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -402,11 +409,11 @@ func TestJavaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 		raw  json.RawMessage
 		want error
 	}{
-		"flat":        {raw: json.RawMessage(`[{"name":"Thing","kind":5,"location":{}}]`), want: backend.ErrJavaUnsupportedResponse},
-		"out-of-root": {raw: json.RawMessage(`[{"name":"Thing","kind":5,"uri":"file:///tmp/out.java","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}]`), want: backend.ErrJavaMalformedResponse},
+		"flat":        {raw: json.RawMessage(`[{"name":"Thing","kind":5,"location":{}}]`), want: javabackend.ErrJavaUnsupportedResponse},
+		"out-of-root": {raw: json.RawMessage(`[{"name":"Thing","kind":5,"uri":"file:///tmp/out.java","range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}}}]`), want: javabackend.ErrJavaMalformedResponse},
 	} {
 		t.Run(name, func(t *testing.T) {
-			underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+			underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 				return &fakeJavaSession{symbols: test.raw}, nil
 			})
 			_, err := underTest.Lookup(context.Background(), trustedJavaProject(root, file), "Thing")
@@ -420,7 +427,9 @@ func TestJavaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 func TestJavaLookupPropagatesCancellation(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	session := &fakeJavaSession{cancel: true}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	_, err := underTest.Lookup(ctx, trustedJavaProject(root, file), "Thing")
@@ -435,7 +444,7 @@ func TestJavaVerifyFormattingWritesAndForwardsDiagnostics(t *testing.T) {
 		formatting:  json.RawMessage(`[{"range":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}},"newText":"Gadget"}]`),
 		diagnostics: []backend.Diagnostic{{Message: "warning", Severity: 2}},
 	}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		return session, nil
 	})
 	result, err := underTest.Verify(context.Background(), backend.VerifyRequest{
@@ -466,7 +475,9 @@ func TestJavaVerifyOrganizeImportsWritesSelectedFile(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	uri := (&url.URL{Scheme: "file", Path: file}).String()
 	session := &fakeJavaSession{codeAction: json.RawMessage(fmt.Sprintf(`[{"kind":"source.organizeImports","edit":{"changes":{%q:[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"import x.Y;\n"}]}}}]`, uri))}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), OrganizeImports: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -494,7 +505,7 @@ func TestJavaVerifyNoOpPreservesFileAndDoesNotNotifyMutation(t *testing.T) {
 		codeAction:  json.RawMessage(fmt.Sprintf(`[ {"kind":"source.organizeImports","edit":{"changes":{%q:[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":5}},"newText":"class"}]}}} ]`, uri)),
 		diagnostics: []backend.Diagnostic{{Message: "warning", Severity: 2}},
 	}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		return session, nil
 	})
 	result, err := underTest.Verify(context.Background(), backend.VerifyRequest{
@@ -532,7 +543,9 @@ func TestJavaVerifySurfacesCloseFailureAfterSuccess(t *testing.T) {
 		formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":""}]`),
 		closeErr:   errors.New("close failed"),
 	}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	_, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true})
 	if err == nil || !strings.Contains(err.Error(), "close Java session") {
 		t.Fatalf("close error = %v", err)
@@ -546,7 +559,9 @@ func TestJavaVerifyCombinedActionsSynchronizeFormattingVersion(t *testing.T) {
 		formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"// formatted\n"}]`),
 		codeAction: json.RawMessage(fmt.Sprintf(`[{"kind":"source.organizeImports","edit":{"documentChanges":[{"textDocument":{"uri":%q,"version":2},"edits":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":"import x.Y;\n"}]}]}}]`, uri)),
 	}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true, OrganizeImports: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +574,9 @@ func TestJavaVerifyCombinedActionsSynchronizeFormattingVersion(t *testing.T) {
 func TestJavaVerifyInvalidFormatterEditClosesSession(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	session := &fakeJavaSession{formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":99},"end":{"line":0,"character":100}},"newText":"x"}]`)}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true}); err == nil {
 		t.Fatal("invalid formatting edit unexpectedly succeeded")
 	}
@@ -574,11 +591,13 @@ func TestJavaVerifyDiagnosticsTimeoutIsDistinct(t *testing.T) {
 		formatting:       json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"newText":""}]`),
 		blockDiagnostics: true,
 	}
-	underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) { return session, nil })
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
 	_, err := underTest.Verify(ctx, backend.VerifyRequest{Project: trustedJavaProject(root, file), FormatSelectedFile: true})
-	if !errors.Is(err, backend.ErrJavaDiagnosticsTimeout) {
+	if !errors.Is(err, javabackend.ErrJavaDiagnosticsTimeout) {
 		t.Fatalf("timeout error = %v", err)
 	}
 }
@@ -613,7 +632,7 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 			}
 			started := false
 			session := &fakeJavaSession{formatting: tc.formatting, codeAction: tc.codeAction}
-			underTest := backend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (backend.JavaSession, error) {
+			underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 				started = true
 				return session, nil
 			})

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"semedit/internal/backend"
+	"semedit/internal/backends"
 )
 
 // ErrUnknownOperation indicates no operation is registered for a key.
@@ -32,7 +33,7 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 func resolveLanguage(cc CallContext, project backend.ProjectContext) (backend.LanguageID, error) {
 	service := cc.Service
 	if service == nil {
-		service = backend.NewDefaultService()
+		service = backends.NewDefaultService()
 	}
 	selected, err := service.Registry.Select(project)
 	if err != nil {

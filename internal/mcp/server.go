@@ -19,6 +19,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/backends"
 	"semedit/internal/gocache"
 	"semedit/internal/maven"
 	"semedit/internal/operation"
@@ -97,7 +98,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	s := &Server{
 		profile:   profile,
 		workDir:   workDir,
-		service:   backend.NewDefaultService(),
+		service:   backends.NewDefaultService(),
 		registry:  operation.DefaultRegistry(),
 		goBaseDir: filepath.Join(workDir, ".scratch", "go"),
 		startedAt: time.Now(),

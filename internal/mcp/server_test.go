@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"semedit/internal/backend"
+	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
 )
 
@@ -40,7 +41,7 @@ func (mcpJavaSession) WaitDiagnostics(context.Context, string, int) ([]backend.D
 }
 func (mcpJavaSession) Close() error { return nil }
 
-var _ backend.JavaSession = mcpJavaSession{}
+var _ javabackend.JavaSession = mcpJavaSession{}
 
 type mcpVerifySession struct{ methods []string }
 
@@ -63,7 +64,7 @@ func (*mcpVerifySession) WaitDiagnostics(context.Context, string, int) ([]backen
 }
 func (*mcpVerifySession) Close() error { return nil }
 
-var _ backend.JavaSession = (*mcpVerifySession)(nil)
+var _ javabackend.JavaSession = (*mcpVerifySession)(nil)
 
 func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
@@ -255,7 +256,7 @@ func TestMCPForwardsJavaMavenImportToLookupAndRename(t *testing.T) {
 	for _, operation := range []string{"lookup", "rename"} {
 		t.Run(operation, func(t *testing.T) {
 			var got backend.JavaConfig
-			java := backend.NewJavaBackendWithFactory(func(_ context.Context, _ string, config backend.JavaConfig) (backend.JavaSession, error) {
+			java := javabackend.NewJavaBackendWithFactory(func(_ context.Context, _ string, config backend.JavaConfig) (javabackend.JavaSession, error) {
 				got = config
 				return mcpJavaSession{}, nil
 			})
@@ -291,7 +292,7 @@ func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
 	}
 	var config backend.JavaConfig
 	var session *mcpVerifySession
-	java := backend.NewJavaBackendWithFactory(func(_ context.Context, _ string, got backend.JavaConfig) (backend.JavaSession, error) {
+	java := javabackend.NewJavaBackendWithFactory(func(_ context.Context, _ string, got backend.JavaConfig) (javabackend.JavaSession, error) {
 		config = got
 		session = &mcpVerifySession{}
 		return session, nil

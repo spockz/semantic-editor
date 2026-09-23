@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"semedit/internal/backend"
+	"semedit/internal/backends"
 )
 
 func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
@@ -155,7 +156,7 @@ func TestPositionFromByteOffsetUsesUTF16Units(t *testing.T) {
 // MatrixProvider declares operations that exactly match its runtime Capabilities.
 // This is the CI drift gate between documentation and behavior.
 func TestCapabilityMatrixConformance(t *testing.T) {
-	svc := backend.NewDefaultService()
+	svc := backends.NewDefaultService()
 	langs := []backend.LanguageID{
 		backend.LanguageGo,
 		backend.LanguageRust,

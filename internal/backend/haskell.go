@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/lsp"
 )
 
@@ -484,7 +485,7 @@ func hasHaskellProjectMarker(root, start string) string {
 	root = CanonicalWorkspaceRoot(root)
 	for pathWithin(root, dir) {
 		for _, name := range []string{"hie.yaml", "stack.yaml", "cabal.project", "package.yaml"} {
-			if fileExists(filepath.Join(dir, name)) {
+			if pathutil.FileExists(filepath.Join(dir, name)) {
 				return filepath.Join(dir, name)
 			}
 		}

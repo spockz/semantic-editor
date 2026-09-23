@@ -16,6 +16,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/lsp"
 )
 
@@ -436,7 +437,7 @@ func resolveMetalsBinary(config ScalaConfig) (string, error) {
 	}
 	for _, name := range []string{"metals", "metals-emacs", "metals-vscode"} {
 		candidate := filepath.Join(config.MetalsHome, "bin", name)
-		if fileExists(candidate) {
+		if pathutil.FileExists(candidate) {
 			return candidate, nil
 		}
 	}
@@ -500,11 +501,11 @@ func hasScalaProjectMarker(file string) bool {
 	dir := filepath.Dir(file)
 	for {
 		for _, marker := range []string{"build.sbt", "build.sc", "pom.xml", "build.gradle", "build.gradle.kts", ".mill-version"} {
-			if fileExists(filepath.Join(dir, marker)) {
+			if pathutil.FileExists(filepath.Join(dir, marker)) {
 				return true
 			}
 		}
-		if fileExists(filepath.Join(dir, "project")) {
+		if pathutil.FileExists(filepath.Join(dir, "project")) {
 			return true
 		}
 		parent := filepath.Dir(dir)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
+	"semedit/internal/backends"
 	"semedit/internal/capability"
 )
 
@@ -308,7 +309,7 @@ func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*backend
 	project := effectiveProject(cc, request.Project)
 	service := cc.Service
 	if service == nil {
-		service = backend.NewDefaultService()
+		service = backends.NewDefaultService()
 	}
 	return service.Lookup(ctx, project, request.Symbol)
 }
@@ -320,7 +321,7 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 	project := effectiveProject(cc, request.Project)
 	service := cc.Service
 	if service == nil {
-		service = backend.NewDefaultService()
+		service = backends.NewDefaultService()
 	}
 	return service.Rename(ctx, backend.RenameRequest{
 		Project:           project,
@@ -351,7 +352,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 	}
 	service := cc.Service
 	if service == nil {
-		service = backend.NewDefaultService()
+		service = backends.NewDefaultService()
 	}
 	result, err := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path, FormatSelectedFile: request.FormatSelectedFile, OrganizeImports: request.OrganizeImports})
 	if err != nil {

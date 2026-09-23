@@ -4,6 +4,7 @@ package pathutil
 import (
 	"errors"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -49,4 +50,10 @@ func FilePathFromURI(raw string) (string, error) {
 		return "", errors.New("empty file URI")
 	}
 	return CanonicalWorkspaceRoot(parsed.Path), nil
+}
+
+// FileExists reports whether path names a non-directory filesystem entry.
+func FileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
