@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
 )
@@ -596,20 +596,11 @@ func discoverCargoRoot(file string) (string, error) {
 }
 
 func pathWithin(root, path string) bool {
-	rel, err := filepath.Rel(root, path)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	return pathutil.PathWithin(root, path)
 }
 
 func filePathFromURI(raw string) (string, error) {
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "file" || parsed.Host != "" {
-		return "", errors.New("invalid file URI")
-	}
-	path := parsed.Path
-	if path == "" {
-		return "", errors.New("empty file URI")
-	}
-	return CanonicalWorkspaceRoot(path), nil
+	return pathutil.FilePathFromURI(raw)
 }
 
 type rustDocumentSymbol struct {

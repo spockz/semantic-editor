@@ -5,12 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
 
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/capability"
 )
 
@@ -79,18 +79,7 @@ type WorkspaceTrust struct {
 // CanonicalWorkspaceRoot returns the cleaned absolute path used for trust comparisons.
 // Existing symlinks are resolved, while not-yet-created roots still receive a stable absolute path.
 func CanonicalWorkspaceRoot(root string) string {
-	if strings.TrimSpace(root) == "" {
-		root = "."
-	}
-	absolute, err := filepath.Abs(root)
-	if err == nil {
-		root = absolute
-	}
-	root = filepath.Clean(root)
-	if evaluated, err := filepath.EvalSymlinks(root); err == nil {
-		root = filepath.Clean(evaluated)
-	}
-	return root
+	return pathutil.CanonicalWorkspaceRoot(root)
 }
 
 // NewWorkspaceTrust creates request-scoped consent for the supplied workspace root.
@@ -573,9 +562,5 @@ func PositionFromByteOffset(source []byte, offset int) Position {
 }
 
 func fileURI(path string) string {
-	absolute, err := filepath.Abs(path)
-	if err == nil {
-		path = absolute
-	}
-	return (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
+	return pathutil.FileURI(path)
 }
