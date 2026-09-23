@@ -1,6 +1,7 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,7 +41,7 @@ func TestApplyJavaOrganizeImportsEditAllowsNoAction(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "Thing.java")
 	source := []byte("class Thing {}")
 	updated, err := applyJavaOrganizeImportsEdit(file, source, json.RawMessage(`[]`))
-	if err != nil || string(updated) != string(source) {
+	if err != nil || !bytes.Equal(updated, source) {
 		t.Fatalf("updated=%q err=%v", updated, err)
 	}
 }
@@ -49,7 +50,7 @@ func TestApplyJavaFormattingEditsAllowsEmptyOrNull(t *testing.T) {
 	source := []byte("class Thing {}")
 	for _, raw := range []string{"[]", "null"} {
 		updated, err := applyJavaFormattingEdits(source, json.RawMessage(raw))
-		if err != nil || string(updated) != string(source) {
+		if err != nil || !bytes.Equal(updated, source) {
 			t.Fatalf("raw %s: updated=%q err=%v", raw, updated, err)
 		}
 	}

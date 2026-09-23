@@ -621,7 +621,7 @@ func parseCommandLine(cmd string) []string {
 	inSingle := false
 	inDouble := false
 
-	for i := 0; i < len(cmd); i++ {
+	for i := range len(cmd) {
 		c := cmd[i]
 		switch {
 		case c == '\'' && !inDouble:

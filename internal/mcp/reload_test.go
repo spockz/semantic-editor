@@ -122,10 +122,7 @@ func TestMCPLiveReloadToolPresence(t *testing.T) {
 func TestMCPLiveReloadInitializedNotification(t *testing.T) {
 	t.Parallel()
 
-	input := strings.Join([]string{
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`,
-		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
-	}, "\n") + "\n"
+	input := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n" + `{"jsonrpc":"2.0","method":"notifications/initialized"}` + "\n"
 
 	t.Run("live-reload enabled emits list_changed", func(t *testing.T) {
 		t.Parallel()

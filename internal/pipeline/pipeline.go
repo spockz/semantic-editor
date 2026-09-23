@@ -283,7 +283,7 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
-		return src, nil
+		return nil, fmt.Errorf("parse source for import edits: %w", err)
 	}
 
 	if len(opts.Remove) > 0 {
@@ -302,51 +302,46 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 					newSpecs = append(newSpecs, spec)
 					continue
 				}
-				impPath := strings.Trim(imp.Path.Value, `"'`)
+				impPath := strings.Trim(imp.Path.Value, `\"'`)
 				if slices.Contains(opts.Remove, impPath) {
 					continue
 				}
 				newSpecs = append(newSpecs, spec)
 			}
-			if len(newSpecs) > 0 {
-				gen.Specs = newSpecs
+			gen.Specs = newSpecs
+			if len(gen.Specs) > 0 {
 				newDecls = append(newDecls, gen)
 			}
 		}
 		fileNode.Decls = newDecls
 	}
 
-	for _, entry := range opts.Add {
-		alias, pkgPath := parseImportEntry(entry)
-		if pkgPath == "" {
-			continue
-		}
-
-		found := false
-		for _, decl := range fileNode.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.IMPORT {
+	if len(opts.Add) > 0 {
+		for _, entry := range opts.Add {
+			alias, pkgPath := parseImportEntry(entry)
+			if pkgPath == "" {
 				continue
 			}
-			for _, spec := range gen.Specs {
-				imp, ok := spec.(*ast.ImportSpec)
-				if !ok {
+			found := false
+			for _, decl := range fileNode.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok || gen.Tok != token.IMPORT {
 					continue
 				}
-				if strings.Trim(imp.Path.Value, `"'`) == pkgPath {
-					found = true
-					if alias != "" {
-						imp.Name = ast.NewIdent(alias)
+				for _, spec := range gen.Specs {
+					imp, ok := spec.(*ast.ImportSpec)
+					if !ok || strings.Trim(imp.Path.Value, `\"'`) != pkgPath {
+						continue
 					}
-					break
+					if alias == "" || (imp.Name != nil && imp.Name.Name == alias) {
+						found = true
+					}
 				}
 			}
 			if found {
-				break
+				continue
 			}
-		}
 
-		if !found {
 			newSpec := &ast.ImportSpec{
 				Path: &ast.BasicLit{
 					Kind:  token.STRING,
@@ -379,7 +374,7 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, fileNode); err != nil {
-		return src, nil
+		return nil, fmt.Errorf("format explicit import edits: %w", err)
 	}
 	return buf.Bytes(), nil
 }

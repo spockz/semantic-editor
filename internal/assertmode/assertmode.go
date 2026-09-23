@@ -198,7 +198,7 @@ func (a *analyzer) block(stmts []ast.Stmt, guard *ifContext, loopVars map[*types
 		rest := append(append([]ast.Stmt(nil), stmts[i+1:]...), outer...)
 		switch typed := stmt.(type) {
 		case *ast.IfStmt:
-			a.ifStmt(typed, guard, loopVars, rest)
+			a.ifStmt(typed, loopVars, rest)
 		case *ast.ForStmt:
 			a.block(typed.Body.List, guard, mergeLoopVars(loopVars, a.rangeVars(typed)), rest)
 		case *ast.RangeStmt:
@@ -215,13 +215,13 @@ func (a *analyzer) block(stmts []ast.Stmt, guard *ifContext, loopVars map[*types
 
 // ifStmt analyzes the branches of one if statement. Else-if chains recurse
 // as ordinary if statements; plain else blocks mark membership for skipping.
-func (a *analyzer) ifStmt(stmt *ast.IfStmt, guard *ifContext, loopVars map[*types.Var]bool, rest []ast.Stmt) {
+func (a *analyzer) ifStmt(stmt *ast.IfStmt, loopVars map[*types.Var]bool, rest []ast.Stmt) {
 	a.block(stmt.Body.List, &ifContext{stmt: stmt}, loopVars, rest)
 	switch els := stmt.Else.(type) {
 	case *ast.BlockStmt:
 		a.block(els.List, &ifContext{stmt: stmt, elseBody: true}, loopVars, rest)
 	case *ast.IfStmt:
-		a.ifStmt(els, guard, loopVars, rest)
+		a.ifStmt(els, loopVars, rest)
 	}
 }
 

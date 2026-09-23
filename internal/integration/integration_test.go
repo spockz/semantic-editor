@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"bytes"
 	"semedit/internal/integration"
 )
 
@@ -210,7 +211,7 @@ func TestMalformedConfigurationFailsWithoutMutation(t *testing.T) {
 		t.Fatal("expected malformed configuration error")
 	}
 	data, readErr := os.ReadFile(configPath) // #nosec G304 -- test path is created inside t.TempDir.
-	if readErr != nil || string(data) != string(original) {
+	if readErr != nil || !bytes.Equal(data, original) {
 		t.Fatalf("malformed config mutated: %q, %v", data, readErr)
 	}
 }
@@ -240,7 +241,7 @@ func TestDryRunParsesExistingState(t *testing.T) {
 		t.Fatalf("conflicting dry-run = %v", err)
 	}
 	after, err := os.ReadFile(filepath.Join(workspace, ".mcp.json")) // #nosec G304 -- test path is created inside t.TempDir.
-	if err != nil || string(after) != string(before) {
+	if err != nil || !bytes.Equal(after, before) {
 		t.Fatalf("dry-run mutated config: %q, %v", after, err)
 	}
 }
@@ -258,7 +259,7 @@ func TestMalformedDryRunDoesNotWrite(t *testing.T) {
 		t.Fatal("expected malformed dry-run error")
 	}
 	after, readErr := os.ReadFile(configPath) // #nosec G304 -- test path is created inside t.TempDir.
-	if readErr != nil || string(after) != string(original) {
+	if readErr != nil || !bytes.Equal(after, original) {
 		t.Fatalf("malformed dry-run mutated config: %q, %v", after, readErr)
 	}
 }
@@ -276,7 +277,7 @@ func TestCopilotCommentsFailSafelyAndUnrelatedStatusIsNotInstalled(t *testing.T)
 		t.Fatal("expected unsupported comments error")
 	}
 	after, readErr := os.ReadFile(configPath) // #nosec G304 -- test path is created inside t.TempDir.
-	if readErr != nil || string(after) != string(commented) {
+	if readErr != nil || !bytes.Equal(after, commented) {
 		t.Fatalf("commented config mutated: %q, %v", after, readErr)
 	}
 	status, err := integration.Status(integration.StatusRequest{Target: integration.TargetCopilot, Scope: integration.ScopeWorkspace, Workspace: workspace})

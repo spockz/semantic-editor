@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
 	"semedit/internal/snapshot"
 )
 
@@ -68,7 +69,7 @@ func TestCreateSnapshot_SpecificFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read blob: %v", err)
 	}
-	if string(blobBytes) != string(content1) {
+	if !bytes.Equal(blobBytes, content1) {
 		t.Errorf("blob content mismatch: expected %q, got %q", string(content1), string(blobBytes))
 	}
 }
@@ -115,7 +116,7 @@ func TestUndo_CleanRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read restored: %v", err)
 	}
-	if string(restoredBytes) != string(originalContent) {
+	if !bytes.Equal(restoredBytes, originalContent) {
 		t.Errorf("expected %q, got %q", string(originalContent), string(restoredBytes))
 	}
 }
@@ -178,7 +179,7 @@ func TestUndo_ConflictDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read after failed undo: %v", err)
 	}
-	if string(currentBytes) != string(conflictingEdit) {
+	if !bytes.Equal(currentBytes, conflictingEdit) {
 		t.Errorf("file was mutated during conflicted undo! expected %q, got %q", string(conflictingEdit), string(currentBytes))
 	}
 }

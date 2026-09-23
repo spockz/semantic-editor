@@ -952,10 +952,7 @@ func TestCreateBenchmarkRunDir(t *testing.T) {
 
 func TestCollectAvailableBenchmarks(t *testing.T) {
 	benchDir := filepath.Clean(filepath.Join("..", "..", "testdata", "bench"))
-	benchmarks, err := CollectAvailableBenchmarks(benchDir)
-	if err != nil {
-		t.Fatalf("CollectAvailableBenchmarks failed: %v", err)
-	}
+	benchmarks := CollectAvailableBenchmarks(benchDir)
 
 	if len(benchmarks) < 10 {
 		t.Fatalf("expected at least 10 benchmarks, got %d", len(benchmarks))

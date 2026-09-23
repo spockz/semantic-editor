@@ -14,6 +14,8 @@ import (
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
 
+	"bytes"
+
 	"pgregory.net/rapid"
 )
 
@@ -140,7 +142,7 @@ func Execute() {
 		}
 
 		// Invariant: Round-trip invertibility R^-1(R(P)) == P
-		if string(roundTripBytes) != string(originalBytes) {
+		if !bytes.Equal(roundTripBytes, originalBytes) {
 			rt.Fatalf("invertibility invariant violated:\nGot:\n%s\nWant:\n%s", roundTripBytes, originalBytes)
 		}
 	})

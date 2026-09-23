@@ -153,7 +153,7 @@ func TestPositionFromByteOffsetUsesUTF16Units(t *testing.T) {
 
 // TestCapabilityMatrixConformance asserts that every backend implementing
 // MatrixProvider declares operations that exactly match its runtime Capabilities.
-// This is the CI drift gate between documentation and behaviour.
+// This is the CI drift gate between documentation and behavior.
 func TestCapabilityMatrixConformance(t *testing.T) {
 	svc := backend.NewDefaultService()
 	langs := []backend.LanguageID{

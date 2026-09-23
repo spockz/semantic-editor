@@ -71,12 +71,12 @@ func effectiveAutoOrganize(cc CallContext, parsed bool) bool {
 
 const automaticVerificationGuidance = " This standalone operation automatically verifies diagnostics and has no verification opt-out; do not call semantic_verify separately."
 
-func surroundingDelta(ctx context.Context, workDir string, deferVerification bool) ([]string, func() pipeline.DiagnosticDelta) {
+func surroundingDelta(ctx context.Context, workDir string, deferVerification bool) func() pipeline.DiagnosticDelta {
 	if deferVerification {
-		return nil, func() pipeline.DiagnosticDelta { return pipeline.DiagnosticDelta{} }
+		return func() pipeline.DiagnosticDelta { return pipeline.DiagnosticDelta{} }
 	}
 	before, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), workDir)
-	return before, func() pipeline.DiagnosticDelta {
+	return func() pipeline.DiagnosticDelta {
 		after, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
 		return pipeline.ComputeDelta(before, after)
 	}
@@ -163,7 +163,7 @@ func parseInsertDeclaration(raw map[string]any) (InsertDeclarationReq, error) {
 
 func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclarationReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	opts := astedit.Options{
 		Placement:           astedit.Placement(req.Placement),
 		TargetSymbol:        req.TargetSymbol,
@@ -252,7 +252,7 @@ func parseInsertFunction(raw map[string]any) (InsertFunctionReq, error) {
 
 func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertFunction(ctx, targetPath, req.Source, astedit.FunctionOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Placement:           astedit.Placement(req.Placement),
@@ -341,7 +341,7 @@ func parseInsertType(raw map[string]any) (InsertTypeReq, error) {
 
 func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertType(ctx, targetPath, req.Source, astedit.TypeOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Placement:           astedit.Placement(req.Placement),
@@ -434,7 +434,7 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 
 func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := astedit.InsertDecl(ctx, targetPath, req.Source, astedit.DeclOptions{
 		AccessModifier:      astedit.AccessModifier(req.AccessModifier),
 		Group:               req.Group,
@@ -511,7 +511,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 	if req.File != "" {
 		paths = []string{resolveWorkPath(cc.WorkDir, req.File)}
 	}
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	err := pipeline.OrganizeImportsWithOptions(ctx, cc.WorkDir, pipeline.ImportOptions{
 		Add:    req.Add,
 		Remove: req.Remove,
@@ -659,7 +659,7 @@ func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
 
 func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
-	_, finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.ReplaceBody(ctx, targetPath, req.Symbol, req.Body, astedit.BodyOptions{
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
@@ -891,8 +891,5 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, scaffoldFileDef()); err != nil {
 		return err
 	}
-	if err := Register(registry, insertCaseDef()); err != nil {
-		return err
-	}
-	return nil
+	return Register(registry, insertCaseDef())
 }

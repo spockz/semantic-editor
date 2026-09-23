@@ -18,8 +18,6 @@ var (
 )
 
 // SymbolError represents a structured error condition when resolving or operating on symbols.
-//
-//nolint:revive // SymbolError stuttering is explicitly specified by ADR-0013 contract
 type SymbolError struct {
 	Op     string
 	File   string

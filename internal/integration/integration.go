@@ -212,7 +212,7 @@ func Status(req StatusRequest) (Result, error) {
 	if err != nil {
 		result.Status = "malformed"
 		result.Detail = err.Error()
-		return result, nil
+		return result, nil //nolint:nilerr // Status reports malformed target config in the result detail.
 	}
 	if !installed {
 		result.Status = "not-installed"
@@ -436,7 +436,7 @@ func ownedRegistration(config string, target Target, scope Scope, current []byte
 	}
 	digest, err := registrationDigest(current, target)
 	if err != nil {
-		return false, nil
+		return false, fmt.Errorf("digest current registration: %w", err)
 	}
 	return record.RegistrationDigest == digest, nil
 }

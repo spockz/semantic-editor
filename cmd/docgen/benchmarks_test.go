@@ -130,13 +130,13 @@ func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *tes
 	rootDir := t.TempDir()
 	writeBenchmarkDocumentationReport(t, rootDir, "run-a", &BenchComparisonSummary{
 		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
-		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
-		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+800*time.Millisecond, 1000, 0),
+		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+800*time.Millisecond, 1000),
 	})
 	writeBenchmarkDocumentationReport(t, rootDir, "run-b", &BenchComparisonSummary{
 		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
-		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
-		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+500*time.Millisecond, 300, 0),
+		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+500*time.Millisecond, 300),
 	})
 
 	documentation, err := renderBenchmarkDocumentation(rootDir)
@@ -185,10 +185,10 @@ func TestBestBenchmarkPairPrefersMCPSuccessOverSpeed(t *testing.T) {
 	t.Parallel()
 
 	passingMCP := bestBenchmarkPair{
-		runID: "slow-success", baseline: benchmarkDocumentationRunResult(false, time.Second, 100, 0), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100, 0),
+		runID: "slow-success", baseline: benchmarkDocumentationRunResult(false, time.Second, 100), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100),
 	}
 	fastFailure := bestBenchmarkPair{
-		runID: "fast-failure", baseline: benchmarkDocumentationRunResult(true, time.Second, 100, 0), semedit: benchmarkDocumentationRunResult(false, time.Millisecond, 100, 0),
+		runID: "fast-failure", baseline: benchmarkDocumentationRunResult(true, time.Second, 100), semedit: benchmarkDocumentationRunResult(false, time.Millisecond, 100),
 	}
 	if !passingMCP.preferredTo(fastFailure) {
 		t.Fatal("MCP oracle success must outrank a faster MCP oracle failure")
@@ -198,12 +198,12 @@ func TestBestBenchmarkPairPrefersMCPSuccessOverSpeed(t *testing.T) {
 func TestBestBenchmarkPreambleOffsetsFirstTimeRightAgainstVanilla(t *testing.T) {
 	t.Parallel()
 
-	firstTurnBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
-	firstTurnMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
-	laterBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
+	firstTurnBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000)
+	firstTurnMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900)
+	laterBaseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000)
 	laterBaseline.Turns = 2
 	laterBaseline.InteractionSteps = []BenchInteractionStep{{Step: 1, Oracle: &BenchOracleResult{Passed: false}}}
-	laterMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
+	laterMCP := benchmarkDocumentationRunResult(true, 9*time.Second, 900)
 	laterMCP.InteractionSteps = []BenchInteractionStep{{Step: 1, Oracle: &BenchOracleResult{Passed: true}}}
 	pairs := []bestBenchmarkPair{
 		{runID: "run-a", comparison: &BenchComparisonSummary{TaskID: "task-a"}, context: benchmarkPairSmall, baseline: firstTurnBaseline, semedit: firstTurnMCP},
@@ -213,8 +213,8 @@ func TestBestBenchmarkPreambleOffsetsFirstTimeRightAgainstVanilla(t *testing.T) 
 		{
 			SmallBaseline:         firstTurnBaseline,
 			SmallSemedit:          firstTurnMCP,
-			SmallVerifiedBaseline: benchmarkDocumentationRunResult(false, time.Second, 100, 0),
-			SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100, 0),
+			SmallVerifiedBaseline: benchmarkDocumentationRunResult(false, time.Second, 100),
+			SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100),
 		},
 		{SmallBaseline: laterBaseline, SmallSemedit: laterMCP},
 	}}}
@@ -228,15 +228,15 @@ func TestBestBenchmarkPreambleOffsetsFirstTimeRightAgainstVanilla(t *testing.T) 
 func TestCorrectiveTurnHistogramSeparatesArmsAndExcludesVerifiedContexts(t *testing.T) {
 	t.Parallel()
 
-	baseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0)
+	baseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000)
 	baseline.InteractionSteps = []BenchInteractionStep{{Step: 1}, {Step: 2}, {Step: 3}}
-	semedit := benchmarkDocumentationRunResult(true, 9*time.Second, 900, 0)
+	semedit := benchmarkDocumentationRunResult(true, 9*time.Second, 900)
 	semedit.InteractionSteps = []BenchInteractionStep{{Step: 1}}
 	runs := []benchmarkDocumentationRun{{Comparisons: []*BenchComparisonSummary{{
 		SmallBaseline:         baseline,
 		SmallSemedit:          semedit,
-		SmallVerifiedBaseline: benchmarkDocumentationRunResult(true, time.Second, 100, 0),
-		SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100, 0),
+		SmallVerifiedBaseline: benchmarkDocumentationRunResult(true, time.Second, 100),
+		SmallVerifiedSemedit:  benchmarkDocumentationRunResult(true, time.Second, 100),
 	}}}}
 
 	histogram := renderCorrectiveTurnHistogram(runs)
@@ -255,11 +255,11 @@ func TestBestBenchmarkPairPrefersOneShotWhenCostsAreComparable(t *testing.T) {
 	t.Parallel()
 
 	oneShot := bestBenchmarkPair{
-		runID: "one-shot", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1020, 0),
+		runID: "one-shot", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1020),
 	}
 	oneShot.semedit.Turns = 1
 	multipleTurns := bestBenchmarkPair{
-		runID: "multiple-turns", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		runID: "multiple-turns", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
 	}
 	multipleTurns.semedit.Turns = 2
 	if !oneShot.preferredTo(multipleTurns) {
@@ -271,20 +271,20 @@ func TestBestBenchmarkPairAllowsTenfoldCostGainToOverrideSpeed(t *testing.T) {
 	t.Parallel()
 
 	slowerCheaper := bestBenchmarkPair{
-		runID: "slower-cheaper", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100, 0),
+		runID: "slower-cheaper", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000), semedit: benchmarkDocumentationRunResult(true, 20*time.Second, 100),
 	}
 	fasterExpensive := bestBenchmarkPair{
-		runID: "faster-expensive", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		runID: "faster-expensive", baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000), semedit: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
 	}
 	if !slowerCheaper.preferredTo(fasterExpensive) {
 		t.Fatal("a tenfold model-cost reduction must override a non-comparable speed regression")
 	}
 }
 
-func benchmarkDocumentationRunResult(passed bool, wallClock time.Duration, uncached, cached int) *BenchRunResult {
+func benchmarkDocumentationRunResult(passed bool, wallClock time.Duration, uncached int) *BenchRunResult {
 	return &BenchRunResult{
 		Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"}, Arm: "baseline-diff", Success: passed,
-		Turns: 1, WallClock: wallClock, PromptTokens: uncached + cached, UncachedPromptTokens: uncached, CachedPromptTokens: cached,
+		Turns: 1, WallClock: wallClock, PromptTokens: uncached, UncachedPromptTokens: uncached, CachedPromptTokens: 0,
 		Oracle: &BenchOracleResult{Passed: passed, Level1Policy: passed, Level2AST: passed, Level3Build: passed, Level4Test: passed},
 	}
 }
@@ -564,13 +564,13 @@ func TestBestBenchmarkPairUsesModelCostInsteadOfCacheAdjustedTokenUnits(t *testi
 
 	lowerModelCost := bestBenchmarkPair{
 		runID:    "lower-model-cost",
-		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
-		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
+		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
+		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
 	}
 	lowerCacheAdjustedUnits := bestBenchmarkPair{
 		runID:    "lower-cache-adjusted-units",
-		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000, 0),
-		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 500, 0),
+		baseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
+		semedit:  benchmarkDocumentationRunResult(true, 10*time.Second, 500),
 	}
 	lowerCacheAdjustedUnits.semedit.OutputTokens = 400
 

@@ -241,7 +241,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project ProjectContext, query 
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
-	symbols, err := decodeRustDocumentSymbols(raw, root, file, source)
+	symbols, err := decodeRustDocumentSymbols(raw, root, source)
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
@@ -294,7 +294,7 @@ func (b *RustBackend) Rename(ctx context.Context, request RenameRequest) (*Renam
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 	}
-	symbols, err := decodeRustDocumentSymbols(raw, root, file, source)
+	symbols, err := decodeRustDocumentSymbols(raw, root, source)
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 	}
@@ -631,7 +631,7 @@ type rustPosition struct {
 	Character int
 }
 
-func decodeRustDocumentSymbols(raw json.RawMessage, root, file string, source []byte) ([]rustDocumentSymbol, error) {
+func decodeRustDocumentSymbols(raw json.RawMessage, root string, source []byte) ([]rustDocumentSymbol, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -641,7 +641,7 @@ func decodeRustDocumentSymbols(raw json.RawMessage, root, file string, source []
 	}
 	result := make([]rustDocumentSymbol, 0, len(values))
 	for _, value := range values {
-		symbol, err := decodeRustDocumentSymbol(value, root, file, source)
+		symbol, err := decodeRustDocumentSymbol(value, root, source)
 		if err != nil {
 			return nil, err
 		}
@@ -650,7 +650,7 @@ func decodeRustDocumentSymbols(raw json.RawMessage, root, file string, source []
 	return result, nil
 }
 
-func decodeRustDocumentSymbol(raw json.RawMessage, root, file string, source []byte) (rustDocumentSymbol, error) {
+func decodeRustDocumentSymbol(raw json.RawMessage, root string, source []byte) (rustDocumentSymbol, error) {
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: symbol is not an object", ErrRustMalformedResponse)
@@ -689,7 +689,7 @@ func decodeRustDocumentSymbol(raw json.RawMessage, root, file string, source []b
 		}
 		symbol.Children = make([]rustDocumentSymbol, 0, len(children))
 		for _, childRaw := range children {
-			child, err := decodeRustDocumentSymbol(childRaw, root, file, source)
+			child, err := decodeRustDocumentSymbol(childRaw, root, source)
 			if err != nil {
 				return rustDocumentSymbol{}, err
 			}

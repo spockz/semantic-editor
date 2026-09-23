@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"bytes"
 	"semedit/internal/backend"
 )
 
@@ -444,7 +445,7 @@ func TestJavaVerifyFormattingWritesAndForwardsDiagnostics(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contents, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+	contents, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +470,7 @@ func TestJavaVerifyOrganizeImportsWritesSelectedFile(t *testing.T) {
 	if _, err := underTest.Verify(context.Background(), backend.VerifyRequest{Project: trustedJavaProject(root, file), OrganizeImports: true}); err != nil {
 		t.Fatal(err)
 	}
-	contents, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+	contents, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +607,7 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			root, file := javaFixture(t, "class Thing {}\n")
-			original, err := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+			original, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -620,11 +621,11 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 			if err == nil {
 				t.Fatal("Verify unexpectedly succeeded")
 			}
-			contents, readErr := os.ReadFile(file) //nolint:gosec // test file is created under t.TempDir.
+			contents, readErr := os.ReadFile(file)
 			if readErr != nil {
 				t.Fatal(readErr)
 			}
-			if string(contents) != string(original) {
+			if !bytes.Equal(contents, original) {
 				t.Fatalf("unsafe request changed file to %q", contents)
 			}
 			if tc.name == "no actions" || tc.name == "untrusted" || tc.name == "non java" {

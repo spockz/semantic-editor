@@ -61,7 +61,7 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			response.Status = "error"
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Symbol: result.Symbol, Status: "error", Error: err.Error()})
 			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-			return response, nil
+			return response, nil //nolint:nilerr // Batch execution errors are carried in the response status and entry.
 		}
 		if writtenFile != "" {
 			if filepath.Clean(writtenFile) == filepath.Clean(s.workDir) {
@@ -106,7 +106,7 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	response.DiagnosticDelta = &delta
 	if err := captureBatchDiff(response, s.workDir, workspaceBefore); err != nil {
 		response.Status = "error"
-		return response, nil
+		return response, nil //nolint:nilerr // Final diff errors are carried in the response.
 	}
 	return response, nil
 }

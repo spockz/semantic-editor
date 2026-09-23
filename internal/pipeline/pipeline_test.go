@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"bytes"
 	"semedit/internal/pipeline"
 )
 
@@ -31,7 +32,7 @@ func TestWriteAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read failed: %v", err)
 	}
-	if string(read) != string(data2) {
+	if !bytes.Equal(read, data2) {
 		t.Errorf("got %q, want %q", string(read), string(data2))
 	}
 }

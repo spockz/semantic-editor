@@ -270,7 +270,7 @@ func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, sin
 	close(jobChan)
 
 	var wg sync.WaitGroup
-	for w := 0; w < concurrency; w++ {
+	for range concurrency {
 		wg.Go(func() {
 			for j := range jobChan {
 				ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -613,7 +613,7 @@ type BenchmarkInfo struct {
 }
 
 // CollectAvailableBenchmarks scans fixture directories and returns sorted benchmark metadata.
-func CollectAvailableBenchmarks(benchDir string) ([]BenchmarkInfo, error) {
+func CollectAvailableBenchmarks(benchDir string) []BenchmarkInfo {
 	var benchmarks []BenchmarkInfo
 	seen := make(map[string]bool)
 
@@ -666,7 +666,7 @@ func CollectAvailableBenchmarks(benchDir string) ([]BenchmarkInfo, error) {
 		return benchmarks[i].TaskID < benchmarks[j].TaskID
 	})
 
-	return benchmarks, nil
+	return benchmarks
 }
 
 // PrintBenchmarksList outputs a formatted table of available benchmarks to the given writer.
@@ -685,11 +685,7 @@ func PrintBenchmarksList(out io.Writer, benchmarks []BenchmarkInfo) {
 }
 
 func listBenchmarks(benchDir string) int {
-	benchmarks, err := CollectAvailableBenchmarks(benchDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error listing benchmarks: %v\n", err)
-		return 1
-	}
+	benchmarks := CollectAvailableBenchmarks(benchDir)
 	PrintBenchmarksList(os.Stdout, benchmarks)
 	return 0
 }

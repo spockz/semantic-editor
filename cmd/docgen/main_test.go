@@ -87,7 +87,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	if err := writeLandingAssets(outputDir); err != nil {
 		t.Fatalf("write landing assets: %v", err)
 	}
-	config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml"))
 	if err != nil {
 		t.Fatalf("read Hugo config: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		t.Fatal("Hugo config must not hardcode the GitHub Pages deployment URL")
 	}
 
-	module, err := os.ReadFile(filepath.Join(outputDir, "go.mod")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	module, err := os.ReadFile(filepath.Join(outputDir, "go.mod"))
 	if err != nil {
 		t.Fatalf("read Hugo module go.mod: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		}
 	}
 
-	landing, err := os.ReadFile(filepath.Join(outputDir, "content", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	landing, err := os.ReadFile(filepath.Join(outputDir, "content", "_index.md"))
 	if err != nil {
 		t.Fatalf("read Hugo landing page: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		}
 	}
 	for _, name := range landingAssetNames {
-		info, err := os.Stat(filepath.Join(outputDir, "static", "images", "landing", name)) //nolint:gosec // outputDir is a test-owned temporary directory.
+		info, err := os.Stat(filepath.Join(outputDir, "static", "images", "landing", name))
 		if err != nil {
 			t.Errorf("stat generated landing asset %q: %v", name, err)
 			continue
@@ -166,7 +166,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 			t.Errorf("generated landing asset %q is empty", name)
 		}
 	}
-	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md")) //nolint:gosec // outputDir is a test-owned temporary directory.
+	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md"))
 	if err != nil {
 		t.Fatalf("read Hugo documentation section: %v", err)
 	}

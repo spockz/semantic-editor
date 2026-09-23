@@ -93,7 +93,7 @@ func writeMavenFailure(stderr io.Writer, err error) (bool, error) {
 	}{Error: err.Error(), Result: mavenErr.MavenResult()}
 	data, marshalErr := json.MarshalIndent(payload, "", "  ")
 	if marshalErr != nil {
-		return false, nil
+		return false, fmt.Errorf("marshal Maven failure: %w", marshalErr)
 	}
 	if _, writeErr := fmt.Fprintln(stderr, string(data)); writeErr != nil {
 		return true, fmt.Errorf("write Maven failure: %w", writeErr)
