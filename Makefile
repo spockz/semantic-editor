@@ -10,7 +10,13 @@ HUGO_BASE_URL ?= /
 ## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
 ## ---------------------------------------------------------
 .PHONY: check
-check: fmt tidy lint vuln test verify-docs ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
+check: ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
+	@$(MAKE) fmt
+	@$(MAKE) tidy
+	@$(MAKE) lint
+	@$(MAKE) vuln
+	@$(MAKE) test
+	@$(MAKE) verify-docs
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
@@ -46,6 +52,7 @@ tools: ## Install development tools (linters, formatters, scanners)
 fix: lint-fix ## Apply automatic Go and Markdown fixes and standard library modernizations
 	@echo "==> Running go fix..."
 	go fix ./...
+	@$(MAKE) fmt-go
 
 .PHONY: lint-fix
 lint-fix: fix-markdown ## Apply unambiguous fixes supplied by configured Go and Markdown linters
@@ -59,6 +66,9 @@ lint-fix: fix-markdown ## Apply unambiguous fixes supplied by configured Go and 
 
 .PHONY: fmt
 fmt: fix ## Format Go source code and optimize imports
+
+.PHONY: fmt-go
+fmt-go: ## Format Go source code and optimize imports without lint fixes
 	@echo "==> Formatting code..."
 	@if command -v gofumpt >/dev/null 2>&1; then \
 		gofumpt -w .; \
