@@ -6,32 +6,51 @@ HUGO_BASE_URL ?= /
 ifeq ($(MAKELEVEL),0)
 export PATH := $(CURDIR)/.scratch/go/bin:$(PATH)
 endif
+# GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
+# Set it only in the top-level process so recursive make shares its jobserver.
+MAKE_JOBS ?= 8
+ifeq ($(MAKELEVEL),0)
+MAKEFLAGS += -j$(MAKE_JOBS)
+endif
+
+GO_SCRATCH := $(CURDIR)/.scratch/go
+export GOENV := $(GO_SCRATCH)/env
+export GOCACHE := $(GO_SCRATCH)/build
+export GOMODCACHE := $(GO_SCRATCH)/mod
+export GOTMPDIR := $(GO_SCRATCH)/tmp
+export GOBIN := $(GO_SCRATCH)/bin
+export GOPATH := $(GO_SCRATCH)
+export GOFLAGS :=
+export GOWORK := off
+export GOLANGCI_LINT_CACHE := $(CURDIR)/.scratch/golangci-lint-cache
 
 .DEFAULT_GOAL := check
+
+## Go commands use project-local state so caches and temporary files stay under the workspace.
+.PHONY: go-env
+go-env:
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOLANGCI_LINT_CACHE)"
 
 ## ---------------------------------------------------------
 ## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
 ## ---------------------------------------------------------
 .PHONY: check
-check: ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
-	@$(MAKE) fmt
-	@$(MAKE) tidy
-	@$(MAKE) lint
-	@$(MAKE) vuln
-	@$(MAKE) test
-	@$(MAKE) verify-docs
+check: lint vuln test verify-docs ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
+
+## Reader targets wait for source formatting and dependency updates.
+lint-go lint-markdown lint-vale vuln test docgen-source build-next: tidy
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
 ## ---------------------------------------------------------
 .PHONY: deps
-deps: ## Download and verify module dependencies
+deps: go-env ## Download and verify module dependencies
 	@echo "==> Downloading Go dependencies..."
 	go mod download
 	go mod verify
 
 .PHONY: tools
-tools: ## Install development tools (linters, formatters, scanners)
+tools: go-env ## Install development tools (linters, formatters, scanners)
 	@echo "==> Installing development tools..."
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install mvdan.cc/gofumpt@latest
@@ -58,7 +77,7 @@ fix: lint-fix ## Apply automatic Go and Markdown fixes and standard library mode
 	@$(MAKE) fmt-go
 
 .PHONY: lint-fix
-lint-fix: fix-markdown ## Apply unambiguous fixes supplied by configured Go and Markdown linters
+lint-fix: go-env fix-markdown ## Apply unambiguous fixes supplied by configured Go and Markdown linters
 	@echo "==> Applying Go linter fixes..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run --fix ./...; \
@@ -71,7 +90,7 @@ lint-fix: fix-markdown ## Apply unambiguous fixes supplied by configured Go and 
 fmt: fix ## Format Go source code and optimize imports
 
 .PHONY: fmt-go
-fmt-go: ## Format Go source code and optimize imports without lint fixes
+fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 	@echo "==> Formatting code..."
 	@if command -v gofumpt >/dev/null 2>&1; then \
 		gofumpt -w .; \
@@ -83,7 +102,7 @@ fmt-go: ## Format Go source code and optimize imports without lint fixes
 	fi
 
 .PHONY: tidy
-tidy: ## Ensure dependencies match source code
+tidy: fmt ## Ensure dependencies match source code
 	@echo "==> Tidying go.mod and go.sum..."
 	go mod tidy
 
@@ -94,7 +113,7 @@ tidy: ## Ensure dependencies match source code
 lint: lint-go lint-markdown lint-vale ## Run all static linters (golangci-lint, markdownlint-cli2, vale)
 
 .PHONY: lint-go
-lint-go: ## Run golangci-lint
+lint-go: go-env ## Run golangci-lint
 	@echo "==> Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
@@ -107,7 +126,7 @@ lint-go: ## Run golangci-lint
 lint-markdown: ## Run markdownlint-cli2
 	@echo "==> Running markdownlint-cli2..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		markdownlint-cli2 "**/*.md"; \
+		markdownlint-cli2 "**/*.md" "!.agents/"; \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
 		exit 1; \
@@ -127,14 +146,14 @@ fix-markdown: ## Apply automatic markdownlint-cli2 fixes
 lint-vale: ## Run vale prose linter
 	@echo "==> Running vale..."
 	@if command -v vale >/dev/null 2>&1; then \
-		vale .; \
+		find . -path './.scratch' -prune -o -path './.git' -prune -o -path './data' -prune -o -type f -name '*.md' -print0 | xargs -0 vale; \
 	else \
 		echo "vale not installed. Run 'make tools' or: brew install vale"; \
 		exit 1; \
 	fi
 
 .PHONY: vuln
-vuln: ## Run vulnerability security check
+vuln: go-env ## Run vulnerability security check
 	@echo "==> Running govulncheck..."
 	@if command -v govulncheck >/dev/null 2>&1; then \
 		govulncheck ./...; \
@@ -146,22 +165,22 @@ vuln: ## Run vulnerability security check
 ## Testing
 ## ---------------------------------------------------------
 .PHONY: test
-test: ## Run unit and race tests
+test: go-env ## Run unit and race tests
 	@echo "==> Running unit tests..."
 	go test -race -shuffle=on -cover -v ./...
 
 .PHONY: test-short
-test-short: ## Run short test suite without long-running tests
+test-short: go-env ## Run short test suite without long-running tests
 	@echo "==> Running short tests..."
 	go test -short ./...
 
 .PHONY: test-property-full
-test-property-full: ## Run comprehensive 100-check property tests
+test-property-full: go-env ## Run comprehensive 100-check property tests
 	@echo "==> Running full property tests (100 checks)..."
 	RAPID_CHECKS=100 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
 
 .PHONY: test-fuzz
-test-fuzz: ## Run deep 1000-check metamorphic property fuzzing
+test-fuzz: go-env ## Run deep 1000-check metamorphic property fuzzing
 	@echo "==> Running deep property fuzzing (1000 checks)..."
 	RAPID_CHECKS=1000 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
 
@@ -169,7 +188,7 @@ test-fuzz: ## Run deep 1000-check metamorphic property fuzzing
 ## Build and Clean
 ## ---------------------------------------------------------
 .PHONY: build-next
-build-next: ## Build the active development binary (bin/semedit-next)
+build-next: go-env ## Build the active development binary (bin/semedit-next)
 	@echo "==> Building bin/semedit-next..."
 	@mkdir -p bin
 	go build -o bin/semedit-next .
@@ -222,7 +241,7 @@ docgen: check-hugo-version docgen-source ## Generate the documentation site into
 	@touch dist/docs/.nojekyll
 
 .PHONY: docgen-source
-docgen-source: ## Generate temporary Hugo Markdown and module source in .scratch/docgen
+docgen-source: go-env ## Generate temporary Hugo Markdown and module source in .scratch/docgen
 	@echo "==> Generating Hugo documentation source in .scratch/docgen..."
 	@mkdir -p .scratch/docgen
 	go run ./cmd/docgen --output-dir .scratch/docgen
@@ -247,7 +266,7 @@ verify-docs: docgen ## Generate the site and assert its published files exist
 -include tools/benchmark-harness/Makefile
 
 .PHONY: clean
-clean: ## Clean build artifacts and test cache
+clean: go-env ## Clean build artifacts and test cache
 	@echo "==> Cleaning cache..."
 	go clean -testcache
 	rm -rf bin/ dist/

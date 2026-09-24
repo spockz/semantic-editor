@@ -13,7 +13,7 @@ How can the complete project quality check become faster without reducing covera
 The top-level `make check` target is the project's quality gate:
 
 ```text
-fmt -> tidy -> lint -> vuln -> test -> verify-docs
+fmt -> tidy -> {lint, vuln, test, verify-docs}
 ```
 
 Its runtime is a validation and CI-harness measurement. It is not a measure of `semedit` editing effectiveness. In agent benchmarks, a direct `semedit` invocation against a `txtar` fixture remains the control for host edit cost. The same validation procedure can then be applied to the direct control and the agent arm so the additional agent and LLM overhead is visible without attributing test-suite time to the semantic edit itself.
@@ -29,9 +29,25 @@ The baseline was measured on macOS arm64 with Go 1.27.1, Hugo 0.166.0 Extended, 
 | `make -j4 check` | 13.20 s | Pass |
 | `make -j8 check` | 13.39 s | Pass |
 
-Four jobs reduced elapsed validation time by approximately 10% relative to the serial baseline. Eight jobs provided no further improvement. These runs are observational only: the current Make graph allows `fmt` and `tidy` to mutate files while lint, tests, and documentation generation read them, so parallel success does not yet establish a safe correctness policy.
+Four jobs reduced elapsed validation time by approximately 10% relative to the serial baseline. Eight jobs provided no further improvement. These historical runs predate the current dependency barrier, so they do not measure the current Make graph.
 
 Hugo reported approximately 0.43 seconds of the run. Documentation rendering is therefore not the dominant cost; Go test packages, including the gopls-backed property test and integration scripts, account for most of the work.
+
+### 2026-09-24 Hyperfine Measurement
+
+Hyperfine 1.20.0 ran all seven commands in one invocation with three warmups and five measured runs per command. The host used macOS arm64, Go 1.27.1, and Hugo 0.166.0 Extended. Every timed command ran the full `make check` gate with race tests and the current `fmt -> tidy` dependency barrier. The Go test command uses `-shuffle=on`, so this measures repeated full validation on warmed caches rather than cached test output.
+
+| Command | Median (s) | IQR (s) | Mean ± standard deviation (s) |
+| :--- | ---: | ---: | ---: |
+| `make check` | 42.510 | 1.103 | 43.356 ± 3.241 |
+| `make -j2 check` | 36.328 | 6.038 | 36.489 ± 3.449 |
+| `make -j3 check` | 28.812 | 4.004 | 30.152 ± 2.799 |
+| `make -j4 check` | 30.745 | 2.628 | 29.981 ± 2.201 |
+| `make -j6 check` | 30.615 | 1.337 | 30.331 ± 1.194 |
+| `make -j8 check` | 28.900 | 1.387 | 28.267 ± 1.129 |
+| `make -j16 check` | 27.192 | 1.507 | 28.336 ± 2.246 |
+
+Eight jobs had the lowest mean, 34.8% below the serial mean. Sixteen jobs were effectively tied with eight and had more variation. These command labels reflect the Makefile at measurement time. The later `MAKE_JOBS ?= 8` setting makes bare `make check` use eight jobs; on GNU Make 3.81, select another count with `make MAKE_JOBS=N check`, including `MAKE_JOBS=1` for serial execution. Hyperfine reported statistical outliers. The commands ran in the listed order in an active, uncommitted worktree; this is a local warmed-workspace result, not a clean or quiet-system comparison. The historical baseline above used a different project state and cannot be directly compared with this measurement.
 
 ## 4. Parallelization Avenues
 
@@ -49,7 +65,7 @@ Rapid generated cases run sequentially within one property check. `t.Parallel()`
 
 ### D. Check-Target Dependency Graph
 
-Separate mutating preparation (`fmt`, `tidy`) from read-only checks. A safe graph could run formatting and tidying first, then fan out lint, vulnerability scanning, unit tests, integration tests, and documentation verification. This would make `make -j` useful without allowing readers to observe files while they are being rewritten.
+The Make graph now completes mutating preparation (`fmt`, then `tidy`) before linting, vulnerability scanning, tests, and documentation generation. `make -j` can fan out those checks without readers observing source rewrites. Documentation generation writes only to its own output directories, and Vale selects Markdown files outside the temporary Go cache.
 
 ### E. Caching
 
@@ -70,7 +86,7 @@ Report median and interquartile range over at least five repetitions. Keep direc
 ## 6. Open Questions
 
 1. Which unit and integration tests are fully isolated enough to opt into `t.Parallel()`?
-2. Should the Makefile expose separate `check-prepare`, `check-tests`, `check-docs`, and `check` targets with explicit dependencies?
+2. Which Make job limit balances validation latency with CPU and memory use on CI hosts?
 3. Does package-level parallelism saturate CPU, memory, gopls processes, or filesystem I/O first as the repository grows?
 4. Should Rapid property cases be sharded in-process or through multiple test-binary processes once their runtime justifies the added complexity?
 5. Which checks should remain uncached for release confidence, and which can use deterministic cache-compatible flags during local development?
@@ -78,6 +94,6 @@ Report median and interquartile range over at least five repetitions. Keep direc
 ## 7. Next Steps
 
 1. Inventory unit and integration tests for shared-state hazards and add parallel-safe candidates incrementally.
-2. Prototype a dependency-ordered Make graph and compare it with the current serial baseline.
+2. Repeat the job-count comparison on a quiet, clean CI workspace and record resource use.
 3. Add structured quality-check timing and cache fields to the benchmark runner's result schema.
 4. Re-run this baseline when additional language packages and integration suites land.
