@@ -270,3 +270,57 @@ func Route(mode string) string {
 		t.Fatalf("path 0.1 should insert into the nested switch:\n%s", updated)
 	}
 }
+
+func TestInsertCase_TypeSwitchMatchesAssertedExpression(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "typeswitch.go")
+	initial := `package main
+
+func Route(mode string, input any) string {
+	switch mode {
+	case "old":
+		return "old"
+	default:
+		return "fallback"
+	}
+	switch modeExtra := input.(type) {
+	case string:
+		return modeExtra
+	default:
+		return "fallback"
+	}
+}
+`
+	if err := os.WriteFile(filePath, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	if _, err := astedit.InsertCase(context.Background(), filePath, "Route", "mode", `case "new":
+		return "new"`, astedit.CaseOptions{}); err != nil {
+		t.Fatalf("InsertCase on mode switch failed: %v", err)
+	}
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read file after mode switch insertion: %v", err)
+	}
+	updated := string(content)
+	modeCase := strings.Index(updated, `case "new":`)
+	typeSwitch := strings.Index(updated, "switch modeExtra := input.(type)")
+	if modeCase < 0 || typeSwitch < 0 || modeCase > typeSwitch {
+		t.Fatalf("switch_on=mode should select only the ordinary mode switch:\n%s", updated)
+	}
+
+	if _, err := astedit.InsertCase(context.Background(), filePath, "Route", "input", `case bool:
+		return "bool"`, astedit.CaseOptions{}); err != nil {
+		t.Fatalf("InsertCase on type-switch asserted expression failed: %v", err)
+	}
+	content, err = os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read file after type-switch insertion: %v", err)
+	}
+	updated = string(content)
+	typeSwitch = strings.Index(updated, "switch modeExtra := input.(type)")
+	boolCase := strings.Index(updated, "case bool:")
+	if typeSwitch < 0 || boolCase < typeSwitch {
+		t.Fatalf("switch_on=input should select the type switch asserted expression:\n%s", updated)
+	}
+}
