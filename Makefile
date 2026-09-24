@@ -3,6 +3,9 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
 HUGO_BASE_URL ?= /
+ifeq ($(MAKELEVEL),0)
+export PATH := $(CURDIR)/.scratch/go/bin:$(PATH)
+endif
 
 .DEFAULT_GOAL := check
 
