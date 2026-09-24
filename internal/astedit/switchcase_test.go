@@ -58,59 +58,37 @@ func TestInsertCase_BeforeDefault(t *testing.T) {
 	}
 }
 
-func TestInsertCase_First(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "main.go")
-	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
+func TestInsertCase_BoundaryPlacement(t *testing.T) {
+	tests := []struct {
+		name      string
+		placement astedit.CasePlacement
+		source    string
+		before    string
+		after     string
+	}{
+		{"first", astedit.CasePlacementFirst, "case \"init\":\n\treturn \"initialized\"", "case \"init\":", "case \"start\":"},
+		{"last", astedit.CasePlacementLast, "case \"extra\":\n\treturn \"extra\"", "default:", "case \"extra\":"},
 	}
-
-	_, err := astedit.InsertCase(context.Background(), filePath, "Handle", "action", `case "init":
-	return "initialized"`, astedit.CaseOptions{
-		Placement: astedit.CasePlacementFirst,
-	})
-	if err != nil {
-		t.Fatalf("InsertCase first failed: %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Clean(filePath))
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-
-	str := string(content)
-	idxInit := strings.Index(str, `case "init":`)
-	idxStart := strings.Index(str, `case "start":`)
-	if idxInit == -1 || idxStart == -1 || idxInit > idxStart {
-		t.Errorf("expected 'case init' before 'case start', got:\n%s", str)
-	}
-}
-
-func TestInsertCase_Last(t *testing.T) {
-	tmpDir := t.TempDir()
-	filePath := filepath.Join(tmpDir, "main.go")
-	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
-		t.Fatalf("write file: %v", err)
-	}
-
-	_, err := astedit.InsertCase(context.Background(), filePath, "Handle", "action", `case "extra":
-	return "extra"`, astedit.CaseOptions{
-		Placement: astedit.CasePlacementLast,
-	})
-	if err != nil {
-		t.Fatalf("InsertCase last failed: %v", err)
-	}
-
-	content, err := os.ReadFile(filepath.Clean(filePath))
-	if err != nil {
-		t.Fatalf("read file: %v", err)
-	}
-
-	str := string(content)
-	idxDefault := strings.Index(str, "default:")
-	idxExtra := strings.Index(str, `case "extra":`)
-	if idxDefault == -1 || idxExtra == -1 || idxExtra < idxDefault {
-		t.Errorf("expected 'case extra' after 'default', got:\n%s", str)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			filePath := filepath.Join(t.TempDir(), "main.go")
+			if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
+				t.Fatalf("write file: %v", err)
+			}
+			if _, err := astedit.InsertCase(context.Background(), filePath, "Handle", "action", test.source, astedit.CaseOptions{Placement: test.placement}); err != nil {
+				t.Fatalf("InsertCase %s failed: %v", test.name, err)
+			}
+			content, err := os.ReadFile(filepath.Clean(filePath))
+			if err != nil {
+				t.Fatalf("read file: %v", err)
+			}
+			str := string(content)
+			before := strings.Index(str, test.before)
+			after := strings.Index(str, test.after)
+			if before == -1 || after == -1 || before > after {
+				t.Errorf("expected %q before %q, got:\n%s", test.before, test.after, str)
+			}
+		})
 	}
 }
 
@@ -241,5 +219,54 @@ func TestInsertCase_Errors(t *testing.T) {
 	_, err = astedit.InsertCase(context.Background(), filePath, "Handle", "action", `invalid case syntax {{`, astedit.CaseOptions{})
 	if _, ok := errors.AsType[*astedit.SyntaxError](err); !ok {
 		t.Errorf("expected SyntaxError, got: %v", err)
+	}
+}
+
+func TestInsertCase_AmbiguousSwitchReportsAndAcceptsPath(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "nested.go")
+	initial := `package main
+func Route(mode string) string {
+	switch mode {
+	case "outer":
+		switch mode {
+		case "inner": return "inner"
+		default: return "nested fallback"
+		}
+	default: return "outer fallback"
+	}
+}
+`
+	if err := os.WriteFile(filePath, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	_, err := astedit.InsertCase(context.Background(), filePath, "Route", "mode", `case "new": return "new"`, astedit.CaseOptions{})
+	if !errors.Is(err, astedit.ErrSwitchAmbiguous) {
+		t.Fatalf("expected ErrSwitchAmbiguous, got: %v", err)
+	}
+	for _, want := range []string{"0  cases:", "0.1  cases:", `"outer"`, `"inner"`, "switch_path"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("ambiguity error missing %q: %v", want, err)
+		}
+	}
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read unchanged file: %v", err)
+	}
+	if string(content) != initial {
+		t.Fatalf("ambiguous request changed file:\n%s", content)
+	}
+	if _, err := astedit.InsertCase(context.Background(), filePath, "Route", "mode", `case "new": return "new"`, astedit.CaseOptions{SwitchPath: "0.1"}); err != nil {
+		t.Fatalf("InsertCase with suggested nested path failed: %v", err)
+	}
+	content, err = os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read updated file: %v", err)
+	}
+	updated := string(content)
+	inner := strings.Index(updated, `case "inner"`)
+	inserted := strings.Index(updated, `case "new"`)
+	outerFallback := strings.LastIndex(updated, "default:")
+	if inner < 0 || inserted < inner || outerFallback < inserted {
+		t.Fatalf("path 0.1 should insert into the nested switch:\n%s", updated)
 	}
 }

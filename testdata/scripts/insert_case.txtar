@@ -3,6 +3,16 @@
 exec semedit insert-case --file router/handler.go --func Dispatch --switch-on method --placement before_default --case 'case "POST": return handlePost()'
 cmp router/handler.go want/router/handler.go
 
+# Repeated switch selectors must fail without changing either switch.
+! exec semedit insert-case --file router/nested.go --func Route --switch-on mode --placement before_default --case 'case "new": return "new"'
+stderr 'ambiguous switch selector'
+stderr '0  cases: "outer", default'
+stderr '0.1  cases: "inner", default'
+cmp router/nested.go want/router/nested.go
+
+exec semedit insert-case --file router/nested.go --func Route --switch-on mode --switch-path 0.1 --placement before_default --case 'case "new": return "new"'
+cmp router/nested.go want/router/nested-path.go
+
 -- go.mod --
 module example.com/test
 go 1.23
@@ -41,3 +51,57 @@ func Dispatch(method string) string {
 func handleGet() string      { return "get" }
 func handlePost() string     { return "post" }
 func handleNotFound() string { return "404" }
+-- router/nested.go --
+// nested.go reproduces a nested switch with the same selector as its parent.
+package router
+
+func Route(mode string) string {
+	switch mode {
+	case "outer":
+		switch mode {
+		case "inner":
+			return "inner"
+		default:
+			return "nested fallback"
+		}
+	default:
+		return "outer fallback"
+	}
+}
+-- want/router/nested.go --
+// nested.go reproduces a nested switch with the same selector as its parent.
+package router
+
+func Route(mode string) string {
+	switch mode {
+	case "outer":
+		switch mode {
+		case "inner":
+			return "inner"
+		default:
+			return "nested fallback"
+		}
+	default:
+		return "outer fallback"
+	}
+}
+-- want/router/nested-path.go --
+// nested.go reproduces a nested switch with the same selector as its parent.
+package router
+
+func Route(mode string) string {
+	switch mode {
+	case "outer":
+		switch mode {
+		case "inner":
+			return "inner"
+
+		case "new":
+			return "new"
+		default:
+			return "nested fallback"
+		}
+	default:
+		return "outer fallback"
+	}
+}

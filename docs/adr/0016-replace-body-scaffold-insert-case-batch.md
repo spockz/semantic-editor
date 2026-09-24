@@ -43,6 +43,8 @@ We introduce four discrete capabilities across the engine, CLI, and MCP interfac
    * Locates switch statements within a target function by function name and optional discriminant expression (`switch_on`).
    * Matches tagless switch statements when `switch_on` is omitted.
    * Canonicalizes discriminant expressions via `go/parser` and `go/format` comparison.
+   * If multiple matching switches exist, fails without mutation and reports each candidate's matching-switch path and case labels.
+   * Accepts `switch_path` to select a reported candidate. Root matching switches use zero-based indexes (`0`, `1`, ...); nested matching switches use dotted paths such as `0.1`, where only matching switches are counted and the parent occupies index `0` at each nesting level.
    * Validates case clauses via synthetic switch stubs in memory.
    * Supports relative placements: `first`, `last`, `before_default` (default), `before`, and `after`.
    * Employs `ErrSwitchNotFound` when target switch is missing and `ErrAnchorNotFound` when specified anchor case is absent.
@@ -66,6 +68,7 @@ We introduce four discrete capabilities across the engine, CLI, and MCP interfac
 4. **Byte Offset Coordinates**: All AST splices must calculate exact file byte offsets via `fset.Position(...).Offset` rather than raw `token.Pos`.
 5. **Sibling Inference Test Exclusion**: Sibling package inference must ignore all `*_test.go` files.
 6. **Canonical Expression Matching**: Switch discriminant matching must compare canonically formatted AST expressions rather than raw substring matching.
+7. **Explicit Switch Selection**: When `switch_on` matches multiple switches in the target function, `insert-case` must not choose implicitly or mutate the file. Its diagnostic must provide case labels and usable `switch_path` values; numbering counts only switches matching the requested selector.
 
 ---
 

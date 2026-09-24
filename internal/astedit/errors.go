@@ -10,6 +10,9 @@ import (
 )
 
 var (
+	// ErrSwitchAmbiguous indicates that more than one switch matches the selector.
+	ErrSwitchAmbiguous = errors.New("ambiguous switch selector")
+
 	// ErrUnsupportedModifier indicates an access modifier is not supported by the active language backend.
 	ErrUnsupportedModifier = errors.New("unsupported access modifier")
 
