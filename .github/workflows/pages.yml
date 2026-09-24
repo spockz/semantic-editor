@@ -28,10 +28,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Read Hugo version
+        id: hugo-version
+        run: echo "version=$(tr -d ' \t\r\n' < .hugo-version)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Hugo
         uses: peaceiris/actions-hugo@v3
         with:
-          hugo-version: '0.140.2'
+          hugo-version: ${{ steps.hugo-version.outputs.version }}
           extended: true
 
       - name: Configure GitHub Pages

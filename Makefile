@@ -186,15 +186,36 @@ build: build-next ## Build development and stable binaries
 		cp bin/semedit-next bin/semedit; \
 	fi
 
-.PHONY: docgen
-docgen: docgen-source ## Generate the documentation site into dist/docs
-	@echo "==> Building Hugo documentation to dist/docs..."
+.PHONY: check-hugo-version
+check-hugo-version: ## Verify installed Hugo matches .hugo-version
 	@if command -v hugo >/dev/null 2>&1; then \
-		hugo --source .scratch/docgen --destination "$(CURDIR)/dist/docs" --baseURL "$(HUGO_BASE_URL)" --cleanDestinationDir --minify; \
+		EXPECTED=$$(tr -d ' \t\r\n' < .hugo-version 2>/dev/null || echo ""); \
+		INSTALLED=$$(hugo version 2>/dev/null | sed -E 's/.*v([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+		if [ -n "$$EXPECTED" ] && [ "$$EXPECTED" != "$$INSTALLED" ]; then \
+			echo "Hugo version mismatch: installed $$INSTALLED, expected $$EXPECTED from .hugo-version"; \
+			echo "Run 'make sync-hugo-version' to update .hugo-version or align your installed Hugo."; \
+			exit 1; \
+		fi; \
 	else \
 		echo "Hugo is not installed. Install Hugo Extended to build documentation."; \
 		exit 1; \
 	fi
+
+.PHONY: sync-hugo-version
+sync-hugo-version: ## Update .hugo-version to match installed Hugo version
+	@if command -v hugo >/dev/null 2>&1; then \
+		INSTALLED=$$(hugo version 2>/dev/null | sed -E 's/.*v([0-9]+\.[0-9]+\.[0-9]+).*/\1/'); \
+		echo "$$INSTALLED" > .hugo-version; \
+		echo "Synced .hugo-version to $$INSTALLED"; \
+	else \
+		echo "Hugo is not installed."; \
+		exit 1; \
+	fi
+
+.PHONY: docgen
+docgen: check-hugo-version docgen-source ## Generate the documentation site into dist/docs
+	@echo "==> Building Hugo documentation to dist/docs..."
+	@hugo --source .scratch/docgen --destination "$(CURDIR)/dist/docs" --baseURL "$(HUGO_BASE_URL)" --cleanDestinationDir --minify
 	@touch dist/docs/.nojekyll
 
 .PHONY: docgen-source
