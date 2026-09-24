@@ -39,14 +39,26 @@ treated as comparable and are resolved by lower relative model cost. A cost
 improvement of at least tenfold overrides a non-comparable wall-clock
 regression; a smaller improvement does not. Cost differences within five
 percentage points are also treated as comparable; a Semedit completion in
-exactly one top-level user turn then wins. Cost is (uncached input times input
-rate plus cached input times cached rate plus reasoning and visible output
-times output rate) divided by one million, using the declared target-model
-rates per million tokens. Stable run identity breaks remaining ties.
+exactly one top-level user turn then wins. Model cost is credit consumption:
+(uncached input tokens × input credits + cached input tokens × cached credits +
+(reasoning tokens + visible output tokens) × output credits) / 1,000,000.
+Thinking tokens are reasoning tokens and use the output rate. The declared
+credits per one million tokens are:
 
-Every published detailed and aggregate table also reports a unitless
-model-specific cost when the target model has a declared rate schedule. It is
-the same per-million-token cost used for best-case selection. Cache-adjusted
+| Model | Input | Cached input | Output |
+| :--- | ---: | ---: | ---: |
+| GPT-6 Astra | 250 | 25 | 1,250 |
+| GPT-6 Sol | 50 | 5 | 250 |
+| GPT-5.6 Sol | 100 | 10 | 500 |
+| GPT-5.6 Terra | 50 | 5 | 300 |
+| GPT-6 Luna | 2.5 | 0.25 | 12.5 |
+| GPT-5.6 Luna | 5 | 0.5 | 30 |
+
+Stable run identity breaks remaining ties.
+
+Every published detailed and aggregate table also reports model-specific
+credits when the target model has a declared rate schedule. This is the same
+per-million-token credit cost used for best-case selection. Cache-adjusted
 token units remain published telemetry, but do not rank best-case pairs.
 
 Oracle outcome is absolute: no speed, token, or one-shot advantage can cause a
@@ -74,7 +86,7 @@ cells.
 - A cached token contributes one tenth of an uncached token only to the
   published cache-adjusted-token metric, not to raw telemetry values or
   best-case selection.
-- A reported model cost is unitless and only available for an explicitly
+- A reported model cost is measured in credits and only available for an explicitly
   declared target-model rate schedule; unavailable cost is never treated as
   zero.
 - Root-level legacy result files remain publishable as the `legacy` run until

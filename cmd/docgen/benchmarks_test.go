@@ -52,6 +52,154 @@ func TestUnmarshalBenchmarkReportNormalizesVersionedMillisecondsAndLegacyNanosec
 	}
 }
 
+func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAssets(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	resultsDir := filepath.Join(rootDir, "data", "benchmarks", "results", "run-a")
+	if err := os.MkdirAll(resultsDir, 0o750); err != nil {
+		t.Fatalf("create benchmark results directory: %v", err)
+	}
+	report := `{"timestamp":"2026-09-24T12:00:00Z","comparisons":[{"task_id":"task-a","target":{"harness":"codex","model":"gpt-5.6-luna","effort":"medium"},"dynamic_dimension":{"variant":"new-schema"},"new_array":["a",{"b":2}],"small_baseline":{"task_id":"task-a","arm":"baseline-diff","turns":4,"wall_clock_ms":1200000000,"prompt_tokens":1000,"uncached_prompt_tokens":1000,"cached_prompt_tokens":0,"output_tokens":500,"oracle":{"passed":true,"duration_ms":30000000},"mcp_verified":false,"dynamic_run_field":{"source":"trial"}},"small_semedit":{"task_id":"task-a","arm":"semedit","turns":3,"wall_clock_ms":900000000,"mcp_verified":true},"large_semedit":{"task_id":"task-a","arm":"semedit","turns":2,"wall_clock_ms":800000000,"mcp_verified":true}},{"task_id":"task-b","another_dimension":"other-schema","small_baseline":{"task_id":"task-b","turns":5}}]}`
+	if err := os.WriteFile(filepath.Join(resultsDir, "report.json"), []byte(report), 0o600); err != nil {
+		t.Fatalf("write benchmark report: %v", err)
+	}
+	vendorDir := filepath.Join(rootDir, "cmd", "docgen", "assets", "vendor", "perspective", "css")
+	if err := os.MkdirAll(vendorDir, 0o750); err != nil {
+		t.Fatalf("create vendor asset directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vendorDir, "pro-dark.css"), []byte("dark-theme"), 0o600); err != nil {
+		t.Fatalf("write vendor asset: %v", err)
+	}
+
+	outputDir := t.TempDir()
+	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
+		t.Fatalf("write benchmark browser assets: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outputDir, "static", "data", "benchmarks.json"))
+	if err != nil {
+		t.Fatalf("read benchmark browser data: %v", err)
+	}
+	var rows []map[string]json.RawMessage
+	if err := json.Unmarshal(data, &rows); err != nil {
+		t.Fatalf("decode benchmark browser data: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("benchmark browser row count = %d, want 4", len(rows))
+	}
+	for key, want := range map[string]string{
+		"task_id": "task-a", "_run_id": "run-a", "_source_file": "run-a/report.json", "_record_type": "result", "context_variant": "small", "arm": "baseline",
+	} {
+		var got string
+		if err := json.Unmarshal(rows[0][key], &got); err != nil {
+			t.Fatalf("decode %s metadata: %v", key, err)
+		}
+		if got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+	var dynamicVariant string
+	if err := json.Unmarshal(rows[0]["dynamic_dimension__variant"], &dynamicVariant); err != nil {
+		t.Fatalf("decode flattened dynamic field: %v", err)
+	}
+	if dynamicVariant != "new-schema" {
+		t.Errorf("flattened dynamic dimension = %q, want %q", dynamicVariant, "new-schema")
+	}
+	var oraclePass bool
+	if err := json.Unmarshal(rows[0]["oracle_pass"], &oraclePass); err != nil || !oraclePass {
+		t.Errorf("oracle pass = %t, err = %v; want true", oraclePass, err)
+	}
+	if string(rows[0]["expected_semantic_tools_used"]) != "null" {
+		t.Errorf("baseline expected semantic tools used = %s, want null", rows[0]["expected_semantic_tools_used"])
+	}
+	var semanticToolPass bool
+	if err := json.Unmarshal(rows[1]["expected_semantic_tools_used"], &semanticToolPass); err != nil || !semanticToolPass {
+		t.Errorf("semedit expected semantic tools used = %t, err = %v; want true", semanticToolPass, err)
+	}
+	var turns int
+	if err := json.Unmarshal(rows[0]["turns"], &turns); err != nil || turns != 4 {
+		t.Errorf("unprefixed turns = %d, err = %v; want 4", turns, err)
+	}
+	var inputTokens int
+	if err := json.Unmarshal(rows[0]["input_tokens"], &inputTokens); err != nil || inputTokens != 1000 {
+		t.Errorf("uncached input tokens = %d, err = %v; want 1000", inputTokens, err)
+	}
+	var cachedInputTokens int
+	if err := json.Unmarshal(rows[0]["cached_input_tokens"], &cachedInputTokens); err != nil || cachedInputTokens != 0 {
+		t.Errorf("cached input tokens = %d, err = %v; want 0", cachedInputTokens, err)
+	}
+	var outputTokens int
+	if err := json.Unmarshal(rows[0]["output_tokens"], &outputTokens); err != nil || outputTokens != 500 {
+		t.Errorf("output tokens = %d, err = %v; want 500", outputTokens, err)
+	}
+	var wallClockMS int64
+	if err := json.Unmarshal(rows[0]["wall_clock_ms"], &wallClockMS); err != nil || wallClockMS != 1200 {
+		t.Errorf("normalized wall clock = %d ms, err = %v; want 1200 ms", wallClockMS, err)
+	}
+	var wallClockSeconds float64
+	if err := json.Unmarshal(rows[0]["wall_clock_seconds"], &wallClockSeconds); err != nil || wallClockSeconds != 1.2 {
+		t.Errorf("wall clock = %v seconds, err = %v; want 1.2 seconds", wallClockSeconds, err)
+	}
+	var oracleDurationMS int64
+	if err := json.Unmarshal(rows[0]["oracle__duration_ms"], &oracleDurationMS); err != nil || oracleDurationMS != 30 {
+		t.Errorf("normalized oracle duration = %d ms, err = %v; want 30 ms", oracleDurationMS, err)
+	}
+	var cost float64
+	if err := json.Unmarshal(rows[0]["cost"], &cost); err != nil || cost != 0.02 {
+		t.Errorf("model cost = %v, err = %v; want 0.02", cost, err)
+	}
+	var dynamicSource string
+	if err := json.Unmarshal(rows[0]["dynamic_run_field__source"], &dynamicSource); err != nil || dynamicSource != "trial" {
+		t.Errorf("flattened dynamic run field = %q, err = %v; want trial", dynamicSource, err)
+	}
+	if _, exists := rows[0]["small_baseline__turns"]; exists {
+		t.Error("split result must not retain the paired benchmark prefix")
+	}
+	var secondContext string
+	if err := json.Unmarshal(rows[1]["context_variant"], &secondContext); err != nil || secondContext != "small" {
+		t.Errorf("second result context = %q, err = %v; want small", secondContext, err)
+	}
+	var turnsDelta float64
+	if err := json.Unmarshal(rows[1]["turns_delta"], &turnsDelta); err != nil || turnsDelta != -1 {
+		t.Errorf("paired turns change = %v, err = %v; want -1", turnsDelta, err)
+	}
+	if string(rows[0]["turns_delta"]) != "null" {
+		t.Errorf("baseline turns change = %s, want null", rows[0]["turns_delta"])
+	}
+	var baselineTurns, semeditTurns int
+	if err := json.Unmarshal(rows[1]["baseline_turns"], &baselineTurns); err != nil || baselineTurns != 4 {
+		t.Errorf("paired baseline turns = %d, err = %v; want 4", baselineTurns, err)
+	}
+	if err := json.Unmarshal(rows[1]["semedit_turns"], &semeditTurns); err != nil || semeditTurns != 3 {
+		t.Errorf("paired semedit turns = %d, err = %v; want 3", semeditTurns, err)
+	}
+	var arrayText string
+	if err := json.Unmarshal(rows[0]["new_array"], &arrayText); err != nil {
+		t.Fatalf("decode serialized array field: %v", err)
+	}
+	if arrayText != `["a",{"b":2}]` {
+		t.Errorf("serialized array = %q, want JSON text", arrayText)
+	}
+	if string(rows[0]["another_dimension"]) != "null" || string(rows[3]["dynamic_dimension__variant"]) != "null" {
+		t.Error("browser rows must share the union of all dynamically discovered fields")
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "static", "vendor", "perspective", "css", "pro-dark.css")); err != nil {
+		t.Errorf("Perspective asset was not copied: %v", err)
+	}
+	shortcode, err := os.ReadFile(filepath.Join(outputDir, "layouts", "shortcodes", "benchmark-browser.html"))
+	if err != nil {
+		t.Fatalf("read benchmark browser shortcode: %v", err)
+	}
+	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens are uncached; cached input is shown separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-comparison-viewer"`, `Baseline and semedit values are compared within each target and context group`, `Negative changes are improvements`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `populateDimensionFilter(promptFilter, "prompt_variant")`, `populateDimensionFilter(instructionsFilter, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch("/data/benchmarks.json")`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
+		if !strings.Contains(string(shortcode), want) {
+			t.Errorf("benchmark browser shortcode missing %q", want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")); err != nil {
+		t.Errorf("benchmark browser page was not generated: %v", err)
+	}
+}
+
 func TestLoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
 	t.Parallel()
 
@@ -530,7 +678,7 @@ func TestDocCachedToUncachedTokenRatioFavorsHigherCachedShare(t *testing.T) {
 	}
 }
 
-func TestBenchmarkCostUsesDeclaredModelRatesWithoutUnit(t *testing.T) {
+func TestBenchmarkCostUsesDeclaredModelRatesAndCountsThinkingAsOutput(t *testing.T) {
 	t.Parallel()
 
 	run := &BenchRunResult{
@@ -555,7 +703,7 @@ func TestBenchmarkCostUsesDeclaredModelRatesWithoutUnit(t *testing.T) {
 
 	row := formatDocCostRow(run, run, nil, nil)
 	if !strings.Contains(row, "| **Cost** | 0.0007 | 0.0007 | 0% |") {
-		t.Errorf("cost row = %q, want unitless cost values", row)
+		t.Errorf("cost row = %q, want values in model credits", row)
 	}
 }
 
@@ -583,13 +731,12 @@ func TestBenchmarkCostRatesMatchDeclaredModelSchedule(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]benchmarkCostRates{
-		"Luna":                  {input: 5, cached: 0.5, output: 30},
-		"Gemini 3.5 Flash-Lite": {input: 7.5, cached: 0.75, output: 62.5},
-		"Gemini 3.6 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
-		"Gemini 3.7 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
-		"Gemini 3.8 Flash":      {input: 18.75, cached: 1.875, output: 93.75},
-		"Terra":                 {input: 50, cached: 5, output: 300},
-		"Sol":                   {input: 100, cached: 10, output: 500},
+		"GPT-6 Astra":   {input: 250, cached: 25, output: 1250},
+		"GPT-6 Sol":     {input: 50, cached: 5, output: 250},
+		"GPT-5.6 Sol":   {input: 100, cached: 10, output: 500},
+		"GPT-5.6 Terra": {input: 50, cached: 5, output: 300},
+		"GPT-6 Luna":    {input: 2.5, cached: 0.25, output: 12.5},
+		"GPT-5.6 Luna":  {input: 5, cached: 0.5, output: 30},
 	}
 	for model, want := range tests {
 		got, available := benchmarkCostRatesForModel(model)
@@ -600,6 +747,9 @@ func TestBenchmarkCostRatesMatchDeclaredModelSchedule(t *testing.T) {
 		if got != want {
 			t.Errorf("rates for %q = %#v, want %#v", model, got, want)
 		}
+	}
+	if _, available := benchmarkCostRatesForModel("Gemini 3.8 Flash"); available {
+		t.Error("model without a declared credit schedule must remain unavailable")
 	}
 }
 

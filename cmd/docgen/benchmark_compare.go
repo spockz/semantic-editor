@@ -205,16 +205,18 @@ func benchmarkRelativeCost(baseline, semedit *BenchRunResult) (float64, bool) {
 func benchmarkCostRatesForModel(model string) (benchmarkCostRates, bool) {
 	normalized := strings.NewReplacer("_", "-", " ", "-", "/", "-").Replace(strings.ToLower(strings.TrimSpace(model)))
 	switch normalized {
-	case "luna", "gpt-5.6-luna":
-		return benchmarkCostRates{input: 5, cached: 0.5, output: 30}, true
-	case "gemini-3.5-flash-lite", "gemini-3-5-flash-lite":
-		return benchmarkCostRates{input: 7.5, cached: 0.75, output: 62.5}, true
-	case "gemini-3.6-flash", "gemini-3-6-flash", "gemini-3.7-flash", "gemini-3-7-flash", "gemini-3.8-flash", "gemini-3-8-flash":
-		return benchmarkCostRates{input: 18.75, cached: 1.875, output: 93.75}, true
-	case "terra", "gpt-5.6-terra":
-		return benchmarkCostRates{input: 50, cached: 5, output: 300}, true
-	case "sol", "gpt-5.6-sol":
+	case "gpt-6-astra":
+		return benchmarkCostRates{input: 250, cached: 25, output: 1250}, true
+	case "gpt-6-sol":
+		return benchmarkCostRates{input: 50, cached: 5, output: 250}, true
+	case "gpt-5.6-sol":
 		return benchmarkCostRates{input: 100, cached: 10, output: 500}, true
+	case "gpt-5.6-terra":
+		return benchmarkCostRates{input: 50, cached: 5, output: 300}, true
+	case "gpt-6-luna":
+		return benchmarkCostRates{input: 2.5, cached: 0.25, output: 12.5}, true
+	case "gpt-5.6-luna":
+		return benchmarkCostRates{input: 5, cached: 0.5, output: 30}, true
 	default:
 		return benchmarkCostRates{}, false
 	}
@@ -283,7 +285,7 @@ weight: 21
 
 ## Metric ranges across benchmark runs
 
-Every table holds one experimental condition, context variant, and arm. **N** is the count of publishable observations with that metric. Technical provenance remains audit metadata and does not split aggregation cells. Cached input is shown raw and also as **cache-adjusted token units**: uncached input + output + reasoning + cached input / 10. **Cost** is a unitless model-specific weighted token total using rates per million tokens: (uncached input × input rate + cached input × cached rate + (reasoning + visible output) × output rate) / 1,000,000. It is omitted when the target model has no declared rate schedule.
+Every table holds one experimental condition, context variant, and arm. **N** is the count of publishable observations with that metric. Technical provenance remains audit metadata and does not split aggregation cells. Cached input is shown raw and also as **cache-adjusted token units**: uncached input + output + reasoning + cached input / 10. **Cost** is model-specific credits calculated from the per-million-token rates in ADR-0043: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. It is omitted when the target model has no declared rate schedule.
 
 [Return to best-case outcomes](/docs/benchmarks/).
 
