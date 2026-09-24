@@ -71,4 +71,4 @@ Instead of forcing the agent to make two separate tool calls (`apply_edit` $\rig
 
 * **Antigravity LSP & Tool Prioritization Guidelines** (Observed harness behavior, 2026).
 * **LSP Specification 3.17**: `textDocument/rename`, `textDocument/codeAction`, `workspace/applyEdit`.
-* **Blackwell Systems `agent-lsp`**: [GitHub agent-lsp](https://github.com/blackwell-systems/agent-lsp) — exposing LSP tools via MCP.
+* **Blackwell Systems `agent-lsp`**: [GitHub agent-lsp](https://github.com/blackwell-systems/agent-lsp): exposes LSP tools via MCP.

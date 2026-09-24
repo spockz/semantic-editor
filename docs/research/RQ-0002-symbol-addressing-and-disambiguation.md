@@ -47,5 +47,5 @@ Define a natural identifier syntax that allows unambiguous resolution without co
 ## 3. Sources & Prior Art
 
 * **Tree-sitter Query Syntax**: [Tree-sitter Pattern Matching](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries).
-* **SCIP (Source Code Intelligence Protocol)**: [Sourcegraph SCIP Specification](https://github.com/sourcegraph/scip) — hierarchical symbol naming (`scip-go`, `scip-java`).
+* **SCIP (Source Code Intelligence Protocol)**: [Sourcegraph SCIP Specification](https://github.com/sourcegraph/scip): hierarchical symbol naming (`scip-go`, `scip-java`).
 * **`gopls` Definition & Symbol RPCs**: [gopls documentation](https://pkg.go.dev/golang.org/x/tools/gopls).

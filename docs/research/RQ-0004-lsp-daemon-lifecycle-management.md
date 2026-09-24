@@ -35,6 +35,6 @@ Running heavy LSPs ephemerally on every CLI command would result in unacceptable
 
 ## 3. Sources & Prior Art
 
-* **Microsoft `multilspy`**: [GitHub multilspy](https://github.com/microsoft/multilspy) — headless multi-language server lifecycle management in Python.
-* **`gopls` Daemon Mode**: [gopls documentation](https://pkg.go.dev/golang.org/x/tools/gopls) — sharing gopls instances across processes via remote socket.
+* **Microsoft `multilspy`**: [GitHub multilspy](https://github.com/microsoft/multilspy): headless multi-language server lifecycle management in Python.
+* **`gopls` Daemon Mode**: [gopls documentation](https://pkg.go.dev/golang.org/x/tools/gopls): shares gopls instances across processes via a remote socket.
 * **Neovim / Kakoune LSP Daemons**: Architectures using persistent background servers for headless editor clients.

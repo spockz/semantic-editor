@@ -32,5 +32,5 @@ To keep agent turn latency within the target $<50\text{ms}$ flow-state threshold
 ## 3. Sources & Prior Art
 
 * **Tree-sitter Incremental Parsing**: [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/using-parsers#incremental-parsing).
-* **Aider Tree-sitter Repo Map**: [Aider Repo Map Architecture](https://aider.chat/docs/repomap.html) — ranking and extracting code symbols efficiently.
-* **Rust `ra_ap_syntax` / Rowan**: [rust-analyzer architecture](https://rust-analyzer.github.io/blog) — lossless syntax trees with fast incremental edits.
+* **Aider Tree-sitter Repo Map**: [Aider Repo Map Architecture](https://aider.chat/docs/repomap.html): ranks and extracts code symbols efficiently.
+* **Rust `ra_ap_syntax` / Rowan**: [rust-analyzer architecture](https://rust-analyzer.github.io/blog): lossless syntax trees with fast incremental edits.

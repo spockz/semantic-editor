@@ -9,7 +9,7 @@ Exposing an editing tool exclusively via the Model Context Protocol (MCP) or exc
 
 * CLI-only is fast for shell scripts and terminal agents, but lacks rich interactive discoverability in graphical agent harnesses.
 * MCP-only incurs JSON-RPC messaging overhead and cannot be invoked as a fast, scriptable 1-shot command.
-* Furthermore, due to extensive pre-training on line diffs, frontier LLMs exhibit "model inertia"—they reflexively emit text search/replace patches even when specialized MCP tools are present.
+* Furthermore, extensive pre-training on line diffs gives frontier LLMs a form of "model inertia": they reflexively emit text search/replace patches even when specialized MCP tools are available.
 
 ## Decision
 

@@ -66,7 +66,7 @@ ADRs have strict structural schemas and require index synchronization (e.g. upda
 
 ## 4. Sources & Prior Art
 
-* **Marksman (Markdown LSP)**: [GitHub marksman](https://github.com/artempyanykh/marksman) — document symbol resolution and cross-file link renaming.
+* **Marksman (Markdown LSP)**: [GitHub marksman](https://github.com/artempyanykh/marksman): document symbol resolution and cross-file link renaming.
 * **Mermaid Parser & AST**: [mermaid.js documentation](https://mermaid.js.org) and [tree-sitter-mermaid](https://github.com/monaqa/tree-sitter-mermaid).
-* **ADR Tools by Nat Pryce**: [GitHub adr-tools](https://github.com/npryce/adr-tools) — CLI for managing ADR creation and index linking.
-* **Unified / Remark (`mdast`)**: [unifiedjs.com](https://unifiedjs.com) — Concrete Syntax Tree parser and transformer ecosystem for Markdown.
+* **ADR Tools by Nat Pryce**: [GitHub adr-tools](https://github.com/npryce/adr-tools): CLI for managing ADR creation and index linking.
+* **Unified / Remark (`mdast`)**: [unifiedjs.com](https://unifiedjs.com): Concrete Syntax Tree parser and transformer ecosystem for Markdown.

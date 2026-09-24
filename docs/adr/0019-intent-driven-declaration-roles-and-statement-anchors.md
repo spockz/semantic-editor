@@ -31,10 +31,10 @@ The agent emits its declaration intent in a **single tool turn** by specifying a
   "name": "semantic_insert_decl",
   "description": "Insert a top-level Go declaration using its semantic role. The host engine deterministically resolves idiomatic placement and formatting without requiring spatial coordinates.",
   "inputSchema": {
-    "file": "string (required) — relative path to source file",
-    "role": "string (required) — semantic role: 'sentinel_error', 'constant', 'global_variable', 'type', 'constructor', 'init_registration'",
-    "source": "string (required) — declaration source code",
-    "access_modifier": "string (optional, default 'infer') — 'public', 'private', or 'infer'",
+    "file": "string (required): relative path to source file",
+    "role": "string (required): semantic role: 'sentinel_error', 'constant', 'global_variable', 'type', 'constructor', 'init_registration'",
+    "source": "string (required): declaration source code",
+    "access_modifier": "string (optional, default 'infer'): 'public', 'private', or 'infer'",
     "auto_organize_imports": "bool (optional, default false)"
   }
 }
@@ -65,10 +65,10 @@ When surgical insertion inside an existing function body or control flow block i
   "name": "semantic_insert_statement",
   "description": "Insert statements into a function, method, or control structure at a semantic anchor point.",
   "inputSchema": {
-    "file": "string (required) — relative path to source file",
-    "func": "string (required) — target function or method name (e.g. 'Server.Serve')",
-    "anchor": "string (optional, default 'end') — 'start', 'end', 'before_return', 'after:<snippet>', 'before:<snippet>'",
-    "statement": "string (required) — statement source code",
+    "file": "string (required): relative path to source file",
+    "func": "string (required): target function or method name (e.g. 'Server.Serve')",
+    "anchor": "string (optional, default 'end'): 'start', 'end', 'before_return', 'after:<snippet>', 'before:<snippet>'",
+    "statement": "string (required): statement source code",
     "auto_organize_imports": "bool (optional, default false)"
   }
 }

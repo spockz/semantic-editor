@@ -42,6 +42,6 @@ If the underlying LSP strictly refuses the rename:
 
 ## 3. Sources & Prior Art
 
-* **Russ Cox's `rf` (Refactoring Tool for Go)**: [rsc.io/rf documentation](https://pkg.go.dev/rsc.io/rf) — scriptable Go transformations supporting symbol moves and inlining.
-* **OpenRewrite Structural Substitutions**: [OpenRewrite Java Recipes](https://docs.openrewrite.org) — coalescing duplicate types.
+* **Russ Cox's `rf` (Refactoring Tool for Go)**: [rsc.io/rf documentation](https://pkg.go.dev/rsc.io/rf): scriptable Go transformations supporting symbol moves and inlining.
+* **OpenRewrite Structural Substitutions**: [OpenRewrite Java Recipes](https://docs.openrewrite.org): coalescing duplicate types.
 * **Go `gorename` Conflict Detection**: [golang.org/x/tools/cmd/gorename](https://pkg.go.dev/golang.org/x/tools/cmd/gorename).

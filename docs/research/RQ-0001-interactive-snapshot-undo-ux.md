@@ -37,10 +37,10 @@ The research challenge is to present snapshot review and rollback as a native, 1
 
 ## 3. Sources & Prior Art
 
-* **Cursor Shadow Workspaces & Review Bar**: [Cursor Technical Blog](https://cursor.com/blog) — inline diff acceptance flows.
-* **Agent-LSP Simulate Mode**: [Blackwell Systems agent-lsp](https://github.com/blackwell-systems/agent-lsp) — dry-run simulation of LSP edits in memory.
+* **Cursor Shadow Workspaces & Review Bar**: [Cursor Technical Blog](https://cursor.com/blog): inline diff acceptance flows.
+* **Agent-LSP Simulate Mode**: [Blackwell Systems agent-lsp](https://github.com/blackwell-systems/agent-lsp): dry-run simulation of LSP edits in memory.
 * **Antigravity Interactive Question Modals**: Built-in harness capability for blocked, structured choice presentation.
-* **Model Context Protocol Specification**: [modelcontextprotocol.io](https://modelcontextprotocol.io) — interactive tool call semantics.
+* **Model Context Protocol Specification**: [modelcontextprotocol.io](https://modelcontextprotocol.io): interactive tool call semantics.
 
 ---
 
