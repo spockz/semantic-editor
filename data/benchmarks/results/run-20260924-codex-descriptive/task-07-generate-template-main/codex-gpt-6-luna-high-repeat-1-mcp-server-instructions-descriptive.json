@@ -1,0 +1,2916 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 69632,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:02.810513Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:02.810533Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:03.153419Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:03.153430Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+        "first_event_to_first_tool_call_ms": 7428,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 731,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'",
+                "transport_status": "unknown"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 28022
+          }
+        ],
+        "internal_turns": 3,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 731,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1048,
+        "process_start_to_first_event_ms": 156,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 79375,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 579,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'",
+            "transport_status": "unknown"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 9743,
+        "variant": "large:crypto_rand",
+        "wall_clock_ms": 28757
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 106240,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:12.568447Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.568466Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.897915Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.897927Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 25 lines)",
+        "first_event_to_first_tool_call_ms": 6569,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 569,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tlog.Fatal(err)\n}\n\ntmpl, err := template.New(\"hello\").Parse(\"Hello World {{.}}\\n\")\nif err != nil {\n\tlog.Fatal(err)\n}\n\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tlog.Fatal(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 32119
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 569,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 882,
+        "process_start_to_first_event_ms": 127,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 122646,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 526,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tlog.Fatal(err)\n}\n\ntmpl, err := template.New(\"hello\").Parse(\"Hello World {{.}}\\n\")\nif err != nil {\n\tlog.Fatal(err)\n}\n\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tlog.Fatal(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 16406,
+        "variant": "large:crypto_rand",
+        "wall_clock_ms": 32692
+      },
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "mcp_server_instructions": "descriptive",
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "repeat": 1,
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 90624,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:09:51.283219Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.283236Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.649394Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.649405Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+        "first_event_to_first_tool_call_ms": 6368,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 263,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 37038
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 263,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1451,
+        "process_start_to_first_event_ms": 133,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 117661,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 736,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+          "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+          "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 27037,
+        "variant": "small:crypto_rand",
+        "wall_clock_ms": 37302
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 91904,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:16.487970Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.487989Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.887350Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.887363Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+        "first_event_to_first_tool_call_ms": 7085,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 352,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\n\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 35268
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 352,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1144,
+        "process_start_to_first_event_ms": 116,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 106077,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 641,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\n\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 14173,
+        "variant": "small:crypto_rand",
+        "wall_clock_ms": 35624
+      },
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/d48187b57f4c6ee3e1c7b415974bedde8ba9d43b/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 88832,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:31.548463Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.548480Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.896713Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.896723Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 7896,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 754,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 37670
+          }
+        ],
+        "internal_turns": 3,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 754,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1184,
+        "process_start_to_first_event_ms": 119,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 99735,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 672,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+          "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 10903,
+        "variant": "large:default",
+        "wall_clock_ms": 38433
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 173824,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:45.332218Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.332236Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.675694Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.675703Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 7988,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 585,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "add": [
+                    "math/rand/v2"
+                  ],
+                  "file": "main.go",
+                  "remove": [
+                    "crypto/rand"
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 73265
+          }
+        ],
+        "internal_turns": 7,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 585,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2441,
+        "process_start_to_first_event_ms": 126,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 190264,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 1489,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "add": [
+                "math/rand/v2"
+              ],
+              "file": "main.go",
+              "remove": [
+                "crypto/rand"
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 7,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+          "semantic_replace_body",
+          "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+          "semantic_organize_imports",
+          "/bin/zsh -lc 'cat main.go'",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+          "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 16440,
+        "variant": "large:default",
+        "wall_clock_ms": 73859
+      },
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "mcp_server_instructions": "descriptive",
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "repeat": 1,
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 44288,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:28.570324Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.570342Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.950529Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.950541Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 10488,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 232,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 29691
+          }
+        ],
+        "internal_turns": 2,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 232,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 710,
+        "process_start_to_first_event_ms": 119,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 56778,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 380,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 2,
+        "tools_used": [
+          "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 12490,
+        "variant": "small:default",
+        "wall_clock_ms": 29924
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 92928,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:52.170041Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.170058Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.537996Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.538006Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 7275,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 283,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 32671
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 283,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 996,
+        "process_start_to_first_event_ms": 142,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 111088,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 669,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 18160,
+        "variant": "small:default",
+        "wall_clock_ms": 32958
+      },
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/d48187b57f4c6ee3e1c7b415974bedde8ba9d43b/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 196608,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:13:09.987546Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:09.987565Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:10.353835Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:10.353848Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 17322,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 837,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 45540
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 837,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1567,
+        "process_start_to_first_event_ms": 133,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 219236,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 826,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+          "/bin/zsh -lc 'cat main.go'",
+          "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 22628,
+        "variant": "large:prefer_discover_semedit",
+        "wall_clock_ms": 46381
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 163328,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:13:56.850202Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:56.850227Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 14605,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 753,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 45025
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 753,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1656,
+        "process_start_to_first_event_ms": 612,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 192860,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 1100,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+          "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 29532,
+        "variant": "large:prefer_discover_semedit",
+        "wall_clock_ms": 45783
+      },
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "mcp_server_instructions": "descriptive",
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "repeat": 1,
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 115456,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:58.505160Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.505178Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.894092Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.894107Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 9523,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 406,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 63868
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 406,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2116,
+        "process_start_to_first_event_ms": 125,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 136762,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 1495,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+          "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 21306,
+        "variant": "small:prefer_discover_semedit",
+        "wall_clock_ms": 64275
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 206848,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:11:25.171390Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.171407Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.543347Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.543364Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File main.go modified (4 lines -\u003e 15 lines)",
+        "first_event_to_first_tool_call_ms": 19454,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 230,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "greeting := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := greeting.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tlog.Fatal(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 47107
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 230,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1357,
+        "process_start_to_first_event_ms": 117,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 231348,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 875,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "high",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "greeting := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := greeting.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tlog.Fatal(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+          "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 24500,
+        "variant": "small:prefer_discover_semedit",
+        "wall_clock_ms": 47339
+      },
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/d48187b57f4c6ee3e1c7b415974bedde8ba9d43b/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 90624,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:09:51.283219Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.283236Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.649394Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:09:51.649405Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+      "first_event_to_first_tool_call_ms": 6368,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 4,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 263,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 37038
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 263,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1451,
+      "process_start_to_first_event_ms": 133,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 117661,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 736,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'Makefile'\"",
+        "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go'",
+        "/bin/zsh -lc 'gofmt -d main.go \u0026\u0026 git diff -- main.go go.mod go.sum'",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 27037,
+      "variant": "small:crypto_rand",
+      "wall_clock_ms": 37302
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 91904,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:16.487970Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.487989Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.887350Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:16.887363Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+      "first_event_to_first_tool_call_ms": 7085,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 352,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\n\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 35268
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 352,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1144,
+      "process_start_to_first_event_ms": 116,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 106077,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 641,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\n\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 14173,
+      "variant": "small:crypto_rand",
+      "wall_clock_ms": 35624
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 44288,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:28.570324Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.570342Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.950529Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:28.950541Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 10488,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 232,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 29691
+        }
+      ],
+      "internal_turns": 2,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 232,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 710,
+      "process_start_to_first_event_ms": 119,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 56778,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 380,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 2,
+      "tools_used": [
+        "/bin/zsh -lc \"sed -n '1,200p' main.go\"",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\n'\"'''\nfd, temp_name = tempfile.mkstemp(dir=path.parent, prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    os.replace(temp_name, path)\nfinally:\n    if os.path.exists(temp_name):\n        os.unlink(temp_name)\nPY\nsed -n '1,120p' main.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 12490,
+      "variant": "small:default",
+      "wall_clock_ms": 29924
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 92928,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:52.170041Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.170058Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.537996Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:52.538006Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 7275,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 283,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 32671
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 283,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 996,
+      "process_start_to_first_event_ms": 142,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 111088,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 669,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'README*'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 18160,
+      "variant": "small:default",
+      "wall_clock_ms": 32958
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 115456,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:10:58.505160Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.505178Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.894092Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:10:58.894107Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 9523,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 406,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 63868
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 406,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 2116,
+      "process_start_to_first_event_ms": 125,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 136762,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 1495,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' | sort\"",
+        "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 printf '\\\\n--- main.go ---\\\\n' \u0026\u0026 cat main.go\"",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\nold_stat = path.stat()\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, tmp_name = tempfile.mkstemp(prefix='.main.go.', dir=path.parent)\ntry:\n    with os.fdopen(fd, 'w') as tmp:\n        tmp.write(content)\n        tmp.flush()\n        os.fsync(tmp.fileno())\n    os.replace(tmp_name, path)\n    timestamp = max(old_stat.st_mtime_ns + 1, path.stat().st_mtime_ns)\n    os.utime(path, ns=(timestamp, timestamp))\n    dir_fd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dir_fd)\n    finally:\n        os.close(dir_fd)\nexcept BaseException:\n    try:\n        os.unlink(tmp_name)\n    except FileNotFoundError:\n        pass\n    raise\nPY\n\ngit diff -- main.go\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 21306,
+      "variant": "small:prefer_discover_semedit",
+      "wall_clock_ms": 64275
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 206848,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:11:25.171390Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.171407Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.543347Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:11:25.543364Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 15 lines)",
+      "first_event_to_first_tool_call_ms": 19454,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 230,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "greeting := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := greeting.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tlog.Fatal(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 47107
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 230,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1357,
+      "process_start_to_first_event_ms": 117,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 231348,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 875,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "greeting := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := greeting.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tlog.Fatal(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd\nrg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'AGENTS*.md'\"",
+        "/bin/zsh -lc 'cat main.go\ngo version\ncat go.mod'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go\ngit status --short\ngit diff -- main.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 24500,
+      "variant": "small:prefer_discover_semedit",
+      "wall_clock_ms": 47339
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 69632,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:02.810513Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:02.810533Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:03.153419Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:03.153430Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+      "first_event_to_first_tool_call_ms": 7428,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 731,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'",
+              "transport_status": "unknown"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 28022
+        }
+      ],
+      "internal_turns": 3,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 731,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1048,
+      "process_start_to_first_event_ms": 156,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 79375,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 579,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'",
+          "transport_status": "unknown"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nimport os\nimport tempfile\n\npath = 'main.go'\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"log\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tvalue, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\n\tgreeting, err := template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\")\n\tif err \"'!= nil {\n\t\tlog.Fatal(err)\n\t}\n\tif err := greeting.Execute(os.Stdout, value); err != nil {\n\t\tlog.Fatal(err)\n\t}\n}\n'\"'''\nfd, temporary_path = tempfile.mkstemp(dir='.', prefix='.main.go.')\ntry:\n    with os.fdopen(fd, 'w') as temporary_file:\n        temporary_file.write(content)\n        temporary_file.flush()\n        os.fsync(temporary_file.fileno())\n    os.replace(temporary_path, path)\nfinally:\n    if os.path.exists(temporary_path):\n        os.unlink(temporary_path)\nPY\ngofmt -w main.go\ngit diff -- main.go go.mod go.sum\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum \u0026\u0026 git diff --no-index /dev/null main.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 9743,
+      "variant": "large:crypto_rand",
+      "wall_clock_ms": 28757
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 106240,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:12.568447Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.568466Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.897915Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:12.897927Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 25 lines)",
+      "first_event_to_first_tool_call_ms": 6569,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 569,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tlog.Fatal(err)\n}\n\ntmpl, err := template.New(\"hello\").Parse(\"Hello World {{.}}\\n\")\nif err != nil {\n\tlog.Fatal(err)\n}\n\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tlog.Fatal(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 32119
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 569,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 882,
+      "process_start_to_first_event_ms": 127,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 122646,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 526,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tlog.Fatal(err)\n}\n\ntmpl, err := template.New(\"hello\").Parse(\"Hello World {{.}}\\n\")\nif err != nil {\n\tlog.Fatal(err)\n}\n\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tlog.Fatal(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 16406,
+      "variant": "large:crypto_rand",
+      "wall_clock_ms": 32692
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 88832,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:31.548463Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.548480Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.896713Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:31.896723Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 7896,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 754,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 37670
+        }
+      ],
+      "internal_turns": 3,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 754,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1184,
+      "process_start_to_first_event_ms": 119,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 99735,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 672,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"sed -n '1,200p' main.go \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+        "/bin/zsh -lc \"pwd; sed -n '1,100p' main.go; git rev-parse --show-toplevel; git status --short -- main.go go.mod go.sum\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 10903,
+      "variant": "large:default",
+      "wall_clock_ms": 38433
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 196608,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:13:09.987546Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:09.987565Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:10.353835Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:10.353848Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 17322,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 4,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 837,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 45540
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 837,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1567,
+      "process_start_to_first_event_ms": 133,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 219236,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 826,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '\"'!go.mod'\"' -g '\"'!go.sum'\"'\"",
+        "/bin/zsh -lc 'cat main.go'",
+        "/bin/zsh -lc 'git diff -- main.go \u0026\u0026 gofmt -d main.go'",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short -- main.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 22628,
+      "variant": "large:prefer_discover_semedit",
+      "wall_clock_ms": 46381
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 173824,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:12:45.332218Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.332236Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.675694Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:12:45.675703Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 7988,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 585,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "add": [
+                  "math/rand/v2"
+                ],
+                "file": "main.go",
+                "remove": [
+                  "crypto/rand"
+                ]
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 73265
+        }
+      ],
+      "internal_turns": 7,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 585,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 2441,
+      "process_start_to_first_event_ms": 126,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 190264,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 1489,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "add": [
+              "math/rand/v2"
+            ],
+            "file": "main.go",
+            "remove": [
+              "crypto/rand"
+            ]
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 7,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' | head -30 \u0026\u0026 sed -n '1,160p' main.go\"",
+        "semantic_replace_body",
+        "/bin/zsh -lc \"cat main.go \u0026\u0026 sed -n '1,30p' go.mod \u0026\u0026 rg --files | head -80\"",
+        "semantic_organize_imports",
+        "/bin/zsh -lc 'cat main.go'",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os, tempfile, time\npath = Path('docs/SUBOPTIMAL_TOOLS.md')\npath.parent.mkdir(parents=True, exist_ok=True)\nentry = \\\"\\\"\\\"# Suboptimal Tool Behavior\n\n## semantic_replace_body import resolution in \"'`main.go`\n\n- Tool: `semantic_replace_body` with `auto_organize_imports: true`\n- Target: `main.go`\n- Observed failure: the generated call `rand.Int()` was paired with `crypto/rand`, whose `Int` requires a reader and a `*big.Int`; semantic diagnostics reported the resulting compile error.\n- Workaround: used `semantic_organize_imports` to replace `crypto/rand` with `math/rand/v2`, where `rand.Int()` has the required zero-argument API.\n- Root cause: import resolution selected the wrong standard-library package for the symbol based on its name.\n\"\"\"\nold = path.read_text() if path.exists() else '\"''\ncontent = old.rstrip() + ('\\\\n\\\\n' if old else '') + entry\nfd, name = tempfile.mkstemp(dir=path.parent, prefix='.SUBOPTIMAL_TOOLS.')\ntry:\n    with os.fdopen(fd, 'w') as f:\n        f.write(content)\n        f.flush()\n        os.fsync(f.fileno())\n    if path.exists():\n        previous = path.stat().st_mtime_ns\n        now = time.time_ns()\n        os.utime(name, ns=(now, max(now, previous + 1)))\n    os.replace(name, path)\n    dfd = os.open(path.parent, os.O_RDONLY)\n    try:\n        os.fsync(dfd)\n    finally:\n        os.close(dfd)\nfinally:\n    if os.path.exists(name):\n        os.unlink(name)\nPY\ncat main.go \u0026\u0026 cat docs/SUBOPTIMAL_TOOLS.md\"",
+        "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- main.go docs/SUBOPTIMAL_TOOLS.md'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 16440,
+      "variant": "large:default",
+      "wall_clock_ms": 73859
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 163328,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:13:56.850202Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:13:56.850227Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 14605,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 753,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+              "transport_status": "unknown"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 45025
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 753,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1656,
+      "process_start_to_first_event_ms": 612,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 192860,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 1100,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "high",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+          "transport_status": "unknown"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 cat AGENTS.md 2\u003e/dev/null \u0026\u0026 cat PROJECT_BRIEF.md 2\u003e/dev/null \u0026\u0026 cat main.go\"",
+        "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat main.go \u0026\u0026 cat go.mod'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 git status --short \u0026\u0026 git diff -- main.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 29532,
+      "variant": "large:prefer_discover_semedit",
+      "wall_clock_ms": 45783
+    }
+  ],
+  "timestamp": "2026-09-24T16:41:35.364624+02:00"
+}

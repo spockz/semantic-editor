@@ -1,0 +1,1074 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 115968,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:49.221841Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.221858Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.618140Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.618152Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 6575,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 481,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 36859
+          }
+        ],
+        "internal_turns": 5,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 481,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1215,
+        "process_start_to_first_event_ms": 112,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 143692,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 346,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+          "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+          "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 27724,
+        "variant": "large:default",
+        "wall_clock_ms": 37344
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 199168,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:22:26.661950Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:26.661969Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:27.061794Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:27.061805Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 11196,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 725,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "access_modifier": "public",
+                  "auto_organize_imports": false,
+                  "file": "api/server.go",
+                  "placement": "before_symbol",
+                  "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+                  "target_symbol": "internalRun"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 66197
+          }
+        ],
+        "internal_turns": 8,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 725,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1679,
+        "process_start_to_first_event_ms": 128,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 249732,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 462,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "access_modifier": "public",
+              "auto_organize_imports": false,
+              "file": "api/server.go",
+              "placement": "before_symbol",
+              "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+              "target_symbol": "internalRun"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 8,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+          "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+          "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+          "semantic_insert_function",
+          "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+          "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+          "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 50564,
+        "variant": "large:default",
+        "wall_clock_ms": 66929
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "mcp_server_instructions": "descriptive",
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "repeat": 1,
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 88576,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:16.434787Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.434806Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.778504Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.778513Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:47.967381Z  WARN codex_analytics::client: events failed with status 503 Service Unavailable: upstream connect error or disconnect/reset before headers. reset reason: connection termination\n",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 6403,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 521,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\"",
+                "transport_status": "unknown"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 32219
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 521,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1005,
+        "process_start_to_first_event_ms": 137,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 120663,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 340,
+        "repeat": 1,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\"",
+            "transport_status": "unknown"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+          "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+          "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+          "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 32087,
+        "variant": "small:default",
+        "wall_clock_ms": 32743
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 99840,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:48.894713Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:48.894732Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.292584Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.292594Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 10756,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 434,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 41224
+          }
+        ],
+        "internal_turns": 4,
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "descriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 434,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1087,
+        "process_start_to_first_event_ms": 145,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+        "prompt_tokens": 122733,
+        "prompt_variant": "default",
+        "provenance": {
+          "binary": "44027cf7b57a0b4e"
+        },
+        "reasoning_tokens": 304,
+        "repeat": 1,
+        "semantic_tool_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+          "response": "I did not call a semantic_* tool because none was available or discoverable in the provided tool context. I used a minimal ordinary source edit instead.",
+          "turns": 1,
+          "wall_clock_ms": 5086
+        },
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-5.6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+          "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+          "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+          "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 22893,
+        "variant": "small:default",
+        "wall_clock_ms": 41660
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "txtar_path": "testdata/bench/task_04_insert_public.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/dd39d52587030a6aae7bbbf05b381f54bb386d3a/testdata/bench/task_04_insert_public.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 88576,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:16.434787Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.434806Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.778504Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:16.778513Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:47.967381Z  WARN codex_analytics::client: events failed with status 503 Service Unavailable: upstream connect error or disconnect/reset before headers. reset reason: connection termination\n",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 6403,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 4,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 521,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\"",
+              "transport_status": "unknown"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 32219
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 521,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1005,
+      "process_start_to_first_event_ms": 137,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 120663,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 340,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\"",
+          "transport_status": "unknown"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | sort\"",
+        "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- tests (read-only) ---\\\\n' \u0026\u0026 sed -n '1,240p' api/server_test.go \u0026\u0026 printf '\\\\n--- root files ---\\\\n' \u0026\u0026 rg --files -g '\"'!api/server.go'\"' -g '\"'!api/server_test.go'\"' | sort\"",
+        "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go \u0026\u0026 git status --short'",
+        "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 32087,
+      "variant": "small:default",
+      "wall_clock_ms": 32743
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 115968,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:49.221841Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.221858Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.618140Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.618152Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 6575,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 5,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 481,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 36859
+        }
+      ],
+      "internal_turns": 5,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 481,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1215,
+      "process_start_to_first_event_ms": 112,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 143692,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 346,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*AGENTS.override.md'\"' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' | head -200\"",
+        "/bin/zsh -lc \"sed -n '1,240p' api/server.go \u0026\u0026 printf '\\\\n--- router ---\\\\n' \u0026\u0026 sed -n '1,220p' api/router.go \u0026\u0026 printf '\\\\n--- project files ---\\\\n' \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'Makefile' -g 'go.mod' -g 'README*'\"",
+        "/bin/zsh -lc \"sed -n '1,240p' api/server_test.go \u0026\u0026 sed -n '1,160p' go.mod \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum \u0026\u0026 git status --short -- api/server.go go.mod go.sum'",
+        "/bin/zsh -lc \"sed -n '1,80p' api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go; git status --short --untracked-files=all -- api/server.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 27724,
+      "variant": "large:default",
+      "wall_clock_ms": 37344
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 99840,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:21:48.894713Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:48.894732Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.292584Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:21:49.292594Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 10756,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 434,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 41224
+        }
+      ],
+      "internal_turns": 4,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 434,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1087,
+      "process_start_to_first_event_ms": 145,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 122733,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 304,
+      "repeat": 1,
+      "semantic_tool_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task.",
+        "response": "I did not call a semantic_* tool because none was available or discoverable in the provided tool context. I used a minimal ordinary source edit instead.",
+        "turns": 1,
+        "wall_clock_ms": 5086
+      },
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd; rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | sort; rg -n \\\"type Server|func .*Server|private|InitServer\\\" -g '*.go' .\"",
+        "/bin/zsh -lc \"sed -n '1,160p' api/server.go; sed -n '1,120p' api/server_test.go; if [ -f PROJECT_BRIEF.md ]; then sed -n '1,200p' PROJECT_BRIEF.md; fi; if [ -f Makefile ]; then sed -n '1,200p' Makefile; fi; git status --short\"",
+        "/bin/zsh -lc \"rg --files -g '\"'!api/server_test.go'\"' -g '\"'!api/server.go'\"' | sort; command -v semedit || true; find . -maxdepth 2 -type f -perm -111 -print\"",
+        "/bin/zsh -lc 'gofmt -w api/server.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- api/server.go go.mod go.sum api/server_test.go \u0026\u0026 git status --short -- api/server.go go.mod go.sum api/server_test.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 22893,
+      "variant": "small:default",
+      "wall_clock_ms": 41660
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 199168,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-24T13:22:26.661950Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:26.661969Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:27.061794Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-24T13:22:27.061805Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 11196,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 725,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "access_modifier": "public",
+                "auto_organize_imports": false,
+                "file": "api/server.go",
+                "placement": "before_symbol",
+                "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+                "target_symbol": "internalRun"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+              "transport_status": "unknown"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 66197
+        }
+      ],
+      "internal_turns": 8,
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "descriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 725,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1679,
+      "process_start_to_first_event_ms": 128,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Prefer using semantic editor operations if applicable. When done, output DONE.",
+      "prompt_tokens": 249732,
+      "prompt_variant": "default",
+      "provenance": {
+        "binary": "44027cf7b57a0b4e"
+      },
+      "reasoning_tokens": 462,
+      "repeat": 1,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-5.6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "access_modifier": "public",
+            "auto_organize_imports": false,
+            "file": "api/server.go",
+            "placement": "before_symbol",
+            "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+            "target_symbol": "internalRun"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+          "transport_status": "unknown"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 8,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 rg -n \\\"type Server|func InitServer|private|func [a-z]\\\" --glob '*.go' .\"",
+        "/bin/zsh -lc \"sed -n '1,220p' api/server.go \u0026\u0026 printf '\\\\n--- Makefile/files ---\\\\n' \u0026\u0026 rg --files -g 'Makefile' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS*.md' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 printf '\\\\n--- git status ---\\\\n' \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"sed -n '1,160p' go.mod; printf '\\\\n--- root files ---\\\\n'; rg --files -g '\"'!go.sum'\"' -g '\"'!go.mod'\"' | sort; printf '\\\\n--- semantic operation references ---\\\\n'; rg -n \\\"semantic_insert_function|insert.*function|semedit\\\" . --glob '\"'!*.sum'\"' --glob '\"'!go.mod'\"' | head -120\"",
+        "/bin/zsh -lc \"sed -n '1,220p' api/server_test.go; sed -n '1,180p' api/router.go; sed -n '1,180p' api/router_test.go\"",
+        "semantic_insert_function",
+        "/bin/zsh -lc \"sed -n '1,120p' api/server.go \u0026\u0026 printf '\\\\n--- diff ---\\\\n' \u0026\u0026 git diff -- api/server.go \u0026\u0026 printf '\\\\n--- protected-file status ---\\\\n' \u0026\u0026 git status --short -- go.mod go.sum \u0026\u0026 printf '\\\\n--- tests ---\\\\n' \u0026\u0026 go test ./...\"",
+        "/bin/zsh -lc 'git status --short -- api/server.go \u0026\u0026 git diff --no-ext-diff -- api/server.go \u0026\u0026 git show HEAD:api/server.go'",
+        "/bin/zsh -lc \"git status --short --untracked-files=all | rg 'server.go|api/' || true; git check-ignore -v api/server.go || true\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 50564,
+      "variant": "large:default",
+      "wall_clock_ms": 66929
+    }
+  ],
+  "timestamp": "2026-09-24T16:41:35.520368+02:00"
+}
