@@ -173,6 +173,7 @@ type InsertCaseReq struct {
 	File                string
 	Func                string
 	SwitchOn            string
+	SwitchPath          string
 	Case                string
 	Placement           string
 	Anchor              string
@@ -189,6 +190,7 @@ var insertCaseParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
 	{Name: "func", CLIName: "func", JSONName: "func", Type: ParamString, Description: "name of the function containing the switch", Required: true},
 	{Name: "switch_on", CLIName: "switch-on", JSONName: "switch_on", Type: ParamString, Description: "the switch discriminant expression, e.g. 'method'; omit for tagless switch"},
+	{Name: "switch_path", CLIName: "switch-path", JSONName: "switch_path", Type: ParamString, Description: "matching-switch path such as 0 or 0.1; use a path reported by an ambiguity error"},
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "full case clause source, e.g. 'case \"foo\":\\n\\treturn bar'", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
 	{Name: "anchor", CLIName: "anchor", JSONName: "anchor", Type: ParamString, Description: "case value to insert before/after when placement is 'before' or 'after'"},
@@ -211,6 +213,9 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 	if req.SwitchOn, err = ParseString(raw, "switch_on", "switch-on", false); err != nil {
 		return req, err
 	}
+	if req.SwitchPath, err = ParseString(raw, "switch_path", "switch-path", false); err != nil {
+		return req, err
+	}
 	if req.Case, err = ParseString(raw, "case", "case", true); err != nil {
 		return req, err
 	}
@@ -231,6 +236,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 	diff, err := astedit.InsertCase(ctx, targetPath, req.Func, req.SwitchOn, req.Case, astedit.CaseOptions{
 		Placement:           astedit.CasePlacement(req.Placement),
 		AnchorCase:          req.Anchor,
+		SwitchPath:          req.SwitchPath,
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
 	if err != nil {
@@ -242,7 +248,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
 		Key:     "insert_case",
-		Summary: "Insert a new case clause into an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). Validates the case source in memory before writing.",
+		Summary: "Insert a new case clause into an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). If multiple switches match, use switch_path from the ambiguity diagnostic. Validates the case source in memory before writing.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",

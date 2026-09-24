@@ -38,6 +38,7 @@ const (
 type CaseOptions struct {
 	Placement           CasePlacement
 	AnchorCase          string
+	SwitchPath          string
 	AutoOrganizeImports bool
 }
 
@@ -102,9 +103,9 @@ func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource st
 		}
 	}
 
-	switchBody, err := locateSwitch(fset, targetFunc.Body, strings.TrimSpace(switchOn))
+	switchBody, err := locateSwitch(fset, targetFunc.Body, strings.TrimSpace(switchOn), opts.SwitchPath)
 	if err != nil {
-		return "", fmt.Errorf("%w: %s in %s", ErrSwitchNotFound, switchOn, funcName)
+		return "", fmt.Errorf("locate switch %q in %s: %w", switchOn, funcName, err)
 	}
 
 	caseTrimmed := strings.TrimSpace(caseSource)
@@ -168,7 +169,7 @@ func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource st
 	return diff, nil
 }
 
-func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn string) (*ast.BlockStmt, error) {
+func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, switchPath string) (*ast.BlockStmt, error) {
 	var canonicalTarget string
 	if targetSwitchOn != "" {
 		if parsed, err := parser.ParseExpr(targetSwitchOn); err == nil {
@@ -182,45 +183,159 @@ func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn strin
 		}
 	}
 
-	var foundBody *ast.BlockStmt
-	ast.Inspect(body, func(n ast.Node) bool {
-		if foundBody != nil {
-			return false
+	matches := collectSwitchMatches(fset, body, targetSwitchOn, canonicalTarget)
+	if len(matches) == 0 {
+		return nil, ErrSwitchNotFound
+	}
+	if switchPath != "" {
+		parts, err := parseSwitchPath(switchPath)
+		if err != nil {
+			return nil, err
 		}
+		current := matches
+		var selected switchMatch
+		for depth, part := range parts {
+			index := part
+			if depth > 0 {
+				index-- // The parent switch occupies index zero at each nested level.
+			}
+			if index < 0 || index >= len(current) {
+				return nil, fmt.Errorf("switch path %q does not exist; matching paths: %s", switchPath, formatSwitchPaths(matches))
+			}
+			selected = current[index]
+			current = selected.children
+		}
+		return selected.body, nil
+	}
+	if countSwitchMatches(matches) > 1 {
+		return nil, fmt.Errorf("%w for %q; candidates:\n%s\nselect one with switch_path", ErrSwitchAmbiguous, targetSwitchOn, formatSwitchCandidates(matches, fset))
+	}
+	return matches[0].body, nil
+}
+
+func countSwitchMatches(matches []switchMatch) int {
+	count := len(matches)
+	for _, match := range matches {
+		count += countSwitchMatches(match.children)
+	}
+	return count
+}
+
+type switchMatch struct {
+	path     string
+	body     *ast.BlockStmt
+	children []switchMatch
+}
+
+func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) []switchMatch {
+	var matches []switchMatch
+	ast.Inspect(body, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.SwitchStmt:
+			matched := false
 			if targetSwitchOn == "" {
-				if s.Tag == nil {
-					foundBody = s.Body
-					return false
-				}
+				matched = s.Tag == nil
 			} else if s.Tag != nil {
 				var buf bytes.Buffer
 				if err := format.Node(&buf, fset, s.Tag); err == nil {
-					if buf.String() == canonicalTarget || strings.TrimSpace(buf.String()) == canonicalTarget {
-						foundBody = s.Body
-						return false
-					}
+					matched = buf.String() == canonicalTarget || strings.TrimSpace(buf.String()) == canonicalTarget
 				}
+			}
+			if matched {
+				matches = append(matches, switchMatch{body: s.Body})
+				return false
 			}
 		case *ast.TypeSwitchStmt:
 			if targetSwitchOn != "" && s.Assign != nil {
-				var buf bytes.Buffer
-				if err := format.Node(&buf, fset, s.Assign); err == nil {
-					if strings.Contains(buf.String(), canonicalTarget) || buf.String() == canonicalTarget {
-						foundBody = s.Body
-						return false
+				var selector ast.Expr
+				if assign, ok := s.Assign.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 {
+					if assertion, ok := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
+						selector = assertion.X
 					}
+				}
+				var buf bytes.Buffer
+				if selector != nil && format.Node(&buf, fset, selector) == nil && buf.String() == canonicalTarget {
+					matches = append(matches, switchMatch{body: s.Body})
+					return false
 				}
 			}
 		}
 		return true
 	})
-
-	if foundBody == nil {
-		return nil, ErrSwitchNotFound
+	for i := range matches {
+		matches[i].children = collectSwitchMatches(fset, matches[i].body, targetSwitchOn, canonicalTarget)
 	}
-	return foundBody, nil
+	assignSwitchPaths(matches, "")
+	return matches
+}
+
+func assignSwitchPaths(matches []switchMatch, prefix string) {
+	for i := range matches {
+		if prefix == "" {
+			matches[i].path = fmt.Sprint(i)
+		} else {
+			matches[i].path = prefix + fmt.Sprint(i+1)
+		}
+		assignSwitchPaths(matches[i].children, matches[i].path+".")
+	}
+}
+
+func parseSwitchPath(path string) ([]int, error) {
+	var parts []int
+	for part := range strings.SplitSeq(path, ".") {
+		var index int
+		if part == "" {
+			return nil, fmt.Errorf("invalid switch path %q: expected dot-separated non-negative indexes", path)
+		}
+		if _, err := fmt.Sscanf(part, "%d", &index); err != nil || index < 0 || fmt.Sprint(index) != part {
+			return nil, fmt.Errorf("invalid switch path %q: expected dot-separated non-negative indexes", path)
+		}
+		parts = append(parts, index)
+	}
+	return parts, nil
+}
+
+func formatSwitchPaths(matches []switchMatch) string {
+	var paths []string
+	var visit func([]switchMatch)
+	visit = func(current []switchMatch) {
+		for _, match := range current {
+			paths = append(paths, match.path)
+			visit(match.children)
+		}
+	}
+	visit(matches)
+	return strings.Join(paths, ", ")
+}
+
+func formatSwitchCandidates(matches []switchMatch, fset *token.FileSet) string {
+	var lines []string
+	var visit func([]switchMatch, int)
+	visit = func(current []switchMatch, depth int) {
+		for _, match := range current {
+			var labels []string
+			for _, stmt := range match.body.List {
+				clause, ok := stmt.(*ast.CaseClause)
+				if !ok {
+					continue
+				}
+				if clause.List == nil {
+					labels = append(labels, "default")
+					continue
+				}
+				for _, expr := range clause.List {
+					var buf bytes.Buffer
+					if format.Node(&buf, fset, expr) == nil {
+						labels = append(labels, buf.String())
+					}
+				}
+			}
+			lines = append(lines, fmt.Sprintf("  %s%s  cases: %s", strings.Repeat("  ", depth), match.path, strings.Join(labels, ", ")))
+			visit(match.children, depth+1)
+		}
+	}
+	visit(matches, 0)
+	return strings.Join(lines, "\n")
 }
 
 func calculateCaseOffset(fset *token.FileSet, content []byte, switchBody *ast.BlockStmt, opts CaseOptions) (int, error) {

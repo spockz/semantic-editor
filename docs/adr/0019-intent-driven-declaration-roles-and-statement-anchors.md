@@ -85,6 +85,10 @@ When surgical insertion inside an existing function body or control flow block i
 
 Maintained as a diagnostic inspection tool for complex, deeply nested control structures (or multi-language discovery) when direct pattern matching is ambiguous.
 
+### 4. Ambiguous Structural Target Resolution
+
+A structural selector may match multiple nodes within its declared owner, even after file, package, type, and function scopes have been selected. A command must not choose the first matching node implicitly. It must fail before mutation and report each candidate with its enclosing structural context and a selector or handle that can be supplied to choose that candidate on retry. The selector syntax may be specific to the operation; the shared contract is candidate reporting, zero mutation on ambiguity, and explicit candidate selection.
+
 ---
 
 ## Invariants
@@ -93,10 +97,11 @@ Maintained as a diagnostic inspection tool for complex, deeply nested control st
 2. **Canonical Section Layout**: The engine must enforce language-idiomatic file organization (imports $\to$ constants $\to$ sentinel errors $\to$ types $\to$ constructors $\to$ methods $\to$ private helpers).
 3. **Dead Code Prevention**: Inserting with `anchor: "end"` must not place statements after a terminal `return` or `panic`.
 4. **Atomic Disk Mutation**: All writes execute through `pipeline.WriteAtomic` with advancing timestamps ([ADR-0010](0010-disk-synchronization-and-cache-invalidation.md)).
+5. **Explicit Structural Disambiguation**: A structural operation that finds multiple targets within its selected owner must report candidates and require an explicit selector or handle; ambiguity must not mutate the workspace.
 
 ---
 
 ## Consequences
 
 * **Positive**: Minimizes agent token expenditure; eliminates spatial coordinate reasoning; preserves idiomatic code layout automatically; provides a seamless single-turn workflow for common additions.
-* **Negative**: Complex non-standard file layouts may require explicit anchor patterns rather than generic semantic roles.
+* **Negative**: Complex non-standard file layouts may require explicit anchor patterns rather than generic semantic roles. Structural selectors that match multiple nodes require a candidate-selection retry.
