@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"semedit/internal/mcp"
+	"semedit/internal/pipeline"
 	"strings"
 )
 
@@ -40,13 +42,50 @@ func agyToolFunctionalStatus(status string) ToolCallStatus {
 	}
 }
 
+func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) {
+	res.Turns = resp.NumTurns
+	res.PromptTokens = resp.Usage.InputTokens
+	res.CachedPromptTokens = resp.Usage.CacheReadTokens
+	uncached := resp.Usage.InputTokens - resp.Usage.CacheReadTokens
+	if uncached < 0 {
+		uncached = resp.Usage.InputTokens
+	}
+	res.UncachedPromptTokens = uncached
+	res.OutputTokens = resp.Usage.OutputTokens
+	res.ReasoningTokens = resp.Usage.ThinkingTokens
+	res.agentResponse = strings.TrimSpace(resp.Response)
+	if resp.ConversationID != "" {
+		extractAgyTools(resp.ConversationID, res)
+	}
+}
+
 func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
 	agyBin := "/Users/alessandro/.local/bin/agy"
 	if _, err := os.Stat(agyBin); err != nil {
 		agyBin = "agy"
 	}
 
-	absWorkDir, _ := filepath.Abs(workDir)
+	absWorkDir, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Agy workspace: %w", err)
+	}
+	repositoryRoot, err := filepath.Abs(filepath.Dir(filepath.Dir(r.baseScratchDir)))
+	if err != nil {
+		return "", fmt.Errorf("resolve repository root for Agy MCP: %w", err)
+	}
+	env, err := fixtureGoEnvironment(ctx, workDir)
+	if err != nil {
+		return "", fmt.Errorf("prepare Agy Go environment: %w", err)
+	}
+	res.MCPServerInstructions = r.mcpServerInstructionsMode
+	if err := writeAgyMCPConfig(absWorkDir, repositoryRoot, res.Arm, res.MCPServerInstructions, env); err != nil {
+		return "", fmt.Errorf("configure Agy MCP server: %w", err)
+	}
+	configPath := filepath.Join(absWorkDir, ".agents", "mcp_config.json")
+	defer func() {
+		_ = os.Remove(configPath)
+	}()
+
 	args := []string{"--output-format", "json", "--dangerously-skip-permissions", "--add-dir", absWorkDir}
 	if resumeID != "" {
 		args = append(args, "--conversation", resumeID)
@@ -61,42 +100,25 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	fullPrompt := fmt.Sprintf("Working directory is %s.\n%s", absWorkDir, prompt)
 	args = append(args, "-p", fullPrompt)
 
-	// #nosec G204 -- external driver invocation controlled by benchmark harness
 	cmd := exec.CommandContext(ctx, agyBin, args...)
 	cmd.Dir = workDir
-	cmd.Env = os.Environ()
+	cmd.Env = env
 
-	out, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("agy exec error: %w (output: %s)", err, string(out))
-	}
-
+	out, runErr := cmd.Output()
 	var resp AgyResponse
-	if err := json.Unmarshal(out, &resp); err != nil {
-		return "", fmt.Errorf("unmarshal agy json response: %w (raw: %s)", err, string(out))
+	decodeErr := json.Unmarshal(out, &resp)
+	if decodeErr == nil {
+		recordAgyResponseMetrics(res, resp)
 	}
-
+	if runErr != nil {
+		return "", fmt.Errorf("agy exec error: %w (output: %s)", runErr, string(out))
+	}
+	if decodeErr != nil {
+		return "", fmt.Errorf("unmarshal agy json response: %w (raw: %s)", decodeErr, string(out))
+	}
 	if resp.Status != "SUCCESS" && resp.Error != "" {
 		return "", fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error)
 	}
-
-	res.Turns = resp.NumTurns
-	res.PromptTokens = resp.Usage.InputTokens
-	res.CachedPromptTokens = resp.Usage.CacheReadTokens
-	uncached := resp.Usage.InputTokens - resp.Usage.CacheReadTokens
-	if uncached < 0 {
-		uncached = resp.Usage.InputTokens
-	}
-	res.UncachedPromptTokens = uncached
-	res.OutputTokens = resp.Usage.OutputTokens
-	res.ReasoningTokens = resp.Usage.ThinkingTokens
-	res.agentResponse = strings.TrimSpace(resp.Response)
-
-	// Inspect transcript for tools used
-	if resp.ConversationID != "" {
-		extractAgyTools(resp.ConversationID, res)
-	}
-
 	if resp.ConversationID == "" {
 		return "", fmt.Errorf("agy did not emit a conversation ID")
 	}
@@ -222,4 +244,50 @@ func parseAgyTranscript(data []byte, res *RunResult) {
 	res.MCPLoadTurns = mcpLoadTurns
 	res.ToolCount = len(res.ToolCalls)
 	refreshMCPVerified(res)
+}
+
+func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {
+	configDir := filepath.Join(workDir, ".agents")
+	if err := os.MkdirAll(configDir, 0o750); err != nil {
+		return fmt.Errorf("create Agy MCP config directory: %w", err)
+	}
+
+	configPath := filepath.Join(configDir, "mcp_config.json")
+	if _, err := os.Lstat(configPath); err == nil {
+		return fmt.Errorf("Agy fixture already contains %s", configPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect Agy MCP config path: %w", err)
+	}
+
+	args := []string{"mcp", "--profile", "full"}
+	disabled := arm == ArmBaseline
+	if !disabled {
+		switch mode {
+		case MCPServerInstructionsNone:
+		case MCPServerInstructionsDescriptive:
+			args = append(args, "--instructions", mcp.DescriptiveInstructions)
+		case MCPServerInstructionsPrescriptive:
+			args = append(args, "--instructions", mcp.PrescriptiveInstructions)
+		default:
+			return fmt.Errorf("unsupported MCP server instruction mode %q", mode)
+		}
+	}
+
+	server := map[string]any{
+		"command":  filepath.Join(repositoryRoot, "bin", "semedit-next"),
+		"args":     args,
+		"cwd":      workDir,
+		"env":      environmentMap(env),
+		"disabled": disabled,
+	}
+	data, err := json.MarshalIndent(map[string]any{
+		"mcpServers": map[string]any{"semedit": server},
+	}, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode Agy MCP config: %w", err)
+	}
+	if err := pipeline.WriteAtomic(configPath, data); err != nil {
+		return fmt.Errorf("write Agy MCP config: %w", err)
+	}
+	return nil
 }

@@ -4,10 +4,12 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io/fs"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -34,19 +36,38 @@ const (
 	HarnessControl  HarnessType = "control"
 )
 
+func shouldRetainWorkDir(ctx context.Context, runErr error) bool {
+	if ctx.Err() != nil || errors.Is(runErr, context.DeadlineExceeded) {
+		return true
+	}
+	var exitErr *exec.ExitError
+	return errors.As(runErr, &exitErr) && exitErr.ExitCode() == -1
+}
+
 // ExecuteAgentDriver runs a task via an external harness (codex or agy) and captures telemetry.
 func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Target, arm ArmType, variant string) (*RunResult, error) {
 	start := time.Now()
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
 
-	// #nosec G703,G301 -- ephemeral test harness work directory
+	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
 	if err := os.MkdirAll(workDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create work dir: %w", err)
 	}
+	var result *RunResult
+	retainWorkDir := false
 	defer func() {
-		// #nosec G703 -- cleanup ephemeral test harness work directory
-		_ = os.RemoveAll(workDir)
+		if !retainWorkDir {
+			// #nosec G703 -- cleanup ephemeral test harness work directory
+			_ = os.RemoveAll(workDir)
+			return
+		}
+		if result != nil {
+			if result.Provenance == nil {
+				result.Provenance = make(ProvenanceSet)
+			}
+			result.Provenance["retained_working_directory"] = workDir
+		}
 	}()
 
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
@@ -88,6 +109,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		Arm:                   arm,
 		BeforeState:           beforeContent,
 	}
+	result = res
 
 	baseInstruction := task.Metadata.Instruction
 
@@ -122,24 +144,30 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	var sessionID string
 	switch target.Harness {
 	case string(HarnessCodex):
-		var runErr error
-		sessionID, runErr = r.runCodex(ctx, workDir, target, prompt, res, "")
-		if runErr != nil {
-			res.Error = fmt.Sprintf("codex execution: %v", runErr)
+		sessionID, err = r.runCodex(ctx, workDir, target, prompt, res, "")
+		if err != nil {
+			res.WallClock = time.Since(start)
+			retainWorkDir = shouldRetainWorkDir(ctx, err)
+			res.Error = fmt.Sprintf("codex execution: %v", err)
+			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
 			return res, nil
 		}
 	case string(HarnessAgy):
-		var runErr error
-		sessionID, runErr = r.runAgy(ctx, workDir, target, prompt, res, "")
-		if runErr != nil {
-			res.Error = fmt.Sprintf("agy execution: %v", runErr)
+		sessionID, err = r.runAgy(ctx, workDir, target, prompt, res, "")
+		if err != nil {
+			res.WallClock = time.Since(start)
+			retainWorkDir = shouldRetainWorkDir(ctx, err)
+			res.Error = fmt.Sprintf("agy execution: %v", err)
+			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
 			return res, nil
 		}
 	case string(HarnessOpenCode):
-		var runErr error
-		sessionID, runErr = r.runOpenCode(ctx, workDir, target, prompt, res, "")
-		if runErr != nil {
-			res.Error = fmt.Sprintf("opencode execution: %v", runErr)
+		sessionID, err = r.runOpenCode(ctx, workDir, target, prompt, res, "")
+		if err != nil {
+			res.WallClock = time.Since(start)
+			retainWorkDir = shouldRetainWorkDir(ctx, err)
+			res.Error = fmt.Sprintf("opencode execution: %v", err)
+			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
 			return res, nil
 		}
 	default:
@@ -148,7 +176,10 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	res.WallClock = time.Since(start)
 
 	if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, res); err != nil {
+		res.WallClock = time.Since(start)
+		retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = err.Error()
+		res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
 		return res, nil
 	}
 	res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
@@ -169,12 +200,23 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 			sessionID, runErr = r.runOpenCode(ctx, workDir, target, followup, turn, sessionID)
 		}
 		if runErr != nil {
+			turn.WallClock = time.Since(turnStarted)
+			turn.Error = runErr.Error()
 			res.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
+			res.WallClock = time.Since(start)
+			retainWorkDir = shouldRetainWorkDir(ctx, runErr)
+			mergeTurn(res, turn)
+			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
 			break
 		}
 		turn.WallClock = time.Since(turnStarted)
 		if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, turn); err != nil {
+			turn.Error = err.Error()
 			res.Error = err.Error()
+			res.WallClock = time.Since(start)
+			retainWorkDir = shouldRetainWorkDir(ctx, err)
+			mergeTurn(res, turn)
+			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
 			break
 		}
 		res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
@@ -343,7 +385,9 @@ func mergeTurn(total, turn *RunResult) {
 	total.UncachedPromptTokens += turn.UncachedPromptTokens
 	total.OutputTokens += turn.OutputTokens
 	total.ReasoningTokens += turn.ReasoningTokens
-	total.Oracle, total.Success = turn.Oracle, turn.Success
+	if turn.Oracle != nil {
+		total.Oracle, total.Success = turn.Oracle, turn.Success
+	}
 }
 
 type workspaceSnapshot map[string][sha256.Size]byte
