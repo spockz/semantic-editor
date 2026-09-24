@@ -20,6 +20,7 @@ func writeProbeTool(t *testing.T, path, body string) {
 }
 
 func TestProbeHaskellToolchainRequiresMatchingHLSGHC(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	ghc := filepath.Join(root, "ghc")
 	hls := filepath.Join(root, "hls")
@@ -32,6 +33,7 @@ func TestProbeHaskellToolchainRequiresMatchingHLSGHC(t *testing.T) {
 }
 
 func TestProbeHaskellToolchainRequiresIdentifiableVersions(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	ghc := filepath.Join(root, "ghc")
 	hls := filepath.Join(root, "hls")

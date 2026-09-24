@@ -27,7 +27,7 @@ var replaceBodyParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "function or method name, e.g. 'Foo' or '(*T).Foo'", Required: true},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
 }
 
 func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
@@ -46,7 +46,7 @@ func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
 	if req.Body, err = ParseString(raw, "body", "body", true); err != nil {
 		return req, err
 	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", false); err != nil {
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, false); err != nil {
 		return req, err
 	}
 	return req, nil
@@ -80,7 +80,7 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 			text := fmt.Sprintf("Successfully replaced body of %s in %s.\n%s", res.Symbol, res.Display, res.Diff)
 			return AppendDiagnosticDelta(text, res.Delta), nil
 		},
-		ExampleRaw: map[string]any{"file": "api/server.go", "symbol": "Server.Start", "body": "return nil"},
+		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
 		Batchable:  true,
 	}
 }
@@ -113,7 +113,7 @@ var scaffoldFileParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path for the new file", Required: true},
 	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')"},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "replace existing file (default false)"},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "no-op for new files; present for schema uniformity"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "no-op for new files; present for schema uniformity"},
 }
 
 func parseScaffoldFile(raw map[string]any) (ScaffoldFileReq, error) {
@@ -162,7 +162,7 @@ func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 		Format: func(res ScaffoldFileRes) (string, error) {
 			return fmt.Sprintf("Successfully scaffolded %s with package %s.", res.Display, res.Package), nil
 		},
-		ExampleRaw: map[string]any{"file": "api/server.go"},
+		ExampleRaw: map[string]any{"file": wireExampleFile},
 		Batchable:  true,
 	}
 }
@@ -194,7 +194,7 @@ var insertCaseParams = []ParameterContract{
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "full case clause source, e.g. 'case \"foo\":\\n\\treturn bar'", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
 	{Name: "anchor", CLIName: "anchor", JSONName: "anchor", Type: ParamString, Description: "case value to insert before/after when placement is 'before' or 'after'"},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "run goimports after insertion (default false)"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after insertion (default false)"},
 }
 
 func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
@@ -225,7 +225,7 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 	if req.Anchor, err = ParseString(raw, "anchor", "anchor", false); err != nil {
 		return req, err
 	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", false); err != nil {
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, false); err != nil {
 		return req, err
 	}
 	return req, nil
@@ -258,7 +258,7 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 			backend.LanguageGo: runInsertCase,
 		},
 		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": "api/server.go", "func": "Serve", "case": "case \"stop\":\n\treturn nil"},
+		ExampleRaw: map[string]any{"file": wireExampleFile, "func": "Serve", "case": "case \"stop\":\n\treturn nil"},
 		Batchable:  true,
 	}
 }

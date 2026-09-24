@@ -110,6 +110,8 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	return s
 }
 
+const schemaPropertiesKey = "properties"
+
 type jsonRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id,omitempty"`
@@ -229,7 +231,7 @@ func (s *Server) listTools() []map[string]any {
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", "description": "Reload the semedit MCP server after promotion and announce updated tools.",
-			"inputSchema":  map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false},
+			"inputSchema":  map[string]any{"type": "object", schemaPropertiesKey: map[string]any{}, "additionalProperties": false},
 			"outputSchema": reloadOutputSchema(),
 		})
 	}
@@ -248,7 +250,7 @@ func toolSchema(entry operation.Entry) map[string]any {
 func standardOutputSchema(resultSchema map[string]any) map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"result":          resultSchema,
 			"metrics":         metricsOutputSchema(),
 			"session_metrics": sessionMetricsOutputSchema(),
@@ -260,12 +262,12 @@ func standardOutputSchema(resultSchema map[string]any) map[string]any {
 func metricsOutputSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"schema_version": map[string]any{"type": "integer"},
 			"total_ms":       map[string]any{"type": "integer"},
 			"phases": map[string]any{
 				"type":                 "object",
-				"additionalProperties": map[string]any{"type": "object", "properties": map[string]any{"count": map[string]any{"type": "integer"}, "duration_ms": map[string]any{"type": "integer"}}},
+				"additionalProperties": map[string]any{"type": "object", schemaPropertiesKey: map[string]any{"count": map[string]any{"type": "integer"}, "duration_ms": map[string]any{"type": "integer"}}},
 			},
 		},
 	}
@@ -274,7 +276,7 @@ func metricsOutputSchema() map[string]any {
 func sessionMetricsOutputSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"server_start_to_initialize_ms":        map[string]any{"type": "integer"},
 			"initialize_to_first_semantic_call_ms": map[string]any{"type": "integer"},
 		},
@@ -284,7 +286,7 @@ func sessionMetricsOutputSchema() map[string]any {
 func batchOutputSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
 			"results": map[string]any{
 				"type":  "array",
@@ -300,7 +302,7 @@ func batchOutputSchema() map[string]any {
 func batchResultSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"tool":   map[string]any{"type": "string"},
 			"symbol": map[string]any{"type": "string"},
 			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
@@ -314,7 +316,7 @@ func batchResultSchema() map[string]any {
 func diagnosticDeltaSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"before":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"after":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"net_delta":   map[string]any{"type": "integer"},
@@ -329,11 +331,11 @@ func diagnosticDeltaSchema() map[string]any {
 func reloadOutputSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
-		"properties": map[string]any{
+		schemaPropertiesKey: map[string]any{
 			"result": map[string]any{
-				"type":       "object",
-				"properties": map[string]any{"status": map[string]any{"const": "reloading"}},
-				"required":   []string{"status"},
+				"type":              "object",
+				schemaPropertiesKey: map[string]any{"status": map[string]any{"const": "reloading"}},
+				"required":          []string{"status"},
 			},
 		},
 		"required": []string{"result"},
@@ -365,7 +367,7 @@ func operationInputSchema(entry operation.Entry) map[string]any {
 			required = append(required, param.JSONName)
 		}
 	}
-	schema := map[string]any{"type": "object", "properties": properties}
+	schema := map[string]any{"type": "object", schemaPropertiesKey: properties}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -377,7 +379,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 	for _, entry := range entries {
 		branches = append(branches, map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			schemaPropertiesKey: map[string]any{
 				"tool":   map[string]any{"const": entry.MCPName},
 				"params": operationInputSchema(entry),
 			},
@@ -389,7 +391,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta.",
 		"inputSchema": map[string]any{
 			"type": "object",
-			"properties": map[string]any{
+			schemaPropertiesKey: map[string]any{
 				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 			},

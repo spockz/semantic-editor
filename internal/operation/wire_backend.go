@@ -15,6 +15,22 @@ import (
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
+
+const (
+	wireCLITrustWorkspace      = "trust-workspace"
+	wireJDTLSHome              = "jdtls_home"
+	wireImportMaven            = "import_maven"
+	wireCLIAutoOrganizeImports = "auto-organize-imports"
+	wireAccessModifier         = "access_modifier"
+)
+
+const (
+	wireTrustWorkspace      = "trust_workspace"
+	wireAutoOrganizeImports = "auto_organize_imports"
+	wireExampleFile         = "api/server.go"
+	wireTargetSymbol        = "target_symbol"
+)
+
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell"}
 
 // LookupReq requests symbol coordinates through the selected language backend.
@@ -73,10 +89,10 @@ var lookupParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path to constrain search", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true and supports read-only lookup only)", Type: ParamString, Enums: languageEnums},
-	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
-	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
 	{Name: "metals_home", CLIName: "metals-home", JSONName: "metals_home", Description: "Explicit preinstalled pinned Metals distribution home required for Scala lookup", Type: ParamString},
 	{Name: "metals_bin", CLIName: "metals-bin", JSONName: "metals_bin", Description: "Direct pinned Metals executable, alternative to metals_home", Type: ParamString},
 	{Name: "java_version", CLIName: "java-version", JSONName: "java_version", Description: "Recorded Java major version required for Scala lookup", Type: ParamString},
@@ -92,21 +108,21 @@ var renameParams = []ParameterContract{
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path containing the declaration to disambiguate scope", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and workspace trust)", Type: ParamString, Enums: languageEnums},
-	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
-	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
-	{Name: "auto_organize_imports", CLIName: "", JSONName: "auto_organize_imports", Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
 }
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional file or directory path to check and format", Type: ParamString, Default: "."},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java source file; required for Java verification", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
-	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
-	{Name: "jdtls_home", CLIName: "jdtls-home", JSONName: "jdtls_home", Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: "import_maven", CLIName: "import-maven", JSONName: "import_maven", Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
 	{Name: "format_selected_file", CLIName: "format-selected-file", JSONName: "format_selected_file", Description: "Apply JDT LS formatting to the selected Java file", Type: ParamBoolean, Default: false},
 	{Name: "organize_imports", CLIName: "organize-imports", JSONName: "organize_imports", Description: "Apply bounded JDT LS source.organizeImports to the selected Java file", Type: ParamBoolean, Default: false},
 }
@@ -127,11 +143,11 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 	if err != nil {
 		return LookupReq{}, err
 	}
-	trusted, err := ParseBool(raw, "trust_workspace", "trust-workspace", false)
+	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
 	if err != nil {
 		return LookupReq{}, err
 	}
-	jdtlsHome, err := ParseString(raw, "jdtls_home", "jdtls-home", false)
+	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
 	if err != nil {
 		return LookupReq{}, err
 	}
@@ -139,7 +155,7 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 	if err != nil {
 		return LookupReq{}, err
 	}
-	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
+	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
 	if err != nil {
 		return LookupReq{}, err
 	}
@@ -213,11 +229,11 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 	if err != nil {
 		return RenameReq{}, err
 	}
-	trusted, err := ParseBool(raw, "trust_workspace", "trust-workspace", false)
+	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
 	if err != nil {
 		return RenameReq{}, err
 	}
-	jdtlsHome, err := ParseString(raw, "jdtls_home", "jdtls-home", false)
+	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
 	if err != nil {
 		return RenameReq{}, err
 	}
@@ -225,11 +241,11 @@ func parseRename(raw map[string]any) (RenameReq, error) {
 	if err != nil {
 		return RenameReq{}, err
 	}
-	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
+	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
 	if err != nil {
 		return RenameReq{}, err
 	}
-	organizeImports, err := ParseBool(raw, "auto_organize_imports", "", true)
+	organizeImports, err := ParseBool(raw, wireAutoOrganizeImports, "", true)
 	if err != nil {
 		return RenameReq{}, err
 	}
@@ -265,11 +281,11 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
-	trusted, err := ParseBool(raw, "trust_workspace", "trust-workspace", false)
+	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
 	if err != nil {
 		return VerifyReq{}, err
 	}
-	jdtlsHome, err := ParseString(raw, "jdtls_home", "jdtls-home", false)
+	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
 	if err != nil {
 		return VerifyReq{}, err
 	}
@@ -277,7 +293,7 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
-	importMaven, err := ParseBool(raw, "import_maven", "import-maven", false)
+	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
 	if err != nil {
 		return VerifyReq{}, err
 	}
@@ -424,10 +440,10 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 		},
 		Format: formatLookup,
 		ExampleRaw: map[string]any{
-			"symbol":          "Server.Start",
-			"file":            "api/server.go",
-			"language":        "auto",
-			"trust_workspace": false,
+			"symbol":           "Server.Start",
+			"file":             wireExampleFile,
+			"language":         "auto",
+			wireTrustWorkspace: false,
 		},
 	}
 }
@@ -452,8 +468,8 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 		ExampleRaw: map[string]any{
 			"symbol":                "Server.Start",
 			"to":                    "Serve",
-			"file":                  "api/server.go",
-			"auto_organize_imports": true,
+			"file":                  wireExampleFile,
+			wireAutoOrganizeImports: true,
 		},
 	}
 }
@@ -473,9 +489,9 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 		},
 		Format: formatVerify,
 		ExampleRaw: map[string]any{
-			"path":            ".",
-			"language":        "go",
-			"trust_workspace": false,
+			"path":             ".",
+			"language":         "go",
+			wireTrustWorkspace: false,
 		},
 	}
 }

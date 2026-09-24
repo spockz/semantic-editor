@@ -313,6 +313,8 @@ func calculateInsertionOffset(fset *token.FileSet, fileNode *ast.File, content [
 				return fset.Position(privateDecls[len(privateDecls)-1].End()).Offset, nil
 			}
 			return len(content), nil
+		default:
+			return 0, fmt.Errorf("invalid grouped placement %q", opts.Placement)
 		}
 	}
 

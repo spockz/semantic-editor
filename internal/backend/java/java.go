@@ -102,6 +102,10 @@ type JavaSession interface {
 // (context.Context, string, JavaConfig); the latter receives request settings.
 type JavaSessionFactory any
 
+const lspDocumentSymbolKey = "documentSymbol"
+
+const lspTextDocumentKey = "textDocument"
+
 func effectiveJavaConfig(project backend.ProjectContext) backend.JavaConfig {
 	config := project.Java
 	if config.JDTLSHome == "" {
@@ -345,18 +349,18 @@ func (b *JavaBackend) Lookup(ctx context.Context, project backend.ProjectContext
 			return nil, &JavaError{Op: "initialize", Workspace: root, Err: err}
 		}
 	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{
 		"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source),
 	}}); err != nil {
 		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
+	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
-		return nil, &JavaError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Symbol: query, Err: err}
 	}
 	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
 	if err != nil {
-		return nil, &JavaError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Symbol: query, Err: err}
 	}
 	return selectJavaSymbol(query, root, file, source, symbols)
 }
@@ -411,29 +415,29 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 		}
 	}
 	session := b.session
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
 		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
-		return nil, &JavaError{Op: "documentSymbol", File: file, Err: err}
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
 	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
 	if err != nil {
-		return nil, &JavaError{Op: "documentSymbol", File: file, Err: err}
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
 	lookup, err := selectJavaSymbol(request.Symbol, root, file, source, symbols)
 	if err != nil {
 		return nil, err
 	}
-	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
 	if err != nil || !validJavaPrepareRename(prepRaw) {
 		if err == nil {
 			err = ErrJavaRenameInvalidEdit
 		}
 		return nil, &JavaError{Op: "prepareRename", File: file, Err: err}
 	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
 	if err != nil {
 		return nil, &JavaError{Op: "rename", File: file, Err: err}
 	}
@@ -555,7 +559,7 @@ func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			return nil, ErrJavaRenameInvalidEdit
 		}
 		for key := range docObject {
-			if key != "textDocument" && key != "edits" {
+			if key != lspTextDocumentKey && key != "edits" {
 				return nil, ErrJavaRenameInvalidEdit
 			}
 		}
@@ -668,14 +672,14 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if selector, ok := b.session.(javaDiagnosticsSelector); ok {
 		selector.SelectDiagnosticsURI(pathutil.FileURI(file))
 	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
 		return nil, err
 	}
 	updated := source
 	version := 1
 	formattingChanged := false
 	if request.FormatSelectedFile {
-		raw, err := b.session.Request(ctx, "textDocument/formatting", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
+		raw, err := b.session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
 		if err != nil {
 			return nil, err
 		}
@@ -688,11 +692,11 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if request.OrganizeImports {
 		if formattingChanged {
 			version = 2
-			if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+			if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
 				return nil, err
 			}
 		}
-		raw, err := b.session.Request(ctx, "textDocument/codeAction", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
+		raw, err := b.session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
 		if err != nil {
 			return nil, err
 		}
@@ -707,10 +711,10 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 			return nil, err
 		}
 		version++
-		if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+		if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
 			return nil, err
 		}
-		if err := b.session.Notify(ctx, "textDocument/didSave", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
+		if err := b.session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
 			return nil, err
 		}
 		diagnosticsVersion = version
@@ -836,7 +840,7 @@ func applyJavaOrganizeImportsEditVersion(file string, source []byte, raw json.Ra
 			return nil, ErrJavaRenameInvalidEdit
 		}
 		for key := range valueObject {
-			if key != "textDocument" && key != "edits" {
+			if key != lspTextDocumentKey && key != "edits" {
 				return nil, ErrJavaRenameInvalidEdit
 			}
 		}
@@ -926,10 +930,10 @@ func initializeJavaSession(ctx context.Context, session JavaSession, root string
 		"workspaceFolders": []map[string]string{{"uri": pathutil.FileURI(root), "name": filepath.Base(root)}},
 		"capabilities": map[string]any{
 			"general": map[string]any{"positionEncodings": []string{"utf-16"}},
-			"textDocument": map[string]any{
-				"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true},
-				"formatting":     map[string]any{"dynamicRegistration": false},
-				"codeAction":     map[string]any{"dynamicRegistration": false, "codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{"valueSet": []string{"source.organizeImports"}}}},
+			lspTextDocumentKey: map[string]any{
+				lspDocumentSymbolKey: map[string]any{"hierarchicalDocumentSymbolSupport": true},
+				"formatting":         map[string]any{"dynamicRegistration": false},
+				"codeAction":         map[string]any{"dynamicRegistration": false, "codeActionLiteralSupport": map[string]any{"codeActionKind": map[string]any{"valueSet": []string{"source.organizeImports"}}}},
 			},
 			"workspace": map[string]any{"workspaceFolders": true, "configuration": true},
 		},

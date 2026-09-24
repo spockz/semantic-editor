@@ -227,7 +227,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 	}
 
 	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{
-		"textDocument": map[string]any{
+		lspTextDocumentKey: map[string]any{
 			"uri":        pathutil.FileURI(file),
 			"languageId": "rust",
 			"version":    1,
@@ -237,7 +237,7 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 		return nil, &RustError{Op: "didOpen", File: file, Err: err}
 	}
 	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{
-		"textDocument": map[string]string{"uri": pathutil.FileURI(file)},
+		lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)},
 	})
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
@@ -288,10 +288,10 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 		}
 	}
 	session := b.session
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": pathutil.FileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
 		return nil, &RustError{Op: "didOpen", File: file, Err: err}
 	}
-	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
 		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 	}
@@ -303,14 +303,14 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	if err != nil {
 		return nil, err
 	}
-	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
 	if err != nil {
 		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
 	}
 	if !validPrepareRename(prepRaw) {
 		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
 	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
 	if err != nil {
 		return nil, &RustError{Op: "rename", File: file, Err: err}
 	}
@@ -329,6 +329,8 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	b.session, b.root = nil, ""
 	return &neutralbackend.RenameResult{Lookup: lookup}, nil
 }
+
+const lspTextDocumentKey = "textDocument"
 
 type rustTextEdit struct {
 	Range   rustRange `json:"range"`

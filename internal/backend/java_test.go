@@ -403,6 +403,7 @@ func TestJavaMavenIgnoresUnrelatedPolyglotAncestor(t *testing.T) {
 	}
 }
 
+//nolint:dupl // Keep the Java backend response contract explicit beside its fixture.
 func TestJavaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 	root, file := javaFixture(t, "class Thing {}\n")
 	for name, test := range map[string]struct {

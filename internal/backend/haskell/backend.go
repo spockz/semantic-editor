@@ -84,6 +84,7 @@ type HaskellSessionFactory any
 
 type haskellRuntimeConfig struct {
 	neutralbackend.HaskellConfig
+
 	workingDir string
 }
 

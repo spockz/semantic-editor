@@ -38,7 +38,7 @@ var assertionModeParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go test file to rewrite", Required: true},
 	{Name: "mode", CLIName: "mode", JSONName: "mode", Type: ParamString, Description: "Rewrite direction", Required: true, Enums: []string{"relax", "restrict"}},
 	{Name: "dry_run", CLIName: "dry-run", JSONName: "dry_run", Type: ParamBoolean, Description: "Preview changes without writing the file", Default: false},
-	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Type: ParamBoolean, Description: "Explicitly authorize writing this workspace", Default: false},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Description: "Explicitly authorize writing this workspace", Default: false},
 }
 
 func parseAssertionMode(raw map[string]any) (AssertionModeReq, error) {
@@ -56,7 +56,7 @@ func parseAssertionMode(raw map[string]any) (AssertionModeReq, error) {
 	if req.DryRun, err = ParseBool(raw, "dry_run", "dry-run", false); err != nil {
 		return req, err
 	}
-	if req.TrustWorkspace, err = ParseBool(raw, "trust_workspace", "trust-workspace", false); err != nil {
+	if req.TrustWorkspace, err = ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false); err != nil {
 		return req, err
 	}
 	req.Project = backend.ProjectContext{Language: backend.LanguageGo, WorkspaceTrust: backend.NewWorkspaceTrust(".", req.TrustWorkspace)}

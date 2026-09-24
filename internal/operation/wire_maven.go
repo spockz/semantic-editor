@@ -34,7 +34,7 @@ type MavenRes = maven.Result
 var mavenParams = []ParameterContract{
 	{Name: "language", CLIName: "language", JSONName: "language", Type: ParamString, Default: "java", Enums: []string{"java"}},
 	{Name: "root", CLIName: "root", JSONName: "root", Type: ParamString, Description: "Canonical Maven workspace root (defaults to the request working directory)"},
-	{Name: "trust_workspace", CLIName: "trust-workspace", JSONName: "trust_workspace", Type: ParamBoolean, Default: false, Description: "Explicitly trust this workspace for this request"},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Default: false, Description: "Explicitly trust this workspace for this request"},
 	{Name: "maven_tool", CLIName: "maven-tool", JSONName: "maven_tool", Type: ParamString, Default: "auto", Enums: []string{"auto", "wrapper", "system"}, Description: "Maven launcher selection"},
 	{Name: "maven_bin", CLIName: "maven-bin", JSONName: "maven_bin", Type: ParamString, Description: "Absolute system Maven executable"},
 	{Name: "allow_network", CLIName: "allow-network", JSONName: "allow_network", Type: ParamBoolean, Default: false, Description: "Allow Maven to access the network for this request"},
@@ -48,7 +48,7 @@ func parseMaven(raw map[string]any, goal string) (MavenReq, error) {
 	if err != nil {
 		return MavenReq{}, err
 	}
-	trusted, err := ParseBool(raw, "trust_workspace", "trust-workspace", false)
+	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
 	if err != nil {
 		return MavenReq{}, err
 	}
@@ -99,7 +99,7 @@ func mavenDef(key, cli, mcp, goal, summary string) Def[MavenReq, MavenRes] {
 			}
 			return string(data), nil
 		},
-		ExampleRaw: map[string]any{"language": "java", "trust_workspace": true, "maven_tool": "auto", "allow_network": false}}
+		ExampleRaw: map[string]any{"language": "java", wireTrustWorkspace: true, "maven_tool": "auto", "allow_network": false}}
 }
 func registerMavenOps(registry *Registry) error {
 	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Run fixed Maven test-compile for a trusted Java root POM")); err != nil {

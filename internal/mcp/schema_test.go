@@ -16,90 +16,7 @@ import (
 func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
-			tools := listTools(t, profile)
-			byName := make(map[string]map[string]any, len(tools))
-			for _, tool := range tools {
-				byName[tool["name"].(string)] = tool
-			}
-
-			batch, ok := byName["semantic_batch"]
-			if !ok {
-				t.Fatal("tools/list omitted semantic_batch")
-			}
-			assertBatchOutputSchema(t, batch["outputSchema"])
-			description := batch["description"].(string)
-			if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "final_diff") {
-				t.Fatalf("batch description = %q, want final_diff and diagnostic_delta guidance", description)
-			}
-
-			inputSchema := batch["inputSchema"].(map[string]any)
-			edits := inputSchema["properties"].(map[string]any)["edits"].(map[string]any)
-			if got := edits["minItems"]; got != float64(1) {
-				t.Fatalf("edits.minItems = %#v, want 1", got)
-			}
-			branches := edits["items"].(map[string]any)["oneOf"].([]any)
-
-			expected := make(map[string]operation.Entry)
-			expectedNames := make([]string, 0)
-			for _, entry := range operation.DefaultRegistry().All() {
-				if entry.MCPName == "" || !entry.Batchable || (profile == "mutations-only" && entry.ReadOnly) {
-					continue
-				}
-				expected[entry.MCPName] = entry
-				expectedNames = append(expectedNames, entry.MCPName)
-			}
-			if len(branches) != len(expected) {
-				t.Fatalf("batch alternatives = %d, want %d", len(branches), len(expected))
-			}
-
-			seen := make(map[string]bool, len(branches))
-			for index, rawBranch := range branches {
-				branch := rawBranch.(map[string]any)
-				properties := branch["properties"].(map[string]any)
-				name := properties["tool"].(map[string]any)["const"].(string)
-				if name != expectedNames[index] {
-					t.Fatalf("batch alternative %d = %q, want registry order %q", index, name, expectedNames[index])
-				}
-				entry, ok := expected[name]
-				if !ok {
-					t.Fatalf("batch schema advertised unexpected tool %q", name)
-				}
-				seen[name] = true
-				if got := branch["required"].([]any); !reflect.DeepEqual(got, []any{"tool", "params"}) {
-					t.Fatalf("%s required = %#v, want tool and params", name, got)
-				}
-				if got := branch["additionalProperties"]; got != false {
-					t.Fatalf("%s additionalProperties = %#v, want false", name, got)
-				}
-				params := properties["params"].(map[string]any)
-				direct := byName[name]["inputSchema"]
-				if !reflect.DeepEqual(params, direct) {
-					t.Fatalf("%s batch params schema drifted from direct schema:\nparams=%#v\ndirect=%#v", name, params, direct)
-				}
-				expectedRequired := make([]any, 0)
-				for _, param := range entry.Params {
-					if param.Required {
-						expectedRequired = append(expectedRequired, param.JSONName)
-					}
-				}
-				if got := params["required"]; len(expectedRequired) == 0 {
-					if got != nil {
-						t.Fatalf("%s batch params required = %#v, want omitted", name, got)
-					}
-				} else if !reflect.DeepEqual(got, expectedRequired) {
-					t.Fatalf("%s batch params required = %#v, want %#v", name, got, expectedRequired)
-				}
-			}
-			for name := range expected {
-				if !seen[name] {
-					t.Errorf("batch schema omitted registry batchable tool %q", name)
-				}
-			}
-			for _, entry := range operation.DefaultRegistry().All() {
-				if entry.MCPName != "" && !entry.Batchable && (profile != "mutations-only" || !entry.ReadOnly) && seen[entry.MCPName] {
-					t.Errorf("batch schema advertised non-batchable tool %q", entry.MCPName)
-				}
-			}
+			assertBatchSchemaProfile(t, profile)
 		})
 	}
 }
@@ -304,4 +221,91 @@ func listToolsWithLiveReload(t *testing.T) []map[string]any {
 		t.Fatalf("decode tools/list response: %v", err)
 	}
 	return response.Result.Tools
+}
+
+func assertBatchSchemaProfile(t *testing.T, profile string) {
+	tools := listTools(t, profile)
+	byName := make(map[string]map[string]any, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = tool
+	}
+
+	batch, ok := byName["semantic_batch"]
+	if !ok {
+		t.Fatal("tools/list omitted semantic_batch")
+	}
+	assertBatchOutputSchema(t, batch["outputSchema"])
+	description := batch["description"].(string)
+	if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "final_diff") {
+		t.Fatalf("batch description = %q, want final_diff and diagnostic_delta guidance", description)
+	}
+
+	inputSchema := batch["inputSchema"].(map[string]any)
+	edits := inputSchema["properties"].(map[string]any)["edits"].(map[string]any)
+	if got := edits["minItems"]; got != float64(1) {
+		t.Fatalf("edits.minItems = %#v, want 1", got)
+	}
+	branches := edits["items"].(map[string]any)["oneOf"].([]any)
+
+	expected := make(map[string]operation.Entry)
+	expectedNames := make([]string, 0)
+	for _, entry := range operation.DefaultRegistry().All() {
+		if entry.MCPName == "" || !entry.Batchable || (profile == "mutations-only" && entry.ReadOnly) {
+			continue
+		}
+		expected[entry.MCPName] = entry
+		expectedNames = append(expectedNames, entry.MCPName)
+	}
+	if len(branches) != len(expected) {
+		t.Fatalf("batch alternatives = %d, want %d", len(branches), len(expected))
+	}
+
+	seen := make(map[string]bool, len(branches))
+	for index, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		name := properties["tool"].(map[string]any)["const"].(string)
+		if name != expectedNames[index] {
+			t.Fatalf("batch alternative %d = %q, want registry order %q", index, name, expectedNames[index])
+		}
+		entry, ok := expected[name]
+		if !ok {
+			t.Fatalf("batch schema advertised unexpected tool %q", name)
+		}
+		seen[name] = true
+		if got := branch["required"].([]any); !reflect.DeepEqual(got, []any{"tool", "params"}) {
+			t.Fatalf("%s required = %#v, want tool and params", name, got)
+		}
+		if got := branch["additionalProperties"]; got != false {
+			t.Fatalf("%s additionalProperties = %#v, want false", name, got)
+		}
+		params := properties["params"].(map[string]any)
+		direct := byName[name]["inputSchema"]
+		if !reflect.DeepEqual(params, direct) {
+			t.Fatalf("%s batch params schema drifted from direct schema:\nparams=%#v\ndirect=%#v", name, params, direct)
+		}
+		expectedRequired := make([]any, 0)
+		for _, param := range entry.Params {
+			if param.Required {
+				expectedRequired = append(expectedRequired, param.JSONName)
+			}
+		}
+		if got := params["required"]; len(expectedRequired) == 0 {
+			if got != nil {
+				t.Fatalf("%s batch params required = %#v, want omitted", name, got)
+			}
+		} else if !reflect.DeepEqual(got, expectedRequired) {
+			t.Fatalf("%s batch params required = %#v, want %#v", name, got, expectedRequired)
+		}
+	}
+	for name := range expected {
+		if !seen[name] {
+			t.Errorf("batch schema omitted registry batchable tool %q", name)
+		}
+	}
+	for _, entry := range operation.DefaultRegistry().All() {
+		if entry.MCPName != "" && !entry.Batchable && (profile != "mutations-only" || !entry.ReadOnly) && seen[entry.MCPName] {
+			t.Errorf("batch schema advertised non-batchable tool %q", entry.MCPName)
+		}
+	}
 }

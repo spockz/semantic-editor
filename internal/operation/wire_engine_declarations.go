@@ -24,13 +24,23 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 // SetProjectContext replaces the request project during dispatch merge.
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
+type insertDeclarationFields struct {
+	Project             backend.ProjectContext
+	File                string
+	Source              string
+	AccessModifier      string
+	Placement           string
+	TargetSymbol        string
+	AutoOrganizeImports bool
+}
+
 var insertDeclarationParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Go declaration code snippet to insert", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Placement qualifier: file_start, file_end (default), public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
-	{Name: "target_symbol", CLIName: "target", JSONName: "target_symbol", Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
+	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
 	{Name: "visibility", CLIName: "visibility", JSONName: "visibility", Type: ParamString, Description: "Optional validation constraint ensuring declaration matches exported scope ('public' or 'private')", Enums: visibilityEnum},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "Automatically resolve and organize package imports required by the inserted declaration (default true)", Default: true},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports required by the inserted declaration (default true)", Default: true},
 }
 
 func parseInsertDeclaration(raw map[string]any) (InsertDeclarationReq, error) {
@@ -49,13 +59,13 @@ func parseInsertDeclaration(raw map[string]any) (InsertDeclarationReq, error) {
 	if req.Placement, err = ParseStringDefault(raw, "placement", "placement", string(astedit.PlacementFileEnd)); err != nil {
 		return req, err
 	}
-	if req.TargetSymbol, err = ParseString(raw, "target_symbol", "target", false); err != nil {
+	if req.TargetSymbol, err = ParseString(raw, wireTargetSymbol, "target", false); err != nil {
 		return req, err
 	}
 	if req.Visibility, err = ParseString(raw, "visibility", "visibility", false); err != nil {
 		return req, err
 	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", true); err != nil {
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
 		return req, err
 	}
 	return req, nil
@@ -89,22 +99,14 @@ func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 			backend.LanguageGo: runInsertDeclaration,
 		},
 		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": "api/server.go", "source": "func InitServer() *Server { return &Server{} }"},
+		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
 		PlacementKey: true,
 		Batchable:    true,
 	}
 }
 
 // InsertFunctionReq inserts one Go function or method.
-type InsertFunctionReq struct {
-	Project             backend.ProjectContext
-	File                string
-	Source              string
-	AccessModifier      string
-	Placement           string
-	TargetSymbol        string
-	AutoOrganizeImports bool
-}
+type InsertFunctionReq insertDeclarationFields
 
 // GetProjectContext returns the request project for registry dispatch.
 func (r InsertFunctionReq) GetProjectContext() backend.ProjectContext { return r.Project }
@@ -116,38 +118,15 @@ var insertFunctionParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Function or method Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
-	{Name: "access_modifier", CLIName: "access", JSONName: "access_modifier", Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
+	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
-	{Name: "target_symbol", CLIName: "target", JSONName: "target_symbol", Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
+	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
 
 func parseInsertFunction(raw map[string]any) (InsertFunctionReq, error) {
-	var req InsertFunctionReq
-	if err := CheckParams(raw, insertFunctionParams); err != nil {
-		return req, err
-	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
-	var err error
-	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
-		return req, err
-	}
-	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
-		return req, err
-	}
-	if req.AccessModifier, err = ParseString(raw, "access_modifier", "access", false); err != nil {
-		return req, err
-	}
-	if req.Placement, err = ParseString(raw, "placement", "placement", false); err != nil {
-		return req, err
-	}
-	if req.TargetSymbol, err = ParseString(raw, "target_symbol", "target", false); err != nil {
-		return req, err
-	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", true); err != nil {
-		return req, err
-	}
-	return req, nil
+	fields, err := parseInsertDeclarationFields(raw, insertFunctionParams)
+	return InsertFunctionReq(fields), err
 }
 
 func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionReq) (FileEditRes, error) {
@@ -178,22 +157,14 @@ func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 			backend.LanguageGo: runInsertFunction,
 		},
 		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": "api/server.go", "source": "func (s *Server) Stop() {}"},
+		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
 		PlacementKey: true,
 		Batchable:    true,
 	}
 }
 
 // InsertTypeReq inserts one Go struct, interface, or type alias.
-type InsertTypeReq struct {
-	Project             backend.ProjectContext
-	File                string
-	Source              string
-	AccessModifier      string
-	Placement           string
-	TargetSymbol        string
-	AutoOrganizeImports bool
-}
+type InsertTypeReq insertDeclarationFields
 
 // GetProjectContext returns the request project for registry dispatch.
 func (r InsertTypeReq) GetProjectContext() backend.ProjectContext { return r.Project }
@@ -205,38 +176,15 @@ var insertTypeParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Type definition Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
-	{Name: "access_modifier", CLIName: "access", JSONName: "access_modifier", Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
+	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
-	{Name: "target_symbol", CLIName: "target", JSONName: "target_symbol", Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
+	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
 
 func parseInsertType(raw map[string]any) (InsertTypeReq, error) {
-	var req InsertTypeReq
-	if err := CheckParams(raw, insertTypeParams); err != nil {
-		return req, err
-	}
-	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
-	var err error
-	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
-		return req, err
-	}
-	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
-		return req, err
-	}
-	if req.AccessModifier, err = ParseString(raw, "access_modifier", "access", false); err != nil {
-		return req, err
-	}
-	if req.Placement, err = ParseString(raw, "placement", "placement", false); err != nil {
-		return req, err
-	}
-	if req.TargetSymbol, err = ParseString(raw, "target_symbol", "target", false); err != nil {
-		return req, err
-	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", true); err != nil {
-		return req, err
-	}
-	return req, nil
+	fields, err := parseInsertDeclarationFields(raw, insertTypeParams)
+	return InsertTypeReq(fields), err
 }
 
 func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (FileEditRes, error) {
@@ -267,7 +215,7 @@ func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 			backend.LanguageGo: runInsertType,
 		},
 		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": "api/server.go", "source": "type Config struct{}"},
+		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
 		PlacementKey: true,
 		Batchable:    true,
 	}
@@ -294,11 +242,11 @@ func (r *InsertDeclReq) SetProjectContext(project backend.ProjectContext) { r.Pr
 var insertDeclParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Declaration Go source code snippet", Required: true},
-	{Name: "access_modifier", CLIName: "access", JSONName: "access_modifier", Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
+	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
-	{Name: "target_symbol", CLIName: "target", JSONName: "target_symbol", Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
-	{Name: "auto_organize_imports", CLIName: "auto-organize-imports", JSONName: "auto_organize_imports", Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
+	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
 
 func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
@@ -314,7 +262,7 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
 		return req, err
 	}
-	if req.AccessModifier, err = ParseString(raw, "access_modifier", "access", false); err != nil {
+	if req.AccessModifier, err = ParseString(raw, wireAccessModifier, "access", false); err != nil {
 		return req, err
 	}
 	if req.Group, err = ParseString(raw, "group", "group", false); err != nil {
@@ -323,10 +271,10 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 	if req.Placement, err = ParseString(raw, "placement", "placement", false); err != nil {
 		return req, err
 	}
-	if req.TargetSymbol, err = ParseString(raw, "target_symbol", "target", false); err != nil {
+	if req.TargetSymbol, err = ParseString(raw, wireTargetSymbol, "target", false); err != nil {
 		return req, err
 	}
-	if req.AutoOrganizeImports, err = ParseBool(raw, "auto_organize_imports", "auto-organize-imports", true); err != nil {
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
 		return req, err
 	}
 	return req, nil
@@ -361,8 +309,36 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 			backend.LanguageGo: runInsertDecl,
 		},
 		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": "api/server.go", "source": "const DefaultPort = 8080"},
+		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
 		PlacementKey: true,
 		Batchable:    true,
 	}
+}
+
+func parseInsertDeclarationFields(raw map[string]any, params []ParameterContract) (insertDeclarationFields, error) {
+	var req insertDeclarationFields
+	if err := CheckParams(raw, params); err != nil {
+		return req, err
+	}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	var err error
+	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return req, err
+	}
+	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
+		return req, err
+	}
+	if req.AccessModifier, err = ParseString(raw, wireAccessModifier, "access", false); err != nil {
+		return req, err
+	}
+	if req.Placement, err = ParseString(raw, "placement", "placement", false); err != nil {
+		return req, err
+	}
+	if req.TargetSymbol, err = ParseString(raw, wireTargetSymbol, "target", false); err != nil {
+		return req, err
+	}
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
+		return req, err
+	}
+	return req, nil
 }

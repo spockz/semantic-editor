@@ -119,6 +119,7 @@ func TestScalaStandaloneRequiresExplicitRootWhenProjectMarkerExists(t *testing.T
 	}
 }
 
+//nolint:dupl // Keep the Scala backend response contract explicit beside its fixture.
 func TestScalaLookupRejectsMalformedAndOutOfRootResponses(t *testing.T) {
 	root, file := scalaFixture(t, "class Thing {}\n")
 	for name, test := range map[string]struct {

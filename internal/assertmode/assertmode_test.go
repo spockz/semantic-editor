@@ -284,6 +284,9 @@ func TestA(t *testing.T) {
 			foundSwapped = true
 		case assertmode.ActionSkippedUnsafe:
 			foundSkipped = true
+
+		default:
+			t.Errorf("unexpected action %q", s.Action)
 		}
 	}
 	if !foundSwapped {

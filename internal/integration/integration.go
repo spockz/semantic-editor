@@ -34,6 +34,8 @@ const (
 	ScopeUser Scope = "user"
 )
 
+const statusNotInstalled = "not-installed"
+
 const serverName = "semedit"
 
 // Request is the common installation contract shared by target adapters.
@@ -197,8 +199,8 @@ func Status(req StatusRequest) (Result, error) {
 		return Result{}, err
 	}
 	if !exists {
-		result.Status = "not-installed"
-		result.Skill = "not-installed"
+		result.Status = statusNotInstalled
+		result.Skill = statusNotInstalled
 		return result, nil
 	}
 	var binary, profile string
@@ -215,8 +217,8 @@ func Status(req StatusRequest) (Result, error) {
 		return result, nil //nolint:nilerr // Status reports malformed target config in the result detail.
 	}
 	if !installed {
-		result.Status = "not-installed"
-		result.Skill = "not-installed"
+		result.Status = statusNotInstalled
+		result.Skill = statusNotInstalled
 		return result, nil
 	}
 	result.Status = "installed"
@@ -228,7 +230,7 @@ func Status(req StatusRequest) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	result.Skill = "not-installed"
+	result.Skill = statusNotInstalled
 	return result, nil
 }
 
@@ -250,8 +252,8 @@ func Uninstall(req StatusRequest) (Result, error) {
 		return Result{}, err
 	}
 	if !exists {
-		result.Status = "not-installed"
-		result.Skill = "not-installed"
+		result.Status = statusNotInstalled
+		result.Skill = statusNotInstalled
 		return result, nil
 	}
 	owned, err := ownedRegistration(path, req.Target, req.Scope, data)
@@ -260,7 +262,7 @@ func Uninstall(req StatusRequest) (Result, error) {
 	}
 	if !owned {
 		result.Status = "not-owned"
-		result.Skill = "not-installed"
+		result.Skill = statusNotInstalled
 		return result, fmt.Errorf("%w: %s", ErrNotOwned, path)
 	}
 	var updated []byte
@@ -290,12 +292,12 @@ func Uninstall(req StatusRequest) (Result, error) {
 	result.Status = "uninstalled"
 	result.Changed = removed
 	result.Owned = true
-	result.Skill = "not-installed"
+	result.Skill = statusNotInstalled
 	return result, nil
 }
 
 func baseResult(req Request, path string) Result {
-	return Result{Target: req.Target, Scope: req.Scope, Path: path, Skill: "not-installed"}
+	return Result{Target: req.Target, Scope: req.Scope, Path: path, Skill: statusNotInstalled}
 }
 
 func configPath(target Target, scope Scope, workspace string) (string, error) {
