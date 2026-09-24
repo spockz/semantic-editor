@@ -84,6 +84,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error rendering benchmark documentation: %v\n", err)
 		os.Exit(1)
 	}
+	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating benchmark browser assets: %v\n", err)
+		os.Exit(1)
+	}
 	benchmarksDir := filepath.Join(outputDir, "content", "docs", "benchmarks")
 	if err := os.MkdirAll(benchmarksDir, 0o750); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating benchmarks documentation directory: %v\n", err)

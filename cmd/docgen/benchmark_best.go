@@ -127,9 +127,9 @@ Speed and token figures include only selected pairs where both Vanilla and MCP p
 
 ## Best-case outcomes measured so far
 
-This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, speed within five percentage points is resolved by lower model cost. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token rates for uncached input, cached input, reasoning, and visible output.
+This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, speed within five percentage points is resolved by lower model cost. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, with thinking tokens counted at the output rate.
 
-[View min, max, and average metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.
+[Open the interactive benchmark browser](/docs/benchmarks/browser/). [View min, max, and average metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.
 
 `)
 	return sb.String()

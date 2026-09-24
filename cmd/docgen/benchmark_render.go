@@ -20,7 +20,7 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 ## Benchmark Methodology & Transparency
 
 * **Reproducibility & Provenance**: Test scenarios are defined in self-contained txtar archives. Links below resolve to commit-anchored GitHub source files for published commits, or cryptographic SHA-256 fingerprints for uncommitted local fixtures.
-* **Model Cost**: Tables report a unitless model-specific weighted token cost where a target model has a declared rate schedule: (uncached input × input rate + cached input × cached rate + (reasoning + visible output) × output rate) / 1,000,000. The rates are per million tokens. ADR-0043 uses this cost for its cost comparison.
+* **Model Cost**: Tables report model-specific credit consumption where a target model has a declared schedule: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. Thinking tokens use the output rate. ADR-0043 defines the per-million-token credit rates.
 * **Multi-Level Correctness Oracle**: Each trial is graded across 4 validation levels:
   1. *Level 1 (Mutation Policy)*: Restricts file modifications strictly to authorized paths.
   2. *Level 2 (AST Invariants)*: Compiler AST verification of required symbols, imports, and relative declaration ordering.
