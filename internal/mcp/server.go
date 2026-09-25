@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,9 @@ type Server struct {
 	liveReload          bool
 	instructions        string
 	goBaseDir           string
+	enabledLanguageText string
+	enabledLanguages    []backend.LanguageID
+	enabledLanguageErr  error
 	startedAt           time.Time
 	sessionMu           sync.Mutex
 	initializedAt       time.Time
@@ -70,6 +74,14 @@ func WithGoBaseDir(baseDir string) Option {
 		if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
 			s.goBaseDir = baseDir
 		}
+	}
+}
+
+// WithEnabledLanguages constrains language-specific tools to an explicit allowlist.
+func WithEnabledLanguages(value string) Option {
+	return func(s *Server) {
+		s.enabledLanguageText = value
+		s.enabledLanguages, s.enabledLanguageErr = backend.ParseEnabledLanguages(value)
 	}
 }
 
@@ -146,6 +158,9 @@ type jsonRPCError struct {
 
 // Serve reads newline-delimited JSON-RPC requests from in and writes responses to out.
 func (s *Server) Serve(ctx context.Context, in io.Reader) error {
+	if s.enabledLanguageErr != nil {
+		return fmt.Errorf("parse --enabled-languages: %w", s.enabledLanguageErr)
+	}
 	ctx = gocache.WithBaseDir(ctx, s.goBaseDir)
 	if _, err := gocache.Environment(ctx, s.workDir); err != nil {
 		return fmt.Errorf("prepare MCP Go base directory: %w", err)
@@ -218,7 +233,12 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 			s.sendResult(req.ID, map[string]any{})
 		}
 	case "tools/list":
-		s.sendResult(req.ID, map[string]any{"tools": s.listTools()})
+		tools, err := s.listTools()
+		if err != nil {
+			s.sendError(req.ID, -32603, err.Error())
+			return
+		}
+		s.sendResult(req.ID, map[string]any{"tools": tools})
 	case "tools/call":
 		s.handleToolCall(ctx, req.ID, req.Params)
 	default:
@@ -228,19 +248,27 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 	}
 }
 
-func (s *Server) listTools() []map[string]any {
+func (s *Server) listTools() ([]map[string]any, error) {
 	tools := make([]map[string]any, 0, len(s.registry.All())+3)
 	batchable := make([]operation.Entry, 0)
+	languages, err := s.activeLanguages()
+	if err != nil {
+		return nil, err
+	}
+	activeBackends := s.backendsForLanguages(languages)
 	for _, entry := range s.registry.All() {
 		if entry.MCPName == "" || (s.profile == "mutations-only" && entry.ReadOnly) {
 			continue
 		}
-		tools = append(tools, toolSchema(entry))
+		if !entrySupportsAny(entry, languages) {
+			continue
+		}
+		tools = append(tools, toolSchemaForLanguages(entry, activeBackends))
 		if entry.Batchable {
 			batchable = append(batchable, entry)
 		}
 	}
-	tools = append(tools, batchToolSchema(batchable))
+	tools = append(tools, batchToolSchemaForLanguages(batchable, activeBackends))
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", "description": "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
@@ -249,7 +277,75 @@ func (s *Server) listTools() []map[string]any {
 		})
 	}
 	tools = append(tools, feedbackToolSchema())
-	return tools
+	return tools, nil
+}
+
+func (s *Server) backendsForLanguages(languages []backend.LanguageID) []backend.Backend {
+	if s.service == nil || s.service.Registry == nil {
+		return nil
+	}
+	registered := make([]backend.Backend, 0, len(languages))
+	for _, language := range languages {
+		if candidate, ok := s.service.Registry.Backend(language); ok {
+			registered = append(registered, candidate)
+		}
+	}
+	return registered
+}
+
+func (s *Server) activeLanguages() ([]backend.LanguageID, error) {
+	detected, err := backend.DetectLanguages(s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("detect workspace source languages: %w", err)
+	}
+	if len(detected) == 0 {
+		if s.service != nil && s.service.Registry != nil {
+			if selected, selectErr := s.service.Registry.Select(backend.ProjectContext{RootDir: s.workDir}); selectErr == nil {
+				detected = []backend.LanguageID{selected.Language()}
+			}
+		}
+	}
+	if len(s.enabledLanguages) == 0 {
+		return withoutImplicitHaskell(detected), nil
+	}
+	if len(detected) == 0 {
+		return append([]backend.LanguageID(nil), s.enabledLanguages...), nil
+	}
+	allowed := make([]backend.LanguageID, 0, len(detected))
+	for _, language := range detected {
+		if slices.Contains(s.enabledLanguages, language) {
+			allowed = append(allowed, language)
+		}
+	}
+	return allowed, nil
+}
+
+func withoutImplicitHaskell(languages []backend.LanguageID) []backend.LanguageID {
+	filtered := make([]backend.LanguageID, 0, len(languages))
+	for _, language := range languages {
+		if language != backend.LanguageHaskell {
+			filtered = append(filtered, language)
+		}
+	}
+	return filtered
+}
+
+func entrySupportsAny(entry operation.Entry, languages []backend.LanguageID) bool {
+	if len(entry.Languages) == 0 || slices.Contains(entry.Languages, backend.LanguageAuto) {
+		return true
+	}
+	for _, language := range languages {
+		if slices.Contains(entry.Languages, language) {
+			return true
+		}
+	}
+	return false
+}
+
+func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) map[string]any {
+	tool := toolSchema(entry)
+	tool["inputSchema"] = operationInputSchemaForBackends(entry, backends)
+	return tool
 }
 
 func toolSchema(entry operation.Entry) map[string]any {
@@ -357,9 +453,17 @@ func reloadOutputSchema() map[string]any {
 }
 
 func operationInputSchema(entry operation.Entry) map[string]any {
-	properties := make(map[string]any, len(entry.Params))
-	required := make([]string, 0, len(entry.Params))
-	for _, param := range entry.Params {
+	return operationInputSchemaForParams(entry.Params)
+}
+
+func operationInputSchemaForBackends(entry operation.Entry, backends []backend.Backend) map[string]any {
+	return operationInputSchemaForParams(operation.ParametersForBackends(entry, backends))
+}
+
+func operationInputSchemaForParams(params []operation.ParameterContract) map[string]any {
+	properties := make(map[string]any, len(params))
+	required := make([]string, 0, len(params))
+	for _, param := range params {
 		property := map[string]any{"description": param.Description}
 		switch param.Type {
 		case operation.ParamBoolean:
@@ -388,7 +492,7 @@ func operationInputSchema(entry operation.Entry) map[string]any {
 	return schema
 }
 
-func batchToolSchema(entries []operation.Entry) map[string]any {
+func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend) map[string]any {
 	const batchDescription = "Use this tool instead of a sequence of built-in text patches when several registered semantic edits must run in order. It writes directly to the supplied workspace: if a later edit fails, earlier successful edits remain applied and are not rolled back. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
@@ -396,7 +500,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
 				"tool":   map[string]any{"const": entry.MCPName},
-				"params": operationInputSchema(entry),
+				"params": operationInputSchemaForBackends(entry, backends),
 			},
 			"required":             []string{"tool", "params"},
 			"additionalProperties": false,
@@ -456,6 +560,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 	}
 	finishArguments()
+	if err := s.validateLanguageAllowed(entry, raw); err != nil {
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	result, err := s.registry.Dispatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Registry: s.registry, Service: s.service}, entry.Key, raw)
 	finishDispatch()
@@ -471,6 +579,45 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		return
 	}
 	s.sendToolSuccessWithTiming(id, text, timing)
+}
+
+func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {
+	if slices.Contains(entry.Languages, backend.LanguageAuto) {
+		return nil
+	}
+	active, err := s.activeLanguages()
+	if err != nil {
+		return err
+	}
+	selected := backend.LanguageID("")
+	if value, ok := raw["language"].(string); ok && value != "" && value != string(backend.LanguageAuto) {
+		selected = backend.LanguageID(value)
+	}
+	if selected == "" {
+		if file, ok := raw["file"].(string); ok {
+			selected = backend.LanguageIDFromFile(file)
+		}
+	}
+	if selected != "" {
+		if len(s.enabledLanguages) > 0 && !slices.Contains(s.enabledLanguages, selected) {
+			return fmt.Errorf("language %q is disabled by --enabled-languages", selected)
+		}
+		if selected == backend.LanguageHaskell {
+			if standalone, _ := raw["standalone_haskell"].(bool); !standalone {
+				return fmt.Errorf("haskell requires standalone_haskell=true")
+			}
+		} else if len(active) > 0 && !slices.Contains(active, selected) {
+			return fmt.Errorf("language %q is not detected in the active workspace", selected)
+		}
+		if !slices.Contains(entry.Languages, selected) {
+			return fmt.Errorf("operation %q has no handler for language %q", entry.Key, selected)
+		}
+		return nil
+	}
+	if entrySupportsAny(entry, active) || len(active) == 0 && len(s.enabledLanguages) == 0 {
+		return nil
+	}
+	return fmt.Errorf("operation %q is unavailable for the active workspace languages", entry.Key)
 }
 
 func (s *Server) handleReload(id json.RawMessage) {

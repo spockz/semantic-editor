@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf16"
@@ -16,6 +15,36 @@ import (
 
 // LanguageID identifies a source language supported by a backend registry.
 type LanguageID string
+
+// ConstructKind names a syntax construct in the cross-language capability taxonomy.
+// Membership here does not claim that any registered backend can mutate that kind.
+type ConstructKind string
+
+// Canonical construct kinds reserved by the cross-language taxonomy.
+const (
+	ConstructLoop             ConstructKind = "loop"
+	ConstructIf               ConstructKind = "if"
+	ConstructElse             ConstructKind = "else"
+	ConstructCase             ConstructKind = "case"
+	ConstructTernary          ConstructKind = "ternary"
+	ConstructSelect           ConstructKind = "select"
+	ConstructDefer            ConstructKind = "defer"
+	ConstructMatch            ConstructKind = "match"
+	ConstructWhen             ConstructKind = "when"
+	ConstructForComprehension ConstructKind = "for_comprehension"
+	ConstructTryCatch         ConstructKind = "try_catch"
+	ConstructTryExcept        ConstructKind = "try_except"
+	ConstructTryWithResources ConstructKind = "try_with_resources"
+	ConstructSynchronized     ConstructKind = "synchronized"
+	ConstructLock             ConstructKind = "lock"
+	ConstructUsing            ConstructKind = "using"
+	ConstructQuery            ConstructKind = "query"
+	ConstructYield            ConstructKind = "yield"
+	ConstructWith             ConstructKind = "with"
+	ConstructRule             ConstructKind = "rule"
+	ConstructVariable         ConstructKind = "variable"
+	ConstructInclude          ConstructKind = "include"
+)
 
 const (
 	// LanguageAuto detects the language from project context.
@@ -30,6 +59,12 @@ const (
 	LanguageScala LanguageID = "scala"
 	// LanguageHaskell selects the trusted standalone Haskell lookup backend.
 	LanguageHaskell LanguageID = "haskell"
+	// LanguageKotlin identifies Kotlin sources for detection; no backend is registered yet.
+	LanguageKotlin LanguageID = "kotlin"
+	// LanguageBash identifies shell sources for detection; no backend is registered yet.
+	LanguageBash LanguageID = "bash"
+	// LanguageMake identifies Make sources for detection; no backend is registered yet.
+	LanguageMake LanguageID = "make"
 )
 
 // Operation identifies a service operation for capability checks.
@@ -223,6 +258,11 @@ type MatrixProvider interface {
 	CapabilityMatrix() capability.LanguageMatrix
 }
 
+// ConstructCapabilityProvider reports construct mutations implemented by a backend.
+type ConstructCapabilityProvider interface {
+	SupportedConstructs() []ConstructKind
+}
+
 // ProjectContext identifies the project and optional source file selected by an ingress.
 type ProjectContext struct {
 	RootDir           string
@@ -379,7 +419,11 @@ func (r *Registry) Select(project ProjectContext) (Backend, error) {
 		language = LanguageAuto
 	}
 	if language == LanguageAuto {
-		language = detectLanguage(project)
+		var err error
+		language, err = r.detectLanguage(project)
+		if err != nil {
+			return nil, &Error{Operation: OperationLookup, Err: err}
+		}
 		if language == "" {
 			return nil, &Error{Operation: OperationLookup, Err: ErrLanguageUndetected}
 		}
@@ -391,68 +435,31 @@ func (r *Registry) Select(project ProjectContext) (Backend, error) {
 	return b, nil
 }
 
-func detectLanguage(project ProjectContext) LanguageID {
-	if strings.EqualFold(filepath.Ext(project.File), ".go") {
-		return LanguageGo
+func (r *Registry) detectLanguage(project ProjectContext) (LanguageID, error) {
+	if language, ok := sourceExtensions[strings.ToLower(filepath.Ext(project.File))]; ok {
+		if language == LanguageHaskell {
+			return "", nil
+		}
+		return language, nil
 	}
-	if strings.EqualFold(filepath.Ext(project.File), ".rs") {
-		return LanguageRust
-	}
-	if strings.EqualFold(filepath.Ext(project.File), ".java") {
-		return LanguageJava
-	}
-	if strings.EqualFold(filepath.Ext(project.File), ".scala") {
-		return LanguageScala
-	}
-	// Haskell standalone lookup requires an explicit language and standalone flag.
 	root := project.RootDir
 	if root == "" {
 		root = "."
 	}
-	goMarker := false
-	for _, name := range []string{"go.mod", "go.work"} {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			goMarker = true
-			break
+	languages, err := DetectLanguages(root)
+	if err != nil {
+		return "", fmt.Errorf("detect workspace language: %w", err)
+	}
+	var autoLanguages []LanguageID
+	for _, language := range languages {
+		if _, registered := r.backends[language]; registered && language != LanguageHaskell {
+			autoLanguages = append(autoLanguages, language)
 		}
 	}
-	rustMarker := false
-	if _, err := os.Stat(filepath.Join(root, "Cargo.toml")); err == nil {
-		rustMarker = true
+	if len(autoLanguages) != 1 {
+		return "", nil
 	}
-	javaMarker := false
-	for _, name := range []string{"pom.xml", "build.gradle", "build.gradle.kts"} {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			javaMarker = true
-			break
-		}
-	}
-	markers := 0
-	scalaMarker := false
-	for _, name := range []string{"build.sbt", "build.sc", "pom.xml", "build.gradle", "build.gradle.kts"} {
-		if _, err := os.Stat(filepath.Join(root, name)); err == nil {
-			scalaMarker = true
-			break
-		}
-	}
-	for _, marker := range []bool{goMarker, rustMarker, javaMarker, scalaMarker} {
-		if marker {
-			markers++
-		}
-	}
-	if markers != 1 {
-		return ""
-	}
-	if javaMarker {
-		return LanguageJava
-	}
-	if scalaMarker {
-		return LanguageScala
-	}
-	if rustMarker {
-		return LanguageRust
-	}
-	return LanguageGo
+	return autoLanguages[0], nil
 }
 
 // Service is the ingress-facing orchestration boundary shared by CLI and MCP.

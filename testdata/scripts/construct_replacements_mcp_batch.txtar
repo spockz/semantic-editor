@@ -7,7 +7,7 @@ cmp api/messages_test.go want/api/messages_test.go
 exec go test ./api
 
 -- input.json --
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_loop","params":{"file":"api/messages_test.go","function":"TestMessages","loop_on":"want","source":"for _, want := range []string{\"alpha\", \"beta\"} { if want == \"\" { t.Fatal(want) } }"}},{"tool":"semantic_replace_decl","params":{"file":"api/settings.go","symbol":"DefaultLimit","source":"const DefaultLimit = 10"}},{"tool":"semantic_insert_decl","params":{"file":"api/settings.go","source":"var Revision = 2","overwrite":true}}]}}}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_construct","params":{"file":"api/messages_test.go","function":"TestMessages","kind":"loop","discriminator":"want","source":"for _, want := range []string{\"alpha\", \"beta\"} { if want == \"\" { t.Fatal(want) } }"}},{"tool":"semantic_replace_decl","params":{"file":"api/settings.go","symbol":"DefaultLimit","source":"const DefaultLimit = 10"}},{"tool":"semantic_insert_decl","params":{"file":"api/settings.go","source":"var Revision = 2","overwrite":true}}]}}}
 
 -- go.mod --
 module example.com/construct

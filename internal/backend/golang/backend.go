@@ -26,6 +26,11 @@ func NewGoBackend() *GoBackend { return &GoBackend{} }
 // Language returns the adapter language ID.
 func (GoBackend) Language() backend.LanguageID { return backend.LanguageGo }
 
+// SupportedConstructs reports the Go construct handlers actually implemented by this adapter.
+func (GoBackend) SupportedConstructs() []backend.ConstructKind {
+	return append([]backend.ConstructKind(nil), astedit.GoConstructKinds...)
+}
+
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
 	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify)

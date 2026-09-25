@@ -13,7 +13,7 @@ When the request matches an operation exposed by the active semedit server, use 
 | --- | --- | --- |
 | Find a named symbol in a supported source file | `semantic_lookup` | Built-in text search, `grep`, or line counting |
 | Rename a supported symbol and its references | `semantic_rename` | Built-in text replacement across files |
-| Replace one Go `for` or `range` loop inside a function | `semantic_replace_loop` with complete loop `source` | Built-in text edits or regenerating the whole function |
+| Replace one Go control-flow construct inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |
 | Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
 | Update an existing package-level Go constant, variable, or type alias | `semantic_replace_decl` | Built-in text replacement or duplicate insertion |
 | Add one Go function or method to an existing file | `semantic_insert_function` | Built-in text insertion or `replace_file_content` |
@@ -38,7 +38,7 @@ Examples:
 
 - “Rename `Server.Start` to `Server.Run`” → use `semantic_rename` with a receiver-qualified symbol.
 - “Rewrite the body of `(*Client).Do` while keeping its signature” → use `semantic_replace_body` in Go.
-- “Change only the assertion loop in `TestMessages`” → use `semantic_replace_loop`; select a reported `loop_path` if more than one loop matches.
+- “Change only the assertion loop in `TestMessages`” → use `semantic_replace_construct` with `kind: "loop"`; select a reported `construct_path` if more than one loop matches.
 - “Change `DefaultLimit` from 5 to 10” → use `semantic_replace_decl`, not a new `semantic_insert_decl` call.
 - “Add the `net/http` import” → use `semantic_organize_imports`; “add the module that provides this package” → use `semantic_add_build_dependency`.
 - “Where is `Config.Port` declared?” → use `semantic_lookup`, with the file path if needed to disambiguate.
@@ -53,4 +53,4 @@ Framework conventions belong in a relevant installed framework skill. Use semedi
 
 ## Keep examples discriminating
 
-Pair a tempting wrong route with the operation that fits the intent. A symbol rename calls for `semantic_rename`; a single loop calls for `semantic_replace_loop`; a package value update calls for `semantic_replace_decl`; a body-only change calls for `semantic_replace_body`. Use `semantic_insert_function`, `semantic_insert_type`, and `semantic_insert_decl` for their respective declaration kinds; use `semantic_insert_declaration` when its generic placement controls fit better. A source import change calls for `semantic_organize_imports`; a new module dependency calls for `semantic_add_build_dependency`. Text edits remain appropriate for documentation, comments, string content, and changes that have no supported semantic operation.
+Pair a tempting wrong route with the operation that fits the intent. A symbol rename calls for `semantic_rename`; a single control-flow construct calls for `semantic_replace_construct`; a package value update calls for `semantic_replace_decl`; a body-only change calls for `semantic_replace_body`. Use `semantic_insert_function`, `semantic_insert_type`, and `semantic_insert_decl` for their respective declaration kinds; use `semantic_insert_declaration` when its generic placement controls fit better. A source import change calls for `semantic_organize_imports`; a new module dependency calls for `semantic_add_build_dependency`. Text edits remain appropriate for documentation, comments, string content, and changes that have no supported semantic operation.

@@ -32,12 +32,12 @@ func readGo(t *testing.T, path string) string {
 	return string(b)
 }
 
-func TestReplaceLoop_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) {
+func TestReplaceConstruct_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(items []string) {\n before()\n for _, item := range items {\n  for _, want := range []string{\"a\"} {\n   check(item, want)\n  }\n }\n after()\n}\n"
 	writeGo(t, path, initial)
-	if _, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "for _, want := range []string{\"b\", \"c\"} { check(want) }", astedit.LoopOptions{}); err != nil {
-		t.Fatalf("ReplaceLoop: %v", err)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range []string{\"b\", \"c\"} { check(want) }", astedit.ConstructOptions{}); err != nil {
+		t.Fatalf("ReplaceConstruct: %v", err)
 	}
 	got := readGo(t, path)
 	for _, preserved := range []string{"before()", "after()", "for _, item := range items", "[]string{\"b\", \"c\"}"} {
@@ -47,15 +47,15 @@ func TestReplaceLoop_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_AmbiguityListsPathsAndLocations(t *testing.T) {
+func TestReplaceConstruct_AmbiguityListsPathsAndLocations(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check(items []string) { for _, want := range items { use(want) }; for _, want := range items { use(want) } }\n")
-	_, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "for _, want := range items { use(1) }", astedit.LoopOptions{})
-	if err == nil || !strings.Contains(err.Error(), "path 0") || !strings.Contains(err.Error(), "path 1") || !strings.Contains(err.Error(), ":2:") {
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range items { use(1) }", astedit.ConstructOptions{})
+	if err == nil || !strings.Contains(err.Error(), "construct_path 0") || !strings.Contains(err.Error(), "construct_path 1") || !strings.Contains(err.Error(), ":2:") {
 		t.Fatalf("expected path and source locations in ambiguity error, got %v", err)
 	}
-	if _, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "for _, want := range items { use(1) }", astedit.LoopOptions{LoopPath: "1"}); err != nil {
-		t.Fatalf("ReplaceLoop with reported path: %v", err)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range items { use(1) }", astedit.ConstructOptions{ConstructPath: "1"}); err != nil {
+		t.Fatalf("ReplaceConstruct with reported path: %v", err)
 	}
 	got := readGo(t, path)
 	if strings.Count(got, "use(want)") != 1 || strings.Count(got, "use(1)") != 1 {
@@ -63,12 +63,12 @@ func TestReplaceLoop_AmbiguityListsPathsAndLocations(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_RejectsBareStatementsWithoutMutation(t *testing.T) {
+func TestReplaceConstruct_RejectsBareStatementsWithoutMutation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(items []string) { for _, want := range items { use(want) } }\n"
 	writeGo(t, path, initial)
-	_, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "use(1)", astedit.LoopOptions{})
-	if err == nil || !strings.Contains(err.Error(), "complete for or range loop") {
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "use(1)", astedit.ConstructOptions{})
+	if err == nil || !strings.Contains(err.Error(), "complete Go loop construct") {
 		t.Fatalf("expected complete loop validation, got %v", err)
 	}
 	if got := readGo(t, path); got != initial {
@@ -76,12 +76,12 @@ func TestReplaceLoop_RejectsBareStatementsWithoutMutation(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_DiscriminatorMatchesIdentifierExactly(t *testing.T) {
+func TestReplaceConstruct_DiscriminatorMatchesIdentifierExactly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(want, unwanted []string) { for _, unwanted := range unwanted { use(unwanted) }; for _, want := range want { use(want) } }\n"
 	writeGo(t, path, initial)
-	if _, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "for _, want := range want { use(\"changed\") }", astedit.LoopOptions{}); err != nil {
-		t.Fatalf("ReplaceLoop: %v", err)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range want { use(\"changed\") }", astedit.ConstructOptions{}); err != nil {
+		t.Fatalf("ReplaceConstruct: %v", err)
 	}
 	got := readGo(t, path)
 	if !strings.Contains(got, "use(unwanted)") || !strings.Contains(got, "use(\"changed\")") {
@@ -89,11 +89,11 @@ func TestReplaceLoop_DiscriminatorMatchesIdentifierExactly(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_ReplacesClassicForHeader(t *testing.T) {
+func TestReplaceConstruct_ReplacesClassicForHeader(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check() { before(); for i := 0; i < 3; i++ { tick(i) }; after() }\n")
-	if _, err := astedit.ReplaceLoop(context.Background(), path, "Check", "i := 0", "for i := 10; i < 20; i++ { tick(i * 2) }", astedit.LoopOptions{}); err != nil {
-		t.Fatalf("ReplaceLoop: %v", err)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "i := 0", "for i := 10; i < 20; i++ { tick(i * 2) }", astedit.ConstructOptions{}); err != nil {
+		t.Fatalf("ReplaceConstruct: %v", err)
 	}
 	got := readGo(t, path)
 	for _, want := range []string{"before()", "for i := 10; i < 20; i++", "tick(i * 2)", "after()"} {
@@ -103,11 +103,11 @@ func TestReplaceLoop_ReplacesClassicForHeader(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_PathSelectsNestedMatchingLoop(t *testing.T) {
+func TestReplaceConstruct_PathSelectsNestedMatchingLoop(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check(wants []string) { for _, want := range wants { for _, want := range wants { use(want) } } }\n")
-	if _, err := astedit.ReplaceLoop(context.Background(), path, "Check", "want", "for _, want := range wants { use(\"inner\") }", astedit.LoopOptions{LoopPath: "0.0.0"}); err != nil {
-		t.Fatalf("ReplaceLoop with nested loop_path: %v", err)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range wants { use(\"inner\") }", astedit.ConstructOptions{ConstructPath: "0.0.0"}); err != nil {
+		t.Fatalf("ReplaceConstruct with nested path: %v", err)
 	}
 	got := readGo(t, path)
 	if strings.Count(got, "range wants") != 2 || !strings.Contains(got, "use(\"inner\")") || strings.Contains(got, "use(want)") {
@@ -115,16 +115,63 @@ func TestReplaceLoop_PathSelectsNestedMatchingLoop(t *testing.T) {
 	}
 }
 
-func TestReplaceLoop_RejectsMalformedReplacementWithoutMutation(t *testing.T) {
+func TestReplaceConstruct_RejectsMalformedReplacementWithoutMutation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check() { for i := 0; i < 3; i++ { tick(i) } }\n"
 	writeGo(t, path, initial)
-	_, err := astedit.ReplaceLoop(context.Background(), path, "Check", "i := 0", "for i := ; i < 10; i++ { tick(i) }", astedit.LoopOptions{})
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "i := 0", "for i := ; i < 10; i++ { tick(i) }", astedit.ConstructOptions{})
 	if err == nil {
 		t.Fatal("expected malformed loop source to fail")
 	}
 	if got := readGo(t, path); got != initial {
 		t.Fatalf("file mutated after malformed source:\n%s", got)
+	}
+}
+
+func TestReplaceConstruct_ReplacesEveryGoKind(t *testing.T) {
+	cases := []struct {
+		name, source, discriminator, replacement, want string
+		kind                                           astedit.ConstructKind
+	}{
+		{"if", "if err != nil { fail() }; keep()", "err != nil", "if err == nil { recover() }", "recover()", astedit.ConstructIf},
+		{"else", "if err != nil { fail() } else { fallback() }; keep()", "err != nil", "{ alternate() }", "alternate()", astedit.ConstructElse},
+		{"case", "switch value { case \"old\": remove(); default: keep() }; tail()", "\"old\"", "case \"new\": added()", "case \"new\":\n\t\tadded()", astedit.ConstructCase},
+		{"select", "select { case <-done: remove(); default: keep() }; tail()", "<-done", "case <-other: added()", "case <-other:", astedit.ConstructSelect},
+		{"defer", "defer close(old); keep()", "close(old)", "defer close(next)", "defer close(next)", astedit.ConstructDefer},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "constructs.go")
+			initial := "package sample\nfunc Check(err error, value string, done, other <-chan struct{}) { " + tc.source + " }\n"
+			writeGo(t, path, initial)
+			if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", tc.kind, tc.discriminator, tc.replacement, astedit.ConstructOptions{}); err != nil {
+				t.Fatalf("ReplaceConstruct: %v", err)
+			}
+			got := readGo(t, path)
+			if !strings.Contains(got, tc.want) || !strings.Contains(got, "keep()") && !strings.Contains(got, "tail()") {
+				t.Fatalf("replacement or surrounding statement missing:\n%s", got)
+			}
+		})
+	}
+}
+
+func TestReplaceConstruct_UsesBranchPathsAndHeaderOnlySelectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "branches.go")
+	initial := "package sample\nfunc Check() { if condition { unrelated() }; switch { case \"x\": first(); case \"x\": second() } }\n"
+	writeGo(t, path, initial)
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "unrelated", "if other { changed() }", astedit.ConstructOptions{}); err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("if body identifier matched as condition: %v", err)
+	}
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructCase, "\"x\"", "case \"y\": changed()", astedit.ConstructOptions{})
+	if err == nil || !strings.Contains(err.Error(), "construct_path 1.0") || !strings.Contains(err.Error(), "construct_path 1.1") {
+		t.Fatalf("case ambiguity did not report branch paths: %v", err)
+	}
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructCase, "case \"x\":", "case \"y\": changed()", astedit.ConstructOptions{ConstructPath: "1.1"}); err != nil {
+		t.Fatalf("select case by reported path: %v", err)
+	}
+	got := readGo(t, path)
+	if !strings.Contains(got, "case \"x\":\n\t\tfirst()") || !strings.Contains(got, "case \"y\":\n\t\tchanged()") {
+		t.Fatalf("construct_path replaced the wrong case:\n%s", got)
 	}
 }
 

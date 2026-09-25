@@ -133,7 +133,7 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, replaceBodyDef()); err != nil {
 		return err
 	}
-	if err := Register(registry, replaceLoopDef()); err != nil {
+	if err := Register(registry, replaceConstructDef()); err != nil {
 		return err
 	}
 	if err := Register(registry, scaffoldFileDef()); err != nil {
