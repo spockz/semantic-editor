@@ -187,3 +187,107 @@ The replay used `semantic_lookup`, `semantic_scaffold_file`, `semantic_insert_ty
 The replay's tests also exposed a false-confidence risk: a first green `make check` did not cover method names or `_` in collision preflight. A final review added cases proving a receiver method `A` can coexist with package constant `A`, repeated `_` declarations are allowed, and duplicate incoming names fail without a write. Its loop tests reject non-loop source, restrict `loop_on` to header components, and use one reported hierarchical path when candidates are ambiguous. The main collision walker already ignores receiver methods and `_`; it scans all sibling `.go` files without build-tag filtering, so mutually exclusive build files remain a candidate false-positive case to test and address.
 
 **Tool priorities from the replay:** first expose canonical root, active binary/catalog version, declaration outline, source excerpts, and read-only diagnostics; then add field, anchored-statement, composite-element, expression, signature, and comment operations with ambiguity rejection and literal-tree fixtures. Keep `semantic_replace_loop` for complete loop-to-loop edits; replacing a loop with a call requires a general selected-statement replacement. Finally, preserve multiline input layout and return a bounded post-edit scope in mutation receipts so callers can notice unintended sibling changes before continuing.
+
+## Fresh-Server ADR-0046 Replay (Iteration 2)
+
+A second Luna high worker started from `d9226f9` in `.scratch/worktrees/adr0046-replay-2` with a fresh `mcp --profile full --live-reload` process. Its `tools/list` exposed 22 operations, including `semantic_replace_loop` and `semantic_replace_decl`. The worker read the original patch for context without applying it and rebuilt the operations through semantic calls where they fit. `go test ./...` passed, including 53 txtar workflows; `git diff --check` passed. `make check` reported exactly four inherited lint findings captured before source edits (funlen, gocognit, gosec, ST1005). The replay remains isolated and uncommitted.
+
+The following records enumerate source reads and edits that still required a fallback. `R2-MR` identifiers distinguish this replay from the earlier audit; the matching failed MCP calls are in `SUBOPTIMAL_TOOLS.md`.
+
+This section records source reads that the advertised semantic MCP tools cannot provide. `semantic_lookup` returns declaration locations only; the complete `tools/list` has no source read or AST display operation.
+
+### R2-MR-0001: Read located Go declarations to plan semantic edits
+
+- Target context: `internal/astedit/decl.go`, `internal/astedit/switchcase.go`, `internal/astedit/errors.go`, and operation wiring files.
+- Attempted route: `semantic_lookup` for `InsertDecl` and `InsertCase` returned only file, line, column, offset, and kind. The advertised tool list has no source read or AST display operation.
+- Missing capability: Read a declaration's source or AST after locating it semantically.
+- Literal before/after example: Before, lookup returned `{"symbol":"InsertDecl","file":"internal/astedit/decl.go","line":29,"column":6,"offset":714,"kind":"function"}`. After fallback read, the actual `func InsertDecl(...)` body is available for implementation planning.
+- Fallback: Read only relevant located source files with `cat`; no source text was edited by this fallback.
+
+### R2-MR-0002: Read operation registration contracts
+
+- Target context: `internal/operation/wire_engine_mutations.go`, `wire_engine_declarations.go`, and operation registry files.
+- Attempted route: `semantic_lookup` located `replaceBodyDef` and `parseReplaceBody`, but returns no function body. `tools/list` exposes no source read or AST display tool.
+- Missing capability: Read operation contracts and handler wiring through the semantic interface.
+- Literal before/after example: Before, lookup returned `{"symbol":"replaceBodyDef","file":"internal/operation/wire_engine_mutations.go","line":67,"column":6,"offset":2844,"kind":"function"}`. After fallback read, the current `Def[ReplaceBodyReq, FileEditRes]` literal is visible for copying its contract pattern.
+- Fallback: Read the named operation files with `cat` before selecting semantic insertions or necessary registration edits. A subsequent inventory confirmed there is no `internal/operation/registry.go`; the registry lives in `operation.go`.
+
+### R2-MR-0003: Locate CLI ingress wiring
+
+- Target context: CLI command generation for registry operations.
+- Attempted route: A shell `rg` query for guessed command-constructor text produced no output; this was an inappropriate source-search route under the replay protocol. The MCP registry schema and `registerEngineOps` location are sufficient to determine whether CLI wiring is registry-derived.
+- Missing capability: Semantic lookup is name-based and does not provide textual/structural search for an unknown command wiring point.
+- Literal before/after example: Before, `rg -n 'replace-body|insert-decl|OperationDefs|Definitions|wire' main.go cmd` produced no matches. After, inspect the `registerEngineOps` declaration through the semantic location and establish that ingress is registry-derived.
+- Fallback: No shell source search will be used further; use known symbols and registry contracts.
+
+### R2-MR-0004: Repair nested declaration group insertion
+
+- Target: `internal/astedit/errors.go`, the `ErrSymbolCollision` sentinel in the package error group.
+- Attempted route: `semantic_insert_decl` inserted a nested `var` declaration into the existing parenthesized `var` group and failed during import organization with `expected IDENT, found var` (also logged as ST-0050). `semantic_replace_decl` could not select a grouped declaration spec.
+- Missing capability: Insert one documented declaration spec into a specific grouped `var` declaration while preserving its comment attachment.
+- Literal before/after example: Before the manual repair, the new text was `var (\n\tvar ErrSymbolCollision = errors.New(...)\n)` inside the existing `var (...)` group. After, the group contains the spec `ErrSymbolCollision = errors.New("symbol collision")` beside its own comment, without a nested `var` keyword.
+- Fallback: After preserving `.scratch/errors.go.baseline` and `.scratch/semantic-insert-decl-errors.go.failed`, atomically move the sentinel spec into the existing group and verify with `semantic_verify`.
+
+### R2-MR-0005: Add overwrite fields to existing option and request structs
+
+- Targets: `internal/astedit/decl.go` (`DeclOptions`) and `internal/operation/wire_engine_declarations.go` (`InsertDeclReq`).
+- Attempted route: `semantic_replace_decl` on `DeclOptions` was rejected because the operation only replaces type aliases. The tool catalog has no struct-field insertion or field-aware type rewrite operation. The same limitation applies to `InsertDeclReq`.
+- Missing capability: Add a named field to an existing Go struct while preserving its other fields.
+- Literal before/after example: Before: `type DeclOptions struct { ... AutoOrganizeImports bool }`. After: the same struct ends with `AutoOrganizeImports bool` and `Overwrite bool`; `InsertDeclReq` likewise gains `Overwrite bool`.
+- Fallback: Apply only those two field insertions with atomic writes after this log entry. Other related behavior and registry contract edits will use semantic MCP tools.
+
+### R2-MR-0006: Add required Go file header after semantic scaffold
+
+- Target: new `internal/astedit/loop.go`.
+- Attempted route: `semantic_scaffold_file` created the correct package clause but exposes no file-purpose header parameter. `semantic_insert_function` cannot place a comment before the package clause.
+- Missing capability: Scaffold a Go file with its mandatory purpose comment.
+- Literal before/after example: Before: `package astedit`. After: `// Package astedit replaces selected loop nodes without regenerating their enclosing function.` followed by `package astedit`.
+- Fallback: Atomically prepend only the package purpose comment; all declarations will use semantic insertion tools.
+
+### R2-MR-0007: Restore request type doc-comment attachment
+
+- Targets: `internal/operation/wire_engine_declarations.go` and `wire_engine_mutations.go`.
+- Attempted route: `semantic_insert_type` successfully inserted new request types, but moved each existing request type's doc comment above the new type. `make check` reported the resulting revive violations. The advertised API cannot move comments independently.
+- Missing capability: Move a declaration comment with its original AST declaration when inserting a sibling type.
+- Literal before/after example: Before in declarations: `// InsertDeclarationReq inserts one top-level Go declaration.` then a blank line, then `// ReplaceDeclReq ...` and `type ReplaceDeclReq`. After: `// ReplaceDeclReq ...` is immediately above `type ReplaceDeclReq`; `// InsertDeclarationReq ...` is immediately above `type InsertDeclarationReq`. Apply the same ordering for `ReplaceBodyReq` and `ReplaceLoopReq`.
+- Fallback: Move only those two existing comments atomically after this log entry.
+
+### R2-MR-0008: Inspect test conventions and prepare contract fixtures
+
+- Targets: `internal/astedit/decl_test.go`, `switchcase_test.go`, `testdata/scripts/*.txtar`, and the ADR-0046 tool schema section.
+- Attempted route: The advertised semantic MCP tools can locate named declarations but cannot read tests, txtar scripts, or Markdown content. No semantic fixture or document read capability is listed.
+- Missing capability: Read source and contract fixture contents after locating them; create or edit txtar and Markdown artifacts.
+- Literal before/after example: Before, semantic lookup provides only `file`, `line`, `column`, `offset`, and `kind`. After fallback read, the actual `func TestInsertDecl...` body and `--`-delimited txtar fixture contents are available for matching project conventions.
+- Fallback: Read only the named test and contract files. Txtar and Markdown changes will use atomic writes after this entry.
+
+### R2-MR-0009: Record non-semantic test-source inspection
+
+- Targets: `internal/astedit/decl_test.go` and `switchcase_test.go`.
+- Attempted route: The lack of a semantic source reader was documented in R2-MR-0008, but a subsequent inspection command used `sed` and `rg` to read and locate test source. This was outside the replay's allowed source-search route.
+- Missing capability: Semantic test-source reading and unknown-name structural lookup.
+- Literal before/after example: Before, the inspection searched `internal/astedit/decl_test.go` and `switchcase_test.go` through shell text utilities. After, the existing test package, imports, and helper conventions are visible.
+- Fallback: No source modifications came from that shell inspection. Future test edits will use semantic insertion, and no further shell source searches will be used.
+
+### R2-MR-0010: Document loop path selection in ADR-0046 and its index
+
+- Targets: `docs/adr/0046-construct-level-ast-replacement-and-declarative-updates.md` and `docs/adr/README.md`.
+- Attempted route: The semantic MCP tools do not read or edit Markdown. The accepted ADR documents ambiguity but omits the `loop_path` parameter exposed by the operation.
+- Missing capability: Read and update a Markdown contract and its mandatory index atomically.
+- Literal before/after example: Before, the `semantic_replace_loop` schema has `loop_on` but no path property. After, it includes `loop_path` with the candidate path supplied by an ambiguity diagnostic; the index summary mentions both selectors.
+- Fallback: Use one atomic write for the ADR and index update.
+
+### R2-MR-0011: Add executable CLI and MCP batch fixtures
+
+- Targets: `testdata/scripts/replace_loop*.txtar`, `replace_decl.txtar`, `insert_decl_collision.txtar`, `construct_replacements_mcp_batch.txtar`, and `mcp_server.txtar`.
+- Attempted route: No semantic operation creates or edits txtar contract scripts; the available tools edit Go source only.
+- Missing capability: Create/update executable text fixtures with before/after file snapshots and ingress commands.
+- Literal before/after example: Before, no `replace_loop.txtar` exists. After, the script invokes `semedit replace-loop`, compares the changed Go file against a literal `want/...` section, and runs `go test ./api`.
+- Fallback: Create or update only these txtar/Markdown files with atomic writes after this entry.
+
+### R2-MR-0012: Change helper signature to return replacement status
+
+- Target: `internal/astedit/decl.go`, `checkDeclCollision`.
+- Attempted route: `semantic_replace_body` added a handled flag to distinguish a completed overwrite from an ordinary insertion, but function-body replacement cannot change the declaration signature. The resulting diagnostics were logged as ST-0054.
+- Missing capability: Change an existing function's result types while preserving its declaration.
+- Literal before/after example: Before: `func checkDeclCollision(...) error`. After: `func checkDeclCollision(...) (bool, error)` to report both whether overwrite handled the request and any error.
+- Fallback: Change only this function signature atomically after this log entry; the caller change remains a semantic body replacement.

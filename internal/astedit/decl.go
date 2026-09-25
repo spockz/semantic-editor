@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -113,7 +114,11 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 				}
 				buf.Write(content[insertOffset:])
 
-				return writeAndOrganize(ctx, cleanPath, buf.Bytes(), opts.AutoOrganizeImports)
+				formatted, err := format.Source(buf.Bytes())
+				if err != nil {
+					return fmt.Errorf("preflight format grouped declaration insertion: %w", err)
+				}
+				return writeAndOrganize(ctx, cleanPath, formatted, opts.AutoOrganizeImports)
 			}
 		}
 	}
@@ -179,7 +184,11 @@ func sentinelVarInsertionOffset(fset *token.FileSet, group *ast.GenDecl, incomin
 			continue
 		}
 		if valueSpec.Names[0].Name > incomingName {
-			return fset.Position(valueSpec.Pos()).Offset, true
+			position := valueSpec.Pos()
+			if valueSpec.Doc != nil {
+				position = valueSpec.Doc.Pos()
+			}
+			return fset.Position(position).Offset, true
 		}
 	}
 	return 0, false
@@ -204,15 +213,66 @@ func findMatchingGroup(fileNode *ast.File, tok token.Token, targetAccess AccessM
 }
 
 func extractSpecSource(raw string, tok token.Token) string {
-	trimmed := strings.TrimSpace(raw)
-	tokPrefix := tok.String() + " "
-	if strings.HasPrefix(trimmed, tokPrefix) {
-		trimmed = strings.TrimSpace(trimmed[len(tokPrefix):])
+	prefix := "package semedit\n"
+	if strings.HasPrefix(strings.TrimSpace(raw), "package ") {
+		prefix = ""
 	}
-	if strings.HasPrefix(trimmed, "(") && strings.HasSuffix(trimmed, ")") {
-		trimmed = strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "snippet.go", prefix+raw, parser.ParseComments|parser.AllErrors)
+	if err != nil || len(file.Decls) != 1 {
+		return strings.TrimSpace(raw)
 	}
-	return trimmed
+	gen, ok := file.Decls[0].(*ast.GenDecl)
+	if !ok || gen.Tok != tok {
+		return strings.TrimSpace(raw)
+	}
+
+	fileToken := fset.File(gen.Pos())
+	if fileToken == nil {
+		return strings.TrimSpace(raw)
+	}
+	sourceOffset := func(position token.Pos) int {
+		return fileToken.Offset(position) - len(prefix)
+	}
+	leadingDoc := gen.Doc
+	if leadingDoc == nil {
+		for _, commentGroup := range file.Comments {
+			if commentGroup.End() <= gen.TokPos &&
+				fset.Position(commentGroup.End()).Line+1 >= fset.Position(gen.TokPos).Line {
+				leadingDoc = commentGroup
+			}
+		}
+	}
+
+	parts := make([]string, 0, len(gen.Specs))
+	for index, spec := range gen.Specs {
+		start := spec.Pos()
+		end := spec.End()
+		if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+			if valueSpec.Doc != nil {
+				start = valueSpec.Doc.Pos()
+			}
+			if valueSpec.Comment != nil {
+				end = valueSpec.Comment.End()
+			}
+		}
+		startOffset := sourceOffset(start)
+		endOffset := sourceOffset(end)
+		if index == 0 && leadingDoc != nil {
+			docStart := sourceOffset(leadingDoc.Pos())
+			tokStart := sourceOffset(gen.TokPos)
+			specStart := sourceOffset(spec.Pos())
+			if docStart >= 0 && docStart < tokStart && tokStart <= specStart {
+				parts = append(parts, strings.TrimSpace(raw[docStart:tokStart]+raw[specStart:endOffset]))
+				continue
+			}
+		}
+		if startOffset < 0 || endOffset > len(raw) || startOffset >= endOffset {
+			return strings.TrimSpace(raw)
+		}
+		parts = append(parts, strings.TrimSpace(raw[startOffset:endOffset]))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func calculateDeclOffset(fset *token.FileSet, fileNode *ast.File, content []byte, effectiveAccess AccessModifier, opts DeclOptions) (int, error) {

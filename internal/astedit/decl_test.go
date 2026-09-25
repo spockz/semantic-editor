@@ -230,3 +230,46 @@ const privateConst = 2
 		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
 	}
 }
+
+func TestInsertDecl_PreservesCommentedSentinelSpecs(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "errors.go")
+	initial := "package errors\n\nvar (\n\t// ErrBravo documents the bravo error.\n\tErrBravo = \"bravo\"\n)\n"
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	source := "// ErrAlpha documents the alpha error.\nvar ErrAlpha = \"alpha\""
+	if err := InsertDecl(context.Background(), file, source, DeclOptions{}); err != nil {
+		t.Fatalf("InsertDecl documented sentinel failed: %v", err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	want := "package errors\n\nvar (\n\t// ErrAlpha documents the alpha error.\n\tErrAlpha = \"alpha\"\n\t// ErrBravo documents the bravo error.\n\tErrBravo = \"bravo\"\n)\n"
+	if string(data) != want {
+		t.Fatalf("InsertDecl output mismatch\n got:\n%s\nwant:\n%s", data, want)
+	}
+}
+
+func TestInsertDecl_RejectsInvalidGroupedSourceWithoutWriting(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "errors.go")
+	initial := "package errors\n\nvar (\n\tErrBravo = \"bravo\"\n)\n"
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	err := InsertDecl(context.Background(), file, "var ErrBroken = {", DeclOptions{})
+	if err == nil {
+		t.Fatal("InsertDecl accepted invalid declaration syntax")
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(data) != initial {
+		t.Fatalf("invalid declaration changed target file\n got:\n%s\nwant:\n%s", data, initial)
+	}
+}

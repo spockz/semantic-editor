@@ -3,9 +3,11 @@ exec semedit insert-decl --file api/errs.go --source 'var ErrAlpha = errors.New(
 exec semedit insert-decl --file api/plain.go --source 'var ErrMike = errors.New("mike")'
 exec semedit insert-decl --file api/plain.go --source 'var Patch = 3'
 exec semedit insert-decl --file api/noblock.go --source 'var ErrSolo = errors.New("solo")'
+exec semedit insert-decl --file api/documented.go --source '/* ErrTango documents the tango error. */ var ErrTango = "tango"'
 cmp api/errs.go want/api/errs.go
 cmp api/plain.go want/api/plain.go
 cmp api/noblock.go want/api/noblock.go
+cmp api/documented.go want/api/documented.go
 exec go test ./...
 
 -- go.mod --
@@ -28,6 +30,23 @@ package api
 
 var Revision = "1.0"
 
+
+-- api/documented.go --
+package api
+
+var (
+	// ErrZulu documents the zulu error.
+	ErrZulu = "zulu"
+)
+
+-- want/api/documented.go --
+package api
+
+var (
+	/* ErrTango documents the tango error. */ ErrTango = "tango"
+	// ErrZulu documents the zulu error.
+	ErrZulu = "zulu"
+)
 -- api/noblock.go --
 package api
 
