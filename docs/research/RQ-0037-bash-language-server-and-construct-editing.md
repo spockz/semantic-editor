@@ -17,7 +17,7 @@ A Bash file may contain nested `if`/`elif`/`else`, `for`/`while`/`until`, `case`
 
 ## Investigation
 
-1. Probe bounded stdio initialization and selected-file document symbols with a pinned, preinstalled server. Confirm exact symbol kinds, ranges, UTF-16 offsets, timeout behavior, and whether project files or optional tools are executed. Gate process launch behind request-scoped workspace trust per ADR-0023.
+1. Probe bounded stdio initialization and selected-file document symbols with a pinned, preinstalled server. Confirm exact symbol kinds, ranges, UTF-16 offsets, timeout behavior, and whether project files or optional tools are executed. Establish the required workspace trust policy before launching the server.
 2. Compare the language server's parse tree access with a pinned Bash parser for structural targeting. Define discriminator and `construct_path` behavior for nested branches, including `elif` and terminal `else`.
 3. Test malformed snippets, heredocs, quoting, comments, and sourced files. Require prewrite parse validation and atomic updates before advertising a mutation capability.
 4. Add CLI txtar contracts for every operation actually registered. Keep unsupported constructs out of the active backend's schema.
