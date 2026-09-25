@@ -17,6 +17,8 @@ The scratch probe used pinned make-ls v0.1.22 over stdio. `initialize` reported 
 
 The [GNU Make manual](https://www.gnu.org/software/make/manual/make.html) defines rules, variable assignment forms, includes, and conditionals. Its conditionals act on makefile text, so a conditional may split a larger rule across branches. Recipe lines normally use tabs but `.RECIPEPREFIX` may change the prefix. Includes can expand variables and wildcards. These features make a naive line or symbol-range replacement unsafe.
 
+The v0.1.22 symbol probe confirms target and variable records can be mapped only when their name selection range matches a plausible declaration in the selected source. Conditional records use the full block range and a condition-expression name, so the read-only backend filters them rather than reporting a line in the selected file as their location. Included targets are also filtered when make-ls maps their range onto the selected file's include line.
+
 ## Investigation
 
 1. The selected-file lookup probe is complete and accepted in ADR-0048. Broader filename variations and parser behavior remain to be measured before mutation.

@@ -29,6 +29,8 @@ func serve(input io.Reader, output io.Writer, server string) error {
 	writer := bufio.NewWriter(output)
 	ambiguous := false
 	included := false
+	conditional := false
+	functionDeclarations := false
 	for {
 		headers := map[string]string{}
 		for {
@@ -67,6 +69,8 @@ func serve(input io.Reader, output io.Writer, server string) error {
 				_ = json.Unmarshal(m.Params, &p)
 				ambiguous = strings.Contains(p.TextDocument.Text, "SEMEDIT_TEST_AMBIGUOUS")
 				included = strings.Contains(p.TextDocument.Text, "include ")
+				conditional = strings.Contains(p.TextDocument.Text, "ifeq (")
+				functionDeclarations = strings.Contains(p.TextDocument.Text, "function fun()")
 			}
 			if server == "bash-language-server" && m.Method == "textDocument/didOpen" {
 				var p struct {
@@ -89,12 +93,22 @@ func serve(input io.Reader, output io.Writer, server string) error {
 			if server == "bash-language-server" {
 				sym := map[string]any{"name": "f", "kind": 12, "location": map[string]any{"uri": "selected", "range": rng(1, 0, 6)}}
 				result = []any{sym}
+				if functionDeclarations {
+					result = []any{
+						map[string]any{"name": "fun", "kind": 12, "location": map[string]any{"uri": "selected", "range": rng(0, 0, 16)}},
+						map[string]any{"name": "loc", "kind": 13, "location": map[string]any{"uri": "selected", "range": rng(1, 1, 14)}},
+					}
+				}
 				if ambiguous {
 					result = []any{sym, sym}
 				}
 			} else {
 				sym := map[string]any{"name": "all", "kind": 12, "range": rng(0, 0, 4), "selectionRange": rng(0, 0, 3)}
 				result = []any{sym}
+				if conditional {
+					wholeBlock := map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 3, "character": 5}}
+					result = []any{map[string]any{"name": "ifeq $(MODE),1", "kind": 3, "range": wholeBlock, "selectionRange": wholeBlock}}
+				}
 				if included {
 					result = []any{map[string]any{"name": "external", "kind": 12, "range": rng(0, 0, 19), "selectionRange": rng(0, 8, 16)}}
 				}

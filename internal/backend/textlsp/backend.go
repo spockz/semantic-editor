@@ -34,6 +34,8 @@ var (
 	ErrDiagnosticsTimeout = errors.New("matching diagnostics report was not received before timeout")
 	// ErrOperationTimeout reports that an LSP operation exceeded its deadline.
 	ErrOperationTimeout = errors.New("language-server operation exceeded its bounded deadline")
+	// ErrScratchOutsideRoot reports scratch paths that escape the trusted workspace.
+	ErrScratchOutsideRoot = errors.New("isolated LSP scratch path escapes workspace root")
 )
 
 const readOnlyPreview = "Read-only preview"
@@ -77,13 +79,18 @@ func (a *Adapter) CapabilityMatrix() backend.LanguageMatrix {
 	if a.Language() == backend.LanguageMake {
 		name, file, server = "Makefile", "Makefile, makefile, GNUmakefile, or .mk", "make-ls"
 	}
-	ops := map[string]backend.OpCapability{"lookup": {Supported: true, Description: "Trusted selected-file symbol lookup from the preinstalled " + server + " using UTF-16 positions.", CLICommand: "semedit lookup --language " + string(a.Language()) + " --file <path> --symbol <sym>", MCPTool: "semantic_lookup"}}
+	lookupDescription := "Trusted selected-file symbol lookup from the preinstalled " + server + " using UTF-16 positions."
+	if a.Language() == backend.LanguageMake {
+		lookupDescription = "Trusted selected-file Make target and assignment-variable lookup from source-mapped make-ls symbols."
+	}
+	ops := map[string]backend.OpCapability{"lookup": {Supported: true, Description: lookupDescription, CLICommand: "semedit lookup --language " + string(a.Language()) + " --file <path> --symbol <sym>", MCPTool: "semantic_lookup"}}
 	if a.Config.Diagnostics {
 		ops["verify"] = backend.OpCapability{Supported: true, Description: "Trusted selected-file diagnostics from a matching publishDiagnostics report; formatting and imports are unsupported.", CLICommand: "semedit verify --language bash --file <path>", MCPTool: "semantic_verify"}
 	}
 	limitations := []backend.Constraint{{Title: "Read Only", Description: name + " rename, formatting, imports, and structural edits are unavailable.", Severity: "error"}, {Title: "Trusted Explicit Tools", Description: "Lookup requires a selected " + file + " file inside the canonical workspace, request-scoped trust, and a preinstalled " + server + " executable.", Severity: "error"}}
 	if a.Language() == backend.LanguageMake {
 		limitations = append(limitations, backend.Constraint{Title: "Make Includes", Description: "The isolated make-ls workspace does not constrain include paths outside its copied source; absolute or traversing relative includes may read files after workspace trust is granted.", Severity: "info"})
+		limitations = append(limitations, backend.Constraint{Title: "Make Conditionals", Description: "Conditional DocumentSymbol records span whole blocks and cannot be mapped to a selected-source declaration, so conditional lookup is omitted.", Severity: "info"})
 	}
 	if a.Config.Diagnostics {
 		limitations = append(limitations, backend.Constraint{Title: "Matching Diagnostics", Description: "Only an explicit matching publishDiagnostics report is accepted; missing reports time out as errors.", Severity: "info"})
@@ -268,9 +275,9 @@ func (a *Adapter) open(ctx context.Context, root, file string, source []byte, pr
 	if err := ctx.Err(); err != nil {
 		return nil, "", "", err
 	}
-	parent := filepath.Join(root, ".scratch")
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return nil, "", "", fmt.Errorf("create scratch root: %w", err)
+	parent, err := scratchParent(root)
+	if err != nil {
+		return nil, "", "", err
 	}
 	scratch, err := os.MkdirTemp(parent, string(a.Language())+"-lsp-")
 	if err != nil {
@@ -304,6 +311,28 @@ func (a *Adapter) open(ctx context.Context, root, file string, source []byte, pr
 		return nil, "", "", errors.Join(fmt.Errorf("initialize %s server: %w", a.Language(), err), session.Close(), removeScratch(scratch))
 	}
 	return session, scratch, pathutil.FileURI(target), nil
+}
+
+func scratchParent(root string) (string, error) {
+	parent := filepath.Join(root, ".scratch")
+	if err := os.Mkdir(parent, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+		return "", fmt.Errorf("create scratch root: %w", err)
+	}
+	info, err := os.Lstat(parent)
+	if err != nil {
+		return "", fmt.Errorf("inspect scratch root: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", ErrScratchOutsideRoot
+	}
+	resolved, err := filepath.EvalSymlinks(parent)
+	if err != nil {
+		return "", fmt.Errorf("resolve scratch root: %w", err)
+	}
+	if !pathutil.PathWithin(root, resolved) {
+		return "", ErrScratchOutsideRoot
+	}
+	return resolved, nil
 }
 
 func removeScratch(path string) error {
@@ -520,12 +549,6 @@ func validMakeSymbol(source []byte, s symbol) bool {
 		}
 		rest := strings.TrimLeft(line[len(s.Name):], " \t")
 		return strings.HasPrefix(rest, "=") || strings.HasPrefix(rest, ":=") || strings.HasPrefix(rest, "?=") || strings.HasPrefix(rest, "+=") || strings.HasPrefix(rest, "!=")
-	case 3:
-		for _, directive := range []string{"ifdef", "ifndef", "ifeq", "ifneq"} {
-			if strings.HasPrefix(line, directive+" ") || strings.HasPrefix(line, directive+"(") {
-				return s.Name == directive && selected == directive
-			}
-		}
 	}
 	return false
 }
@@ -545,20 +568,30 @@ func validBashSymbol(source []byte, s symbol) bool {
 		lineEnd++
 	}
 	line := strings.TrimLeft(string(source[lineStart:lineEnd]), " \t")
-	nameAt := strings.Index(line, s.Name)
-	if nameAt < 0 || (nameAt > 0 && isIdentifierByte(line[nameAt-1])) || (nameAt+len(s.Name) < len(line) && isIdentifierByte(line[nameAt+len(s.Name)])) {
-		return false
+	for offset := 0; offset < len(line); {
+		relative := strings.Index(line[offset:], s.Name)
+		if relative < 0 {
+			break
+		}
+		nameAt := offset + relative
+		offset = nameAt + len(s.Name)
+		if (nameAt > 0 && isIdentifierByte(line[nameAt-1])) || (nameAt+len(s.Name) < len(line) && isIdentifierByte(line[nameAt+len(s.Name)])) {
+			continue
+		}
+		prefix := strings.TrimSpace(line[:nameAt])
+		suffix := strings.TrimSpace(line[nameAt+len(s.Name):])
+		switch s.Kind {
+		case 12:
+			if (prefix == "" || prefix == "function") && (strings.HasPrefix(suffix, "(") || strings.HasPrefix(suffix, "{")) {
+				return true
+			}
+		case 13:
+			if (prefix == "" || prefix == "local" || prefix == "declare" || prefix == "typeset" || prefix == "readonly" || prefix == "export") && (suffix == "" || strings.HasPrefix(suffix, "=")) {
+				return true
+			}
+		}
 	}
-	prefix := strings.TrimSpace(line[:nameAt])
-	suffix := strings.TrimSpace(line[nameAt+len(s.Name):])
-	switch s.Kind {
-	case 12:
-		return (prefix == "" || prefix == "function") && (strings.HasPrefix(suffix, "(") || strings.HasPrefix(suffix, "{"))
-	case 13:
-		return prefix == "" || prefix == "local" || prefix == "declare" || prefix == "typeset" || prefix == "readonly" || prefix == "export"
-	default:
-		return false
-	}
+	return false
 }
 
 func bytesLastNewline(source []byte, before int) int {

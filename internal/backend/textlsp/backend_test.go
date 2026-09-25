@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -60,6 +61,37 @@ func TestLookupRequiresTrustBeforeStartingServer(t *testing.T) {
 	}
 	if started {
 		t.Fatal("server started before request trust")
+	}
+}
+
+func TestLookupRejectsScratchSymlinkOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	file := filepath.Join(root, "a.sh")
+	if err := pipeline.WriteAtomic(file, []byte("f() {}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, ".scratch")); err != nil {
+		t.Fatal(err)
+	}
+	started := false
+	a := &Adapter{Config: Config{Language: backend.LanguageBash, Extensions: []string{".sh"}}, Factory: func(context.Context, string, string, []string) (Session, error) {
+		started = true
+		return nil, errors.New("unexpected")
+	}}
+	_, err := a.Lookup(context.Background(), backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "f")
+	if !errors.Is(err, ErrScratchOutsideRoot) {
+		t.Fatalf("Lookup error=%v, want scratch path rejection", err)
+	}
+	if started {
+		t.Fatal("server started with scratch symlink outside workspace")
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("outside scratch target contains %d entries", len(entries))
 	}
 }
 

@@ -11,6 +11,10 @@ stderr 'operation is not supported'
 cmp scripts/tool.sh want.sh
 exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/ambiguous.sh --symbol f
 stdout '"ambiguous": true'
+exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/declarations.sh --symbol fun
+stdout '"kind": "function"'
+exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/declarations.sh --symbol loc
+stdout '"kind": "variable"'
 
 -- scripts/tool.sh --
 #!/usr/bin/env bash
@@ -19,6 +23,10 @@ f() { echo safe; }
 #!/usr/bin/env bash
 f() { :; }
 # SEMEDIT_TEST_AMBIGUOUS
+-- scripts/declarations.sh --
+function fun() {
+ local loc=value
+}
 -- want.sh --
 #!/usr/bin/env bash
 f() { echo safe; }

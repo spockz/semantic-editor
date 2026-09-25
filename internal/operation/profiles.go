@@ -153,7 +153,7 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 		}}, true
 	case backend.LanguageMake:
 		return Profile{Language: backend.LanguageMake, DisplayName: "Makefile", Maturity: readOnlyPreview, Limitations: []capability.Constraint{
-			{Title: "Read Only", Description: "Makefile supports trusted selected-file lookup only; verification, rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
+			{Title: "Read Only", Description: "Makefile supports trusted selected-file target and assignment-variable lookup only; conditional lookup, verification, rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
 			{Title: "Selected File", Description: "Only Makefile, makefile, GNUmakefile, and .mk files are accepted. make-ls runs in an isolated source workspace after request-scoped trust.", Severity: "error"},
 			{Title: "Include Reads", Description: "make-ls resolves includes; absolute paths and relative paths traversing outside the copied source may read files after trust is granted.", Severity: "info"},
 		}}, true

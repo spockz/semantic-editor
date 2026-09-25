@@ -8,6 +8,9 @@ stderr 'workspace trust required'
 stderr 'operation is not supported'
 cmp Makefile want.mk
 ! exists ran-marker
+! semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Conditional.mk --symbol 'ifeq $(MODE),1'
+stderr 'symbol not found in selected file'
+! exists ran-marker
 ! semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Include.mk --symbol external
 stderr 'symbol not found in selected file'
 exec semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Ambiguous.mk --symbol all
@@ -29,3 +32,8 @@ include external.mk
 -- external.mk --
 external:
 	@touch ran-marker
+-- Conditional.mk --
+ifeq ($(MODE),1)
+all:
+	@touch ran-marker
+endif
