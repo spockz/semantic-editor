@@ -38,14 +38,15 @@ const (
 
 // ParameterContract declares one operation parameter in ingress-neutral form.
 type ParameterContract struct {
-	Name        string
-	CLIName     string
-	JSONName    string
-	Type        string
-	Description string
-	Required    bool
-	Default     any
-	Enums       []string
+	Name         string
+	CLIName      string
+	JSONName     string
+	Type         string
+	Description  string
+	Required     bool
+	Default      any
+	Enums        []string
+	DynamicEnums func(backend.Backend) []string
 }
 
 // Def declares one semantic operation with typed parse, per-language handlers, and formatting.
@@ -252,6 +253,32 @@ func (r *Registry) All() []Entry {
 	return slices.SortedFunc(maps.Values(r.byKey), func(a, b Entry) int {
 		return cmp.Compare(a.Key, b.Key)
 	})
+}
+
+// ParametersForBackends builds parameter contracts using capabilities reported by
+// the registered backend instances that can handle the operation.
+func ParametersForBackends(entry Entry, backends []backend.Backend) []ParameterContract {
+	params := append([]ParameterContract(nil), entry.Params...)
+	for i := range params {
+		if params[i].DynamicEnums == nil {
+			continue
+		}
+		seen := map[string]bool{}
+		var values []string
+		for _, candidate := range backends {
+			if !slices.Contains(entry.Languages, candidate.Language()) {
+				continue
+			}
+			for _, value := range params[i].DynamicEnums(candidate) {
+				if !seen[value] {
+					seen[value] = true
+					values = append(values, value)
+				}
+			}
+		}
+		params[i].Enums = values
+	}
+	return params
 }
 
 func cloneRaw(raw map[string]any) map[string]any {

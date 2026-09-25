@@ -132,9 +132,11 @@ To support deterministic mutation without synthetic grammar types, `semantic_rep
 
 To avoid introducing one-off registry interfaces (e.g. `ConstructReplacingBackend`), construct capabilities follow the declarative metadata pattern established in ADR-0012 for access modifiers:
 
-1. **Backend Capability Slice**: In `internal/backend`, `Backend` announces supported constructs via `SupportedConstructs() []ConstructKind`.
+1. **Backend Capability Slice**: In `internal/backend`, an executable construct backend reports its supported constructs via `SupportedConstructs() []ConstructKind`.
 2. **Dynamic Parameter Contract**: `operation.ParameterContract` supports `DynamicEnums: func(backend.Backend) []string`.
-3. **Dynamic MCP Schema Filtering at Initialization**: During the `initialize` handshake and subsequent `tools/list` requests, `internal/mcp/server.go` resolves `DynamicEnums` against the active workspace backend established during initialization. The server dynamically emits only the constructs valid for that language (e.g. emitting `["loop", "if", "else", "case", "select", "defer"]` for Go, or `["loop", "if", "else", "when", "case", "try_catch"]` for Kotlin). This prevents catalog dilution and allows LLM decoding engines to enforce valid tokens via logit masking from the initial tool exposure. If the active language changes, `notifications/tools/list_changed` pushes the updated schema to the client.
+3. **Dynamic MCP Schema Filtering at Initialization**: During `tools/list`, `internal/mcp/server.go` resolves `DynamicEnums` against the registered backend instances for active workspace languages. It unions capability values only from backends with an executable handler for the operation (e.g. Go's six implemented constructs); Kotlin taxonomy values remain planned until a Kotlin mutation handler exists. This prevents catalog dilution and allows clients to validate construct kinds from the advertised schema. If active languages change, `notifications/tools/list_changed` pushes the updated schema to the client.
+
+The language table records the intended taxonomy and grammar mappings. An enum is executable only when a registered backend has a `replace_construct` handler for that language; this change currently exposes the six Go kinds, while the Kotlin kinds remain planned until a Kotlin mutation handler exists.
 
 #### Discriminator & Ambiguity Rules
 

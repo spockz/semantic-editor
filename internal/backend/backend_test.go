@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -57,14 +58,94 @@ func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module test\n"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
 	selected, err = registry.Select(backend.ProjectContext{RootDir: root})
 	if err != nil || selected.Language() != backend.LanguageGo {
 		t.Fatalf("auto selection = %v, backend = %v", err, selected)
 	}
 
-	_, err = registry.Select(backend.ProjectContext{RootDir: t.TempDir()})
+	sourceLess := t.TempDir()
+	if err := os.WriteFile(filepath.Join(sourceLess, "go.mod"), []byte("module empty\n"), 0o600); err != nil {
+		t.Fatalf("write source-less module: %v", err)
+	}
+	_, err = registry.Select(backend.ProjectContext{RootDir: sourceLess})
 	if err == nil || !errors.Is(err, backend.ErrLanguageUndetected) {
-		t.Fatalf("auto selection without project marker error = %v", err)
+		t.Fatalf("auto selection without source files error = %v", err)
+	}
+}
+
+func TestRegistryAutoSelectionIgnoresDetectedLanguagesWithoutBackends(t *testing.T) {
+	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for name, source := range map[string]string{
+		"main.go":  "package main\n",
+		"Makefile": "all:\n\tgo build ./...\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	detected, err := backend.DetectLanguages(root)
+	if err != nil {
+		t.Fatalf("DetectLanguages: %v", err)
+	}
+	if !reflect.DeepEqual(detected, []backend.LanguageID{backend.LanguageGo, backend.LanguageMake}) {
+		t.Fatalf("detected languages = %v, want Go and Make", detected)
+	}
+	selected, err := registry.Select(backend.ProjectContext{RootDir: root})
+	if err != nil || selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto selection = %v, backend = %v; want Go backend", err, selected)
+	}
+}
+
+func TestDetectLanguagesUsesSourcesAndSkipsGeneratedTrees(t *testing.T) {
+	root := t.TempDir()
+	for path, source := range map[string]string{
+		"main.go":                             "package main\n",
+		"sub/lib.rs":                          "pub fn lib() {}\n",
+		".scratch/worktrees/nested/fake.java": "class Fake {}\n",
+		"vendor/dependency/dep.scala":         "object Dep\n",
+		"build.sc":                            "// build manifest, not source\n",
+	} {
+		full := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	languages, err := backend.DetectLanguages(root)
+	if err != nil {
+		t.Fatalf("DetectLanguages: %v", err)
+	}
+	want := []backend.LanguageID{backend.LanguageGo, backend.LanguageRust}
+	if !reflect.DeepEqual(languages, want) {
+		t.Fatalf("languages = %v, want %v", languages, want)
+	}
+}
+
+func TestDetectLanguagesRecognizesPlannedSourceExtensions(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"Main.kt", "build.kts", "script.sh", "hook.bash", "Makefile", "rules.mk", "makefile", "GNUmakefile"} {
+		path := filepath.Join(root, name)
+		if err := os.WriteFile(path, []byte("# source\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	languages, err := backend.DetectLanguages(root)
+	if err != nil {
+		t.Fatalf("DetectLanguages: %v", err)
+	}
+	want := []backend.LanguageID{backend.LanguageBash, backend.LanguageKotlin, backend.LanguageMake}
+	if !reflect.DeepEqual(languages, want) {
+		t.Fatalf("languages = %v, want %v", languages, want)
 	}
 }
 

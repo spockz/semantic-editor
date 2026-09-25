@@ -5,10 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
+	"semedit/internal/backend"
+	gobackend "semedit/internal/backend/golang"
 	"semedit/internal/mcp"
 	"semedit/internal/operation"
 )
@@ -193,17 +197,22 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 
 func listTools(t *testing.T, profile string) []map[string]any {
 	t.Helper()
-	return listToolsWithRegistry(t, profile, nil)
+	return listToolsAtWithRegistry(t, profile, schemaWorkspace(t), nil)
 }
 
 func listToolsWithRegistry(t *testing.T, profile string, registry *operation.Registry) []map[string]any {
+	t.Helper()
+	return listToolsAtWithRegistry(t, profile, schemaWorkspace(t), registry)
+}
+
+func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *operation.Registry) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
 	var opts []mcp.Option
 	if registry != nil {
 		opts = append(opts, mcp.WithRegistry(registry))
 	}
-	if err := mcp.NewServer(profile, ".", &out, opts...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	if err := mcp.NewServer(profile, root, &out, opts...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -217,10 +226,21 @@ func listToolsWithRegistry(t *testing.T, profile string, registry *operation.Reg
 	return response.Result.Tools
 }
 
+func schemaWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for name, source := range map[string]string{"main.go": "package sample\n", "Main.java": "class Main {}\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
 func listToolsWithLiveReload(t *testing.T) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", ".", &out, mcp.WithLiveReload(true)).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	if err := mcp.NewServer("full", schemaWorkspace(t), &out, mcp.WithLiveReload(true)).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -334,9 +354,9 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 		stringProperties []string
 	}{
 		{
-			name:             "semantic_replace_loop",
-			required:         []string{"file", "function", "source"},
-			stringProperties: []string{"file", "function", "loop_on", "loop_path", "source"},
+			name:             "semantic_replace_construct",
+			required:         []string{"file", "function", "kind", "source"},
+			stringProperties: []string{"file", "function", "kind", "discriminator", "construct_path", "source"},
 		},
 		{
 			name:             "semantic_replace_decl",
@@ -367,6 +387,10 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 			}
 		})
 	}
+	construct := byName["semantic_replace_construct"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["kind"].(map[string]any)
+	if got, want := construct["enum"], toAnySlice([]string{"loop", "if", "else", "case", "select", "defer"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("Go construct enum = %#v, want %#v", got, want)
+	}
 
 	insertDecl := byName["semantic_insert_decl"]
 	if insertDecl == nil {
@@ -393,7 +417,7 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 		toolName, _ := properties["tool"].(map[string]any)["const"].(string)
 		batchTools[toolName] = properties["params"].(map[string]any)
 	}
-	for _, name := range []string{"semantic_replace_loop", "semantic_replace_decl", "semantic_insert_decl"} {
+	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_decl"} {
 		params, ok := batchTools[name]
 		if !ok {
 			t.Errorf("semantic_batch schema omitted %s", name)
@@ -403,6 +427,118 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 			t.Errorf("semantic_batch params for %s differ from tools/list schema", name)
 		}
 	}
+}
+
+func TestMCPEnabledLanguagesFilterMixedAndSourceLessWorkspaces(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, source string) {
+		t.Helper()
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("main.go", "package sample\nfunc F() {}\n")
+	write("rust/lib.rs", "pub fn f() {}\n")
+	tools := listToolsAt(t, root, mcp.WithEnabledLanguages("go"))
+	byName := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = true
+	}
+	if !byName["semantic_replace_construct"] {
+		t.Fatal("Go construct tool missing from enabled mixed workspace")
+	}
+	if byName["semantic_maven_compile"] {
+		t.Fatal("Java-only Maven tool exposed when only Go is enabled")
+	}
+
+	empty := t.TempDir()
+	for _, tool := range listToolsAt(t, empty) {
+		if tool["name"] == "semantic_replace_construct" {
+			t.Fatal("source-less workspace inferred a Go construct backend")
+		}
+	}
+	if err := mcp.NewServer("full", empty, &bytes.Buffer{}, mcp.WithEnabledLanguages("go,unknown")).Serve(context.Background(), strings.NewReader("")); err == nil {
+		t.Fatal("unknown enabled language was accepted")
+	}
+
+	haskell := t.TempDir()
+	if err := os.WriteFile(filepath.Join(haskell, "Main.hs"), []byte("module Main where\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if hasTool(listToolsAt(t, haskell), "semantic_lookup") {
+		t.Fatal("implicit Haskell source advertised standalone lookup")
+	}
+	if !hasTool(listToolsAt(t, haskell, mcp.WithEnabledLanguages("haskell")), "semantic_lookup") {
+		t.Fatal("explicitly enabled Haskell omitted standalone lookup")
+	}
+}
+
+type customConstructBackend struct {
+	backend.Backend
+
+	kinds []backend.ConstructKind
+}
+
+func (b customConstructBackend) SupportedConstructs() []backend.ConstructKind {
+	return append([]backend.ConstructKind(nil), b.kinds...)
+}
+
+func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	custom := customConstructBackend{
+		Backend: gobackend.NewGoBackend(),
+		kinds:   []backend.ConstructKind{"custom_kind", backend.ConstructLoop},
+	}
+	registry, err := backend.NewRegistry(custom)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)))
+	for _, tool := range tools {
+		if tool["name"] != "semantic_replace_construct" {
+			continue
+		}
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		kind := properties["kind"].(map[string]any)
+		if got, want := kind["enum"], toAnySlice([]string{"custom_kind", "loop"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("construct kind enum = %#v, want registered backend values %#v", got, want)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_replace_construct")
+}
+
+func hasTool(tools []map[string]any, name string) bool {
+	for _, tool := range tools {
+		if tool["name"] == name {
+			return true
+		}
+	}
+	return false
+}
+
+func listToolsAt(t *testing.T, root string, options ...mcp.Option) []map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out, options...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+		t.Fatalf("tools/list failed: %v", err)
+	}
+	var response struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode tools/list response: %v", err)
+	}
+	return response.Result.Tools
 }
 
 func TestDefaultMCPDescriptionsRouteBeforeGenericTools(t *testing.T) {

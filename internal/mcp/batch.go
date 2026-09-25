@@ -191,6 +191,9 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 	if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
 		return BatchResult{}, "", fmt.Errorf("invalid arguments: %w", err)
 	}
+	if err := s.validateLanguageAllowed(entry, raw); err != nil {
+		return BatchResult{}, "", err
+	}
 	result, err := s.registry.Dispatch(operation.CallContext{
 		Ctx:               ctx,
 		WorkDir:           s.workDir,

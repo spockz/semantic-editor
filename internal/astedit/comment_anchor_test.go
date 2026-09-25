@@ -133,11 +133,11 @@ func TestInsertDeclarationAfterSymbolFollowsInlineTrailingComment(t *testing.T) 
 	assertCommentSource(t, got, want)
 }
 
-func TestReplaceLoopKeepsLeadingCommentWithLoop(t *testing.T) {
+func TestReplaceConstructKeepsLeadingCommentWithLoop(t *testing.T) {
 	initial := "package p\n\nfunc Count(values []int) {\n\t// Keep documentation.\n\tfor _, value := range values {\n\t\t_ = value\n\t}\n}\n"
 	path := writeCommentFixture(t, initial)
-	if _, err := ReplaceLoop(context.Background(), path, "Count", "values", "for range values {}", LoopOptions{}); err != nil {
-		t.Fatalf("ReplaceLoop: %v", err)
+	if _, err := ReplaceConstruct(context.Background(), path, "Count", ConstructLoop, "values", "for range values {}", ConstructOptions{}); err != nil {
+		t.Fatalf("ReplaceConstruct: %v", err)
 	}
 	got := readCommentFixture(t, path)
 	want := "package p\n\nfunc Count(values []int) {\n\t// Keep documentation.\n\tfor range values {\n\t}\n}\n"
