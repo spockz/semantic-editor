@@ -392,16 +392,16 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 		t.Errorf("Go construct enum = %#v, want %#v", got, want)
 	}
 
-	insertDecl := byName["semantic_insert_decl"]
-	if insertDecl == nil {
-		t.Fatal("tools/list omitted semantic_insert_decl")
+	insertStructure := byName["semantic_insert_structure"]
+	if insertStructure == nil {
+		t.Fatal("tools/list omitted semantic_insert_structure")
 	}
-	overwrite, ok := insertDecl["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"].(map[string]any)
+	overwrite, ok := insertStructure["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"].(map[string]any)
 	if !ok || overwrite["type"] != "boolean" {
-		t.Fatalf("semantic_insert_decl overwrite schema = %#v, want optional boolean", overwrite)
+		t.Fatalf("semantic_insert_structure overwrite schema = %#v, want optional boolean", overwrite)
 	}
 	if defaultValue, hasDefault := overwrite["default"]; hasDefault && defaultValue != false {
-		t.Fatalf("semantic_insert_decl overwrite default = %#v, want false when specified", defaultValue)
+		t.Fatalf("semantic_insert_structure overwrite default = %#v, want false when specified", defaultValue)
 	}
 
 	batch := byName["semantic_batch"]
@@ -417,7 +417,7 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 		toolName, _ := properties["tool"].(map[string]any)["const"].(string)
 		batchTools[toolName] = properties["params"].(map[string]any)
 	}
-	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_decl"} {
+	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_structure"} {
 		params, ok := batchTools[name]
 		if !ok {
 			t.Errorf("semantic_batch schema omitted %s", name)
@@ -611,6 +611,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
 	assertContains("semantic_insert_decl description", toolDescription("semantic_insert_decl"), "one Go constant or variable", "instead of replace_file_content")
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
+	assertContains("semantic_insert_structure description", toolDescription("semantic_insert_structure"), "structural construct", "instead of replace_file_content")
 }
 
 func toAnySlice(values []string) []any {

@@ -128,10 +128,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 	for _, required := range []string{
 		"semantic_rename",
-		"semantic_insert_declaration",
-		"semantic_insert_function",
-		"semantic_insert_type",
-		"semantic_insert_decl",
+		"semantic_insert_structure",
 		"semantic_organize_imports",
 		"semantic_add_build_dependency",
 		"semantic_verify",
@@ -412,9 +409,9 @@ func Existing() {}
 	}
 
 	messages := []string{
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_type","arguments":{"file":%q,"source":"type Item struct { ID string }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":%q,"source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_decl","arguments":{"file":%q,"source":"const DefaultLimit = 50"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"type","source":"type Item struct { ID string }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"decl","source":"const DefaultLimit = 50"}}}`, filePath),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":%q,"add":["crand crypto/rand"]}}}`, filePath),
 	}
 
@@ -481,7 +478,7 @@ func TestMCPToolLocationError(t *testing.T) {
 		t.Fatalf("write initial file: %v", err)
 	}
 
-	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_function","arguments":{"file":%q,"source":"func broken( {"}}}`, filePath) + "\n"
+	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func broken( {"}}}`, filePath) + "\n"
 	inBuf := bytes.NewBufferString(callMsg)
 	var outBuf bytes.Buffer
 

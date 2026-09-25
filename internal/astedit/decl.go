@@ -29,6 +29,20 @@ type DeclOptions struct {
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
+	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
+		Kind:                StructureKindDecl,
+		AccessModifier:      opts.AccessModifier,
+		Group:               opts.Group,
+		Placement:           opts.Placement,
+		TargetSymbol:        opts.TargetSymbol,
+		Overwrite:           opts.Overwrite,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return err
+}
+
+// InsertDecl injects constants, variables, or general top-level declarations into filePath.
+func insertDeclImpl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
 	source = strings.TrimSpace(source)
 	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
 		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {

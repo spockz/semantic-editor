@@ -12,11 +12,12 @@ import (
 )
 
 var (
-	placementEnum  = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
-	accessEnum     = []string{"infer", "public", "private", "protected", "package-private"}
-	visibilityEnum = []string{"public", "private"}
-	groupEnum      = []string{"append", "standalone"}
-	caseEnum       = []string{"first", "last", "before_default", "before", "after"}
+	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
+	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
+	accessEnum             = []string{"infer", "public", "private", "protected", "package-private"}
+	visibilityEnum         = []string{"public", "private"}
+	groupEnum              = []string{"append", "standalone"}
+	caseEnum               = []string{"first", "last", "before_default", "before", "after"}
 )
 
 // FileOutcome is implemented by results that record a written file for batch post-processing.
@@ -107,6 +108,9 @@ func formatFileEdit(res FileEditRes) (string, error) {
 // registerEngineOps adds the host-engine file and build operations to the registry.
 func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, assertionModeDef()); err != nil {
+		return err
+	}
+	if err := Register(registry, insertStructureDef()); err != nil {
 		return err
 	}
 	if err := Register(registry, insertDeclarationDef()); err != nil {
