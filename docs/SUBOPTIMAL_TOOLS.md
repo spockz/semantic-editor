@@ -56,7 +56,10 @@ The goal is to track:
 
 | **ST-0030** | 2026-09-24 | `semantic_insert_function` | `tools/benchmark-harness/driver.go` | Inserting a helper with `placement: before_symbol` anchored before `ExecuteAgentDriver` placed it between the target function’s doc comment and declaration, attaching the comment to the helper. | Move the doc comment back above `ExecuteAgentDriver` with an atomic source edit. | The insertion anchor does not keep a Go doc comment attached to its declaration. | Preserve target declaration comments when inserting before a symbol. |
 
+| **ST-0031** | 2026-09-25 | `semantic_insert_function` | `internal/mcp/server_test.go` while adding feedback-tool contract coverage | Rejected a `Test...` function when the request explicitly declared private access, because the exported Go identifier casing implied public access. | Retry the insertion with `access_modifier: public`; no source change was made by the rejected call. | The tool enforces agreement between Go identifier casing and the requested access modifier. | Match the access modifier to exported Go test function names. |
+
 | **ST-0032** | 2026-09-25 | `semantic_lookup` | `tools/benchmark-harness/driver.go` | Querying the guessed symbol `Run` returned `symbol not found`; no source change was made. | Use the actual declaration name `ExecuteAgentDriver` for lookup. | The lookup request used a generic guessed symbol rather than the target function identifier. | Check the target declaration name before semantic lookup. |
+
 ---
 
 ## Guidelines for Logging Dogfooding Deficiencies

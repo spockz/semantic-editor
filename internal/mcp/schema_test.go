@@ -103,6 +103,17 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				switch name {
 				case "semantic_batch":
 					assertBatchOutputSchema(t, tool["outputSchema"])
+				case "report_feedback":
+					assertStandardOutputSchema(t, tool["outputSchema"], "object")
+					output := tool["outputSchema"].(map[string]any)
+					result := output["properties"].(map[string]any)["result"].(map[string]any)
+					if got := result["required"]; !reflect.DeepEqual(got, []any{"status", "date", "report", "markdown"}) {
+						t.Fatalf("feedback result required = %#v", got)
+					}
+					status := result["properties"].(map[string]any)["status"].(map[string]any)
+					if status["const"] != "draft_only" {
+						t.Fatalf("feedback status schema = %#v, want draft_only", status)
+					}
 				default:
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 				}

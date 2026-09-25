@@ -656,3 +656,155 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 		t.Errorf("expected return 1, got %s", string(restored))
 	}
 }
+
+func TestFeedbackToolAdvertisesStructuredSchemaAndPrivacyGuidance(t *testing.T) {
+	t.Parallel()
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("mutations-only", t.TempDir(), &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				Description string `json:"description"`
+				InputSchema struct {
+					Properties map[string]json.RawMessage `json:"properties"`
+					Required   []string                   `json:"required"`
+				} `json:"inputSchema"`
+				OutputSchema json.RawMessage `json:"outputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, feedback := range response.Result.Tools {
+		if feedback.Name != "report_feedback" {
+			continue
+		}
+		found = true
+		for _, field := range []string{"intent", "interface", "command", "parameters", "observed_result", "unexpected_reason", "manual_touchups"} {
+			if _, ok := feedback.InputSchema.Properties[field]; !ok {
+				t.Errorf("feedback input schema is missing %q", field)
+			}
+			required := false
+			for _, candidate := range feedback.InputSchema.Required {
+				required = required || candidate == field
+			}
+			if !required {
+				t.Errorf("feedback input schema does not require %q", field)
+			}
+		}
+		for _, phrase := range []string{"open-source", "ask the user first", "proprietary", "intellectual property", "review for accuracy and sensitive content", "post manually as a GitHub issue", "does not save or post feedback"} {
+			if !strings.Contains(feedback.Description, phrase) {
+				t.Errorf("feedback tool description does not contain %q", phrase)
+			}
+		}
+		if len(feedback.OutputSchema) == 0 {
+			t.Error("report_feedback is missing its output schema")
+		}
+		break
+	}
+	if !found {
+		t.Fatal("report_feedback is missing from tools/list")
+	}
+}
+
+func TestReportFeedbackReturnsStructuredLocalDraft(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/feedback\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(dir, "docs", "SUBOPTIMAL_TOOLS.md")
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const originalLog = "existing local log\n"
+	if err := os.WriteFile(logPath, []byte(originalLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	arguments := `{"intent":"Rename a public function","interface":"mcp","command":"semantic_rename","parameters":{"symbol":"OldName","to":"NewName"},"observed_result":"The declaration changed but a reference did not.","unexpected_reason":"The rename should update all supported references.","manual_touchups":"None"}`
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_feedback","arguments":` + arguments + `}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Result struct {
+					Status   string `json:"status"`
+					Date     string `json:"date"`
+					Markdown string `json:"markdown"`
+					Report   struct {
+						Command    string         `json:"command"`
+						Parameters map[string]any `json:"parameters"`
+					} `json:"report"`
+				} `json:"result"`
+				Metrics map[string]any `json:"metrics"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.IsError {
+		t.Fatalf("report_feedback returned an error: %s", out.String())
+	}
+	result := response.Result.StructuredContent.Result
+	if result.Status != "draft_only" || result.Date == "" {
+		t.Fatalf("feedback result status/date = %q/%q", result.Status, result.Date)
+	}
+	if result.Report.Command != "semantic_rename" || result.Report.Parameters["symbol"] != "OldName" {
+		t.Errorf("feedback command details = %#v", result.Report)
+	}
+	for _, phrase := range []string{"Rename a public function", "semantic_rename", "The declaration changed", "The rename should update", "Manual touch-ups", "Review this draft for accuracy and sensitive content", "manually posting it as a GitHub issue", "not been saved or posted"} {
+		if !strings.Contains(result.Markdown, phrase) {
+			t.Errorf("feedback draft is missing %q", phrase)
+		}
+	}
+	if response.Result.StructuredContent.Metrics == nil || len(response.Result.Content) != 1 || response.Result.Content[0].Text != result.Markdown {
+		t.Fatalf("feedback response is missing its standard MCP envelope: %s", out.String())
+	}
+	gotLog, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(gotLog) != originalLog {
+		t.Fatalf("report_feedback modified the workspace log: %q", gotLog)
+	}
+}
+
+func TestReportFeedbackRejectsMissingCoreFields(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/feedbackvalidation\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	arguments := `{"intent":"Fix a tool issue","interface":"mcp","command":"semantic_verify","parameters":{},"observed_result":"Unexpected error","unexpected_reason":"The file is valid.","manual_touchups":""}`
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_feedback","arguments":` + arguments + `}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Result.IsError || len(response.Result.Content) == 0 || !strings.Contains(response.Result.Content[0].Text, "manual_touchups") {
+		t.Fatalf("report_feedback should reject missing manual touch-ups: %s", out.String())
+	}
+}

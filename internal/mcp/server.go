@@ -110,6 +110,19 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	return s
 }
 
+type feedbackReport struct {
+	Intent           string         `json:"intent"`
+	Interface        string         `json:"interface"`
+	Command          string         `json:"command"`
+	Parameters       map[string]any `json:"parameters"`
+	TargetContext    string         `json:"target_context,omitempty"`
+	ObservedResult   string         `json:"observed_result"`
+	UnexpectedReason string         `json:"unexpected_reason"`
+	ManualTouchups   string         `json:"manual_touchups"`
+	SuspectedCause   string         `json:"suspected_cause,omitempty"`
+	SuggestedFix     string         `json:"suggested_fix,omitempty"`
+}
+
 const schemaPropertiesKey = "properties"
 
 type jsonRPCRequest struct {
@@ -216,7 +229,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 }
 
 func (s *Server) listTools() []map[string]any {
-	tools := make([]map[string]any, 0, len(s.registry.All())+2)
+	tools := make([]map[string]any, 0, len(s.registry.All())+3)
 	batchable := make([]operation.Entry, 0)
 	for _, entry := range s.registry.All() {
 		if entry.MCPName == "" || (s.profile == "mutations-only" && entry.ReadOnly) {
@@ -235,6 +248,7 @@ func (s *Server) listTools() []map[string]any {
 			"outputSchema": reloadOutputSchema(),
 		})
 	}
+	tools = append(tools, feedbackToolSchema())
 	return tools
 }
 
@@ -414,6 +428,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	}
 	if params.Name == "semantic_reload" {
 		s.handleReload(id)
+		return
+	}
+	if params.Name == "report_feedback" {
+		s.handleFeedbackReport(ctx, id, params.Arguments)
 		return
 	}
 	if params.Name == "semantic_batch" {
@@ -663,4 +681,146 @@ func (s *Server) notifyToolsListChanged() {
 	if data, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}); err == nil {
 		_, _ = s.out.Write(append(data, '\n'))
 	}
+}
+
+func (s *Server) handleFeedbackReport(ctx context.Context, id json.RawMessage, arguments json.RawMessage) {
+	timing := newToolRequestTiming(ctx, nil)
+	ctx = timing.Context(ctx)
+	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
+	decoder := json.NewDecoder(strings.NewReader(string(arguments)))
+	decoder.DisallowUnknownFields()
+	var report feedbackReport
+	if err := decoder.Decode(&report); err != nil {
+		finishArguments()
+		err = fmt.Errorf("invalid feedback arguments: %w", err)
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("multiple JSON values are not allowed")
+		}
+		finishArguments()
+		err = fmt.Errorf("invalid feedback arguments: %w", err)
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	if err := validateFeedbackReport(report); err != nil {
+		finishArguments()
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	finishArguments()
+
+	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
+	date := time.Now().Format("2006-01-02")
+	parameters, err := json.MarshalIndent(report.Parameters, "", "  ")
+	if err != nil {
+		finishResponse()
+		err = fmt.Errorf("format feedback parameters: %w", err)
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	var draft strings.Builder
+	fmt.Fprintf(&draft, "# Feedback report draft (%s)\n\nReview this draft for accuracy and sensitive content before manually posting it as a GitHub issue. It has not been saved or posted.\n\n", date)
+	fmt.Fprintf(&draft, "## Intended task\n\n%s\n\n", report.Intent)
+	fmt.Fprintf(&draft, "## Command\n\nInterface: %s\n\nCommand: %s\n\nParameters:\n\n```json\n%s\n```\n\n", report.Interface, report.Command, parameters)
+	if report.TargetContext != "" {
+		fmt.Fprintf(&draft, "## Target context\n\n%s\n\n", report.TargetContext)
+	}
+	fmt.Fprintf(&draft, "## Observed result\n\n%s\n\n", report.ObservedResult)
+	fmt.Fprintf(&draft, "## Why it was unexpected\n\n%s\n\n", report.UnexpectedReason)
+	fmt.Fprintf(&draft, "## Manual touch-ups\n\n%s\n\n", report.ManualTouchups)
+	if report.SuspectedCause != "" {
+		fmt.Fprintf(&draft, "## Suspected cause\n\n%s\n\n", report.SuspectedCause)
+	}
+	if report.SuggestedFix != "" {
+		fmt.Fprintf(&draft, "## Suggested fix\n\n%s\n\n", report.SuggestedFix)
+	}
+	finishResponse()
+
+	result := map[string]any{
+		"status":   "draft_only",
+		"date":     date,
+		"report":   report,
+		"markdown": draft.String(),
+	}
+	s.sendToolSuccessWithTimingAndResult(id, draft.String(), result, timing)
+}
+
+func feedbackToolSchema() map[string]any {
+	const (
+		descriptionKey          = "description"
+		additionalPropertiesKey = "additionalProperties"
+	)
+	stringProperty := func(description string) map[string]any {
+		return map[string]any{"type": "string", "minLength": 1, descriptionKey: description}
+	}
+	properties := map[string]any{
+		"intent":            stringProperty("In a few sentences, describe what the user was trying to accomplish. Keep project details suitable for sharing."),
+		"interface":         map[string]any{"type": "string", "enum": []string{"mcp", "cli", "other"}, descriptionKey: "Where the command was run."},
+		"command":           stringProperty("Exact semedit MCP tool name or CLI command that was executed."),
+		"parameters":        map[string]any{"type": "object", additionalPropertiesKey: true, descriptionKey: "The command parameters exactly as supplied. Omit proprietary values and source code."},
+		"target_context":    map[string]any{"type": "string", descriptionKey: "Optional concise target context, such as a public project-relative file path or symbol. Do not paste source text or private paths."},
+		"observed_result":   stringProperty("Describe the result or error that actually occurred. Do not include source code, secrets, or private data."),
+		"unexpected_reason": stringProperty("State what was expected instead and why the observed result fell short."),
+		"manual_touchups":   stringProperty("Describe manual edits or extra commands needed afterward. Write None if no follow-up was needed."),
+		"suspected_cause":   map[string]any{"type": "string", descriptionKey: "Optional suspected cause or missing invariant, if known."},
+		"suggested_fix":     map[string]any{"type": "string", descriptionKey: "Optional candidate fix or follow-up, if known."},
+	}
+	reportSchema := map[string]any{
+		"type":                  "object",
+		schemaPropertiesKey:     properties,
+		"required":              []string{"intent", "interface", "command", "parameters", "observed_result", "unexpected_reason", "manual_touchups"},
+		additionalPropertiesKey: false,
+	}
+	return map[string]any{
+		"name":         "report_feedback",
+		descriptionKey: "Prepare a structured report about friction with a semedit command or MCP tool. Use after an unexpected result, an error, or a required manual touch-up. The report is a draft for the user to review for accuracy and sensitive content, then post manually as a GitHub issue if appropriate; this tool does not save or post feedback. Privacy: do not include source code, credentials, personal or customer data, private paths, proprietary business details, or intellectual property. For an open-source project, public project and tool details are generally okay to include, but still omit secrets and private information. If unsure whether a detail is safe to share or whether the project is open source, ask the user first and leave uncertain details out until approved.",
+		"inputSchema": map[string]any{
+			"type":                  "object",
+			schemaPropertiesKey:     properties,
+			"required":              []string{"intent", "interface", "command", "parameters", "observed_result", "unexpected_reason", "manual_touchups"},
+			additionalPropertiesKey: false,
+		},
+		"outputSchema": standardOutputSchema(map[string]any{
+			"type": "object",
+			schemaPropertiesKey: map[string]any{
+				"status":   map[string]any{"const": "draft_only"},
+				"date":     map[string]any{"type": "string"},
+				"report":   reportSchema,
+				"markdown": map[string]any{"type": "string"},
+			},
+			"required":              []string{"status", "date", "report", "markdown"},
+			additionalPropertiesKey: false,
+		}),
+	}
+}
+
+func validateFeedbackReport(report feedbackReport) error {
+	for _, field := range []struct {
+		name  string
+		value string
+	}{
+		{name: "intent", value: report.Intent},
+		{name: "interface", value: report.Interface},
+		{name: "command", value: report.Command},
+		{name: "observed_result", value: report.ObservedResult},
+		{name: "unexpected_reason", value: report.UnexpectedReason},
+		{name: "manual_touchups", value: report.ManualTouchups},
+	} {
+		if strings.TrimSpace(field.value) == "" {
+			return fmt.Errorf("feedback field %q is required", field.name)
+		}
+	}
+	if report.Parameters == nil {
+		return errors.New("feedback field \"parameters\" must be an object; use an empty object when there are no parameters")
+	}
+	switch report.Interface {
+	case "mcp", "cli", "other":
+	default:
+		return errors.New("feedback field \"interface\" must be mcp, cli, or other")
+	}
+	return nil
 }
