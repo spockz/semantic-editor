@@ -130,9 +130,13 @@ func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource st
 		return "", err
 	}
 
+	offset = normalizeInsertionOffset(fset, fileNode, content, offset)
+
 	var newContent bytes.Buffer
 	newContent.Write(content[:offset])
-	newContent.WriteString("\n")
+	if offset == 0 || content[offset-1] != '\n' {
+		newContent.WriteByte('\n')
+	}
 	newContent.WriteString(caseTrimmed)
 	newContent.WriteString("\n")
 	newContent.Write(content[offset:])

@@ -46,6 +46,7 @@ Without semantic AST insertion tools, agents fall back to line-based text diff t
 * File updates must strictly use atomic writes (`pipeline.WriteAtomic`) and advancing `mtime` ([ADR-0010](0010-disk-synchronization-and-cache-invalidation.md)).
 * When public section placement is requested on a file with exclusively private declarations, the declaration must land preceding the first private declaration.
 * Dependency fetching remains an explicit tool action and is never triggered automatically in the background.
+* Structural Go insertion preserves adjacent standalone comments with the same code token. A standalone comment directly before an insertion token moves with that token; blank-separated and trailing inline comments are not leading anchors. For insert-after offsets that land before a same-line trailing comment, insertion advances past that comment and its line ending. This guarantee covers the Go AST insertion splices before formatting and import organization; it does not constrain external formatters or language-server edits.
 
 ## Consequences
 

@@ -1,0 +1,62 @@
+# Structural insertion keeps anchored comments attached to their code
+exec semedit insert --file api/anchors.go --placement before_symbol --target Keep --source 'func AddedBefore() {}'
+exec semedit insert --file api/anchors.go --placement after_symbol --target Target --source 'func AddedAfter() {}'
+cmp api/anchors.go want/api/anchors.go
+exec semedit insert-case --file api/handler.go --func Handle --switch-on value --placement before_default --case 'case "added": return "added"'
+cmp api/handler.go want/api/handler.go
+exec go test ./...
+
+-- go.mod --
+module example.com/test
+go 1.23
+
+-- api/anchors.go --
+package api
+
+// Keep documentation on Keep.
+func Keep() {}
+
+func Target() {} // Keep this trailing comment.
+
+func Last() {}
+
+-- want/api/anchors.go --
+package api
+
+func AddedBefore() {}
+
+// Keep documentation on Keep.
+func Keep() {}
+
+func Target() {} // Keep this trailing comment.
+
+func AddedAfter() {}
+
+func Last() {}
+-- api/handler.go --
+package api
+
+func Handle(value string) string {
+	switch value {
+	case "keep":
+		return "keep"
+	// Keep this comment on the default case.
+	default:
+		return "default"
+	}
+}
+
+-- want/api/handler.go --
+package api
+
+func Handle(value string) string {
+	switch value {
+	case "keep":
+		return "keep"
+	case "added":
+		return "added"
+	// Keep this comment on the default case.
+	default:
+		return "default"
+	}
+}

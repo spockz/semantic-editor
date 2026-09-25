@@ -75,6 +75,8 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 		return fmt.Errorf("calculate type offset: %w", err)
 	}
 
+	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
+
 	var newContent bytes.Buffer
 	newContent.Write(content[:insertOffset])
 

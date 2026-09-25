@@ -81,6 +81,8 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 		return fmt.Errorf("calculate insertion offset: %w", err)
 	}
 
+	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
+
 	var newContent bytes.Buffer
 	newContent.Write(content[:insertOffset])
 

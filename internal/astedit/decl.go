@@ -95,6 +95,8 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 					}
 				}
 
+				insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
+
 				var buf bytes.Buffer
 				buf.Write(content[:insertOffset])
 				groupEnd := fset.Position(targetGroup.Rparen).Offset
@@ -136,6 +138,8 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 		}
 		return fmt.Errorf("calculate declaration offset: %w", err)
 	}
+
+	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
 
 	var newContent bytes.Buffer
 	newContent.Write(content[:insertOffset])

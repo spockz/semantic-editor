@@ -98,6 +98,8 @@ The goal is to track:
 | **ST-0065** | 2026-09-25 | `semantic_insert_function` | replay 4 `replaceLoopDef` | Snippet validation rejected a compact nested `Def` literal with `missing ',' in composite literal`; no source changed. | Retry with a multiline literal and trailing commas. | Client supplied invalid Go source. | Surface a multiline nested-registry example in the catalog. |
 | **ST-0066** | 2026-09-25 | `semantic_replace_decl` | replay 4 `internal/astedit/decl.go`, `DeclOptions` | Rejected a valid request to add `Overwrite bool` to an existing struct: `replacement of "DeclOptions" requires a type alias`; no source changed. | Add only the field with an atomic edit after logging the failure. | Declaration replacement supports const, var, and type aliases, not struct member edits. | Add a bounded `semantic_insert_field` with duplicate detection and literal before/after fixtures. |
 
+| **ST-0067** | 2026-09-25 | `semantic_insert_function`, `semantic_scaffold_file` | `internal/astedit/comment_anchor.go` | Inserting `normalizeInsertionOffset` succeeded but left `bytes`, `go/ast`, and `go/token` unresolved; scaffolding also omitted the required file-purpose header. | Log the failure, organize the imports, then add the required WHY header atomically. | The function insertion did not resolve required imports, and the scaffold API has no repository header input. | Improve semantic insertion import resolution and allow a file-purpose header during scaffolding. |
+
 ---
 
 ## Guidelines for Logging Dogfooding Deficiencies
