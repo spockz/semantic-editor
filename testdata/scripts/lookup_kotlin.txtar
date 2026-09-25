@@ -1,0 +1,32 @@
+# Kotlin CLI contracts: trusted class/function lookup and ambiguity, not-found, untrusted denial, selected-file diagnostics, and timeout on wrong-URI diagnostics.
+env SEMEDIT_TEST_KOTLIN_FUNCTION=1
+exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol launch
+stdout '"kind": "function"'
+env SEMEDIT_TEST_KOTLIN_FUNCTION=
+exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
+stdout '\"file\":\s*\"src/Widget.kt\"'
+stdout '\"symbol\":\s*\"Widget\"'
+env SEMEDIT_TEST_KOTLIN_AMBIGUOUS=1
+exec semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
+stdout '\"ambiguous\": true'
+! semedit lookup --language kotlin --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Widget
+stderr 'workspace trust required'
+! semedit lookup --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --symbol Missing
+stderr 'kotlin symbol not found'
+env SEMEDIT_TEST_KOTLIN_VERIFY=1
+exec semedit verify --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt
+stdout 'Verification clean: 0 diagnostics.'
+env SEMEDIT_TEST_KOTLIN_VERIFY=1
+env SEMEDIT_TEST_KOTLIN_DIAGNOSTIC=1
+exec semedit verify --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt
+stdout 'selected Kotlin warning'
+env SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY=1
+! semedit verify --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt
+stderr 'diagnostics were not published before the bounded timeout'
+! semedit verify --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --file src/Widget.kt --format-selected-file
+stderr 'operation is not supported'
+
+-- src/Widget.kt --
+package example
+fun launch() {}
+class Widget { fun run() {} }

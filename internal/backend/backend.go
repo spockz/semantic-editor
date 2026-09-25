@@ -59,7 +59,7 @@ const (
 	LanguageScala LanguageID = "scala"
 	// LanguageHaskell selects the trusted standalone Haskell lookup backend.
 	LanguageHaskell LanguageID = "haskell"
-	// LanguageKotlin identifies Kotlin sources for detection; no backend is registered yet.
+	// LanguageKotlin selects the trusted read-only Kotlin backend.
 	LanguageKotlin LanguageID = "kotlin"
 	// LanguageBash identifies shell sources for detection; no backend is registered yet.
 	LanguageBash LanguageID = "bash"
@@ -272,6 +272,8 @@ type ProjectContext struct {
 	Java              JavaConfig
 	Scala             ScalaConfig
 	Haskell           HaskellConfig
+	Kotlin            KotlinConfig
+	KotlinBin         string
 	HaskellStandalone bool
 	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
 	JDTLSHome   string

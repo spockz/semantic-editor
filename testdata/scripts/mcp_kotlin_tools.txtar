@@ -1,0 +1,14 @@
+# Kotlin-only MCP tools/list contract: lookup and verify are exposed, mutation is not.
+stdin input.json
+exec semedit mcp --enabled-languages=kotlin
+stdout '"name":\s*"semantic_lookup"'
+stdout '"name":\s*"semantic_verify"'
+! stdout '"name":\s*"semantic_replace_construct"'
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+
+-- src/Widget.kt --
+package example
+class Widget {}
