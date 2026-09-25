@@ -13,9 +13,9 @@ import (
 	"strings"
 )
 
-const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspective/css/pro.css">
-<link rel="stylesheet" href="/vendor/perspective/css/pro-dark.css">
-<link rel="stylesheet" href="/vendor/perspective/css/perspective-viewer-datagrid.css">
+const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/perspective/css/pro.css" | relURL }}">
+<link rel="stylesheet" href="{{ "vendor/perspective/css/pro-dark.css" | relURL }}">
+<link rel="stylesheet" href="{{ "vendor/perspective/css/perspective-viewer-datagrid.css" | relURL }}">
 
 <div class="benchmark-browser">
   <div class="benchmark-browser-toolbar">
@@ -107,9 +107,9 @@ html.dark .benchmark-browser:fullscreen { background: #111; color: #eee; }
 </style>
 
 <script type="module">
-import perspective from "/vendor/perspective/cdn/perspective.js";
-import "/vendor/perspective/cdn/perspective-viewer.js";
-import "/vendor/perspective/cdn/perspective-viewer-datagrid.js";
+import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}';
+import '{{ "vendor/perspective/cdn/perspective-viewer.js" | relURL }}';
+import '{{ "vendor/perspective/cdn/perspective-viewer-datagrid.js" | relURL }}';
 
 const viewer = document.querySelector("#benchmark-browser-viewer");
 const comparisonViewer = document.querySelector("#benchmark-browser-comparison-viewer");
@@ -191,7 +191,7 @@ window.addEventListener("resize", () => viewers.forEach(scheduleViewerResize));
 
 try {
   await customElements.whenDefined("perspective-viewer");
-  const response = await fetch("/data/benchmarks.json");
+  const response = await fetch('{{ "data/benchmarks.json" | relURL }}');
   if (!response.ok) throw new Error("Benchmark data request failed: " + response.status);
   const rows = await response.json();
   const populateDimensionFilter = (control, column) => {
