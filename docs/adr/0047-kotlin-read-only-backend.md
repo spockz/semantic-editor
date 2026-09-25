@@ -1,3 +1,4 @@
+<!-- This decision records why Kotlin lookup and diagnostics require an isolated, trust-gated server boundary. -->
 # ADR-0047: Trusted Read-Only Kotlin Backend
 
 * **Status**: Accepted
