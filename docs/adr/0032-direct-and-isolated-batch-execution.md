@@ -76,20 +76,28 @@ we establish state-journaled staging as a peer batching mechanism:
    buffer. If a snippet is syntactically invalid or targets a non-existent symbol,
    the individual tool call fails fast immediately in that turn with `isError: true`.
    Invalid AST mutations are never staged.
-2. **Deterministic Step Attribution**:
+2. **Deterministic Step Attribution & Stable Step IDs**:
    Successful staged calls append to an in-memory modification journal and return
-   a lightweight stage receipt containing the step index, targeted symbol, and an
-   AST diff hunk. Surrounding disk writes and full compiler diagnostics remain
-   deferred.
+   a lightweight stage receipt containing a stable, content-addressed step identifier
+   (`step_id: "step_7a3f81"`, matching the ephemeral handle pattern of ADR-0003),
+   an optional ordinal index for display, the targeted symbol, and an AST diff hunk.
+   Surrounding disk writes and full compiler diagnostics remain deferred.
 3. **Attributed Commit & Diagnostic Deltas**:
    `semantic_commit` applies all staged mutations atomically to disk via
    `pipeline.WriteAtomic` (ADR-0010), executes coalesced formatting and
    `goimports` once, and collects the compiler diagnostic delta. Any newly
    introduced diagnostics explicitly link to the originating step
-   (`attributed_step`, `attributed_tool`), providing deterministic attribution
+   (`attributed_step_id`, `attributed_tool`), providing deterministic attribution
    without requiring the agent to deduce which edit caused a compiler error.
-4. **Clean Abort**:
-   `semantic_stage_abort` drops the in-memory journal with zero disk mutations,
+4. **Granular Reversion (`semantic_stage_drop`)**:
+   `semantic_stage_drop` removes a single staged mutation from the in-memory journal
+   before commit. To prevent off-by-one errors and re-indexing hazards (where
+   dropping step 2 shifts step 3 into index 2, risking accidental clobbering by
+   subsequent agent commands), `semantic_stage_drop` addresses mutations by their
+   stable `step_id` (e.g. `step_id: "step_7a3f81"`). The engine recalculates the
+   in-memory AST buffer across the remaining journal entries and returns the updated diff.
+5. **Clean Abort (`semantic_stage_abort`)**:
+   `semantic_stage_abort` drops the entire in-memory journal with zero disk mutations,
    providing clean cancellation without git worktree or stash pollution.
 
 Do not implement an embedded `WorkspaceView` or isolated-batch MCP operation
