@@ -133,7 +133,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	var prompt string
 	switch arm {
 	case ArmSemedit:
-		prompt = fmt.Sprintf("%s Prefer using semantic editor operations if applicable. When done, output DONE.", baseInstruction)
+		prompt = fmt.Sprintf("%s Do not read source code with shell or terminal commands, including `sed`, `cat`, or equivalent commands. Use built-in code inspection tools to inspect source and semedit semantic operations for applicable edits. Use `semantic_lookup` to locate target symbols whenever supported and available. Do not silently fall back to shell-based source reads. If you cannot use `semantic_lookup` because it is unavailable, unsupported for the target, blocked by an unmet precondition, or fails, state the specific reason in your response, then finish with DONE.", baseInstruction)
 	case ArmBaseline:
 		prompt = fmt.Sprintf("%s Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.", baseInstruction)
 	default:
