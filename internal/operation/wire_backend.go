@@ -422,7 +422,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 	run := lookupRun
 	return Def[LookupReq, *backend.LookupResult]{
 		Key:     capability.OpLookup,
-		Summary: "Use this tool instead of grep, text search, or line counting when locating a named symbol in a selected Go, trusted Rust, Java, Scala, or explicitly standalone Haskell source file. Rust, Java, Scala, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
+		Summary: "Use this tool instead of grep, text search, or line counting when locating a named symbol in Go or a selected trusted Rust, Java, Scala, or explicitly standalone Haskell source file. Omit file for a Go workspace-wide symbol search when its owning file is unknown. Rust, Java, Scala, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
 		Params:  lookupParams,
 		Level:   LevelSymbol,
 		// The only read-only operation: lookup never mutates the workspace.

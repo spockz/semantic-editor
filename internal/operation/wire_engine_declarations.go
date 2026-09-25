@@ -154,7 +154,7 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 	return Def[InsertFunctionReq, FileEditRes]{
 		Key:     "insert_function",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Supply one function or method declaration; exported names require public access. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",
@@ -212,7 +212,7 @@ func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (File
 func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 	return Def[InsertTypeReq, FileEditRes]{
 		Key:     "insert_type",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Supply one type declaration; exported names require public access. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
 		Params:  insertTypeParams,
 		Level:   LevelFile,
 		CLIName: "insert-type",
@@ -327,7 +327,7 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 	return Def[InsertDeclReq, FileEditRes]{
 		Key:     "insert_decl",
-		Summary: "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Existing package symbols are rejected by default; use semantic_replace_decl for updates or set overwrite=true intentionally. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
 		Params:  insertDeclParams,
 		Level:   LevelFile,
 		CLIName: "insert-decl",

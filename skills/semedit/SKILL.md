@@ -43,7 +43,7 @@ Examples:
 - “Add the `net/http` import” → use `semantic_organize_imports`; “add the module that provides this package” → use `semantic_add_build_dependency`.
 - “Where is `Config.Port` declared?” → use `semantic_lookup`, with the file path if needed to disambiguate.
 
-For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. Use the optional file parameter to disambiguate repeated local names.
+For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration, and an exported name requires public access. In an isolated worktree, confirm the target through a read-only lookup and use an explicit worktree path for edits because the active MCP root may differ from the task directory.
 
 ## Respect backend capabilities
 
