@@ -94,15 +94,41 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 	if value, ok := match.spec.(*ast.ValueSpec); ok && len(value.Names) != 1 {
 		return "", fmt.Errorf("cannot replace %q inside a shared value spec; split the spec first", symbolQuery)
 	}
-	var newContent []byte
-	if len(match.gen.Specs) == 1 && !match.gen.Lparen.IsValid() {
-		start, end := fset.Position(match.decl.Pos()).Offset, fset.Position(match.decl.End()).Offset
-		newContent = replaceBytes(content, start, end, []byte(replacement.text))
-	} else {
-		start := fset.Position(match.spec.Pos()).Offset
-		end := fset.Position(match.spec.End()).Offset
-		newContent = replaceBytes(content, start, end, []byte(replacement.specText))
+	targetStart := match.spec.Pos()
+	targetEnd := match.spec.End()
+	switch spec := match.spec.(type) {
+	case *ast.ValueSpec:
+		if replacement.hasLeadingComment && spec.Doc != nil {
+			targetStart = spec.Doc.Pos()
+		}
+		if replacement.hasTrailingComment && spec.Comment != nil {
+			targetEnd = spec.Comment.End()
+		}
+	case *ast.TypeSpec:
+		if replacement.hasLeadingComment && spec.Doc != nil {
+			targetStart = spec.Doc.Pos()
+		}
+		if replacement.hasTrailingComment && spec.Comment != nil {
+			targetEnd = spec.Comment.End()
+		}
 	}
+	standalone := len(match.gen.Specs) == 1 && !match.gen.Lparen.IsValid()
+	replacementText := replacement.specText
+	if standalone {
+		if match.decl.Pos() < targetStart {
+			targetStart = match.decl.Pos()
+		}
+		if replacement.hasLeadingComment && match.gen.Doc != nil && match.gen.Doc.Pos() < targetStart {
+			targetStart = match.gen.Doc.Pos()
+		}
+		if match.decl.End() > targetEnd {
+			targetEnd = match.decl.End()
+		}
+		replacementText = replacement.text
+	}
+	startOffset := fset.Position(targetStart).Offset
+	endOffset := fset.Position(targetEnd).Offset
+	newContent := replaceBytes(content, startOffset, endOffset, []byte(replacementText))
 	formatted, err := format.Source(newContent)
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
@@ -118,13 +144,14 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 		return "", fmt.Errorf("format file: %w", err)
 	}
-	oldStart, oldEnd := fset.Position(match.spec.Pos()).Offset, fset.Position(match.spec.End()).Offset
-	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[oldStart:oldEnd])), strings.TrimSpace(replacement.specText)), nil
+	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[startOffset:endOffset])), strings.TrimSpace(replacementText)), nil
 }
 
 type replacementDecl struct {
-	kind           token.Token
-	text, specText string
+	kind               token.Token
+	text, specText     string
+	hasLeadingComment  bool
+	hasTrailingComment bool
 }
 
 func parseSingleReplacementDecl(source, symbol string) (replacementDecl, error) {
@@ -172,15 +199,19 @@ func parseSingleReplacementDecl(source, symbol string) (replacementDecl, error) 
 	}
 	var formattedBuf bytes.Buffer
 	if err := format.Node(&formattedBuf, fset, formattedGen); err != nil {
-		return replacementDecl{}, err
+		return replacementDecl{}, fmt.Errorf("format replacement node: %w", err)
 	}
 	formatted := formattedBuf.String()
-	specText := formatted
-	if after, ok := strings.CutPrefix(specText, formattedGen.Tok.String()); ok {
-		specText = strings.TrimSpace(after)
+	specText := extractSpecSource(string(formattedSource), formattedGen.Tok)
+	result := replacementDecl{kind: formattedGen.Tok, text: formatted, specText: specText}
+	result.hasLeadingComment = formattedGen.Doc != nil
+	switch value := formattedGen.Specs[0].(type) {
+	case *ast.ValueSpec:
+		result.hasLeadingComment = result.hasLeadingComment || value.Doc != nil
+		result.hasTrailingComment = value.Comment != nil
+	case *ast.TypeSpec:
+		result.hasLeadingComment = result.hasLeadingComment || value.Doc != nil
+		result.hasTrailingComment = value.Comment != nil
 	}
-	if strings.HasPrefix(specText, "(") && strings.HasSuffix(specText, ")") {
-		specText = strings.TrimSpace(specText[1 : len(specText)-1])
-	}
-	return replacementDecl{kind: formattedGen.Tok, text: formatted, specText: specText}, nil
+	return result, nil
 }

@@ -35,10 +35,10 @@ type AssertionModeRes struct {
 }
 
 var assertionModeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go test file to rewrite", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go test file to rewrite; relative paths resolve from the active semedit workspace root", Required: true},
 	{Name: "mode", CLIName: "mode", JSONName: "mode", Type: ParamString, Description: "Rewrite direction", Required: true, Enums: []string{"relax", "restrict"}},
-	{Name: "dry_run", CLIName: "dry-run", JSONName: "dry_run", Type: ParamBoolean, Description: "Preview changes without writing the file", Default: false},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Description: "Explicitly authorize writing this workspace", Default: false},
+	{Name: "dry_run", CLIName: "dry-run", JSONName: "dry_run", Type: ParamBoolean, Description: "Preview the assertion rewrite without writing; trust_workspace is not required when true", Default: false},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Description: "Must be true for a non-dry-run request that writes this workspace; consent applies to this request only", Default: false},
 }
 
 func parseAssertionMode(raw map[string]any) (AssertionModeReq, error) {
@@ -93,7 +93,7 @@ func runAssertionMode(_ context.Context, cc CallContext, req AssertionModeReq) (
 func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 	return Def[AssertionModeReq, AssertionModeRes]{
 		Key:      "assertion_mode",
-		Summary:  "Use this tool instead of text replacing t.Fatal/t.Error calls when converting supported Go test assertions between fail-fast and continue-on-failure modes. Requires workspace trust before writes; use dry_run to preview.",
+		Summary:  "Use this tool instead of text replacing t.Fatal/t.Error calls when converting supported Go test assertions between fail-fast and continue-on-failure modes. Set trust_workspace=true before a write; set dry_run=true to preview without trust or file writes.",
 		Params:   assertionModeParams,
 		Level:    LevelFile,
 		CLIName:  "assertion-mode",

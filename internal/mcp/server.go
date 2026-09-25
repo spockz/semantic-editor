@@ -389,6 +389,7 @@ func operationInputSchema(entry operation.Entry) map[string]any {
 }
 
 func batchToolSchema(entries []operation.Entry) map[string]any {
+	const batchDescription = "Use this tool instead of a sequence of built-in text patches when several registered semantic edits must run in order. It writes directly to the supplied workspace: if a later edit fails, earlier successful edits remain applied and are not rolled back. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		branches = append(branches, map[string]any{
@@ -402,7 +403,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 		})
 	}
 	return map[string]any{
-		"name": "semantic_batch", "description": "Use this tool instead of a sequence of built-in text patches when several registered semantic edits must run in order. Stop at the first failure. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta.",
+		"name": "semantic_batch", "description": batchDescription,
 		"inputSchema": map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{

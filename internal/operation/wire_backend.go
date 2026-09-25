@@ -89,7 +89,7 @@ var lookupParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path to constrain search", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true and supports read-only lookup only)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends such as Java and Rust (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
 	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
@@ -106,9 +106,9 @@ var lookupParams = []ParameterContract{
 var renameParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path containing the declaration to disambiguate scope", Type: ParamString},
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and workspace trust)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional source file containing the declaration; relative paths resolve from the active semedit workspace root. Required to select scope for Rust or Java rename", Type: ParamString},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
 	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
@@ -116,10 +116,10 @@ var renameParams = []ParameterContract{
 }
 
 var verifyParams = []ParameterContract{
-	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional file or directory path to check and format", Type: ParamString, Default: "."},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java source file; required for Java verification", Type: ParamString},
+	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java source file, relative to the active semedit workspace root; required for Java verification", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for future external-tool backends (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Java verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
 	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
@@ -477,7 +477,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 func verifyDef() Def[VerifyReq, VerifyRes] {
 	return Def[VerifyReq, VerifyRes]{
 		Key:     capability.OpVerify,
-		Summary: "Use this tool instead of shelling out to formatters or ad hoc diagnostic commands when explicitly checking or formatting supported Go sources or bounded trusted Java files. It may write formatting/import changes; standalone edits already return diagnostics, so avoid redundant verification. Does not run Maven or Gradle.",
+		Summary: "Use this tool instead of shelling out to formatters or ad hoc diagnostic commands when explicitly checking or formatting supported Go sources or a selected Java file. Go verification runs formatting before diagnostics and can write files; Java formatting/import organization also writes when requested. There is no dry-run. Standalone edits already return diagnostics, so avoid redundant verification. Does not run Maven or Gradle.",
 		Params:  verifyParams,
 		Level:   LevelBuild,
 		CLIName: "verify",

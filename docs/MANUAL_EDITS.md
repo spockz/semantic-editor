@@ -291,3 +291,7 @@ This section records source reads that the advertised semantic MCP tools cannot 
 - Missing capability: Change an existing function's result types while preserving its declaration.
 - Literal before/after example: Before: `func checkDeclCollision(...) error`. After: `func checkDeclCollision(...) (bool, error)` to report both whether overwrite handled the request and any error.
 - Fallback: Change only this function signature atomically after this log entry; the caller change remains a semantic body replacement.
+
+## Commented Declaration Replacement Follow-up
+
+`semantic_replace_body` updates the existing replacement routines, and `semantic_insert_function` adds the AST regression. The existing `replacementDecl` struct needs two comment-presence fields so replacement can preserve an old doc comment when the new snippet has none, or replace it when the snippet supplies one. `semantic_replace_decl` accepts type aliases, not an existing struct body, and there is no field-insertion operation. An atomic edit will add only those two fields. Before: `type replacementDecl struct { kind token.Token; text, specText string }`. After: it also records `hasLeadingComment` and `hasTrailingComment`. The CLI txtar archive is not Go source and has no semantic edit operation; its literal before/after fixture will be written atomically.

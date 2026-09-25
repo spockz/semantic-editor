@@ -273,3 +273,75 @@ func TestInsertDecl_RejectsInvalidGroupedSourceWithoutWriting(t *testing.T) {
 		t.Fatalf("invalid declaration changed target file\n got:\n%s\nwant:\n%s", data, initial)
 	}
 }
+
+func TestReplaceDecl_GroupedDocumentedVarPreservesSibling(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "errors.go")
+	initial := `package sample
+
+import "errors"
+
+var (
+    // ErrAlpha is the original grouped sentinel.
+    ErrAlpha = errors.New("alpha")
+    // ErrZulu remains unchanged.
+    ErrZulu = errors.New("zulu")
+)
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	source := "// ErrAlpha is the updated grouped sentinel.\nvar ErrAlpha = errors.New(\"changed\")"
+	if _, err := ReplaceDecl(context.Background(), file, "ErrAlpha", source, ReplaceDeclOptions{}); err != nil {
+		t.Fatalf("ReplaceDecl documented grouped sentinel: %v", err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read replaced file: %v", err)
+	}
+	want := `package sample
+
+import "errors"
+
+var (
+	// ErrAlpha is the updated grouped sentinel.
+	ErrAlpha = errors.New("changed")
+	// ErrZulu remains unchanged.
+	ErrZulu = errors.New("zulu")
+)
+`
+	if string(got) != want {
+		t.Fatalf("grouped declaration mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestReplaceDecl_StandaloneCommentReplacementAndPreservation(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "count.go")
+	initial := `package sample
+
+// Count records the original amount.
+var Count = 1
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	withComment := "// Count records the updated amount.\nvar Count = 2"
+	if _, err := ReplaceDecl(context.Background(), file, "Count", withComment, ReplaceDeclOptions{}); err != nil {
+		t.Fatalf("replace with comment: %v", err)
+	}
+	if _, err := ReplaceDecl(context.Background(), file, "Count", "var Count = 3", ReplaceDeclOptions{}); err != nil {
+		t.Fatalf("replace without comment: %v", err)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read replaced file: %v", err)
+	}
+	want := `package sample
+
+// Count records the updated amount.
+var Count = 3
+`
+	if string(got) != want {
+		t.Fatalf("standalone declaration mismatch\ngot:\n%s\nwant:\n%s", got, want)
+	}
+}

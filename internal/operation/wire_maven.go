@@ -33,11 +33,11 @@ type MavenRes = maven.Result
 
 var mavenParams = []ParameterContract{
 	{Name: "language", CLIName: "language", JSONName: "language", Type: ParamString, Default: "java", Enums: []string{"java"}},
-	{Name: "root", CLIName: "root", JSONName: "root", Type: ParamString, Description: "Canonical Maven workspace root (defaults to the request working directory)"},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Default: false, Description: "Explicitly trust this workspace for this request"},
+	{Name: "root", CLIName: "root", JSONName: "root", Type: ParamString, Description: "Optional absolute Maven project root containing pom.xml; defaults to the active semedit workspace root and must remain inside it. Use an absolute worktree path when targeting an isolated worktree"},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Default: false, Description: "Must be true to run Maven; grants trust to the active workspace for this request only"},
 	{Name: "maven_tool", CLIName: "maven-tool", JSONName: "maven_tool", Type: ParamString, Default: "auto", Enums: []string{"auto", "wrapper", "system"}, Description: "Maven launcher selection"},
 	{Name: "maven_bin", CLIName: "maven-bin", JSONName: "maven_bin", Type: ParamString, Description: "Absolute system Maven executable"},
-	{Name: "allow_network", CLIName: "allow-network", JSONName: "allow_network", Type: ParamBoolean, Default: false, Description: "Allow Maven to access the network for this request"},
+	{Name: "allow_network", CLIName: "allow-network", JSONName: "allow_network", Type: ParamBoolean, Default: false, Description: "Opt in to network access; false runs Maven offline (default)"},
 }
 
 func parseMaven(raw map[string]any, goal string) (MavenReq, error) {
@@ -102,8 +102,8 @@ func mavenDef(key, cli, mcp, goal, summary string) Def[MavenReq, MavenRes] {
 		ExampleRaw: map[string]any{"language": "java", wireTrustWorkspace: true, "maven_tool": "auto", "allow_network": false}}
 }
 func registerMavenOps(registry *Registry) error {
-	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Use this tool instead of a shell Maven invocation when compiling tests for a trusted Java root POM with fixed test-compile scope")); err != nil {
+	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Use this tool instead of a shell Maven invocation when compiling tests for a Java root POM. Set trust_workspace=true. The fixed test-compile goal runs offline unless allow_network=true and uses temporary Maven home/repository data under .scratch; Maven writes project build outputs.")); err != nil {
 		return err
 	}
-	return Register(registry, mavenDef("maven_test", "maven-test", "semantic_maven_test", "test", "Use this tool instead of a shell Maven invocation when running tests for a trusted Java root POM with fixed test scope"))
+	return Register(registry, mavenDef("maven_test", "maven-test", "semantic_maven_test", "test", "Use this tool instead of a shell Maven invocation when running tests for a Java root POM. Set trust_workspace=true. The fixed test goal runs offline unless allow_network=true and uses temporary Maven home/repository data under .scratch; Maven writes project build outputs."))
 }

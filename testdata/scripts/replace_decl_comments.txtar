@@ -1,0 +1,53 @@
+# Replacing one grouped var accepts a leading doc comment, preserves its sibling, and rejects malformed input without a write.
+! exec semedit replace-decl --file api/errors.go --symbol ErrAlpha --source 'var ErrAlpha = {'
+stderr 'syntax error'
+cmp api/errors.go want/api/before.go
+exec sh -c 'semedit replace-decl --file api/errors.go --symbol ErrAlpha --source "$(cat api/replacement.txt)"'
+exec semedit replace-decl --file api/errors.go --symbol ErrZulu --source 'var ErrZulu = errors.New("updated zulu")'
+cmp api/errors.go want/api/errors.go
+exec go test ./api
+
+-- go.mod --
+module example.com/comments
+
+go 1.23
+
+-- api/errors.go --
+package api
+
+import "errors"
+
+var (
+	// ErrAlpha is the original sentinel.
+	ErrAlpha = errors.New("alpha")
+	// ErrZulu stays documented.
+	ErrZulu = errors.New("zulu")
+)
+
+-- api/replacement.txt --
+// ErrAlpha is the updated sentinel.
+var ErrAlpha = errors.New("updated alpha")
+
+-- want/api/before.go --
+package api
+
+import "errors"
+
+var (
+	// ErrAlpha is the original sentinel.
+	ErrAlpha = errors.New("alpha")
+	// ErrZulu stays documented.
+	ErrZulu = errors.New("zulu")
+)
+
+-- want/api/errors.go --
+package api
+
+import "errors"
+
+var (
+	// ErrAlpha is the updated sentinel.
+	ErrAlpha = errors.New("updated alpha")
+	// ErrZulu stays documented.
+	ErrZulu = errors.New("updated zulu")
+)

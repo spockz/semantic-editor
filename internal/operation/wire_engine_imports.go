@@ -25,7 +25,7 @@ func (r OrganizeImportsReq) GetProjectContext() backend.ProjectContext { return 
 func (r *OrganizeImportsReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var organizeImportsParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Optional file or directory path to process (defaults to entire workspace)"},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Optional Go file or directory path, relative to the active semedit workspace root. Omit it to organize imports across the entire workspace, which may write multiple files"},
 	{Name: "add", CLIName: "add", JSONName: "add", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly add. Supports 'path', 'alias path', or '_ path'."},
 	{Name: "remove", CLIName: "remove", JSONName: "remove", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly remove."},
 }
@@ -72,7 +72,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 	return Def[OrganizeImportsReq, FileEditRes]{
 		Key:     "organize_imports",
-		Summary: "Use this tool instead of text editing import blocks or shelling out to goimports when adding, removing, or formatting Go source imports in specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text editing import blocks or shelling out to goimports when adding, removing, or formatting Go source imports. Set `file` to limit writes to one file or directory; omit it only when workspace-wide import changes are intended. Supports explicit package additions (including aliases and blank imports) and removals." + automaticVerificationGuidance,
 		Params:  organizeImportsParams,
 		Level:   LevelFile,
 		CLIName: "imports",
@@ -113,7 +113,7 @@ type BuildDependencyRes struct {
 func (r BuildDependencyRes) WrittenFile() string { return r.GoMod }
 
 var addBuildDependencyParams = []ParameterContract{
-	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "Module path to fetch into the build (e.g. github.com/google/uuid@latest); mutates go.mod, not source files", Required: true},
+	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "Module path to fetch (e.g. github.com/google/uuid@latest); runs go get and go mod tidy, can use the network, and may update go.mod and go.sum without editing source files", Required: true},
 }
 
 func parseAddBuildDependency(raw map[string]any) (AddBuildDependencyReq, error) {
@@ -139,7 +139,7 @@ func runAddBuildDependency(ctx context.Context, cc CallContext, req AddBuildDepe
 func addBuildDependencyDef() Def[AddBuildDependencyReq, BuildDependencyRes] {
 	return Def[AddBuildDependencyReq, BuildDependencyRes]{
 		Key:     "add_build_dependency",
-		Summary: "Use this tool instead of editing go.mod or shelling out to go get/go mod tidy when adding an external Go module dependency. Runs go get and go mod tidy. Build scope (go.mod); contrast with organize_imports, which edits import statements within source files.",
+		Summary: "Use this tool instead of editing go.mod/go.sum or shelling out to go get or go mod tidy when adding an external Go module dependency. It runs go get and go mod tidy and may access the network. This changes build dependencies; use semantic_organize_imports for source import statements.",
 		Params:  addBuildDependencyParams,
 		Level:   LevelBuild,
 		CLIName: "add-build-dependency",

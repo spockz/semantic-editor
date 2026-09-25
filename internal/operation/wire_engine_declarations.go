@@ -42,8 +42,8 @@ type insertDeclarationFields struct {
 }
 
 var insertDeclarationParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
-	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Go declaration code snippet to insert", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One top-level Go declaration. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, types, constants, and variables", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Placement qualifier: file_start, file_end (default), public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
 	{Name: "visibility", CLIName: "visibility", JSONName: "visibility", Type: ParamString, Description: "Optional validation constraint ensuring declaration matches exported scope ('public' or 'private')", Enums: visibilityEnum},
@@ -96,7 +96,7 @@ func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclara
 func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 	return Def[InsertDeclarationReq, FileEditRes]{
 		Key:     "insert_declaration",
-		Summary: "Use this tool instead of replace_file_content or write_to_file whenever adding a new top-level function, method, type, or constant to an existing Go file. Accurately places declarations at file boundaries, public/private sections, or relative to existing symbols without coordinate hunting." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one top-level Go declaration and its generic placement controls fit the task. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, methods, types, constants, or variables so the operation matches the declaration. Accurately places one declaration at file boundaries, public/private sections, or relative to an existing symbol." + automaticVerificationGuidance,
 		Params:  insertDeclarationParams,
 		Level:   LevelFile,
 		CLIName: "insert",
@@ -122,7 +122,7 @@ func (r InsertFunctionReq) GetProjectContext() backend.ProjectContext { return r
 func (r *InsertFunctionReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Function or method Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
@@ -154,7 +154,7 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 	return Def[InsertFunctionReq, FileEditRes]{
 		Key:     "insert_function",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new top-level function or method to an existing Go file. Supply one function or method declaration; exported names require public access. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go function or method to an existing file. Supply one function or method declaration; exported names require public access. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",
@@ -180,7 +180,7 @@ func (r InsertTypeReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertTypeReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertTypeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Type definition Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
@@ -212,7 +212,7 @@ func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (File
 func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 	return Def[InsertTypeReq, FileEditRes]{
 		Key:     "insert_type",
-		Summary: "Use this tool instead of replace_file_content whenever adding a new struct, interface, or type alias to an existing Go file. Supply one type declaration; exported names require public access. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go struct, interface, or type alias to an existing file. Supply one type declaration; exported names require public access. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
 		Params:  insertTypeParams,
 		Level:   LevelFile,
 		CLIName: "insert-type",
@@ -263,7 +263,7 @@ func (r InsertDeclReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertDeclReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target file path", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Declaration Go source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
@@ -327,7 +327,7 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 	return Def[InsertDeclReq, FileEditRes]{
 		Key:     "insert_decl",
-		Summary: "Use this tool instead of replace_file_content whenever adding constants, variables, or declarations to an existing Go file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Existing package symbols are rejected by default; use semantic_replace_decl for updates or set overwrite=true intentionally. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go constant or variable to an existing file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Existing package symbols are rejected by default; use semantic_replace_decl for updates or set overwrite=true intentionally. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
 		Params:  insertDeclParams,
 		Level:   LevelFile,
 		CLIName: "insert-decl",

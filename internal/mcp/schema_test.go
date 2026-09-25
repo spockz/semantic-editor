@@ -413,11 +413,68 @@ func TestDefaultMCPDescriptionsRouteBeforeGenericTools(t *testing.T) {
 		for _, tool := range catalog {
 			name := tool["name"].(string)
 			description := tool["description"].(string)
-			if !strings.Contains(description, "Use this tool instead of") {
-				t.Errorf("%s description omits an explicit routing preference: %q", name, description)
+			if !strings.HasPrefix(description, "Use this tool instead of") {
+				t.Errorf("%s description does not start with an explicit routing trigger: %q", name, description)
 			}
 		}
 	}
+}
+
+func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
+	tools := listToolsWithRegistry(t, "full", operation.DefaultRegistry())
+	byName := make(map[string]map[string]any, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = tool
+	}
+	toolDescription := func(name string) string {
+		t.Helper()
+		tool, ok := byName[name]
+		if !ok {
+			t.Fatalf("tools/list omitted %s", name)
+		}
+		return tool["description"].(string)
+	}
+	paramDescription := func(toolName, paramName string) string {
+		t.Helper()
+		tool, ok := byName[toolName]
+		if !ok {
+			t.Fatalf("tools/list omitted %s", toolName)
+		}
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		property, ok := properties[paramName].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema omitted parameter %s", toolName, paramName)
+		}
+		return property["description"].(string)
+	}
+	assertContains := func(label, value string, want ...string) {
+		t.Helper()
+		for _, phrase := range want {
+			if !strings.Contains(value, phrase) {
+				t.Errorf("%s = %q, want wording containing %q", label, value, phrase)
+			}
+		}
+	}
+
+	assertContains("semantic_verify description", toolDescription("semantic_verify"), "Go verification runs formatting before diagnostics and can write files", "There is no dry-run")
+	assertContains("semantic_verify.path", paramDescription("semantic_verify", "path"), "relative paths resolve from the active semedit workspace root", "runs formatting before diagnostics and can write files")
+	assertContains("semantic_batch description", toolDescription("semantic_batch"), "earlier successful edits remain applied", "are not rolled back")
+	for _, name := range []string{"semantic_maven_compile", "semantic_maven_test"} {
+		assertContains(name+" description", toolDescription(name), "trust_workspace=true", "offline unless allow_network=true", "under .scratch", "build outputs")
+	}
+	assertContains("semantic_maven_compile.root", paramDescription("semantic_maven_compile", "root"), "absolute", "isolated worktree")
+	assertContains("semantic_organize_imports.file", paramDescription("semantic_organize_imports", "file"), "Omit it to organize imports across the entire workspace", "may write multiple files")
+	assertContains("semantic_add_build_dependency description", toolDescription("semantic_add_build_dependency"), "go.mod/go.sum", "may access the network")
+	assertContains("semantic_add_build_dependency.package", paramDescription("semantic_add_build_dependency", "package"), "go.mod", "go.sum", "network")
+	assertContains("semantic_assertion_mode description", toolDescription("semantic_assertion_mode"), "trust_workspace=true", "dry_run=true", "without trust or file writes")
+	assertContains("semantic_assertion_mode.dry_run", paramDescription("semantic_assertion_mode", "dry_run"), "without writing", "trust_workspace is not required")
+	assertContains("semantic_assertion_mode.trust_workspace", paramDescription("semantic_assertion_mode", "trust_workspace"), "Must be true", "non-dry-run")
+	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select scope for Rust or Java rename", "active semedit workspace root")
+	assertContains("semantic_insert_declaration.source", paramDescription("semantic_insert_declaration", "source"), "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
+	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one Go function or method", "instead of replace_file_content")
+	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
+	assertContains("semantic_insert_decl description", toolDescription("semantic_insert_decl"), "one Go constant or variable", "instead of replace_file_content")
+	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 }
 
 func toAnySlice(values []string) []any {
