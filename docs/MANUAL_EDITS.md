@@ -295,3 +295,73 @@ This section records source reads that the advertised semantic MCP tools cannot 
 ## Commented Declaration Replacement Follow-up
 
 `semantic_replace_body` updates the existing replacement routines, and `semantic_insert_function` adds the AST regression. The existing `replacementDecl` struct needs two comment-presence fields so replacement can preserve an old doc comment when the new snippet has none, or replace it when the snippet supplies one. `semantic_replace_decl` accepts type aliases, not an existing struct body, and there is no field-insertion operation. An atomic edit will add only those two fields. Before: `type replacementDecl struct { kind token.Token; text, specText string }`. After: it also records `hasLeadingComment` and `hasTrailingComment`. The CLI txtar archive is not Go source and has no semantic edit operation; its literal before/after fixture will be written atomically.
+
+## Catalog Description and Skill Routing Review (2026-09-25)
+
+An independent worker inspected a fresh full-profile, live-reload MCP catalog at `46d5816` and all 22 skill routes. Commit `bf6e142` tightened the following wording without changing operation semantics or schema types. The catalog test now requires every description to start with `Use this tool instead of`; the skill has one selection row for every exposed tool.
+
+| Tool family | Previous selection risk | Wording now exposed to the agent |
+| :--- | :--- | :--- |
+| `semantic_verify` | A reader could treat verification as read-only. | Go runs formatting before diagnostics and can write files; selected Java formatting/import actions can write; there is no dry-run. |
+| `semantic_batch` | “Stop at first failure” did not say prior edits remain. | Earlier successful edits stay written if a later edit fails; inspect the returned final diff. |
+| Maven compile/test | Fixed goals were clear, but trust, offline mode, and writes were understated. | `trust_workspace=true` is required, network is opt-in, Maven writes build output and temporary data under `.scratch`. |
+| Imports and dependencies | Agents could omit `file` or confuse an import with a module. | Omitting `file` organizes imports across the workspace; dependency addition can use the network and update both `go.mod` and `go.sum`. |
+| Assertion rewrite and rename | Trust/preview and selected-file scope were easy to miss. | Assertion `dry_run=true` previews without trust or writes; Rust/Java rename requires a selected file and workspace trust. |
+| Declaration insertion | The generic and specialized descriptions overlapped. | Functions/methods, types, and const/var declarations route to their dedicated insertion tools; generic insertion is for placement controls that fit better. |
+| Relative paths | A worktree agent could assume the task directory is the server root. | Paths resolve from the active MCP workspace root; an explicit worktree path is needed when that root differs. |
+
+The wording audit still found contract gaps that prose alone cannot fix. `tools/list` omits the active canonical root and does not emit the registry's `ExampleRaw` examples. Several operation schemas advertise broad language enums that their handlers do not implement; Rust/Java rename's selected-file requirement is described but not encoded conditionally. A future catalog test should reject unsupported language-operation pairs and expose a worked `loop_path`, nested batch, and worktree-root example. Read-only source excerpts/references and current diagnostics remain absent, while `semantic_verify` is a formatting action. The missing field, statement, composite-element, expression, signature, and comment edits remain structural capability gaps; the replay cases above show their exact target trees.
+
+## ADR-0046 Replay 3 Findings
+
+A third Luna high worker started from `d9226f9` in `.scratch/worktrees/adr0046-replay-3` with the `46d5816` promoted binary and a fresh full-profile, live-reload MCP process exposing 22 tools. It reconstructed the declaration/loop operations with CLI and MCP batch txtar trees. Full `go test ./...`, the targeted construct and batch cases, and `git diff --check` passed. `make check` reported only the four lint failures present before edits (funlen, gocognit, gosec, ST1005). The replay remains isolated and uncommitted.
+
+The fresh `semantic_insert_decl` successfully inserted a documented sentinel into the existing `var (...)` block, preserving both its own comment and the prior sentinel's comment. `semantic_verify` found zero diagnostics. The grouped-spec `semantic_replace_decl` failure below was reproduced against the older replay binary and is addressed in `bf6e142`; the next fresh-server pass must verify it end to end.
+
+- Intent: route `InsertDecl` through package-level collision validation before it writes a declaration, and wire the new construct and declaration operations into existing registry code.
+- Semantic route attempted: `semantic_lookup` located `InsertDecl` in `internal/astedit/decl.go`. The fresh 22-tool catalog has no source-read operation. `semantic_replace_body` can replace a known body but cannot reveal the current body, so applying it safely would require recovering the complete body first.
+- Literal example: before, `InsertDecl` parsed a snippet and continued to group-append or insert it; after, `InsertDecl` parses the target, invokes `handleInsertDeclCollisions(...)`, returns the collision error before mutation, and only then follows the existing insertion path.
+- Fallback: read the exact target implementation after documenting this constraint, then make the smallest atomic AST-aware source change; keep new Go declarations on semantic insertion tools wherever possible.
+- Fixture-only fallback: `semantic_replace_decl` was called with `{file: ".scratch/replay-commented-collision.go", symbol: "ErrReplayBase", source: "// ErrReplayBase is the pre-existing grouped sentinel.\nvar ErrReplayBase = errors.New(\"base\")"}` to replace one spec within an existing grouped var, not the group. It returned `syntax error: 7:1: expected 'IDENT', found 'var'`; the file was unchanged by the failed call. The fixture's literal before/after is `ErrReplayBase = errors.New("base")` becoming `// ErrReplayBase is the pre-existing grouped sentinel.\nErrReplayBase = errors.New("base")`. Apply only that comment attachment atomically, then verify.
+
+- Intent: add `DeclOptions.Overwrite` and run package collision checks before any grouped or standalone insertion.
+- Semantic route attempted: `semantic_lookup` found `InsertDecl`; the catalog has no field-level AST insertion or source-read operation. `semantic_replace_body` requires a complete known body, so the field and insertion guard need a documented narrow fallback.
+- Literal before/after: `type DeclOptions struct { TargetSymbol string; AutoOrganizeImports bool }` becomes `type DeclOptions struct { TargetSymbol string; Overwrite bool; AutoOrganizeImports bool }`; the current parse fallback `if err != nil && fileNode == nil { return appendToEOF(...) }` becomes a contextual parse error, followed by `handleInsertDeclCollisions(...)` and an early return when it performs an overwrite.
+- Fallback: after reading the exact target, atomically add the field and replace only that parse/collision gate; keep the rest of `InsertDecl` unchanged.
+
+- Intent: expose `overwrite` on `semantic_insert_decl` so the operation request reaches `DeclOptions.Overwrite`.
+- Semantic route attempted: existing struct fields and a slice member do not have a dedicated semantic insertion tool. `semantic_replace_body` applies to functions, not fields or variable initializer lists.
+- Literal before/after: `InsertDeclReq` gains `Overwrite bool` after `TargetSymbol`; `insertDeclParams` gains `{Name:"overwrite", CLIName:"overwrite", JSONName:"overwrite", Type:ParamBoolean, Description:"Replace an existing declaration with the same name (default false)}` after the auto-import parameter.
+- Fallback: atomically add these two narrow declarations; update `parseInsertDecl` and `runInsertDecl` through semantic_replace_body.
+
+- Intent: add required file-purpose and exported API comments to the new AST and operation files.
+- Semantic route attempted: the fresh catalog has no comment insertion/edit operation for an existing type or declaration; semantic type/function insertion does not attach comments to an existing symbol.
+- Literal before/after: `package astedit` becomes a WHY package comment followed by `package astedit`; `type LoopOptions struct { ... }` gains `// LoopOptions configures construct-level loop replacement.`; `func ReplaceDecl(...)` gains `// ReplaceDecl replaces one existing package-level constant, variable, or type alias.` Similar Go doc comments are added to exported request types and project-context methods in `wire_engine_construct.go`.
+- Fallback: atomically add only those comments and package purpose comments; implementations remain semantic-tool edits.
+
+- Intent: give the new external-package AST tests a file-purpose comment.
+- Semantic route attempted: no MCP tool edits package clauses or file headers after scaffolding.
+- Literal before/after: `package astedit_test` becomes `// Package astedit_test verifies construct-level AST replacement and collision behavior.\npackage astedit_test`.
+- Fallback: atomically add only the file-purpose comment.
+
+The retained grouped-comment fixture result is:
+
+Before insertion:
+
+```go
+var (
+ // ErrReplayBase is the pre-existing grouped sentinel.
+ ErrReplayBase = errors.New("base")
+)
+```
+
+After `semantic_insert_decl` inserted the commented sentinel:
+
+```go
+var (
+ // ErrReplayBase is the pre-existing grouped sentinel.
+ ErrReplayBase = errors.New("base")
+ // ErrSymbolCollision reports when an insertion would duplicate a package declaration.
+ ErrSymbolCollision = errors.New("symbol collision")
+)
+```
