@@ -80,6 +80,52 @@ var (
 	}
 }
 
+func TestReplaceDecl_MultilineVarPreservesLayoutAndAdjacentFunctions(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "declarations.go")
+	initial := `package sample
+
+type ParameterContract struct {
+	Name string
+}
+
+var insertDeclParams = []ParameterContract{{Name: "old"}}
+
+func parseInsertDecl() []ParameterContract { return insertDeclParams }
+
+func runInsertDecl() string { return "present" }
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+	replacement := `var insertDeclParams = []ParameterContract{
+	{Name: "file"},
+	{Name: "source"},
+	{Name: "access"},
+	{Name: "group"},
+	{Name: "placement"},
+	{Name: "target"},
+	{Name: "auto_imports"},
+	{Name: "overwrite"},
+}`
+	for call := range 2 {
+		if _, err := ReplaceDecl(context.Background(), file, "insertDeclParams", replacement, ReplaceDeclOptions{}); err != nil {
+			t.Fatalf("ReplaceDecl call %d: %v", call+1, err)
+		}
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read file after call %d: %v", call+1, err)
+		}
+		content := string(data)
+		if !strings.Contains(content, "\n\t{Name: \"source\"},") {
+			t.Fatalf("call %d flattened multiline parameter list:\n%s", call+1, content)
+		}
+		if !strings.Contains(content, "func parseInsertDecl()") || !strings.Contains(content, "func runInsertDecl()") {
+			t.Fatalf("call %d changed adjacent functions:\n%s", call+1, content)
+		}
+	}
+}
+
 func TestInsertDecl_SentinelVarSortedWithinGroup(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "errors.go")

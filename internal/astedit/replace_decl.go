@@ -150,17 +150,37 @@ func parseSingleReplacementDecl(source, symbol string) (replacementDecl, error) 
 	if typeSpec, ok := spec.(*ast.TypeSpec); ok && !typeSpec.Assign.IsValid() {
 		return replacementDecl{}, fmt.Errorf("replacement of %q requires a type alias", symbol)
 	}
+	parseSource := strings.TrimSpace(source)
+	if !strings.HasPrefix(parseSource, "package ") {
+		parseSource = "package dummy\n\n" + parseSource
+	}
+	formattedSource, err := format.Source([]byte(parseSource))
+	if err != nil {
+		return replacementDecl{}, fmt.Errorf("format replacement declaration: %w", err)
+	}
+	fset := token.NewFileSet()
+	formattedFile, err := parser.ParseFile(fset, "snippet", formattedSource, parser.ParseComments)
+	if err != nil {
+		return replacementDecl{}, fmt.Errorf("parse formatted replacement declaration: %w", err)
+	}
+	if len(formattedFile.Decls) != 1 {
+		return replacementDecl{}, ErrMultipleDeclarations
+	}
+	formattedGen, ok := formattedFile.Decls[0].(*ast.GenDecl)
+	if !ok {
+		return replacementDecl{}, ErrUnexpectedDeclType
+	}
 	var formattedBuf bytes.Buffer
-	if err := format.Node(&formattedBuf, token.NewFileSet(), gen); err != nil {
+	if err := format.Node(&formattedBuf, fset, formattedGen); err != nil {
 		return replacementDecl{}, err
 	}
 	formatted := formattedBuf.String()
 	specText := formatted
-	if after, ok0 := strings.CutPrefix(specText, gen.Tok.String()); ok0 {
+	if after, ok := strings.CutPrefix(specText, formattedGen.Tok.String()); ok {
 		specText = strings.TrimSpace(after)
 	}
 	if strings.HasPrefix(specText, "(") && strings.HasSuffix(specText, ")") {
 		specText = strings.TrimSpace(specText[1 : len(specText)-1])
 	}
-	return replacementDecl{kind: gen.Tok, text: formatted, specText: specText}, nil
+	return replacementDecl{kind: formattedGen.Tok, text: formatted, specText: specText}, nil
 }
