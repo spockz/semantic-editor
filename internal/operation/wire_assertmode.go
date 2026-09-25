@@ -93,7 +93,7 @@ func runAssertionMode(_ context.Context, cc CallContext, req AssertionModeReq) (
 func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 	return Def[AssertionModeReq, AssertionModeRes]{
 		Key:      "assertion_mode",
-		Summary:  "Safely rewrite Go test assertions between fail-fast and continue-on-failure modes, requiring workspace trust before writes.",
+		Summary:  "Use this tool instead of text replacing t.Fatal/t.Error calls when converting supported Go test assertions between fail-fast and continue-on-failure modes. Requires workspace trust before writes; use dry_run to preview.",
 		Params:   assertionModeParams,
 		Level:    LevelFile,
 		CLIName:  "assertion-mode",

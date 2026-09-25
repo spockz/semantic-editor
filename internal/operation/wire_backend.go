@@ -422,7 +422,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 	run := lookupRun
 	return Def[LookupReq, *backend.LookupResult]{
 		Key:     capability.OpLookup,
-		Summary: "Locate a Go, trusted Rust, Java, Scala, or explicitly standalone Haskell symbol in a selected source file without line counting. Rust, Java, Scala, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
+		Summary: "Use this tool instead of grep, text search, or line counting when locating a named symbol in a selected Go, trusted Rust, Java, Scala, or explicitly standalone Haskell source file. Rust, Java, Scala, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
 		Params:  lookupParams,
 		Level:   LevelSymbol,
 		// The only read-only operation: lookup never mutates the workspace.
@@ -452,7 +452,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
 	return Def[RenameReq, *backend.RenameResult]{
 		Key:       capability.OpRename,
-		Summary:   "Rename a symbol semantically through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
+		Summary:   "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
 		Params:    renameParams,
 		Level:     LevelSymbol,
 		CLIName:   "rename",
@@ -477,7 +477,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 func verifyDef() Def[VerifyReq, VerifyRes] {
 	return Def[VerifyReq, VerifyRes]{
 		Key:     capability.OpVerify,
-		Summary: "Verify Go sources or apply bounded trusted Java JDT LS formatting/import actions and report diagnostics without Maven/Gradle execution.",
+		Summary: "Use this tool instead of shelling out to formatters or ad hoc diagnostic commands when explicitly checking or formatting supported Go sources or bounded trusted Java files. It may write formatting/import changes; standalone edits already return diagnostics, so avoid redundant verification. Does not run Maven or Gradle.",
 		Params:  verifyParams,
 		Level:   LevelBuild,
 		CLIName: "verify",

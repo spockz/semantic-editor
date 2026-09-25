@@ -73,7 +73,7 @@ func runSnapshot(ctx context.Context, cc CallContext, req SnapshotReq) (Snapshot
 func snapshotDef() Def[SnapshotReq, SnapshotRes] {
 	return Def[SnapshotReq, SnapshotRes]{
 		Key:     "snapshot",
-		Summary: "Capture a pre-edit transactional snapshot only when a later semantic_undo may be needed, creating an immutable journal under .scratch/snapshots/<id>/ for conflict-checked rollback. Do not use it for routine one-way edits, batches, or verification.",
+		Summary: "Use this tool instead of git stash or manual backup copies when a later semantic_undo may be needed for a bounded edit; capture a pre-edit transactional snapshot, creating an immutable journal under .scratch/snapshots/<id>/ for conflict-checked rollback. Do not use it for routine one-way edits, batches, or verification.",
 		Params:  snapshotParams,
 		Level:   LevelWorkspace,
 		CLIName: "snapshot",
@@ -142,7 +142,7 @@ func runUndo(ctx context.Context, cc CallContext, req UndoReq) (UndoRes, error) 
 func undoDef() Def[UndoReq, UndoRes] {
 	return Def[UndoReq, UndoRes]{
 		Key:     "undo",
-		Summary: "Roll back workspace files to a previously captured snapshot state using conflict-checked atomic writes. Fails and performs zero writes if any touched file was modified after the snapshot's recorded post-edit state.",
+		Summary: "Use this tool instead of git reset or manual file restoration when undoing edits recorded by semantic_snapshot; it restores workspace files with conflict-checked atomic writes. Fails and performs zero writes if any touched file was modified after the snapshot's recorded post-edit state.",
 		Params:  undoParams,
 		Level:   LevelWorkspace,
 		CLIName: "undo",

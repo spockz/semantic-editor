@@ -243,7 +243,7 @@ func (s *Server) listTools() []map[string]any {
 	tools = append(tools, batchToolSchema(batchable))
 	if s.liveReload {
 		tools = append(tools, map[string]any{
-			"name": "semantic_reload", "description": "Reload the semedit MCP server after promotion and announce updated tools.",
+			"name": "semantic_reload", "description": "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
 			"inputSchema":  map[string]any{"type": "object", schemaPropertiesKey: map[string]any{}, "additionalProperties": false},
 			"outputSchema": reloadOutputSchema(),
 		})
@@ -402,7 +402,7 @@ func batchToolSchema(entries []operation.Entry) map[string]any {
 		})
 	}
 	return map[string]any{
-		"name": "semantic_batch", "description": "Execute registered batchable semantic edits in sequence, stopping at the first failure. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta.",
+		"name": "semantic_batch", "description": "Use this tool instead of a sequence of built-in text patches when several registered semantic edits must run in order. Stop at the first failure. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta.",
 		"inputSchema": map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
@@ -777,7 +777,7 @@ func feedbackToolSchema() map[string]any {
 	}
 	return map[string]any{
 		"name":         "report_feedback",
-		descriptionKey: "Prepare a structured report about friction with a semedit command or MCP tool. Use after an unexpected result, an error, or a required manual touch-up. The report is a draft for the user to review for accuracy and sensitive content, then post manually as a GitHub issue if appropriate; this tool does not save or post feedback. Privacy: do not include source code, credentials, personal or customer data, private paths, proprietary business details, or intellectual property. For an open-source project, public project and tool details are generally okay to include, but still omit secrets and private information. If unsure whether a detail is safe to share or whether the project is open source, ask the user first and leave uncertain details out until approved.",
+		descriptionKey: "Use this tool instead of manually drafting a tool issue when a semedit command or MCP tool fails, surprises you, or needs a manual touch-up. Prepare a structured report about that friction. Use after an unexpected result, an error, or a required manual touch-up. The report is a draft for the user to review for accuracy and sensitive content, then post manually as a GitHub issue if appropriate; this tool does not save or post feedback. Privacy: do not include source code, credentials, personal or customer data, private paths, proprietary business details, or intellectual property. For an open-source project, public project and tool details are generally okay to include, but still omit secrets and private information. If unsure whether a detail is safe to share or whether the project is open source, ask the user first and leave uncertain details out until approved.",
 		"inputSchema": map[string]any{
 			"type":                  "object",
 			schemaPropertiesKey:     properties,

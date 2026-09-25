@@ -408,7 +408,7 @@ func runReplaceDecl(ctx context.Context, cc CallContext, req ReplaceDeclReq) (Fi
 func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 	return Def[ReplaceDeclReq, FileEditRes]{
 		Key:     "replace_decl",
-		Summary: "Use this tool instead of replace_file_content whenever updating the definition or value of an existing package-level constant, variable, or type alias.",
+		Summary: "Use this tool instead of replace_file_content or inserting a duplicate declaration when updating an existing package-level Go constant, variable, or type alias. The selected name must match the replacement declaration; grouped specs and collisions are checked before writing.",
 		Params:  replaceDeclParams,
 		Level:   LevelFile,
 		CLIName: "replace-decl",

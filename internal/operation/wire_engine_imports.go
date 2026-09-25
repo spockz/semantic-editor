@@ -72,7 +72,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 	return Def[OrganizeImportsReq, FileEditRes]{
 		Key:     "organize_imports",
-		Summary: "Use this tool to format imports, resolve missing package imports, and strip unused imports across specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text editing import blocks or shelling out to goimports when adding, removing, or formatting Go source imports in specified files or the workspace. Supports explicit package additions (including aliases and blank imports) and explicit removals." + automaticVerificationGuidance,
 		Params:  organizeImportsParams,
 		Level:   LevelFile,
 		CLIName: "imports",
@@ -139,7 +139,7 @@ func runAddBuildDependency(ctx context.Context, cc CallContext, req AddBuildDepe
 func addBuildDependencyDef() Def[AddBuildDependencyReq, BuildDependencyRes] {
 	return Def[AddBuildDependencyReq, BuildDependencyRes]{
 		Key:     "add_build_dependency",
-		Summary: "Add an external module to the build (runs 'go get <package>' and 'go mod tidy') without manual shell execution. Build scope (go.mod); contrast with organize_imports, which edits import statements within source files.",
+		Summary: "Use this tool instead of editing go.mod or shelling out to go get/go mod tidy when adding an external Go module dependency. Runs go get and go mod tidy. Build scope (go.mod); contrast with organize_imports, which edits import statements within source files.",
 		Params:  addBuildDependencyParams,
 		Level:   LevelBuild,
 		CLIName: "add-build-dependency",

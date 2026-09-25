@@ -102,8 +102,8 @@ func mavenDef(key, cli, mcp, goal, summary string) Def[MavenReq, MavenRes] {
 		ExampleRaw: map[string]any{"language": "java", wireTrustWorkspace: true, "maven_tool": "auto", "allow_network": false}}
 }
 func registerMavenOps(registry *Registry) error {
-	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Run fixed Maven test-compile for a trusted Java root POM")); err != nil {
+	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Use this tool instead of a shell Maven invocation when compiling tests for a trusted Java root POM with fixed test-compile scope")); err != nil {
 		return err
 	}
-	return Register(registry, mavenDef("maven_test", "maven-test", "semantic_maven_test", "test", "Run fixed Maven test for a trusted Java root POM"))
+	return Register(registry, mavenDef("maven_test", "maven-test", "semantic_maven_test", "test", "Use this tool instead of a shell Maven invocation when running tests for a trusted Java root POM with fixed test scope"))
 }

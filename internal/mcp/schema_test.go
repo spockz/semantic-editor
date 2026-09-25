@@ -405,6 +405,21 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	}
 }
 
+func TestDefaultMCPDescriptionsRouteBeforeGenericTools(t *testing.T) {
+	for _, catalog := range [][]map[string]any{
+		listToolsWithRegistry(t, "full", operation.DefaultRegistry()),
+		listToolsWithLiveReload(t),
+	} {
+		for _, tool := range catalog {
+			name := tool["name"].(string)
+			description := tool["description"].(string)
+			if !strings.Contains(description, "Use this tool instead of") {
+				t.Errorf("%s description omits an explicit routing preference: %q", name, description)
+			}
+		}
+	}
+}
+
 func toAnySlice(values []string) []any {
 	result := make([]any, len(values))
 	for index, value := range values {

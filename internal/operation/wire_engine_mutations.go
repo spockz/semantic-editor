@@ -93,7 +93,7 @@ func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (Fi
 func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 	return Def[ReplaceBodyReq, FileEditRes]{
 		Key:     "replace_body",
-		Summary: "Replace the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text editing or replacing the entire declaration when changing the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",
@@ -176,7 +176,7 @@ func runScaffoldFile(ctx context.Context, cc CallContext, req ScaffoldFileReq) (
 func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 	return Def[ScaffoldFileReq, ScaffoldFileRes]{
 		Key:     "scaffold_file",
-		Summary: "Create a new Go source file with the correct package declaration. Use 'infer' (default) for package to auto-detect from sibling non-test files. Fails if the file already exists unless overwrite is true. Does not seed declarations — use insert tools afterward.",
+		Summary: "Use this tool instead of a built-in file writer when creating a Go source file with the correct package declaration. Use 'infer' (default) for package to auto-detect from sibling non-test files. Fails if the file already exists unless overwrite is true. Does not seed declarations — use insert tools afterward.",
 		Params:  scaffoldFileParams,
 		Level:   LevelFile,
 		CLIName: "scaffold-file",
@@ -274,7 +274,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
 		Key:     "insert_case",
-		Summary: "Insert a new case clause into an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). If multiple switches match, use switch_path from the ambiguity diagnostic. Validates the case source in memory before writing.",
+		Summary: "Use this tool instead of text insertion or replacing the enclosing function when adding a case clause to an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). If multiple switches match, use switch_path from the ambiguity diagnostic. Validates the case source in memory before writing.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",
@@ -333,7 +333,7 @@ func runReplaceLoop(ctx context.Context, cc CallContext, req ReplaceLoopReq) (Fi
 func replaceLoopDef() Def[ReplaceLoopReq, FileEditRes] {
 	return Def[ReplaceLoopReq, FileEditRes]{
 		Key:     "replace_loop",
-		Summary: "Use this tool instead of replace_body or replace_file_content whenever modifying an existing for loop, range loop, or loop condition inside a function or method (e.g. updating assertion loops, range slices, or loop bounds). Operates directly on the targeted loop construct without regenerating the rest of the function body.",
+		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go for or range loop inside a function or method. Supply the complete replacement loop in source; select by loop_on and, for ambiguity, loop_path. It changes the selected loop without regenerating the rest of the function body.",
 		Params:  replaceLoopParams,
 		Level:   LevelFile,
 		CLIName: "replace-loop",

@@ -1,6 +1,6 @@
 ---
 name: semedit
-description: Use when locating or renaming symbols, or editing Go loops, declarations, functions, imports, and files through semedit semantic operations.
+description: Use semedit tools for symbol lookup, code edits, verification, trusted Java builds, workspace snapshots, live reload, and tool-friction reports when their stated scope matches the task.
 ---
 
 # Use semedit for supported code transformations
@@ -11,21 +11,28 @@ When the request matches an operation exposed by the active semedit server, use 
 
 | Requested change | Prefer over built-in tools | Route away from |
 | --- | --- | --- |
-| Find a symbol or its location | `semantic_lookup` | Counting lines or guessing coordinates |
-| Rename a symbol and its references | `semantic_rename` | Text replacement across files |
-| Replace one existing Go `for` or `range` loop inside a function or method | `semantic_replace_loop` with a complete loop in `source`; use `loop_on` and a reported `loop_path` when needed | Built-in text edits or regenerating the whole function body |
-| Change an existing Go function or method body while keeping its declaration | `semantic_replace_body` | `semantic_rename` or replacing the whole declaration |
-| Replace an existing package-level Go constant, variable, or type alias | `semantic_replace_decl` | Built-in text replacement or inserting a duplicate declaration |
-| Add a Go function or method to an existing file | `semantic_insert_function` | General declaration insertion when the specialized operation fits |
-| Add a Go type to an existing file | `semantic_insert_type` | Built-in text edits around neighboring types |
-| Add a new Go constant or variable | `semantic_insert_decl`; use `overwrite: true` only for an intentional update | Built-in text edits or an accidental duplicate declaration |
+| Find a named symbol in a supported source file | `semantic_lookup` | Built-in text search, `grep`, or line counting |
+| Rename a supported symbol and its references | `semantic_rename` | Built-in text replacement across files |
+| Replace one Go `for` or `range` loop inside a function | `semantic_replace_loop` with complete loop `source` | Built-in text edits or regenerating the whole function |
+| Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
+| Update an existing package-level Go constant, variable, or type alias | `semantic_replace_decl` | Built-in text replacement or duplicate insertion |
+| Add a Go function or method to an existing file | `semantic_insert_function` | Built-in text insertion around adjacent declarations |
+| Add a Go type to an existing file | `semantic_insert_type` | Built-in text insertion around adjacent types |
+| Add a new Go constant or variable | `semantic_insert_decl`; use `overwrite: true` only for an intentional update | Built-in text edits or accidental duplicate declarations |
 | Add another kind of top-level Go declaration | `semantic_insert_declaration` | Built-in text insertion by line number |
-| Create a Go source file | `semantic_scaffold_file`, then add declarations with the matching insertion operation | Writing a package header by hand |
-| Add or remove Go source imports | `semantic_organize_imports` | Treating an import as a module dependency |
-| Add an external Go module dependency | `semantic_add_build_dependency` | `semantic_organize_imports` or manual `go.mod` edits |
-| Add a Go switch case | `semantic_insert_case` | Replacing the switch text when a structural case insertion fits |
-| Apply several supported semantic edits in order | `semantic_batch` | Several built-in text patches when the registered operations cover the edits |
-| Format or check supported sources | `semantic_verify` | Re-running verification already included in the operation result |
+| Create a Go source file and infer its package | `semantic_scaffold_file`, followed by a matching insertion operation | Built-in file writing for the package header |
+| Add, remove, or format Go source imports | `semantic_organize_imports` | Built-in import-block edits or shell `goimports` |
+| Add an external Go module dependency | `semantic_add_build_dependency` | Built-in `go.mod` edits or shell `go get` |
+| Add a Go switch case | `semantic_insert_case` | Built-in switch text replacement |
+| Convert supported Go test assertions between failure modes | `semantic_assertion_mode` | Built-in text replacement of `t.Fatal`/`t.Error` calls |
+| Apply several registered semantic edits in order | `semantic_batch` | Several built-in text patches |
+| Explicitly format or check supported Go or trusted Java sources | `semantic_verify` | Shell formatters or ad hoc diagnostics; avoid a redundant call after an edit that already verifies |
+| Compile tests for a trusted Java root POM | `semantic_maven_compile` | Shell Maven invocation |
+| Run tests for a trusted Java root POM | `semantic_maven_test` | Shell Maven invocation |
+| Save a pre-edit rollback point for a bounded edit | `semantic_snapshot` | `git stash` or manual backup copies |
+| Restore edits from a semedit snapshot | `semantic_undo` | `git reset` or manual file restoration |
+| Reload a promoted MCP binary when live reload is enabled | `semantic_reload` | Restarting the client or server manually |
+| Prepare a privacy-reviewed semedit tool-friction draft | `report_feedback` | Manually drafting a tool issue; keep local friction logs required by this repository |
 
 Examples:
 
