@@ -1,8 +1,8 @@
 # RQ-0022: Structural Edit Capability Family: Block Anchors, Control Slots & Location Discovery
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Semantics & Architecture
-* **Date**: 2026-09-17
+* **Date**: 2026-09-17 (Resolved: 2026-09-25)
 
 ---
 
@@ -201,8 +201,12 @@ If disambiguation is needed in deeply nested control flow, the discovery tool `s
 
 ---
 
-## 6. Next Steps
+## 6. Resolution & Architectural Outcomes
 
-1. **Codify Architecture in ADR-0019**: Document Intent-Driven Declarative Roles and Precision Block Anchors.
-2. **Implement `semantic_insert_decl` Role Engine**: Support `sentinel_error`, `constant`, `type`, `constructor`, and `init_registration`.
-3. **Implement `semantic_insert_statement`**: Support `start`, `end`, `before_return`, and `before/after:<pattern>`.
+1. **Codified in ADR-0019 & ADR-0046**:
+   * ADR-0019 defined intent-driven declaration roles and statement anchors.
+   * ADR-0046 formalizes construct-level AST replacement (`semantic_replace_loop`) and top-level declaration replacement/collision preemption (`semantic_replace_decl`), resolving the whole-body replacement token bloat and constant update gaps.
+2. **Intent-Triggered Schema Guidance**:
+   * Tools must match the model's internal reasoning slots (e.g. `function`, `loop_on`) and lead with affirmative trigger scenarios ("Use this tool instead of replace_body or replace_file_content whenever modifying an existing for loop, range loop, or loop condition...").
+3. **Collision Detection Contract**:
+   * `semantic_insert_decl` must preempt duplicate symbol collisions, reporting diagnostic errors or routing to `semantic_replace_decl` / `overwrite: true`.
