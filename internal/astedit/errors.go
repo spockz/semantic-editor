@@ -66,6 +66,9 @@ var (
 
 	// ErrNoBody indicates the target function does not have a body.
 	ErrNoBody = errors.New("function has no body")
+
+	// ErrDeclCollision indicates a declaration would duplicate a package symbol.
+	ErrDeclCollision = errors.New("package declaration collision")
 )
 
 // VisibilityMismatchError represents an access modifier or casing visibility constraint violation.

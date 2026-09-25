@@ -320,3 +320,95 @@ func assertBatchSchemaProfile(t *testing.T, profile string) {
 		}
 	}
 }
+
+func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
+	tools := listTools(t, "full")
+	byName := make(map[string]map[string]any, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = tool
+	}
+
+	for _, test := range []struct {
+		name             string
+		required         []string
+		stringProperties []string
+	}{
+		{
+			name:             "semantic_replace_loop",
+			required:         []string{"file", "function", "source"},
+			stringProperties: []string{"file", "function", "loop_on", "loop_path", "source"},
+		},
+		{
+			name:             "semantic_replace_decl",
+			required:         []string{"file", "symbol", "source"},
+			stringProperties: []string{"file", "symbol", "source"},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tool, ok := byName[test.name]
+			if !ok {
+				t.Fatalf("tools/list omitted %s", test.name)
+			}
+			input := tool["inputSchema"].(map[string]any)
+			properties := input["properties"].(map[string]any)
+			for _, name := range test.stringProperties {
+				property, ok := properties[name].(map[string]any)
+				if !ok || property["type"] != "string" {
+					t.Errorf("%s property schema = %#v, want string", name, properties[name])
+				}
+			}
+			if got := input["required"]; !reflect.DeepEqual(got, toAnySlice(test.required)) {
+				t.Errorf("required = %#v, want %v", got, test.required)
+			}
+			description, _ := tool["description"].(string)
+			if !strings.Contains(description, "Use this tool instead of") ||
+				(!strings.Contains(description, "replace_body") && !strings.Contains(description, "replace_file_content")) {
+				t.Errorf("description does not advertise the semantic-edit trigger: %q", description)
+			}
+		})
+	}
+
+	insertDecl := byName["semantic_insert_decl"]
+	if insertDecl == nil {
+		t.Fatal("tools/list omitted semantic_insert_decl")
+	}
+	overwrite, ok := insertDecl["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"].(map[string]any)
+	if !ok || overwrite["type"] != "boolean" {
+		t.Fatalf("semantic_insert_decl overwrite schema = %#v, want optional boolean", overwrite)
+	}
+	if defaultValue, hasDefault := overwrite["default"]; hasDefault && defaultValue != false {
+		t.Fatalf("semantic_insert_decl overwrite default = %#v, want false when specified", defaultValue)
+	}
+
+	batch := byName["semantic_batch"]
+	if batch == nil {
+		t.Fatal("tools/list omitted semantic_batch")
+	}
+	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
+	branches := edits["items"].(map[string]any)["oneOf"].([]any)
+	batchTools := make(map[string]map[string]any, len(branches))
+	for _, raw := range branches {
+		branch := raw.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		toolName, _ := properties["tool"].(map[string]any)["const"].(string)
+		batchTools[toolName] = properties["params"].(map[string]any)
+	}
+	for _, name := range []string{"semantic_replace_loop", "semantic_replace_decl", "semantic_insert_decl"} {
+		params, ok := batchTools[name]
+		if !ok {
+			t.Errorf("semantic_batch schema omitted %s", name)
+			continue
+		}
+		if !reflect.DeepEqual(params, byName[name]["inputSchema"]) {
+			t.Errorf("semantic_batch params for %s differ from tools/list schema", name)
+		}
+	}
+}
+
+func toAnySlice(values []string) []any {
+	result := make([]any, len(values))
+	for index, value := range values {
+		result[index] = value
+	}
+	return result
+}

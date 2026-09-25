@@ -255,121 +255,9 @@ try {
 
 func writeBenchmarkBrowserAssets(rootDir, outputDir string) error {
 	resultsDir := filepath.Join(rootDir, "data", "benchmarks", "results")
-	var rows []map[string]json.RawMessage
-	resultsRoot, err := os.OpenRoot(resultsDir)
-	if os.IsNotExist(err) {
-		err = nil
-	} else if err != nil {
-		return fmt.Errorf("open benchmark results directory: %w", err)
-	}
-	if resultsRoot != nil {
-		err = filepath.WalkDir(resultsDir, func(path string, entry os.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if entry.IsDir() || filepath.Ext(path) != ".json" {
-				return nil
-			}
-			relativePath, err := filepath.Rel(resultsDir, path)
-			if err != nil {
-				return fmt.Errorf("make benchmark result path relative: %w", err)
-			}
-			resultFile, err := resultsRoot.Open(relativePath)
-			if err != nil {
-				return fmt.Errorf("open benchmark result %s: %w", relativePath, err)
-			}
-			data, readErr := io.ReadAll(resultFile)
-			closeErr := resultFile.Close()
-			if readErr != nil {
-				return fmt.Errorf("read benchmark result %s: %w", relativePath, readErr)
-			}
-			if closeErr != nil {
-				return fmt.Errorf("close benchmark result %s: %w", relativePath, closeErr)
-			}
-			var report map[string]json.RawMessage
-			if err := json.Unmarshal(data, &report); err != nil {
-				return fmt.Errorf("decode benchmark result %s: %w", path, err)
-			}
-			var formatVersion int
-			formatVersionValue := bytes.TrimSpace(report["format_version"])
-			if len(formatVersionValue) > 0 && !bytes.Equal(formatVersionValue, []byte("null")) {
-				if err := json.Unmarshal(formatVersionValue, &formatVersion); err != nil {
-					return fmt.Errorf("decode benchmark format version in %s: %w", path, err)
-				}
-			}
-			legacyDurations := formatVersion == 0
-			runID, err := benchmarkRunID(resultsDir, path)
-			if err != nil {
-				return err
-			}
-			records := report["comparisons"]
-			recordType := "comparison"
-			if len(records) == 0 || string(records) == "null" {
-				records = report["runs"]
-				recordType = "run"
-			}
-			var entries []json.RawMessage
-			if len(records) > 0 && string(records) != "null" {
-				if err := json.Unmarshal(records, &entries); err != nil {
-					return fmt.Errorf("decode benchmark %s records in %s: %w", recordType, path, err)
-				}
-			}
-			for _, entry := range entries {
-				var sourceRow map[string]json.RawMessage
-				if err := json.Unmarshal(entry, &sourceRow); err != nil {
-					return fmt.Errorf("decode benchmark %s in %s: %w", recordType, path, err)
-				}
-				if sourceRow == nil {
-					return fmt.Errorf("decode benchmark %s in %s: expected a JSON object", recordType, path)
-				}
-				if recordType == "comparison" {
-					comparisonRows, err := splitBenchmarkComparison(sourceRow, legacyDurations)
-					if err != nil {
-						return fmt.Errorf("split benchmark comparison in %s: %w", path, err)
-					}
-					for _, row := range comparisonRows {
-						if err := addBenchmarkBrowserMetadata(row, runID, relativePath, "result"); err != nil {
-							return err
-						}
-						rows = append(rows, row)
-					}
-					continue
-				}
-				row := make(map[string]json.RawMessage, len(sourceRow))
-				for key, value := range sourceRow {
-					if err := flattenBenchmarkField(key, value, row); err != nil {
-						return fmt.Errorf("flatten benchmark field %s in %s: %w", key, path, err)
-					}
-				}
-				if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
-					return fmt.Errorf("derive semantic tool pass in %s: %w", path, err)
-				}
-				if err := addBenchmarkBrowserCost(entry, report["target"], row); err != nil {
-					return fmt.Errorf("calculate benchmark cost in %s: %w", path, err)
-				}
-				if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
-					return fmt.Errorf("normalize benchmark durations in %s: %w", path, err)
-				}
-				if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
-					return fmt.Errorf("derive benchmark wall-clock seconds in %s: %w", path, err)
-				}
-				if err := addBenchmarkBrowserMetadata(row, runID, relativePath, recordType); err != nil {
-					return err
-				}
-				rows = append(rows, row)
-			}
-			return nil
-		})
-		closeErr := resultsRoot.Close()
-		if err == nil {
-			err = closeErr
-		}
-	}
+	rows, err := readBenchmarkBrowserRows(resultsDir)
 	if err != nil {
-		return fmt.Errorf("aggregate benchmark results: %w", err)
-	}
-	if rows == nil {
-		rows = make([]map[string]json.RawMessage, 0)
+		return err
 	}
 	if err := addBenchmarkBrowserComparisonDeltas(rows); err != nil {
 		return fmt.Errorf("derive benchmark comparison changes: %w", err)
@@ -398,83 +286,7 @@ func writeBenchmarkBrowserAssets(rootDir, outputDir string) error {
 	if err := writeGeneratedFile(dataPath, encodedRows); err != nil {
 		return fmt.Errorf("write benchmark browser data: %w", err)
 	}
-
-	vendorRoot := filepath.Join(rootDir, "cmd", "docgen", "assets", "vendor", "perspective")
-	vendor, err := os.OpenRoot(vendorRoot)
-	if err != nil {
-		return fmt.Errorf("open Perspective vendor assets: %w", err)
-	}
-	err = filepath.WalkDir(vendorRoot, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		relativePath, err := filepath.Rel(vendorRoot, path)
-		if err != nil {
-			return fmt.Errorf("make Perspective asset path relative: %w", err)
-		}
-		if entry.IsDir() {
-			if relativePath == "." {
-				return nil
-			}
-			if err := os.MkdirAll(filepath.Join(outputDir, "static", "vendor", "perspective", relativePath), 0o750); err != nil {
-				return fmt.Errorf("create Perspective asset directory: %w", err)
-			}
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		assetFile, err := vendor.Open(relativePath)
-		if err != nil {
-			return fmt.Errorf("open Perspective asset %s: %w", relativePath, err)
-		}
-		asset, readErr := io.ReadAll(assetFile)
-		closeErr := assetFile.Close()
-		if readErr != nil {
-			return fmt.Errorf("read Perspective asset %s: %w", relativePath, readErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close Perspective asset %s: %w", relativePath, closeErr)
-		}
-		targetPath := filepath.Join(outputDir, "static", "vendor", "perspective", relativePath)
-		if err := writeGeneratedFile(targetPath, asset); err != nil {
-			return fmt.Errorf("write Perspective asset %s: %w", relativePath, err)
-		}
-		return nil
-	})
-	closeErr := vendor.Close()
-	if err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return fmt.Errorf("unpack Perspective vendor assets: %w", err)
-	}
-
-	shortcodeDir := filepath.Join(outputDir, "layouts", "shortcodes")
-	if err := os.MkdirAll(shortcodeDir, 0o750); err != nil {
-		return fmt.Errorf("create benchmark browser shortcode directory: %w", err)
-	}
-	shortcodePath := filepath.Join(shortcodeDir, "benchmark-browser.html")
-	if err := writeGeneratedFile(shortcodePath, []byte(benchmarkBrowserShortcode)); err != nil {
-		return fmt.Errorf("write benchmark browser shortcode: %w", err)
-	}
-	page := `---
-title: "Benchmark browser"
-description: "Explore benchmark observations across tasks, models, and experimental conditions."
-draft: false
-weight: 20
----
-
-{{< benchmark-browser >}}
-`
-	pagePath := filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")
-	if err := os.MkdirAll(filepath.Dir(pagePath), 0o750); err != nil {
-		return fmt.Errorf("create benchmark browser page directory: %w", err)
-	}
-	if err := writeGeneratedFile(pagePath, []byte(page)); err != nil {
-		return fmt.Errorf("write benchmark browser page: %w", err)
-	}
-	return nil
+	return writeBenchmarkBrowserViewerAssets(rootDir, outputDir)
 }
 
 func addBenchmarkBrowserComparisonDeltas(rows []map[string]json.RawMessage) error {
@@ -807,6 +619,215 @@ func flattenBenchmarkField(name string, value json.RawMessage, row map[string]js
 	}
 	if name == "cached_prompt_tokens" {
 		row["cached_input_tokens"] = value
+	}
+	return nil
+}
+
+func loadBenchmarkBrowserResult(resultsDir, path, relativePath string, data []byte) ([]map[string]json.RawMessage, error) {
+	var rows []map[string]json.RawMessage
+	var report map[string]json.RawMessage
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, fmt.Errorf("decode benchmark result %s: %w", path, err)
+	}
+	var formatVersion int
+	formatVersionValue := bytes.TrimSpace(report["format_version"])
+	if len(formatVersionValue) > 0 && !bytes.Equal(formatVersionValue, []byte("null")) {
+		if err := json.Unmarshal(formatVersionValue, &formatVersion); err != nil {
+			return nil, fmt.Errorf("decode benchmark format version in %s: %w", path, err)
+		}
+	}
+	legacyDurations := formatVersion == 0
+	runID, err := benchmarkRunID(resultsDir, path)
+	if err != nil {
+		return nil, err
+	}
+	records := report["comparisons"]
+	recordType := "comparison"
+	if len(records) == 0 || string(records) == "null" {
+		records = report["runs"]
+		recordType = "run"
+	}
+	var entries []json.RawMessage
+	if len(records) > 0 && string(records) != "null" {
+		if err := json.Unmarshal(records, &entries); err != nil {
+			return nil, fmt.Errorf("decode benchmark %s records in %s: %w", recordType, path, err)
+		}
+	}
+	for _, entry := range entries {
+		var sourceRow map[string]json.RawMessage
+		if err := json.Unmarshal(entry, &sourceRow); err != nil {
+			return nil, fmt.Errorf("decode benchmark %s in %s: %w", recordType, path, err)
+		}
+		if sourceRow == nil {
+			return nil, fmt.Errorf("decode benchmark %s in %s: expected a JSON object", recordType, path)
+		}
+		if recordType == "comparison" {
+			comparisonRows, err := splitBenchmarkComparison(sourceRow, legacyDurations)
+			if err != nil {
+				return nil, fmt.Errorf("split benchmark comparison in %s: %w", path, err)
+			}
+			for _, row := range comparisonRows {
+				if err := addBenchmarkBrowserMetadata(row, runID, relativePath, "result"); err != nil {
+					return nil, err
+				}
+				rows = append(rows, row)
+			}
+			continue
+		}
+		row := make(map[string]json.RawMessage, len(sourceRow))
+		for key, value := range sourceRow {
+			if err := flattenBenchmarkField(key, value, row); err != nil {
+				return nil, fmt.Errorf("flatten benchmark field %s in %s: %w", key, path, err)
+			}
+		}
+		if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
+			return nil, fmt.Errorf("derive semantic tool pass in %s: %w", path, err)
+		}
+		if err := addBenchmarkBrowserCost(entry, report["target"], row); err != nil {
+			return nil, fmt.Errorf("calculate benchmark cost in %s: %w", path, err)
+		}
+		if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
+			return nil, fmt.Errorf("normalize benchmark durations in %s: %w", path, err)
+		}
+		if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
+			return nil, fmt.Errorf("derive benchmark wall-clock seconds in %s: %w", path, err)
+		}
+		if err := addBenchmarkBrowserMetadata(row, runID, relativePath, recordType); err != nil {
+			return nil, err
+		}
+		rows = append(rows, row)
+	}
+	return rows, nil
+}
+
+func readBenchmarkBrowserRows(resultsDir string) ([]map[string]json.RawMessage, error) {
+	var rows []map[string]json.RawMessage
+	resultsRoot, err := os.OpenRoot(resultsDir)
+	if os.IsNotExist(err) {
+		err = nil
+	} else if err != nil {
+		return nil, fmt.Errorf("open benchmark results directory: %w", err)
+	}
+	if resultsRoot != nil {
+		err = filepath.WalkDir(resultsDir, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if entry.IsDir() || filepath.Ext(path) != ".json" {
+				return nil
+			}
+			relativePath, err := filepath.Rel(resultsDir, path)
+			if err != nil {
+				return fmt.Errorf("make benchmark result path relative: %w", err)
+			}
+			resultFile, err := resultsRoot.Open(relativePath)
+			if err != nil {
+				return fmt.Errorf("open benchmark result %s: %w", relativePath, err)
+			}
+			data, readErr := io.ReadAll(resultFile)
+			closeErr := resultFile.Close()
+			if readErr != nil {
+				return fmt.Errorf("read benchmark result %s: %w", relativePath, readErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close benchmark result %s: %w", relativePath, closeErr)
+			}
+			resultRows, err := loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
+			if err != nil {
+				return err
+			}
+			rows = append(rows, resultRows...)
+			return nil
+		})
+		closeErr := resultsRoot.Close()
+		if err == nil {
+			err = closeErr
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("aggregate benchmark results: %w", err)
+	}
+	if rows == nil {
+		rows = make([]map[string]json.RawMessage, 0)
+	}
+	return rows, nil
+}
+
+func writeBenchmarkBrowserViewerAssets(rootDir, outputDir string) error {
+	vendorRoot := filepath.Join(rootDir, "cmd", "docgen", "assets", "vendor", "perspective")
+	vendor, err := os.OpenRoot(vendorRoot)
+	if err != nil {
+		return fmt.Errorf("open Perspective vendor assets: %w", err)
+	}
+	err = filepath.WalkDir(vendorRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relativePath, err := filepath.Rel(vendorRoot, path)
+		if err != nil {
+			return fmt.Errorf("make Perspective asset path relative: %w", err)
+		}
+		if entry.IsDir() {
+			if relativePath == "." {
+				return nil
+			}
+			if err := os.MkdirAll(filepath.Join(outputDir, "static", "vendor", "perspective", relativePath), 0o750); err != nil {
+				return fmt.Errorf("create Perspective asset directory: %w", err)
+			}
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+		assetFile, err := vendor.Open(relativePath)
+		if err != nil {
+			return fmt.Errorf("open Perspective asset %s: %w", relativePath, err)
+		}
+		asset, readErr := io.ReadAll(assetFile)
+		closeErr := assetFile.Close()
+		if readErr != nil {
+			return fmt.Errorf("read Perspective asset %s: %w", relativePath, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close Perspective asset %s: %w", relativePath, closeErr)
+		}
+		targetPath := filepath.Join(outputDir, "static", "vendor", "perspective", relativePath)
+		if err := writeGeneratedFile(targetPath, asset); err != nil {
+			return fmt.Errorf("write Perspective asset %s: %w", relativePath, err)
+		}
+		return nil
+	})
+	closeErr := vendor.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return fmt.Errorf("unpack Perspective vendor assets: %w", err)
+	}
+
+	shortcodeDir := filepath.Join(outputDir, "layouts", "shortcodes")
+	if err := os.MkdirAll(shortcodeDir, 0o750); err != nil {
+		return fmt.Errorf("create benchmark browser shortcode directory: %w", err)
+	}
+	shortcodePath := filepath.Join(shortcodeDir, "benchmark-browser.html")
+	if err := writeGeneratedFile(shortcodePath, []byte(benchmarkBrowserShortcode)); err != nil {
+		return fmt.Errorf("write benchmark browser shortcode: %w", err)
+	}
+	page := `---
+title: "Benchmark browser"
+description: "Explore benchmark observations across tasks, models, and experimental conditions."
+draft: false
+weight: 20
+---
+
+{{< benchmark-browser >}}
+`
+	pagePath := filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")
+	if err := os.MkdirAll(filepath.Dir(pagePath), 0o750); err != nil {
+		return fmt.Errorf("create benchmark browser page directory: %w", err)
+	}
+	if err := writeGeneratedFile(pagePath, []byte(page)); err != nil {
+		return fmt.Errorf("write benchmark browser page: %w", err)
 	}
 	return nil
 }

@@ -111,33 +111,9 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 	}
 	result = res
 
-	baseInstruction := task.Metadata.Instruction
-
-	// Check if a specific prompt variant is requested via variant name (e.g. "small:crypto_rand", "small+verified:crypto_rand")
-	promptVarName := ""
-	if _, after, ok := strings.Cut(variant, ":"); ok {
-		promptVarName = after
-	}
-	if promptVarName != "" && len(task.Metadata.PromptVariants) > 0 {
-		if customInstr, ok := task.Metadata.PromptVariants[promptVarName]; ok {
-			baseInstruction = customInstr
-		}
-	}
-	res.PromptVariant = promptVarName
-
-	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
-		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
-	}
-	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
-
-	var prompt string
-	switch arm {
-	case ArmSemedit:
-		prompt = fmt.Sprintf("%s Do not read source code with shell or terminal commands, including `sed`, `cat`, or equivalent commands. Use built-in code inspection tools to inspect source and semedit semantic operations for applicable edits. Use `semantic_lookup` to locate target symbols whenever supported and available. Do not silently fall back to shell-based source reads. If you cannot use `semantic_lookup` because it is unavailable, unsupported for the target, blocked by an unmet precondition, or fails, state the specific reason in your response, then finish with DONE.", baseInstruction)
-	case ArmBaseline:
-		prompt = fmt.Sprintf("%s Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.", baseInstruction)
-	default:
-		return nil, fmt.Errorf("unsupported arm for agent driver: %s", arm)
+	prompt, err := prepareAgentPrompt(task, arm, variant, res)
+	if err != nil {
+		return nil, err
 	}
 	res.Prompt = prompt
 
@@ -183,6 +159,47 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		return res, nil
 	}
 	res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
+	sessionID, retainWorkDir = r.runInteractiveFollowups(ctx, task, workDir, beforeFiles, initialPath, beforeContent, target, arm, start, sessionID, res)
+	res.WallClock = time.Since(start)
+	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
+		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticBatchReflectionPrompt)
+	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {
+		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticToolReflectionPrompt)
+	}
+
+	return res, nil
+}
+
+func prepareAgentPrompt(task *Task, arm ArmType, variant string, res *RunResult) (string, error) {
+	baseInstruction := task.Metadata.Instruction
+	promptVarName := ""
+	if _, after, ok := strings.Cut(variant, ":"); ok {
+		promptVarName = after
+	}
+	if promptVarName != "" && len(task.Metadata.PromptVariants) > 0 {
+		if customInstruction, ok := task.Metadata.PromptVariants[promptVarName]; ok {
+			baseInstruction = customInstruction
+		}
+	}
+	res.PromptVariant = promptVarName
+
+	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
+		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
+	}
+	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
+
+	switch arm {
+	case ArmSemedit:
+		return fmt.Sprintf("%s Do not read source code with shell or terminal commands, including `sed`, `cat`, or equivalent commands. Use built-in code inspection tools to inspect source and semedit semantic operations for applicable edits. Use `semantic_lookup` to locate target symbols whenever supported and available. Do not silently fall back to shell-based source reads. If you cannot use `semantic_lookup` because it is unavailable, unsupported for the target, blocked by an unmet precondition, or fails, state the specific reason in your response, then finish with DONE.", baseInstruction), nil
+	case ArmBaseline:
+		return fmt.Sprintf("%s Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.", baseInstruction), nil
+	default:
+		return "", fmt.Errorf("unsupported arm for agent driver: %s", arm)
+	}
+}
+
+func (r *Runner) runInteractiveFollowups(ctx context.Context, task *Task, workDir string, beforeFiles workspaceSnapshot, initialPath, beforeContent string, target Target, arm ArmType, started time.Time, sessionID string, res *RunResult) (string, bool) {
+	retainWorkDir := false
 	for index, followup := range task.Metadata.InteractiveFollowups {
 		if res.Success {
 			break
@@ -203,7 +220,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 			turn.WallClock = time.Since(turnStarted)
 			turn.Error = runErr.Error()
 			res.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
-			res.WallClock = time.Since(start)
+			res.WallClock = time.Since(started)
 			retainWorkDir = shouldRetainWorkDir(ctx, runErr)
 			mergeTurn(res, turn)
 			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
@@ -213,7 +230,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, turn); err != nil {
 			turn.Error = err.Error()
 			res.Error = err.Error()
-			res.WallClock = time.Since(start)
+			res.WallClock = time.Since(started)
 			retainWorkDir = shouldRetainWorkDir(ctx, err)
 			mergeTurn(res, turn)
 			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
@@ -222,14 +239,7 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 		res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
 		mergeTurn(res, turn)
 	}
-	res.WallClock = time.Since(start)
-	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
-		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticBatchReflectionPrompt)
-	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {
-		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticToolReflectionPrompt)
-	}
-
-	return res, nil
+	return sessionID, retainWorkDir
 }
 
 // writeBenchmarkAGENTSOverride confines inherited Codex instructions to the synthetic fixture.

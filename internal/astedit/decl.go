@@ -22,6 +22,7 @@ type DeclOptions struct {
 	Group               string // "append" (default for const/var) or "standalone"
 	Placement           Placement
 	TargetSymbol        string
+	Overwrite           bool
 	AutoOrganizeImports bool
 }
 
@@ -69,8 +70,15 @@ func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOp
 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil && fileNode == nil {
-		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
+	if err != nil {
+		return fmt.Errorf("cannot check package declaration collisions in unparseable target file: %w", err)
+	}
+	handled, err := handleInsertDeclCollisions(ctx, cleanPath, source, snippetDecls, fileNode, opts)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return nil
 	}
 
 	// 1. Attempt group appending for const/var if opts.Group is "append" (or default empty)

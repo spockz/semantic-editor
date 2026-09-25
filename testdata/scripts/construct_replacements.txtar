@@ -1,0 +1,111 @@
+# Replace only a selected loop and declaration; reject declaration collisions until overwrite is explicit.
+! exec semedit insert-decl --file api/settings.go --source 'var Revision = 2'
+stderr 'Revision.*already exists'
+cmp api/settings.go want/api/settings_before.go
+exec semedit insert-decl --file api/settings.go --source 'var Revision = 2' --overwrite
+exec semedit replace-decl --file api/settings.go --symbol DefaultLimit --source 'const DefaultLimit = 10'
+exec semedit replace-loop --file api/messages_test.go --function TestMessages --loop-on want --source 'for _, want := range []string{"alpha", "beta"} { if want == "" { t.Fatal(want) } }'
+cmp api/settings.go want/api/settings.go
+cmp api/messages_test.go want/api/messages_test.go
+! exec semedit replace-loop --file api/loops_test.go --function TestAmbiguousLoops --loop-on item --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
+stderr 'ambiguous loop'
+cmp api/loops_test.go want/api/loops_before.go
+exec semedit replace-loop --file api/loops_test.go --function TestAmbiguousLoops --loop-on item --loop-path 0 --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
+cmp api/loops_test.go want/api/loops_test.go
+exec go test ./api
+
+-- go.mod --
+module example.com/construct
+
+go 1.23
+
+-- api/settings.go --
+package api
+
+const DefaultLimit = 5
+
+var Revision = 1
+-- want/api/settings_before.go --
+package api
+
+const DefaultLimit = 5
+
+var Revision = 1
+-- want/api/settings.go --
+package api
+
+const DefaultLimit = 10
+
+var Revision = 2
+-- api/messages_test.go --
+package api
+
+import "testing"
+
+func TestMessages(t *testing.T) {
+	original := []string{"old"}
+	if len(original) == 0 {
+		t.Fatal("missing originals")
+	}
+	for _, want := range original {
+		if want == "" {
+			t.Fatal(want)
+		}
+	}
+}
+
+-- api/loops_test.go --
+package api
+
+import "testing"
+
+func TestAmbiguousLoops(t *testing.T) {
+	for _, item := range []string{"first"} {
+		t.Log(item)
+	}
+	for _, item := range []string{"second"} {
+		t.Log(item)
+	}
+}
+-- want/api/loops_before.go --
+package api
+
+import "testing"
+
+func TestAmbiguousLoops(t *testing.T) {
+	for _, item := range []string{"first"} {
+		t.Log(item)
+	}
+	for _, item := range []string{"second"} {
+		t.Log(item)
+	}
+}
+-- want/api/loops_test.go --
+package api
+
+import "testing"
+
+func TestAmbiguousLoops(t *testing.T) {
+	for _, item := range []string{"chosen"} {
+		t.Log(item)
+	}
+	for _, item := range []string{"second"} {
+		t.Log(item)
+	}
+}
+-- want/api/messages_test.go --
+package api
+
+import "testing"
+
+func TestMessages(t *testing.T) {
+	original := []string{"old"}
+	if len(original) == 0 {
+		t.Fatal("missing originals")
+	}
+	for _, want := range []string{"alpha", "beta"} {
+		if want == "" {
+			t.Fatal(want)
+		}
+	}
+}

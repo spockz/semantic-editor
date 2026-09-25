@@ -17,11 +17,37 @@ type ReplaceBodyReq struct {
 	AutoOrganizeImports bool
 }
 
+// ReplaceLoopReq replaces one for or range loop within a function or method.
+type ReplaceLoopReq struct {
+	Project             backend.ProjectContext
+	File                string
+	Function            string
+	LoopOn              string
+	LoopPath            string
+	Source              string
+	AutoOrganizeImports bool
+}
+
+// GetProjectContext returns the request project for registry dispatch.
+func (r ReplaceLoopReq) GetProjectContext() backend.ProjectContext { return r.Project }
+
+// SetProjectContext replaces the request project during dispatch merge.
+func (r *ReplaceLoopReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
 // GetProjectContext returns the request project for registry dispatch.
 func (r ReplaceBodyReq) GetProjectContext() backend.ProjectContext { return r.Project }
 
 // SetProjectContext replaces the request project during dispatch merge.
 func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
+var replaceLoopParams = []ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Path to the Go source file", Required: true},
+	{Name: "function", CLIName: "function", JSONName: "function", Type: ParamString, Description: "Name of the containing function or method (e.g. 'TestWriteAssets' or '(*Server).Serve')", Required: true},
+	{Name: "loop_on", CLIName: "loop-on", JSONName: "loop_on", Type: ParamString, Description: "Optional expression or variable that identifies the loop (e.g. 'want', 'items', 'i := 0')"},
+	{Name: "loop_path", CLIName: "loop-path", JSONName: "loop_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
+	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Replacement Go loop code, e.g. 'for _, want := range [...] { ... }'", Required: true},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
+}
 
 var replaceBodyParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
@@ -259,6 +285,65 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 		},
 		Format:     formatFileEdit,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "func": "Serve", "case": "case \"stop\":\n\treturn nil"},
+		Batchable:  true,
+	}
+}
+
+func parseReplaceLoop(raw map[string]any) (ReplaceLoopReq, error) {
+	var req ReplaceLoopReq
+	if err := CheckParams(raw, replaceLoopParams); err != nil {
+		return req, err
+	}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	var err error
+	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return req, err
+	}
+	if req.Function, err = ParseString(raw, "function", "function", true); err != nil {
+		return req, err
+	}
+	if req.LoopOn, err = ParseString(raw, "loop_on", "loop-on", false); err != nil {
+		return req, err
+	}
+	if req.LoopPath, err = ParseString(raw, "loop_path", "loop-path", false); err != nil {
+		return req, err
+	}
+	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
+		return req, err
+	}
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func runReplaceLoop(ctx context.Context, cc CallContext, req ReplaceLoopReq) (FileEditRes, error) {
+	targetPath := resolveWorkPath(cc.WorkDir, req.File)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	diff, err := astedit.ReplaceLoop(ctx, targetPath, req.Function, req.LoopOn, req.Source, astedit.LoopOptions{
+		LoopPath:            req.LoopPath,
+		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
+	})
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Function, Diff: diff, Detail: "Successfully replaced loop in " + req.Function + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+}
+
+func replaceLoopDef() Def[ReplaceLoopReq, FileEditRes] {
+	return Def[ReplaceLoopReq, FileEditRes]{
+		Key:     "replace_loop",
+		Summary: "Use this tool instead of replace_body or replace_file_content whenever modifying an existing for loop, range loop, or loop condition inside a function or method (e.g. updating assertion loops, range slices, or loop bounds). Operates directly on the targeted loop construct without regenerating the rest of the function body.",
+		Params:  replaceLoopParams,
+		Level:   LevelFile,
+		CLIName: "replace-loop",
+		MCPName: "semantic_replace_loop",
+		Parse:   parseReplaceLoop,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceLoopReq) (FileEditRes, error){
+			backend.LanguageGo: runReplaceLoop,
+		},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "function": "TestWriteAssets", "loop_on": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
 		Batchable:  true,
 	}
 }

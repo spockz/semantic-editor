@@ -100,6 +100,7 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	fullPrompt := fmt.Sprintf("Working directory is %s.\n%s", absWorkDir, prompt)
 	args = append(args, "-p", fullPrompt)
 
+	// #nosec G204 -- agyBin is one of two fixed executable names; args are passed directly without shell interpretation.
 	cmd := exec.CommandContext(ctx, agyBin, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
@@ -254,7 +255,7 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 
 	configPath := filepath.Join(configDir, "mcp_config.json")
 	if _, err := os.Lstat(configPath); err == nil {
-		return fmt.Errorf("Agy fixture already contains %s", configPath)
+		return fmt.Errorf("agy fixture already contains %s", configPath)
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect Agy MCP config path: %w", err)
 	}

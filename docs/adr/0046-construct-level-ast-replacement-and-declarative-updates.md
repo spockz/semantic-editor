@@ -48,8 +48,12 @@ Expose a dedicated construct replacement tool targeting `for` and `range` loops 
         "description": "Optional expression or variable that identifies the loop (e.g. 'want', 'items', 'i := 0')",
         "type": "string"
       },
+      "loop_path": {
+        "description": "Optional ordinal path reported when multiple loops match",
+        "type": "string"
+      },
       "source": {
-        "description": "Replacement Go loop code (e.g. 'for _, want := range [...] { ... }') or bare body statements if mode is body-only",
+        "description": "Complete replacement Go loop code (e.g. 'for _, want := range [...] { ... }')",
         "type": "string"
       },
       "auto_organize_imports": {
@@ -66,7 +70,7 @@ Expose a dedicated construct replacement tool targeting `for` and `range` loops 
 #### Discriminator & Ambiguity Rules
 
 * The engine resolves the target loop within `function` using `loop_on` matching against `ast.ForStmt` or `ast.RangeStmt` headers.
-* If multiple loops match the same discriminator, the engine fails before mutation and reports each candidate with its enclosing context and ordinal path, matching the ambiguity contract established in ADR-0016 and ADR-0019.
+* If multiple loops match the same discriminator, the engine fails before mutation and reports each candidate with its enclosing context and ordinal path, matching the ambiguity contract established in ADR-0016 and ADR-0019. The caller can select a reported path with `loop_path`.
 
 ### 2. Top-Level Declaration Replacement & Collision Handling (`semantic_replace_decl` / `overwrite: true`)
 

@@ -24,6 +24,13 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 // SetProjectContext replaces the request project during dispatch merge.
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
+var replaceDeclParams = []ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target Go source file", Required: true},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Existing constant, global variable, or type alias identifier", Required: true},
+	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
+}
+
 type insertDeclarationFields struct {
 	Project             backend.ProjectContext
 	File                string
@@ -231,7 +238,23 @@ type InsertDeclReq struct {
 	Placement           string
 	TargetSymbol        string
 	AutoOrganizeImports bool
+	Overwrite           bool
 }
+
+// ReplaceDeclReq replaces one package-level Go constant, variable, or type alias.
+type ReplaceDeclReq struct {
+	Project             backend.ProjectContext
+	File                string
+	Symbol              string
+	Source              string
+	AutoOrganizeImports bool
+}
+
+// SetProjectContext replaces the request project during dispatch merge.
+func (r *ReplaceDeclReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
+// GetProjectContext returns the request project for registry dispatch.
+func (r ReplaceDeclReq) GetProjectContext() backend.ProjectContext { return r.Project }
 
 // GetProjectContext returns the request project for registry dispatch.
 func (r InsertDeclReq) GetProjectContext() backend.ProjectContext { return r.Project }
@@ -247,6 +270,7 @@ var insertDeclParams = []ParameterContract{
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
+	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "Replace an existing declaration with the same name (default false)"},
 }
 
 func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
@@ -277,6 +301,9 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
 		return req, err
 	}
+	if req.Overwrite, err = ParseBool(raw, "overwrite", "overwrite", false); err != nil {
+		return req, err
+	}
 	return req, nil
 }
 
@@ -288,6 +315,7 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 		Group:               req.Group,
 		Placement:           astedit.Placement(req.Placement),
 		TargetSymbol:        req.TargetSymbol,
+		Overwrite:           req.Overwrite,
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
 	if err != nil {
@@ -309,7 +337,7 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 			backend.LanguageGo: runInsertDecl,
 		},
 		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
+		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080", "overwrite": false},
 		PlacementKey: true,
 		Batchable:    true,
 	}
@@ -341,4 +369,56 @@ func parseInsertDeclarationFields(raw map[string]any, params []ParameterContract
 		return req, err
 	}
 	return req, nil
+}
+
+func parseReplaceDecl(raw map[string]any) (ReplaceDeclReq, error) {
+	var req ReplaceDeclReq
+	if err := CheckParams(raw, replaceDeclParams); err != nil {
+		return req, err
+	}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	var err error
+	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return req, err
+	}
+	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
+		return req, err
+	}
+	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
+		return req, err
+	}
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func runReplaceDecl(ctx context.Context, cc CallContext, req ReplaceDeclReq) (FileEditRes, error) {
+	targetPath := resolveWorkPath(cc.WorkDir, req.File)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	diff, err := astedit.ReplaceDecl(ctx, targetPath, req.Symbol, req.Source, astedit.ReplaceDeclOptions{
+		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
+	})
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Symbol, Diff: diff, Detail: "Successfully replaced declaration " + req.Symbol + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+}
+
+func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
+	return Def[ReplaceDeclReq, FileEditRes]{
+		Key:     "replace_decl",
+		Summary: "Use this tool instead of replace_file_content whenever updating the definition or value of an existing package-level constant, variable, or type alias.",
+		Params:  replaceDeclParams,
+		Level:   LevelFile,
+		CLIName: "replace-decl",
+		MCPName: "semantic_replace_decl",
+		Parse:   parseReplaceDecl,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceDeclReq) (FileEditRes, error){
+			backend.LanguageGo: runReplaceDecl,
+		},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
+		Batchable:  true,
+	}
 }
