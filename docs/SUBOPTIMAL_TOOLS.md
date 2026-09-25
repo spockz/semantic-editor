@@ -100,6 +100,10 @@ The goal is to track:
 
 | **ST-0067** | 2026-09-25 | `semantic_insert_function`, `semantic_scaffold_file` | `internal/astedit/comment_anchor.go` | Inserting `normalizeInsertionOffset` succeeded but left `bytes`, `go/ast`, and `go/token` unresolved; scaffolding also omitted the required file-purpose header. | Log the failure, organize the imports, then add the required WHY header atomically. | The function insertion did not resolve required imports, and the scaffold API has no repository header input. | Improve semantic insertion import resolution and allow a file-purpose header during scaffolding. |
 
+| **ST-0068** | 2026-09-25 | `semantic_scaffold_file` | `internal/backend/kotlin/real_server_integration_test.go` | Scaffolding created the correct package declaration but omitted the repository-required file-purpose header. | Add the WHY header atomically before verification; continue semantic insertion for the test function. | Scaffold schema has no header input, matching the previously recorded ST-0067 limitation. | Add a file-purpose header parameter to scaffolding. |
+
+| **ST-0069** | 2026-09-25 | `semantic_insert_function` | `internal/backend/kotlin/real_server_integration_test.go` | The first insertion rejected exported Go test name `TestRealKotlinLanguageServerIntegration` with `access_modifier: private`; no source changed. | Retry with public access for the exported test function. | Caller supplied visibility inconsistent with Go identifier casing; the tool correctly enforced its invariant. | Keep explicit visibility guidance in agent examples. |
+
 ---
 
 ## Guidelines for Logging Dogfooding Deficiencies
