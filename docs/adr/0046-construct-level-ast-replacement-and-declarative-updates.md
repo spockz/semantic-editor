@@ -26,34 +26,38 @@ Dogfooding on real-world refactorings (ST-0035, ST-0036) revealed critical ergon
 
 We establish construct-level AST mutation and declarative updates across the engine, CLI, and MCP interfaces:
 
-### 1. Construct-Level Loop Replacement (`semantic_replace_loop`)
+### 1. Construct-Level Replacement (`semantic_replace_construct`)
 
-Expose a dedicated construct replacement tool targeting `for` and `range` loops within functions:
+To avoid tool catalog explosion while providing construct-level precision, we unify inner-function control flow mutations under a single construct replacement tool parameterized by a `kind` discriminator:
 
 ```json
 {
-  "name": "semantic_replace_loop",
-  "description": "Use this tool instead of replace_body or replace_file_content whenever modifying an existing for loop, range loop, or loop condition inside a function or method (e.g. updating assertion loops, range slices, or loop bounds). Operates directly on the targeted loop construct without regenerating the rest of the function body.",
+  "name": "semantic_replace_construct",
+  "description": "Use this tool instead of replace_body or replace_file_content whenever modifying an existing control-flow construct (for loop, if condition/branch, switch case, select branch) inside a function or method. Operates directly on the targeted construct without regenerating the surrounding body.",
   "parameters": {
     "properties": {
       "file": {
-        "description": "Path to the Go source file",
+        "description": "Path to the source file",
         "type": "string"
       },
       "function": {
         "description": "Name of the containing function or method (e.g. 'TestWriteAssets' or '(*Server).Serve')",
         "type": "string"
       },
-      "loop_on": {
-        "description": "Optional expression or variable that identifies the loop (e.g. 'want', 'items', 'i := 0')",
+      "kind": {
+        "description": "Structural construct kind to replace. Enums are dynamically constrained by the active language backend (e.g. ['loop', 'if', 'case', 'select'] for Go).",
         "type": "string"
       },
-      "loop_path": {
-        "description": "Optional ordinal path reported when multiple loops match",
+      "discriminator": {
+        "description": "Expression, condition, or selector identifying the construct (e.g. 'want', 'err != nil', or 'case \"stop\":')",
+        "type": "string"
+      },
+      "construct_path": {
+        "description": "Optional ordinal path reported when multiple constructs match (e.g. '0', '0.1')",
         "type": "string"
       },
       "source": {
-        "description": "Complete replacement Go loop code (e.g. 'for _, want := range [...] { ... }')",
+        "description": "Complete replacement code for the targeted construct",
         "type": "string"
       },
       "auto_organize_imports": {
@@ -62,15 +66,47 @@ Expose a dedicated construct replacement tool targeting `for` and `range` loops 
         "type": "boolean"
       }
     },
-    "required": ["file", "function", "source"]
+    "required": ["file", "function", "kind", "source"]
   }
 }
 ```
 
+#### Language Construct Taxonomy & Grammar Neutrality
+
+The term `construct` neutralizes cross-language grammar differences (e.g. whether `if...else` or `switch/match` is classified as a statement or an expression):
+
+* **Go**: `kind: ["loop", "if", "case", "select"]`.
+  * `loop`: `*ast.ForStmt`, `*ast.RangeStmt`.
+  * `if`: `*ast.IfStmt` (statement).
+  * `case`: `*ast.CaseClause` within switches.
+  * `select`: `*ast.SelectStmt` / `*ast.CommClause` (channel concurrency multiplexer).
+* **Rust**: `kind: ["loop", "if", "match"]`.
+  * `loop`: `for`, `while`, `loop` (`ExprForLoop`, `ExprWhile`, `ExprLoop`).
+  * `if`: `ExprIf` (expression evaluating to a typed value).
+  * `match`: `ExprMatch` / `Arm` patterns.
+* **Java**: `kind: ["loop", "if", "case", "try_catch"]`.
+  * `loop`: `ForStatement`, `EnhancedForStatement`, `WhileStatement`.
+  * `if`: `IfStatement`.
+  * `case`: `SwitchCase` (statement or arrow expression).
+  * `try_catch`: `TryStatement`.
+* **Scala**: `kind: ["loop", "if", "match", "for_comprehension"]`.
+  * Monadic `for ... yield` is recognized as `for_comprehension`, distinct from imperative loops.
+* **C#**: `kind: ["loop", "if", "case", "try_catch", "query"]`.
+  * LINQ comprehensions (`from ... select`) are categorized under `query`.
+
+#### Declarative Registry Announcement (Zero Special Registry Interfaces)
+
+To avoid introducing one-off registry interfaces (e.g. `ConstructReplacingBackend`), construct capabilities follow the declarative metadata pattern established in ADR-0012 for access modifiers:
+
+1. **Backend Capability Slice**: In `internal/backend`, `Backend` announces supported constructs via `SupportedConstructs() []ConstructKind`.
+2. **Dynamic Parameter Contract**: `operation.ParameterContract` supports `DynamicEnums: func(backend.Backend) []string`.
+3. **Dynamic MCP Schema Filtering**: During `tools/list`, `internal/mcp/server.go` resolves `DynamicEnums` against the active workspace backend, dynamically emitting only the constructs valid for that language. This allows inference engines to enforce valid construct tokens via logit masking without schema dilution.
+
 #### Discriminator & Ambiguity Rules
 
-* The engine resolves the target loop within `function` using `loop_on` matching against `ast.ForStmt` or `ast.RangeStmt` headers.
-* If multiple loops match the same discriminator, the engine fails before mutation and reports each candidate with its enclosing context and ordinal path, matching the ambiguity contract established in ADR-0016 and ADR-0019. The caller can select a reported path with `loop_path`.
+* The engine traverses `function` searching for nodes matching `kind`.
+* The target node is selected using `discriminator` matching against headers (loop conditions, range expressions, if predicates, case values).
+* If multiple constructs match, the engine fails before mutation and reports each candidate with its line number, context, and ordinal path (`construct_path`), matching the ambiguity contract in ADR-0016 and ADR-0019.
 
 ### 2. Top-Level Declaration Replacement & Collision Handling (`semantic_replace_decl` / `overwrite: true`)
 
