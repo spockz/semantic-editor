@@ -127,7 +127,7 @@ Speed and token figures include only selected pairs where both Vanilla and MCP p
 
 ## Best-case outcomes measured so far
 
-This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, speed within five percentage points is resolved by lower model cost. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, with thinking tokens counted at the output rate.
+This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, lower model cost resolves speed ties within five percentage points. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, and counts thinking tokens at the output rate.
 
 [Open the interactive benchmark browser](/docs/benchmarks/browser/). [View min, max, and average metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.
 
@@ -155,7 +155,7 @@ func renderCorrectiveTurnHistogram(runs []benchmarkDocumentationRun) string {
 	histogram := summarizeCorrectiveTurns(runs)
 	var sb strings.Builder
 	sb.WriteString("\n## Required corrective turns\n\n")
-	sb.WriteString("Each row counts paired observations by the number of follow-up prompts attempted after the initial task prompt. Verified/self-correction contexts are excluded.\n\n")
+	sb.WriteString("Each row counts paired observations by the number of follow-up prompts attempted after the initial task prompt. The count excludes verified/self-correction contexts.\n\n")
 	sb.WriteString("| Required corrective turns | Vanilla count | Semedit MCP count |\n| ---: | ---: | ---: |\n")
 	for turn := 0; turn <= maximumCorrectiveInteractiveTurns; turn++ {
 		fmt.Fprintf(&sb, "| %d | %d | %d |\n", turn, histogram.vanilla[turn], histogram.mcp[turn])

@@ -19,9 +19,9 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 
 ## Benchmark Methodology & Transparency
 
-* **Reproducibility & Provenance**: Test scenarios are defined in self-contained txtar archives. Links below resolve to commit-anchored GitHub source files for published commits, or cryptographic SHA-256 fingerprints for uncommitted local fixtures.
+* **Reproducibility & Provenance**: Self-contained txtar archives define test scenarios. Links below resolve to commit-anchored GitHub source files for published commits, or cryptographic SHA-256 fingerprints for uncommitted local fixtures.
 * **Model Cost**: Tables report model-specific credit consumption where a target model has a declared schedule: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. Thinking tokens use the output rate. ADR-0043 defines the per-million-token credit rates.
-* **Multi-Level Correctness Oracle**: Each trial is graded across 4 validation levels:
+* **Multi-Level Correctness Oracle**: Four validation levels evaluate each trial:
   1. *Level 1 (Mutation Policy)*: Restricts file modifications strictly to authorized paths.
   2. *Level 2 (AST Invariants)*: Compiler AST verification of required symbols, imports, and relative declaration ordering.
   3. *Level 3 (Clean Build)*: Strict compilation validation with zero compiler or typecheck errors.
@@ -40,7 +40,7 @@ func renderBenchmarkComparisonsDoc(title, description, preamble string, comparis
 
 	if len(comparisons) == 0 {
 		sb.WriteString(`> [!NOTE]
-> No benchmark evaluations are recorded yet in ` + "`data/benchmarks/results/`" + `. Run the benchmark harness using ` + "`go run ./tools/benchmark-harness --target ...`" + ` to record empirical results.
+> No benchmark evaluations exist yet in ` + "`data/benchmarks/results/`" + `. Run the benchmark harness using ` + "`go run ./tools/benchmark-harness --target ...`" + ` to record empirical results.
 `)
 		return sb.String()
 	}

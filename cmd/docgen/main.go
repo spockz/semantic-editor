@@ -117,7 +117,7 @@ draft: false
 weight: 22
 ---
 
-Individual benchmark observations are linked from the [empirical benchmark overview](/docs/benchmarks/).
+The [empirical benchmark overview](/docs/benchmarks/) links individual benchmark observations.
 `)); err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing benchmark runs index: %v\n", err)
 		os.Exit(1)

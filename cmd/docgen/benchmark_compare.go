@@ -285,7 +285,7 @@ weight: 21
 
 ## Metric ranges across benchmark runs
 
-Every table holds one experimental condition, context variant, and arm. **N** is the count of publishable observations with that metric. Technical provenance remains audit metadata and does not split aggregation cells. Cached input is shown raw and also as **cache-adjusted token units**: uncached input + output + reasoning + cached input / 10. **Cost** is model-specific credits calculated from the per-million-token rates in ADR-0043: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. It is omitted when the target model has no declared rate schedule.
+Every table holds one experimental condition, context variant, and arm. **N** is the count of publishable observations with that metric. Technical provenance remains audit metadata and does not split aggregation cells. Tables display cached input raw and as **cache-adjusted token units**: uncached input + output + reasoning + cached input / 10. **Cost** reflects model-specific credits calculated from the per-million-token rates in ADR-0043: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. The table omits cost when the target model has no declared rate schedule.
 
 [Return to best-case outcomes](/docs/benchmarks/).
 

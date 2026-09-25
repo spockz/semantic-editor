@@ -59,6 +59,9 @@ The goal is to track:
 | **ST-0031** | 2026-09-25 | `semantic_insert_function` | `internal/mcp/server_test.go` while adding feedback-tool contract coverage | Rejected a `Test...` function when the request explicitly declared private access, because the exported Go identifier casing implied public access. | Retry the insertion with `access_modifier: public`; no source change was made by the rejected call. | The tool enforces agreement between Go identifier casing and the requested access modifier. | Match the access modifier to exported Go test function names. |
 
 | **ST-0032** | 2026-09-25 | `semantic_lookup` | `tools/benchmark-harness/driver.go` | Querying the guessed symbol `Run` returned `symbol not found`; no source change was made. | Use the actual declaration name `ExecuteAgentDriver` for lookup. | The lookup request used a generic guessed symbol rather than the target function identifier. | Check the target declaration name before semantic lookup. |
+| **ST-0033** | 2026-09-25 | `semantic_insert_type` | `cmd/worktreecheck/main.go` | The shared access-modifier schema accepted `package-private`, but the Go backend rejected it as unsupported before making a source change. | Retry with the Go-supported `private` modifier. | The generic schema exposes an access modifier that the Go backend does not implement. | Filter unsupported access modifiers by backend or normalize `package-private` for Go. |
+
+| **ST-0034** | 2026-09-25 | `semantic_replace_body` | `cmd/worktreecheck/main.go` | Replacing `removeDoneWorktrees` failed with `syntax error: expected '(', found removeDoneWorktrees` before writing source. | Retry with only the function body statements, as required by the tool. | The request included the full function declaration even though the tool accepts a bare body. | Make the body-only input contract clearer in examples. |
 
 ---
 

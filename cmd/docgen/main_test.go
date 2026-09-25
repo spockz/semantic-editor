@@ -4,6 +4,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -274,6 +275,25 @@ func TestRenderMarkdownOutputsExpectedState(t *testing.T) {
 	for _, want := range wants {
 		if !strings.Contains(page, want) {
 			t.Errorf("rendered markdown missing expected string %q", want)
+		}
+	}
+}
+
+func TestRenderedPagesAvoidPassiveVoice(t *testing.T) {
+	t.Parallel()
+
+	passiveRe := regexp.MustCompile(`(?i)\b(?:am|are|were|being|is|been|was|be)\s+(?:[a-z]+ed|built|driven|eliminated|executed|made|shown|seen|found|given|held|known|taken|written)\b`)
+
+	pages := map[string]string{
+		"getting-started":       renderGettingStarted(),
+		"reference-scaffolding": renderMarkdown(nil, nil, nil),
+		"benchmark-methodology": benchmarkMethodology,
+	}
+
+	for name, content := range pages {
+		matches := passiveRe.FindAllString(content, -1)
+		if len(matches) > 0 {
+			t.Errorf("page %q contains passive voice matches: %v", name, matches)
 		}
 	}
 }

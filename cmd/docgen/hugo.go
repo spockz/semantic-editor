@@ -104,7 +104,7 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 	}
 
 	buf.WriteString("\n## Executable Test Workflows\n\n")
-	buf.WriteString("Every scenario below is parsed from active, compiler-verified regression tests in `testdata/scripts/*.txtar`.\n\n")
+	buf.WriteString("Active, compiler-verified regression tests in `testdata/scripts/*.txtar` provide every scenario below.\n\n")
 	for _, ex := range examples {
 		fmt.Fprintf(&buf, "### %s\n\n", markdownCell(ex.Title))
 		sourcePath := "/testdata/scripts/" + ex.Filename
@@ -174,7 +174,7 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 		}
 	}
 
-	buf.WriteString("## CI Drift Invariant\n\nDocumentation is regenerated from compiler capabilities and regression test archives during continuous integration before publication.\n")
+	buf.WriteString("## CI Drift Invariant\n\nContinuous integration regenerates documentation from compiler capabilities and regression test archives before publication.\n")
 	return buf.String()
 }
 

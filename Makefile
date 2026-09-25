@@ -38,7 +38,7 @@ go-env:
 check: lint vuln test verify-docs ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
 
 ## Reader targets wait for source formatting and dependency updates.
-lint-go lint-markdown lint-vale vuln test docgen-source build-next: tidy
+lint-go lint-markdown lint-vale vuln test build-next: tidy
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
@@ -264,6 +264,13 @@ verify-docs: docgen ## Generate the site and assert its published files exist
 ## Benchmark Harness
 ## ---------------------------------------------------------
 -include tools/benchmark-harness/Makefile
+
+.PHONY: list-clean-worktrees clean-clean-worktrees
+list-clean-worktrees: go-env ## List worktrees that are clean and integrated into local main
+	@go run ./cmd/worktreecheck
+
+clean-clean-worktrees: go-env ## Remove clean worktrees integrated into local main
+	@go run ./cmd/worktreecheck --remove-done
 
 .PHONY: clean
 clean: go-env ## Clean build artifacts and test cache

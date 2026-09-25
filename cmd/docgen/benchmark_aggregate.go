@@ -21,7 +21,7 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspect
   <div class="benchmark-browser-toolbar">
     <button id="benchmark-browser-fullscreen" type="button" aria-pressed="false">Full screen</button>
   </div>
-  <p>Results are grouped by target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens are uncached; cached input is shown separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
+  <p>The browser groups results by target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
   <div class="benchmark-browser-filters">
     <label>Requirement met
       <select id="benchmark-browser-oracle-filter">
@@ -56,7 +56,7 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspect
   <p id="benchmark-browser-status" role="status">Loading benchmark results…</p>
   <perspective-viewer id="benchmark-browser-viewer" theme="Pro Light" settings></perspective-viewer>
   <h2>Baseline vs semedit</h2>
-  <p>Baseline and semedit values are compared within each target and context group. Negative changes are improvements for these lower-is-better metrics; positive changes are degradations.</p>
+  <p>Comparison evaluates baseline and semedit values within each target and context group. Negative changes mark improvements for these lower-is-better metrics; positive changes mark degradations.</p>
   <div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">
     <label>Requirement met
       <select id="benchmark-browser-comparison-oracle-filter">
