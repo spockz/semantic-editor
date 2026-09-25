@@ -44,6 +44,20 @@ type CaseOptions struct {
 
 // InsertCase injects a case clause into an existing switch statement.
 func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource string, opts CaseOptions) (string, error) {
+	res, err := InsertStructure(ctx, filePath, caseSource, StructureOptions{
+		Kind:                StructureKindCase,
+		Function:            funcName,
+		SwitchOn:            switchOn,
+		SwitchPath:          opts.SwitchPath,
+		CasePlacement:       opts.Placement,
+		AnchorCase:          opts.AnchorCase,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return res.Diff, err
+}
+
+// InsertCase injects a case clause into an existing switch statement.
+func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSource string, opts CaseOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
 	content, err := os.ReadFile(cleanPath)
 	if err != nil {

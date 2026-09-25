@@ -31,6 +31,11 @@ func (GoBackend) SupportedConstructs() []backend.ConstructKind {
 	return append([]backend.ConstructKind(nil), astedit.GoConstructKinds...)
 }
 
+// SupportedStructures reports the Go structural insertion kinds implemented by this adapter.
+func (GoBackend) SupportedStructures() []backend.StructureKind {
+	return append([]backend.StructureKind(nil), astedit.GoStructureKinds...)
+}
+
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
 	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify)

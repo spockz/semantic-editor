@@ -29,6 +29,7 @@ const (
 	wireAutoOrganizeImports = "auto_organize_imports"
 	wireExampleFile         = "api/server.go"
 	wireTargetSymbol        = "target_symbol"
+	wireDiscriminator       = "discriminator"
 )
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}

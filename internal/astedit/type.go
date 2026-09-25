@@ -26,6 +26,18 @@ type TypeOptions struct {
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.
 func InsertType(ctx context.Context, filePath string, source string, opts TypeOptions) error {
+	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
+		Kind:                StructureKindType,
+		AccessModifier:      opts.AccessModifier,
+		Placement:           opts.Placement,
+		TargetSymbol:        opts.TargetSymbol,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return err
+}
+
+// InsertType injects a struct, interface, or type alias declaration into filePath.
+func insertTypeImpl(ctx context.Context, filePath string, source string, opts TypeOptions) error {
 	source = strings.TrimSpace(source)
 	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
 		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {

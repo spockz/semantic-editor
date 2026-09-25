@@ -43,6 +43,18 @@ type Options struct {
 
 // InsertDeclaration parses and injects one or more top-level declarations into filePath.
 func InsertDeclaration(ctx context.Context, filePath string, source string, opts Options) error {
+	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
+		Kind:                StructureKindDeclaration,
+		Placement:           opts.Placement,
+		TargetSymbol:        opts.TargetSymbol,
+		Visibility:          opts.Visibility,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return err
+}
+
+// InsertDeclaration parses and injects one or more top-level declarations into filePath.
+func insertDeclarationImpl(ctx context.Context, filePath string, source string, opts Options) error {
 	source = strings.TrimSpace(source)
 	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
 		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {

@@ -36,6 +36,7 @@ func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing
 		"semantic_insert_function",
 		"semantic_insert_type",
 		"semantic_insert_decl",
+		"semantic_insert_structure",
 		"semantic_organize_imports",
 		"semantic_replace_body",
 	} {
@@ -61,8 +62,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 19 {
-		t.Errorf("registered operations = %d, want 19", len(entries))
+	if len(entries) != 20 {
+		t.Errorf("registered operations = %d, want 20", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {

@@ -26,6 +26,18 @@ type FunctionOptions struct {
 
 // InsertFunction injects a function or method declaration into filePath.
 func InsertFunction(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
+	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
+		Kind:                StructureKindFunction,
+		AccessModifier:      opts.AccessModifier,
+		Placement:           opts.Placement,
+		TargetSymbol:        opts.TargetSymbol,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return err
+}
+
+// InsertFunction injects a function or method declaration into filePath.
+func insertFunctionImpl(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
 	source = strings.TrimSpace(source)
 	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
 		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {

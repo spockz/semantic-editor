@@ -1,0 +1,31 @@
+# Unified insertion uses the public CLI and preserves the resulting Go source.
+exec semedit insert-structure --file api/server.go --kind type --source 'type Config struct { Port int }'
+stdout 'Successfully inserted type structure'
+exec semedit insert-structure --file api/server.go --kind function --source 'func NewConfig() Config { return Config{} }'
+stdout 'Successfully inserted function structure'
+exec semedit insert-structure --file api/server.go --kind const --source 'const DefaultPort = 8080'
+stdout 'Successfully inserted const structure'
+exec semedit insert-structure --file api/server.go --kind case --function Handle --discriminator v --source 'case 1: return 1'
+stdout 'Successfully inserted case structure'
+! exec semedit insert-structure --file api/server.go --kind unknown --source 'type Broken struct{}'
+stderr 'unsupported'
+grep 'type Config struct' api/server.go
+grep 'func NewConfig' api/server.go
+grep 'DefaultPort' api/server.go
+grep 'case 1:' api/server.go
+! grep 'Broken' api/server.go
+
+-- go.mod --
+module example.com/structure
+
+go 1.23
+
+-- api/server.go --
+package api
+
+func Handle(v int) int {
+ switch v {
+ default:
+  return 0
+ }
+}

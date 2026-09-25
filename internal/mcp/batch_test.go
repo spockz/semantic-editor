@@ -38,8 +38,8 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 			Params: json.RawMessage(`{"file":"file1.go","symbol":"Foo","body":"return \"new\""}`),
 		},
 		{
-			Tool:   "semantic_insert_case",
-			Params: json.RawMessage(`{"file":"file2.go","func":"Dispatch","switch_on":"op","case":"case \"ping\":\n\treturn \"pong\""}`),
+			Tool:   "semantic_insert_structure",
+			Params: json.RawMessage(`{"file":"file2.go","kind":"case","function":"Dispatch","discriminator":"op","source":"case \"ping\":\n\treturn \"pong\""}`),
 		},
 	}
 
@@ -206,8 +206,8 @@ func TestBatch_FailFast(t *testing.T) {
 		},
 		{
 			// Edit 3: should be skipped
-			Tool:   "semantic_insert_case",
-			Params: json.RawMessage(`{"file":"file2.go","func":"Bar","case":"case 1:"}`),
+			Tool:   "semantic_insert_structure",
+			Params: json.RawMessage(`{"file":"file2.go","kind":"case","function":"Bar","source":"case 1:"}`),
 		},
 	}
 

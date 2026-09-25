@@ -48,6 +48,25 @@ const (
 	ConstructInclude          ConstructKind = "include"
 )
 
+// StructureKind names a structural construct type in the cross-language capability taxonomy for insertion.
+// Membership here does not claim that any registered backend can insert that kind.
+type StructureKind string
+
+// Canonical structure kinds reserved by the cross-language taxonomy for insertion.
+const (
+	StructureFunction    StructureKind = "function"
+	StructureMethod      StructureKind = "method"
+	StructureType        StructureKind = "type"
+	StructureConst       StructureKind = "const"
+	StructureVar         StructureKind = "var"
+	StructureDecl        StructureKind = "decl"
+	StructureDeclaration StructureKind = "declaration"
+	StructureCase        StructureKind = "case"
+	StructureClass       StructureKind = "class"
+	StructureInterface   StructureKind = "interface"
+	StructureEnum        StructureKind = "enum"
+)
+
 const (
 	// LanguageAuto detects the language from project context.
 	LanguageAuto LanguageID = "auto"
@@ -263,6 +282,11 @@ type MatrixProvider interface {
 // ConstructCapabilityProvider reports construct mutations implemented by a backend.
 type ConstructCapabilityProvider interface {
 	SupportedConstructs() []ConstructKind
+}
+
+// StructureCapabilityProvider reports structural construct insertions implemented by a backend.
+type StructureCapabilityProvider interface {
+	SupportedStructures() []StructureKind
 }
 
 // ProjectContext identifies the project and optional source file selected by an ingress.
