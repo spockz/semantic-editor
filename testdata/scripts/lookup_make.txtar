@@ -1,0 +1,31 @@
+# Makefile CLI contracts: trusted selected-file target lookup; untrusted calls are rejected.
+exec semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol all
+stdout '"kind": "function"'
+stdout '"file": "Makefile"'
+! semedit lookup --language make --make-bin $SEMEDIT_TEST_MAKE_LS --file Makefile --symbol all
+stderr 'workspace trust required'
+! semedit verify --language make --trust-workspace --file Makefile
+stderr 'operation is not supported'
+cmp Makefile want.mk
+! exists ran-marker
+! semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Include.mk --symbol external
+stderr 'symbol not found in selected file'
+exec semedit lookup --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Ambiguous.mk --symbol all
+stdout '"ambiguous": true'
+! exists ran-marker
+
+-- Makefile --
+all:
+	@touch ran-marker
+-- Ambiguous.mk --
+all:
+	@touch ran-marker
+# SEMEDIT_TEST_AMBIGUOUS
+-- want.mk --
+all:
+	@touch ran-marker
+-- Include.mk --
+include external.mk
+-- external.mk --
+external:
+	@touch ran-marker

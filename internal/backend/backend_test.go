@@ -23,6 +23,23 @@ func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
 	}
 }
 
+func TestAutoLookupPrefersGoInGoAndMakeWorkspace(t *testing.T) {
+	root := t.TempDir()
+	for name, contents := range map[string]string{"go.mod": "module example.test/mixed\n\ngo 1.25\n", "main.go": "package main\n", "Makefile": "all:\n\t@echo no-run\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(contents), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := backends.NewDefaultService()
+	selected, err := service.Registry.Select(backend.ProjectContext{RootDir: root, Language: backend.LanguageAuto})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto-selected %q, want Go", selected.Language())
+	}
+}
+
 type testBackend struct {
 	language     backend.LanguageID
 	capabilities backend.Capabilities

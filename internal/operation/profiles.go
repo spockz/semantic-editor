@@ -19,6 +19,8 @@ type Profile struct {
 	Limitations        []capability.Constraint
 }
 
+const readOnlyPreview = "Read-only preview"
+
 func goModifiers() []string {
 	modifiers := make([]string, 0, 3)
 	for _, modifier := range (astedit.GolangBackend{}).SupportedAccessModifiers() {
@@ -113,7 +115,7 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 		return Profile{
 			Language:    backend.LanguageScala,
 			DisplayName: "Scala",
-			Maturity:    "Read-only preview",
+			Maturity:    readOnlyPreview,
 			Limitations: []capability.Constraint{
 				{
 					Title:       "Lookup Only",
@@ -134,7 +136,7 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 		}, true
 	case backend.LanguageKotlin:
 		return Profile{
-			Language: backend.LanguageKotlin, DisplayName: "Kotlin", Maturity: "Read-only preview",
+			Language: backend.LanguageKotlin, DisplayName: "Kotlin", Maturity: readOnlyPreview,
 			SupportedModifiers: []string{"public", "private", "protected", "internal"},
 			Limitations: []capability.Constraint{
 				{Title: "Read Only", Description: "Kotlin supports trusted lookup and selected-file diagnostics only; rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
@@ -142,11 +144,24 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 				{Title: "Selected File Diagnostics", Description: "Verification requires a matching publishDiagnostics notification for the selected isolated file; no report before timeout is an error, not a clean result. Formatting and import modes are rejected.", Severity: "info"},
 			},
 		}, true
+	case backend.LanguageBash:
+		return Profile{Language: backend.LanguageBash, DisplayName: "Bash", Maturity: readOnlyPreview, Limitations: []capability.Constraint{
+			{Title: "Read Only", Description: "Bash supports trusted selected-file lookup and diagnostics only; rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
+			{Title: "Selected File", Description: "Only .sh and .bash files are accepted. The server runs in a source-only scratch workspace after request-scoped workspace trust.", Severity: "error"},
+			{Title: "Optional Shell Tools", Description: "bash-language-server may invoke an installed ShellCheck against the copied selected source; the backend does not execute the shell script.", Severity: "info"},
+			{Title: "Diagnostics Receipt", Description: "Verification requires an explicit matching publishDiagnostics report. Silence and malformed reports are errors.", Severity: "info"},
+		}}, true
+	case backend.LanguageMake:
+		return Profile{Language: backend.LanguageMake, DisplayName: "Makefile", Maturity: readOnlyPreview, Limitations: []capability.Constraint{
+			{Title: "Read Only", Description: "Makefile supports trusted selected-file lookup only; verification, rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
+			{Title: "Selected File", Description: "Only Makefile, makefile, GNUmakefile, and .mk files are accepted. make-ls runs in an isolated source workspace after request-scoped trust.", Severity: "error"},
+			{Title: "Include Reads", Description: "make-ls resolves includes; absolute paths and relative paths traversing outside the copied source may read files after trust is granted.", Severity: "info"},
+		}}, true
 	case backend.LanguageHaskell:
 		return Profile{
 			Language:    backend.LanguageHaskell,
 			DisplayName: "Haskell",
-			Maturity:    "Read-only preview",
+			Maturity:    readOnlyPreview,
 			Limitations: []capability.Constraint{
 				{
 					Title:       "Lookup Only",

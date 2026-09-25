@@ -31,7 +31,7 @@ const (
 	wireTargetSymbol        = "target_symbol"
 )
 
-var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin"}
+var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
 
 // LookupReq requests symbol coordinates through the selected language backend.
 type LookupReq struct {
@@ -88,8 +88,8 @@ type VerifyRes struct {
 var lookupParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path to constrain search", Type: ParamString},
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Kotlin requires a selected .kt/.kts file and supports lookup plus bounded diagnostics only)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends such as Kotlin, Java, Rust, Scala, and Haskell (default false)", Type: ParamBoolean, Default: false},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Bash and Make require a selected source file)", Type: ParamString, Enums: languageEnums},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends including Bash, Make, Kotlin, Java, Rust, Scala, and Haskell (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
 	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
@@ -102,6 +102,8 @@ var lookupParams = []ParameterContract{
 	{Name: "ghc_version", CLIName: "ghc-version", JSONName: "ghc_version", Description: "Recorded GHC version to require", Type: ParamString},
 	{Name: "hls_version", CLIName: "hls-version", JSONName: "hls_version", Description: "Recorded HLS version to require", Type: ParamString},
 	{Name: "kotlin_bin", CLIName: "kotlin-bin", JSONName: "kotlin_bin", Description: "Path to a preinstalled fwcd/kotlin-language-server executable; defaults to the executable on PATH", Type: ParamString},
+	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable; defaults to PATH", Type: ParamString},
+	{Name: "make_bin", CLIName: "make-bin", JSONName: "make_bin", Description: "Path to a preinstalled make-ls executable; defaults to PATH", Type: ParamString},
 }
 
 var renameParams = []ParameterContract{
@@ -118,15 +120,16 @@ var renameParams = []ParameterContract{
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java or Kotlin source file, relative to the active semedit workspace root; required for external language verification", Type: ParamString},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java, Kotlin, or Bash source file, relative to the active semedit workspace root; required for external language verification", Type: ParamString},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Java and Kotlin verification (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
 	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
 	{Name: "format_selected_file", CLIName: "format-selected-file", JSONName: "format_selected_file", Description: "Apply JDT LS formatting to the selected Java file", Type: ParamBoolean, Default: false},
 	{Name: "organize_imports", CLIName: "organize-imports", JSONName: "organize_imports", Description: "Apply bounded JDT LS source.organizeImports to the selected Java file", Type: ParamBoolean, Default: false},
 	{Name: "kotlin_bin", CLIName: "kotlin-bin", JSONName: "kotlin_bin", Description: "Path to a preinstalled fwcd/kotlin-language-server executable", Type: ParamString},
+	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable", Type: ParamString},
 }
 
 func parseLookup(raw map[string]any) (LookupReq, error) {
@@ -197,6 +200,14 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 	if err != nil {
 		return LookupReq{}, err
 	}
+	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
+	if err != nil {
+		return LookupReq{}, err
+	}
+	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
+	if err != nil {
+		return LookupReq{}, err
+	}
 	return LookupReq{
 		Project: backend.ProjectContext{
 			File:           file,
@@ -211,6 +222,8 @@ func parseLookup(raw map[string]any) (LookupReq, error) {
 			},
 			HaskellStandalone: standalone,
 			Kotlin:            backend.KotlinConfig{KotlinBin: kotlinBin},
+			Bash:              backend.BashConfig{BashBin: bashBin},
+			Make:              backend.MakeConfig{MakeBin: makeBin},
 			KotlinBin:         kotlinBin,
 		},
 		Symbol: symbol,
@@ -317,6 +330,10 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
 	return VerifyReq{
 		Project: backend.ProjectContext{
 			File:           path,
@@ -324,6 +341,7 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 			WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
 			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
 			Kotlin:         backend.KotlinConfig{KotlinBin: kotlinBin},
+			Bash:           backend.BashConfig{BashBin: bashBin},
 			KotlinBin:      kotlinBin,
 		},
 		Path:               path,
@@ -373,7 +391,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		path = "."
 	}
 	formatted := false
-	if project.Language != backend.LanguageJava && project.Language != backend.LanguageKotlin && (project.Language != backend.LanguageAuto || (!strings.HasSuffix(strings.ToLower(path), ".java") && !strings.HasSuffix(strings.ToLower(path), ".kt") && !strings.HasSuffix(strings.ToLower(path), ".kts"))) {
+	if shouldRunGofmt(project, path) {
 		var err error
 		formatted, err = gofmtListsFiles(ctx, project.RootDir, path)
 		if err != nil {
@@ -389,6 +407,14 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		return VerifyRes{}, err
 	}
 	return VerifyRes{Diagnostics: result.Diagnostics, Formatted: formatted}, nil
+}
+
+func shouldRunGofmt(project backend.ProjectContext, path string) bool {
+	language := project.Language
+	if language == backend.LanguageAuto {
+		language = backend.LanguageIDFromFile(path)
+	}
+	return language != backend.LanguageJava && language != backend.LanguageKotlin && language != backend.LanguageBash && language != backend.LanguageMake
 }
 
 // gofmtListsFiles reports whether gofmt would reformat sources under path.
@@ -436,7 +462,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 	run := lookupRun
 	return Def[LookupReq, *backend.LookupResult]{
 		Key:     capability.OpLookup,
-		Summary: "Use this tool instead of grep, text search, or line counting when locating a named symbol in Go or a selected trusted Rust, Java, Scala, Kotlin, or explicitly standalone Haskell source file. Omit file for a Go workspace-wide symbol search when its owning file is unknown. Rust, Java, Scala, Kotlin, and Haskell lookup are read-only and require explicit workspace trust; standalone Haskell rejects project markers and requires preinstalled GHC and matching HLS.",
+		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed.",
 		Params:  lookupParams,
 		Level:   LevelSymbol,
 		// The only read-only operation: lookup never mutates the workspace.
@@ -452,6 +478,8 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 			backend.LanguageScala:   run,
 			backend.LanguageHaskell: run,
 			backend.LanguageKotlin:  run,
+			backend.LanguageBash:    run,
+			backend.LanguageMake:    run,
 		},
 		Format: formatLookup,
 		ExampleRaw: map[string]any{
@@ -492,7 +520,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 func verifyDef() Def[VerifyReq, VerifyRes] {
 	return Def[VerifyReq, VerifyRes]{
 		Key:     capability.OpVerify,
-		Summary: "Use this tool instead of shelling out to formatters or ad hoc diagnostic commands when explicitly checking supported Go sources or selected Java/Kotlin files. Go verification runs formatting before diagnostics and can write files; Java formatting/import organization also writes when requested. Kotlin verification returns selected-file diagnostics only and rejects formatting/import modes. There is no dry-run for mutation-capable modes.",
+		Summary: "Use this tool instead of ad hoc diagnostic commands when checking supported Go sources or selected Java, Kotlin, and Bash files. Go verification runs formatting before diagnostics and can write files. There is no dry-run. Java formatting/import organization may write files; read-only server diagnostics reject formatting modes.",
 		Params:  verifyParams,
 		Level:   LevelBuild,
 		CLIName: "verify",
@@ -502,6 +530,7 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 			backend.LanguageGo:     verifyRun,
 			backend.LanguageJava:   verifyRun,
 			backend.LanguageKotlin: verifyRun,
+			backend.LanguageBash:   verifyRun,
 		},
 		Format: formatVerify,
 		ExampleRaw: map[string]any{

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"semedit/internal/backend"
@@ -18,6 +19,49 @@ import (
 	"github.com/rogpeppe/go-internal/testscript"
 	"github.com/rogpeppe/go-internal/txtar"
 )
+
+var fakeLSPBuild sync.Once
+var errFakeLSPBuild error
+var fakeBashLSPPath string
+var fakeMakeLSPPath string
+
+func prepareFakeLSPs() error {
+	fakeLSPBuild.Do(func() {
+		helperDir := filepath.Join(".scratch", "testtools")
+		helperCache := filepath.Join(".scratch", "cache", "testtools")
+		if err := os.MkdirAll(helperDir, 0o700); err != nil {
+			errFakeLSPBuild = err
+			return
+		}
+		if err := os.MkdirAll(helperCache, 0o700); err != nil {
+			errFakeLSPBuild = err
+			return
+		}
+		var err error
+		helperDir, err = filepath.Abs(helperDir)
+		if err != nil {
+			errFakeLSPBuild = err
+			return
+		}
+		helperCache, err = filepath.Abs(helperCache)
+		if err != nil {
+			errFakeLSPBuild = err
+			return
+		}
+		fakeBashLSPPath = filepath.Join(helperDir, "bash-language-server")
+		fakeMakeLSPPath = filepath.Join(helperDir, "make-ls")
+		for _, target := range []string{fakeBashLSPPath, fakeMakeLSPPath} {
+			command := exec.Command("go", "build", "-o", target, "./internal/testtools/lspserver")
+			command.Env = append(os.Environ(), "GOCACHE="+helperCache)
+			output, buildErr := command.CombinedOutput()
+			if buildErr != nil {
+				errFakeLSPBuild = fmt.Errorf("build fake LSP %s: %w: %s", target, buildErr, output)
+				return
+			}
+		}
+	})
+	return errFakeLSPBuild
+}
 
 func TestMain(m *testing.M) {
 	testscript.Main(m, map[string]func(){
@@ -57,6 +101,10 @@ func TestScripts(t *testing.T) {
 			if !pathFound {
 				env.Vars = append(env.Vars, "PATH="+goBin+":"+os.Getenv("PATH"))
 			}
+			if err := prepareFakeLSPs(); err != nil {
+				return err
+			}
+			env.Vars = append(env.Vars, "SEMEDIT_TEST_BASH_LS="+fakeBashLSPPath, "SEMEDIT_TEST_MAKE_LS="+fakeMakeLSPPath)
 
 			for variable, command := range map[string]string{
 				"SEMEDIT_TEST_JAVA":      "java",
@@ -136,6 +184,16 @@ func TestTxtarsCoverRegistryCommandsByLanguage(t *testing.T) {
 			return hasExtension(".hs")
 		case backend.LanguageKotlin:
 			return hasExtension(".kt") || hasExtension(".kts")
+		case backend.LanguageBash:
+			return hasExtension(".sh") || hasExtension(".bash")
+		case backend.LanguageMake:
+			for name := range candidate.files {
+				base := strings.ToLower(filepath.Base(name))
+				if base == "makefile" || base == "gnumakefile" || filepath.Ext(strings.ToLower(name)) == ".mk" {
+					return true
+				}
+			}
+			return false
 		default:
 			return false
 		}

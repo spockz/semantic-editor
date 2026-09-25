@@ -1,0 +1,24 @@
+# Bash CLI contracts: trusted selected-file lookup and explicit matching diagnostics; untrusted calls are rejected.
+exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh --symbol f
+stdout '"kind": "function"'
+stdout '"file": "scripts/tool.sh"'
+! semedit lookup --language bash --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh --symbol f
+stderr 'workspace trust required'
+exec semedit verify --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh
+stdout 'Verification clean: 0 diagnostics.'
+! semedit verify --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/tool.sh --format-selected-file
+stderr 'operation is not supported'
+cmp scripts/tool.sh want.sh
+exec semedit lookup --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --file scripts/ambiguous.sh --symbol f
+stdout '"ambiguous": true'
+
+-- scripts/tool.sh --
+#!/usr/bin/env bash
+f() { echo safe; }
+-- scripts/ambiguous.sh --
+#!/usr/bin/env bash
+f() { :; }
+# SEMEDIT_TEST_AMBIGUOUS
+-- want.sh --
+#!/usr/bin/env bash
+f() { echo safe; }

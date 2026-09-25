@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode/utf16"
 
@@ -273,6 +275,8 @@ type ProjectContext struct {
 	Scala             ScalaConfig
 	Haskell           HaskellConfig
 	Kotlin            KotlinConfig
+	Bash              BashConfig
+	Make              MakeConfig
 	KotlinBin         string
 	HaskellStandalone bool
 	// JDTLSHome and JavaBin are compatibility aliases for JavaConfig fields.
@@ -281,6 +285,16 @@ type ProjectContext struct {
 	MetalsHome  string
 	MetalsBin   string
 	JavaVersion string
+}
+
+// BashConfig identifies an explicitly preinstalled Bash language server.
+type BashConfig struct {
+	BashBin string `json:"bash_bin,omitempty"`
+}
+
+// MakeConfig identifies an explicitly preinstalled Make language server.
+type MakeConfig struct {
+	MakeBin string `json:"make_bin,omitempty"`
 }
 
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
@@ -438,7 +452,7 @@ func (r *Registry) Select(project ProjectContext) (Backend, error) {
 }
 
 func (r *Registry) detectLanguage(project ProjectContext) (LanguageID, error) {
-	if language, ok := sourceExtensions[strings.ToLower(filepath.Ext(project.File))]; ok {
+	if language := LanguageIDFromFile(project.File); language != "" {
 		if language == LanguageHaskell {
 			return "", nil
 		}
@@ -456,6 +470,11 @@ func (r *Registry) detectLanguage(project ProjectContext) (LanguageID, error) {
 	for _, language := range languages {
 		if _, registered := r.backends[language]; registered && language != LanguageHaskell {
 			autoLanguages = append(autoLanguages, language)
+		}
+	}
+	if slices.Contains(autoLanguages, LanguageGo) {
+		if _, err := os.Stat(filepath.Join(root, "go.mod")); err == nil {
+			return LanguageGo, nil
 		}
 	}
 	if len(autoLanguages) != 1 {
