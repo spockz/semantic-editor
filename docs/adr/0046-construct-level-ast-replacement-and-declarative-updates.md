@@ -73,26 +73,60 @@ To avoid tool catalog explosion while providing construct-level precision, we un
 
 #### Language Construct Taxonomy & Grammar Neutrality
 
-The term `construct` neutralizes cross-language grammar differences (e.g. whether `if...else` or `switch/match` is classified as a statement or an expression):
+The term `construct` neutralizes cross-language grammar differences (e.g. whether `if...else` or `switch/match` is classified as a statement or an expression) while providing precision targeting for nested blocks:
 
-* **Go**: `kind: ["loop", "if", "case", "select"]`.
-  * `loop`: `*ast.ForStmt`, `*ast.RangeStmt`.
-  * `if`: `*ast.IfStmt` (statement).
-  * `case`: `*ast.CaseClause` within switches.
-  * `select`: `*ast.SelectStmt` / `*ast.CommClause` (channel concurrency multiplexer).
-* **Rust**: `kind: ["loop", "if", "match"]`.
-  * `loop`: `for`, `while`, `loop` (`ExprForLoop`, `ExprWhile`, `ExprLoop`).
-  * `if`: `ExprIf` (expression evaluating to a typed value).
-  * `match`: `ExprMatch` / `Arm` patterns.
-* **Java**: `kind: ["loop", "if", "case", "try_catch"]`.
-  * `loop`: `ForStatement`, `EnhancedForStatement`, `WhileStatement`.
-  * `if`: `IfStatement`.
-  * `case`: `SwitchCase` (statement or arrow expression).
-  * `try_catch`: `TryStatement`.
-* **Scala**: `kind: ["loop", "if", "match", "for_comprehension"]`.
-  * Monadic `for ... yield` is recognized as `for_comprehension`, distinct from imperative loops.
-* **C#**: `kind: ["loop", "if", "case", "try_catch", "query"]`.
-  * LINQ comprehensions (`from ... select`) are categorized under `query`.
+| Language | Supported `kind` Values | Primary AST Construct Mappings |
+| :--- | :--- | :--- |
+| **Go** | `["loop", "if", "else", "case", "select", "defer"]` | `*ast.ForStmt`, `*ast.RangeStmt`, `*ast.IfStmt`, `*ast.CaseClause`, `*ast.SelectStmt` / `*ast.CommClause`, `*ast.DeferStmt` |
+| **Rust** | `["loop", "if", "else", "match"]` | `ExprForLoop`, `ExprWhile`, `ExprLoop`, `ExprIf`, `ExprMatch` / `Arm` patterns |
+| **Java** | `["loop", "if", "else", "case", "try_catch", "try_with_resources", "synchronized"]` | `ForStatement`, `EnhancedForStatement`, `WhileStatement`, `IfStatement`, `SwitchCase`, `TryStatement`, `SynchronizedStatement` |
+| **Kotlin** | `["loop", "if", "else", "when", "case", "try_catch"]` | `KtForExpression`, `KtWhileExpression`, `KtDoWhileExpression`, `KtIfExpression`, `KtWhenExpression`, `KtWhenEntry`, `KtTryExpression` |
+| **Scala** | `["loop", "if", "else", "match", "for_comprehension", "try_catch"]` | Imperative loops, `if` expressions, pattern matching, monadic `for ... yield` comprehensions, `try ... catch` |
+| **C#** | `["loop", "if", "else", "case", "try_catch", "lock", "using", "query", "yield"]` | Iteration statements, selection statements, switch arms, `try ... catch`, `lock`, `using`, LINQ `from ... select`, `yield return/break` |
+| **Python** | `["loop", "if", "else", "case", "try_except", "with", "yield"]` | `ast.For`, `ast.While`, `ast.If`, `ast.MatchCase`, `ast.Try`, `ast.With`, `ast.Yield` / `ast.YieldFrom` |
+
+##### 1. Conditionals & Branch Modeling (`if`, `else`, `case`, `when`, `match`)
+
+In compiler ASTs across languages (Go `*ast.IfStmt`, Rust `ExprIf`, Java `JCIf`, C# `IfStatementSyntax`, Kotlin `KtIfExpression`), there is no standalone AST node for `else if`. Instead, `else if` is an `if` node nested within the `else` slot of a parent `if`.
+
+To support deterministic mutation without synthetic grammar types, `semantic_replace_construct` distinguishes three mutation targets:
+
+1. **Root Conditional Replacement (`kind: "if"`)**: Supplying the condition of the root `if` (e.g. `discriminator: "err != nil"`) replaces the entire conditional chain and all attached branches.
+2. **Branch Replacement (`kind: "if"`)**: Supplying the condition of an `else if` branch (e.g. `discriminator: "count > 0"`) replaces only that nested `if` node; the parent condition and sibling branches remain intact.
+3. **Terminal Fallback Replacement (`kind: "else"`)**: Terminal `else` blocks lack a boolean condition. Targeting `kind: "else"` selects the unconditioned fallback block (e.g. `*ast.BlockStmt`), allowing direct fallback mutation without regenerating the preceding conditional tree.
+4. **Pattern & Switch Matching (`case`, `when`, `match`)**:
+   * `case`: Targets switch clauses (`*ast.CaseClause`, `SwitchCase`).
+   * `when`: Kotlin unifies switches, condition cascades, and type pattern matching under `when` (`KtWhenExpression`), where `case` addresses individual branch entries (`KtWhenEntry`).
+   * `match`: Rust (`ExprMatch`) and Scala pattern matching arms.
+
+##### 2. Iteration & Comprehensions (`loop`, `for_comprehension`, `query`)
+
+* `loop`: Imperative iteration constructs (`for`, `while`, `do-while`, Rust `loop`).
+* `for_comprehension`: Monadic `for ... yield` in Scala, representing sequence transformations distinct from imperative loops.
+* `query`: Declarative LINQ comprehensions (`from ... where ... select`) in C#.
+
+##### 3. Coroutine & Generator Suspension (`yield`)
+
+* In Python, JavaScript, and C# (`yield return`, `yield break`), `yield` is a primitive suspension construct. Mutating `kind: "yield"` rewrites generator emissions or yield points without regenerating the surrounding iteration.
+* **The Kotlin Distinction**: In Kotlin, `yield` is not a language keyword or statement; it is a suspending standard library member function on `SequenceScope<T>` (`sequence { yield(x) }`). In AST terms, it is a function call (`KtCallExpression`) within a coroutine builder lambda rather than a primitive AST control construct.
+
+##### 4. Resource & Lifecycle Management (`defer`, `with`, `using`, `try_with_resources`)
+
+* `defer`: Go (`*ast.DeferStmt`), Swift, and Zig function-exit execution blocks.
+* `with`: Python context manager scopes (`ast.With`).
+* `using`: C# deterministic disposal blocks (`UsingStatementSyntax`).
+* `try_with_resources`: Java deterministic resource acquisition and disposal (`TryStatement` declaring resources implementing `AutoCloseable`). Distinguishing `try_with_resources` from general `try_catch` enables mutating resource bindings (`try (BufferedReader br = ...)`) and their managed block without disturbing trailing catch/finally clauses.
+
+##### 5. Exception & Error Handling (`try_catch`, `try_except`)
+
+* `try_catch`: Java, C#, JavaScript, and Scala (`try ... catch ... finally`). In Kotlin, `try` is an expression producing a value (`KtTryExpression`).
+* `try_except`: Python structured exception handling (`ast.Try`).
+
+##### 6. Concurrency & Synchronization (`select`, `lock`, `synchronized`)
+
+* `select`: Go channel concurrency multiplexer (`*ast.SelectStmt` / `*ast.CommClause`).
+* `synchronized`: Java monitor synchronization blocks (`SynchronizedStatement`).
+* `lock`: C# mutual exclusion blocks (`LockStatementSyntax`).
 
 #### Declarative Registry Announcement (Zero Special Registry Interfaces)
 
@@ -100,7 +134,7 @@ To avoid introducing one-off registry interfaces (e.g. `ConstructReplacingBacken
 
 1. **Backend Capability Slice**: In `internal/backend`, `Backend` announces supported constructs via `SupportedConstructs() []ConstructKind`.
 2. **Dynamic Parameter Contract**: `operation.ParameterContract` supports `DynamicEnums: func(backend.Backend) []string`.
-3. **Dynamic MCP Schema Filtering**: During `tools/list`, `internal/mcp/server.go` resolves `DynamicEnums` against the active workspace backend, dynamically emitting only the constructs valid for that language. This allows inference engines to enforce valid construct tokens via logit masking without schema dilution.
+3. **Dynamic MCP Schema Filtering at Initialization**: During the `initialize` handshake and subsequent `tools/list` requests, `internal/mcp/server.go` resolves `DynamicEnums` against the active workspace backend established during initialization. The server dynamically emits only the constructs valid for that language (e.g. emitting `["loop", "if", "else", "case", "select", "defer"]` for Go, or `["loop", "if", "else", "when", "case", "try_catch"]` for Kotlin). This prevents catalog dilution and allows LLM decoding engines to enforce valid tokens via logit masking from the initial tool exposure. If the active language changes, `notifications/tools/list_changed` pushes the updated schema to the client.
 
 #### Discriminator & Ambiguity Rules
 

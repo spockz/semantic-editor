@@ -20,13 +20,19 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
 3. **Configurable MCP Profiles**: Support a `--profile` flag on `semedit mcp`:
    * `--profile=mutations-only`: Exposes only mutating and verification tools; relies on the environment's existing LSP-MCP for navigation.
    * `--profile=full` (Default): Exposes both intent-based symbol location and mutation tools.
+4. **Dynamic Language Scoping at Initialization**:
+   During the `initialize` handshake, the server extracts workspace context (`rootUri`, `workspaceFolders`, or client `initializationOptions`) and identifies the active language backend. The tool schemas returned to the client (in `tools/list` and capability responses) are dynamically scoped:
+   * **Language-Specific Tool Availability**: Tools with handlers only for a specific language (e.g. build dependency management, framework-specific actions) are omitted when that language is absent.
+   * **Dynamic Parameter Enums**: Operation parameter schemas with dynamic constraints (such as `kind` in `semantic_replace_construct` or `access_modifier` in insertion tools) emit `enum` definitions restricted strictly to the valid constructs/modifiers supported by the active language backend, enabling LLM token decoders to enforce valid tokens via logit masking.
+   * **Dynamic Change Propagation**: When workspace focus shifts or an explicit language context changes, the server emits `notifications/tools/list_changed` so the client re-requests the adapted schema definitions.
 
 ## Invariants
 
 * `semedit` tool names must never collide with standard LSP method names.
 * Mutating operations (`semantic_rename`, `organize_imports`, `verify_diagnostics`) are always exposed across all profiles.
+* Tool schemas and parameter enums presented after `initialize` must strictly reflect the capabilities of the active language backend without polluting the schema with unsupported cross-language constructs.
 
 ## Consequences
 
-* **Positive**: Seamless coexistence with existing LSP-MCP servers; eliminates planner confusion; allows users to minimize context token footprint via profiles.
-* **Negative**: Introduces a CLI configuration option that users must be aware of when tuning token efficiency.
+* **Positive**: Seamless coexistence with existing LSP-MCP servers; eliminates planner confusion; allows users to minimize context token footprint via profiles; enforces schema correctness via language-scoped logit masking from initialization.
+* **Negative**: Introduces dynamic schema generation in the MCP server layer requiring reactive updates via `notifications/tools/list_changed` when languages switch.
