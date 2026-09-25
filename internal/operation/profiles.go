@@ -132,6 +132,16 @@ func profileFor(language backend.LanguageID) (Profile, bool) {
 				},
 			},
 		}, true
+	case backend.LanguageKotlin:
+		return Profile{
+			Language: backend.LanguageKotlin, DisplayName: "Kotlin", Maturity: "Read-only preview",
+			SupportedModifiers: []string{"public", "private", "protected", "internal"},
+			Limitations: []capability.Constraint{
+				{Title: "Read Only", Description: "Kotlin supports trusted lookup and selected-file diagnostics only; rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
+				{Title: "Trusted Server", Description: "A selected .kt or .kts file and request-scoped workspace trust are required before the preinstalled fwcd/kotlin-language-server is resolved or launched. Upstream may execute project classpath scripts or Maven/Gradle while resolving dependencies.", Severity: "error"},
+				{Title: "Selected File Diagnostics", Description: "Verification requires a matching publishDiagnostics notification for the selected isolated file; no report before timeout is an error, not a clean result. Formatting and import modes are rejected.", Severity: "info"},
+			},
+		}, true
 	case backend.LanguageHaskell:
 		return Profile{
 			Language:    backend.LanguageHaskell,

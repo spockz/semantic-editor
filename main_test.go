@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 		"metals":                          runFakeMetals,
 		"ghc":                             runFakeGHC,
 		"haskell-language-server-wrapper": runFakeHLS,
+		"kotlin-language-server":          runFakeKotlin,
 		"maven":                           runFakeMaven,
 	})
 }
@@ -58,11 +59,12 @@ func TestScripts(t *testing.T) {
 			}
 
 			for variable, command := range map[string]string{
-				"SEMEDIT_TEST_JAVA":   "java",
-				"SEMEDIT_TEST_GHC":    "ghc",
-				"SEMEDIT_TEST_HLS":    "haskell-language-server-wrapper",
-				"SEMEDIT_TEST_METALS": "metals",
-				"SEMEDIT_TEST_MAVEN":  "maven",
+				"SEMEDIT_TEST_JAVA":      "java",
+				"SEMEDIT_TEST_GHC":       "ghc",
+				"SEMEDIT_TEST_HLS":       "haskell-language-server-wrapper",
+				"SEMEDIT_TEST_METALS":    "metals",
+				"SEMEDIT_TEST_KOTLIN_LS": "kotlin-language-server",
+				"SEMEDIT_TEST_MAVEN":     "maven",
 			} {
 				path, err := exec.LookPath(command)
 				if err != nil {
@@ -132,6 +134,8 @@ func TestTxtarsCoverRegistryCommandsByLanguage(t *testing.T) {
 			return hasExtension(".scala")
 		case backend.LanguageHaskell:
 			return hasExtension(".hs")
+		case backend.LanguageKotlin:
+			return hasExtension(".kt") || hasExtension(".kts")
 		default:
 			return false
 		}

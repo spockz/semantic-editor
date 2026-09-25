@@ -7,6 +7,7 @@ import (
 	gobackend "semedit/internal/backend/golang"
 	haskellbackend "semedit/internal/backend/haskell"
 	javabackend "semedit/internal/backend/java"
+	kotlinbackend "semedit/internal/backend/kotlin"
 	rustbackend "semedit/internal/backend/rust"
 	scalabackend "semedit/internal/backend/scala"
 )
@@ -18,6 +19,7 @@ func NewDefaultService() *backend.Service {
 		rustbackend.NewRustBackend(),
 		javabackend.NewJavaBackend(),
 		scalabackend.NewScalaBackend(),
+		kotlinbackend.NewKotlinBackend(),
 		haskellbackend.NewHaskellBackend(),
 	)
 	if err != nil {

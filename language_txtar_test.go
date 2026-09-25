@@ -54,6 +54,14 @@ func runFakeJava() {
 	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 14), fakeRange(6, 12)})
 }
 
+func runFakeKotlin() {
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_FUNCTION") != "" {
+		runFakeLanguageServer(fakeDocumentSymbol{"launch", 12, fakeRangeAt(1, 0, 15), fakeRangeAt(1, 4, 10)})
+		return
+	}
+	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRangeAt(2, 0, 29), fakeRangeAt(2, 6, 12)})
+}
+
 func runFakeMetals() {
 	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 15), fakeRange(7, 13)})
 }
@@ -119,6 +127,25 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			continue
 		}
 		if len(request.ID) == 0 {
+			if request.Method == "textDocument/didOpen" && (os.Getenv("SEMEDIT_TEST_KOTLIN_VERIFY") != "" || os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "") {
+				var opened struct {
+					TextDocument struct {
+						URI string `json:"uri"`
+					} `json:"textDocument"`
+				}
+				_ = json.Unmarshal(request.Params, &opened)
+				uri := opened.TextDocument.URI
+				if os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "" {
+					uri = "file:///outside/Widget.kt"
+				}
+				diagnostics := []any{}
+				if os.Getenv("SEMEDIT_TEST_KOTLIN_DIAGNOSTIC") != "" {
+					diagnostics = []any{map[string]any{"message": "selected Kotlin warning", "severity": 2, "range": fakeRange(0, 0)}}
+				}
+				params, _ := json.Marshal(map[string]any{"uri": uri, "diagnostics": diagnostics})
+				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+				_ = writer.WriteMessage(notification)
+			}
 			if request.Method == "textDocument/didChange" {
 				var change struct {
 					TextDocument struct {
@@ -155,6 +182,9 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			}
 		case "textDocument/documentSymbol":
 			result = []fakeDocumentSymbol{symbol}
+			if os.Getenv("SEMEDIT_TEST_KOTLIN_AMBIGUOUS") != "" {
+				result = []fakeDocumentSymbol{symbol, symbol}
+			}
 		case "textDocument/prepareRename":
 			result = symbol.SelectionRange
 		case "textDocument/formatting":
