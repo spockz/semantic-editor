@@ -52,6 +52,24 @@ func TestUnmarshalBenchmarkReportNormalizesVersionedMillisecondsAndLegacyNanosec
 	}
 }
 
+func assertBenchmarkBrowserPairValues(t *testing.T, baseline, semedit map[string]json.RawMessage) {
+	t.Helper()
+	var turnsDelta float64
+	if err := json.Unmarshal(semedit["turns_delta"], &turnsDelta); err != nil || turnsDelta != -1 {
+		t.Errorf("paired turns change = %v, err = %v; want -1", turnsDelta, err)
+	}
+	if string(baseline["turns_delta"]) != "null" {
+		t.Errorf("baseline turns change = %s, want null", baseline["turns_delta"])
+	}
+	var baselineTurns, semeditTurns int
+	if err := json.Unmarshal(semedit["baseline_turns"], &baselineTurns); err != nil || baselineTurns != 4 {
+		t.Errorf("paired baseline turns = %d, err = %v; want 4", baselineTurns, err)
+	}
+	if err := json.Unmarshal(semedit["semedit_turns"], &semeditTurns); err != nil || semeditTurns != 3 {
+		t.Errorf("paired semedit turns = %d, err = %v; want 3", semeditTurns, err)
+	}
+}
+
 func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAssets(t *testing.T) {
 	t.Parallel()
 
@@ -159,20 +177,7 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if err := json.Unmarshal(rows[1]["context_variant"], &secondContext); err != nil || secondContext != "small" {
 		t.Errorf("second result context = %q, err = %v; want small", secondContext, err)
 	}
-	var turnsDelta float64
-	if err := json.Unmarshal(rows[1]["turns_delta"], &turnsDelta); err != nil || turnsDelta != -1 {
-		t.Errorf("paired turns change = %v, err = %v; want -1", turnsDelta, err)
-	}
-	if string(rows[0]["turns_delta"]) != "null" {
-		t.Errorf("baseline turns change = %s, want null", rows[0]["turns_delta"])
-	}
-	var baselineTurns, semeditTurns int
-	if err := json.Unmarshal(rows[1]["baseline_turns"], &baselineTurns); err != nil || baselineTurns != 4 {
-		t.Errorf("paired baseline turns = %d, err = %v; want 4", baselineTurns, err)
-	}
-	if err := json.Unmarshal(rows[1]["semedit_turns"], &semeditTurns); err != nil || semeditTurns != 3 {
-		t.Errorf("paired semedit turns = %d, err = %v; want 3", semeditTurns, err)
-	}
+	assertBenchmarkBrowserPairValues(t, rows[0], rows[1])
 	var arrayText string
 	if err := json.Unmarshal(rows[0]["new_array"], &arrayText); err != nil {
 		t.Fatalf("decode serialized array field: %v", err)
@@ -190,9 +195,14 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if err != nil {
 		t.Fatalf("read benchmark browser shortcode: %v", err)
 	}
-	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens are uncached; cached input is shown separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-comparison-viewer"`, `Baseline and semedit values are compared within each target and context group`, `Negative changes are improvements`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `populateDimensionFilter(promptFilter, "prompt_variant")`, `populateDimensionFilter(instructionsFilter, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch("/data/benchmarks.json")`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
+	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens are uncached; cached input is shown separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Baseline and semedit values are compared within each target and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes are improvements`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch("/data/benchmarks.json")`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
 		if !strings.Contains(string(shortcode), want) {
 			t.Errorf("benchmark browser shortcode missing %q", want)
+		}
+	}
+	for _, want := range []string{`id="benchmark-browser-model-filter"`, `id="benchmark-browser-comparison-model-filter"`, `for (const control of [modelFilter, comparisonModelFilter]) populateDimensionFilter(control, "target__model")`} {
+		if !strings.Contains(string(shortcode), want) {
+			t.Errorf("benchmark browser model filter missing %q", want)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")); err != nil {

@@ -18,6 +18,9 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspect
 <link rel="stylesheet" href="/vendor/perspective/css/perspective-viewer-datagrid.css">
 
 <div class="benchmark-browser">
+  <div class="benchmark-browser-toolbar">
+    <button id="benchmark-browser-fullscreen" type="button" aria-pressed="false">Full screen</button>
+  </div>
   <p>Results are grouped by target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens are uncached; cached input is shown separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
   <div class="benchmark-browser-filters">
     <label>Requirement met
@@ -32,6 +35,11 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspect
         <option value="">All</option>
         <option value="true">Pass</option>
         <option value="false">Fail</option>
+      </select>
+    </label>
+    <label>Model
+      <select id="benchmark-browser-model-filter">
+        <option value="">All</option>
       </select>
     </label>
     <label>Prompt variant
@@ -49,17 +57,53 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="/vendor/perspect
   <perspective-viewer id="benchmark-browser-viewer" theme="Pro Light" settings></perspective-viewer>
   <h2>Baseline vs semedit</h2>
   <p>Baseline and semedit values are compared within each target and context group. Negative changes are improvements for these lower-is-better metrics; positive changes are degradations.</p>
+  <div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">
+    <label>Requirement met
+      <select id="benchmark-browser-comparison-oracle-filter">
+        <option value="">All</option>
+        <option value="true">Pass</option>
+        <option value="false">Fail</option>
+      </select>
+    </label>
+    <label>Expected semantic tools used
+      <select id="benchmark-browser-comparison-expected-tools-filter">
+        <option value="">All</option>
+        <option value="true">Pass</option>
+        <option value="false">Fail</option>
+      </select>
+    </label>
+    <label>Model
+      <select id="benchmark-browser-comparison-model-filter">
+        <option value="">All</option>
+      </select>
+    </label>
+    <label>Prompt variant
+      <select id="benchmark-browser-comparison-prompt-filter">
+        <option value="">All</option>
+      </select>
+    </label>
+    <label>MCP instructions
+      <select id="benchmark-browser-comparison-instructions-filter">
+        <option value="">All</option>
+      </select>
+    </label>
+  </div>
   <perspective-viewer id="benchmark-browser-comparison-viewer" theme="Pro Light" settings></perspective-viewer>
 </div>
 
 <style>
 .benchmark-browser { width: 100%; }
+.benchmark-browser-toolbar { display: flex; justify-content: flex-end; }
+.benchmark-browser-toolbar button { padding: 0.4rem 0.75rem; }
 .benchmark-browser-filters { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
 .benchmark-browser-filters label { display: flex; align-items: center; gap: 0.5rem; }
-.benchmark-browser perspective-viewer { display: block; width: 100%; height: min(75vh, 56rem); min-height: 34rem; }
-.benchmark-browser #benchmark-browser-comparison-viewer { height: min(75vh, 56rem); min-height: 34rem; margin-top: 1rem; }
+.benchmark-browser perspective-viewer { display: block; width: 100%; height: 7rem; }
+.benchmark-browser #benchmark-browser-comparison-viewer { margin-top: 1rem; }
 .benchmark-browser #benchmark-browser-status:empty { display: none; }
+.benchmark-browser:fullscreen { box-sizing: border-box; height: 100vh; overflow: auto; overscroll-behavior: contain; padding: 1rem; }
+html:not(.dark) .benchmark-browser:fullscreen { background: #fff; color: #222; }
 html.dark .benchmark-browser { color-scheme: dark; }
+html.dark .benchmark-browser:fullscreen { background: #111; color: #eee; }
 </style>
 
 <script type="module">
@@ -73,8 +117,22 @@ const viewers = [viewer, comparisonViewer];
 const status = document.querySelector("#benchmark-browser-status");
 const oracleFilter = document.querySelector("#benchmark-browser-oracle-filter");
 const expectedToolsFilter = document.querySelector("#benchmark-browser-expected-tools-filter");
+const modelFilter = document.querySelector("#benchmark-browser-model-filter");
 const promptFilter = document.querySelector("#benchmark-browser-prompt-filter");
 const instructionsFilter = document.querySelector("#benchmark-browser-instructions-filter");
+const comparisonOracleFilter = document.querySelector("#benchmark-browser-comparison-oracle-filter");
+const comparisonExpectedToolsFilter = document.querySelector("#benchmark-browser-comparison-expected-tools-filter");
+const comparisonModelFilter = document.querySelector("#benchmark-browser-comparison-model-filter");
+const comparisonPromptFilter = document.querySelector("#benchmark-browser-comparison-prompt-filter");
+const comparisonInstructionsFilter = document.querySelector("#benchmark-browser-comparison-instructions-filter");
+const fullscreenButton = document.querySelector("#benchmark-browser-fullscreen");
+const filterGroups = [
+  { column: "oracle_pass", type: "boolean", controls: [oracleFilter, comparisonOracleFilter] },
+  { column: "expected_semantic_tools_used", type: "boolean", controls: [expectedToolsFilter, comparisonExpectedToolsFilter] },
+  { column: "target__model", type: "string", controls: [modelFilter, comparisonModelFilter] },
+  { column: "prompt_variant", type: "string", controls: [promptFilter, comparisonPromptFilter] },
+  { column: "mcp_server_instructions", type: "string", controls: [instructionsFilter, comparisonInstructionsFilter] },
+];
 const syncTheme = () => {
   const dark = document.documentElement.classList.contains("dark");
   for (const currentViewer of viewers) currentViewer.setAttribute("theme", dark ? "Pro Dark" : "Pro Light");
@@ -82,6 +140,54 @@ const syncTheme = () => {
 const themeObserver = new MutationObserver(syncTheme);
 themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
 syncTheme();
+const browserPanel = document.querySelector(".benchmark-browser");
+document.addEventListener("wheel", event => {
+  if (event.deltaY === 0 || event.shiftKey || !event.composedPath().some(target => viewers.includes(target))) return;
+  event.preventDefault();
+  event.stopPropagation();
+  if (document.fullscreenElement === browserPanel) browserPanel.scrollTop += event.deltaY;
+  else window.scrollBy(0, event.deltaY);
+}, { capture: true, passive: false });
+fullscreenButton.addEventListener("click", async () => {
+  try {
+    if (document.fullscreenElement === browserPanel) await document.exitFullscreen();
+    else await browserPanel.requestFullscreen();
+  } catch (error) {
+    status.textContent = "Could not change full-screen mode: " + error.message;
+    status.setAttribute("role", "alert");
+  }
+});
+document.addEventListener("fullscreenchange", () => {
+  const fullscreen = document.fullscreenElement === browserPanel;
+  fullscreenButton.textContent = fullscreen ? "Exit full screen" : "Full screen";
+  fullscreenButton.setAttribute("aria-pressed", String(fullscreen));
+});
+const resizeTimers = new WeakMap();
+const resizeViewerToContent = async (currentViewer) => {
+  await currentViewer.flush();
+  const view = await currentViewer.getView();
+  const rowCount = await view.num_rows();
+  const rowHeight = 22;
+  const viewerChromeHeight = 112;
+  currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px";
+  await currentViewer.resize();
+};
+const scheduleViewerResize = (currentViewer) => {
+  clearTimeout(resizeTimers.get(currentViewer));
+  resizeTimers.set(currentViewer, setTimeout(() => {
+    resizeViewerToContent(currentViewer).catch(error => {
+      status.textContent = "Could not size benchmark results: " + error.message;
+      status.setAttribute("role", "alert");
+    });
+  }, 80));
+};
+for (const currentViewer of viewers) {
+  for (const eventName of ["perspective-config-update", "perspective-select", "perspective-click"]) {
+    currentViewer.addEventListener(eventName, () => scheduleViewerResize(currentViewer));
+  }
+  currentViewer.addEventListener("keyup", () => scheduleViewerResize(currentViewer));
+}
+window.addEventListener("resize", () => viewers.forEach(scheduleViewerResize));
 
 try {
   await customElements.whenDefined("perspective-viewer");
@@ -97,8 +203,9 @@ try {
       control.append(option);
     }
   };
-  populateDimensionFilter(promptFilter, "prompt_variant");
-  populateDimensionFilter(instructionsFilter, "mcp_server_instructions");
+  for (const control of [modelFilter, comparisonModelFilter]) populateDimensionFilter(control, "target__model");
+  for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant");
+  for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions");
   const worker = await perspective.worker();
   const table = await worker.table(rows);
   await Promise.all(viewers.map(currentViewer => currentViewer.load(table)));
@@ -123,20 +230,21 @@ try {
       reasoning_tokens_delta: { number_bg_mode: "color", neg_bg_color: "#b7e4c7", pos_bg_color: "#f7b6b2" },
     },
   });
-  const updateFilters = async () => {
+  await Promise.all(viewers.map(resizeViewerToContent));
+  const updateFilters = async (changedGroup, sourceControl) => {
+    for (const control of changedGroup.controls) control.value = sourceControl.value;
     const filters = [];
-    for (const [control, column] of [[oracleFilter, "oracle_pass"], [expectedToolsFilter, "expected_semantic_tools_used"]]) {
-      if (control.value !== "") filters.push([column, "==", control.value === "true"]);
-    }
-    for (const [control, column] of [[promptFilter, "prompt_variant"], [instructionsFilter, "mcp_server_instructions"]]) {
-      if (control.value !== "") filters.push([column, "==", control.value]);
+    for (const { column, type, controls } of filterGroups) {
+      const value = controls[0].value;
+      if (value === "") continue;
+      filters.push([column, "==", type === "boolean" ? value === "true" : value]);
     }
     await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })));
+    await Promise.all(viewers.map(resizeViewerToContent));
   };
-  oracleFilter.addEventListener("change", updateFilters);
-  expectedToolsFilter.addEventListener("change", updateFilters);
-  promptFilter.addEventListener("change", updateFilters);
-  instructionsFilter.addEventListener("change", updateFilters);
+  for (const group of filterGroups) {
+    for (const control of group.controls) control.addEventListener("change", () => updateFilters(group, control));
+  }
   status.textContent = "";
 } catch (error) {
   status.textContent = "Could not load benchmark results: " + error.message;
