@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -58,24 +59,26 @@ type codexItem struct {
 }
 
 type codexToolTracker struct {
-	calls            map[string]int
-	internalTurns    int
-	initialLoadTurns int
-	mcpLoadTurns     int
-	mutatingSeen     bool
-	firstToolCallAt  time.Time
+	calls             map[string]int
+	internalTurns     int
+	initialLoadTurns  int
+	mcpLoadTurns      int
+	mutatingSeen      bool
+	firstToolCallAt   time.Time
+	eventDecodeErrors int
 }
 
 func (t *codexToolTracker) observe(res *RunResult, item *codexItem, observedAt time.Time) {
-	if item == nil || !isCodexToolItem(item.Type) {
+	if item == nil {
 		return
 	}
-
+	if !isCodexToolItem(item.Type) {
+		return
+	}
 	name := codexToolName(item)
 	if name == "" {
 		return
 	}
-
 	if item.Status == "in_progress" {
 		if _, alreadyRecorded := t.calls[item.ID]; alreadyRecorded {
 			return
@@ -89,7 +92,6 @@ func (t *codexToolTracker) observe(res *RunResult, item *codexItem, observedAt t
 		}, observedAt)
 		return
 	}
-
 	call := codexToolOutcome(name, item.Server, item.Arguments, item.Status, item.Result, item.Error)
 	if callIndex, ok := t.calls[item.ID]; ok {
 		if len(call.Arguments) == 0 {
@@ -347,14 +349,21 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	turns := 0
+	validEvents := 0
 	tracker := codexToolTracker{}
 	var firstEventAt time.Time
 	threadID := resumeID
 	for scanner.Scan() {
+		rawEvent := append([]byte(nil), scanner.Bytes()...)
 		var ev CodexEvent
-		if err := json.Unmarshal(scanner.Bytes(), &ev); err != nil {
+		if err := json.Unmarshal(rawEvent, &ev); err != nil || ev.Type == "" {
+			tracker.eventDecodeErrors++
+			encodedInvalid, _ := json.Marshal(string(rawEvent))
+			res.rawEvents = append(res.rawEvents, json.RawMessage(encodedInvalid))
 			continue
 		}
+		validEvents++
+		res.rawEvents = append(res.rawEvents, json.RawMessage(rawEvent))
 		observedAt := time.Now()
 		if firstEventAt.IsZero() {
 			firstEventAt = observedAt
@@ -382,10 +391,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 		res.CodexExitCode = &code
 	}
 	res.CodexStderr = boundedDiagnostic(stderr.Bytes(), maxCodexStderrBytes)
-	res.Turns = 1
-	if turns > 0 {
-		res.Turns = turns
-	}
+	res.Turns = turns
 	res.InternalTurns = tracker.internalTurns
 	res.InitialLoadTurns = tracker.initialLoadTurns
 	res.MCPLoadTurns = tracker.mcpLoadTurns
@@ -398,14 +404,25 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 		value := tracker.firstToolCallAt.Sub(firstEventAt)
 		res.FirstEventToFirstToolCall = &value
 	}
+	var providerErr error
 	if scanErr != nil {
-		return threadID, fmt.Errorf("scan codex output: %w", scanErr)
+		providerErr = fmt.Errorf("scan codex output: %w", scanErr)
+	}
+	if tracker.eventDecodeErrors > 0 {
+		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed Codex event records", tracker.eventDecodeErrors))
 	}
 	if waitErr != nil {
 		if diagnostic := strings.TrimSpace(res.CodexStderr); diagnostic != "" {
-			return threadID, fmt.Errorf("run codex: %w: %s", waitErr, diagnostic)
+			providerErr = errors.Join(providerErr, fmt.Errorf("run codex: %w: %s", waitErr, diagnostic))
+		} else {
+			providerErr = errors.Join(providerErr, fmt.Errorf("run codex: %w", waitErr))
 		}
-		return threadID, fmt.Errorf("run codex: %w", waitErr)
+	}
+	if providerErr != nil {
+		return threadID, providerErr
+	}
+	if validEvents == 0 {
+		return threadID, fmt.Errorf("codex emitted no valid task events")
 	}
 	if threadID == "" {
 		return "", fmt.Errorf("codex did not emit a thread ID")

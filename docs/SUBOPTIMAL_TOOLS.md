@@ -113,3 +113,85 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 1. **Bug / Failure**: The tool returned an error or unexpected output for a valid semantic intent.
 2. **Follow-up Manual Edit**: The tool modified the AST, but agents needed a manual edit after the tool operation to make the code compile, pass formatting, or adjust surrounding declarations.
 3. **Inconvenient Ergonomics**: The parameter schema or error message caused the agent to fail or hallucinate parameters on its first attempt.
+
+## 2026-09-26: semantic_insert_construct switch-case locator
+
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/oracle.go`, `parseYAMLFrontmatter`
+- Observed failure: inserting a `contexts` case after the `interactive_followups` list case returned `switch statement not found`.
+- Workaround: use `semantic_replace_body` for the existing parser function to add the list handling without replacing the file or declaration.
+- Root cause: case insertion did not locate the existing `switch targetSlice` when given the string case discriminator.
+
+## 2026-09-26: semantic_scaffold_file omits required file-purpose header
+
+- Tool: `semantic_scaffold_file`
+- Target: `tools/benchmark-harness/planner.go`
+- Observed behavior: scaffolding created only `package main`, with no place to provide the repository-required WHY header.
+- Workaround: add the concise file-purpose header atomically before inserting constructs.
+- Root cause: scaffold schema has no file-header input.
+
+## 2026-09-26: semantic_rename argument-name mismatch
+
+- Tool: `semantic_rename`
+- Target: `tools/benchmark-harness/planner.go`, type `PlannedJob`
+- Observed failure: call rejected with `param "to" is required` because the initial request used `new_name`.
+- Workaround: retry with the documented `to` parameter.
+- Root cause: caller used a parameter name not present in the live schema.
+
+## 2026-09-26: semantic_rename reports transient call arity during signature migration
+
+- Tool: `semantic_rename`
+- Target: `tools/benchmark-harness/driver.go`, `prepareAgentPrompt`
+- Observed failure: rename applied but verification reported one callsite with a temporary missing argument while the function signature was being migrated.
+- Workaround: complete the wrapper/signature transition using semantic declaration edits, then verify the package after the migration.
+- Root cause: the rename operation verified an intermediate state before dependent callsites were adapted.
+
+## 2026-09-26: semantic_replace_construct did not resolve existing method
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/driver.go`, method `(*Runner).ExecuteAgentDriver`
+- Observed failure: replacement returned `symbol not found` for the visible receiver method.
+- Workaround: use `semantic_replace_body` for the existing method, preserving its declaration and updating only its body.
+- Root cause: method symbol lookup did not accept the unqualified method name in this request.
+
+## 2026-09-26: semantic_insert_construct requires one declaration per call
+
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/planner.go`, plan renderer and helper
+- Observed failure: inserting two function declarations together returned `multiple declarations found in snippet`.
+- Workaround: insert each declaration separately.
+- Root cause: construct insertion accepts exactly one declaration per invocation.
+
+## 2026-09-26: semantic_replace_construct rejected provider type and method together
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/session.go`, `agyProvider`
+- Observed failure: rejected the snippet with `multiple declarations found in snippet`; no source change was applied.
+- Workaround: split the provider type and its `run` method into separate semantic construct replacements.
+- Root cause: the tool accepts exactly one top-level declaration per request.
+
+### 2026-09-26
+
+- Tool: `semantic_replace_body`
+- Target: `tools/benchmark-harness/oracle.go`
+- Observed failure: the method replacement request used symbol `ExtractVariantTo`; the semantic tool requires the receiver-qualified symbol `(*Task).ExtractVariantTo`.
+- Workaround: retry with the receiver-qualified method name.
+- Root cause: method lookup requires an explicit receiver.
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/planner_test.go`
+- Observed failure: one request contained a helper, several tests, and a test writer type; insertion accepts one declaration at a time.
+- Workaround: insert each declaration separately.
+- Root cause: construct insertion validates a single AST declaration per request.
+| **ST-0019** | 2026-09-26 | `semantic_insert_construct` | `tools/benchmark-harness/session_test.go` file-level WHY comment | Rejected a comment-only declaration snippet with `no declarations found in snippet`; an initial patch to the log also missed its exact table row. | Appended the entry after reading the actual file; will add the mandatory source comment using a focused atomic edit. | Declaration insertion accepts declaration syntax only; comment insertion is unsupported. | Support file-level comment insertion or document the limitation. |
+| **ST-0020** | 2026-09-26 | `semantic_insert_construct` | `tools/benchmark-harness/runner.go` runner test executable field | Rejected inserting an individual struct field as a declaration (`expected declaration, found agyExecutable`). | Will replace the enclosing type declaration using the semantic construct tool. | The insertion operation accepts top-level declarations but not struct fields. | Support field insertion into struct types. |
+| **ST-0021** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/agy_driver.go` executable selection conditional | Did not resolve the conditional using the short statement discriminator `_, err := os.Stat(agyBin)`. | Will retry with the complete condition text after recording this failure. | Conditional matching requires the parsed full source condition. | Improve construct-resolution diagnostics for short-statement conditionals. |
+| **ST-0022** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/agy_driver.go` executable selection conditional | Also failed to resolve the full conditional when supplied as a discriminator. | After recording the failure, will apply a focused atomic edit to the conditional. | The tool does not identify short-init conditionals in this method. | Add short-init conditional matching. |
+| **ST-0023** | 2026-09-26 | `semantic_rename` | `tools/benchmark-harness/driver.go` follow-up method | Rejected an invalid rename argument object because the tool requires `symbol` and `to` fields. | Will retry with the declared semantic rename schema after logging this failure. | The caller used stale tool parameter names. | Validate MCP inputs from current schemas. |
+| **ST-0024** | 2026-09-26 | `semantic` construct operations | `tools/benchmark-harness/driver.go` obsolete helper removal | The available construct APIs do not provide deletion of a declaration, so they cannot remove the superseded runner-owned follow-up method after its loop moved into the session. | Applied a focused deletion of the dead helper after recording the limitation. | The semantic editing API supports insert, replace, and move but not declaration removal. | Add `semantic_delete_construct`. |
+| **ST-0025** | 2026-09-26 | `semantic` construct operations | `tools/benchmark-harness/codex_driver.go`, `opencode_driver.go` event decode accounting | Available construct operations do not insert statements into existing scanner loops without replacing whole provider methods. | Applied focused atomic edits to count decode failures and reject empty resumed streams. | The API lacks statement insertion for existing loops. | Add `semantic_insert_statement`. |
+| **ST-0026** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/driver.go` session cleanup defer | The construct matcher did not resolve the `session.close()` defer by the supplied discriminator. | After logging, apply a focused atomic edit to the defer. | Defer matching did not accept the call expression as discriminator. | Improve defer construct matching. |
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/planner.go`, the executor selection branch in `ExecutePlan`
+- Observed failure: the request did not locate the conditional using discriminator `ctx.Err() != nil`.
+- Workaround: retry by matching the exact branch expression from the AST or use a focused declaration replacement.
+- Root cause: conditional discriminators require exact backend-resolved syntax.

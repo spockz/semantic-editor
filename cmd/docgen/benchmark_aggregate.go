@@ -21,7 +21,7 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/persp
   <div class="benchmark-browser-toolbar">
     <button id="benchmark-browser-fullscreen" type="button" aria-pressed="false">Full screen</button>
   </div>
-  <p>The browser groups results by target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
+  <p>The browser groups results by restriction policy, target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.</p>
   <div class="benchmark-browser-filters">
     <label>Requirement met
       <select id="benchmark-browser-oracle-filter">
@@ -47,6 +47,9 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/persp
         <option value="">All</option>
       </select>
     </label>
+    <label>Semedit restriction
+      <select id="benchmark-browser-restriction-filter"><option value="">All</option></select>
+    </label>
     <label>MCP instructions
       <select id="benchmark-browser-instructions-filter">
         <option value="">All</option>
@@ -56,7 +59,7 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/persp
   <p id="benchmark-browser-status" role="status">Loading benchmark results…</p>
   <perspective-viewer id="benchmark-browser-viewer" theme="Pro Light" settings></perspective-viewer>
   <h2>Baseline vs semedit</h2>
-  <p>Comparison evaluates baseline and semedit values within each target and context group. Negative changes mark improvements for these lower-is-better metrics; positive changes mark degradations.</p>
+  <p>Comparison evaluates baseline and semedit values within each restriction policy, target, and context group. Negative changes mark improvements for these lower-is-better metrics; positive changes mark degradations.</p>
   <div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">
     <label>Requirement met
       <select id="benchmark-browser-comparison-oracle-filter">
@@ -81,6 +84,9 @@ const benchmarkBrowserShortcode = `<link rel="stylesheet" href="{{ "vendor/persp
       <select id="benchmark-browser-comparison-prompt-filter">
         <option value="">All</option>
       </select>
+    </label>
+    <label>Semedit restriction
+      <select id="benchmark-browser-comparison-restriction-filter"><option value="">All</option></select>
     </label>
     <label>MCP instructions
       <select id="benchmark-browser-comparison-instructions-filter">
@@ -125,8 +131,11 @@ const comparisonExpectedToolsFilter = document.querySelector("#benchmark-browser
 const comparisonModelFilter = document.querySelector("#benchmark-browser-comparison-model-filter");
 const comparisonPromptFilter = document.querySelector("#benchmark-browser-comparison-prompt-filter");
 const comparisonInstructionsFilter = document.querySelector("#benchmark-browser-comparison-instructions-filter");
+const restrictionFilter = document.querySelector("#benchmark-browser-restriction-filter");
+const comparisonRestrictionFilter = document.querySelector("#benchmark-browser-comparison-restriction-filter");
 const fullscreenButton = document.querySelector("#benchmark-browser-fullscreen");
 const filterGroups = [
+  { column: "semedit_arm_restrict", type: "string", controls: [restrictionFilter, comparisonRestrictionFilter] },
   { column: "oracle_pass", type: "boolean", controls: [oracleFilter, comparisonOracleFilter] },
   { column: "expected_semantic_tools_used", type: "boolean", controls: [expectedToolsFilter, comparisonExpectedToolsFilter] },
   { column: "target__model", type: "string", controls: [modelFilter, comparisonModelFilter] },
@@ -206,18 +215,19 @@ try {
   for (const control of [modelFilter, comparisonModelFilter]) populateDimensionFilter(control, "target__model");
   for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant");
   for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions");
+  for (const control of [restrictionFilter, comparisonRestrictionFilter]) populateDimensionFilter(control, "semedit_arm_restrict");
   const worker = await perspective.worker();
   const table = await worker.table(rows);
   await Promise.all(viewers.map(currentViewer => currentViewer.load(table)));
   await viewer.restore({
     plugin: "Datagrid",
-    group_by: ["target__harness", "target__model", "target__effort", "context_variant", "arm"],
+    group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant", "arm"],
     columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"],
     aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" },
   });
   await comparisonViewer.restore({
     plugin: "Datagrid",
-    group_by: ["target__harness", "target__model", "target__effort", "context_variant"],
+    group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant"],
     columns: ["baseline_cost", "semedit_cost", "cost_delta", "baseline_turns", "semedit_turns", "turns_delta", "baseline_wall_clock_seconds", "semedit_wall_clock_seconds", "wall_clock_seconds_delta", "baseline_input_tokens", "semedit_input_tokens", "input_tokens_delta", "baseline_cached_input_tokens", "semedit_cached_input_tokens", "cached_input_tokens_delta", "baseline_output_tokens", "semedit_output_tokens", "output_tokens_delta", "baseline_reasoning_tokens", "semedit_reasoning_tokens", "reasoning_tokens_delta"],
     aggregates: { baseline_cost: "avg", semedit_cost: "avg", cost_delta: "avg", baseline_turns: "avg", semedit_turns: "avg", turns_delta: "avg", baseline_wall_clock_seconds: "avg", semedit_wall_clock_seconds: "avg", wall_clock_seconds_delta: "avg", baseline_input_tokens: "avg", semedit_input_tokens: "avg", input_tokens_delta: "avg", baseline_cached_input_tokens: "avg", semedit_cached_input_tokens: "avg", cached_input_tokens_delta: "avg", baseline_output_tokens: "avg", semedit_output_tokens: "avg", output_tokens_delta: "avg", baseline_reasoning_tokens: "avg", semedit_reasoning_tokens: "avg", reasoning_tokens_delta: "avg" },
     columns_config: {
@@ -300,7 +310,7 @@ func addBenchmarkBrowserComparisonDeltas(rows []map[string]json.RawMessage) erro
 		}
 	}
 	dimensions := make([]string, 0, 8+len(targetDimensions))
-	dimensions = append(dimensions, "_run_id", "_source_file", "_record_type", "task_id", "context_variant", "variant", "prompt_variant", "mcp_server_instructions")
+	dimensions = append(dimensions, "_run_id", "_source_file", "_record_type", "task_id", "context_variant", "variant", "prompt_variant", "mcp_server_instructions", "semedit_arm_restrict", "comparison_pair_id", "repeat")
 	for dimension := range targetDimensions {
 		dimensions = append(dimensions, dimension)
 	}
@@ -561,7 +571,7 @@ func isBenchmarkComparisonPrompt(name string) bool {
 
 func isBenchmarkRunDetail(name string) bool {
 	switch name {
-	case "prompt", "before_state", "diff", "tools_used", "tool_calls", "interaction_steps", "semantic_tool_reflection":
+	case "prompt", "before_state", "diff", "tools_used", "tool_calls", "interaction_steps", "semantic_tool_reflection", "semantic_batch_reflection":
 		return true
 	default:
 		return false
@@ -578,6 +588,17 @@ func addBenchmarkBrowserMetadata(row map[string]json.RawMessage, runID, relative
 		}
 		row[key] = encoded
 	}
+	var policy string
+	if raw, ok := row["semedit_arm_restrict"]; ok {
+		if err := json.Unmarshal(raw, &policy); err != nil {
+			return fmt.Errorf("decode semedit restriction metadata: %w", err)
+		}
+	}
+	encodedPolicy, err := json.Marshal(displaySemeditArmRestriction(policy))
+	if err != nil {
+		return fmt.Errorf("encode semedit restriction metadata: %w", err)
+	}
+	row["semedit_arm_restrict"] = encodedPolicy
 	return nil
 }
 
@@ -676,6 +697,9 @@ func loadBenchmarkBrowserResult(resultsDir, path, relativePath string, data []by
 		}
 		row := make(map[string]json.RawMessage, len(sourceRow))
 		for key, value := range sourceRow {
+			if key == "semantic_tool_reflection" || key == "semantic_batch_reflection" {
+				continue
+			}
 			if err := flattenBenchmarkField(key, value, row); err != nil {
 				return nil, fmt.Errorf("flatten benchmark field %s in %s: %w", key, path, err)
 			}

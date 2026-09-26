@@ -28,6 +28,8 @@ func (t BenchTarget) String() string {
 
 // BenchRunResult captures telemetry for a single trial.
 type BenchRunResult struct {
+	SemeditArmRestrict               string                       `json:"semedit_arm_restrict,omitempty"`
+	SemeditArmRestrictionApplied     *bool                        `json:"semedit_arm_restriction_applied,omitempty"`
 	TaskID                           string                       `json:"task_id"`
 	Variant                          string                       `json:"variant,omitempty"`
 	PromptVariant                    string                       `json:"prompt_variant,omitempty"`
@@ -181,6 +183,7 @@ type BenchOracleResult struct {
 
 // BenchComparisonSummary bundles Baseline vs MCP runs for a task and target.
 type BenchComparisonSummary struct {
+	SemeditArmRestrict    string            `json:"semedit_arm_restrict,omitempty"`
 	SelectedRunID         string            `json:"-"`
 	TaskID                string            `json:"task_id"`
 	PromptVariant         string            `json:"prompt_variant,omitempty"`
