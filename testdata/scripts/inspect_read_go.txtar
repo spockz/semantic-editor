@@ -1,0 +1,99 @@
+# Inspect returns exact method source and declaration metadata without writing source
+exec semedit inspect-symbol --file api/server.go --symbol Server.Start
+stdout '"kind":\s*"method"'
+stdout '"qualified_name":\s*"Server.Start"'
+stdout '"source":\s*"func \(s \*Server\) Start\(\) \{\}"'
+stdout '"revision":\s*"[0-9a-f]{64}"'
+stdout '"source_extent":\s*"declaration"'
+stdout '"path":\s*"encoding/json"'
+stdout '"name":\s*"fmtx"'
+stdout '"name":\s*"\."'
+cmp api/server.go want/api/server.go
+exec semedit inspect-symbol --file api/group.go --symbol IotaTarget
+stdout '"kind":\s*"constant"'
+stdout '"qualified_name":\s*"IotaTarget"'
+stdout 'IotaTarget'
+stdout 'iota'
+stdout 'last'
+exec semedit inspect-symbol --file api/group.go --symbol LocalTarget
+stdout '"kind":\s*"variable"'
+stdout '"source":\s*"LocalTarget := \\\"local\\\""'
+exec semedit inspect-symbol --file api/server_test.go --symbol TestGroup
+stdout '"kind":\s*"function"'
+exec semedit inspect-symbol --symbol Child.Inherited
+stdout '"name":\s*"Inherited"'
+stdout '"qualified_name":\s*"Child.Inherited"'
+stdout '"file":\s*"api/base.go"'
+exec semedit inspect-symbol --symbol Duplicate
+stdout '"matches":\s*\['
+stdout '"file":\s*"ambiguous/a.go"'
+stdout '"file":\s*"ambiguous/b.go"'
+! semedit inspect-symbol --symbol MissingSymbol
+stderr 'symbol not found'
+
+-- go.mod --
+module example.com/readinspect
+go 1.23
+
+-- api/server.go --
+package api
+
+import (
+	fmtx "encoding/json"
+	. "strings"
+	_ "net/http/httptest"
+	"net/http"
+)
+
+type Server struct{}
+
+func (s *Server) Start() {}
+-- api/group.go --
+package api
+
+const (
+	First = iota
+	secret, IotaTarget = 5, First + 1
+	last
+)
+
+func calculate() {
+	LocalTarget := "local"
+	_ = LocalTarget
+}
+
+-- api/server_test.go --
+package api
+
+func TestGroup() {}
+-- api/base.go --
+package api
+
+type Parent interface {
+	Inherited() string
+}
+-- api/child.go --
+package api
+
+type Child interface { Parent }
+-- ambiguous/a.go --
+package a
+
+func Duplicate() {}
+-- ambiguous/b.go --
+package b
+
+func Duplicate() {}
+-- want/api/server.go --
+package api
+
+import (
+	fmtx "encoding/json"
+	. "strings"
+	_ "net/http/httptest"
+	"net/http"
+)
+
+type Server struct{}
+
+func (s *Server) Start() {}

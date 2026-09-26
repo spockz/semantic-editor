@@ -4,6 +4,8 @@ package operation_test
 import (
 	"errors"
 	"maps"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -63,8 +65,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 20 {
-		t.Errorf("registered operations = %d, want 20", len(entries))
+	if len(entries) != 22 {
+		t.Errorf("registered operations = %d, want 22", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -167,6 +169,12 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	if _, ok := registry.LookupMCP("semantic_verify"); !ok {
 		t.Error("LookupMCP(semantic_verify) missed")
 	}
+	if _, ok := registry.LookupMCP("semantic_inspect_symbol"); !ok {
+		t.Error("LookupMCP(semantic_inspect_symbol) missed")
+	}
+	if _, ok := registry.LookupMCP("semantic_outline"); !ok {
+		t.Error("LookupMCP(semantic_outline) missed")
+	}
 	if _, ok := registry.LookupCLI("lookup"); !ok {
 		t.Error("LookupCLI(lookup) missed")
 	}
@@ -175,6 +183,12 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	}
 	if _, ok := registry.LookupCLI("verify"); !ok {
 		t.Error("LookupCLI(verify) missed")
+	}
+	if _, ok := registry.LookupCLI("inspect-symbol"); !ok {
+		t.Error("LookupCLI(inspect-symbol) missed")
+	}
+	if _, ok := registry.LookupCLI("outline"); !ok {
+		t.Error("LookupCLI(outline) missed")
 	}
 }
 
@@ -214,11 +228,11 @@ func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	}
 }
 
-func TestExactlyLookupIsReadOnly(t *testing.T) {
+func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
@@ -275,5 +289,42 @@ func TestLookupSharedProjectParserPreservesBackendConfiguration(t *testing.T) {
 	}
 	if lookup.Symbol != "Widget" {
 		t.Errorf("lookup symbol = %q, want Widget", lookup.Symbol)
+	}
+}
+
+func TestOutlineDirectoryDispatchUsesEffectiveRootBeforeLanguageSelection(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/outline\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "generated.java")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "source.go"), []byte("package sample\nfunc Ready() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, explicitLanguage := range []bool{false, true} {
+		name := "auto language"
+		raw := map[string]any{"path": "generated.java"}
+		if explicitLanguage {
+			name = "explicit language"
+			raw["language"] = "go"
+		}
+		t.Run(name, func(t *testing.T) {
+			cc := operation.NewCallContext(root, backend.ProjectContext{RootDir: root})
+			result, err := cc.Registry.Dispatch(cc, "outline", raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outline, ok := result.(*backend.OutlineResult)
+			if !ok {
+				t.Fatalf("result type = %T, want *backend.OutlineResult", result)
+			}
+			if outline.Scope.Path != "generated.java" || len(outline.Files) != 1 || outline.Files[0].File != "generated.java/source.go" {
+				t.Fatalf("outline = %#v, want selected directory contents", outline)
+			}
+		})
 	}
 }

@@ -38,7 +38,7 @@ func (GoBackend) SupportedStructures() []backend.StructureKind {
 
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify)
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationOutline)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Go backend.
@@ -97,6 +97,24 @@ func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 				CLICommand:   "semedit lookup --file <path> --symbol <sym>",
 				MCPTool:      "resolve_symbol_location",
 				PlacementKey: false,
+			},
+			"inspect_symbol": {
+				Supported:    true,
+				Description:  "Resolve a Go declaration and return its exact source snapshot, revision, range, signature, docs, imports, and type metadata.",
+				CLICommand:   "semedit inspect-symbol --symbol <name> [--file <path>]",
+				MCPTool:      "semantic_inspect_symbol",
+				PlacementKey: false,
+				Level:        "symbol",
+				ReadOnly:     true,
+			},
+			"outline": {
+				Supported:    true,
+				Description:  "Return a file-centric Go declaration outline with optional kind, visibility, and test-file filters.",
+				CLICommand:   "semedit outline --path <file-or-directory>",
+				MCPTool:      "semantic_outline",
+				PlacementKey: false,
+				Level:        "symbol",
+				ReadOnly:     true,
 			},
 			"verify": {
 				Supported:    true,
@@ -232,6 +250,16 @@ func (GoBackend) Verify(ctx context.Context, request backend.VerifyRequest) ([]b
 		result = append(result, backend.Diagnostic{Message: message, Severity: 1})
 	}
 	return result, nil
+}
+
+// Inspect resolves a Go declaration and returns its exact source snapshot.
+func (GoBackend) Inspect(_ context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
+	return astedit.InspectGo(request.Project.RootDir, request.Project.File, request.Symbol)
+}
+
+// Outline returns a file-centric declaration projection for a Go source selection.
+func (GoBackend) Outline(_ context.Context, request backend.OutlineRequest) (*backend.OutlineResult, error) {
+	return astedit.OutlineGo(request.Project.RootDir, request.Path, request.Kinds, request.IncludeUnexported, request.IncludeTests)
 }
 
 func convertCandidate(root string, candidate *symbol.Symbol) *backend.SymbolCandidate {

@@ -364,8 +364,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed.",
 		Params:  lookupParams,
 		Level:   LevelSymbol,
-		// The only read-only operation: lookup never mutates the workspace.
-		// Every other operation (including verify, which reformats) is refactoring.
+		// Lookup is read-only; edit and verification operations can change source.
 		ReadOnly: true,
 		CLIName:  "lookup",
 		MCPName:  "semantic_lookup",
@@ -450,6 +449,9 @@ func DefaultRegistry() *Registry {
 		panic(err)
 	}
 	if err := Register(registry, verifyDef()); err != nil {
+		panic(err)
+	}
+	if err := registerReadInspectOps(registry); err != nil {
 		panic(err)
 	}
 	if err := registerEngineOps(registry); err != nil {
