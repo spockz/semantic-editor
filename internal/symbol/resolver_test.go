@@ -403,3 +403,56 @@ func TestResolveDefinedInterfaceIndirection(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveSnapshotCapturesSelectedAndInheritedSources(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	selectedPath := filepath.Join(dir, "outer.go")
+	inheritedPath := filepath.Join(dir, "base.go")
+	selectedSource := []byte("package api\ntype Outer interface { Base }\n")
+	inheritedSource := []byte("package api\ntype Base interface { Write() }\n")
+	if err := os.WriteFile(selectedPath, selectedSource, 0o600); err != nil {
+		t.Fatalf("write selected source: %v", err)
+	}
+	if err := os.WriteFile(inheritedPath, inheritedSource, 0o600); err != nil {
+		t.Fatalf("write inherited source: %v", err)
+	}
+
+	snapshot, err := symbol.ResolveSnapshot(dir, "outer.go", "Outer.Write")
+	if err != nil {
+		t.Fatalf("ResolveSnapshot: %v", err)
+	}
+	if snapshot.Result.Definition == nil || snapshot.Result.Definition.File != "base.go" {
+		t.Fatalf("definition = %#v, want actual inherited declaration in base.go", snapshot.Result.Definition)
+	}
+	selectedKey, err := filepath.Abs(selectedPath)
+	if err != nil {
+		t.Fatalf("resolve selected path: %v", err)
+	}
+	inheritedKey, err := filepath.Abs(inheritedPath)
+	if err != nil {
+		t.Fatalf("resolve inherited path: %v", err)
+	}
+	if got := string(snapshot.Files[filepath.Clean(selectedKey)]); got != string(selectedSource) {
+		t.Fatalf("selected snapshot = %q, want %q", got, selectedSource)
+	}
+	if got := string(snapshot.Files[filepath.Clean(inheritedKey)]); got != string(inheritedSource) {
+		t.Fatalf("inherited snapshot = %q, want %q", got, inheritedSource)
+	}
+	if len(snapshot.Files) != 2 {
+		t.Fatalf("snapshot files = %d, want selected and inherited declarations", len(snapshot.Files))
+	}
+
+	if err := os.WriteFile(selectedPath, []byte("package changed\n"), 0o600); err != nil {
+		t.Fatalf("mutate selected source after resolution: %v", err)
+	}
+	if err := os.WriteFile(inheritedPath, []byte("package changed\n"), 0o600); err != nil {
+		t.Fatalf("mutate inherited source after resolution: %v", err)
+	}
+	if got := string(snapshot.Files[filepath.Clean(selectedKey)]); got != string(selectedSource) {
+		t.Errorf("selected snapshot changed after disk mutation: %q", got)
+	}
+	if got := string(snapshot.Files[filepath.Clean(inheritedKey)]); got != string(inheritedSource) {
+		t.Errorf("inherited snapshot changed after disk mutation: %q", got)
+	}
+}

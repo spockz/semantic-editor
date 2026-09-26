@@ -9,6 +9,7 @@ import (
 	"go/scanner"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,67 +86,16 @@ func normalizeInput(raw string) string {
 
 // Resolve locates a symbol within a target file or workspace directory.
 func Resolve(rootDir string, filePath string, query string) (*LookupResult, error) {
-	recv, name, err := ParseIdentifier(query)
+	snapshot, err := ResolveSnapshot(rootDir, filePath, query)
 	if err != nil {
-		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
+		return nil, err
 	}
-
-	targetFiles, err := resolveTargetFiles(rootDir, filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan workspace: %w", err)
-	}
-
-	packageIndexes := make(map[string]*packageTypeIndex)
-	var declarations, usages []*Symbol
-	for _, file := range targetFiles {
-		symbols, scanErr := scanFile(file, recv, name, packageIndexes)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		for _, candidate := range symbols {
-			candidate.QualifiedName = candidate.BuildQualifiedName()
-			if rootDir != "" {
-				if relative, relErr := filepath.Rel(rootDir, candidate.File); relErr == nil && !strings.HasPrefix(relative, "..") {
-					candidate.File = relative
-				}
-			}
-			if isLocalBinding(candidate.Kind) {
-				usages = append(usages, candidate)
-			} else {
-				declarations = append(declarations, candidate)
-			}
-		}
-	}
-
-	result := &LookupResult{Usages: usages}
-	if len(declarations) > 0 {
-		if len(declarations) > 1 {
-			result.Ambiguous = true
-			result.Candidates = declarations
-			return result, nil
-		}
-		result.Definition = declarations[0]
-		setLegacyDefinition(result, result.Definition)
-		return result, nil
-	}
-
-	if len(usages) == 0 {
-		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: ErrNotFound}
-	}
-	if len(usages) > 1 {
-		result.Ambiguous = true
-		result.Candidates = usages
-		return result, nil
-	}
-	result.Definition = usages[0]
-	setLegacyDefinition(result, result.Definition)
-	return result, nil
+	return snapshot.Result, nil
 }
 
-func scanFile(filePath string, targetRecv string, targetName string, packageIndexes map[string]*packageTypeIndex) ([]*Symbol, error) {
+func scanFile(filePath string, targetRecv string, targetName string, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) ([]*Symbol, error) {
 	cleanPath := filepath.Clean(filePath)
-	// #nosec G304 -- reading verified target go source files
-	src, err := os.ReadFile(cleanPath)
+	src, err := reader.read(cleanPath)
 	if err != nil {
 		return nil, &SymbolError{Op: "read", File: cleanPath, Symbol: targetName, Err: err}
 	}
@@ -179,7 +129,7 @@ func scanFile(filePath string, targetRecv string, targetName string, packageInde
 				}
 				index = packageIndexes[key]
 				if index == nil {
-					index, err = loadPackageTypeIndex(filePath, node.Name.Name)
+					index, err = loadPackageTypeIndex(filePath, node.Name.Name, reader)
 					if err != nil {
 						return nil, fmt.Errorf("index interface declarations for %s: %w", filePath, err)
 					}
@@ -341,4 +291,103 @@ func setLegacyDefinition(result *LookupResult, definition *Symbol) {
 	result.Offset = definition.Offset
 	result.Kind = definition.Kind
 	result.Receiver = definition.Receiver
+}
+
+// ResolutionSnapshot contains a lookup result and the exact source bytes read while resolving it.
+type ResolutionSnapshot struct {
+	Result *LookupResult
+	Files  map[string][]byte
+}
+
+type sourceSnapshotReader struct {
+	files map[string][]byte
+}
+
+func newSourceSnapshotReader() *sourceSnapshotReader {
+	return &sourceSnapshotReader{files: make(map[string][]byte)}
+}
+
+func (reader *sourceSnapshotReader) read(path string) ([]byte, error) {
+	cleanPath := filepath.Clean(path)
+	absolutePath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve source path %s: %w", cleanPath, err)
+	}
+	key := filepath.Clean(absolutePath)
+	if source, ok := reader.files[key]; ok {
+		return source, nil
+	}
+	// #nosec G304 -- caller supplies a Go source path discovered by the resolver.
+	source, err := os.ReadFile(cleanPath)
+	if err != nil {
+		return nil, err
+	}
+	reader.files[key] = source
+	return source, nil
+}
+
+func (reader *sourceSnapshotReader) snapshot() map[string][]byte {
+	files := make(map[string][]byte, len(reader.files))
+	maps.Copy(files, reader.files)
+	return files
+}
+
+// ResolveSnapshot resolves a symbol and returns the exact source files read during lookup.
+func ResolveSnapshot(rootDir string, filePath string, query string) (*ResolutionSnapshot, error) {
+	recv, name, err := ParseIdentifier(query)
+	if err != nil {
+		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
+	}
+
+	targetFiles, err := resolveTargetFiles(rootDir, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan workspace: %w", err)
+	}
+
+	reader := newSourceSnapshotReader()
+	packageIndexes := make(map[string]*packageTypeIndex)
+	var declarations, usages []*Symbol
+	for _, file := range targetFiles {
+		symbols, scanErr := scanFile(file, recv, name, packageIndexes, reader)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		for _, candidate := range symbols {
+			candidate.QualifiedName = candidate.BuildQualifiedName()
+			if rootDir != "" {
+				if relative, relErr := filepath.Rel(rootDir, candidate.File); relErr == nil && !strings.HasPrefix(relative, "..") {
+					candidate.File = relative
+				}
+			}
+			if isLocalBinding(candidate.Kind) {
+				usages = append(usages, candidate)
+			} else {
+				declarations = append(declarations, candidate)
+			}
+		}
+	}
+
+	result := &LookupResult{Usages: usages}
+	if len(declarations) > 0 {
+		if len(declarations) > 1 {
+			result.Ambiguous = true
+			result.Candidates = declarations
+			return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
+		}
+		result.Definition = declarations[0]
+		setLegacyDefinition(result, result.Definition)
+		return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
+	}
+
+	if len(usages) == 0 {
+		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: ErrNotFound}
+	}
+	if len(usages) > 1 {
+		result.Ambiguous = true
+		result.Candidates = usages
+		return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
+	}
+	result.Definition = usages[0]
+	setLegacyDefinition(result, result.Definition)
+	return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
 }

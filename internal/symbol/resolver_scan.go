@@ -192,7 +192,7 @@ type packageTypeIndex struct {
 	types map[string][]indexedTypeDeclaration
 }
 
-func loadPackageTypeIndex(filePath, packageName string) (*packageTypeIndex, error) {
+func loadPackageTypeIndex(filePath, packageName string, reader *sourceSnapshotReader) (*packageTypeIndex, error) {
 	selectedIsTest := strings.HasSuffix(filePath, "_test.go")
 	entries, err := os.ReadDir(filepath.Dir(filePath))
 	if err != nil {
@@ -205,8 +205,7 @@ func loadPackageTypeIndex(filePath, packageName string) (*packageTypeIndex, erro
 			continue
 		}
 		path := filepath.Join(filepath.Dir(filePath), name)
-		// #nosec G304 -- path is bounded to one regular Go file in the selected package directory.
-		source, err := os.ReadFile(path)
+		source, err := reader.read(path)
 		if err != nil {
 			return nil, fmt.Errorf("read package source %s: %w", path, err)
 		}
