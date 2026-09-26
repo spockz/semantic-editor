@@ -9,12 +9,37 @@ import (
 	"os"
 	"path/filepath"
 	"semedit/internal/pipeline"
+	"strings"
 	"time"
 )
 
 func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, classification string, result *RunResult) error {
 	started := time.Now()
 	resumeID, runErr := s.adapter.run(ctx, s.workDir, target, prompt, result, s.resumeID)
+	if classification == "task" {
+		if runErr != nil && result.toolObservationState != ToolObservationPartial {
+			result.toolObservationState = ToolObservationPartial
+			result.toolObservationReason = runErr.Error()
+		}
+		if result.toolObservationState == "" {
+			result.toolObservationState = ToolObservationUnknown
+			result.toolObservationReason = "provider did not confirm complete tool observation capture"
+		}
+		if s.taskObservationTurns == 0 {
+			s.toolObservationState = result.toolObservationState
+			if result.toolObservationReason != "" {
+				s.toolObservationReasons = append(s.toolObservationReasons, result.toolObservationReason)
+			}
+		} else if result.toolObservationState != ToolObservationComplete {
+			if result.toolObservationState == ToolObservationPartial || s.toolObservationState == ToolObservationComplete {
+				s.toolObservationState = result.toolObservationState
+			}
+			if result.toolObservationReason != "" {
+				s.toolObservationReasons = append(s.toolObservationReasons, result.toolObservationReason)
+			}
+		}
+		s.taskObservationTurns++
+	}
 	refreshMCPVerified(result)
 	finished := time.Now()
 	if resumeID != "" {
@@ -51,6 +76,22 @@ func (s *agentSession) evaluate(ctx context.Context, result *RunResult) error {
 }
 
 func (s *agentSession) close() error {
+	if s.result != nil {
+		state := s.toolObservationState
+		reason := strings.Join(s.toolObservationReasons, "; ")
+		if s.taskObservationTurns == 0 {
+			state = ToolObservationUnknown
+			reason = "no task turn produced tool observation evidence"
+		}
+		s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
+		if s.execution.Arm == ArmSemedit && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls)) {
+			if s.result.Error != "" {
+				s.result.DiagnosticReflectionSkipped = "task execution or oracle evaluation failed"
+			} else {
+				s.result.DiagnosticReflectionSkipped = "final task oracle did not pass"
+			}
+		}
+	}
 	if s.retainWorkDir {
 		if s.result != nil {
 			if s.result.Provenance == nil {
@@ -104,18 +145,21 @@ func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
 }
 
 type agentSession struct {
-	adapter        providerAdapter
-	execution      AgentExecution
-	workDir        string
-	transcriptPath string
-	resumeID       string
-	turns          []sessionTurn
-	started        time.Time
-	beforeFiles    workspaceSnapshot
-	initialPath    string
-	beforeContent  string
-	result         *RunResult
-	retainWorkDir  bool
+	adapter                providerAdapter
+	execution              AgentExecution
+	workDir                string
+	transcriptPath         string
+	resumeID               string
+	turns                  []sessionTurn
+	started                time.Time
+	beforeFiles            workspaceSnapshot
+	initialPath            string
+	beforeContent          string
+	result                 *RunResult
+	retainWorkDir          bool
+	toolObservationState   ToolObservationState
+	taskObservationTurns   int
+	toolObservationReasons []string
 }
 
 type sessionTurn struct {
@@ -214,7 +258,7 @@ func newAgentSession(adapter providerAdapter, baseDir, runID, workDir string) (*
 		return nil, fmt.Errorf("create session transcript directory: %w", err)
 	}
 	transcriptPath := filepath.Join(transcriptDir, runID+".json")
-	return &agentSession{adapter: adapter, workDir: workDir, transcriptPath: transcriptPath}, nil
+	return &agentSession{adapter: adapter, workDir: workDir, transcriptPath: transcriptPath, toolObservationState: ToolObservationUnknown}, nil
 }
 
 func errorString(err error) string {

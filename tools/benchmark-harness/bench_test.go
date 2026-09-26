@@ -294,7 +294,7 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
 	t.Parallel()
 
-	if !shouldRequestSemanticToolReflection(ArmSemedit, "thread-123", &RunResult{}) {
+	if !shouldRequestSemanticToolReflection(ArmSemedit, "thread-123", &RunResult{Success: true}) {
 		t.Fatal("unverified semantic run should request a reflection")
 	}
 	for _, test := range []struct {
@@ -303,9 +303,9 @@ func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
 		sessionID string
 		result    *RunResult
 	}{
-		{name: "baseline", arm: ArmBaseline, sessionID: "thread-123", result: &RunResult{}},
-		{name: "no session", arm: ArmSemedit, result: &RunResult{}},
-		{name: "semantic confirmed", arm: ArmSemedit, sessionID: "thread-123", result: &RunResult{MCPVerified: true}},
+		{name: "baseline", arm: ArmBaseline, sessionID: "thread-123", result: &RunResult{Success: true}},
+		{name: "no session", arm: ArmSemedit, result: &RunResult{Success: true}},
+		{name: "semantic confirmed", arm: ArmSemedit, sessionID: "thread-123", result: &RunResult{MCPVerified: true, Success: true}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if shouldRequestSemanticToolReflection(test.arm, test.sessionID, test.result) {
@@ -323,7 +323,7 @@ func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"type":"item.completed","item":{"type":"agent_message","text":"Ordinary editing seemed simpler."}}`), &event); err != nil {
 		t.Fatal(err)
 	}
-	result := &RunResult{}
+	result := &RunResult{Success: true}
 	appendCodexAgentResponse(result, event.Item)
 	if got, want := result.agentResponse, "Ordinary editing seemed simpler."; got != want {
 		t.Errorf("captured reflection = %q, want %q", got, want)
@@ -333,14 +333,14 @@ func TestSemanticToolReflectionOnlyFollowsUnverifiedSemanticRuns(t *testing.T) {
 func TestSemanticBatchReflectionRequiresConsecutiveUnbatchedCalls(t *testing.T) {
 	t.Parallel()
 
-	result := &RunResult{MCPVerified: true, ToolCalls: []ToolCall{
+	result := &RunResult{MCPVerified: true, Success: true, ToolCalls: []ToolCall{
 		{Name: "semantic_rename", Server: "semedit"},
 		{Name: "semantic_insert_function", Server: "semedit"},
 	}}
 	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", result) {
 		t.Fatal("consecutive unbatched semantic calls should request a reflection")
 	}
-	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{ToolCalls: result.ToolCalls}) {
+	if !shouldRequestSemanticBatchReflection(ArmSemedit, "thread-123", &RunResult{Success: true, ToolCalls: result.ToolCalls}) {
 		t.Fatal("attempted consecutive semantic calls should request a reflection even when transport was not confirmed")
 	}
 	for _, test := range []struct {
@@ -349,8 +349,8 @@ func TestSemanticBatchReflectionRequiresConsecutiveUnbatchedCalls(t *testing.T) 
 		result *RunResult
 	}{
 		{name: "baseline", arm: ArmBaseline, result: result},
-		{name: "separated", arm: ArmSemedit, result: &RunResult{MCPVerified: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "shell", Server: "local"}, {Name: "semantic_insert_function", Server: "semedit"}}}},
-		{name: "batch", arm: ArmSemedit, result: &RunResult{MCPVerified: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "semantic_insert_function", Server: "semedit"}, {Name: "mcp__semedit__semantic_batch"}}}},
+		{name: "separated", arm: ArmSemedit, result: &RunResult{MCPVerified: true, Success: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "shell", Server: "local"}, {Name: "semantic_insert_function", Server: "semedit"}}}},
+		{name: "batch", arm: ArmSemedit, result: &RunResult{MCPVerified: true, Success: true, ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit"}, {Name: "semantic_insert_function", Server: "semedit"}, {Name: "mcp__semedit__semantic_batch"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if shouldRequestSemanticBatchReflection(test.arm, "thread-123", test.result) {
@@ -1078,6 +1078,88 @@ func TestEvaluateKeepsHiddenTestsOutOfAgentWorkspace(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(workDir, ".scratch")); !os.IsNotExist(err) {
 				t.Fatalf("private oracle workspace remains before resumed turn: stat error = %v", err)
+			}
+		})
+	}
+}
+
+func TestDiagnosticExpectedToolsAreParsedFromOracleMetadata(t *testing.T) {
+	data := []byte(`task_id: diagnostic-tools
+oracle:
+  diagnostic_expected_tools:
+    - "mcp__semedit__semantic_lookup"
+    - "semantic_replace_body"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+`)
+	metadata, err := parseYAMLFrontmatter(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"mcp__semedit__semantic_lookup", "semantic_replace_body"}
+	if !slices.Equal(metadata.Oracle.DiagnosticExpectedTools, want) {
+		t.Fatalf("diagnostic expected tools = %v, want %v", metadata.Oracle.DiagnosticExpectedTools, want)
+	}
+}
+
+func TestCodexToolObservationRequiresTerminalTurnAndNamedToolEvents(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(bin, "codex")
+	program := `#!/bin/sh
+printf '{"type":"thread.started","thread_id":"capture-test"}\n'
+case "$SEMEDIT_CODEX_CAPTURE_CASE" in
+  unfinished)
+    printf '{"type":"turn.started"}\n'
+    printf '{"type":"turn.completed"}\n'
+    printf '{"type":"turn.started"}\n'
+    ;;
+  malformed_tool)
+    printf '{"type":"turn.started"}\n'
+    printf '{"type":"item.completed","item":{"type":"mcp_tool_call","status":"completed"}}\n'
+    printf '{"type":"turn.completed"}\n'
+    ;;
+  complete)
+    printf '{"type":"turn.started"}\n'
+    printf '{"type":"turn.completed"}\n'
+    ;;
+esac
+`
+	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	runner := NewRunner(filepath.Join(root, "scratch"))
+	for _, test := range []struct {
+		name       string
+		state      ToolObservationState
+		wantErr    bool
+		wantReason string
+	}{
+		{name: "unfinished latest turn", state: ToolObservationPartial, wantReason: "terminal turn.completed"},
+		{name: "unnamed selected tool", state: ToolObservationPartial, wantReason: "malformed tool call records"},
+		{name: "terminal capture", state: ToolObservationComplete},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mode := "complete"
+			if strings.Contains(test.name, "unfinished") {
+				mode = "unfinished"
+			} else if strings.Contains(test.name, "unnamed") {
+				mode = "malformed_tool"
+			}
+			t.Setenv("SEMEDIT_CODEX_CAPTURE_CASE", mode)
+			result := &RunResult{Arm: ArmBaseline}
+			_, err := runner.runCodex(t.Context(), root, Target{Harness: string(HarnessCodex)}, "prompt", result, "")
+			if (err != nil) != test.wantErr {
+				t.Fatalf("runCodex error = %v, want error=%t", err, test.wantErr)
+			}
+			if result.toolObservationState != test.state || (test.wantReason != "" && !strings.Contains(result.toolObservationReason, test.wantReason)) {
+				t.Fatalf("observation state/reason = %q/%q", result.toolObservationState, result.toolObservationReason)
 			}
 		})
 	}

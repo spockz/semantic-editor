@@ -140,6 +140,24 @@ type InteractionStep struct {
 	Error     string        `json:"error,omitempty"`
 }
 
+type DiagnosticToolCoverage struct {
+	Expected           []string             `json:"expected"`
+	Observed           []string             `json:"observed"`
+	Missing            []string             `json:"missing"`
+	ObservationState   ToolObservationState `json:"observation_state"`
+	Complete           bool                 `json:"complete"`
+	ExpectedSatisfied  bool                 `json:"expected_satisfied"`
+	CompletenessReason string               `json:"completeness_reason,omitempty"`
+}
+
+type ToolObservationState string
+
+const (
+	ToolObservationUnknown  ToolObservationState = "unknown"
+	ToolObservationComplete ToolObservationState = "complete"
+	ToolObservationPartial  ToolObservationState = "partial"
+)
+
 // SemanticToolReflection records a diagnostic-only follow-up after semantic tool-use behavior needs explanation.
 type SemanticToolReflection struct {
 	Prompt    string        `json:"prompt"`
@@ -215,6 +233,10 @@ type RunResult struct {
 	ToolsUsed                        []string                 `json:"tools_used,omitempty"`
 	ToolCalls                        []ToolCall               `json:"tool_calls,omitempty"`
 	InteractionSteps                 []InteractionStep        `json:"interaction_steps,omitempty"`
+	DiagnosticToolCoverage           *DiagnosticToolCoverage  `json:"diagnostic_tool_coverage,omitempty"`
+	DiagnosticReflectionSkipped      string                   `json:"diagnostic_reflection_skipped,omitempty"`
+	toolObservationState             ToolObservationState     `json:"-"`
+	toolObservationReason            string                   `json:"-"`
 	SemanticToolReflection           *SemanticToolReflection  `json:"semantic_tool_reflection,omitempty"`
 	SemanticBatchReflection          *SemanticToolReflection  `json:"semantic_batch_reflection,omitempty"`
 	MCPVerified                      bool                     `json:"mcp_verified"`
@@ -429,4 +451,49 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	res.Oracle = oracleRes
 	res.Success = oracleRes.Passed
 	return res, nil
+}
+
+func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObservationState, reason string) *DiagnosticToolCoverage {
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, name := range expected {
+		if normalized := strings.TrimSpace(semanticToolBaseName(name)); normalized != "" {
+			expectedSet[normalized] = struct{}{}
+		}
+	}
+	if len(expectedSet) == 0 {
+		return nil
+	}
+
+	observedSet := make(map[string]struct{}, len(calls))
+	for _, call := range calls {
+		if normalized := strings.TrimSpace(semanticToolBaseName(call.Name)); normalized != "" {
+			observedSet[normalized] = struct{}{}
+		}
+	}
+
+	coverage := &DiagnosticToolCoverage{
+		ObservationState:   state,
+		Complete:           state == ToolObservationComplete,
+		CompletenessReason: reason,
+		ExpectedSatisfied:  true,
+	}
+	if state == ToolObservationComplete {
+		coverage.Missing = make([]string, 0)
+	}
+	for name := range expectedSet {
+		coverage.Expected = append(coverage.Expected, name)
+		if _, found := observedSet[name]; !found {
+			coverage.ExpectedSatisfied = false
+			if coverage.Complete {
+				coverage.Missing = append(coverage.Missing, name)
+			}
+		}
+	}
+	for name := range observedSet {
+		coverage.Observed = append(coverage.Observed, name)
+	}
+	sort.Strings(coverage.Expected)
+	sort.Strings(coverage.Observed)
+	sort.Strings(coverage.Missing)
+	return coverage
 }

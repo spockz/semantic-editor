@@ -35,10 +35,11 @@ type TaskMetadata struct {
 
 // OracleConfig specifies the validation criteria across evaluation levels.
 type OracleConfig struct {
-	MutationPolicy MutationPolicyConfig `json:"level_1_mutation_policy"`
-	AST            ASTConfig            `json:"level_2_ast"`
-	Build          BuildConfig          `json:"level_3_build"`
-	Test           TestConfig           `json:"level_4_test"`
+	MutationPolicy          MutationPolicyConfig `json:"level_1_mutation_policy"`
+	AST                     ASTConfig            `json:"level_2_ast"`
+	Build                   BuildConfig          `json:"level_3_build"`
+	Test                    TestConfig           `json:"level_4_test"`
+	DiagnosticExpectedTools []string             `json:"diagnostic_expected_tools,omitempty"`
 }
 
 // MutationPolicyConfig defines file modification constraints.
@@ -150,6 +151,8 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 				meta.Contexts = append(meta.Contexts, itemVal)
 			case "interactive_followups":
 				meta.InteractiveFollowups = append(meta.InteractiveFollowups, itemVal)
+			case "oracle.diagnostic_expected_tools":
+				meta.Oracle.DiagnosticExpectedTools = append(meta.Oracle.DiagnosticExpectedTools, itemVal)
 			case "oracle.level_1_mutation_policy.disallowed_files":
 				meta.Oracle.MutationPolicy.DisallowedFiles = append(meta.Oracle.MutationPolicy.DisallowedFiles, itemVal)
 			case "oracle.level_2_ast.must_contain_symbols":

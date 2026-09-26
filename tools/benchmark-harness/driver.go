@@ -226,11 +226,11 @@ const semanticToolReflectionPrompt = "The benchmark task is complete. For benchm
 const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
 
 func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return arm == ArmSemedit && sessionID != "" && result != nil && !result.MCPVerified
+	return arm == ArmSemedit && sessionID != "" && result != nil && result.Success && !result.MCPVerified
 }
 
 func shouldRequestSemanticBatchReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return arm == ArmSemedit && sessionID != "" && result != nil && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
+	return arm == ArmSemedit && sessionID != "" && result != nil && result.Success && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
 }
 
 func hasConsecutiveUnbatchedSemanticToolCalls(calls []ToolCall) bool {

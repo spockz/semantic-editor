@@ -130,6 +130,17 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w", waitErr))
 		}
 	}
+	switch {
+	case providerErr != nil:
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = providerErr.Error()
+	case sessionID == "" || validEvents == 0:
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = "OpenCode stream lacks a session ID or valid events"
+	default:
+		res.toolObservationState = ToolObservationUnknown
+		res.toolObservationReason = "OpenCode adapter has no validated terminal event marker"
+	}
 	if providerErr != nil {
 		return sessionID, providerErr
 	}

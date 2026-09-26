@@ -66,6 +66,7 @@ type codexToolTracker struct {
 	mutatingSeen      bool
 	firstToolCallAt   time.Time
 	eventDecodeErrors int
+	observationErrors int
 }
 
 func (t *codexToolTracker) observe(res *RunResult, item *codexItem, observedAt time.Time) {
@@ -77,6 +78,7 @@ func (t *codexToolTracker) observe(res *RunResult, item *codexItem, observedAt t
 	}
 	name := codexToolName(item)
 	if name == "" {
+		t.observationErrors++
 		return
 	}
 	if item.Status == "in_progress" {
@@ -349,6 +351,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	turns := 0
+	sawTerminalTurn := false
 	validEvents := 0
 	tracker := codexToolTracker{}
 	var firstEventAt time.Time
@@ -370,6 +373,10 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 		}
 		if ev.Type == "turn.started" {
 			turns++
+			sawTerminalTurn = false
+		}
+		if ev.Type == "turn.completed" {
+			sawTerminalTurn = true
 		}
 		if ev.Type == "thread.started" && ev.ThreadID != "" {
 			threadID = ev.ThreadID
@@ -417,6 +424,11 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 		} else {
 			providerErr = errors.Join(providerErr, fmt.Errorf("run codex: %w", waitErr))
 		}
+	}
+	setCodexObservationState(res, providerErr, sawTerminalTurn)
+	if providerErr == nil && sawTerminalTurn && tracker.observationErrors > 0 {
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = fmt.Sprintf("Codex observed %d malformed tool call records", tracker.observationErrors)
 	}
 	if providerErr != nil {
 		return threadID, providerErr
@@ -489,5 +501,18 @@ func (r *Runner) codexMCPServerInstructionsOverride() (string, error) {
 		return "mcp_servers.semedit.args=[" + strings.Join(quoted, ",") + "]", nil
 	default:
 		return "", fmt.Errorf("unsupported MCP server instruction mode %q", r.mcpServerInstructionsMode)
+	}
+}
+
+func setCodexObservationState(result *RunResult, providerErr error, terminalTurn bool) {
+	switch {
+	case providerErr != nil:
+		result.toolObservationState = ToolObservationPartial
+		result.toolObservationReason = providerErr.Error()
+	case terminalTurn:
+		result.toolObservationState = ToolObservationComplete
+	default:
+		result.toolObservationState = ToolObservationPartial
+		result.toolObservationReason = "Codex stream ended without a terminal turn.completed event"
 	}
 }

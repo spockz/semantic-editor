@@ -132,6 +132,13 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 		responseErr = errors.Join(responseErr, fmt.Errorf("agy did not emit a conversation ID"))
 	}
 	if responseErr != nil {
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = responseErr.Error()
+	} else {
+		res.toolObservationState = ToolObservationUnknown
+		res.toolObservationReason = "Agy adapter has no validated terminal transcript marker"
+	}
+	if responseErr != nil {
 		return resp.ConversationID, responseErr
 	}
 	return resp.ConversationID, nil
