@@ -40,10 +40,10 @@ func (r InspectReq) GetProjectContext() backend.ProjectContext { return r.Projec
 func (r *InspectReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var outlineReadParams = readRequestParams(
-	ParameterContract{Name: "path", CLIName: "path", JSONName: "path", Description: "Go source file or directory to outline", Type: ParamString, Required: true},
-	ParameterContract{Name: "kinds", CLIName: "kind", JSONName: "kinds", Description: "Optional kinds to include: type, interface, function, method, field, constant, variable", Type: ParamStringSlice},
-	ParameterContract{Name: "include_unexported", CLIName: "include-unexported", JSONName: "include_unexported", Description: "Include unexported declarations and members (default true)", Type: ParamBoolean, Default: true},
-	ParameterContract{Name: "include_tests", CLIName: "include-tests", JSONName: "include_tests", Description: "Include _test.go files for directory scopes (default false)", Type: ParamBoolean, Default: false},
+	ParameterContract{Name: "path", CLIName: "path", JSONName: "path", Description: "Source file or directory to outline", Type: ParamString, Required: true},
+	ParameterContract{Name: "kinds", CLIName: "kind", JSONName: "kinds", Description: "Optional kinds to include: type, interface, function, method, field, constant, variable, package, class, constructor, enum, record, module, property, object, enum_member, trait, target; known kinds absent from a backend produce empty symbols", Type: ParamStringSlice},
+	ParameterContract{Name: "include_unexported", CLIName: "include-unexported", JSONName: "include_unexported", Description: "Include unexported Go declarations and members; external backends require true (default true)", Type: ParamBoolean, Default: true},
+	ParameterContract{Name: "include_tests", CLIName: "include-tests", JSONName: "include_tests", Description: "Include _test.go files for Go directory scopes (default false)", Type: ParamBoolean, Default: false},
 )
 
 var inspectReadParams = readRequestParams(
@@ -142,11 +142,13 @@ func formatOutlineRead(result *backend.OutlineResult) (string, error) {
 
 func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 	return Def[InspectReq, *backend.InspectResult]{
-		Key: capability.OpInspect, Summary: "Use this tool instead of reading Go source with shell commands when you need a declaration's exact source, metadata, and snapshot revision.",
+		Key: capability.OpInspect, Summary: "Use this tool instead of reading source with shell commands when you need a declaration's exact source, metadata, and snapshot revision.",
 		Params: inspectReadParams, Level: LevelSymbol, CLIName: "inspect-symbol", MCPName: "semantic_inspect_symbol",
 		ReadOnly: true, Parse: parseInspectRead,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InspectReq) (*backend.InspectResult, error){
-			backend.LanguageGo: inspectReadRun,
+			backend.LanguageGo:   inspectReadRun,
+			backend.LanguageJava: inspectReadRun,
+			backend.LanguageMake: inspectReadRun,
 		},
 		Format:     formatInspectRead,
 		ExampleRaw: map[string]any{"symbol": "Server.Start", "language": "go", wireTrustWorkspace: false},
@@ -155,11 +157,14 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 
 func outlineReadDef() Def[OutlineReq, *backend.OutlineResult] {
 	return Def[OutlineReq, *backend.OutlineResult]{
-		Key: capability.OpOutline, Summary: "Use this tool instead of scanning Go files with shell commands when you need a declaration outline for a file or directory.",
+		Key: capability.OpOutline, Summary: "Use this tool instead of scanning source files with shell commands when you need a declaration outline for a selected source scope; directory scopes are Go-only.",
 		Params: outlineReadParams, Level: LevelSymbol, CLIName: "outline", MCPName: "semantic_outline",
 		ReadOnly: true, Parse: parseOutlineRead, PrepareProject: prepareOutlineProject,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, OutlineReq) (*backend.OutlineResult, error){
-			backend.LanguageGo: outlineReadRun,
+			backend.LanguageGo:   outlineReadRun,
+			backend.LanguageJava: outlineReadRun,
+			backend.LanguageBash: outlineReadRun,
+			backend.LanguageMake: outlineReadRun,
 		},
 		Format:     formatOutlineRead,
 		ExampleRaw: map[string]any{"path": "internal/astedit", "language": "go", "include_unexported": true, "include_tests": false},

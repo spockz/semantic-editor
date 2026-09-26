@@ -248,3 +248,27 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Failure: the method selector was supplied as `FindReferences`; the tool could not resolve it because the receiver is part of the symbol identity. No edit occurred.
 - Workaround: retry with receiver-qualified symbol `(GoBackend).FindReferences`.
 - Root cause: semantic method lookup requires the receiver name.
+
+### 2026-09-26: semantic edit invoked from wrong worktree
+
+- Tool: `semantic_replace_body` and `semantic_insert_construct`
+- Target: `internal/backend/java/java.go` and `internal/backend/java_test.go`
+- Failure: the semantic tools successfully applied the Java rename compatibility comment and regression in the original task checkout instead of the assigned integration worktree; those test results did not exercise the integration branch. The root preserved the patch and restored the original checkout clean.
+- Workaround: reapply only in `.scratch/worktrees/read-inspection`, explicitly pass that workdir to every command, and verify `pwd` plus `git branch --show-current` before each tool invocation.
+- Root cause: the semantic tool used the active checkout binding, which differed from the nested worktree selected for Stage 4.
+
+### 2026-09-26: semantic local variable replacement unsupported
+
+- Tool: `semantic_replace_construct`
+- Target: `internal/backend/java/java.go`, local variable `root` in `resolveJavaReadSelection`
+- Failure: the tool could not find the local declaration when asked to replace `root := ""` with `var root string`; no edit occurred.
+- Workaround: replace the containing function body with `semantic_replace_body` so the local declaration is updated while preserving the function logic.
+- Root cause: construct replacement does not resolve this local declaration selector.
+
+### 2026-09-26: no semantic function-deletion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/java/java.go`, obsolete `javaCharacterOffset`
+- Failure: no exposed semantic operation deletes an unused function declaration after coordinate conversion moved to `readlsp.ByteOffset`.
+- Workaround: remove only that function with a narrow atomic patch; keep the shared converter as the sole implementation.
+- Root cause: the current semantic tool set supports construct insertion/replacement but not declaration deletion.

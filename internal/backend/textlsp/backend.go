@@ -17,6 +17,7 @@ import (
 
 	"semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
 )
@@ -37,6 +38,8 @@ var (
 	// ErrScratchOutsideRoot reports scratch paths that escape the trusted workspace.
 	ErrScratchOutsideRoot = errors.New("isolated LSP scratch path escapes workspace root")
 )
+
+const textDocumentKey = "textDocument"
 
 const readOnlyPreview = "Read-only preview"
 
@@ -84,11 +87,26 @@ func (a *Adapter) CapabilityMatrix() backend.LanguageMatrix {
 		lookupDescription = "Trusted selected-file Make target and assignment-variable lookup from source-mapped make-ls symbols."
 	}
 	ops := map[string]backend.OpCapability{"lookup": {Supported: true, Description: lookupDescription, CLICommand: "semedit lookup --language " + string(a.Language()) + " --file <path> --symbol <sym>", MCPTool: "semantic_lookup"}}
+	ops[string(backend.OperationOutline)] = backend.OpCapability{
+		Supported: true, Description: "Trusted selected-file outline from validated " + server + " document symbols; directory scopes and visibility filtering are Go-only.",
+		CLICommand: "semedit outline --language " + string(a.Language()) + " --path <file>", MCPTool: "semantic_outline", Level: "symbol", ReadOnly: true,
+	}
+	if a.Language() == backend.LanguageMake {
+		ops[string(backend.OperationInspect)] = backend.OpCapability{
+			Supported: true, Description: "Inspect matching Make targets and assignment variables from exact selected-file make-ls source ranges.",
+			CLICommand: "semedit inspect-symbol --language make --file <path> --symbol <name>", MCPTool: "semantic_inspect_symbol", Level: "symbol", ReadOnly: true,
+		}
+	}
 	if a.Config.Diagnostics {
 		ops["verify"] = backend.OpCapability{Supported: true, Description: "Trusted selected-file diagnostics from a matching publishDiagnostics report; formatting and imports are unsupported.", CLICommand: "semedit verify --language bash --file <path>", MCPTool: "semantic_verify"}
 	}
-	limitations := []backend.Constraint{{Title: "Read Only", Description: name + " rename, formatting, imports, and structural edits are unavailable.", Severity: "error"}, {Title: "Trusted Explicit Tools", Description: "Lookup requires a selected " + file + " file inside the canonical workspace, request-scoped trust, and a preinstalled " + server + " executable.", Severity: "error"}}
+	limitations := []backend.Constraint{
+		{Title: "Read Only", Description: name + " rename, formatting, imports, and structural edits are unavailable.", Severity: "error"},
+		{Title: "Trusted Explicit Tools", Description: "Lookup requires a selected " + file + " file inside the canonical workspace, request-scoped trust, and a preinstalled " + server + " executable.", Severity: "error"},
+		{Title: "Selected-File Reads", Description: "External outlines and inspection are limited to one selected file; visibility filtering and directory scopes are Go-only.", Severity: "info"},
+	}
 	if a.Language() == backend.LanguageMake {
+		limitations = append(limitations, backend.Constraint{Title: "Incomplete Make Projection", Description: "Make outlines and inspections are incomplete: continued declarations fail explicitly, while conditional blocks, include-remapped symbols, define blocks, and interrupted recipe ranges remain bounded server projections.", Severity: "info"})
 		limitations = append(limitations, backend.Constraint{Title: "Make Includes", Description: "The isolated make-ls workspace does not constrain include paths outside its copied source; absolute or traversing relative includes may read files after workspace trust is granted.", Severity: "info"})
 		limitations = append(limitations, backend.Constraint{Title: "Make Conditionals", Description: "Conditional DocumentSymbol records span whole blocks and cannot be mapped to a selected-source declaration, so conditional lookup is omitted.", Severity: "info"})
 	}
@@ -96,6 +114,7 @@ func (a *Adapter) CapabilityMatrix() backend.LanguageMatrix {
 		limitations = append(limitations, backend.Constraint{Title: "Matching Diagnostics", Description: "Only an explicit matching publishDiagnostics report is accepted; missing reports time out as errors.", Severity: "info"})
 	}
 	if a.Language() == backend.LanguageBash {
+		limitations = append(limitations, backend.Constraint{Title: "Flat Bash Symbols", Description: "bash-language-server provides flat function and variable locations; declaration extents and nested symbol hierarchy are not inferred.", Severity: "info"})
 		limitations = append(limitations, backend.Constraint{Title: "Optional Shell Tools", Description: "bash-language-server may invoke an installed ShellCheck against the copied selected source; the adapter does not execute the shell script.", Severity: "info"})
 	}
 	return backend.LanguageMatrix{Language: string(a.Language()), DisplayName: name, Maturity: readOnlyPreview, Operations: ops, Limitations: limitations}
@@ -103,7 +122,10 @@ func (a *Adapter) CapabilityMatrix() backend.LanguageMatrix {
 
 // Capabilities returns the operation registry for this adapter.
 func (a *Adapter) Capabilities() backend.Capabilities {
-	ops := []backend.Operation{backend.OperationLookup}
+	ops := []backend.Operation{backend.OperationLookup, backend.OperationOutline}
+	if a.Language() == backend.LanguageMake {
+		ops = append(ops, backend.OperationInspect)
+	}
 	if a.Config.Diagnostics {
 		ops = append(ops, backend.OperationVerify)
 	}
@@ -145,7 +167,7 @@ func (a *Adapter) Verify(ctx context.Context, request backend.VerifyRequest) (re
 			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
 		}
 	}()
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
 		return nil, fmt.Errorf("open selected file for diagnostics: %w", err)
 	}
 	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -192,10 +214,10 @@ func (a *Adapter) Lookup(ctx context.Context, project backend.ProjectContext, qu
 			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
 		}
 	}()
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
 		return nil, fmt.Errorf("open selected file: %w", err)
 	}
-	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{textDocumentKey: map[string]string{"uri": uri}})
 	if err != nil {
 		return nil, fmt.Errorf("request document symbols: %w", err)
 	}
@@ -204,6 +226,85 @@ func (a *Adapter) Lookup(ctx context.Context, project backend.ProjectContext, qu
 		return nil, err
 	}
 	return selectSymbol(query, root, file, source, symbols)
+}
+
+// Outline returns a validated selected-file projection from the configured language server.
+func (a *Adapter) Outline(ctx context.Context, request backend.OutlineRequest) (*backend.OutlineResult, error) {
+	if a.Language() != backend.LanguageBash && a.Language() != backend.LanguageMake {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: backend.ErrUnsupportedOperation}
+	}
+	if err := readlsp.ValidateOutlineRequest(request, false); err != nil {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: err}
+	}
+	root := request.Project.RootDir
+	if root == "" {
+		root = "."
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("resolve outline workspace: %w", err)
+	}
+	selected := request.Path
+	if !filepath.IsAbs(selected) {
+		selected = filepath.Join(root, selected)
+	}
+	selected, err = filepath.Abs(selected)
+	if err != nil {
+		return nil, fmt.Errorf("resolve outline path: %w", err)
+	}
+	info, err := os.Stat(selected)
+	if err != nil {
+		return nil, fmt.Errorf("stat outline path %q: %w", selected, err)
+	}
+	if info.IsDir() {
+		err := readlsp.ValidateOutlineRequest(request, true)
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: err}
+	}
+	if !info.Mode().IsRegular() {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: fmt.Errorf("outline path %q is not a regular source file", request.Path)}
+	}
+	project := request.Project
+	project.File = request.Path
+	root, file, source, symbols, limitations, err := a.readSymbols(ctx, project, backend.OperationOutline)
+	if err != nil {
+		return nil, err
+	}
+	complete := a.Language() == backend.LanguageBash
+	if a.Language() == backend.LanguageMake {
+		limitations = append(makeOutlineLimitations(), limitations...)
+	}
+	document := readlsp.Document{Root: root, File: file, Language: a.Language(), Source: source, Symbols: symbols, Complete: complete, Limitations: limitations}
+	result, err := readlsp.Outline(document, request)
+	if err != nil {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: fmt.Errorf("outline %s file %q: %w", a.Language(), request.Path, err)}
+	}
+	return result, nil
+}
+
+// Inspect returns exact selected-file source ranges from the configured language server.
+func (a *Adapter) Inspect(ctx context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
+	if a.Language() != backend.LanguageMake {
+		return nil, &backend.Error{Operation: backend.OperationInspect, Language: a.Language(), Err: backend.ErrUnsupportedOperation}
+	}
+	root, file, source, symbols, limitations, err := a.readSymbols(ctx, request.Project, backend.OperationInspect)
+	if err != nil {
+		return nil, err
+	}
+	limitations = append(makeOutlineLimitations(), limitations...)
+	matches := matchReadSymbols(request.Symbol, symbols)
+	if len(matches) == 0 {
+		return nil, &backend.Error{Operation: backend.OperationInspect, Language: a.Language(), Err: fmt.Errorf("%s: %w", request.Symbol, ErrSymbolNotFound)}
+	}
+	selected := make([]readlsp.InspectMatch, 0, len(matches))
+	for _, symbol := range matches {
+		selected = append(selected, readlsp.InspectMatch{Symbol: symbol, SourceExtent: "server_range"})
+	}
+	document := readlsp.Document{Root: root, File: file, Language: a.Language(), Source: source, Symbols: symbols, Complete: false, Limitations: limitations}
+	result, err := readlsp.Inspect(document, selected)
+	if err != nil {
+		return nil, &backend.Error{Operation: backend.OperationInspect, Language: a.Language(), Err: fmt.Errorf("inspect %s file %q symbol %q: %w", a.Language(), file, request.Symbol, err)}
+	}
+	return result, nil
 }
 
 func (a *Adapter) timeout() time.Duration {
@@ -304,13 +405,58 @@ func (a *Adapter) open(ctx context.Context, root, file string, source []byte, pr
 		return nil, "", "", errors.Join(fmt.Errorf("start %s language server: %w", a.Language(), err), removeScratch(scratch))
 	}
 	rootURI := pathutil.FileURI(scratch)
-	if _, err = session.Request(ctx, "initialize", map[string]any{"processId": nil, "rootUri": rootURI, "workspaceFolders": []map[string]string{{"uri": rootURI, "name": filepath.Base(root)}}, "capabilities": map[string]any{"general": map[string]any{"positionEncodings": []string{"utf-16"}}, "textDocument": map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}}}}); err != nil {
+	if _, err = session.Request(ctx, "initialize", map[string]any{"processId": nil, "rootUri": rootURI, "workspaceFolders": []map[string]string{{"uri": rootURI, "name": filepath.Base(root)}}, "capabilities": map[string]any{"general": map[string]any{"positionEncodings": []string{"utf-16"}}, textDocumentKey: map[string]any{"documentSymbol": map[string]any{"hierarchicalDocumentSymbolSupport": true}}}}); err != nil {
 		return nil, "", "", errors.Join(fmt.Errorf("initialize %s server: %w", a.Language(), err), session.Close(), removeScratch(scratch))
 	}
 	if err := session.Notify(ctx, "initialized", map[string]any{}); err != nil {
 		return nil, "", "", errors.Join(fmt.Errorf("initialize %s server: %w", a.Language(), err), session.Close(), removeScratch(scratch))
 	}
 	return session, scratch, pathutil.FileURI(target), nil
+}
+
+func (a *Adapter) readSymbols(ctx context.Context, project backend.ProjectContext, operation backend.Operation) (root, file string, source []byte, symbols []backend.ReadSymbol, limitations []string, retErr error) {
+	root, file, source, err := a.resolve(project)
+	if err != nil {
+		return "", "", nil, nil, nil, &backend.Error{Operation: operation, Language: a.Language(), Err: err}
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return "", "", nil, nil, nil, &backend.WorkspaceTrustError{Operation: operation, Language: a.Language(), Workspace: root}
+	}
+	if a.Language() == backend.LanguageMake {
+		if line := makeContinuationLine(source); line >= 0 {
+			return "", "", nil, nil, nil, &backend.Error{Operation: operation, Language: a.Language(), Err: fmt.Errorf("make read projection cannot map continued declaration at line %d", line+1)}
+		}
+	}
+	callerCtx := nonNilContext(ctx)
+	requestCtx, cancel := context.WithTimeout(callerCtx, a.timeout())
+	defer func() {
+		if callerCtx.Err() == nil && errors.Is(requestCtx.Err(), context.DeadlineExceeded) && retErr != nil {
+			retErr = errors.Join(retErr, ErrOperationTimeout)
+		}
+		cancel()
+	}()
+	session, scratch, uri, err := a.open(requestCtx, root, file, source, project)
+	if err != nil {
+		return "", "", nil, nil, nil, &backend.Error{Operation: operation, Language: a.Language(), Err: err}
+	}
+	defer func() {
+		retErr = errors.Join(retErr, session.Close())
+		if cleanupErr := os.RemoveAll(scratch); cleanupErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
+		}
+	}()
+	if err := session.Notify(requestCtx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
+		return "", "", nil, nil, nil, fmt.Errorf("open selected file for read: %w", err)
+	}
+	raw, err := session.Request(requestCtx, "textDocument/documentSymbol", map[string]any{textDocumentKey: map[string]string{"uri": uri}})
+	if err != nil {
+		return "", "", nil, nil, nil, fmt.Errorf("request read symbols: %w", err)
+	}
+	mapped, readLimitations, err := decodeReadSymbols(raw, source, a.Config.SymbolSyntax, uri, file)
+	if err != nil {
+		return "", "", nil, nil, nil, fmt.Errorf("decode %s read symbols: %w", a.Language(), err)
+	}
+	return root, file, source, mapped, readLimitations, nil
 }
 
 func scratchParent(root string) (string, error) {
@@ -459,6 +605,7 @@ type sourceRange struct {
 type symbol struct {
 	Name      string      `json:"name"`
 	Kind      int         `json:"kind"`
+	URI       string      `json:"uri"`
 	Range     sourceRange `json:"range"`
 	Selection sourceRange `json:"selectionRange"`
 	Location  *struct {
@@ -735,4 +882,351 @@ func symbolKind(k int) string {
 	default:
 		return fmt.Sprintf("symbol-%d", k)
 	}
+}
+
+func makeOutlineLimitations() []string {
+	return []string{"continued declarations are rejected; conditionals, include-remapped symbols, define blocks, and interrupted recipe spans remain incomplete server projections"}
+}
+
+func makeContinuationLine(source []byte) int {
+	lineNumber := 0
+	start := 0
+	for offset := 0; offset <= len(source); {
+		end := offset
+		for end < len(source) && source[end] != 10 && source[end] != 13 {
+			end++
+		}
+		line := string(source[start:end])
+		if len(line) > 0 && hasTrailingContinuation(line) {
+			return lineNumber
+		}
+		if end == len(source) {
+			break
+		}
+		offset = end + 1
+		if source[end] == 13 && offset < len(source) && source[offset] == 10 {
+			offset++
+		}
+		start = offset
+		lineNumber++
+	}
+	return -1
+}
+
+func hasTrailingContinuation(line string) bool {
+	return strings.HasSuffix(line, string(byte(92)))
+}
+
+func physicalSourceLine(source []byte, requested int) ([]byte, bool) {
+	if requested < 0 {
+		return nil, false
+	}
+	lineNumber := 0
+	start := 0
+	for offset := 0; offset <= len(source); {
+		end := offset
+		for end < len(source) && source[end] != 10 && source[end] != 13 {
+			end++
+		}
+		if lineNumber == requested {
+			return source[start:end], true
+		}
+		if end == len(source) {
+			break
+		}
+		offset = end + 1
+		if source[end] == 13 && offset < len(source) && source[offset] == 10 {
+			offset++
+		}
+		start = offset
+		lineNumber++
+	}
+	return nil, false
+}
+
+func isMakeIncludeLine(source []byte, line int) bool {
+	text, ok := physicalSourceLine(source, line)
+	if !ok {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(string(text)))
+	if len(fields) == 0 {
+		return false
+	}
+	switch fields[0] {
+	case "include", "-include", "sinclude":
+		return true
+	}
+	return false
+}
+
+func matchReadSymbols(query string, symbols []backend.ReadSymbol) []backend.ReadSymbol {
+	parts := strings.Split(strings.TrimSpace(query), ".")
+	if len(parts) == 0 || slices.Contains(parts, "") {
+		return nil
+	}
+	matches := make([]backend.ReadSymbol, 0)
+	var visit func([]backend.ReadSymbol)
+	visit = func(items []backend.ReadSymbol) {
+		for _, item := range items {
+			qualified := item.QualifiedName
+			if qualified == "" {
+				qualified = item.Name
+			}
+			path := strings.Split(qualified, ".")
+			if len(parts) <= len(path) && strings.Join(path[len(path)-len(parts):], ".") == strings.Join(parts, ".") {
+				matches = append(matches, item)
+			}
+			visit(item.Children)
+		}
+	}
+	visit(symbols)
+	return matches
+}
+
+func decodeReadSymbols(raw json.RawMessage, source []byte, syntax, uri, file string) ([]backend.ReadSymbol, []string, error) {
+	var values []symbol
+	if len(raw) == 0 || string(raw) == "null" {
+		return []backend.ReadSymbol{}, []string{}, nil
+	}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrMalformedSymbols, err)
+	}
+	if syntax != "bash" && syntax != "make" {
+		return nil, nil, fmt.Errorf("%w: unsupported symbol syntax %q", ErrMalformedSymbols, syntax)
+	}
+	if err := validateReadURIs(values, uri); err != nil {
+		return nil, nil, err
+	}
+	limitations := make(map[string]bool)
+	var walk func([]symbol, []string) ([]backend.ReadSymbol, error)
+	walk = func(items []symbol, parents []string) ([]backend.ReadSymbol, error) {
+		out := make([]backend.ReadSymbol, 0, len(items))
+		for _, item := range items {
+			if item.URI != "" && item.URI != uri {
+				return nil, fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+			}
+			if item.Location != nil && item.Location.URI != uri {
+				return nil, fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+			}
+			if syntax == "make" && item.Kind == 3 {
+				if !validMakeContainer(source, item) {
+					return nil, fmt.Errorf("%w: unexpected Make namespace %q", ErrMalformedSymbols, item.Name)
+				}
+				limitations["conditional blocks are omitted because server ranges cover multiple source declarations"] = true
+				continue
+			}
+			kind := ""
+			switch item.Kind {
+			case 12:
+				if syntax == "bash" {
+					kind = "function"
+				} else {
+					kind = "target"
+				}
+			case 13:
+				kind = "variable"
+			}
+			if kind == "" {
+				return nil, fmt.Errorf("%w: unsupported %s symbol kind %d for %q", ErrMalformedSymbols, syntax, item.Kind, item.Name)
+			}
+			var sourceRangeValue sourceRange
+			if syntax == "bash" {
+				if item.Location == nil || item.Location.URI != uri {
+					return nil, fmt.Errorf("%w: Bash symbol %q has a missing or foreign URI", ErrMalformedSymbols, item.Name)
+				}
+				sourceRangeValue = item.Location.Range
+				if item.Name == "" || !validBashReadSymbol(source, item) {
+					return nil, fmt.Errorf("%w: invalid Bash symbol %q", ErrMalformedSymbols, item.Name)
+				}
+			} else {
+				if item.Location != nil && item.Location.URI != uri {
+					return nil, fmt.Errorf("%w: Make symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+				}
+				sourceRangeValue = item.Range
+				if item.Name == "" || item.Selection == (sourceRange{}) || !validMakeReadSymbol(source, item) {
+					return nil, fmt.Errorf("%w: invalid or unmappable Make symbol %q", ErrMalformedSymbols, item.Name)
+				}
+				if isMakeIncludeLine(source, item.Selection.Start.Line) {
+					limitations["included targets mapped onto include lines are omitted"] = true
+					continue
+				}
+			}
+			qualified := item.Name
+			if syntax == "make" && len(parents) > 0 {
+				qualified = strings.Join(append(append([]string{}, parents...), item.Name), ".")
+			}
+			readSymbol := backend.ReadSymbol{
+				Name: item.Name, QualifiedName: qualified, Kind: kind, File: filepath.ToSlash(file),
+				Range: backend.Range{Start: backend.Position(sourceRangeValue.Start), End: backend.Position(sourceRangeValue.End)},
+			}
+			if syntax == "bash" {
+				readSymbol.SelectionRange = readSymbol.Range
+			} else {
+				readSymbol.SelectionRange = backend.Range{Start: backend.Position(item.Selection.Start), End: backend.Position(item.Selection.End)}
+			}
+			children, err := walk(item.Children, append(append([]string{}, parents...), item.Name))
+			if err != nil {
+				return nil, err
+			}
+			readSymbol.Children = children
+			out = append(out, readSymbol)
+		}
+		return out, nil
+	}
+	mapped, err := walk(values, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	readLimitations := make([]string, 0, len(limitations))
+	for limitation := range limitations {
+		readLimitations = append(readLimitations, limitation)
+	}
+	slices.Sort(readLimitations)
+	return mapped, readLimitations, nil
+}
+
+func validMakeReadSymbol(source []byte, s symbol) bool {
+	if s.Location != nil || s.Selection == (sourceRange{}) || s.Selection.Start.Line != s.Range.Start.Line || s.Selection.End.Line != s.Selection.Start.Line {
+		return false
+	}
+	start, startErr := readlsp.ByteOffset(source, backend.Position(s.Selection.Start))
+	end, endErr := readlsp.ByteOffset(source, backend.Position(s.Selection.End))
+	rangeStart, rangeStartErr := readlsp.ByteOffset(source, backend.Position(s.Range.Start))
+	rangeEnd, rangeEndErr := readlsp.ByteOffset(source, backend.Position(s.Range.End))
+	if startErr != nil || endErr != nil || rangeStartErr != nil || rangeEndErr != nil || start < rangeStart || end > rangeEnd || end <= start {
+		return false
+	}
+	if isMakeIncludeLine(source, s.Selection.Start.Line) {
+		return true
+	}
+	if string(source[start:end]) != s.Name {
+		return false
+	}
+	line, ok := physicalSourceLine(source, s.Selection.Start.Line)
+	if !ok {
+		return false
+	}
+	text := strings.TrimSpace(string(line))
+	switch s.Kind {
+	case 12:
+		colon := strings.IndexByte(text, byte(58))
+		return colon >= 0 && strings.TrimSpace(text[:colon]) == s.Name
+	case 13:
+		if !strings.HasPrefix(text, s.Name) {
+			return false
+		}
+		rest := strings.TrimLeft(text[len(s.Name):], " \t")
+		for _, operator := range []string{"=", ":=", "?=", "+=", "!="} {
+			if strings.HasPrefix(rest, operator) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
+func validMakeContainer(source []byte, item symbol) bool {
+	if item.Name == "" || item.Location != nil {
+		return false
+	}
+	start, startErr := readlsp.ByteOffset(source, backend.Position(item.Range.Start))
+	end, endErr := readlsp.ByteOffset(source, backend.Position(item.Range.End))
+	selectionStart, selectionStartErr := readlsp.ByteOffset(source, backend.Position(item.Selection.Start))
+	selectionEnd, selectionEndErr := readlsp.ByteOffset(source, backend.Position(item.Selection.End))
+	if startErr != nil || endErr != nil || selectionStartErr != nil || selectionEndErr != nil || start >= end || selectionStart < start || selectionEnd > end || selectionStart >= selectionEnd {
+		return false
+	}
+	if !isMakeConditionalLine(source, item.Range.Start.Line) {
+		return false
+	}
+	line, ok := physicalSourceLine(source, item.Range.Start.Line)
+	if !ok {
+		return false
+	}
+	sourceFields := strings.Fields(strings.TrimSpace(string(line)))
+	nameFields := strings.Fields(strings.TrimSpace(item.Name))
+	return len(sourceFields) > 0 && len(nameFields) > 0 && strings.EqualFold(sourceFields[0], nameFields[0])
+}
+
+func isMakeConditionalLine(source []byte, line int) bool {
+	text, ok := physicalSourceLine(source, line)
+	if !ok {
+		return false
+	}
+	fields := strings.Fields(strings.TrimSpace(string(text)))
+	if len(fields) == 0 {
+		return false
+	}
+	switch strings.ToLower(fields[0]) {
+	case "ifeq", "ifneq", "ifdef", "ifndef":
+		return true
+	}
+	return false
+}
+
+func validateReadURIs(items []symbol, selectedURI string) error {
+	for _, item := range items {
+		if item.URI != "" && item.URI != selectedURI {
+			return fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+		}
+		if item.Location != nil && item.Location.URI != selectedURI {
+			return fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+		}
+		if err := validateReadURIs(item.Children, selectedURI); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validBashReadSymbol(source []byte, s symbol) bool {
+	if s.Location == nil {
+		return false
+	}
+	start, startErr := readlsp.ByteOffset(source, backend.Position(s.Location.Range.Start))
+	end, endErr := readlsp.ByteOffset(source, backend.Position(s.Location.Range.End))
+	lineStart, lineStartErr := readlsp.ByteOffset(source, backend.Position{Line: s.Location.Range.Start.Line, Character: 0})
+	if startErr != nil || endErr != nil || lineStartErr != nil || start >= end {
+		return false
+	}
+	rawLine, ok := physicalSourceLine(source, s.Location.Range.Start.Line)
+	if !ok {
+		return false
+	}
+	leading := len(rawLine) - len(strings.TrimLeft(string(rawLine), " \t"))
+	line := strings.TrimLeft(string(rawLine), " \t")
+	lowerBound := start - lineStart - leading
+	upperBound := len(line)
+	if s.Location.Range.End.Line == s.Location.Range.Start.Line {
+		upperBound = end - lineStart - leading
+	}
+	for offset := 0; offset < len(line); {
+		relative := strings.Index(line[offset:], s.Name)
+		if relative < 0 {
+			break
+		}
+		nameAt := offset + relative
+		offset = nameAt + len(s.Name)
+		if nameAt < lowerBound || nameAt+len(s.Name) > upperBound || nameAt+len(s.Name) > len(line) {
+			continue
+		}
+		if (nameAt > 0 && isIdentifierByte(line[nameAt-1])) || (nameAt+len(s.Name) < len(line) && isIdentifierByte(line[nameAt+len(s.Name)])) {
+			continue
+		}
+		prefix := strings.TrimSpace(line[:nameAt])
+		suffix := strings.TrimSpace(line[nameAt+len(s.Name):])
+		switch s.Kind {
+		case 12:
+			if (prefix == "" || prefix == "function") && (strings.HasPrefix(suffix, "(") || strings.HasPrefix(suffix, "{")) {
+				return true
+			}
+		case 13:
+			if (prefix == "" || prefix == "local" || prefix == "declare" || prefix == "typeset" || prefix == "readonly" || prefix == "export") && (suffix == "" || strings.HasPrefix(suffix, "=")) {
+				return true
+			}
+		}
+	}
+	return false
 }

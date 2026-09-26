@@ -1,0 +1,13 @@
+# Bash outline preserves the flat selected-file declarations from the server.
+exec semedit outline --language bash --trust-workspace --bash-bin $SEMEDIT_TEST_BASH_LS --path tool.sh
+stdout '"name": "f"'
+stdout '"kind": "function"'
+stdout '"file": "tool.sh"'
+cmp tool.sh want.sh
+
+-- tool.sh --
+#!/usr/bin/env bash
+f() { echo safe; }
+-- want.sh --
+#!/usr/bin/env bash
+f() { echo safe; }

@@ -90,13 +90,20 @@ func serve(input io.Reader, output io.Writer, server string) error {
 		case "initialize":
 			result = map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "documentSymbolProvider": true}}
 		case "textDocument/documentSymbol":
+			var params struct {
+				TextDocument struct {
+					URI string
+				}
+			}
+			_ = json.Unmarshal(m.Params, &params)
+			selectedURI := params.TextDocument.URI
 			if server == "bash-language-server" {
-				sym := map[string]any{"name": "f", "kind": 12, "location": map[string]any{"uri": "selected", "range": rng(1, 0, 6)}}
+				sym := map[string]any{"name": "f", "kind": 12, "location": map[string]any{"uri": selectedURI, "range": rng(1, 0, 6)}}
 				result = []any{sym}
 				if functionDeclarations {
 					result = []any{
-						map[string]any{"name": "fun", "kind": 12, "location": map[string]any{"uri": "selected", "range": rng(0, 0, 16)}},
-						map[string]any{"name": "loc", "kind": 13, "location": map[string]any{"uri": "selected", "range": rng(1, 1, 14)}},
+						map[string]any{"name": "fun", "kind": 12, "location": map[string]any{"uri": selectedURI, "range": rng(0, 0, 16)}},
+						map[string]any{"name": "loc", "kind": 13, "location": map[string]any{"uri": selectedURI, "range": rng(1, 1, 14)}},
 					}
 				}
 				if ambiguous {
@@ -105,6 +112,14 @@ func serve(input io.Reader, output io.Writer, server string) error {
 			} else {
 				sym := map[string]any{"name": "all", "kind": 12, "range": rng(0, 0, 4), "selectionRange": rng(0, 0, 3)}
 				result = []any{sym}
+				if strings.HasSuffix(selectedURI, "/Read.mk") {
+					sym["range"] = rng(0, 0, 0)
+					sym["range"] = map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 2, "character": 10}}
+					result = []any{sym}
+				}
+				if strings.HasSuffix(selectedURI, "/Variables.mk") {
+					result = []any{map[string]any{"name": "X", "kind": 13, "range": rng(0, 0, 5), "selectionRange": rng(0, 0, 1)}}
+				}
 				if conditional {
 					wholeBlock := map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 3, "character": 5}}
 					result = []any{map[string]any{"name": "ifeq $(MODE),1", "kind": 3, "range": wholeBlock, "selectionRange": wholeBlock}}

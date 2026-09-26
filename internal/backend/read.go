@@ -212,3 +212,12 @@ func (r ReferencesRequest) GetProjectContext() ProjectContext { return r.Project
 
 // SetProjectContext updates the reference-search project after ingress context is merged.
 func (r *ReferencesRequest) SetProjectContext(project ProjectContext) { r.Project = project }
+
+// IsReadOutlineKind reports whether kind belongs to the shared read-outline vocabulary.
+func IsReadOutlineKind(kind string) bool {
+	switch kind {
+	case "type", "interface", "function", "method", "field", "constant", "variable", "package", "class", "constructor", "enum", "record", "module", "property", "object", "enum_member", "trait", "target":
+		return true
+	}
+	return false
+}

@@ -44,12 +44,10 @@ func OutlineGo(root, path string, kinds []string, includeUnexported, includeTest
 	}
 	kindSet := make(map[string]bool, len(kinds))
 	for _, kind := range kinds {
-		switch kind {
-		case "type", "interface", "function", "method", "field", "constant", "variable":
-			kindSet[kind] = true
-		default:
+		if !backend.IsReadOutlineKind(kind) {
 			return nil, fmt.Errorf("unknown outline kind %q", kind)
 		}
+		kindSet[kind] = true
 	}
 	files, err := pipeline.GoFiles(absoluteRoot, target)
 	if err != nil {
