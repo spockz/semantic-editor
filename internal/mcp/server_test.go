@@ -805,3 +805,16 @@ func TestReportFeedbackRejectsMissingCoreFields(t *testing.T) {
 		t.Fatalf("report_feedback should reject missing manual touch-ups: %s", out.String())
 	}
 }
+
+func TestMCPFullProfileListsFindReferences(t *testing.T) {
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
+		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
+		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "\"semantic_find_references\"") {
+		t.Fatalf("tools/list response lacks semantic_find_references: %s", output.String())
+	}
+}

@@ -13,6 +13,8 @@ const (
 	OpInspect = "inspect_symbol"
 	// OpOutline retrieves declarations within a selected file or directory.
 	OpOutline = "outline"
+	// OpFindReferences returns typed references within the active Go module build.
+	OpFindReferences = "find_references"
 )
 
 // LanguageMatrix declares capabilities and constraints for a single language backend.

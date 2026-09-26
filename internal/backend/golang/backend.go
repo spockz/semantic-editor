@@ -38,7 +38,7 @@ func (GoBackend) SupportedStructures() []backend.StructureKind {
 
 // Capabilities returns operations supported by the Go adapter.
 func (GoBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationOutline)
+	return backend.NewCapabilities(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationInspect, backend.OperationOutline, backend.OperationFindReferences)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Go backend.
@@ -122,6 +122,15 @@ func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 				CLICommand:   "semedit verify --file <path>",
 				MCPTool:      "semantic_verify",
 				PlacementKey: false,
+			},
+			"find_references": {
+				Supported:    true,
+				Description:  "Find typed references in the selected Go module using active build configuration, including test variants. Cgo and transformed inputs are unsupported.",
+				CLICommand:   "semedit find-references --symbol <sym> [--file <path>]",
+				MCPTool:      "semantic_find_references",
+				PlacementKey: false,
+				Level:        "symbol",
+				ReadOnly:     true,
 			},
 		},
 		Limitations: []backend.Constraint{

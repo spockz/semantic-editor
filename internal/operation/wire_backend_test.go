@@ -65,8 +65,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 22 {
-		t.Errorf("registered operations = %d, want 22", len(entries))
+	if len(entries) != 23 {
+		t.Errorf("registered operations = %d, want 23", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -194,13 +194,12 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 
 func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	t.Parallel()
-
 	registry := operation.DefaultRegistry()
 	matrix, err := registry.Matrix(backend.LanguageGo)
 	if err != nil {
 		t.Errorf("Matrix(go) failed: %v", err)
 	}
-	for _, key := range []string{"lookup", "rename", "verify"} {
+	for _, key := range []string{"lookup", "rename", "verify", "find_references"} {
 		capability, ok := matrix.Operations[key]
 		if !ok {
 			t.Errorf("go matrix misses operation %q", key)
@@ -232,9 +231,12 @@ func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline" || entry.Key == "find_references"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
+		}
+		if entry.Key == "find_references" && entry.Batchable {
+			t.Error("find_references must not be batchable")
 		}
 	}
 }
@@ -326,5 +328,18 @@ func TestOutlineDirectoryDispatchUsesEffectiveRootBeforeLanguageSelection(t *tes
 				t.Fatalf("outline = %#v, want selected directory contents", outline)
 			}
 		})
+	}
+}
+
+func TestFindReferencesRegistryAliases(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	if _, ok := registry.LookupKey("find_references"); !ok {
+		t.Fatal("LookupKey(find_references) missed")
+	}
+	if _, ok := registry.LookupMCP("semantic_find_references"); !ok {
+		t.Fatal("LookupMCP(semantic_find_references) missed")
+	}
+	if _, ok := registry.LookupCLI("find-references"); !ok {
+		t.Fatal("LookupCLI(find-references) missed")
 	}
 }

@@ -445,6 +445,9 @@ func DefaultRegistry() *Registry {
 	if err := Register(registry, lookupDef()); err != nil {
 		panic(err)
 	}
+	if err := Register(registry, referencesDef()); err != nil {
+		panic(err)
+	}
 	if err := Register(registry, renameDef()); err != nil {
 		panic(err)
 	}

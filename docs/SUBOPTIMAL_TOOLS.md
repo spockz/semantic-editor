@@ -203,3 +203,48 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the MCP server resolved the relative path under the original task checkout, where the file did not exist; no source was mutated.
 - Workaround: use the prebuilt semedit CLI with an explicit isolated working directory. Relocated this log from the original task checkout after detecting the same working-directory error in logging.
 - Root cause: the MCP server is bound to its original workspace, and tool invocations do not inherit shell working-directory changes.
+
+- Tool: `semantic_replace_body`
+  Target: `internal/backend/golang/references.go` in `.scratch/worktrees/read-inspection-verify`
+  Failure: the tool resolved the relative path against the primary checkout and reported the file missing; no source changed.
+  Workaround: retry using the nested worktree absolute path if supported, otherwise use the semantic CLI with an explicit workspace.
+  Root cause: the connector workspace root differs from the assigned nested implementation worktree.
+
+- Tool: `semantic_replace_body`
+  Target: `internal/backend/golang/references.go`
+  Failure: the tool could not resolve the method using the bare name `FindReferences`; no source changed.
+  Workaround: retry with the receiver-qualified symbol `GoBackend.FindReferences`.
+  Root cause: semantic symbol lookup requires the method receiver in its identifier.
+
+- Tool: `semantic_rename`
+  Target: `internal/backend/golang/references.go`
+  Failure: the connector resolved the Go symbol against the primary checkout and reported it missing; no source changed.
+  Workaround: invoke the repository `semedit rename` CLI from the assigned worktree with an explicit file and symbol.
+  Root cause: connector workspace binding is the primary checkout, while this task owns a nested worktree.
+
+- Tool: `semantic_insert_construct`
+  Target: `internal/capability/capability.go`
+  Failure: a const insertion supplied only the spec rather than a declaration, so snippet validation rejected it before edits.
+  Workaround: retry with a complete `const (...)` declaration.
+  Root cause: the semantic insertion API expects a full declaration for const constructs.
+
+### 2026-09-26: semantic_insert_construct
+
+- Target: `internal/backend/golang/references_test.go`
+- Failure: one call supplied two function declarations; the tool rejected the snippet before editing because it accepts exactly one construct.
+- Workaround: insert the regression tests in separate calls.
+- Root cause: construct-level API enforces a single Go declaration per request.
+
+### 2026-09-26: semantic_replace_construct target-path retry
+
+- Target: `internal/backend/golang/references.go`
+- Failure: the absolute target omitted the assigned `.scratch/worktrees/read-inspection-verify` component, so the tool could not open the file; no edit occurred.
+- Workaround: retry with the complete assigned worktree path.
+- Root cause: an incomplete absolute path.
+
+### 2026-09-26: semantic_replace_construct method selector retry
+
+- Target: `internal/backend/golang/references.go`
+- Failure: the method selector was supplied as `FindReferences`; the tool could not resolve it because the receiver is part of the symbol identity. No edit occurred.
+- Workaround: retry with receiver-qualified symbol `(GoBackend).FindReferences`.
+- Root cause: semantic method lookup requires the receiver name.
