@@ -277,6 +277,7 @@ func main() {
 
 func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
 	root := t.TempDir()
+	t.Setenv("GOTMPDIR", filepath.Dir(root))
 	unformatted := []byte("package   main\n\nfunc   main(  )   {}\n")
 	invalid := []byte("package invalid {\n")
 	fixtures := map[string][]byte{
