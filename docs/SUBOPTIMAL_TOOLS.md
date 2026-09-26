@@ -352,3 +352,24 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Failure: after adding optional detail/URI/children fields for hierarchical Kotlin outline fixtures, package test compilation reported too few values in existing positional literals; no runtime test ran.
 - Workaround: convert the affected fake symbol fixtures to keyed literals.
 - Root cause: Go positional struct literals require values for every field when a test helper struct grows.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/hugo.go`
+  - Failure: Attempted to replace the local `config` short declaration to add Hugo `relativeURLs`; tool rejected the operation because it requires an enclosing `function` parameter.
+  - Workaround: Use a supported semantic operation on the enclosing function.
+  - Root cause: The tool does not support direct selection of a local declaration without identifying its containing function.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/hugo.go`
+  - Failure: Retried local `config` declaration replacement with its containing function; tool reported `unsupported Go construct kind "decl"`.
+  - Workaround: Use `semantic_replace_body` on `writeHugoConfig`.
+  - Root cause: This operation supports control-flow constructs rather than local declarations.
+
+### 2026-09-26: Make outline cannot map continued declarations
+
+- Tool: `semantic_outline`
+- Target: `Makefile` and `tools/benchmark-harness/Makefile`
+- Observed failure: both selected-file outline requests failed with `make read projection cannot map continued declaration` (lines 59 and 69 respectively).
+- Workaround: no outline workaround applied; report the limitation and preserve the request results.
+- Root cause: the Make read projection cannot map continued declarations to source ranges.
+

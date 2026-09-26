@@ -386,7 +386,7 @@ draft: false
 
 <div class="hx:mt-16 hx:mb-16 hx:text-center">
 
-{{< hextra/hero-badge link="/docs/" >}}
+{{< hextra/hero-badge link="docs/" >}}
 Compiler-backed semantic editing <span aria-hidden="true">→</span>
 {{< /hextra/hero-badge >}}
 
@@ -397,11 +397,11 @@ LLMs plan the change. Compilers and language servers apply it precisely.
 </p>
 
 <figure class="hx:mt-10 hx:mb-10 hx:overflow-hidden hx:rounded-2xl hx:border hx:border-gray-200 hx:shadow-xl hx:dark:border-neutral-800">
-  <img src="/images/landing/semantic-workflow-banner.png" alt="An abstract code editor flowing into a precise compiler syntax tree" style="display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover;" />
+  <img src="images/landing/semantic-workflow-banner.png" alt="An abstract code editor flowing into a precise compiler syntax tree" style="display: block; width: 100%; aspect-ratio: 3 / 1; object-fit: cover;" />
 </figure>
 
 <div class="hx:mt-8 hx:flex hx:flex-wrap hx:justify-center hx:gap-3">
-{{< hextra/hero-button text="Get started" link="/docs/getting-started/" >}}
+{{< hextra/hero-button text="Get started" link="docs/getting-started/" >}}
 {{< hextra/hero-button text="View on GitHub" link="https://github.com/spockz/semantic-editor" style="background-color: transparent; color: inherit; border: 1px solid currentColor;" >}}
 </div>
 
@@ -413,20 +413,20 @@ LLMs plan the change. Compilers and language servers apply it precisely.
 semedit separates semantic intent from syntax transformation, so agents can ask for the change while local tooling handles the mechanical work.
 
 {{< hextra/feature-grid cols="2" >}}
-<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
-  <img src="/images/landing/deterministic-edits.png" alt="A compiler shield protecting a structured code module" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="docs/reference/">
+  <img src="images/landing/deterministic-edits.png" alt="A compiler shield protecting a structured code module" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
   <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Deterministic edits</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use compiler-backed transformations that preserve syntax and eliminate fragile line-based patching.</span></span>
 </a>
-<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/getting-started/">
-  <img src="/images/landing/symbol-intent.png" alt="A target resolved within a connected graph of symbols" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="docs/getting-started/">
+  <img src="images/landing/symbol-intent.png" alt="A target resolved within a connected graph of symbols" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
   <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Symbol-based intent</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Ask for <strong>Server.Start</strong> instead of hunting for a byte offset or line number.</span></span>
 </a>
-<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
-  <img src="/images/landing/structured-feedback.png" alt="Diagnostics resolving into a clear evidence graph" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="docs/reference/">
+  <img src="images/landing/structured-feedback.png" alt="Diagnostics resolving into a clear evidence graph" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
   <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">Structured feedback</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Receive formatting, diagnostics, and compiler evidence as structured results.</span></span>
 </a>
-<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="/docs/reference/">
-  <img src="/images/landing/agent-contract.png" alt="Connected modules sharing one central contract" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
+<a class="hx:block hx:overflow-hidden hx:rounded-xl hx:border hx:border-gray-200 hx:bg-gray-50 hx:transition hover:hx:border-primary-300 hover:hx:shadow-lg hx:dark:border-neutral-800 hx:dark:bg-neutral-900" href="docs/reference/">
+  <img src="images/landing/agent-contract.png" alt="Connected modules sharing one central contract" style="display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover;" loading="lazy" />
   <span class="hx:block hx:p-5"><strong class="hx:block hx:text-lg">One contract for agents</strong><span class="hx:mt-2 hx:block hx:text-gray-600 hx:dark:text-gray-400">Use the same semantic operations through the CLI or MCP.</span></span>
 </a>
 {{< /hextra/feature-grid >}}
@@ -440,7 +440,7 @@ semedit separates semantic intent from syntax transformation, so agents can ask 
 
 ## Explore the documentation
 
-[Read the capability reference](/docs/reference/) to see the available operations and executable examples, or [view empirical benchmarks](/docs/benchmarks/) for measured results.
+[Read the capability reference](docs/reference/) to see the available operations and executable examples, or [view empirical benchmarks](docs/benchmarks/) for measured results.
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(landing)); err != nil {
 		return fmt.Errorf("write Hugo landing page: %w", err)
@@ -455,9 +455,9 @@ weight: 1
 Start with the installation guide, then use the reference when you need a specific semantic operation. The benchmark report documents the measured results behind the workflow.
 
 {{< hextra/feature-grid cols="3" >}}
-{{< hextra/feature-card title="Get started" icon="terminal" link="/docs/getting-started/" subtitle="Install semedit and run your first compiler-backed edit." >}}
-{{< hextra/feature-card title="Reference" icon="shield-check" link="/docs/reference/" subtitle="Browse the generated capability and CLI reference." >}}
-{{< hextra/feature-card title="Benchmarks" icon="chart-bar" link="/docs/benchmarks/" subtitle="Review empirical latency, token, and correctness results." >}}
+{{< hextra/feature-card title="Get started" icon="terminal" link="getting-started/" subtitle="Install semedit and run your first compiler-backed edit." >}}
+{{< hextra/feature-card title="Reference" icon="shield-check" link="reference/" subtitle="Browse the generated capability and CLI reference." >}}
+{{< hextra/feature-card title="Benchmarks" icon="chart-bar" link="benchmarks/" subtitle="Review empirical latency, token, and correctness results." >}}
 {{< /hextra/feature-grid >}}
 `
 	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {

@@ -174,11 +174,11 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	for _, want := range []string{
 		`hextra/feature-grid`,
 		`title="Get started"`,
-		`link="/docs/getting-started/"`,
+		`link="getting-started/"`,
 		`title="Reference"`,
-		`link="/docs/reference/"`,
+		`link="reference/"`,
 		`title="Benchmarks"`,
-		`link="/docs/benchmarks/"`,
+		`link="benchmarks/"`,
 	} {
 		if !strings.Contains(string(docsSection), want) {
 			t.Errorf("Hugo documentation section does not contain %q", want)
