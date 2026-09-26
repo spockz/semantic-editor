@@ -72,6 +72,7 @@ func TestBenchmarkProcessHelper(t *testing.T) {
 
 func TestCLIPlansBeforeExecutionAndIsolatesRestrictionPolicies(t *testing.T) {
 	var baselinePrompt string
+	readRestriction := "Do not inspect Go implementation files (non-test *.go)"
 	for _, policy := range []string{"read", "write", "readwrite", "default"} {
 		t.Run(policy, func(t *testing.T) {
 			flags := []string{}
@@ -100,14 +101,14 @@ func TestCLIPlansBeforeExecutionAndIsolatesRestrictionPolicies(t *testing.T) {
 					if invocation.Prompt != baselinePrompt {
 						t.Errorf("policy %s altered baseline prompt", policy)
 					}
-					if strings.Contains(invocation.Prompt, "Do not inspect source") || strings.Contains(invocation.Prompt, "Shell commands for builds") {
+					if strings.Contains(invocation.Prompt, readRestriction) || strings.Contains(invocation.Prompt, "Shell commands for builds") {
 						t.Errorf("baseline received policy steering: %s", invocation.Prompt)
 					}
 				} else {
 					if !slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=true") {
 						t.Error("semedit MCP not enabled")
 					}
-					read := strings.Contains(invocation.Prompt, "Do not inspect source")
+					read := strings.Contains(invocation.Prompt, readRestriction)
 					write := strings.Contains(invocation.Prompt, "supported source code modifications")
 					if read != (resolved != "write") || write != (resolved != "read") {
 						t.Errorf("policy %s wrong steering: %s", policy, invocation.Prompt)

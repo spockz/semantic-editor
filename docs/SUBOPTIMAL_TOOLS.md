@@ -195,3 +195,9 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the request did not locate the conditional using discriminator `ctx.Err() != nil`.
 - Workaround: retry by matching the exact branch expression from the AST or use a focused declaration replacement.
 - Root cause: conditional discriminators require exact backend-resolved syntax.
+
+- Tool: `semantic_replace_body` (Stage 2 prompt policy, 2026-09-26)
+- Target: `tools/benchmark-harness/session_policy.go` in the isolated policy worktree.
+- Observed failure: the MCP server resolved the relative path under the original task checkout, where the file did not exist; no source was mutated.
+- Workaround: use the prebuilt semedit CLI with an explicit isolated working directory. Relocated this log from the original task checkout after detecting the same working-directory error in logging.
+- Root cause: the MCP server is bound to its original workspace, and tool invocations do not inherit shell working-directory changes.

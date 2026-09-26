@@ -69,13 +69,14 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 }
 
 func semeditRestrictionSteering(policy SemeditArmRestriction) (string, error) {
+	readSteering := "Do not inspect Go implementation files (non-test *.go) with shell commands such as cat, sed, or rg. Use semantic code inspection tools for those files. Reading project documentation (docs/*.md), build manifests (go.mod, Makefile), and visible test files in the task workspace is permitted."
 	switch policy {
 	case SemeditArmRestrictRead:
-		return "Do not inspect source files with shell commands such as cat, sed, or rg. Use semantic or built-in code inspection tools. Shell commands for builds and tests are allowed.", nil
+		return readSteering + " Shell commands for builds and tests are allowed.", nil
 	case SemeditArmRestrictWrite:
 		return "Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed.", nil
 	case SemeditArmRestrictReadWrite:
-		return "Do not inspect source files with shell commands such as cat, sed, or rg. Use semantic or built-in code inspection tools, and use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed.", nil
+		return readSteering + " Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed.", nil
 	default:
 		return "", fmt.Errorf("unsupported semedit arm restriction %q", policy)
 	}
