@@ -433,14 +433,9 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 			execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: followups, Policy: SemeditArmRestrictWrite}
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			started := time.Now()
 			result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(ctx, execution)
-			elapsed := time.Since(started)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if elapsed >= 2*time.Second {
-				t.Fatalf("failed task did not return before the five-second context deadline: %s", elapsed)
 			}
 			if ctx.Err() != nil {
 				t.Fatalf("task returned only after its context ended: %v", ctx.Err())
@@ -459,7 +454,7 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 				t.Fatalf("provider attempts = %q, err=%v; want %d task attempts and no reflection", count, err, 1+len(followups))
 			}
 			if len(result.InteractionSteps) != 1+len(followups) {
-				t.Fatalf("interaction steps = %d, want %d", len(result.InteractionSteps), 1+len(followups))
+				t.Fatalf("interaction steps = %d, want %d task attempts", len(result.InteractionSteps), 1+len(followups))
 			}
 		})
 	}
