@@ -773,14 +773,6 @@ type StartupMetrics struct {
 	InitializeToFirstSemanticCallMS int64 `json:"initialize_to_first_semantic_call_ms"`
 }
 
-func (s *Server) markInitialized(at time.Time) {
-	s.sessionMu.Lock()
-	defer s.sessionMu.Unlock()
-	if s.initializedAt.IsZero() {
-		s.initializedAt = at
-	}
-}
-
 func (s *Server) firstSemanticCallMetrics(at time.Time) *StartupMetrics {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
