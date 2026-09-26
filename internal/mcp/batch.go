@@ -197,6 +197,7 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 	result, err := s.registry.Dispatch(operation.CallContext{
 		Ctx:               ctx,
 		WorkDir:           s.workDir,
+		Project:           backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
 		Registry:          s.registry,
 		Service:           s.service,
 		InBatch:           true,
@@ -256,6 +257,15 @@ func resultForBatch(result any) BatchResult {
 }
 
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
+	s.sessionMu.Lock()
+	uninitialized := s.initializedAt.IsZero()
+	s.sessionMu.Unlock()
+	if uninitialized {
+		if _, err := s.Initialize(ctx, nil); err != nil {
+			s.sendError(id, -32603, fmt.Sprintf("initialize server: %v", err))
+			return
+		}
+	}
 	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
 	ctx = timing.Context(ctx)
 	var request struct {

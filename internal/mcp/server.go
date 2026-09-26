@@ -37,6 +37,8 @@ type Server struct {
 	liveReload          bool
 	instructions        string
 	goBaseDir           string
+	explicitGoBaseDir   bool
+	workspaceTrust      backend.WorkspaceTrust
 	enabledLanguageText string
 	enabledLanguages    []backend.LanguageID
 	enabledLanguageErr  error
@@ -73,6 +75,7 @@ func WithGoBaseDir(baseDir string) Option {
 	return func(s *Server) {
 		if baseDir = strings.TrimSpace(baseDir); baseDir != "" {
 			s.goBaseDir = baseDir
+			s.explicitGoBaseDir = true
 		}
 	}
 }
@@ -100,19 +103,11 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	if profile == "" {
 		profile = "full"
 	}
-	if workDir == "" {
-		if wd, err := os.Getwd(); err == nil {
-			workDir = wd
-		} else {
-			workDir = "."
-		}
-	}
 	s := &Server{
 		profile:   profile,
 		workDir:   workDir,
 		service:   backends.NewDefaultService(),
 		registry:  operation.DefaultRegistry(),
-		goBaseDir: filepath.Join(workDir, ".scratch", "go"),
 		startedAt: time.Now(),
 		out:       out,
 	}
@@ -161,10 +156,6 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 	if s.enabledLanguageErr != nil {
 		return fmt.Errorf("parse --enabled-languages: %w", s.enabledLanguageErr)
 	}
-	ctx = gocache.WithBaseDir(ctx, s.goBaseDir)
-	if _, err := gocache.Environment(ctx, s.workDir); err != nil {
-		return fmt.Errorf("prepare MCP Go base directory: %w", err)
-	}
 
 	reader := bufio.NewReader(in)
 	for {
@@ -193,35 +184,80 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 	}
 }
 
+// Initialize processes client initialization parameters, establishes workspace root and Go cache environments,
+// and marks the server initialized.
+func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map[string]any, error) {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+
+	var initParams struct {
+		RootURI          string `json:"rootUri"`
+		RootPath         string `json:"rootPath"`
+		WorkspaceFolders []struct {
+			URI string `json:"uri"`
+		} `json:"workspaceFolders"`
+		InitializationOptions struct {
+			WorkspaceRoot  string `json:"workspace_root"`
+			RootURI        string `json:"rootUri"`
+			TrustWorkspace bool   `json:"trust_workspace"`
+		} `json:"initializationOptions"`
+	}
+	if len(rawParams) > 0 && string(rawParams) != "null" {
+		if err := json.Unmarshal(rawParams, &initParams); err != nil {
+			return nil, fmt.Errorf("parse initialize params: %w", err)
+		}
+	}
+	switch {
+	case initParams.RootURI != "":
+		s.workDir = strings.TrimPrefix(initParams.RootURI, "file://")
+	case initParams.RootPath != "":
+		s.workDir = initParams.RootPath
+	case len(initParams.WorkspaceFolders) > 0 && initParams.WorkspaceFolders[0].URI != "":
+		s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
+	case initParams.InitializationOptions.RootURI != "":
+		s.workDir = strings.TrimPrefix(initParams.InitializationOptions.RootURI, "file://")
+	case initParams.InitializationOptions.WorkspaceRoot != "":
+		s.workDir = initParams.InitializationOptions.WorkspaceRoot
+	}
+	if s.workDir == "" {
+		if wd, err := os.Getwd(); err == nil {
+			s.workDir = wd
+		} else {
+			s.workDir = "."
+		}
+	}
+	s.workDir = backend.CanonicalWorkspaceRoot(s.workDir)
+	if !s.explicitGoBaseDir || s.goBaseDir == "" {
+		s.goBaseDir = filepath.Join(s.workDir, ".scratch", "go")
+	}
+	initCtx := gocache.WithBaseDir(ctx, s.goBaseDir)
+	if _, err := gocache.Environment(initCtx, s.workDir); err != nil {
+		return nil, fmt.Errorf("prepare MCP Go base directory: %w", err)
+	}
+	s.workspaceTrust = backend.NewWorkspaceTrust(s.workDir, initParams.InitializationOptions.TrustWorkspace)
+	if s.initializedAt.IsZero() {
+		s.initializedAt = time.Now()
+	}
+
+	result := map[string]any{
+		"protocolVersion": "2025-06-18",
+		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
+		"serverInfo":      map[string]any{"name": "semedit", "version": "0.1.0"},
+	}
+	if s.instructions != "" {
+		result["instructions"] = s.instructions
+	}
+	return result, nil
+}
+
 func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 	isNotification := len(req.ID) == 0
 	switch req.Method {
 	case "initialize":
-		var initParams struct {
-			RootURI          string `json:"rootUri"`
-			RootPath         string `json:"rootPath"`
-			WorkspaceFolders []struct {
-				URI string `json:"uri"`
-			} `json:"workspaceFolders"`
-		}
-		if err := json.Unmarshal(req.Params, &initParams); err == nil {
-			switch {
-			case initParams.RootURI != "":
-				s.workDir = strings.TrimPrefix(initParams.RootURI, "file://")
-			case initParams.RootPath != "":
-				s.workDir = initParams.RootPath
-			case len(initParams.WorkspaceFolders) > 0 && initParams.WorkspaceFolders[0].URI != "":
-				s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
-			}
-		}
-		s.markInitialized(time.Now())
-		result := map[string]any{
-			"protocolVersion": "2025-06-18",
-			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
-			"serverInfo":      map[string]any{"name": "semedit", "version": "0.1.0"},
-		}
-		if s.instructions != "" {
-			result["instructions"] = s.instructions
+		result, err := s.Initialize(ctx, req.Params)
+		if err != nil {
+			s.sendError(req.ID, -32603, err.Error())
+			return
 		}
 		s.sendResult(req.ID, result)
 	case "notifications/initialized":
@@ -543,6 +579,15 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.handleBatch(ctx, id, params.Arguments)
 		return
 	}
+	s.sessionMu.Lock()
+	uninitialized := s.initializedAt.IsZero()
+	s.sessionMu.Unlock()
+	if uninitialized {
+		if _, err := s.Initialize(ctx, nil); err != nil {
+			s.sendError(id, -32603, fmt.Sprintf("initialize server: %v", err))
+			return
+		}
+	}
 	entry, ok := s.registry.LookupMCP(params.Name)
 	if !ok || (s.profile == "mutations-only" && entry.ReadOnly) {
 		s.sendError(id, -32601, fmt.Sprintf("Unknown tool: %s", params.Name))
@@ -565,7 +610,13 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
-	result, err := s.registry.Dispatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Registry: s.registry, Service: s.service}, entry.Key, raw)
+	result, err := s.registry.Dispatch(operation.CallContext{
+		Ctx:      ctx,
+		WorkDir:  s.workDir,
+		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		Registry: s.registry,
+		Service:  s.service,
+	}, entry.Key, raw)
 	finishDispatch()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)

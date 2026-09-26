@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -213,12 +214,41 @@ func TestMCPServerRejectsUnusableGoBaseDir(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	err := mcp.NewServer("full", t.TempDir(), &out, mcp.WithGoBaseDir(baseDir)).Serve(t.Context(), strings.NewReader(""))
+	srv := mcp.NewServer("full", t.TempDir(), &out, mcp.WithGoBaseDir(baseDir))
+	_, err := srv.Initialize(t.Context(), nil)
 	if err == nil {
-		t.Fatal("Serve succeeded with an unusable Go base directory")
+		t.Fatal("Initialize succeeded with an unusable Go base directory")
 	}
 	if !strings.Contains(err.Error(), "prepare MCP Go base directory") {
-		t.Errorf("Serve error = %v, want Go base directory context", err)
+		t.Errorf("Initialize error = %v, want Go base directory context", err)
+	}
+}
+
+func TestMCPServerInitializeDeferred(t *testing.T) {
+	temp := t.TempDir()
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", "", &out)
+
+	// Ensure .scratch/go is not eagerly created before Initialize
+	if _, err := os.Stat(filepath.Join(temp, ".scratch", "go")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected .scratch/go to not exist before Initialize, got %v", err)
+	}
+
+	rawParams, err := json.Marshal(map[string]any{
+		"rootUri": "file://" + temp,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := srv.Initialize(t.Context(), rawParams)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	if result["protocolVersion"] != "2025-06-18" {
+		t.Errorf("unexpected protocolVersion: %v", result["protocolVersion"])
+	}
+	if _, err := os.Stat(filepath.Join(temp, ".scratch", "go")); err != nil {
+		t.Errorf("expected .scratch/go to be created on Initialize: %v", err)
 	}
 }
 
