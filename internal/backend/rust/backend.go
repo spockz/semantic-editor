@@ -925,6 +925,7 @@ func mapRustReadSymbols(items []rustDocumentSymbol, file, parent string) ([]neut
 	return result, nil
 }
 
+// Outline returns the selected Rust file's validated hierarchical declarations.
 func (b *RustBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (*neutralbackend.OutlineResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

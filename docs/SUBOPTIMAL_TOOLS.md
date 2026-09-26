@@ -337,7 +337,6 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Workaround: rerun semedit imports after the test body was inserted, which restored the required imports and resolved the diagnostics.
 - Root cause: imports are cleaned against the file state at operation time and intentionally remove imports not yet referenced.
 
-
 ### 2026-09-26: semantic body selector required receiver qualification
 
 - Tool: `semantic_replace_body` through the prebuilt semedit CLI
@@ -345,7 +344,6 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Failure: selecting the method by bare name `Capabilities` did not resolve its receiver method; no edit occurred.
 - Workaround: retry with the fully qualified selector `(*KotlinBackend).Capabilities`.
 - Root cause: the CLI body selector requires receiver qualification for this method.
-
 
 ### 2026-09-26: semantic struct extension exposed positional test fixtures
 

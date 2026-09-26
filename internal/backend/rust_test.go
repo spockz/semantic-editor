@@ -241,93 +241,13 @@ func TestRustRenameUsesAbsoluteUTF8ByteOffsetsOnLaterLine(t *testing.T) {
 	}
 }
 
-type statefulRustSession struct {
-	calls       []string
-	open        map[string]string
-	openedTexts []string
-	responses   map[string]json.RawMessage
-	closeCount  int
-}
-
-func (f *statefulRustSession) Request(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	f.calls = append(f.calls, method)
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if method == "initialize" {
-		return json.RawMessage("{\"capabilities\":{}}"), nil
-	}
-	var request struct {
-		TextDocument struct {
-			URI string
-		}
-	}
-	encoded, err := json.Marshal(params)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(encoded, &request); err != nil {
-		return nil, err
-	}
-	source, ok := f.open[request.TextDocument.URI]
-	if !ok {
-		return nil, errors.New("documentSymbol requested without an open document")
-	}
-	response, ok := f.responses[source]
-	if !ok {
-		return nil, errors.New("no symbol response for opened source")
-	}
-	return response, nil
-}
-
-func (f *statefulRustSession) Notify(ctx context.Context, method string, params any) error {
-	f.calls = append(f.calls, method)
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if method != "textDocument/didOpen" && method != "textDocument/didClose" {
-		return nil
-	}
-	var notification struct {
-		TextDocument struct {
-			URI  string
-			Text string
-		}
-	}
-	encoded, err := json.Marshal(params)
-	if err != nil {
-		return err
-	}
-	if err := json.Unmarshal(encoded, &notification); err != nil {
-		return err
-	}
-	if method == "textDocument/didOpen" {
-		if _, exists := f.open[notification.TextDocument.URI]; exists {
-			return errors.New("document opened twice")
-		}
-		f.open[notification.TextDocument.URI] = notification.TextDocument.Text
-		f.openedTexts = append(f.openedTexts, notification.TextDocument.Text)
-		return nil
-	}
-	if _, exists := f.open[notification.TextDocument.URI]; !exists {
-		return errors.New("closed document was not open")
-	}
-	delete(f.open, notification.TextDocument.URI)
-	return nil
-}
-
-func (f *statefulRustSession) Close() error {
-	f.closeCount++
-	return nil
-}
-
 func TestRustLookupThenOutlineUsesFreshMatchedDocumentSnapshot(t *testing.T) {
 	root, file := rustProject(t, "fn alpha() {}\n")
 	sourceA := "fn alpha() {}\n"
 	sourceB := "fn bravo() {}\n"
 	responseA := json.RawMessage("[{\"name\":\"alpha\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}}}]")
 	responseB := json.RawMessage("[{\"name\":\"bravo\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}},\"detail\":\"fn bravo()\"}]")
-	session := &statefulRustSession{open: map[string]string{}, responses: map[string]json.RawMessage{sourceA: responseA, sourceB: responseB}}
+	session := newStatefulTestLspSession(json.RawMessage("{\"capabilities\":{}}"), map[string]json.RawMessage{sourceA: responseA, sourceB: responseB})
 	factoryCalls := 0
 	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		factoryCalls++
@@ -366,11 +286,12 @@ func TestRustLookupThenOutlineUsesFreshMatchedDocumentSnapshot(t *testing.T) {
 
 type closeFailRustSession struct {
 	*fakeRustSession
+
 	closeErr error
 }
 
 func (f *closeFailRustSession) Close() error {
-	f.fakeRustSession.closed = true
+	f.closed = true
 	return f.closeErr
 }
 

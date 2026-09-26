@@ -802,6 +802,7 @@ func mapScalaReadSymbols(items []scalaDocumentSymbol, file, parent string) ([]ne
 	return result, nil
 }
 
+// Outline returns the selected Scala file's validated hierarchical declarations.
 func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (*neutralbackend.OutlineResult, error) {
 	if ctx == nil {
 		ctx = context.Background()

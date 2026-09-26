@@ -123,6 +123,7 @@ func ByteOffset(source []byte, position backend.Position) (int, error) {
 	return sourceByteOffset(source, index, position)
 }
 
+// ValidateRangeShape verifies that raw contains an object with valid start and end positions.
 func ValidateRangeShape(raw json.RawMessage) error {
 	var value map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &value); err != nil || value == nil {

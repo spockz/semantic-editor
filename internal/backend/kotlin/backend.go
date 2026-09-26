@@ -316,6 +316,7 @@ func (b *KotlinBackend) Verify(ctx context.Context, request neutralbackend.Verif
 	return diagnostics, nil
 }
 
+// Outline returns the selected Kotlin file's validated hierarchical declarations.
 func (b *KotlinBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (result *neutralbackend.OutlineResult, retErr error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -948,7 +949,7 @@ func resolveKotlinOutlineProject(project neutralbackend.ProjectContext) (root, f
 		return neutralbackend.CanonicalWorkspaceRoot(base), selected, nil, true, nil
 	}
 	if !info.Mode().IsRegular() {
-		return "", "", nil, false, fmt.Errorf("Kotlin outline path %q is not a regular file", selected)
+		return "", "", nil, false, fmt.Errorf("kotlin outline path %q is not a regular file", selected)
 	}
 	if base == "" {
 		project.File = selected
