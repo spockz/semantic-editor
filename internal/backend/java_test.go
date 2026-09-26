@@ -1184,3 +1184,16 @@ func TestJavaRenameCloseFailureKeepsCommittedResultAndResetsSession(t *testing.T
 		t.Fatal(err)
 	}
 }
+
+func TestJavaOutlineRejectsMissingRangeCoordinates(t *testing.T) {
+	root, file := javaFixture(t, "class Thing {}\n")
+	session := &fakeJavaSession{symbols: json.RawMessage(`[{"name":"Thing","kind":5,"range":{"end":{"line":0,"character":13}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}}]`)}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		return session, nil
+	})
+	project := trustedJavaProject(root, file)
+	_, err := underTest.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	if !errors.Is(err, javabackend.ErrJavaMalformedResponse) {
+		t.Fatalf("missing range coordinate error = %v, want malformed response", err)
+	}
+}

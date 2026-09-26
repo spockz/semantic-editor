@@ -272,3 +272,85 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Failure: no exposed semantic operation deletes an unused function declaration after coordinate conversion moved to `readlsp.ByteOffset`.
 - Workaround: remove only that function with a narrow atomic patch; keep the shared converter as the sole implementation.
 - Root cause: the current semantic tool set supports construct insertion/replacement but not declaration deletion.
+
+### 2026-09-26: semantic_insert_construct rejected multiple functions
+
+- Tool: `semantic_insert_construct`
+- Target: `internal/backend/rust/backend.go`
+- Failure: the tool accepts one declaration per call and rejected a snippet containing five helper functions; no edit occurred.
+- Workaround: insert each function separately with explicit absolute worktree paths.
+- Root cause: the edit request grouped independent declarations into a single-function operation.
+
+### 2026-09-26: semantic target omitted assigned worktree
+
+- Tool: `semantic_replace_construct`
+- Target: original checkout `internal/backend/rust/backend.go`
+- Failure: an absolute source path omitted `.scratch/worktrees/read-inspection`, so the tool applied the `Detail` field edit to the parent checkout. The accidental field was removed immediately and the exact patch was saved at `.scratch/wrong-target-rust-field.patch`.
+- Workaround: use relative source paths with the prebuilt semedit CLI from the assigned integration worktree, and verify the worktree branch before editing.
+- Root cause: the semantic tool was bound to the original checkout and the manually assembled path was incomplete.
+
+### 2026-09-26: no semantic field-level insertion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go`, `rustDocumentSymbol.Detail` and `decodeRustDocumentSymbol`
+- Failure: available semantic operations edit complete declarations but provide no operation for adding one struct field or one decode clause without replacing the whole function.
+- Workaround: apply two narrow atomic patches to the selected struct and JSON decoder; all function additions and body changes use the prebuilt semedit CLI.
+- Root cause: semantic editing does not expose field-level or statement-level insertion for these constructs.
+
+### 2026-09-26: no semantic capability-map entry insertion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go`, Rust `CapabilityMatrix`
+- Failure: the available Go semantic operations do not insert one keyed entry into a map literal.
+- Workaround: apply a narrow atomic patch to the operations map; use semedit for the capability method body.
+- Root cause: the semantic edit surface has no map-entry insertion operation.
+
+### 2026-09-26: no semantic field or capability-map insertion operation for Scala
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/scala/backend.go`, `scalaDocumentSymbol` and `CapabilityMatrix`
+- Failure: available Go semantic operations do not add one field to an existing struct or one keyed capability entry to a map literal.
+- Workaround: apply narrow atomic patches to the struct, decoder, and operations map; use semedit for function additions and body changes.
+- Root cause: the semantic edit surface has no field-level or map-entry insertion operation.
+
+### 2026-09-26: no semantic function-deletion operation for obsolete position converters
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go` and `internal/backend/scala/backend.go`, old UTF-16 byte-offset helpers
+- Failure: the available semantic tools replace function bodies and insert declarations but cannot delete an unused function declaration.
+- Workaround: remove only the obsolete character-offset functions and their now-unused imports with narrow atomic patches after delegating conversion to `readlsp.ByteOffset`.
+- Root cause: the semantic edit surface has no declaration-deletion operation.
+
+### 2026-09-26: duplicate semantic test type insertion
+
+- Tool: `semedit insert-type`
+- Target: `internal/backend/rust_test.go`, `statefulRustSession`
+- Failure: an earlier successful insertion was repeated after losing track of the file update, creating a duplicate type declaration that semedit diagnostics reported. The duplicate was immediately removed; one intended declaration remains.
+- Workaround: inspect the current file before retrying semantic insertions and remove only the duplicate declaration.
+- Root cause: the first insertion result was not checked against the live source before a retry.
+
+### 2026-09-26: semedit removed imports before their references existed
+
+- Tool: `semedit imports` and `semedit replace-body`
+- Target: `internal/backend/rust_test.go`, source snapshot regression
+- Failure: semedit imports organized the test before the new code referenced `pipeline`, SHA-256, and hex imports, so it removed those unused imports; a subsequent body replacement reported undefined symbols.
+- Workaround: rerun semedit imports after the test body was inserted, which restored the required imports and resolved the diagnostics.
+- Root cause: imports are cleaned against the file state at operation time and intentionally remove imports not yet referenced.
+
+
+### 2026-09-26: semantic body selector required receiver qualification
+
+- Tool: `semantic_replace_body` through the prebuilt semedit CLI
+- Target: `internal/backend/kotlin/backend.go`, `(*KotlinBackend).Capabilities`
+- Failure: selecting the method by bare name `Capabilities` did not resolve its receiver method; no edit occurred.
+- Workaround: retry with the fully qualified selector `(*KotlinBackend).Capabilities`.
+- Root cause: the CLI body selector requires receiver qualification for this method.
+
+
+### 2026-09-26: semantic struct extension exposed positional test fixtures
+
+- Tool: `semantic_replace_construct` through the prebuilt semedit CLI
+- Target: `language_txtar_test.go`, `fakeDocumentSymbol`
+- Failure: after adding optional detail/URI/children fields for hierarchical Kotlin outline fixtures, package test compilation reported too few values in existing positional literals; no runtime test ran.
+- Workaround: convert the affected fake symbol fixtures to keyed literals.
+- Root cause: Go positional struct literals require values for every field when a test helper struct grows.

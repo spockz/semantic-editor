@@ -1291,6 +1291,12 @@ func decodeJavaDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	if _, flat := object["location"]; flat {
 		return javaDocumentSymbol{}, fmt.Errorf("%w: flat SymbolInformation is not supported", ErrJavaUnsupportedResponse)
 	}
+	if err := readlsp.ValidateRangeShape(object["range"]); err != nil {
+		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid range: %w", ErrJavaMalformedResponse, err)
+	}
+	if err := readlsp.ValidateRangeShape(object["selectionRange"]); err != nil {
+		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range: %w", ErrJavaMalformedResponse, err)
+	}
 	var symbol javaDocumentSymbol
 	if err := json.Unmarshal(object["name"], &symbol.Name); err != nil || symbol.Name == "" {
 		return javaDocumentSymbol{}, fmt.Errorf("%w: missing name", ErrJavaMalformedResponse)

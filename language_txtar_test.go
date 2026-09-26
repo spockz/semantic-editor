@@ -23,14 +23,17 @@ type fakeLSPRange struct {
 }
 
 type fakeDocumentSymbol struct {
-	Name           string       `json:"name"`
-	Kind           int          `json:"kind"`
-	Range          fakeLSPRange `json:"range"`
-	SelectionRange fakeLSPRange `json:"selectionRange"`
+	Name           string               `json:"name"`
+	Kind           int                  `json:"kind"`
+	Detail         string               `json:"detail,omitempty"`
+	URI            string               `json:"uri,omitempty"`
+	Range          fakeLSPRange         `json:"range"`
+	SelectionRange fakeLSPRange         `json:"selectionRange"`
+	Children       []fakeDocumentSymbol `json:"children,omitempty"`
 }
 
 func runFakeRustAnalyzer() {
-	symbol := fakeDocumentSymbol{"Widget", 23, fakeRange(0, 15), fakeRange(7, 13)}
+	symbol := fakeDocumentSymbol{Name: "Widget", Kind: 23, Range: fakeRange(0, 15), SelectionRange: fakeRange(7, 13)}
 	if rawLine := os.Getenv("SEMEDIT_RUST_SYMBOL_LINE"); rawLine != "" {
 		line, err := strconv.Atoi(rawLine)
 		if err != nil {
@@ -51,19 +54,28 @@ func runFakeJava() {
 		_, _ = os.Stderr.WriteString("openjdk version \"21.0.2\"\n")
 		return
 	}
-	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 14), fakeRange(6, 12)})
+	runFakeLanguageServer(fakeDocumentSymbol{Name: "Widget", Kind: 5, Range: fakeRange(0, 14), SelectionRange: fakeRange(6, 12)})
 }
 
 func runFakeKotlin() {
-	if os.Getenv("SEMEDIT_TEST_KOTLIN_FUNCTION") != "" {
-		runFakeLanguageServer(fakeDocumentSymbol{"launch", 12, fakeRangeAt(1, 0, 15), fakeRangeAt(1, 4, 10)})
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_OUTLINE") != "" {
+		symbol := fakeDocumentSymbol{
+			Name: "Widget", Kind: 5, Detail: "server class detail",
+			Range: fakeRangeAt(0, 0, 29), SelectionRange: fakeRangeAt(0, 6, 12),
+			Children: []fakeDocumentSymbol{{Name: "run", Kind: 6, Detail: "fun run()", Range: fakeRangeAt(0, 15, 27), SelectionRange: fakeRangeAt(0, 19, 22)}},
+		}
+		runFakeLanguageServer(symbol)
 		return
 	}
-	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRangeAt(2, 0, 29), fakeRangeAt(2, 6, 12)})
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_FUNCTION") != "" {
+		runFakeLanguageServer(fakeDocumentSymbol{"launch", 12, "", "", fakeRangeAt(1, 0, 15), fakeRangeAt(1, 4, 10), nil})
+		return
+	}
+	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, "", "", fakeRangeAt(2, 0, 29), fakeRangeAt(2, 6, 12), nil})
 }
 
 func runFakeMetals() {
-	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 15), fakeRange(7, 13)})
+	runFakeLanguageServer(fakeDocumentSymbol{Name: "Widget", Kind: 5, Range: fakeRange(0, 15), SelectionRange: fakeRange(7, 13)})
 }
 
 func runFakeGHC() {
@@ -77,7 +89,7 @@ func runFakeHLS() {
 		_, _ = os.Stdout.WriteString("haskell-language-server version: 2.9.0 (GHC: 9.8.2)\n")
 		return
 	}
-	runFakeLanguageServer(fakeDocumentSymbol{"Widget", 5, fakeRange(0, 20), fakeRange(5, 11)})
+	runFakeLanguageServer(fakeDocumentSymbol{Name: "Widget", Kind: 5, Range: fakeRange(0, 20), SelectionRange: fakeRange(5, 11)})
 }
 
 func runFakeMaven() {

@@ -989,11 +989,14 @@ func decodeReadSymbols(raw json.RawMessage, source []byte, syntax, uri, file str
 	if len(raw) == 0 || string(raw) == "null" {
 		return []backend.ReadSymbol{}, []string{}, nil
 	}
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return nil, nil, fmt.Errorf("%w: %w", ErrMalformedSymbols, err)
-	}
 	if syntax != "bash" && syntax != "make" {
 		return nil, nil, fmt.Errorf("%w: unsupported symbol syntax %q", ErrMalformedSymbols, syntax)
+	}
+	if err := validateReadRangeShapes(raw, syntax); err != nil {
+		return nil, nil, err
+	}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, nil, fmt.Errorf("%w: %w", ErrMalformedSymbols, err)
 	}
 	if err := validateReadURIs(values, uri); err != nil {
 		return nil, nil, err
@@ -1229,4 +1232,52 @@ func validBashReadSymbol(source []byte, s symbol) bool {
 		}
 	}
 	return false
+}
+
+func validateReadRangeShapes(raw json.RawMessage, syntax string) error {
+	var values []json.RawMessage
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return fmt.Errorf("%w: %w", ErrMalformedSymbols, err)
+	}
+	var walk func([]json.RawMessage) error
+	walk = func(items []json.RawMessage) error {
+		for _, item := range items {
+			var object map[string]json.RawMessage
+			if err := json.Unmarshal(item, &object); err != nil || object == nil {
+				return fmt.Errorf("%w: symbol is not an object", ErrMalformedSymbols)
+			}
+			var rangeRaw json.RawMessage
+			if syntax == "bash" {
+				var location map[string]json.RawMessage
+				if err := json.Unmarshal(object["location"], &location); err != nil || location == nil {
+					return fmt.Errorf("%w: Bash symbol has invalid location", ErrMalformedSymbols)
+				}
+				rangeRaw = location["range"]
+			} else {
+				rangeRaw = object["range"]
+			}
+			if err := readlsp.ValidateRangeShape(rangeRaw); err != nil {
+				return fmt.Errorf("%w: invalid %s symbol range: %w", ErrMalformedSymbols, syntax, err)
+			}
+			if syntax == "make" {
+				if err := readlsp.ValidateRangeShape(object["selectionRange"]); err != nil {
+					return fmt.Errorf("%w: invalid Make selection range: %w", ErrMalformedSymbols, err)
+				}
+			}
+			var children []json.RawMessage
+			if childRaw, ok := object["children"]; ok && string(childRaw) != "null" {
+				if err := json.Unmarshal(childRaw, &children); err != nil {
+					return fmt.Errorf("%w: invalid child symbols", ErrMalformedSymbols)
+				}
+			}
+			if err := walk(children); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return walk(values)
 }

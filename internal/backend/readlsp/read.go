@@ -4,6 +4,7 @@ package readlsp
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"semedit/internal/backend"
@@ -120,6 +121,30 @@ func ByteOffset(source []byte, position backend.Position) (int, error) {
 		return 0, err
 	}
 	return sourceByteOffset(source, index, position)
+}
+
+func ValidateRangeShape(raw json.RawMessage) error {
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &value); err != nil || value == nil {
+		return fmt.Errorf("range is not an object")
+	}
+	for _, endpoint := range []string{"start", "end"} {
+		var position map[string]json.RawMessage
+		if err := json.Unmarshal(value[endpoint], &position); err != nil || position == nil {
+			return fmt.Errorf("range %s position is missing or invalid", endpoint)
+		}
+		for _, coordinate := range []string{"line", "character"} {
+			rawCoordinate := position[coordinate]
+			if len(rawCoordinate) == 0 {
+				return fmt.Errorf("range %s %s is missing", endpoint, coordinate)
+			}
+			var number *int
+			if err := json.Unmarshal(rawCoordinate, &number); err != nil || number == nil {
+				return fmt.Errorf("range %s %s is not an integer", endpoint, coordinate)
+			}
+		}
+	}
+	return nil
 }
 
 type preparedDocument struct {

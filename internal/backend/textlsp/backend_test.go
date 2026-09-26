@@ -278,3 +278,29 @@ func TestMakeReadRejectsEvenBackslashContinuationBeforeServer(t *testing.T) {
 		t.Fatal("language server started after a trailing backslash continuation")
 	}
 }
+
+func TestReadOutlinesRejectMalformedRangeShapesBeforeOmissionOrProjection(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Makefile")
+	source := []byte("ifeq ($(MODE),debug)\nFLAGS := -g\nendif\n")
+	if err := pipeline.WriteAtomic(file, source); err != nil {
+		t.Fatal(err)
+	}
+	raw := json.RawMessage(`[{"name":"ifeq ($(MODE),debug)","kind":3,"range":{"start":{"line":0,"character":0},"end":{"line":2,"character":5}},"selectionRange":{"start":{"line":0,"character":0},"end":{"line":2,"character":5}},"children":[{"name":"FLAGS","kind":13,"range":{"end":{"line":1,"character":11}},"selectionRange":{"start":{"line":1,"character":0},"end":{"line":1,"character":5}}}]}]`)
+	session := &fakeSession{response: raw}
+	adapter := &Adapter{Config: Config{Language: backend.LanguageMake, Basenames: []string{"Makefile"}, LanguageID: "makefile", SymbolSyntax: "make"}, Factory: func(context.Context, string, string, []string) (Session, error) { return session, nil }}
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	if _, err := adapter.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true}); !errors.Is(err, ErrMalformedSymbols) {
+		t.Fatalf("omitted malformed Make child error = %v, want malformed response", err)
+	}
+	bashFile := filepath.Join(root, "f.sh")
+	if err := pipeline.WriteAtomic(bashFile, []byte("f() {}\n")); err != nil {
+		t.Fatal(err)
+	}
+	session.response = json.RawMessage(`[{"name":"f","kind":12,"location":{"uri":"SELECTED_URI","range":{"end":{"line":0,"character":1}}}}]`)
+	bash := &Adapter{Config: Config{Language: backend.LanguageBash, Extensions: []string{".sh"}, LanguageID: "shell", SymbolSyntax: "bash"}, Factory: func(context.Context, string, string, []string) (Session, error) { return session, nil }}
+	project.File = bashFile
+	if _, err := bash.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: bashFile, IncludeUnexported: true}); !errors.Is(err, ErrMalformedSymbols) {
+		t.Fatalf("malformed Bash location range error = %v, want malformed response", err)
+	}
+}

@@ -3,6 +3,7 @@ package readlsp
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"semedit/internal/backend"
@@ -211,6 +212,31 @@ func TestByteOffsetSupportsLineTerminatorsAndRejectsSurrogateSplits(t *testing.T
 	}
 	if _, err := ByteOffset(source, backend.Position{Line: 0, Character: 4}); err == nil {
 		t.Fatal("ByteOffset accepted a position beyond line end")
+	}
+}
+
+func TestValidateRangeShapeRejectsAbsentAndNonIntegerCoordinates(t *testing.T) {
+	for _, raw := range []string{
+		`{"end":{"line":0,"character":0}}`,
+		`{"start":{"line":0,"character":0},"end":null}`,
+		`{"start":{"line":0},"end":{"line":0,"character":0}}`,
+		`{"start":{"line":0.5,"character":0},"end":{"line":0,"character":0}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			if err := ValidateRangeShape(json.RawMessage(raw)); err == nil {
+				t.Fatal("malformed range shape was accepted")
+			}
+		})
+	}
+	if err := ValidateRangeShape(json.RawMessage(`{"start":{"line":0,"character":0},"end":{"line":0,"character":0}}`)); err != nil {
+		t.Fatalf("zero-valued integer coordinates should be valid shape: %v", err)
+	}
+}
+
+func TestValidateRangeShapeRejectsNullCoordinate(t *testing.T) {
+	raw := json.RawMessage(`{"start":{"line":null,"character":0},"end":{"line":0,"character":0}}`)
+	if err := ValidateRangeShape(raw); err == nil {
+		t.Fatal("null coordinate was accepted as zero")
 	}
 }
 

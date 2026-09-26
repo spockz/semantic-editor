@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
 	"strings"
@@ -144,7 +145,7 @@ func (*KotlinBackend) Language() neutralbackend.LanguageID { return neutralbacke
 
 // Capabilities declares Kotlin's trusted read-only lookup capability.
 func (*KotlinBackend) Capabilities() neutralbackend.Capabilities {
-	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationVerify)
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationVerify, neutralbackend.OperationOutline)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Kotlin backend.
@@ -154,25 +155,15 @@ func (*KotlinBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 		DisplayName: "Kotlin",
 		Maturity:    "Read-only preview",
 		Operations: map[string]neutralbackend.OpCapability{
-			"lookup": {Supported: true, Description: "Trusted file-scoped hierarchical Kotlin symbol lookup through preinstalled fwcd/kotlin-language-server using UTF-16 positions.", CLICommand: "semedit lookup --language kotlin --file <path.kt> --symbol <sym> --kotlin-bin <path>", MCPTool: "semantic_lookup"},
-			"verify": {Supported: true, Description: "Trusted selected-file diagnostics from a matching publishDiagnostics notification; formatting and imports are unsupported.", CLICommand: "semedit verify --language kotlin --file <path.kt> --kotlin-bin <path>", MCPTool: "semantic_verify"},
+			"lookup":  {Supported: true, Description: "Trusted file-scoped hierarchical Kotlin symbol lookup through preinstalled fwcd/kotlin-language-server using UTF-16 positions.", CLICommand: "semedit lookup --language kotlin --file <path.kt> --symbol <sym> --kotlin-bin <path>", MCPTool: "semantic_lookup"},
+			"verify":  {Supported: true, Description: "Trusted selected-file diagnostics from a matching publishDiagnostics notification; formatting and imports are unsupported.", CLICommand: "semedit verify --language kotlin --file <path.kt> --kotlin-bin <path>", MCPTool: "semantic_verify"},
+			"outline": {Supported: true, Description: "Trusted selected-file Kotlin declaration outline from validated hierarchical document symbols; directory scopes and visibility filtering are unsupported.", CLICommand: "semedit outline --language kotlin --path <path.kt> --kotlin-bin <path>", MCPTool: "semantic_outline", Level: "symbol", ReadOnly: true},
 		},
 		Limitations: []neutralbackend.Constraint{
-			{
-				Title:       "Read Only",
-				Description: "Kotlin rename, formatting, imports, build import, and structural edits are unavailable.",
-				Severity:    "error",
-			},
-			{
-				Title:       "Trusted Explicit Tools",
-				Description: "Lookup and verification require a selected .kt or .kts file, explicit workspace trust, and a preinstalled fwcd/kotlin-language-server executable; upstream may run project classpath scripts or build tools after trust is granted.",
-				Severity:    "error",
-			},
-			{
-				Title:       "Hierarchical Document Symbols",
-				Description: "Only exact hierarchical classes, objects, interfaces, enums, functions, properties, and nested types are resolved; overload signatures, extension functions, generated symbols, and cross-file search are not promised.",
-				Severity:    "info",
-			},
+			{Title: "Read Only", Description: "Kotlin rename, formatting, imports, build import, and structural edits are unavailable.", Severity: "error"},
+			{Title: "Trusted Explicit Tools", Description: "Lookup, outline, and verification require a selected .kt or .kts file, explicit workspace trust, and a preinstalled fwcd/kotlin-language-server executable; upstream may run project classpath scripts or build tools after trust is granted.", Severity: "error"},
+			{Title: "Selected-File Outline", Description: "Outline requires one selected Kotlin file; directory scopes and include_unexported=false are unsupported.", Severity: "error"},
+			{Title: "Hierarchical Document Symbols", Description: "Only exact hierarchical classes, objects, interfaces, enums, functions, properties, and nested types are resolved; overload signatures, extension functions, generated symbols, and cross-file search are not promised.", Severity: "info"},
 		},
 	}
 }
@@ -230,7 +221,6 @@ func (b *KotlinBackend) Lookup(ctx context.Context, project neutralbackend.Proje
 	if strings.TrimSpace(query) == "" {
 		return nil, &KotlinError{Op: "lookup", File: file, Symbol: query, Err: ErrKotlinMalformedResponse}
 	}
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	defer func() {
@@ -241,22 +231,9 @@ func (b *KotlinBackend) Lookup(ctx context.Context, project neutralbackend.Proje
 	if b.session != nil && b.root != root {
 		return nil, &KotlinError{Op: "lookup", Workspace: root, Err: ErrKotlinSessionConflict}
 	}
-	if err := b.ensureSession(ctx, root, project.Kotlin); err != nil {
-		return nil, err
-	}
-	scratchFile, err := b.copySelectedFile(root, file, source)
+	raw, _, err := b.requestDocumentSymbols(ctx, root, file, source, project.Kotlin, "lookup")
 	if err != nil {
 		return nil, err
-	}
-	uri := pathutil.FileURI(scratchFile)
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
-		"uri": uri, "languageId": "kotlin", "version": 1, "text": string(source),
-	}}); err != nil {
-		return nil, &KotlinError{Op: "didOpen", File: file, Err: err}
-	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
-	if err != nil {
-		return nil, &KotlinError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
 	}
 	symbols, err := decodeKotlinDocumentSymbols(raw, b.tempRoot, source)
 	if err != nil {
@@ -337,6 +314,60 @@ func (b *KotlinBackend) Verify(ctx context.Context, request neutralbackend.Verif
 		}
 	}
 	return diagnostics, nil
+}
+
+func (b *KotlinBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (result *neutralbackend.OutlineResult, retErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	callerCtx := ctx
+	timeout := b.operationTimeout
+	if timeout <= 0 {
+		timeout = defaultKotlinOperationTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer func() {
+		timedOut := errors.Is(ctx.Err(), context.DeadlineExceeded)
+		cancel()
+		if retErr != nil && callerCtx.Err() == nil && timedOut {
+			retErr = errors.Join(retErr, ErrKotlinOperationTimeout)
+		}
+	}()
+	project := request.Project
+	project.File = request.Path
+	root, file, source, directory, err := resolveKotlinOutlineProject(project)
+	if err != nil {
+		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: err}
+	}
+	if err := readlsp.ValidateOutlineRequest(request, directory); err != nil {
+		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: err}
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Workspace: root}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	defer func() {
+		if closeErr := b.closeSessionLocked(); closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close Kotlin request session: %w", closeErr))
+		}
+	}()
+	if b.session != nil && b.root != root {
+		return nil, &KotlinError{Op: "outline", Workspace: root, Err: ErrKotlinSessionConflict}
+	}
+	raw, uri, err := b.requestDocumentSymbols(ctx, root, file, source, project.Kotlin, "outline")
+	if err != nil {
+		return nil, err
+	}
+	symbols, err := mapKotlinOutlineSymbols(raw, uri, file)
+	if err != nil {
+		return nil, &KotlinError{Op: "documentSymbol", File: file, Err: err}
+	}
+	result, err = readlsp.Outline(readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageKotlin, Source: source, Symbols: symbols, Complete: true}, request)
+	if err != nil {
+		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: err}
+	}
+	return result, nil
 }
 
 func rejectKotlinServerRequest(_ context.Context, request lsp.Request) (json.RawMessage, *lsp.ErrorObject) {
@@ -420,6 +451,27 @@ func (b *KotlinBackend) copySelectedFile(root, file string, source []byte) (stri
 		return "", fmt.Errorf("write isolated Kotlin source atomically: %w", err)
 	}
 	return target, nil
+}
+
+func (b *KotlinBackend) requestDocumentSymbols(ctx context.Context, root, file string, source []byte, config neutralbackend.KotlinConfig, operation string) (json.RawMessage, string, error) {
+	if err := b.ensureSession(ctx, root, config); err != nil {
+		return nil, "", err
+	}
+	scratchFile, err := b.copySelectedFile(root, file, source)
+	if err != nil {
+		return nil, "", err
+	}
+	uri := pathutil.FileURI(scratchFile)
+	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+		"uri": uri, "languageId": "kotlin", "version": 1, "text": string(source),
+	}}); err != nil {
+		return nil, "", &KotlinError{Op: operation + " didOpen", File: file, Err: err}
+	}
+	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	if err != nil {
+		return nil, "", &KotlinError{Op: operation + " documentSymbol", File: file, Err: err}
+	}
+	return raw, uri, nil
 }
 
 func defaultKotlinSessionFactory(ctx context.Context, root string, config neutralbackend.KotlinConfig) (KotlinSession, error) {
@@ -865,4 +917,176 @@ func kotlinCharacterOffset(line []byte, character int) (int, error) {
 		return len(line), nil
 	}
 	return 0, errors.New("character outside source")
+}
+
+func resolveKotlinOutlineProject(project neutralbackend.ProjectContext) (root, file string, source []byte, directory bool, retErr error) {
+	selected := project.File
+	if strings.TrimSpace(selected) == "" {
+		return "", "", nil, false, ErrKotlinFileRequired
+	}
+	base := project.RootDir
+	if !filepath.IsAbs(selected) {
+		if base == "" {
+			absolute, err := filepath.Abs(selected)
+			if err != nil {
+				return "", "", nil, false, fmt.Errorf("resolve Kotlin outline path %q: %w", selected, err)
+			}
+			selected = absolute
+		} else {
+			selected = filepath.Join(base, selected)
+		}
+	}
+	selected = neutralbackend.CanonicalWorkspaceRoot(selected)
+	info, err := os.Stat(selected)
+	if err != nil {
+		return "", "", nil, false, fmt.Errorf("stat Kotlin outline path %q: %w", selected, err)
+	}
+	if info.IsDir() {
+		if base == "" {
+			base = selected
+		}
+		return neutralbackend.CanonicalWorkspaceRoot(base), selected, nil, true, nil
+	}
+	if !info.Mode().IsRegular() {
+		return "", "", nil, false, fmt.Errorf("Kotlin outline path %q is not a regular file", selected)
+	}
+	if base == "" {
+		project.File = selected
+		root, err = kotlinWorkspaceRoot(project)
+		if err != nil {
+			return "", "", nil, false, err
+		}
+		base = root
+	}
+	project.RootDir = neutralbackend.CanonicalWorkspaceRoot(base)
+	project.File = selected
+	root, file, source, err = resolveKotlinProject(project)
+	return root, file, source, false, err
+}
+
+func mapKotlinOutlineSymbols(raw json.RawMessage, selectedURI, file string) ([]neutralbackend.ReadSymbol, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []neutralbackend.ReadSymbol{}, nil
+	}
+	var values []json.RawMessage
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrKotlinMalformedResponse, err)
+	}
+	result := make([]neutralbackend.ReadSymbol, 0, len(values))
+	for _, value := range values {
+		symbol, err := mapKotlinOutlineSymbol(value, nil, selectedURI, file)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, symbol)
+	}
+	return result, nil
+}
+
+func mapKotlinOutlineSymbol(raw json.RawMessage, parent []string, selectedURI, file string) (neutralbackend.ReadSymbol, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: symbol is not an object", ErrKotlinMalformedResponse)
+	}
+	if _, flat := object["location"]; flat {
+		return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: flat SymbolInformation is not supported", ErrKotlinUnsupportedResponse)
+	}
+	for _, key := range []string{"name", "kind", "range", "selectionRange"} {
+		if len(object[key]) == 0 {
+			return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: missing %s", ErrKotlinMalformedResponse, key)
+		}
+	}
+	if err := validateKotlinOutlineRange(object["range"]); err != nil {
+		return neutralbackend.ReadSymbol{}, err
+	}
+	if err := validateKotlinOutlineRange(object["selectionRange"]); err != nil {
+		return neutralbackend.ReadSymbol{}, err
+	}
+	var wire struct {
+		Name           string               `json:"name"`
+		Kind           int                  `json:"kind"`
+		Detail         string               `json:"detail"`
+		Range          neutralbackend.Range `json:"range"`
+		SelectionRange neutralbackend.Range `json:"selectionRange"`
+		Children       []json.RawMessage    `json:"children"`
+	}
+	if err := json.Unmarshal(raw, &wire); err != nil || strings.TrimSpace(wire.Name) == "" {
+		return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: missing or invalid symbol name", ErrKotlinMalformedResponse)
+	}
+	kind, err := kotlinOutlineKind(wire.Kind)
+	if err != nil {
+		return neutralbackend.ReadSymbol{}, err
+	}
+	if uriRaw, ok := object["uri"]; ok {
+		var uri string
+		if err := json.Unmarshal(uriRaw, &uri); err != nil {
+			return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: invalid symbol uri", ErrKotlinMalformedResponse)
+		}
+		if uri != "" && uri != selectedURI {
+			return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: symbol uri does not match selected document", ErrKotlinMalformedResponse)
+		}
+	}
+	nameParts := strings.Split(wire.Name, ".")
+	pathParts := append(append([]string(nil), parent...), nameParts...)
+	symbol := neutralbackend.ReadSymbol{
+		Name: wire.Name, QualifiedName: strings.Join(pathParts, "."), Kind: kind, File: filepath.ToSlash(file),
+		Range: wire.Range, SelectionRange: wire.SelectionRange,
+	}
+	if wire.Detail != "" {
+		detail := wire.Detail
+		symbol.ServerDetail = &detail
+	}
+	if _, ok := object["children"]; ok && wire.Children == nil && string(object["children"]) != "null" {
+		return neutralbackend.ReadSymbol{}, fmt.Errorf("%w: invalid children", ErrKotlinMalformedResponse)
+	}
+	symbol.Children = make([]neutralbackend.ReadSymbol, 0, len(wire.Children))
+	for _, child := range wire.Children {
+		mapped, err := mapKotlinOutlineSymbol(child, pathParts, selectedURI, file)
+		if err != nil {
+			return neutralbackend.ReadSymbol{}, err
+		}
+		symbol.Children = append(symbol.Children, mapped)
+	}
+	return symbol, nil
+}
+
+func kotlinOutlineKind(kind int) (string, error) {
+	switch kind {
+	case 2:
+		return "module", nil
+	case 4:
+		return "package", nil
+	case 5:
+		return "class", nil
+	case 6:
+		return "method", nil
+	case 7:
+		return "property", nil
+	case 8:
+		return "field", nil
+	case 9:
+		return "constructor", nil
+	case 10:
+		return "enum", nil
+	case 11:
+		return "interface", nil
+	case 12:
+		return "function", nil
+	case 13:
+		return "variable", nil
+	case 14:
+		return "constant", nil
+	case 19:
+		return "object", nil
+	case 22:
+		return "enum_member", nil
+	case 23, 26:
+		return "type", nil
+	default:
+		return "", fmt.Errorf("%w: unsupported Kotlin symbol kind %d", ErrKotlinUnsupportedResponse, kind)
+	}
+}
+
+func validateKotlinOutlineRange(raw json.RawMessage) error {
+	return readlsp.ValidateRangeShape(raw)
 }

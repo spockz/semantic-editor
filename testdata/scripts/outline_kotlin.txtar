@@ -1,0 +1,21 @@
+# Kotlin CLI contracts: trusted selected-file outline, hierarchy, revision, read-only copy, and explicit unsupported scope/filter errors.
+env SEMEDIT_TEST_KOTLIN_OUTLINE=1
+exec cp src/Widget.kt expected.kt
+exec semedit outline --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --path src/Widget.kt --include-unexported
+stdout '"kind": "selected_file"'
+stdout '"file": "src/Widget.kt"'
+stdout '"language": "kotlin"'
+stdout '"name": "Widget"'
+stdout '"name": "run"'
+stdout 'server_detail'
+stdout 'fun run'
+stdout '"revision":\s*"[0-9a-f]{64}"'
+! stderr .+
+exec cmp src/Widget.kt expected.kt
+! semedit outline --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --path src --include-unexported
+stderr 'selected files only'
+! semedit outline --language kotlin --trust-workspace --kotlin-bin $SEMEDIT_TEST_KOTLIN_LS --path src/Widget.kt --include-unexported=false
+stderr 'visibility filtering'
+
+-- src/Widget.kt --
+class Widget { fun run() {} }
