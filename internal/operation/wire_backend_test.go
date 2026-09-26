@@ -4,6 +4,7 @@ package operation_test
 import (
 	"errors"
 	"maps"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -221,5 +222,58 @@ func TestExactlyLookupIsReadOnly(t *testing.T) {
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
+	}
+}
+
+func TestLookupSharedProjectParserPreservesBackendConfiguration(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("lookup")
+	if !ok {
+		t.Fatal("lookup registry entry missing")
+	}
+	request, err := entry.Parse(map[string]any{
+		"symbol":             "Widget",
+		"file":               "src/Widget.java",
+		"language":           "java",
+		"trust_workspace":    true,
+		"jdtls_home":         "/jdtls",
+		"java_bin":           "/java",
+		"import_maven":       true,
+		"metals_home":        "/metals",
+		"metals_bin":         "/metals/bin",
+		"java_version":       "21",
+		"standalone_haskell": true,
+		"ghc_bin":            "/ghc",
+		"hls_bin":            "/hls",
+		"ghc_version":        "9.10",
+		"hls_version":        "2.11",
+		"kotlin_bin":         "/kotlin",
+		"bash_bin":           "/bash",
+		"make_bin":           "/make",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup, ok := request.(operation.LookupReq)
+	if !ok {
+		t.Fatalf("parsed request type = %T, want LookupReq", request)
+	}
+	want := backend.ProjectContext{
+		File:              "src/Widget.java",
+		Language:          backend.LanguageJava,
+		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: true},
+		Java:              backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true},
+		Scala:             backend.ScalaConfig{MetalsHome: "/metals", MetalsBin: "/metals/bin", JavaBin: "/java", JavaVersion: "21"},
+		Haskell:           backend.HaskellConfig{Standalone: true, GHCBin: "/ghc", HLSBin: "/hls", GHCVersion: "9.10", HLSVersion: "2.11"},
+		HaskellStandalone: true,
+		Kotlin:            backend.KotlinConfig{KotlinBin: "/kotlin"},
+		Bash:              backend.BashConfig{BashBin: "/bash"},
+		Make:              backend.MakeConfig{MakeBin: "/make"},
+		KotlinBin:         "/kotlin",
+	}
+	if !reflect.DeepEqual(lookup.Project, want) {
+		t.Errorf("lookup project = %#v, want %#v", lookup.Project, want)
+	}
+	if lookup.Symbol != "Widget" {
+		t.Errorf("lookup symbol = %q, want Widget", lookup.Symbol)
 	}
 }

@@ -335,3 +335,80 @@ func TestCapabilityMatrixConformance(t *testing.T) {
 		}
 	}
 }
+
+type inspectTestBackend struct {
+	testBackend
+
+	request backend.InspectRequest
+	result  *backend.InspectResult
+}
+
+func (b *inspectTestBackend) Inspect(_ context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
+	b.request = request
+	return b.result, nil
+}
+
+func TestReadServiceChecksCapabilityInterfaceAndTrust(t *testing.T) {
+	t.Run("unsupported capability", func(t *testing.T) {
+		registry, err := backend.NewRegistry(testBackend{
+			language:     "test",
+			capabilities: backend.NewCapabilities(backend.OperationLookup),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = backend.NewService(registry).Inspect(context.Background(), backend.InspectRequest{
+			Project: backend.ProjectContext{Language: "test"},
+		})
+		if !errors.Is(err, backend.ErrUnsupportedOperation) {
+			t.Fatalf("Inspect error = %v, want ErrUnsupportedOperation", err)
+		}
+	})
+	t.Run("advertised capability without interface", func(t *testing.T) {
+		registry, err := backend.NewRegistry(testBackend{
+			language:     "test",
+			capabilities: backend.NewCapabilities(backend.OperationInspect),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = backend.NewService(registry).Inspect(context.Background(), backend.InspectRequest{
+			Project: backend.ProjectContext{Language: "test"},
+		})
+		if !errors.Is(err, backend.ErrBackendInterfaceMismatch) {
+			t.Fatalf("Inspect error = %v, want ErrBackendInterfaceMismatch", err)
+		}
+	})
+	t.Run("trust is enforced and request is forwarded", func(t *testing.T) {
+		root := t.TempDir()
+		result := &backend.InspectResult{Scope: backend.ReadScope{Kind: "selected_file"}}
+		reader := &inspectTestBackend{
+			language:     "external",
+			capabilities: backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationInspect),
+			result:       result,
+		}
+		registry, err := backend.NewRegistry(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		service := backend.NewService(registry)
+		request := backend.InspectRequest{
+			Project: backend.ProjectContext{RootDir: root, Language: "external"},
+			Symbol:  "(*Server).Serve",
+		}
+		if _, err := service.Inspect(context.Background(), request); !errors.Is(err, backend.ErrWorkspaceTrustRequired) {
+			t.Fatalf("untrusted Inspect error = %v, want ErrWorkspaceTrustRequired", err)
+		}
+		request.Project.WorkspaceTrust = backend.NewWorkspaceTrust(root, true)
+		got, err := service.Inspect(context.Background(), request)
+		if err != nil {
+			t.Fatalf("trusted Inspect: %v", err)
+		}
+		if got != result {
+			t.Fatalf("Inspect result = %p, want %p", got, result)
+		}
+		if !reflect.DeepEqual(reader.request, request) {
+			t.Fatalf("backend received request %+v, want %+v", reader.request, request)
+		}
+	})
+}
