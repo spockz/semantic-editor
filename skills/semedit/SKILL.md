@@ -1,6 +1,6 @@
 ---
 name: semedit
-description: Use semedit tools for symbol lookup, code edits, verification, trusted Java builds, workspace snapshots, live reload, and tool-friction reports when their stated scope matches the task.
+description: Use semedit tools for symbol lookup, code inspection, outlines, references, code edits, verification, trusted Java builds, workspace snapshots, live reload, and tool-friction reports when their stated scope matches the task.
 ---
 
 # Use semedit for supported code transformations
@@ -12,6 +12,9 @@ When the request matches an operation exposed by the active semedit server, use 
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
 | Find a named symbol in a supported source file | `semantic_lookup` | Built-in text search, `grep`, or line counting |
+| Inspect a symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
+| View declaration hierarchy and structure of a file or directory | `semantic_outline` with optional `kinds` and `include_unexported` | Reading whole files or manual grep navigation |
+| Find usages, call sites, or references of a symbol | `semantic_find_references` | Broad text search or regex |
 | Rename a supported symbol and its references | `semantic_rename` | Built-in text replacement across files |
 | Replace one Go control-flow construct inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |
 | Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
@@ -47,7 +50,7 @@ For methods, qualify the receiver when useful, such as `Server.Start` or `(*Serv
 
 ## Respect backend capabilities
 
-The declaration, loop, body, file, import, dependency, and switch-case operations above are Go operations. Symbol lookup also supports trusted Rust, Java, Scala, and standalone Haskell backends. Semantic rename is available for Go workspaces and for selected Rust or Java files; Rust/Java rename requires both `file` and `trust_workspace: true`. Scala and Haskell are lookup-only. Java verification is limited to its advertised selected-file actions and requires workspace trust. Use only operations exposed for the current workspace and follow their schema requirements. For unsupported changes, use the available editing workflow and report any relevant limitation.
+The declaration, loop, body, file, import, dependency, and switch-case operations above are Go operations. Symbol inspection and reference discovery currently support Go workspaces. Declaration outline supports Go, Java, Kotlin, Rust, Scala, Makefile, and Bash backends. Symbol lookup supports Go, trusted Rust, Java, Scala, and standalone Haskell backends. Semantic rename is available for Go workspaces and for selected Rust or Java files; Rust/Java rename requires both `file` and `trust_workspace: true`. Scala and Haskell are lookup-only. Java verification is limited to its advertised selected-file actions and requires workspace trust. Use only operations exposed for the current workspace and follow their schema requirements. For unsupported changes, use the available editing workflow and report any relevant limitation.
 
 Framework conventions belong in a relevant installed framework skill. Use semedit's language-level operation to perform the structural change, and use that skill to choose the framework-specific owner or placement.
 
