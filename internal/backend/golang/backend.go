@@ -143,23 +143,26 @@ func (GoBackend) Lookup(_ context.Context, project backend.ProjectContext, query
 		return nil, err
 	}
 	converted := &backend.LookupResult{
-		Symbol:    result.Symbol,
-		File:      result.File,
-		Line:      result.Line,
-		Column:    result.Column,
-		Offset:    result.Offset,
-		Kind:      result.Kind,
-		Receiver:  result.Receiver,
+		Symbol: result.Symbol, File: result.File, Line: result.Line, Column: result.Column,
+		Offset: result.Offset, Kind: result.Kind, Receiver: result.Receiver,
 		Ambiguous: result.Ambiguous,
 	}
-	if result.Ambiguous {
+	if result.Definition != nil {
+		converted.Definition = convertCandidate(project.RootDir, result.Definition)
+		converted.Location = converted.Definition.Location
+	}
+	if result.Usages != nil {
+		converted.Usages = make([]*backend.SymbolCandidate, 0, len(result.Usages))
+		for _, usage := range result.Usages {
+			converted.Usages = append(converted.Usages, convertCandidate(project.RootDir, usage))
+		}
+	}
+	if result.Candidates != nil {
 		converted.Candidates = make([]*backend.SymbolCandidate, 0, len(result.Candidates))
 		for _, candidate := range result.Candidates {
 			converted.Candidates = append(converted.Candidates, convertCandidate(project.RootDir, candidate))
 		}
-		return converted, nil
 	}
-	converted.Location = sourceLocation(project.RootDir, result.File, result.Offset)
 	return converted, nil
 }
 

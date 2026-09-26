@@ -36,13 +36,16 @@ func (s *Symbol) BuildQualifiedName() string {
 
 // LookupResult holds the resolved symbol information or ambiguous candidate options.
 type LookupResult struct {
-	Symbol     string    `json:"symbol,omitempty"`
-	File       string    `json:"file,omitempty"`
-	Line       int       `json:"line,omitempty"`
-	Column     int       `json:"column,omitempty"`
-	Offset     int       `json:"offset,omitempty"`
-	Kind       string    `json:"kind,omitempty"`
-	Receiver   string    `json:"receiver,omitempty"`
+	Symbol     string  `json:"symbol,omitempty"`
+	File       string  `json:"file,omitempty"`
+	Line       int     `json:"line,omitempty"`
+	Column     int     `json:"column,omitempty"`
+	Offset     int     `json:"offset,omitempty"`
+	Kind       string  `json:"kind,omitempty"`
+	Receiver   string  `json:"receiver,omitempty"`
+	Definition *Symbol `json:"definition,omitempty"`
+	// Usages are syntactic local binding declarations, not semantic references.
+	Usages     []*Symbol `json:"usages,omitempty"`
 	Ambiguous  bool      `json:"ambiguous,omitempty"`
 	Candidates []*Symbol `json:"candidates,omitempty"`
 }
@@ -84,122 +87,119 @@ func normalizeInput(raw string) string {
 func Resolve(rootDir string, filePath string, query string) (*LookupResult, error) {
 	recv, name, err := ParseIdentifier(query)
 	if err != nil {
-		return nil, &SymbolError{
-			Op:     "resolve",
-			File:   filePath,
-			Symbol: query,
-			Err:    err,
-		}
+		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
 	}
 
-	var targetFiles []string
-	if filePath != "" {
-		resolvedPath := filePath
-		if !filepath.IsAbs(resolvedPath) && rootDir != "" {
-			resolvedPath = filepath.Join(rootDir, filePath)
-		}
-		targetFiles = append(targetFiles, resolvedPath)
-	} else {
-		searchRoot := rootDir
-		if searchRoot == "" {
-			searchRoot = "."
-		}
-		err := filepath.WalkDir(searchRoot, func(path string, d fs.DirEntry, walkErr error) error {
-			if walkErr != nil {
-				return walkErr
-			}
-			if d.IsDir() {
-				base := d.Name()
-				if strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata" {
-					return filepath.SkipDir
-				}
-				return nil
-			}
-			if strings.HasSuffix(d.Name(), ".go") && !strings.HasSuffix(d.Name(), "_test.go") {
-				targetFiles = append(targetFiles, path)
-			}
-			return nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan workspace: %w", err)
-		}
+	targetFiles, err := resolveTargetFiles(rootDir, filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan workspace: %w", err)
 	}
 
-	var matches []*Symbol
+	packageIndexes := make(map[string]*packageTypeIndex)
+	var declarations, usages []*Symbol
 	for _, file := range targetFiles {
-		syms, err := scanFile(file, recv, name)
-		if err != nil {
-			return nil, err
+		symbols, scanErr := scanFile(file, recv, name, packageIndexes)
+		if scanErr != nil {
+			return nil, scanErr
 		}
-		matches = append(matches, syms...)
-	}
-
-	if len(matches) == 0 {
-		return nil, &SymbolError{
-			Op:     "resolve",
-			File:   filePath,
-			Symbol: query,
-			Err:    ErrNotFound,
-		}
-	}
-
-	for _, m := range matches {
-		m.QualifiedName = m.BuildQualifiedName()
-		if rootDir != "" {
-			if rel, err := filepath.Rel(rootDir, m.File); err == nil && !strings.HasPrefix(rel, "..") {
-				m.File = rel
+		for _, candidate := range symbols {
+			candidate.QualifiedName = candidate.BuildQualifiedName()
+			if rootDir != "" {
+				if relative, relErr := filepath.Rel(rootDir, candidate.File); relErr == nil && !strings.HasPrefix(relative, "..") {
+					candidate.File = relative
+				}
+			}
+			if isLocalBinding(candidate.Kind) {
+				usages = append(usages, candidate)
+			} else {
+				declarations = append(declarations, candidate)
 			}
 		}
 	}
 
-	if len(matches) > 1 {
-		return &LookupResult{
-			Ambiguous:  true,
-			Candidates: matches,
-		}, nil
+	result := &LookupResult{Usages: usages}
+	if len(declarations) > 0 {
+		if len(declarations) > 1 {
+			result.Ambiguous = true
+			result.Candidates = declarations
+			return result, nil
+		}
+		result.Definition = declarations[0]
+		setLegacyDefinition(result, result.Definition)
+		return result, nil
 	}
 
-	match := matches[0]
-	return &LookupResult{
-		Symbol:    match.QualifiedName,
-		File:      match.File,
-		Line:      match.Line,
-		Column:    match.Column,
-		Offset:    match.Offset,
-		Kind:      match.Kind,
-		Receiver:  match.Receiver,
-		Ambiguous: false,
-	}, nil
+	if len(usages) == 0 {
+		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: ErrNotFound}
+	}
+	if len(usages) > 1 {
+		result.Ambiguous = true
+		result.Candidates = usages
+		return result, nil
+	}
+	result.Definition = usages[0]
+	setLegacyDefinition(result, result.Definition)
+	return result, nil
 }
 
-func scanFile(filePath string, targetRecv string, targetName string) ([]*Symbol, error) {
+func scanFile(filePath string, targetRecv string, targetName string, packageIndexes map[string]*packageTypeIndex) ([]*Symbol, error) {
 	cleanPath := filepath.Clean(filePath)
 	// #nosec G304 -- reading verified target go source files
 	src, err := os.ReadFile(cleanPath)
 	if err != nil {
-		return nil, &SymbolError{
-			Op:     "read",
-			File:   cleanPath,
-			Symbol: targetName,
-			Err:    err,
-		}
+		return nil, &SymbolError{Op: "read", File: cleanPath, Symbol: targetName, Err: err}
 	}
 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
 		pos := extractPosition(fset, err)
-		return nil, &SymbolError{
-			Op:     "parse",
-			File:   filePath,
-			Symbol: targetName,
-			Pos:    pos,
-			Err:    err,
+		return nil, &SymbolError{Op: "parse", File: filePath, Symbol: targetName, Pos: pos, Err: err}
+	}
+
+	var index *packageTypeIndex
+	if targetRecv != "" {
+		for _, declaration := range node.Decls {
+			general, ok := declaration.(*ast.GenDecl)
+			if !ok {
+				continue
+			}
+			for _, raw := range general.Specs {
+				spec, ok := raw.(*ast.TypeSpec)
+				if !ok || spec.Name.Name != targetRecv {
+					continue
+				}
+				_, isInterface := spec.Type.(*ast.InterfaceType)
+				if !isInterface && embeddedInterfaceName(spec.Type) == "" {
+					continue
+				}
+				key := filepath.Clean(filepath.Dir(filePath)) + "\x00" + node.Name.Name
+				if strings.HasSuffix(filePath, "_test.go") {
+					key += "\x00tests"
+				}
+				index = packageIndexes[key]
+				if index == nil {
+					index, err = loadPackageTypeIndex(filePath, node.Name.Name)
+					if err != nil {
+						return nil, fmt.Errorf("index interface declarations for %s: %w", filePath, err)
+					}
+					packageIndexes[key] = index
+				}
+				break
+			}
+			if index != nil {
+				break
+			}
 		}
 	}
 
-	results := scanTopLevelDeclarations(fset, node, filePath, targetRecv, targetName)
-	results = append(results, scanFunctionVariables(fset, node, filePath, targetName)...)
+	results, err := scanTopLevelDeclarations(fset, node, filePath, targetRecv, targetName, index)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s.%s in %s: %w", targetRecv, targetName, filePath, err)
+	}
+	if targetRecv == "" {
+		results = append(results, scanFunctionVariables(fset, node, filePath, targetName)...)
+	}
 	return results, nil
 }
 
@@ -218,32 +218,30 @@ func appendLocalVariable(results *[]*Symbol, fset *token.FileSet, filePath strin
 	})
 }
 
-// findStructFields returns fields declared directly by the requested named struct.
-func findStructFields(fset *token.FileSet, filePath string, spec *ast.TypeSpec, targetName string) []*Symbol {
-	structType, ok := spec.Type.(*ast.StructType)
-	if !ok {
-		return nil
-	}
-
-	var results []*Symbol
-	for _, field := range structType.Fields.List {
-		for _, ident := range field.Names {
-			if ident.Name != targetName {
-				continue
+func findTypeMembers(fset *token.FileSet, filePath string, spec *ast.TypeSpec, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
+	switch typeNode := spec.Type.(type) {
+	case *ast.StructType:
+		var results []*Symbol
+		for _, field := range typeNode.Fields.List {
+			for _, ident := range field.Names {
+				if ident.Name != targetName {
+					continue
+				}
+				position := fset.Position(ident.Pos())
+				results = append(results, &Symbol{Name: ident.Name, Receiver: spec.Name.Name, Kind: "field", File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset})
 			}
-			pos := fset.Position(ident.Pos())
-			results = append(results, &Symbol{
-				Name:     ident.Name,
-				Receiver: spec.Name.Name,
-				Kind:     "field",
-				File:     filePath,
-				Line:     pos.Line,
-				Column:   pos.Column,
-				Offset:   pos.Offset,
-			})
 		}
+		return results, nil
+	case *ast.InterfaceType:
+		root := indexedTypeDeclaration{spec: spec, source: packageSourceFile{path: filePath, fset: fset}}
+		return findInterfaceMethods(index, root, targetName)
+	default:
+		if embeddedInterfaceName(spec.Type) == "" {
+			return nil, nil
+		}
+		root := indexedTypeDeclaration{spec: spec, source: packageSourceFile{path: filePath, fset: fset}}
+		return findInterfaceMethods(index, root, targetName)
 	}
-	return results
 }
 
 func extractReceiver(recv *ast.FieldList) string {
@@ -286,4 +284,61 @@ func extractPosition(fset *token.FileSet, err error) token.Position {
 		return sErr.Pos
 	}
 	return token.Position{}
+}
+
+func resolveTargetFiles(rootDir, filePath string) ([]string, error) {
+	if filePath != "" {
+		resolvedPath := filePath
+		if !filepath.IsAbs(resolvedPath) && rootDir != "" {
+			resolvedPath = filepath.Join(rootDir, filePath)
+		}
+		return []string{resolvedPath}, nil
+	}
+	searchRoot := rootDir
+	if searchRoot == "" {
+		searchRoot = "."
+	}
+	rootPath := filepath.Clean(searchRoot)
+	var targetFiles []string
+	err := filepath.WalkDir(searchRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if filepath.Clean(path) != rootPath {
+				base := entry.Name()
+				if strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata" {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if strings.HasSuffix(entry.Name(), ".go") && !strings.HasSuffix(entry.Name(), "_test.go") {
+			targetFiles = append(targetFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return targetFiles, nil
+}
+
+func isLocalBinding(kind string) bool {
+	switch kind {
+	case "receiver", "parameter", "result", "variable":
+		return true
+	default:
+		return false
+	}
+}
+
+func setLegacyDefinition(result *LookupResult, definition *Symbol) {
+	result.Symbol = definition.BuildQualifiedName()
+	result.File = definition.File
+	result.Line = definition.Line
+	result.Column = definition.Column
+	result.Offset = definition.Offset
+	result.Kind = definition.Kind
+	result.Receiver = definition.Receiver
 }
