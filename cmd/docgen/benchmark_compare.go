@@ -230,6 +230,7 @@ func benchmarkAggregateIdentity(comp *BenchComparisonSummary) string {
 	return strings.Join([]string{
 		comp.TaskID,
 		comp.Target.String(),
+		displaySemeditArmRestriction(comp.SemeditArmRestrict),
 		prompt,
 		displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions),
 	}, "\x00")
@@ -264,6 +265,7 @@ func (summary benchmarkMetricSummary) average() float64 {
 }
 
 type benchmarkAggregateGroup struct {
+	restriction  string
 	task         string
 	target       string
 	prompt       string
@@ -300,7 +302,7 @@ Every table holds one experimental condition, context variant, and arm. **N** is
 	metrics := benchmarkMetrics()
 	for _, group := range groups {
 		fmt.Fprintf(&sb, "### `%s` · `%s` · %s · `%s` arm\n\n", group.task, group.target, group.context, group.arm)
-		fmt.Fprintf(&sb, "Prompt variant: `%s` · MCP server instructions: `%s`\n\n", group.prompt, group.instructions)
+		fmt.Fprintf(&sb, "Prompt variant: `%s` · MCP server instructions: `%s` · Semedit restriction: `%s`\n\n", group.prompt, group.instructions, group.restriction)
 		sb.WriteString("| Metric | N | Min | Max | Average |\n| :--- | ---: | ---: | ---: | ---: |\n")
 		for _, metric := range metrics {
 			summary := group.metrics[metric.name]
@@ -336,7 +338,7 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 				if group == nil {
 					group = &benchmarkAggregateGroup{
 						task: comparison.TaskID, target: comparison.Target.String(), prompt: prompt, instructions: instructions,
-						context: context.label(), arm: observation.arm, metrics: make(map[string]*benchmarkMetricSummary),
+						context: context.label(), arm: observation.arm, metrics: make(map[string]*benchmarkMetricSummary), restriction: displaySemeditArmRestriction(comparison.SemeditArmRestrict),
 					}
 					groups[key] = group
 				}
@@ -362,8 +364,8 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 	}
 	sort.Slice(result, func(i, j int) bool {
 		left, right := result[i], result[j]
-		return strings.Join([]string{left.task, left.target, left.prompt, left.instructions, left.context, left.arm}, "\x00") <
-			strings.Join([]string{right.task, right.target, right.prompt, right.instructions, right.context, right.arm}, "\x00")
+		return strings.Join([]string{left.task, left.target, left.prompt, left.instructions, left.restriction, left.context, left.arm}, "\x00") <
+			strings.Join([]string{right.task, right.target, right.prompt, right.instructions, right.restriction, right.context, right.arm}, "\x00")
 	})
 	return result
 }

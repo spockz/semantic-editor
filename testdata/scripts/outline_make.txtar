@@ -1,0 +1,40 @@
+# Make outline keeps exact make-ls ranges and reports intentional partial projections.
+exec semedit outline --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --path Read.mk
+stdout '"name": "all"'
+stdout '"complete": false'
+stdout '"line": 2'
+stdout '"character": 10'
+cmp Read.mk want.mk
+exec semedit outline --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --path Conditional.mk
+stdout '"complete": false'
+stdout '"symbols": \[\]'
+exec semedit outline --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --path Include.mk
+stdout '"complete": false'
+stdout '"symbols": \[\]'
+! semedit outline --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --path Continued.mk
+stderr 'continued declaration'
+! semedit inspect-symbol --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Continued.mk --symbol FLAG
+stderr 'continued declaration'
+
+-- Read.mk --
+all:
+	@echo one
+	@echo two
+next:
+	@echo next
+-- want.mk --
+all:
+	@echo one
+	@echo two
+next:
+	@echo next
+-- Conditional.mk --
+ifeq ($(MODE),1)
+all:
+	@echo yes
+endif
+-- Include.mk --
+include external.mk
+-- Continued.mk --
+FLAGS := -Wall \
+  -Wextra

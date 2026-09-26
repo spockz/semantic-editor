@@ -1,3 +1,4 @@
+// These tests protect benchmark condition identity and published measurement semantics.
 package main
 
 import (
@@ -19,7 +20,8 @@ func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
 		InteractionSteps: []InteractionStep{{
 			WallClock: 1750 * time.Millisecond,
 		}},
-		SemanticToolReflection: &SemanticToolReflection{WallClock: 2 * time.Second},
+		SemanticToolReflection:  &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Reason recorded"},
+		SemanticBatchReflection: &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Batch reason recorded"},
 		Oracle: &OracleResult{
 			Level1Policy: true,
 			Duration:     1750 * time.Millisecond,
@@ -63,8 +65,19 @@ func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
 	if got, want := run["interaction_steps"].([]any)[0].(map[string]any)["wall_clock_ms"], float64(1750); got != want {
 		t.Errorf("interaction wall_clock_ms = %v, want %v", got, want)
 	}
-	if got, want := run["semantic_tool_reflection"].(map[string]any)["wall_clock_ms"], float64(2000); got != want {
-		t.Errorf("reflection wall_clock_ms = %v, want %v", got, want)
+	for _, key := range []string{"semantic_tool_reflection", "semantic_batch_reflection"} {
+		reflection := run[key].(map[string]any)
+		for _, metric := range []string{"wall_clock_ms", "turns", "tool_calls", "output_tokens", "prompt_tokens"} {
+			if _, present := reflection[metric]; present {
+				t.Errorf("%s contains diagnostic metric %s", key, metric)
+			}
+		}
+		if reflection["response"] == "" {
+			t.Errorf("%s lost explanation", key)
+		}
+	}
+	if rendered := report.RenderMarkdown(); strings.Contains(rendered, "Reflection wall-clock:") {
+		t.Error("Markdown publishes interrogation metrics")
 	}
 	if got, want := run["oracle"].(map[string]any)["duration_ms"], float64(1750); got != want {
 		t.Errorf("oracle duration_ms = %v, want %v", got, want)
@@ -500,5 +513,118 @@ func TestFormatMCPMetrics(t *testing.T) {
 	}})
 	if want := "; server: 1.25s (verification: 700ms; formatting: 300ms)"; got != want {
 		t.Errorf("MCP timing summary = %q, want %q", got, want)
+	}
+}
+
+func TestRestrictionPoliciesKeepReportsAndFilesDistinct(t *testing.T) {
+	t.Parallel()
+	policies := []SemeditArmRestriction{"", SemeditArmRestrictRead, SemeditArmRestrictWrite, SemeditArmRestrictReadWrite}
+	runs := make([]*RunResult, 0, 2*len(policies))
+	for _, policy := range policies {
+		for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
+			runs = append(runs, &RunResult{TaskID: "task-01-rename-local", Target: Target{Harness: "codex"}, Variant: "small:default", PromptVariant: "default", Repeat: 1, Arm: arm, SemeditArmRestrict: policy, SemeditArmRestrictionApplied: arm == ArmSemedit && policy != "", Success: true, Oracle: &OracleResult{Passed: true}, WallClock: 1500 * time.Millisecond})
+		}
+	}
+	report := &BenchmarkReport{Runs: runs, Comparisons: BuildComparisons(runs)}
+	if len(report.Comparisons) != 4 {
+		t.Fatalf("comparison count = %d, want 4", len(report.Comparisons))
+	}
+	seen := make(map[SemeditArmRestriction]bool)
+	for _, comp := range report.Comparisons {
+		seen[comp.SemeditArmRestrict] = true
+		if comp.SmallBaseline == nil || comp.SmallSemedit == nil {
+			t.Errorf("policy %q lost its pair", comp.SemeditArmRestrict)
+			continue
+		}
+		if comp.SmallBaseline.SemeditArmRestrict != comp.SemeditArmRestrict || comp.SmallSemedit.SemeditArmRestrict != comp.SemeditArmRestrict {
+			t.Errorf("policy %q paired across conditions", comp.SemeditArmRestrict)
+		}
+		if comp.SmallBaseline.SemeditArmRestrictionApplied {
+			t.Errorf("baseline policy applied for %q", comp.SemeditArmRestrict)
+		}
+	}
+	for _, policy := range policies {
+		if !seen[policy] {
+			t.Errorf("missing policy %q", policy)
+		}
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		FormatVersion int    `json:"format_version"`
+		DurationUnit  string `json:"duration_unit"`
+		Runs          []struct {
+			Policy    string `json:"semedit_arm_restrict"`
+			WallClock int    `json:"wall_clock_ms"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(data, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if wire.FormatVersion != 2 || wire.DurationUnit != "milliseconds" {
+		t.Errorf("duration contract changed: %+v", wire)
+	}
+	for i, run := range wire.Runs {
+		if run.Policy != string(runs[i].SemeditArmRestrict) || run.WallClock != 1500 {
+			t.Errorf("run %d lost condition or units: %+v", i, run)
+		}
+	}
+	dir := t.TempDir()
+	if err := saveMatrixReports(dir, "../../testdata/bench", runs); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "task-01-rename-local", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 4 {
+		t.Errorf("result files = %d, want 4 policies", len(files))
+	}
+	if !strings.Contains(report.RenderMarkdown(), "unspecified semedit restriction") {
+		t.Error("legacy restriction missing explicit unspecified label")
+	}
+}
+
+func TestPlannedPhysicalAndGeneratedLargeFixturesRemainDistinct(t *testing.T) {
+	t.Parallel()
+	runs := []*RunResult{
+		{JobID: "generated-small", TaskID: "task-01-rename-local", Variant: "small", Target: Target{Harness: "control"}, Arm: ArmControl},
+		{JobID: "generated-large", TaskID: "task-01-rename-local", Variant: "large", Target: Target{Harness: "control"}, Arm: ArmControl},
+		{JobID: "physical-large", TaskID: "task-01b-rename-local-large-context", Variant: "large", Target: Target{Harness: "control"}, Arm: ArmControl},
+	}
+	comparisons := BuildComparisons(runs)
+	if len(comparisons) != 2 {
+		t.Fatalf("comparisons=%d, want distinct fixtures", len(comparisons))
+	}
+	count := 0
+	for _, comparison := range comparisons {
+		if comparison.SmallSemedit != nil {
+			count++
+		}
+		if comparison.LargeSemedit != nil {
+			count++
+		}
+	}
+	if count != 3 {
+		t.Errorf("published %d of 3 planned observations", count)
+	}
+	dir := t.TempDir()
+	if err := saveMatrixReports(dir, "../../testdata/bench", runs); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "*", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 2 {
+		t.Errorf("distinct fixture reports=%d, want 2", len(files))
+	}
+	for _, run := range runs {
+		run.JobID = ""
+	}
+	if len(BuildComparisons(runs)) != 1 {
+		t.Error("historical normalization changed")
 	}
 }

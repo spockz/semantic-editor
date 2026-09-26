@@ -23,9 +23,12 @@ diagnostics are not invoked.
 - Foreign files, resources, annotations, malformed UTF-16 ranges, version
   mismatches, stale preimages, multi-file edits, and overlap are rejected before
   writing.
-- The managed session is closed and reset after a successful commit.
+- The managed session is closed and reset after a successful commit. A close
+  failure after the atomic write does not turn the committed rename into a
+  reported failure.
 
 ## Consequences
 
 Java now has a deliberately narrow mutation capability while lookup behavior
-and all other language backends remain unchanged.
+and all other language backends remain unchanged. The successful mutation result
+is preserved when only post-commit session cleanup fails.

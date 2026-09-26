@@ -1,0 +1,29 @@
+# Lookup methods declared by and embedded into a package interface.
+exec semedit lookup --file api/outer.go --symbol "TransactionalSink.Write"
+! stdout '"ambiguous":\s*true'
+! stdout '"candidates":'
+stdout '"definition":'
+stdout '"kind":\s*"method"'
+stdout '"definition":\s*\{\s*"name":\s*"Write",\s*"receiver":\s*"TransactionalSink"'
+stdout '"file":\s*"api/base.go"'
+stdout '"line":\s*4'
+stdout '"offset":\s*36'
+stdout '"symbol":\s*"TransactionalSink.Write"'
+
+-- go.mod --
+module example.com/interface-lookup
+go 1.23
+
+-- api/outer.go --
+package api
+
+type TransactionalSink interface {
+	Sink
+}
+
+-- api/base.go --
+package api
+
+type Sink interface {
+	Write([]byte) error
+}

@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"semedit/internal/pipeline"
 	"slices"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ type TaskMetadata struct {
 	Category               string            `json:"category"`
 	Instruction            string            `json:"instruction"`
 	VerificationConstraint string            `json:"verification_constraint,omitempty"`
+	Contexts               []string          `json:"contexts,omitempty"`
 	PromptVariants         map[string]string `json:"prompt_variants,omitempty"`
 	InteractiveFollowups   []string          `json:"interactive_followups,omitempty"`
 	Oracle                 OracleConfig      `json:"oracle"`
@@ -33,10 +35,11 @@ type TaskMetadata struct {
 
 // OracleConfig specifies the validation criteria across evaluation levels.
 type OracleConfig struct {
-	MutationPolicy MutationPolicyConfig `json:"level_1_mutation_policy"`
-	AST            ASTConfig            `json:"level_2_ast"`
-	Build          BuildConfig          `json:"level_3_build"`
-	Test           TestConfig           `json:"level_4_test"`
+	MutationPolicy          MutationPolicyConfig `json:"level_1_mutation_policy"`
+	AST                     ASTConfig            `json:"level_2_ast"`
+	Build                   BuildConfig          `json:"level_3_build"`
+	Test                    TestConfig           `json:"level_4_test"`
+	DiagnosticExpectedTools []string             `json:"diagnostic_expected_tools,omitempty"`
 }
 
 // MutationPolicyConfig defines file modification constraints.
@@ -85,8 +88,9 @@ type OracleResult struct {
 
 // Task represents an unpacked benchmark scenario ready for agent execution.
 type Task struct {
-	Metadata TaskMetadata
-	Archive  *Archive
+	Metadata       TaskMetadata
+	Archive        *Archive
+	contextVariant string
 }
 
 // ParseTask parses a txtar archive containing YAML frontmatter in its initial comment.
@@ -126,13 +130,11 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 			continue
 		}
 
-		// Support testscript comment prefixes: strip leading "# " or "#"
 		if after, ok := strings.CutPrefix(trimmed, "#"); ok {
 			trimmed = strings.TrimSpace(after)
 			if trimmed == "" || strings.HasPrefix(trimmed, "exec ") || strings.HasPrefix(trimmed, "cmp ") {
 				continue
 			}
-			// Preserve indentation after the '#' symbol
 			if hashIdx := strings.Index(rawLine, "#"); hashIdx >= 0 {
 				rawLine = strings.TrimPrefix(rawLine[hashIdx+1:], " ")
 			}
@@ -145,8 +147,12 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 			itemVal := strings.Trim(after, `"'`)
 			targetSlice := strings.Join(currentPath, ".")
 			switch targetSlice {
+			case "contexts":
+				meta.Contexts = append(meta.Contexts, itemVal)
 			case "interactive_followups":
 				meta.InteractiveFollowups = append(meta.InteractiveFollowups, itemVal)
+			case "oracle.diagnostic_expected_tools":
+				meta.Oracle.DiagnosticExpectedTools = append(meta.Oracle.DiagnosticExpectedTools, itemVal)
 			case "oracle.level_1_mutation_policy.disallowed_files":
 				meta.Oracle.MutationPolicy.DisallowedFiles = append(meta.Oracle.MutationPolicy.DisallowedFiles, itemVal)
 			case "oracle.level_2_ast.must_contain_symbols":
@@ -230,47 +236,60 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 
 // ExtractTo extracts all non-golden archive files to target directory.
 func (t *Task) ExtractTo(targetDir string) error {
-	return t.ExtractVariantTo(targetDir, "small")
+	contexts := supportedTaskContexts(t)
+	variant := t.contextVariant
+	if variant == "" {
+		variant = "small"
+		if !slices.Contains(contexts, variant) && len(contexts) > 0 {
+			variant = contexts[0]
+		}
+	}
+	return t.ExtractVariantTo(targetDir, variant)
 }
 
 // ExtractVariantTo extracts archive files and dynamically injects overlay files for large contexts.
 func (t *Task) ExtractVariantTo(targetDir, variant string) error {
+	contexts := supportedTaskContexts(t)
+	variantContext, _, _ := strings.Cut(variant, ":")
+	baseContext, valid := normalizedContextBase(variantContext)
+	if !valid || !slices.Contains(contexts, baseContext) {
+		return fmt.Errorf("task %s does not support context %q (available: %s)", t.Metadata.TaskID, variantContext, strings.Join(contexts, ","))
+	}
 	for _, file := range t.Archive.Files {
-		// Strict invariant: never extract want/ golden files into model workspace
 		if strings.HasPrefix(file.Name, "want/") || strings.HasPrefix(file.Name, "want\\") {
 			continue
 		}
-
 		destPath := filepath.Join(targetDir, filepath.FromSlash(file.Name))
-		// #nosec G703,G301 -- creating directory inside isolated benchmark workspace
+		// #nosec G304 G703 -- archive paths are trusted fixture contents and extraction is constrained to a caller-owned work directory.
 		if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 			return fmt.Errorf("create dir for %s: %w", file.Name, err)
 		}
-		// #nosec G703,G306 -- writing benchmark fixture file
-		if err := os.WriteFile(destPath, file.Data, 0o600); err != nil {
+		// #nosec G304 G703 -- archive paths are trusted fixture contents and extraction is constrained to a caller-owned work directory.
+		if err := pipeline.WriteAtomic(destPath, file.Data); err != nil {
 			return fmt.Errorf("write file %s: %w", file.Name, err)
 		}
 	}
-
-	if strings.Contains(strings.ToLower(variant), "large") {
+	hasSmall := slices.Contains(contexts, "small")
+	hasLarge := slices.Contains(contexts, "large")
+	if baseContext == "large" && hasLarge && hasSmall {
 		for relPath, content := range LargeContextOverlayFiles(t.Metadata.TaskID) {
 			destPath := filepath.Join(targetDir, filepath.FromSlash(relPath))
-			// #nosec G703 -- checking if overlay file already exists in targetDir
+			// #nosec G304 G703 -- fixture overlay destinations are fixed by harness code.
 			if _, err := os.Stat(destPath); err == nil {
-				// Don't overwrite existing files from fixture
 				continue
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("stat overlay destination %s: %w", relPath, err)
 			}
-			// #nosec G703,G301 -- creating directory inside isolated benchmark workspace
+			// #nosec G304 G703 -- fixture overlay destinations are fixed by harness code.
 			if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 				return fmt.Errorf("create dir for %s: %w", relPath, err)
 			}
-			// #nosec G703,G306 -- writing large context overlay file
-			if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
+			// #nosec G304 G703 -- fixture overlay destinations are fixed by harness code.
+			if err := pipeline.WriteAtomic(destPath, []byte(content)); err != nil {
 				return fmt.Errorf("write overlay file %s: %w", relPath, err)
 			}
 		}
 	}
-
 	return nil
 }
 

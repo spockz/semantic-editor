@@ -19,10 +19,10 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	backend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
 )
@@ -236,7 +236,7 @@ func (*JavaBackend) Language() backend.LanguageID { return backend.LanguageJava 
 
 // Capabilities declares Java's trusted, file-scoped capabilities.
 func (*JavaBackend) Capabilities() backend.Capabilities {
-	return backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationLookup, backend.OperationRename, backend.OperationVerify)
+	return backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationLookup, backend.OperationRename, backend.OperationVerify, backend.OperationOutline, backend.OperationInspect)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Java backend.
@@ -261,8 +261,31 @@ func (*JavaBackend) CapabilityMatrix() backend.LanguageMatrix {
 				MCPTool:      "resolve_symbol_location",
 				PlacementKey: false,
 			},
+			"outline": {
+				Supported:    true,
+				Description:  "Trusted selected-file Java declaration outline from validated hierarchical JDT LS document symbols.",
+				CLICommand:   "semedit outline --language java --path <path.java> --trust-workspace --jdtls-home <path>",
+				MCPTool:      "semantic_outline",
+				Level:        "symbol",
+				ReadOnly:     true,
+				PlacementKey: false,
+			},
+			"inspect_symbol": {
+				Supported:    true,
+				Description:  "Trusted selected-file Java source inspection for all matching hierarchical declarations and overloads.",
+				CLICommand:   "semedit inspect-symbol --language java --file <path.java> --symbol <sym> --trust-workspace --jdtls-home <path>",
+				MCPTool:      "semantic_inspect_symbol",
+				Level:        "symbol",
+				ReadOnly:     true,
+				PlacementKey: false,
+			},
 		},
 		Limitations: []backend.Constraint{
+			{
+				Title:       "Selected-File Java Reads",
+				Description: "Java outline and inspect require one selected .java file; directory outlines and include_unexported=false are unsupported.",
+				Severity:    "error",
+			},
 			{
 				Title:       "Selected-File Rename Only",
 				Description: "Java supports selected-file rename, formatting, source.organizeImports, and diagnostics; extraction, inline, move, and hierarchy refactoring remain unavailable.",
@@ -270,12 +293,12 @@ func (*JavaBackend) CapabilityMatrix() backend.LanguageMatrix {
 			},
 			{
 				Title:       "Trusted Explicit Workspace",
-				Description: "JDT LS lookup and edits remain selected-file operations with explicit trust and a preinstalled distribution; Maven process actions are registered separately and are not JDT LS capabilities. Gradle import remains disabled.",
+				Description: "JDT LS lookup, reads, and edits require explicit trust and a preinstalled distribution; Maven process actions are registered separately and are not JDT LS capabilities. Gradle import remains disabled.",
 				Severity:    "error",
 			},
 			{
 				Title:       "Hierarchical Document Symbols",
-				Description: "Only exact hierarchical package, type, field, method, and constructor document symbols are resolved; overload signatures, locals, generated symbols, and malformed-source fallback are not promised.",
+				Description: "Only validated hierarchical package, type, field, method, and constructor document symbols are returned; local variables and generated symbols are not part of the selected-file declaration tree.",
 				Severity:    "info",
 			},
 		},
@@ -311,62 +334,28 @@ func (b *JavaBackend) Lookup(ctx context.Context, project backend.ProjectContext
 	if !project.WorkspaceTrust.Allows(root) {
 		return nil, &backend.WorkspaceTrustError{Operation: backend.OperationLookup, Language: backend.LanguageJava, Workspace: root}
 	}
-	javaConfig := effectiveJavaConfig(project)
-	fingerprint, fingerprintErr := javaImportFingerprint(root, javaConfig)
-	if fingerprintErr != nil {
-		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	config := effectiveJavaConfig(project)
+	fingerprint, err := javaImportFingerprint(root, config)
+	if err != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: err}
 	}
 	if strings.TrimSpace(query) == "" {
 		return nil, &JavaError{Op: "lookup", File: file, Symbol: query, Err: ErrJavaMalformedResponse}
 	}
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.session != nil && b.root != root {
-		return nil, &JavaError{Op: "lookup", Workspace: root, Err: ErrJavaSessionConflict}
+	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "lookup"); err != nil {
+		return nil, err
 	}
-	if b.session != nil && b.fingerprint != fingerprint {
-		if err := b.session.Close(); err != nil {
-			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
-		}
-		b.session, b.root, b.fingerprint = nil, "", ""
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		session, factoryErr := b.factory(ctx, root, javaConfig)
-		if factoryErr != nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: factoryErr}
-		}
-		if session == nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		b.session, b.root, b.fingerprint = session, root, fingerprint
-		if err := initializeJavaSession(ctx, session, root, javaConfig); err != nil {
-			_ = session.Close()
-			b.session, b.root, b.fingerprint = nil, "", ""
-			return nil, &JavaError{Op: "initialize", Workspace: root, Err: err}
-		}
-	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{
-		"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source),
-	}}); err != nil {
-		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
-	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
+	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
 	if err != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Symbol: query, Err: err}
-	}
-	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
-	if err != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Symbol: query, Err: err}
+		return nil, err
 	}
 	return selectJavaSymbol(query, root, file, source, symbols)
 }
 
 // Rename executes one trusted, file-scoped JDT LS rename transaction.
-func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest) (*backend.RenameResult, error) {
+func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest) (result *backend.RenameResult, retErr error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -378,43 +367,25 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 		return nil, &backend.WorkspaceTrustError{Operation: backend.OperationRename, Language: backend.LanguageJava, Workspace: root}
 	}
 	config := effectiveJavaConfig(request.Project)
-	fingerprint, fingerprintErr := javaImportFingerprint(root, config)
-	if fingerprintErr != nil {
-		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: fingerprintErr}
+	fingerprint, err := javaImportFingerprint(root, config)
+	if err != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: err}
 	}
 	if strings.TrimSpace(request.Symbol) == "" || strings.TrimSpace(request.To) == "" {
 		return nil, &backend.Error{Operation: backend.OperationRename, Language: backend.LanguageJava, Err: ErrJavaRenameInvalidEdit}
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.session != nil && b.root != root {
-		return nil, &JavaError{Op: "rename", Workspace: root, Err: ErrJavaSessionConflict}
-	}
-	if b.session != nil && b.fingerprint != fingerprint {
-		if err := b.session.Close(); err != nil {
-			return nil, &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", err)}
-		}
-		b.session, b.root, b.fingerprint = nil, "", ""
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		s, factoryErr := b.factory(ctx, root, config)
-		if factoryErr != nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: factoryErr}
-		}
-		if s == nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		b.session, b.root, b.fingerprint = s, root, fingerprint
-		if initErr := initializeJavaSession(ctx, s, root, config); initErr != nil {
-			_ = s.Close()
-			b.session, b.root, b.fingerprint = nil, "", ""
-			return nil, &JavaError{Op: "initialize", Workspace: root, Err: initErr}
-		}
+	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "rename"); err != nil {
+		return nil, err
 	}
 	session := b.session
+	defer func() {
+		if retErr == nil || b.session == nil {
+			return
+		}
+		retErr = errors.Join(retErr, b.invalidateJavaSessionLocked(session))
+	}()
 	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
 		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
 	}
@@ -424,6 +395,9 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	}
 	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
 	if err != nil {
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+	}
+	if err := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); err != nil {
 		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
 	lookup, err := selectJavaSymbol(request.Symbol, root, file, source, symbols)
@@ -452,9 +426,8 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	if err := pipeline.WriteAtomic(file, updated); err != nil {
 		return nil, &JavaError{Op: "write", File: file, Err: err}
 	}
-	_ = session.Close()
-	b.session, b.root = nil, ""
-	b.fingerprint = ""
+	// Preserve the committed rename result if only session cleanup fails.
+	_ = b.invalidateJavaSessionLocked(session)
 	return &backend.RenameResult{Lookup: lookup}, nil
 }
 
@@ -641,45 +614,46 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 		}
 		closeErr := b.session.Close()
 		b.session, b.root, b.fingerprint = nil, "", ""
-		if closeErr != nil && retErr == nil {
-			retErr = fmt.Errorf("close Java session after failure: %w", closeErr)
+		if closeErr != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close Java session after failure: %w", closeErr))
 		}
 	}()
 	if b.session != nil && b.root != root {
 		return nil, &JavaError{Op: "verify", Workspace: root, Err: ErrJavaSessionConflict}
 	}
-	if b.session != nil && b.fingerprint != fingerprint {
-		if err := b.session.Close(); err != nil {
-			return nil, fmt.Errorf("close stale Java session: %w", err)
-		}
+	if b.session != nil {
+		session := b.session
 		b.session, b.root, b.fingerprint = nil, "", ""
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
-		}
-		session, err := b.factory(ctx, root, config)
-		if err != nil {
-			return nil, err
-		}
-		b.session, b.root, b.fingerprint = session, root, fingerprint
-		cleanupOnError = true
-		if err := initializeJavaSession(ctx, session, root, config); err != nil {
-			return nil, err
+		if err := session.Close(); err != nil {
+			return nil, fmt.Errorf("close retained Java session before verify: %w", err)
 		}
 	}
+	if b.factory == nil {
+		return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+	}
+	session, err := b.factory(ctx, root, config)
+	if err != nil {
+		return nil, err
+	}
+	if session == nil {
+		return nil, &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+	}
+	b.session, b.root, b.fingerprint = session, root, fingerprint
 	cleanupOnError = true
-	if selector, ok := b.session.(javaDiagnosticsSelector); ok {
+	if err := initializeJavaSession(ctx, session, root, config); err != nil {
+		return nil, err
+	}
+	if selector, ok := session.(javaDiagnosticsSelector); ok {
 		selector.SelectDiagnosticsURI(pathutil.FileURI(file))
 	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
 		return nil, err
 	}
 	updated := source
 	version := 1
 	formattingChanged := false
 	if request.FormatSelectedFile {
-		raw, err := b.session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
+		raw, err := session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
 		if err != nil {
 			return nil, err
 		}
@@ -692,11 +666,11 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if request.OrganizeImports {
 		if formattingChanged {
 			version = 2
-			if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+			if err := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
 				return nil, err
 			}
 		}
-		raw, err := b.session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
+		raw, err := session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
 		if err != nil {
 			return nil, err
 		}
@@ -711,26 +685,32 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 			return nil, err
 		}
 		version++
-		if err := b.session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
+		if err := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
 			return nil, err
 		}
-		if err := b.session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
+		if err := session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
 			return nil, err
 		}
 		diagnosticsVersion = version
 	}
 	diagnosticCtx, cancelDiagnostics := context.WithTimeout(ctx, javaDiagnosticsTimeout)
-	diagnostics, err = b.session.WaitDiagnostics(diagnosticCtx, pathutil.FileURI(file), diagnosticsVersion)
+	diagnostics, err = session.WaitDiagnostics(diagnosticCtx, pathutil.FileURI(file), diagnosticsVersion)
 	cancelDiagnostics()
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = fmt.Errorf("%w: %w", ErrJavaDiagnosticsTimeout, err)
 	}
-	closeErr := b.session.Close()
+	closeErr := session.Close()
 	b.session, b.root, b.fingerprint = nil, "", ""
-	if err == nil && closeErr != nil {
+	if err != nil {
+		if closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("close Java session: %w", closeErr))
+		}
+		return diagnostics, err
+	}
+	if closeErr != nil {
 		return diagnostics, fmt.Errorf("close Java session: %w", closeErr)
 	}
-	return diagnostics, err
+	return diagnostics, nil
 }
 
 func applyJavaFormattingEdits(source []byte, raw json.RawMessage) ([]byte, error) {
@@ -1273,6 +1253,7 @@ type javaDocumentSymbol struct {
 	SelectionRange javaRange
 	Children       []javaDocumentSymbol
 	URI            string
+	Detail         string
 }
 type javaRange struct {
 	Start javaPosition
@@ -1310,6 +1291,12 @@ func decodeJavaDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	if _, flat := object["location"]; flat {
 		return javaDocumentSymbol{}, fmt.Errorf("%w: flat SymbolInformation is not supported", ErrJavaUnsupportedResponse)
 	}
+	if err := readlsp.ValidateRangeShape(object["range"]); err != nil {
+		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid range: %w", ErrJavaMalformedResponse, err)
+	}
+	if err := readlsp.ValidateRangeShape(object["selectionRange"]); err != nil {
+		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range: %w", ErrJavaMalformedResponse, err)
+	}
 	var symbol javaDocumentSymbol
 	if err := json.Unmarshal(object["name"], &symbol.Name); err != nil || symbol.Name == "" {
 		return javaDocumentSymbol{}, fmt.Errorf("%w: missing name", ErrJavaMalformedResponse)
@@ -1322,6 +1309,11 @@ func decodeJavaDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	}
 	if err := json.Unmarshal(object["selectionRange"], &symbol.SelectionRange); err != nil || !validJavaRange(symbol.SelectionRange, source) {
 		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range", ErrJavaMalformedResponse)
+	}
+	if detailRaw, ok := object["detail"]; ok && string(detailRaw) != "null" {
+		if err := json.Unmarshal(detailRaw, &symbol.Detail); err != nil {
+			return javaDocumentSymbol{}, fmt.Errorf("%w: invalid detail", ErrJavaMalformedResponse)
+		}
 	}
 	if uriRaw, ok := object["uri"]; ok {
 		if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
@@ -1437,49 +1429,300 @@ func javaCandidate(root, file string, source []byte, symbol javaDocumentSymbol, 
 }
 
 func javaByteOffset(source []byte, position javaPosition) (int, error) {
-	if position.Line < 0 || position.Character < 0 {
-		return 0, errors.New("negative position")
-	}
-	line, start := 0, 0
-	for i, b := range source {
-		if b == '\n' {
-			if line == position.Line {
-				offset, err := javaCharacterOffset(source[start:i], position.Character)
-				return start + offset, err
-			}
-			line++
-			start = i + 1
-		}
-	}
-	if line != position.Line {
-		return 0, errors.New("line outside source")
-	}
-	offset, err := javaCharacterOffset(source[start:], position.Character)
-	return start + offset, err
+	return readlsp.ByteOffset(source, backend.Position{Line: position.Line, Character: position.Character})
 }
 
-func javaCharacterOffset(line []byte, character int) (int, error) {
-	units := 0
-	for offset := 0; offset < len(line); {
-		runeValue, size := utf8.DecodeRune(line[offset:])
-		if runeValue == utf8.RuneError && size == 1 {
-			return 0, errors.New("invalid UTF-8 source")
-		}
-		runeUnits := 1
-		if runeValue > 0xffff {
-			runeUnits = 2
-		}
-		if units == character {
-			return offset, nil
-		}
-		if units < character && character < units+runeUnits {
-			return 0, errors.New("UTF-16 position splits a code point")
-		}
-		units += runeUnits
-		offset += size
+func (b *JavaBackend) withJavaDocumentLocked(ctx context.Context, file string, source []byte, action func() error) error {
+	session := b.session
+	if session == nil {
+		return ErrJDTLSUnavailable
 	}
-	if units == character {
-		return len(line), nil
+	uri := pathutil.FileURI(file)
+	openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{
+		"uri": uri, "languageId": "java", "version": 1, "text": string(source),
+	}})
+	if openErr != nil {
+		return errors.Join(fmt.Errorf("didOpen Java document: %w", openErr), b.invalidateJavaSessionLocked(session))
 	}
-	return 0, errors.New("character outside source")
+	actionErr := action()
+	closeErr := session.Notify(ctx, "textDocument/didClose", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
+	if closeErr != nil {
+		return errors.Join(actionErr, fmt.Errorf("didClose Java document: %w", closeErr), b.invalidateJavaSessionLocked(session))
+	}
+	return actionErr
+}
+
+func (b *JavaBackend) invalidateJavaSessionLocked(session JavaSession) error {
+	if b.session == nil {
+		return nil
+	}
+	closeErr := session.Close()
+	b.session, b.root, b.fingerprint = nil, "", ""
+	if closeErr != nil {
+		return fmt.Errorf("close invalid Java session: %w", closeErr)
+	}
+	return nil
+}
+
+func (b *JavaBackend) readJavaSymbolsLocked(ctx context.Context, root, file string, source []byte) ([]javaDocumentSymbol, error) {
+	var symbols []javaDocumentSymbol
+	err := b.withJavaDocumentLocked(ctx, file, source, func() error {
+		raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
+		if err != nil {
+			return &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+		}
+		symbols, err = decodeJavaDocumentSymbols(raw, root, source)
+		if err != nil {
+			return &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+		}
+		if err := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); err != nil {
+			return &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return symbols, nil
+}
+
+func validateJavaDocumentSymbolURI(symbols []javaDocumentSymbol, expected string) error {
+	for _, symbol := range symbols {
+		if symbol.URI != "" && symbol.URI != expected {
+			return fmt.Errorf("%w: symbol uri does not match selected document", ErrJavaMalformedResponse)
+		}
+		if err := validateJavaDocumentSymbolURI(symbol.Children, expected); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (b *JavaBackend) ensureJavaSessionLocked(ctx context.Context, root string, config backend.JavaConfig, fingerprint, operation string) error {
+	if b.session != nil && b.root != root {
+		return &JavaError{Op: operation, Workspace: root, Err: ErrJavaSessionConflict}
+	}
+	if b.session != nil && b.fingerprint != fingerprint {
+		session := b.session
+		closeErr := session.Close()
+		b.session, b.root, b.fingerprint = nil, "", ""
+		if closeErr != nil {
+			return &JavaError{Op: "restart", Workspace: root, Err: fmt.Errorf("close stale Java session: %w", closeErr)}
+		}
+	}
+	if b.session != nil {
+		return nil
+	}
+	if b.factory == nil {
+		return &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+	}
+	session, err := b.factory(ctx, root, config)
+	if err != nil {
+		return &JavaError{Op: "start", Workspace: root, Err: err}
+	}
+	if session == nil {
+		return &JavaError{Op: "start", Workspace: root, Err: ErrJDTLSUnavailable}
+	}
+	b.session, b.root, b.fingerprint = session, root, fingerprint
+	if err := initializeJavaSession(ctx, session, root, config); err != nil {
+		closeErr := session.Close()
+		b.session, b.root, b.fingerprint = nil, "", ""
+		return &JavaError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
+	}
+	return nil
+}
+
+func mapJavaReadSymbols(items []javaDocumentSymbol, parent []string, file string) ([]backend.ReadSymbol, error) {
+	result := make([]backend.ReadSymbol, 0, len(items))
+	for _, item := range items {
+		kind := javaKindName(item.Kind)
+		if kind == "" {
+			return nil, fmt.Errorf("%w: unsupported Java symbol kind %d", ErrJavaUnsupportedResponse, item.Kind)
+		}
+		nameParts := strings.Split(item.Name, ".")
+		pathParts := append(append([]string(nil), parent...), nameParts...)
+		qualified := strings.Join(pathParts, ".")
+		symbol := backend.ReadSymbol{
+			Name:           item.Name,
+			QualifiedName:  qualified,
+			Kind:           kind,
+			File:           file,
+			Range:          javaReadRange(item.Range),
+			SelectionRange: javaReadRange(item.SelectionRange),
+		}
+		if item.Detail != "" {
+			detail := item.Detail
+			symbol.ServerDetail = &detail
+		}
+		children, err := mapJavaReadSymbols(item.Children, pathParts, file)
+		if err != nil {
+			return nil, err
+		}
+		symbol.Children = children
+		result = append(result, symbol)
+	}
+	return result, nil
+}
+
+func javaReadRange(value javaRange) backend.Range {
+	return backend.Range{
+		Start: backend.Position{Line: value.Start.Line, Character: value.Start.Character},
+		End:   backend.Position{Line: value.End.Line, Character: value.End.Character},
+	}
+}
+
+func resolveJavaReadSelection(project backend.ProjectContext, requested string) (string, string, bool, error) {
+	target := requested
+	if strings.TrimSpace(target) == "" {
+		target = project.File
+	}
+	if strings.TrimSpace(target) == "" {
+		return "", "", false, ErrJavaFileRequired
+	}
+	base := project.RootDir
+	if base == "" {
+		base = "."
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(base, target)
+	}
+	target = backend.CanonicalWorkspaceRoot(target)
+	info, statErr := os.Stat(target)
+	directory := statErr == nil && info.IsDir()
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return "", "", false, &JavaError{Op: "project", File: target, Err: statErr}
+	}
+	var root string
+	if project.RootDir != "" {
+		root = backend.CanonicalWorkspaceRoot(project.RootDir)
+	} else {
+		marker := target
+		if directory {
+			marker = filepath.Join(target, "__semedit_outline__.java")
+		}
+		var err error
+		root, err = discoverJavaWorkspaceRoot(marker)
+		if err != nil {
+			return "", "", directory, &JavaError{Op: "project", File: target, Err: err}
+		}
+	}
+	if !pathutil.PathWithin(root, target) {
+		return "", "", directory, &JavaError{Op: "project", File: target, Workspace: root, Err: ErrJavaFileOutsideWorkspace}
+	}
+	return root, target, directory, nil
+}
+
+// Outline returns the selected Java file's validated hierarchical declarations.
+func (b *JavaBackend) Outline(ctx context.Context, request backend.OutlineRequest) (*backend.OutlineResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	root, file, directory, err := resolveJavaReadSelection(request.Project, request.Path)
+	if err != nil {
+		return nil, err
+	}
+	if err := readlsp.ValidateOutlineRequest(request, directory); err != nil {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: backend.LanguageJava, Err: err}
+	}
+	if !strings.EqualFold(filepath.Ext(file), ".java") {
+		return nil, &JavaError{Op: "outline", File: file, Err: ErrJavaFileRequired}
+	}
+	project := request.Project
+	project.RootDir, project.File = root, file
+	root, file, source, err := resolveJavaProject(project)
+	if err != nil {
+		return nil, err
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return nil, &backend.WorkspaceTrustError{Operation: backend.OperationOutline, Language: backend.LanguageJava, Workspace: root}
+	}
+	config := effectiveJavaConfig(project)
+	fingerprint, err := javaImportFingerprint(root, config)
+	if err != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: err}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "outline"); err != nil {
+		return nil, err
+	}
+	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
+	if err != nil {
+		return nil, err
+	}
+	mapped, err := mapJavaReadSymbols(symbols, nil, file)
+	if err != nil {
+		return nil, &JavaError{Op: "outline", File: file, Err: err}
+	}
+	return readlsp.Outline(readlsp.Document{Root: root, File: file, Language: backend.LanguageJava, Source: source, Symbols: mapped, Complete: true}, request)
+}
+
+// Inspect returns all Java declarations whose hierarchical names match the query.
+func (b *JavaBackend) Inspect(ctx context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	root, file, source, err := resolveJavaProject(request.Project)
+	if err != nil {
+		return nil, err
+	}
+	if !request.Project.WorkspaceTrust.Allows(root) {
+		return nil, &backend.WorkspaceTrustError{Operation: backend.OperationInspect, Language: backend.LanguageJava, Workspace: root}
+	}
+	if strings.TrimSpace(request.Symbol) == "" {
+		return nil, &JavaError{Op: "inspect", File: file, Symbol: request.Symbol, Err: ErrJavaMalformedResponse}
+	}
+	config := effectiveJavaConfig(request.Project)
+	fingerprint, err := javaImportFingerprint(root, config)
+	if err != nil {
+		return nil, &JavaError{Op: "fingerprint", Workspace: root, Err: err}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "inspect"); err != nil {
+		return nil, err
+	}
+	rawSymbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
+	if err != nil {
+		return nil, err
+	}
+	symbols, err := mapJavaReadSymbols(rawSymbols, nil, file)
+	if err != nil {
+		return nil, &JavaError{Op: "inspect", File: file, Symbol: request.Symbol, Err: err}
+	}
+	matches, err := matchJavaReadSymbols(request.Symbol, symbols)
+	if err != nil {
+		return nil, &JavaError{Op: "inspect", File: file, Symbol: request.Symbol, Err: err}
+	}
+	if len(matches) == 0 {
+		return nil, &JavaError{Op: "inspect", File: file, Symbol: request.Symbol, Err: ErrJavaSymbolNotFound}
+	}
+	inspectMatches := make([]readlsp.InspectMatch, 0, len(matches))
+	for _, symbol := range matches {
+		inspectMatches = append(inspectMatches, readlsp.InspectMatch{Symbol: symbol, SourceExtent: "declaration"})
+	}
+	return readlsp.Inspect(readlsp.Document{Root: root, File: file, Language: backend.LanguageJava, Source: source, Symbols: symbols, Complete: true}, inspectMatches)
+}
+
+func matchJavaReadSymbols(query string, symbols []backend.ReadSymbol) ([]backend.ReadSymbol, error) {
+	parts := strings.Split(strings.Trim(strings.TrimSpace(query), `"'`), ".")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+		if parts[i] == "" {
+			return nil, ErrJavaMalformedResponse
+		}
+	}
+	matches := make([]backend.ReadSymbol, 0)
+	var visit func([]backend.ReadSymbol)
+	visit = func(items []backend.ReadSymbol) {
+		for _, item := range items {
+			nameParts := strings.Split(item.QualifiedName, ".")
+			if len(parts) <= len(nameParts) && strings.Join(nameParts[len(nameParts)-len(parts):], ".") == strings.Join(parts, ".") {
+				matches = append(matches, item)
+			}
+			visit(item.Children)
+		}
+	}
+	visit(symbols)
+	return matches, nil
 }

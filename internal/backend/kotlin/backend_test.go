@@ -2,7 +2,9 @@
 package kotlin
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +47,13 @@ func TestWaitDiagnosticsAcceptsVersionlessExplicitEmptyReport(t *testing.T) {
 	if diagnostics == nil || len(diagnostics) != 0 {
 		t.Fatalf("WaitDiagnostics returned %#v, want explicit empty diagnostic list", diagnostics)
 	}
+}
+
+type outlineTestSession struct {
+	response string
+	uri      string
+	text     string
+	closed   bool
 }
 
 type receiptTestSession struct {
@@ -153,6 +162,15 @@ type stalledInitializeSession struct {
 	closed bool
 }
 
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 func (s *stalledInitializeSession) Request(ctx context.Context, method string, _ any) (json.RawMessage, error) {
 	if method == "initialize" {
 		<-ctx.Done()
@@ -206,5 +224,227 @@ func TestInitializeCleanupErrorsAreJoined(t *testing.T) {
 	_, err := backend.Lookup(context.Background(), project, "Widget")
 	if !errors.Is(err, requestErr) || !errors.Is(err, closeErr) {
 		t.Fatalf("Lookup error = %v, want initialize and close errors", err)
+	}
+}
+
+func (s *outlineTestSession) Request(_ context.Context, method string, _ any) (json.RawMessage, error) {
+	if method == "textDocument/documentSymbol" {
+		return json.RawMessage(strings.ReplaceAll(s.response, "SELECTED_URI", s.uri)), nil
+	}
+	return json.RawMessage("{}"), nil
+}
+
+func (s *outlineTestSession) Notify(_ context.Context, method string, params any) error {
+	if method != "textDocument/didOpen" {
+		return nil
+	}
+	data, err := json.Marshal(params)
+	if err != nil {
+		return err
+	}
+	var opened struct {
+		TextDocument struct {
+			URI  string `json:"uri"`
+			Text string `json:"text"`
+		} `json:"textDocument"`
+	}
+	if err := json.Unmarshal(data, &opened); err != nil {
+		return err
+	}
+	s.uri, s.text = opened.TextDocument.URI, opened.TextDocument.Text
+	return nil
+}
+
+func (*outlineTestSession) WaitDiagnostics(context.Context, string, int) ([]neutralbackend.Diagnostic, error) {
+	return nil, errors.New("unexpected diagnostics wait")
+}
+
+func (s *outlineTestSession) Close() error {
+	s.closed = true
+	return nil
+}
+
+func TestOutlineMapsExactSnapshotAndCanonicalKinds(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.kt")
+	source := []byte("package p // 😀\rclass Widget {\r  fun smile() {}\r}\r")
+	if err := pipeline.WriteAtomic(file, source); err != nil {
+		t.Fatal(err)
+	}
+	response := `[
+		{"name":"p","kind":4,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":15}},"selectionRange":{"start":{"line":0,"character":8},"end":{"line":0,"character":9}},"uri":"SELECTED_URI"},
+		{"name":"Widget","kind":5,"detail":"class detail","range":{"start":{"line":1,"character":0},"end":{"line":3,"character":1}},"selectionRange":{"start":{"line":1,"character":6},"end":{"line":1,"character":12}},"children":[{"name":"smile","kind":12,"detail":"fun smile()","range":{"start":{"line":2,"character":2},"end":{"line":2,"character":16}},"selectionRange":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}}}]},
+		{"name":"ACTIVE","kind":22,"range":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}},"selectionRange":{"start":{"line":2,"character":6},"end":{"line":2,"character":11}}}
+	]`
+	var session *outlineTestSession
+	var scratch string
+	underTest := NewKotlinBackend(WithKotlinSessionFactory(func(_ context.Context, root string, _ neutralbackend.KotlinConfig) (KotlinSession, error) {
+		scratch = root
+		session = &outlineTestSession{response: response}
+		entries, err := os.ReadDir(root)
+		if err != nil || len(entries) != 0 {
+			return nil, fmt.Errorf("scratch workspace was not empty before source copy: %v, %w", entries, err)
+		}
+		return session, nil
+	}))
+	request := neutralbackend.OutlineRequest{
+		Project: neutralbackend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: neutralbackend.NewWorkspaceTrust(root, true)},
+		Path:    file, IncludeUnexported: true,
+	}
+	result, err := underTest.Outline(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session == nil || !session.closed || session.text != string(source) || session.uri == "" {
+		t.Fatalf("session did not receive and close over exact snapshot: %#v", session)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".scratch"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("request scratch was not cleaned: %v, %v", entries, err)
+	}
+	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
+		t.Fatalf("isolated server workspace still exists: %q, %v", scratch, err)
+	}
+	if len(result.Files) != 1 || result.Files[0].File != "Widget.kt" || result.Files[0].Symbols == nil {
+		t.Fatalf("outline file metadata = %#v", result.Files)
+	}
+	sum := sha256.Sum256(source)
+	if result.Files[0].Revision != fmt.Sprintf("%x", sum) {
+		t.Fatalf("revision = %q, want exact source hash %x", result.Files[0].Revision, sum)
+	}
+	symbols := result.Files[0].Symbols
+	if len(symbols) != 3 || symbols[0].Kind != "package" || symbols[1].Kind != "class" || symbols[2].Kind != "enum_member" {
+		t.Fatalf("canonical Kotlin symbols = %#v", symbols)
+	}
+	if symbols[1].ServerDetail == nil || *symbols[1].ServerDetail != "class detail" {
+		t.Fatalf("server detail was not preserved: %#v", symbols[1].ServerDetail)
+	}
+	if len(symbols[1].Children) != 1 || symbols[1].Children[0].QualifiedName != "Widget.smile" || symbols[1].Children[0].Kind != "function" {
+		t.Fatalf("hierarchical children = %#v", symbols[1].Children)
+	}
+	filtered, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: request.Project, Path: file, Kinds: []string{"trait"}, IncludeUnexported: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Files[0].Symbols == nil || len(filtered.Files[0].Symbols) != 0 {
+		t.Fatalf("known absent kind should return an empty symbol array, got %#v", filtered.Files[0].Symbols)
+	}
+	if !bytes.Equal(mustReadFile(t, file), source) {
+		t.Fatal("outline changed the original file")
+	}
+}
+
+func TestOutlinePreservesWhitespacePathAndRejectsUnsupportedScopeBeforeLaunch(t *testing.T) {
+	root := t.TempDir()
+	spaced := filepath.Join(root, " Thing.kt")
+	plain := filepath.Join(root, "Thing.kt")
+	spacedSource := []byte("class Spaced {}\n")
+	plainSource := []byte("class Wrong {}\n")
+	if err := pipeline.WriteAtomic(spaced, spacedSource); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(plain, plainSource); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	var sessions []*outlineTestSession
+	underTest := NewKotlinBackend(WithKotlinSessionFactory(func(_ context.Context, _ string, _ neutralbackend.KotlinConfig) (KotlinSession, error) {
+		calls++
+		session := &outlineTestSession{response: "[]"}
+		sessions = append(sessions, session)
+		return session, nil
+	}))
+	project := neutralbackend.ProjectContext{RootDir: root, File: spaced, WorkspaceTrust: neutralbackend.NewWorkspaceTrust(root, true)}
+	selectedPath := " Thing.kt"
+	result, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: selectedPath, IncludeUnexported: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || sessions[0].text != string(spacedSource) || result.Files[0].File != selectedPath {
+		t.Fatalf("outline did not preserve selected filename and source: calls=%d text=%q file=%q", calls, sessions[0].text, result.Files[0].File)
+	}
+	sum := sha256.Sum256(spacedSource)
+	if result.Files[0].Revision != fmt.Sprintf("%x", sum) {
+		t.Fatalf("revision = %q, want spaced-file hash %x", result.Files[0].Revision, sum)
+	}
+	filtered, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: selectedPath, Kinds: []string{"trait"}, IncludeUnexported: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || sessions[0] == sessions[1] || sessions[0].uri == sessions[1].uri || !sessions[0].closed || !sessions[1].closed {
+		t.Fatalf("outline operations did not use fresh closed sessions and URIs: %#v", sessions)
+	}
+	if filtered.Files[0].Symbols == nil || len(filtered.Files[0].Symbols) != 0 {
+		t.Fatalf("known absent kind should return an empty symbol array, got %#v", filtered.Files[0].Symbols)
+	}
+	before := calls
+	if _, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: root, IncludeUnexported: true}); err == nil || !strings.Contains(err.Error(), "selected files only") {
+		t.Fatalf("directory outline error = %v, want unsupported selected-file scope", err)
+	}
+	if calls != before {
+		t.Fatalf("directory outline launched %d additional sessions", calls-before)
+	}
+	if _, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: selectedPath}); err == nil || !strings.Contains(err.Error(), "visibility filtering") {
+		t.Fatalf("visibility=false error = %v, want explicit unsupported filter", err)
+	}
+	if calls != before {
+		t.Fatalf("unsupported visibility request launched %d additional sessions", calls-before)
+	}
+	untrusted := project
+	untrusted.WorkspaceTrust = neutralbackend.WorkspaceTrust{}
+	if _, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: untrusted, Path: selectedPath, IncludeUnexported: true}); err == nil {
+		t.Fatal("untrusted outline succeeded")
+	}
+	if calls != before {
+		t.Fatalf("untrusted outline launched %d additional sessions", calls-before)
+	}
+	if !bytes.Equal(mustReadFile(t, spaced), spacedSource) || !bytes.Equal(mustReadFile(t, plain), plainSource) {
+		t.Fatal("outline changed one of the original files")
+	}
+}
+
+func TestOutlineRejectsForeignURIInFilteredChild(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.kt")
+	if err := pipeline.WriteAtomic(file, []byte("class Widget { fun child() {} }\n")); err != nil {
+		t.Fatal(err)
+	}
+	response := `[{"name":"Widget","kind":5,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":31}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}},"children":[{"name":"child","kind":12,"range":{"start":{"line":0,"character":15},"end":{"line":0,"character":29}},"selectionRange":{"start":{"line":0,"character":19},"end":{"line":0,"character":24}},"uri":"file:///outside/Widget.kt"}]}]`
+	session := &outlineTestSession{response: response}
+	underTest := NewKotlinBackend(WithKotlinSessionFactory(func(context.Context, string, neutralbackend.KotlinConfig) (KotlinSession, error) { return session, nil }))
+	project := neutralbackend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: neutralbackend.NewWorkspaceTrust(root, true)}
+	_, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: file, Kinds: []string{"variable"}, IncludeUnexported: true})
+	if !errors.Is(err, ErrKotlinMalformedResponse) {
+		t.Fatalf("filtered foreign child error = %v, want malformed response", err)
+	}
+	if !session.closed {
+		t.Fatal("foreign child response did not clean up the session")
+	}
+}
+
+func TestOutlineBoundsInitializationAndRejectsUnknownKinds(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "Widget.kt")
+	if err := pipeline.WriteAtomic(file, []byte("class Widget {}\n")); err != nil {
+		t.Fatal(err)
+	}
+	stalled := &stalledInitializeSession{}
+	underTest := NewKotlinBackend(WithKotlinSessionFactory(func(context.Context, string, neutralbackend.KotlinConfig) (KotlinSession, error) { return stalled, nil }))
+	underTest.operationTimeout = 30 * time.Millisecond
+	project := neutralbackend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: neutralbackend.NewWorkspaceTrust(root, true)}
+	_, err := underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	if !errors.Is(err, ErrKotlinOperationTimeout) || !stalled.closed {
+		t.Fatalf("timeout error = %v, session closed=%v", err, stalled.closed)
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".scratch"))
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("timeout left request scratch entries: %v, %v", entries, err)
+	}
+	unknown := `[{"name":"Widget","kind":99,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":15}},"selectionRange":{"start":{"line":0,"character":6},"end":{"line":0,"character":12}}}]`
+	session := &outlineTestSession{response: unknown}
+	underTest = NewKotlinBackend(WithKotlinSessionFactory(func(context.Context, string, neutralbackend.KotlinConfig) (KotlinSession, error) { return session, nil }))
+	_, err = underTest.Outline(context.Background(), neutralbackend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	if !errors.Is(err, ErrKotlinUnsupportedResponse) {
+		t.Fatalf("unknown kind error = %v, want unsupported response", err)
 	}
 }

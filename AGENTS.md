@@ -16,6 +16,8 @@ Before proposing architectural shifts, consult the indexed decisions and researc
 * **ADRs**: [`docs/adr/README.md`](docs/adr/README.md)
 * **Research Spikes**: [`docs/research/README.md`](docs/research/README.md)
 
+For benchmark harness or benchmark publication changes, start with [the benchmark architecture guide](tools/benchmark-harness/README.md). It maps responsibilities to source files and tests; update the guide when those boundaries move.
+
 ---
 
 ## 2. Documentation Governance (ADR & Research Lifecycle)
@@ -62,6 +64,10 @@ When implementing features, refactoring, or diagnosing test and build failures:
 
 When developing or refactoring code inside this repository, agents must dogfood `semedit` semantic tools rather than falling back to text-based file editing:
 
+* **Navigation & Coordinates**: Use `semantic_lookup` to locate declaration coordinates.
+* **Symbol Inspection**: Use `semantic_inspect_symbol` to retrieve complete source declarations, signatures, comments, and package imports.
+* **Declaration Outline**: Use `semantic_outline` to inspect hierarchical symbol trees for a file or directory with elided function bodies.
+* **References & Usages**: Use `semantic_find_references` to discover call sites, type usages, parameter bindings, and field accesses.
 * **Renaming**: Use `semantic_rename` for function, method, type, or variable renames instead of search-and-replace.
 * **Function/Method Bodies**: Use `semantic_replace_body` to modify existing function implementations rather than editing entire blocks.
 * **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.

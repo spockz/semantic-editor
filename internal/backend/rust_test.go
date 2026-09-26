@@ -7,10 +7,14 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
+	"crypto/sha256"
+	"encoding/hex"
 	"semedit/internal/backend"
 	rustbackend "semedit/internal/backend/rust"
+	"semedit/internal/pipeline"
 )
 
 type fakeRustSession struct {
@@ -88,7 +92,7 @@ func rustProject(t *testing.T, source string) (string, string) {
 
 func TestRustLookupStreamsInitializeOpenAndSymbolsWithUTF16(t *testing.T) {
 	root, file := rustProject(t, "fn 😀value() {}\n")
-	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"😀value","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":10}},"children":[]}]`)}
+	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"😀value","kind":12,"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":12}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":10}},"children":[]}] `)}
 	backendUnderTest := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
 		return session, nil
 	})
@@ -103,7 +107,7 @@ func TestRustLookupStreamsInitializeOpenAndSymbolsWithUTF16(t *testing.T) {
 	if result.Offset != 3 || result.Line != 1 || result.Column != 4 || result.Kind != "function" {
 		t.Fatalf("lookup result = %+v", result)
 	}
-	if len(session.calls) != 5 || session.calls[0] != "initialize" || session.calls[1] != "initialized" || session.calls[2] != "workspace/didChangeConfiguration" || session.calls[3] != "textDocument/didOpen" || session.calls[4] != "textDocument/documentSymbol" {
+	if len(session.calls) != 6 || session.calls[0] != "initialize" || session.calls[1] != "initialized" || session.calls[2] != "workspace/didChangeConfiguration" || session.calls[3] != "textDocument/didOpen" || session.calls[4] != "textDocument/documentSymbol" || session.calls[5] != "textDocument/didClose" {
 		t.Fatalf("LSP call sequence = %#v", session.calls)
 	}
 	if session.init["initializationOptions"] == nil {
@@ -234,5 +238,123 @@ func TestRustRenameUsesAbsoluteUTF8ByteOffsetsOnLaterLine(t *testing.T) {
 		if string(got) != want {
 			t.Fatalf("renamed source = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestRustLookupThenOutlineUsesFreshMatchedDocumentSnapshot(t *testing.T) {
+	root, file := rustProject(t, "fn alpha() {}\n")
+	sourceA := "fn alpha() {}\n"
+	sourceB := "fn bravo() {}\n"
+	responseA := json.RawMessage("[{\"name\":\"alpha\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}}}]")
+	responseB := json.RawMessage("[{\"name\":\"bravo\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}},\"detail\":\"fn bravo()\"}]")
+	session := newStatefulTestLspSession(json.RawMessage("{\"capabilities\":{}}"), map[string]json.RawMessage{sourceA: responseA, sourceB: responseB})
+	factoryCalls := 0
+	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
+		factoryCalls++
+		return session, nil
+	})
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	if _, err := b.Lookup(context.Background(), project, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(file, []byte(sourceB)); err != nil {
+		t.Fatal(err)
+	}
+	result, err := b.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if factoryCalls != 1 || len(session.openedTexts) != 2 || session.openedTexts[0] != sourceA || session.openedTexts[1] != sourceB {
+		t.Fatalf("factory calls %d, opened texts %#v", factoryCalls, session.openedTexts)
+	}
+	if len(session.open) != 0 || session.closeCount != 0 {
+		t.Fatalf("open documents after matched requests %#v, process closes %d", session.open, session.closeCount)
+	}
+	wantCalls := []string{"initialize", "initialized", "workspace/didChangeConfiguration", "textDocument/didOpen", "textDocument/documentSymbol", "textDocument/didClose", "textDocument/didOpen", "textDocument/documentSymbol", "textDocument/didClose"}
+	if !reflect.DeepEqual(session.calls, wantCalls) {
+		t.Fatalf("LSP calls = %#v, want %#v", session.calls, wantCalls)
+	}
+	digest := sha256.Sum256([]byte(sourceB))
+	if len(result.Files) != 1 || len(result.Files[0].Symbols) != 1 || result.Files[0].Symbols[0].Name != "bravo" || result.Files[0].Symbols[0].ServerDetail == nil || *result.Files[0].Symbols[0].ServerDetail != "fn bravo()" || result.Files[0].Revision != hex.EncodeToString(digest[:]) {
+		t.Fatalf("outline result = %+v", result)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil || string(after) != sourceB {
+		t.Fatalf("outline changed source: %q, err %v", after, err)
+	}
+}
+
+type closeFailRustSession struct {
+	*fakeRustSession
+
+	closeErr error
+}
+
+func (f *closeFailRustSession) Close() error {
+	f.closed = true
+	return f.closeErr
+}
+
+func TestRustFailedRenameJoinsCloseFailureAndNextReadStartsFresh(t *testing.T) {
+	root, file := rustProject(t, "fn alpha() {}\n")
+	primaryErr := errors.New("document symbols failed")
+	closeErr := errors.New("session close failed")
+	first := &closeFailRustSession{fakeRustSession: &fakeRustSession{err: primaryErr}, closeErr: closeErr}
+	second := &fakeRustSession{symbols: json.RawMessage("[{\"name\":\"alpha\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}}}]")}
+	factoryCalls := 0
+	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
+		factoryCalls++
+		if factoryCalls == 1 {
+			return first, nil
+		}
+		return second, nil
+	})
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	_, err := b.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "alpha", To: "bravo"})
+	if !errors.Is(err, primaryErr) || !errors.Is(err, closeErr) || !first.closed {
+		t.Fatalf("rename error = %v, session closed = %v", err, first.closed)
+	}
+	source, readErr := os.ReadFile(file)
+	if readErr != nil || string(source) != "fn alpha() {}\n" {
+		t.Fatalf("failed rename changed source: %q, err %v", source, readErr)
+	}
+	if _, err := b.Lookup(context.Background(), project, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if factoryCalls != 2 {
+		t.Fatalf("factory called %d times after failed rename", factoryCalls)
+	}
+}
+
+func TestRustCommittedRenameSurvivesCloseFailureAndNextReadStartsFresh(t *testing.T) {
+	root, file := rustProject(t, "fn alpha() {}\n")
+	symbols := json.RawMessage("[{\"name\":\"alpha\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}}}]")
+	uri := "file://" + filepath.ToSlash(file)
+	edit, err := json.Marshal(map[string]any{"changes": map[string]any{uri: []any{map[string]any{"range": map[string]any{"start": map[string]int{"line": 0, "character": 3}, "end": map[string]int{"line": 0, "character": 8}}, "newText": "bravo"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := &closeFailRustSession{fakeRustSession: &fakeRustSession{symbols: symbols, rename: edit}, closeErr: errors.New("committed session close failed")}
+	second := &fakeRustSession{symbols: json.RawMessage("[{\"name\":\"bravo\",\"kind\":12,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":13}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":3},\"end\":{\"line\":0,\"character\":8}}}]")}
+	factoryCalls := 0
+	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) {
+		factoryCalls++
+		if factoryCalls == 1 {
+			return first, nil
+		}
+		return second, nil
+	})
+	project := backend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}
+	result, err := b.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "alpha", To: "bravo"})
+	if err != nil || result == nil || !first.closed {
+		t.Fatalf("committed rename result = %+v, error %v, closed %v", result, err, first.closed)
+	}
+	source, readErr := os.ReadFile(file)
+	if readErr != nil || string(source) != "fn bravo() {}\n" {
+		t.Fatalf("committed source = %q, err %v", source, readErr)
+	}
+	lookup, err := b.Lookup(context.Background(), project, "bravo")
+	if err != nil || lookup.Symbol != "bravo" || factoryCalls != 2 {
+		t.Fatalf("next read = %+v, error %v, factory calls %d", lookup, err, factoryCalls)
 	}
 }

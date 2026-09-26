@@ -13,11 +13,11 @@ import (
 	"path/filepath"
 	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/lsp"
 	"strconv"
 	"strings"
 	"sync"
-	"unicode/utf8"
 )
 
 var (
@@ -145,7 +145,7 @@ func (*ScalaBackend) Language() neutralbackend.LanguageID { return neutralbacken
 
 // Capabilities declares Scala's trusted read-only lookup capability.
 func (*ScalaBackend) Capabilities() neutralbackend.Capabilities {
-	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup)
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationOutline)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Scala backend.
@@ -161,6 +161,15 @@ func (*ScalaBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 				CLICommand:   "semedit lookup --language scala --file <path.scala> --symbol <sym> --metals-bin <path> --java-bin <path> --java-version <major>",
 				MCPTool:      "resolve_symbol_location",
 				PlacementKey: false,
+			},
+			"outline": {
+				Supported:    true,
+				Description:  "Return the complete selected-file Scala declaration tree from trusted Metals; directory scopes and visibility filtering are unsupported.",
+				CLICommand:   "semedit outline --language scala --path <path.scala> --metals-bin <path> --java-bin <path> --java-version <major>",
+				MCPTool:      "semantic_outline",
+				PlacementKey: false,
+				Level:        "symbol",
+				ReadOnly:     true,
 			},
 		},
 		Limitations: []neutralbackend.Constraint{
@@ -214,55 +223,24 @@ func (b *ScalaBackend) Lookup(ctx context.Context, project neutralbackend.Projec
 	if strings.TrimSpace(query) == "" {
 		return nil, &ScalaError{Op: "lookup", File: file, Symbol: query, Err: ErrScalaMalformedResponse}
 	}
-
+	config := project.Scala
+	if config.MetalsHome == "" {
+		config.MetalsHome = project.MetalsHome
+	}
+	if config.MetalsBin == "" {
+		config.MetalsBin = project.MetalsBin
+	}
+	if config.JavaBin == "" {
+		config.JavaBin = project.JavaBin
+	}
+	if config.JavaVersion == "" {
+		config.JavaVersion = project.JavaVersion
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.session != nil && b.root != root {
-		return nil, &ScalaError{Op: "lookup", Workspace: root, Err: ErrScalaSessionConflict}
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
-		}
-		scalaConfig := project.Scala
-		if scalaConfig.MetalsHome == "" {
-			scalaConfig.MetalsHome = project.MetalsHome
-		}
-		if scalaConfig.MetalsBin == "" {
-			scalaConfig.MetalsBin = project.MetalsBin
-		}
-		if scalaConfig.JavaBin == "" {
-			scalaConfig.JavaBin = project.JavaBin
-		}
-		if scalaConfig.JavaVersion == "" {
-			scalaConfig.JavaVersion = project.JavaVersion
-		}
-		session, factoryErr := b.factory(ctx, root, scalaConfig)
-		if factoryErr != nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: factoryErr}
-		}
-		if session == nil {
-			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
-		}
-		b.session, b.root = session, root
-		if err := initializeScalaSession(ctx, session, root); err != nil {
-			_ = session.Close()
-			b.session, b.root = nil, ""
-			return nil, &ScalaError{Op: "initialize", Workspace: root, Err: err}
-		}
-	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
-		"uri": pathutil.FileURI(file), "languageId": "scala", "version": 1, "text": string(source),
-	}}); err != nil {
-		return nil, &ScalaError{Op: "didOpen", File: file, Err: err}
-	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
+	symbols, err := b.readScalaDocumentSymbolsLocked(ctx, root, file, source, config, query, "lookup")
 	if err != nil {
-		return nil, &ScalaError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
-	}
-	symbols, err := decodeScalaDocumentSymbols(raw, root, source)
-	if err != nil {
-		return nil, &ScalaError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return nil, err
 	}
 	return selectScalaSymbol(query, root, file, source, symbols)
 }
@@ -518,6 +496,7 @@ type scalaDocumentSymbol struct {
 	SelectionRange scalaRange
 	Children       []scalaDocumentSymbol
 	URI            string
+	Detail         string
 }
 type scalaRange struct {
 	Start scalaPosition
@@ -561,6 +540,11 @@ func decodeScalaDocumentSymbol(raw json.RawMessage, root string, source []byte) 
 	}
 	if err := json.Unmarshal(object["kind"], &symbol.Kind); err != nil {
 		return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid kind", ErrScalaMalformedResponse)
+	}
+	if detailRaw, ok := object["detail"]; ok && string(detailRaw) != "null" {
+		if err := json.Unmarshal(detailRaw, &symbol.Detail); err != nil {
+			return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid detail", ErrScalaMalformedResponse)
+		}
 	}
 	if err := json.Unmarshal(object["range"], &symbol.Range); err != nil || !validScalaRange(symbol.Range, source) {
 		return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid range", ErrScalaMalformedResponse)
@@ -682,49 +666,212 @@ func scalaCandidate(root, file string, source []byte, symbol scalaDocumentSymbol
 }
 
 func scalaByteOffset(source []byte, position scalaPosition) (int, error) {
-	if position.Line < 0 || position.Character < 0 {
-		return 0, errors.New("negative position")
-	}
-	line, start := 0, 0
-	for i, b := range source {
-		if b == '\n' {
-			if line == position.Line {
-				offset, err := scalaCharacterOffset(source[start:i], position.Character)
-				return start + offset, err
-			}
-			line++
-			start = i + 1
-		}
-	}
-	if line != position.Line {
-		return 0, errors.New("line outside source")
-	}
-	offset, err := scalaCharacterOffset(source[start:], position.Character)
-	return start + offset, err
+	return readlsp.ByteOffset(source, neutralbackend.Position(position))
 }
 
-func scalaCharacterOffset(line []byte, character int) (int, error) {
-	units := 0
-	for offset := 0; offset < len(line); {
-		runeValue, size := utf8.DecodeRune(line[offset:])
-		if runeValue == utf8.RuneError && size == 1 {
-			return 0, errors.New("invalid UTF-8 source")
-		}
-		runeUnits := 1
-		if runeValue > 0xffff {
-			runeUnits = 2
-		}
-		if units == character {
-			return offset, nil
-		}
-		if units < character && character < units+runeUnits {
-			return 0, errors.New("UTF-16 position splits a code point")
-		}
-		units += runeUnits
-		offset += size
+func (b *ScalaBackend) closeSessionLocked() error {
+	if b.session == nil {
+		b.root = ""
+		return nil
 	}
-	if units == character {
-		return len(line), nil
+	err := b.session.Close()
+	b.session = nil
+	b.root = ""
+	return err
+}
+
+func validateScalaDocumentSymbolURI(symbols []scalaDocumentSymbol, selectedURI string) error {
+	var visit func([]scalaDocumentSymbol) error
+	visit = func(items []scalaDocumentSymbol) error {
+		for _, item := range items {
+			if item.URI != "" && item.URI != selectedURI {
+				return fmt.Errorf("%w: symbol URI does not match selected document", ErrScalaMalformedResponse)
+			}
+			if err := visit(item.Children); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
-	return 0, errors.New("character outside source")
+	return visit(symbols)
+}
+
+func (b *ScalaBackend) readScalaDocumentSymbolsLocked(ctx context.Context, root, file string, source []byte, config neutralbackend.ScalaConfig, query, operation string) ([]scalaDocumentSymbol, error) {
+	if b.session != nil && b.root != root {
+		return nil, &ScalaError{Op: operation, Workspace: root, Err: ErrScalaSessionConflict}
+	}
+	if b.session == nil {
+		if b.factory == nil {
+			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
+		}
+		session, err := b.factory(ctx, root, config)
+		if err != nil {
+			return nil, &ScalaError{Op: "start", Workspace: root, Err: err}
+		}
+		if session == nil {
+			return nil, &ScalaError{Op: "start", Workspace: root, Err: ErrMetalsUnavailable}
+		}
+		b.session, b.root = session, root
+		if err := initializeScalaSession(ctx, session, root); err != nil {
+			closeErr := b.closeSessionLocked()
+			return nil, &ScalaError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
+		}
+	}
+	session := b.session
+	uri := pathutil.FileURI(file)
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+		"uri": uri, "languageId": "scala", "version": 1, "text": string(source),
+	}}); err != nil {
+		closeErr := b.closeSessionLocked()
+		return nil, &ScalaError{Op: "didOpen", File: file, Err: errors.Join(err, closeErr)}
+	}
+	raw, requestErr := session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	var symbols []scalaDocumentSymbol
+	if requestErr == nil {
+		symbols, requestErr = decodeScalaDocumentSymbols(raw, root, source)
+	}
+	if requestErr == nil {
+		requestErr = validateScalaDocumentSymbolURI(symbols, uri)
+	}
+	closeErr := session.Notify(ctx, "textDocument/didClose", map[string]any{"textDocument": map[string]string{"uri": uri}})
+	if closeErr != nil {
+		retireErr := b.closeSessionLocked()
+		return nil, &ScalaError{Op: "didClose", File: file, Symbol: query, Err: errors.Join(requestErr, closeErr, retireErr)}
+	}
+	if requestErr != nil {
+		return nil, &ScalaError{Op: "documentSymbol", File: file, Symbol: query, Err: requestErr}
+	}
+	return symbols, nil
+}
+
+func scalaOutlineKind(kind int) string {
+	switch kind {
+	case 2, 19:
+		return "object"
+	case 4:
+		return "package"
+	case 5:
+		return "class"
+	case 6:
+		return "method"
+	case 7, 8:
+		return "field"
+	case 9:
+		return "constructor"
+	case 10:
+		return "enum"
+	case 11:
+		return "trait"
+	case 12:
+		return "function"
+	case 13:
+		return "variable"
+	case 14:
+		return "constant"
+	case 22:
+		return "enum_member"
+	case 23, 26:
+		return "type"
+	default:
+		return ""
+	}
+}
+
+func mapScalaReadSymbols(items []scalaDocumentSymbol, file, parent string) ([]neutralbackend.ReadSymbol, error) {
+	result := make([]neutralbackend.ReadSymbol, 0, len(items))
+	for _, item := range items {
+		kind := scalaOutlineKind(item.Kind)
+		if kind == "" {
+			return nil, fmt.Errorf("%w: unsupported Metals symbol kind %d", ErrScalaUnsupportedResponse, item.Kind)
+		}
+		qualified := item.Name
+		if parent != "" {
+			qualified = parent + "." + item.Name
+		}
+		children, err := mapScalaReadSymbols(item.Children, file, qualified)
+		if err != nil {
+			return nil, err
+		}
+		mapped := neutralbackend.ReadSymbol{Name: item.Name, QualifiedName: qualified, Kind: kind, File: file, Range: neutralbackend.Range{Start: neutralbackend.Position(item.Range.Start), End: neutralbackend.Position(item.Range.End)}, SelectionRange: neutralbackend.Range{Start: neutralbackend.Position(item.SelectionRange.Start), End: neutralbackend.Position(item.SelectionRange.End)}, Children: children}
+		if item.Detail != "" {
+			detail := item.Detail
+			mapped.ServerDetail = &detail
+		}
+		result = append(result, mapped)
+	}
+	return result, nil
+}
+
+// Outline returns the selected Scala file's validated hierarchical declarations.
+func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (*neutralbackend.OutlineResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	selected := request.Path
+	if selected == "" {
+		selected = request.Project.File
+	}
+	if strings.TrimSpace(selected) == "" {
+		return nil, fmt.Errorf("outline path is required")
+	}
+	base := request.Project.RootDir
+	if base == "" {
+		var err error
+		base, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve outline path: %w", err)
+		}
+	}
+	if !filepath.IsAbs(selected) {
+		selected = filepath.Join(base, selected)
+	}
+	selected, err := filepath.Abs(selected)
+	if err != nil {
+		return nil, fmt.Errorf("resolve outline path: %w", err)
+	}
+	info, err := os.Stat(selected)
+	if err != nil {
+		return nil, fmt.Errorf("inspect outline path: %w", err)
+	}
+	request.Path = selected
+	if err := readlsp.ValidateOutlineRequest(request, info.IsDir()); err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("scala outline requires a regular source file")
+	}
+	project := request.Project
+	project.File = selected
+	root, file, source, err := resolveScalaProject(project)
+	if err != nil {
+		return nil, err
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageScala, Workspace: root}
+	}
+	config := project.Scala
+	if config.MetalsHome == "" {
+		config.MetalsHome = project.MetalsHome
+	}
+	if config.MetalsBin == "" {
+		config.MetalsBin = project.MetalsBin
+	}
+	if config.JavaBin == "" {
+		config.JavaBin = project.JavaBin
+	}
+	if config.JavaVersion == "" {
+		config.JavaVersion = project.JavaVersion
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rawSymbols, err := b.readScalaDocumentSymbolsLocked(ctx, root, file, source, config, "", "outline")
+	if err != nil {
+		return nil, err
+	}
+	symbols, err := mapScalaReadSymbols(rawSymbols, file, "")
+	if err != nil {
+		return nil, err
+	}
+	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageScala, Source: source, Symbols: symbols, Complete: true}
+	return readlsp.Outline(document, request)
 }

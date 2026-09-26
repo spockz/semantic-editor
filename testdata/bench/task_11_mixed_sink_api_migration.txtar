@@ -1,6 +1,9 @@
 task_id: task-11-mixed-sink-api-migration
 category: semantic_routing
 instruction: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+contexts:
+  - small
+  - large
 verification_constraint: "Run go test ./... before concluding."
 prompt_variants:
   default: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
@@ -11,6 +14,10 @@ interactive_followups:
   - "Ensure the service delivery path applies audit normalization to an event before handing that event to its configured sink."
   - "Add audit.NormalizeKind using strings.ToLower(strings.TrimSpace(kind)); classify normalized probe events as control while retaining health control classification; set event.Kind = audit.NormalizeKind(event.Kind) in Dispatcher.Record before sink.Write; then run go test ./...."
 oracle:
+  diagnostic_expected_tools:
+    - semantic_lookup
+    - semantic_inspect_symbol
+    - semantic_replace_body
   level_1_mutation_policy:
     disallowed_files:
       - "go.mod"

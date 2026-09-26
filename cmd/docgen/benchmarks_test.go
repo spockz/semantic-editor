@@ -195,7 +195,7 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if err != nil {
 		t.Fatalf("read benchmark browser shortcode: %v", err)
 	}
-	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens exclude cached tokens; cached input appears separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each target and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `group_by: ["target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
+	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens exclude cached tokens; cached input appears separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each restriction policy, target, and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
 		if !strings.Contains(string(shortcode), want) {
 			t.Errorf("benchmark browser shortcode missing %q", want)
 		}
@@ -806,7 +806,7 @@ func TestWriteDocConfigurationDetailsRestatesComparisonContext(t *testing.T) {
 		"| Test case | `task-04-insert-public` |\n" +
 		"| Target | `codex/gpt-5.6-luna/medium` |\n" +
 		"| Prompt variant | `default` |\n" +
-		"| MCP server instructions | `descriptive` |\n" +
+		"| MCP server instructions | `descriptive` |\n| Semedit arm restriction | `unspecified` |\n" +
 		"| Run provenance | `run=42` |\n" +
 		"| Fixture | `testdata/bench/task_04_insert_public.txtar` (`sha256:abc`) |\n\n"
 	if got := rendered.String(); got != want {
@@ -835,5 +835,158 @@ func TestEscapeDocToolCallTableCell(t *testing.T) {
 
 	if got, want := escapeDocTableCell("`rg one |\nrg two`"), "`rg one \\| rg two`"; got != want {
 		t.Errorf("escaped table cell = %q, want %q", got, want)
+	}
+}
+
+func TestPolicyConditionsSurvivePublicationAndBrowserAggregation(t *testing.T) {
+	t.Parallel()
+	var legacy BenchReport
+	if err := unmarshalBenchmarkReport([]byte(`{"runs":[{}]}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Runs[0].SemeditArmRestrictionApplied != nil {
+		t.Error("missing legacy applicability became a known value")
+	}
+	policies := []string{"", "read", "write", "readwrite"}
+	comparisons := make([]*BenchComparisonSummary, 0, len(policies))
+	for i, policy := range policies {
+		run := func(arm string, turns int) *BenchRunResult {
+			applied := arm == "semedit" && policy != ""
+			return &BenchRunResult{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, Arm: arm, Variant: "small:default", PromptVariant: "default", SemeditArmRestrict: policy, SemeditArmRestrictionApplied: &applied, Success: true, Turns: turns, Oracle: &BenchOracleResult{Passed: true}}
+		}
+		comparisons = append(comparisons, &BenchComparisonSummary{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, PromptVariant: "default", SemeditArmRestrict: policy, SmallBaseline: run("baseline", 10+i), SmallSemedit: run("semedit", 1+i)})
+	}
+	report := BenchReport{FormatVersion: 2, DurationUnit: "milliseconds", Comparisons: comparisons}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded BenchReport
+	if err := unmarshalBenchmarkReport(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Comparisons[0].SemeditArmRestrict != "" {
+		t.Error("legacy policy defaulted during decode")
+	}
+	selected := selectBestBenchmarkComparisons([]benchmarkDocumentationRun{{ID: "policy-run", Comparisons: decoded.Comparisons}})
+	if len(selected) != 4 {
+		t.Errorf("best-case selection merged policies: %d", len(selected))
+	}
+	groups := aggregateBenchmarkMetrics(decoded.Comparisons)
+	if len(groups) != 8 {
+		t.Errorf("aggregate groups = %d, want four policies and two arms", len(groups))
+	}
+	for _, g := range groups {
+		for name, m := range g.metrics {
+			if m.count != 1 {
+				t.Errorf("policy %s metric %s mixed observations: %d", g.restriction, name, m.count)
+			}
+		}
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "policy-run", "result.json")
+	rows, err := loadBenchmarkBrowserResult(root, path, "policy-run/result.json", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := addBenchmarkBrowserComparisonDeltas(rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 8 {
+		t.Fatalf("browser rows = %d, want 8", len(rows))
+	}
+	seen := make(map[string]int)
+	for _, row := range rows {
+		var policy, arm string
+		if err := json.Unmarshal(row["semedit_arm_restrict"], &policy); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(row["arm"], &arm); err != nil {
+			t.Fatal(err)
+		}
+		seen[policy]++
+		if arm == "semedit" {
+			var delta float64
+			if err := json.Unmarshal(row["turns_delta"], &delta); err != nil {
+				t.Fatal(err)
+			}
+			if delta != -9 {
+				t.Errorf("policy %s paired incorrectly: delta %v", policy, delta)
+			}
+		}
+	}
+	for _, policy := range []string{"unspecified", "read", "write", "readwrite"} {
+		if seen[policy] != 2 {
+			t.Errorf("policy %s rows = %d, want 2", policy, seen[policy])
+		}
+	}
+	for _, policy := range []string{"unspecified", "read", "write", "readwrite"} {
+		if !strings.Contains(renderBenchmarkAggregatesDoc(decoded.Comparisons), "Semedit restriction: `"+policy+"`") {
+			t.Errorf("policy %s not labeled", policy)
+		}
+	}
+}
+
+func TestDiagnosticQuestioningIsNotBrowserTelemetry(t *testing.T) {
+	t.Parallel()
+	run := map[string]any{"task_id": "task", "arm": "semedit", "turns": 2, "wall_clock_ms": 1000, "output_tokens": 5, "semantic_tool_reflection": map[string]any{"turns": 100, "wall_clock_ms": 9000, "output_tokens": 10000}, "semantic_batch_reflection": map[string]any{"turns": 100, "wall_clock_ms": 9000, "output_tokens": 10000}}
+	for _, kind := range []string{"runs", "comparisons"} {
+		report := map[string]any{"format_version": 2, "duration_unit": "milliseconds"}
+		if kind == "runs" {
+			report[kind] = []any{run}
+		} else {
+			report[kind] = []any{map[string]any{"task_id": "task", "small_semedit": run}}
+		}
+		data, err := json.Marshal(report)
+		if err != nil {
+			t.Fatal(err)
+		}
+		root := t.TempDir()
+		rows, err := loadBenchmarkBrowserResult(root, filepath.Join(root, "trial", "result.json"), "trial/result.json", data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 {
+			t.Fatalf("%s rows = %d", kind, len(rows))
+		}
+		for key := range rows[0] {
+			if strings.Contains(key, "reflection") {
+				t.Errorf("%s exposes diagnostic metric %s", kind, key)
+			}
+		}
+		if string(rows[0]["turns"]) != "2" || string(rows[0]["output_tokens"]) != "5" || string(rows[0]["wall_clock_ms"]) != "1000" {
+			t.Errorf("%s changed measured metrics: %v", kind, rows[0])
+		}
+	}
+}
+
+func TestHeadlineRatesAndCorrectionHistogramsStayWithinPolicy(t *testing.T) {
+	t.Parallel()
+	makePair := func(policy string, passed bool) *BenchComparisonSummary {
+		return &BenchComparisonSummary{TaskID: "task", SemeditArmRestrict: policy, SmallBaseline: &BenchRunResult{Turns: 1, Oracle: &BenchOracleResult{Passed: true}}, SmallSemedit: &BenchRunResult{Turns: 1, Oracle: &BenchOracleResult{Passed: passed}}}
+	}
+	read, write := makePair("read", true), makePair("write", false)
+	runs := []benchmarkDocumentationRun{{ID: "same-run", Comparisons: []*BenchComparisonSummary{read, write}}}
+	page := renderBestBenchmarkPreamble(nil, runs)
+	sections := strings.Split(page, "### Semedit restriction:")
+	if len(sections) != 3 {
+		t.Fatalf("policy sections = %d, want 2", len(sections)-1)
+	}
+	if !strings.Contains(sections[1], "`read`") || !strings.Contains(sections[1], "MCP 1/1 (100.0%) vs Vanilla 1/1 (100.0%)") {
+		t.Errorf("read metrics mixed: %s", sections[1])
+	}
+	if !strings.Contains(sections[2], "`write`") || !strings.Contains(sections[2], "MCP 0/1 (0.0%) vs Vanilla 1/1 (100.0%)") {
+		t.Errorf("write metrics mixed: %s", sections[2])
+	}
+	for _, section := range sections[1:] {
+		if !strings.Contains(section, "| 0 | 1 | 1 |") {
+			t.Errorf("histogram mixed policies: %s", section)
+		}
+	}
+	if runs[0].Comparisons[0] != read || runs[0].Comparisons[1] != write {
+		t.Error("partition mutated source comparisons")
+	}
+	if !strings.Contains(renderBestBenchmarkPreamble(nil, nil), "No publishable standard-context first attempts") {
+		t.Error("empty fallback disappeared")
 	}
 }

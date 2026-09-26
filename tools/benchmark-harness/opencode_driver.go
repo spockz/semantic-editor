@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -67,13 +68,21 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
 	tracker := openCodeToolTracker{}
+	decodeErrors := 0
+	validEvents := 0
 	var firstEventAt time.Time
 	sessionID := resumeID
 	for scanner.Scan() {
+		rawEvent := append([]byte(nil), scanner.Bytes()...)
 		var event map[string]any
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+		if err := json.Unmarshal(rawEvent, &event); err != nil || event == nil || len(event) == 0 || openCodeEventType(event) == "" {
+			decodeErrors++
+			encodedInvalid, _ := json.Marshal(string(rawEvent))
+			res.rawEvents = append(res.rawEvents, json.RawMessage(encodedInvalid))
 			continue
 		}
+		validEvents++
+		res.rawEvents = append(res.rawEvents, json.RawMessage(rawEvent))
 		observedAt := time.Now()
 		if firstEventAt.IsZero() {
 			firstEventAt = observedAt
@@ -91,7 +100,10 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 		res.OpenCodeExitCode = &code
 	}
 	res.OpenCodeStderr = sanitizeOpenRouterDiagnostic(boundedDiagnostic(stderr.Bytes(), maxOpenCodeStderrBytes), env)
-	res.Turns = 1
+	res.Turns = 0
+	if validEvents > 0 {
+		res.Turns = 1
+	}
 	res.InternalTurns = tracker.internalTurns
 	res.InitialLoadTurns = tracker.initialLoadTurns
 	res.MCPLoadTurns = tracker.mcpLoadTurns
@@ -104,19 +116,46 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 		value := tracker.firstToolCallAt.Sub(firstEventAt)
 		res.FirstEventToFirstToolCall = &value
 	}
+	var providerErr error
 	if scanErr != nil {
-		return sessionID, fmt.Errorf("scan OpenCode output: %w", scanErr)
+		providerErr = fmt.Errorf("scan OpenCode output: %w", scanErr)
+	}
+	if decodeErrors > 0 {
+		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed OpenCode event records", decodeErrors))
 	}
 	if waitErr != nil {
 		if diagnostic := strings.TrimSpace(res.OpenCodeStderr); diagnostic != "" {
-			return sessionID, fmt.Errorf("run OpenCode: %w: %s", waitErr, diagnostic)
+			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w: %s", waitErr, diagnostic))
+		} else {
+			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w", waitErr))
 		}
-		return sessionID, fmt.Errorf("run OpenCode: %w", waitErr)
+	}
+	switch {
+	case providerErr != nil:
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = providerErr.Error()
+	case sessionID == "" || validEvents == 0:
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = "OpenCode stream lacks a session ID or valid events"
+	default:
+		res.toolObservationState = ToolObservationUnknown
+		res.toolObservationReason = "OpenCode adapter has no validated terminal event marker"
+	}
+	if providerErr != nil {
+		return sessionID, providerErr
 	}
 	if sessionID == "" {
 		return "", fmt.Errorf("OpenCode did not emit a session ID")
 	}
+	if validEvents == 0 {
+		return sessionID, fmt.Errorf("OpenCode emitted no valid task events")
+	}
 	return sessionID, nil
+}
+
+func openCodeEventType(event map[string]any) string {
+	eventType, _ := event["type"].(string)
+	return strings.TrimSpace(eventType)
 }
 
 func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm ArmType, target Target) (string, []string, error) {

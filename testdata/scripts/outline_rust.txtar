@@ -1,0 +1,21 @@
+# Outline one trusted Rust source file and prove the CLI leaves it byte-for-byte unchanged.
+exec cp src/lib.rs expected.rs
+exec semedit outline --language rust --trust-workspace --path src/lib.rs --include-unexported
+stdout '"kind":\s*"selected_file"'
+stdout '"language":\s*"rust"'
+stdout '"name":\s*"Widget"'
+stdout '"revision":\s*"[0-9a-f]{64}"'
+! stderr .+
+exec cmp src/lib.rs expected.rs
+! semedit outline --language rust --trust-workspace --path src --include-unexported
+stderr 'selected files only'
+! semedit outline --language rust --trust-workspace --path src/lib.rs --include-unexported=false
+stderr 'visibility filtering'
+
+-- Cargo.toml --
+[package]
+name = "outline-example"
+version = "0.1.0"
+
+-- src/lib.rs --
+struct Widget {}

@@ -140,13 +140,31 @@ type InteractionStep struct {
 	Error     string        `json:"error,omitempty"`
 }
 
+type DiagnosticToolCoverage struct {
+	Expected           []string             `json:"expected"`
+	Observed           []string             `json:"observed"`
+	Missing            []string             `json:"missing"`
+	ObservationState   ToolObservationState `json:"observation_state"`
+	Complete           bool                 `json:"complete"`
+	ExpectedSatisfied  bool                 `json:"expected_satisfied"`
+	CompletenessReason string               `json:"completeness_reason,omitempty"`
+}
+
+type ToolObservationState string
+
+const (
+	ToolObservationUnknown  ToolObservationState = "unknown"
+	ToolObservationComplete ToolObservationState = "complete"
+	ToolObservationPartial  ToolObservationState = "partial"
+)
+
 // SemanticToolReflection records a diagnostic-only follow-up after semantic tool-use behavior needs explanation.
 type SemanticToolReflection struct {
 	Prompt    string        `json:"prompt"`
 	Response  string        `json:"response,omitempty"`
-	WallClock time.Duration `json:"wall_clock_ms"`
-	Turns     int           `json:"turns"`
-	ToolCalls []ToolCall    `json:"tool_calls,omitempty"`
+	WallClock time.Duration `json:"-"`
+	Turns     int           `json:"-"`
+	ToolCalls []ToolCall    `json:"-"`
 	Error     string        `json:"error,omitempty"`
 }
 
@@ -180,9 +198,13 @@ type RunConfig struct {
 // RunResult aggregates telemetry, performance metrics, and oracle outcomes.
 type RunResult struct {
 	TaskID                           string                   `json:"task_id"`
-	Variant                          string                   `json:"variant,omitempty"` // "small", "large"
+	JobID                            string                   `json:"job_id,omitempty"`
+	ComparisonPairID                 string                   `json:"comparison_pair_id,omitempty"`
+	Variant                          string                   `json:"variant,omitempty"`
 	Repeat                           int                      `json:"repeat,omitempty"`
 	PromptVariant                    string                   `json:"prompt_variant,omitempty"`
+	SemeditArmRestrict               SemeditArmRestriction    `json:"semedit_arm_restrict,omitempty"`
+	SemeditArmRestrictionApplied     bool                     `json:"semedit_arm_restriction_applied"`
 	MCPServerInstructions            MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
 	Provenance                       ProvenanceSet            `json:"provenance,omitempty"`
 	Target                           Target                   `json:"target"`
@@ -211,6 +233,10 @@ type RunResult struct {
 	ToolsUsed                        []string                 `json:"tools_used,omitempty"`
 	ToolCalls                        []ToolCall               `json:"tool_calls,omitempty"`
 	InteractionSteps                 []InteractionStep        `json:"interaction_steps,omitempty"`
+	DiagnosticToolCoverage           *DiagnosticToolCoverage  `json:"diagnostic_tool_coverage,omitempty"`
+	DiagnosticReflectionSkipped      string                   `json:"diagnostic_reflection_skipped,omitempty"`
+	toolObservationState             ToolObservationState     `json:"-"`
+	toolObservationReason            string                   `json:"-"`
 	SemanticToolReflection           *SemanticToolReflection  `json:"semantic_tool_reflection,omitempty"`
 	SemanticBatchReflection          *SemanticToolReflection  `json:"semantic_batch_reflection,omitempty"`
 	MCPVerified                      bool                     `json:"mcp_verified"`
@@ -220,13 +246,16 @@ type RunResult struct {
 	OpenCodeExitCode                 *int                     `json:"opencode_exit_code,omitempty"`
 	OpenCodeStderr                   string                   `json:"opencode_stderr,omitempty"`
 	agentResponse                    string
+	rawEvents                        []json.RawMessage
 }
 
 // Runner coordinates execution across evaluation arms and benchmarks.
 type Runner struct {
 	baseScratchDir            string
 	mcpServerInstructionsMode MCPServerInstructionMode
+	semeditArmRestriction     SemeditArmRestriction
 	provenance                ProvenanceSet
+	agyExecutable             string
 }
 
 // RunnerOption configures one benchmark runner without adding global process state.
@@ -242,7 +271,6 @@ func WithProvenance(provenance ProvenanceSet) RunnerOption {
 	return func(r *Runner) { r.provenance = provenance.Clone() }
 }
 
-// NewRunner initializes a benchmark runner.
 func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	if scratchDir == "" {
 		scratchDir = filepath.Join(".scratch", "benchmarks")
@@ -253,6 +281,7 @@ func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 	runner := &Runner{
 		baseScratchDir:            scratchDir,
 		mcpServerInstructionsMode: MCPServerInstructionsNone,
+		semeditArmRestriction:     SemeditArmRestrictWrite,
 	}
 	for _, option := range options {
 		option(runner)
@@ -262,6 +291,15 @@ func NewRunner(scratchDir string, options ...RunnerOption) *Runner {
 
 func (r *Runner) provenanceFor() ProvenanceSet {
 	return r.provenance.Clone()
+}
+
+func (r *Runner) ExecuteControlVariant(ctx context.Context, task *Task, variant string) (*RunResult, error) {
+	if task == nil {
+		return nil, fmt.Errorf("execute control variant: task is nil")
+	}
+	copy := *task
+	copy.contextVariant = variant
+	return r.ExecuteControl(ctx, &copy)
 }
 
 // ExecuteControl runs a benchmark task using deterministic semedit operations directly.
@@ -413,4 +451,49 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	res.Oracle = oracleRes
 	res.Success = oracleRes.Passed
 	return res, nil
+}
+
+func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObservationState, reason string) *DiagnosticToolCoverage {
+	expectedSet := make(map[string]struct{}, len(expected))
+	for _, name := range expected {
+		if normalized := strings.TrimSpace(semanticToolBaseName(name)); normalized != "" {
+			expectedSet[normalized] = struct{}{}
+		}
+	}
+	if len(expectedSet) == 0 {
+		return nil
+	}
+
+	observedSet := make(map[string]struct{}, len(calls))
+	for _, call := range calls {
+		if normalized := strings.TrimSpace(semanticToolBaseName(call.Name)); normalized != "" {
+			observedSet[normalized] = struct{}{}
+		}
+	}
+
+	coverage := &DiagnosticToolCoverage{
+		ObservationState:   state,
+		Complete:           state == ToolObservationComplete,
+		CompletenessReason: reason,
+		ExpectedSatisfied:  true,
+	}
+	if state == ToolObservationComplete {
+		coverage.Missing = make([]string, 0)
+	}
+	for name := range expectedSet {
+		coverage.Expected = append(coverage.Expected, name)
+		if _, found := observedSet[name]; !found {
+			coverage.ExpectedSatisfied = false
+			if coverage.Complete {
+				coverage.Missing = append(coverage.Missing, name)
+			}
+		}
+	}
+	for name := range observedSet {
+		coverage.Observed = append(coverage.Observed, name)
+	}
+	sort.Strings(coverage.Expected)
+	sort.Strings(coverage.Observed)
+	sort.Strings(coverage.Missing)
+	return coverage
 }

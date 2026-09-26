@@ -337,13 +337,16 @@ type SymbolCandidate struct {
 
 // LookupResult retains legacy fields for CLI/MCP compatibility and adds a neutral location.
 type LookupResult struct {
-	Symbol     string             `json:"symbol,omitempty"`
-	File       string             `json:"file,omitempty"`
-	Line       int                `json:"line,omitempty"`
-	Column     int                `json:"column,omitempty"`
-	Offset     int                `json:"offset,omitempty"`
-	Kind       string             `json:"kind,omitempty"`
-	Receiver   string             `json:"receiver,omitempty"`
+	Symbol     string           `json:"symbol,omitempty"`
+	File       string           `json:"file,omitempty"`
+	Line       int              `json:"line,omitempty"`
+	Column     int              `json:"column,omitempty"`
+	Offset     int              `json:"offset,omitempty"`
+	Kind       string           `json:"kind,omitempty"`
+	Receiver   string           `json:"receiver,omitempty"`
+	Definition *SymbolCandidate `json:"definition,omitempty"`
+	// Usages are syntactic local binding declarations, not semantic references.
+	Usages     []*SymbolCandidate `json:"usages,omitempty"`
 	Ambiguous  bool               `json:"ambiguous,omitempty"`
 	Candidates []*SymbolCandidate `json:"candidates,omitempty"`
 	Location   SourceLocation     `json:"-"`

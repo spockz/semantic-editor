@@ -1,0 +1,121 @@
+# Outline a Go directory with visibility, kind, empty-file, test, and exclusion coverage
+exec semedit outline --path api
+stdout '"path":\s*"api"'
+stdout '"kind":\s*"interface"'
+stdout '"qualified_name":\s*"Server.Start"'
+stdout '"qualified_name":\s*"PublicFunction"'
+stdout '"name":\s*"Visible"'
+stdout '"name":\s*"secretField"'
+stdout '"name":\s*"hiddenMethod"'
+stdout '"name":\s*"fmtx"'
+stdout '"name":\s*"\."'
+stdout '"symbols":\s*\[\]'
+stdout '"path":\s*"net/http"'
+stdout '"path":\s*"net/http/httptest"'
+cmp api/server.go want/api/server.go
+exec semedit outline --path api --include-unexported=false --kind field
+stdout '"kind":\s*"type"'
+stdout '"name":\s*"Visible"'
+! stdout '"name":\s*"secretField"'
+! stdout '"qualified_name":\s*"PublicFunction"'
+exec semedit outline --path api --include-tests=true
+stdout '"name":\s*"TestServer"'
+exec semedit outline --path api/server_test.go
+stdout '"name":\s*"TestServer"'
+exec semedit outline --path api --kind method
+stdout '"qualified_name":\s*"Service.Do"'
+stdout '"symbols":\s*\[\]'
+! semedit outline --path api --kind mystery
+stderr 'unknown outline kind'
+exec semedit outline --path api/server.go --kind class --kind target
+stdout '"symbols":\s*\[\]'
+exec semedit outline --path api/server.go --kind class --kind function
+stdout '"qualified_name":\s*"PublicFunction"'
+exec semedit outline --path .
+stdout '"file":\s*"other/extra.go"'
+exec semedit outline --path generated.java
+stdout '"name":\s*"DirectorySymbol"'
+exec semedit outline --path generated.java --language go
+stdout '"name":\s*"DirectorySymbol"'
+
+-- go.mod --
+module example.com/readoutline
+go 1.23
+
+-- api/server.go --
+package api
+
+import (
+	"fmt"
+	fmtx "encoding/json"
+	. "strings"
+	_ "net/http/httptest"
+	"net/http"
+)
+
+type Base[T any] interface{ Get() T }
+
+type Server struct {
+	Visible, secretField int
+}
+
+func (s *Server) Start() {}
+func (s *Server) hiddenMethod() {}
+func PublicFunction() {}
+
+type Service interface {
+	Base[string]
+	Visible() string
+	Do(value string, values ...int) (bool, error)
+	secretMethod()
+}
+-- api/empty.go --
+// Package api retains even files with no declarations.
+package api
+
+-- api/server_test.go --
+package api
+
+func TestServer() {}
+
+-- generated.java/source.go --
+package generated
+
+func DirectorySymbol() {}
+-- other/extra.go --
+package other
+
+func OtherPackage() {}
+-- vendor/dependency/bad.go --
+this is invalid vendor source
+
+-- .scratch/cache/bad.go --
+this is invalid scratch source
+
+-- want/api/server.go --
+package api
+
+import (
+	"fmt"
+	fmtx "encoding/json"
+	. "strings"
+	_ "net/http/httptest"
+	"net/http"
+)
+
+type Base[T any] interface{ Get() T }
+
+type Server struct {
+	Visible, secretField int
+}
+
+func (s *Server) Start() {}
+func (s *Server) hiddenMethod() {}
+func PublicFunction() {}
+
+type Service interface {
+	Base[string]
+	Visible() string
+	Do(value string, values ...int) (bool, error)
+	secretMethod()
+}

@@ -107,6 +107,7 @@ func durationNanosecondsToMilliseconds(raw any) (int64, error) {
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
 type ComparisonSummary struct {
+	SemeditArmRestrict    SemeditArmRestriction    `json:"semedit_arm_restrict,omitempty"`
 	TaskID                string                   `json:"task_id"`
 	Repeat                int                      `json:"repeat,omitempty"`
 	PromptVariant         string                   `json:"prompt_variant,omitempty"`
@@ -191,14 +192,15 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		repeat                int
 		promptVariant         string
 		mcpServerInstructions MCPServerInstructionMode
+		semeditArmRestrict    SemeditArmRestriction
 	}
 
 	grouped := make(map[key]*ComparisonSummary)
 
 	for _, r := range runs {
-		baseTask := normalizeTaskBase(r.TaskID)
+		baseTask := comparisonTaskIdentity(r)
 		mcpServerInstructions := normalizeMCPServerInstructions(r.MCPServerInstructions)
-		k := key{baseTask: baseTask, target: r.Target.String(), repeat: r.Repeat, promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions}
+		k := key{baseTask: baseTask, target: r.Target.String(), repeat: r.Repeat, promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions, semeditArmRestrict: r.SemeditArmRestrict}
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
@@ -206,6 +208,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 				Repeat:                k.repeat,
 				PromptVariant:         r.PromptVariant,
 				MCPServerInstructions: mcpServerInstructions,
+				SemeditArmRestrict:    r.SemeditArmRestrict,
 				Provenance:            r.Provenance.Clone(),
 				Target:                r.Target,
 				BeforeState:           r.BeforeState,
@@ -219,63 +222,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 			comp.BeforeState = r.BeforeState
 		}
 
-		variant := strings.ToLower(r.Variant)
-		if idx := strings.Index(variant, ":"); idx >= 0 {
-			variant = variant[:idx]
-		}
-		if variant == "" {
-			if strings.Contains(r.TaskID, "large") {
-				variant = "large"
-			} else {
-				variant = "small"
-			}
-		}
-
-		isLarge := strings.Contains(variant, "large")
-		isVerified := strings.Contains(variant, "verified")
-
-		switch r.Arm {
-		case ArmBaseline:
-			if isVerified {
-				if comp.VanillaVerifiedPrompt == "" && r.Prompt != "" {
-					comp.VanillaVerifiedPrompt = r.Prompt
-				}
-				if isLarge {
-					comp.LargeVerifiedBaseline = r
-				} else {
-					comp.SmallVerifiedBaseline = r
-				}
-			} else {
-				if comp.VanillaPrompt == "" && r.Prompt != "" {
-					comp.VanillaPrompt = r.Prompt
-				}
-				if isLarge {
-					comp.LargeBaseline = r
-				} else {
-					comp.SmallBaseline = r
-				}
-			}
-		case ArmSemedit, ArmControl:
-			if isVerified {
-				if comp.MCPVerifiedPrompt == "" && r.Prompt != "" {
-					comp.MCPVerifiedPrompt = r.Prompt
-				}
-				if isLarge {
-					comp.LargeVerifiedSemedit = r
-				} else {
-					comp.SmallVerifiedSemedit = r
-				}
-			} else {
-				if comp.MCPPrompt == "" && r.Prompt != "" {
-					comp.MCPPrompt = r.Prompt
-				}
-				if isLarge {
-					comp.LargeSemedit = r
-				} else {
-					comp.SmallSemedit = r
-				}
-			}
-		}
+		assignComparisonRun(comp, r)
 	}
 
 	result := make([]*ComparisonSummary, 0, len(grouped))
@@ -299,7 +246,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		if result[i].MCPServerInstructions != result[j].MCPServerInstructions {
 			return result[i].MCPServerInstructions < result[j].MCPServerInstructions
 		}
-		return false
+		return result[i].SemeditArmRestrict < result[j].SemeditArmRestrict
 	})
 
 	return result
@@ -487,7 +434,11 @@ func formatConfiguration(comp *ComparisonSummary) string {
 	if promptVariant == "" {
 		promptVariant = "default"
 	}
-	return fmt.Sprintf("%s prompt · %s MCP instructions", promptVariant, normalizeMCPServerInstructions(comp.MCPServerInstructions))
+	policy := string(comp.SemeditArmRestrict)
+	if policy == "" {
+		policy = "unspecified"
+	}
+	return fmt.Sprintf("%s prompt · %s MCP instructions · %s semedit restriction", promptVariant, normalizeMCPServerInstructions(comp.MCPServerInstructions), policy)
 }
 
 func renderSemanticToolReflection(sb *strings.Builder, title string, run *RunResult) {
@@ -505,7 +456,6 @@ func renderSemanticToolReflection(sb *strings.Builder, title string, run *RunRes
 	if reflection.Error != "" {
 		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
 	}
-	fmt.Fprintf(sb, "<p>Reflection wall-clock: %.2fs; turns: %d; tool calls: %d.</p>\n", reflection.WallClock.Seconds(), reflection.Turns, len(reflection.ToolCalls))
 	sb.WriteString("</details>\n\n")
 }
 
@@ -524,7 +474,6 @@ func renderSemanticBatchReflection(sb *strings.Builder, title string, run *RunRe
 	if reflection.Error != "" {
 		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
 	}
-	fmt.Fprintf(sb, "<p>Reflection wall-clock: %.2fs; turns: %d; tool calls: %d.</p>\n", reflection.WallClock.Seconds(), reflection.Turns, len(reflection.ToolCalls))
 	sb.WriteString("</details>\n\n")
 }
 
@@ -1039,6 +988,73 @@ func formatDelta(pct, diff float64, direction deltaDirection, mcpVerified bool) 
 		return fmt.Sprintf("<span class=\"benchmark-delta-negative\">%s</span>", delta)
 	}
 	return delta
+}
+
+func assignComparisonRun(comp *ComparisonSummary, r *RunResult) {
+	variant := strings.ToLower(r.Variant)
+	if idx := strings.Index(variant, ":"); idx >= 0 {
+		variant = variant[:idx]
+	}
+	if variant == "" {
+		if strings.Contains(r.TaskID, "large") {
+			variant = "large"
+		} else {
+			variant = "small"
+		}
+	}
+
+	isLarge := strings.Contains(variant, "large")
+	isVerified := strings.Contains(variant, "verified")
+
+	switch r.Arm {
+	case ArmBaseline:
+		if isVerified {
+			if comp.VanillaVerifiedPrompt == "" && r.Prompt != "" {
+				comp.VanillaVerifiedPrompt = r.Prompt
+			}
+			if isLarge {
+				comp.LargeVerifiedBaseline = r
+			} else {
+				comp.SmallVerifiedBaseline = r
+			}
+		} else {
+			if comp.VanillaPrompt == "" && r.Prompt != "" {
+				comp.VanillaPrompt = r.Prompt
+			}
+			if isLarge {
+				comp.LargeBaseline = r
+			} else {
+				comp.SmallBaseline = r
+			}
+		}
+	case ArmSemedit, ArmControl:
+		if isVerified {
+			if comp.MCPVerifiedPrompt == "" && r.Prompt != "" {
+				comp.MCPVerifiedPrompt = r.Prompt
+			}
+			if isLarge {
+				comp.LargeVerifiedSemedit = r
+			} else {
+				comp.SmallVerifiedSemedit = r
+			}
+		} else {
+			if comp.MCPPrompt == "" && r.Prompt != "" {
+				comp.MCPPrompt = r.Prompt
+			}
+			if isLarge {
+				comp.LargeSemedit = r
+			} else {
+				comp.SmallSemedit = r
+			}
+		}
+	}
+}
+
+func comparisonTaskIdentity(run *RunResult) string {
+	if run.JobID != "" {
+		return run.TaskID
+	}
+	return normalizeTaskBase(run.TaskID)
 }
 
 // SaveReport writes telemetry stats as JSON and a rendered Markdown table.

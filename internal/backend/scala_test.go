@@ -2,10 +2,13 @@ package backend_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -176,5 +179,41 @@ func TestScalaStandaloneFileWithoutMarkersUsesContainingRoot(t *testing.T) {
 	})
 	if _, err := underTest.Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageScala, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing"); err != nil {
 		t.Fatalf("standalone lookup failed: %v", err)
+	}
+}
+
+func TestScalaLookupThenOutlineUsesFreshMatchedDocumentSnapshot(t *testing.T) {
+	root, file := scalaFixture(t, "class Alpha {}\n")
+	sourceA := "class Alpha {}\n"
+	sourceB := "class Bravo {}\n"
+	responseA := json.RawMessage("[{\"name\":\"Alpha\",\"kind\":5,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":14}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":6},\"end\":{\"line\":0,\"character\":11}}}]")
+	responseB := json.RawMessage("[{\"name\":\"Bravo\",\"kind\":5,\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":14}},\"selectionRange\":{\"start\":{\"line\":0,\"character\":6},\"end\":{\"line\":0,\"character\":11}},\"detail\":\"class Bravo\"}]")
+	session := newStatefulTestLspSession(json.RawMessage("{}"), map[string]json.RawMessage{sourceA: responseA, sourceB: responseB})
+	factoryCalls := 0
+	b := scalabackend.NewScalaBackendWithFactory(func(context.Context, string, backend.ScalaConfig) (scalabackend.ScalaSession, error) {
+		factoryCalls++
+		return session, nil
+	})
+	project := trustedScalaProject(root, file)
+	if _, err := b.Lookup(context.Background(), project, "Alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(sourceB), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := b.Outline(context.Background(), backend.OutlineRequest{Project: project, Path: file, IncludeUnexported: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if factoryCalls != 1 || len(session.openedTexts) != 2 || session.openedTexts[0] != sourceA || session.openedTexts[1] != sourceB || len(session.open) != 0 {
+		t.Fatalf("factory calls %d, opened texts %#v, open docs %#v", factoryCalls, session.openedTexts, session.open)
+	}
+	wantCalls := []string{"initialize", "initialized", "workspace/didChangeConfiguration", "textDocument/didOpen", "textDocument/documentSymbol", "textDocument/didClose", "textDocument/didOpen", "textDocument/documentSymbol", "textDocument/didClose"}
+	if !reflect.DeepEqual(session.calls, wantCalls) {
+		t.Fatalf("LSP calls = %#v, want %#v", session.calls, wantCalls)
+	}
+	digest := sha256.Sum256([]byte(sourceB))
+	if len(result.Files) != 1 || len(result.Files[0].Symbols) != 1 || result.Files[0].Symbols[0].Name != "Bravo" || result.Files[0].Symbols[0].ServerDetail == nil || *result.Files[0].Symbols[0].ServerDetail != "class Bravo" || result.Files[0].Revision != hex.EncodeToString(digest[:]) {
+		t.Fatalf("outline result = %+v", result)
 	}
 }

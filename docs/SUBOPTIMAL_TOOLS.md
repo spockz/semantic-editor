@@ -104,6 +104,8 @@ The goal is to track:
 
 | **ST-0069** | 2026-09-25 | `semantic_insert_function` | `internal/backend/kotlin/real_server_integration_test.go` | The first insertion rejected exported Go test name `TestRealKotlinLanguageServerIntegration` with `access_modifier: private`; no source changed. | Retry with public access for the exported test function. | Caller supplied visibility inconsistent with Go identifier casing; the tool correctly enforced its invariant. | Keep explicit visibility guidance in agent examples. |
 
+| **ST-0070** | 2026-09-26 | `semantic_insert_construct` (CLI) | `internal/capability/capability.go`, operation-key constants | The insertion failed with `expected declaration, found OpInspect`; the supplied snippet contained constant specs without a top-level `const` declaration, and no source was changed. | Deferred adding capability keys to feature wiring; no source workaround was needed. | Construct insertion validates a complete top-level declaration, while the request supplied only grouped constant specs. | Supply a complete declaration or append valid constant specs through the supported declaration workflow. |
+
 ---
 
 ## Guidelines for Logging Dogfooding Deficiencies
@@ -113,3 +115,240 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 1. **Bug / Failure**: The tool returned an error or unexpected output for a valid semantic intent.
 2. **Follow-up Manual Edit**: The tool modified the AST, but agents needed a manual edit after the tool operation to make the code compile, pass formatting, or adjust surrounding declarations.
 3. **Inconvenient Ergonomics**: The parameter schema or error message caused the agent to fail or hallucinate parameters on its first attempt.
+
+## 2026-09-26: semantic_insert_construct switch-case locator
+
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/oracle.go`, `parseYAMLFrontmatter`
+- Observed failure: inserting a `contexts` case after the `interactive_followups` list case returned `switch statement not found`.
+- Workaround: use `semantic_replace_body` for the existing parser function to add the list handling without replacing the file or declaration.
+- Root cause: case insertion did not locate the existing `switch targetSlice` when given the string case discriminator.
+
+## 2026-09-26: semantic_scaffold_file omits required file-purpose header
+
+- Tool: `semantic_scaffold_file`
+- Target: `tools/benchmark-harness/planner.go`
+- Observed behavior: scaffolding created only `package main`, with no place to provide the repository-required WHY header.
+- Workaround: add the concise file-purpose header atomically before inserting constructs.
+- Root cause: scaffold schema has no file-header input.
+
+## 2026-09-26: semantic_rename argument-name mismatch
+
+- Tool: `semantic_rename`
+- Target: `tools/benchmark-harness/planner.go`, type `PlannedJob`
+- Observed failure: call rejected with `param "to" is required` because the initial request used `new_name`.
+- Workaround: retry with the documented `to` parameter.
+- Root cause: caller used a parameter name not present in the live schema.
+
+## 2026-09-26: semantic_rename reports transient call arity during signature migration
+
+- Tool: `semantic_rename`
+- Target: `tools/benchmark-harness/driver.go`, `prepareAgentPrompt`
+- Observed failure: rename applied but verification reported one callsite with a temporary missing argument while the function signature was being migrated.
+- Workaround: complete the wrapper/signature transition using semantic declaration edits, then verify the package after the migration.
+- Root cause: the rename operation verified an intermediate state before dependent callsites were adapted.
+
+## 2026-09-26: semantic_replace_construct did not resolve existing method
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/driver.go`, method `(*Runner).ExecuteAgentDriver`
+- Observed failure: replacement returned `symbol not found` for the visible receiver method.
+- Workaround: use `semantic_replace_body` for the existing method, preserving its declaration and updating only its body.
+- Root cause: method symbol lookup did not accept the unqualified method name in this request.
+
+## 2026-09-26: semantic_insert_construct requires one declaration per call
+
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/planner.go`, plan renderer and helper
+- Observed failure: inserting two function declarations together returned `multiple declarations found in snippet`.
+- Workaround: insert each declaration separately.
+- Root cause: construct insertion accepts exactly one declaration per invocation.
+
+## 2026-09-26: semantic_replace_construct rejected provider type and method together
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/session.go`, `agyProvider`
+- Observed failure: rejected the snippet with `multiple declarations found in snippet`; no source change was applied.
+- Workaround: split the provider type and its `run` method into separate semantic construct replacements.
+- Root cause: the tool accepts exactly one top-level declaration per request.
+
+### 2026-09-26
+
+- Tool: `semantic_replace_body`
+- Target: `tools/benchmark-harness/oracle.go`
+- Observed failure: the method replacement request used symbol `ExtractVariantTo`; the semantic tool requires the receiver-qualified symbol `(*Task).ExtractVariantTo`.
+- Workaround: retry with the receiver-qualified method name.
+- Root cause: method lookup requires an explicit receiver.
+- Tool: `semantic_insert_construct`
+- Target: `tools/benchmark-harness/planner_test.go`
+- Observed failure: one request contained a helper, several tests, and a test writer type; insertion accepts one declaration at a time.
+- Workaround: insert each declaration separately.
+- Root cause: construct insertion validates a single AST declaration per request.
+| **ST-0019** | 2026-09-26 | `semantic_insert_construct` | `tools/benchmark-harness/session_test.go` file-level WHY comment | Rejected a comment-only declaration snippet with `no declarations found in snippet`; an initial patch to the log also missed its exact table row. | Appended the entry after reading the actual file; will add the mandatory source comment using a focused atomic edit. | Declaration insertion accepts declaration syntax only; comment insertion is unsupported. | Support file-level comment insertion or document the limitation. |
+| **ST-0020** | 2026-09-26 | `semantic_insert_construct` | `tools/benchmark-harness/runner.go` runner test executable field | Rejected inserting an individual struct field as a declaration (`expected declaration, found agyExecutable`). | Will replace the enclosing type declaration using the semantic construct tool. | The insertion operation accepts top-level declarations but not struct fields. | Support field insertion into struct types. |
+| **ST-0021** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/agy_driver.go` executable selection conditional | Did not resolve the conditional using the short statement discriminator `_, err := os.Stat(agyBin)`. | Will retry with the complete condition text after recording this failure. | Conditional matching requires the parsed full source condition. | Improve construct-resolution diagnostics for short-statement conditionals. |
+| **ST-0022** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/agy_driver.go` executable selection conditional | Also failed to resolve the full conditional when supplied as a discriminator. | After recording the failure, will apply a focused atomic edit to the conditional. | The tool does not identify short-init conditionals in this method. | Add short-init conditional matching. |
+| **ST-0023** | 2026-09-26 | `semantic_rename` | `tools/benchmark-harness/driver.go` follow-up method | Rejected an invalid rename argument object because the tool requires `symbol` and `to` fields. | Will retry with the declared semantic rename schema after logging this failure. | The caller used stale tool parameter names. | Validate MCP inputs from current schemas. |
+| **ST-0024** | 2026-09-26 | `semantic` construct operations | `tools/benchmark-harness/driver.go` obsolete helper removal | The available construct APIs do not provide deletion of a declaration, so they cannot remove the superseded runner-owned follow-up method after its loop moved into the session. | Applied a focused deletion of the dead helper after recording the limitation. | The semantic editing API supports insert, replace, and move but not declaration removal. | Add `semantic_delete_construct`. |
+| **ST-0025** | 2026-09-26 | `semantic` construct operations | `tools/benchmark-harness/codex_driver.go`, `opencode_driver.go` event decode accounting | Available construct operations do not insert statements into existing scanner loops without replacing whole provider methods. | Applied focused atomic edits to count decode failures and reject empty resumed streams. | The API lacks statement insertion for existing loops. | Add `semantic_insert_statement`. |
+| **ST-0026** | 2026-09-26 | `semantic_replace_construct` | `tools/benchmark-harness/driver.go` session cleanup defer | The construct matcher did not resolve the `session.close()` defer by the supplied discriminator. | After logging, apply a focused atomic edit to the defer. | Defer matching did not accept the call expression as discriminator. | Improve defer construct matching. |
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/planner.go`, the executor selection branch in `ExecutePlan`
+- Observed failure: the request did not locate the conditional using discriminator `ctx.Err() != nil`.
+- Workaround: retry by matching the exact branch expression from the AST or use a focused declaration replacement.
+- Root cause: conditional discriminators require exact backend-resolved syntax.
+
+- Tool: `semantic_replace_body` (Stage 2 prompt policy, 2026-09-26)
+- Target: `tools/benchmark-harness/session_policy.go` in the isolated policy worktree.
+- Observed failure: the MCP server resolved the relative path under the original task checkout, where the file did not exist; no source was mutated.
+- Workaround: use the prebuilt semedit CLI with an explicit isolated working directory. Relocated this log from the original task checkout after detecting the same working-directory error in logging.
+- Root cause: the MCP server is bound to its original workspace, and tool invocations do not inherit shell working-directory changes.
+
+- Tool: `semantic_replace_body`
+  Target: `internal/backend/golang/references.go` in `.scratch/worktrees/read-inspection-verify`
+  Failure: the tool resolved the relative path against the primary checkout and reported the file missing; no source changed.
+  Workaround: retry using the nested worktree absolute path if supported, otherwise use the semantic CLI with an explicit workspace.
+  Root cause: the connector workspace root differs from the assigned nested implementation worktree.
+
+- Tool: `semantic_replace_body`
+  Target: `internal/backend/golang/references.go`
+  Failure: the tool could not resolve the method using the bare name `FindReferences`; no source changed.
+  Workaround: retry with the receiver-qualified symbol `GoBackend.FindReferences`.
+  Root cause: semantic symbol lookup requires the method receiver in its identifier.
+
+- Tool: `semantic_rename`
+  Target: `internal/backend/golang/references.go`
+  Failure: the connector resolved the Go symbol against the primary checkout and reported it missing; no source changed.
+  Workaround: invoke the repository `semedit rename` CLI from the assigned worktree with an explicit file and symbol.
+  Root cause: connector workspace binding is the primary checkout, while this task owns a nested worktree.
+
+- Tool: `semantic_insert_construct`
+  Target: `internal/capability/capability.go`
+  Failure: a const insertion supplied only the spec rather than a declaration, so snippet validation rejected it before edits.
+  Workaround: retry with a complete `const (...)` declaration.
+  Root cause: the semantic insertion API expects a full declaration for const constructs.
+
+### 2026-09-26: semantic_insert_construct
+
+- Target: `internal/backend/golang/references_test.go`
+- Failure: one call supplied two function declarations; the tool rejected the snippet before editing because it accepts exactly one construct.
+- Workaround: insert the regression tests in separate calls.
+- Root cause: construct-level API enforces a single Go declaration per request.
+
+### 2026-09-26: semantic_replace_construct target-path retry
+
+- Target: `internal/backend/golang/references.go`
+- Failure: the absolute target omitted the assigned `.scratch/worktrees/read-inspection-verify` component, so the tool could not open the file; no edit occurred.
+- Workaround: retry with the complete assigned worktree path.
+- Root cause: an incomplete absolute path.
+
+### 2026-09-26: semantic_replace_construct method selector retry
+
+- Target: `internal/backend/golang/references.go`
+- Failure: the method selector was supplied as `FindReferences`; the tool could not resolve it because the receiver is part of the symbol identity. No edit occurred.
+- Workaround: retry with receiver-qualified symbol `(GoBackend).FindReferences`.
+- Root cause: semantic method lookup requires the receiver name.
+
+### 2026-09-26: semantic edit invoked from wrong worktree
+
+- Tool: `semantic_replace_body` and `semantic_insert_construct`
+- Target: `internal/backend/java/java.go` and `internal/backend/java_test.go`
+- Failure: the semantic tools successfully applied the Java rename compatibility comment and regression in the original task checkout instead of the assigned integration worktree; those test results did not exercise the integration branch. The root preserved the patch and restored the original checkout clean.
+- Workaround: reapply only in `.scratch/worktrees/read-inspection`, explicitly pass that workdir to every command, and verify `pwd` plus `git branch --show-current` before each tool invocation.
+- Root cause: the semantic tool used the active checkout binding, which differed from the nested worktree selected for Stage 4.
+
+### 2026-09-26: semantic local variable replacement unsupported
+
+- Tool: `semantic_replace_construct`
+- Target: `internal/backend/java/java.go`, local variable `root` in `resolveJavaReadSelection`
+- Failure: the tool could not find the local declaration when asked to replace `root := ""` with `var root string`; no edit occurred.
+- Workaround: replace the containing function body with `semantic_replace_body` so the local declaration is updated while preserving the function logic.
+- Root cause: construct replacement does not resolve this local declaration selector.
+
+### 2026-09-26: no semantic function-deletion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/java/java.go`, obsolete `javaCharacterOffset`
+- Failure: no exposed semantic operation deletes an unused function declaration after coordinate conversion moved to `readlsp.ByteOffset`.
+- Workaround: remove only that function with a narrow atomic patch; keep the shared converter as the sole implementation.
+- Root cause: the current semantic tool set supports construct insertion/replacement but not declaration deletion.
+
+### 2026-09-26: semantic_insert_construct rejected multiple functions
+
+- Tool: `semantic_insert_construct`
+- Target: `internal/backend/rust/backend.go`
+- Failure: the tool accepts one declaration per call and rejected a snippet containing five helper functions; no edit occurred.
+- Workaround: insert each function separately with explicit absolute worktree paths.
+- Root cause: the edit request grouped independent declarations into a single-function operation.
+
+### 2026-09-26: semantic target omitted assigned worktree
+
+- Tool: `semantic_replace_construct`
+- Target: original checkout `internal/backend/rust/backend.go`
+- Failure: an absolute source path omitted `.scratch/worktrees/read-inspection`, so the tool applied the `Detail` field edit to the parent checkout. The accidental field was removed immediately and the exact patch was saved at `.scratch/wrong-target-rust-field.patch`.
+- Workaround: use relative source paths with the prebuilt semedit CLI from the assigned integration worktree, and verify the worktree branch before editing.
+- Root cause: the semantic tool was bound to the original checkout and the manually assembled path was incomplete.
+
+### 2026-09-26: no semantic field-level insertion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go`, `rustDocumentSymbol.Detail` and `decodeRustDocumentSymbol`
+- Failure: available semantic operations edit complete declarations but provide no operation for adding one struct field or one decode clause without replacing the whole function.
+- Workaround: apply two narrow atomic patches to the selected struct and JSON decoder; all function additions and body changes use the prebuilt semedit CLI.
+- Root cause: semantic editing does not expose field-level or statement-level insertion for these constructs.
+
+### 2026-09-26: no semantic capability-map entry insertion operation
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go`, Rust `CapabilityMatrix`
+- Failure: the available Go semantic operations do not insert one keyed entry into a map literal.
+- Workaround: apply a narrow atomic patch to the operations map; use semedit for the capability method body.
+- Root cause: the semantic edit surface has no map-entry insertion operation.
+
+### 2026-09-26: no semantic field or capability-map insertion operation for Scala
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/scala/backend.go`, `scalaDocumentSymbol` and `CapabilityMatrix`
+- Failure: available Go semantic operations do not add one field to an existing struct or one keyed capability entry to a map literal.
+- Workaround: apply narrow atomic patches to the struct, decoder, and operations map; use semedit for function additions and body changes.
+- Root cause: the semantic edit surface has no field-level or map-entry insertion operation.
+
+### 2026-09-26: no semantic function-deletion operation for obsolete position converters
+
+- Tool: semantic editing tool catalog
+- Target: `internal/backend/rust/backend.go` and `internal/backend/scala/backend.go`, old UTF-16 byte-offset helpers
+- Failure: the available semantic tools replace function bodies and insert declarations but cannot delete an unused function declaration.
+- Workaround: remove only the obsolete character-offset functions and their now-unused imports with narrow atomic patches after delegating conversion to `readlsp.ByteOffset`.
+- Root cause: the semantic edit surface has no declaration-deletion operation.
+
+### 2026-09-26: duplicate semantic test type insertion
+
+- Tool: `semedit insert-type`
+- Target: `internal/backend/rust_test.go`, `statefulRustSession`
+- Failure: an earlier successful insertion was repeated after losing track of the file update, creating a duplicate type declaration that semedit diagnostics reported. The duplicate was immediately removed; one intended declaration remains.
+- Workaround: inspect the current file before retrying semantic insertions and remove only the duplicate declaration.
+- Root cause: the first insertion result was not checked against the live source before a retry.
+
+### 2026-09-26: semedit removed imports before their references existed
+
+- Tool: `semedit imports` and `semedit replace-body`
+- Target: `internal/backend/rust_test.go`, source snapshot regression
+- Failure: semedit imports organized the test before the new code referenced `pipeline`, SHA-256, and hex imports, so it removed those unused imports; a subsequent body replacement reported undefined symbols.
+- Workaround: rerun semedit imports after the test body was inserted, which restored the required imports and resolved the diagnostics.
+- Root cause: imports are cleaned against the file state at operation time and intentionally remove imports not yet referenced.
+
+### 2026-09-26: semantic body selector required receiver qualification
+
+- Tool: `semantic_replace_body` through the prebuilt semedit CLI
+- Target: `internal/backend/kotlin/backend.go`, `(*KotlinBackend).Capabilities`
+- Failure: selecting the method by bare name `Capabilities` did not resolve its receiver method; no edit occurred.
+- Workaround: retry with the fully qualified selector `(*KotlinBackend).Capabilities`.
+- Root cause: the CLI body selector requires receiver qualification for this method.
+
+### 2026-09-26: semantic struct extension exposed positional test fixtures
+
+- Tool: `semantic_replace_construct` through the prebuilt semedit CLI
+- Target: `language_txtar_test.go`, `fakeDocumentSymbol`
+- Failure: after adding optional detail/URI/children fields for hierarchical Kotlin outline fixtures, package test compilation reported too few values in existing positional literals; no runtime test ran.
+- Workaround: convert the affected fake symbol fixtures to keyed literals.
+- Root cause: Go positional struct literals require values for every field when a test helper struct grows.

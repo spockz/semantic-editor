@@ -1,0 +1,31 @@
+# Receiver lookup returns its field definition while local bindings remain usage data.
+exec semedit lookup --file api/dispatch.go --symbol "Dispatcher.sink"
+! stdout '"ambiguous":\s*true'
+! stdout '"candidates":'
+stdout '"definition":'
+stdout '"definition":\s*\{\s*"name":\s*"sink"'
+! stdout '"usages":'
+stdout '"kind":\s*"field"'
+stdout '"receiver":\s*"Dispatcher"'
+stdout '"symbol":\s*"Dispatcher.sink"'
+
+exec semedit lookup --file api/dispatch.go --symbol "sink"
+! stdout '"ambiguous":\s*true'
+stdout '"definition":'
+stdout '"kind":\s*"function"'
+stdout '"usages":'
+
+-- go.mod --
+module example.com/receiver-lookup
+go 1.23
+
+-- api/dispatch.go --
+package api
+
+type Dispatcher struct {
+	sink int
+}
+
+func NewDispatcher(sink int) {}
+
+func sink() {}

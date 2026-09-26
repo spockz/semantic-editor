@@ -4,6 +4,9 @@ package operation_test
 import (
 	"errors"
 	"maps"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -62,8 +65,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 20 {
-		t.Errorf("registered operations = %d, want 20", len(entries))
+	if len(entries) != 23 {
+		t.Errorf("registered operations = %d, want 23", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -166,6 +169,12 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	if _, ok := registry.LookupMCP("semantic_verify"); !ok {
 		t.Error("LookupMCP(semantic_verify) missed")
 	}
+	if _, ok := registry.LookupMCP("semantic_inspect_symbol"); !ok {
+		t.Error("LookupMCP(semantic_inspect_symbol) missed")
+	}
+	if _, ok := registry.LookupMCP("semantic_outline"); !ok {
+		t.Error("LookupMCP(semantic_outline) missed")
+	}
 	if _, ok := registry.LookupCLI("lookup"); !ok {
 		t.Error("LookupCLI(lookup) missed")
 	}
@@ -175,17 +184,22 @@ func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	if _, ok := registry.LookupCLI("verify"); !ok {
 		t.Error("LookupCLI(verify) missed")
 	}
+	if _, ok := registry.LookupCLI("inspect-symbol"); !ok {
+		t.Error("LookupCLI(inspect-symbol) missed")
+	}
+	if _, ok := registry.LookupCLI("outline"); !ok {
+		t.Error("LookupCLI(outline) missed")
+	}
 }
 
 func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	t.Parallel()
-
 	registry := operation.DefaultRegistry()
 	matrix, err := registry.Matrix(backend.LanguageGo)
 	if err != nil {
 		t.Errorf("Matrix(go) failed: %v", err)
 	}
-	for _, key := range []string{"lookup", "rename", "verify"} {
+	for _, key := range []string{"lookup", "rename", "verify", "find_references"} {
 		capability, ok := matrix.Operations[key]
 		if !ok {
 			t.Errorf("go matrix misses operation %q", key)
@@ -213,13 +227,119 @@ func TestMatrixDerivesSupportFromHandlers(t *testing.T) {
 	}
 }
 
-func TestExactlyLookupIsReadOnly(t *testing.T) {
+func TestReadOperationsAreOnlyReadOnlyOperations(t *testing.T) {
 	t.Parallel()
 
 	for _, entry := range operation.DefaultRegistry().All() {
-		want := entry.Key == "lookup"
+		want := entry.Key == "lookup" || entry.Key == "inspect_symbol" || entry.Key == "outline" || entry.Key == "find_references"
 		if entry.ReadOnly != want {
 			t.Errorf("operation %q ReadOnly = %v, want %v", entry.Key, entry.ReadOnly, want)
 		}
+		if entry.Key == "find_references" && entry.Batchable {
+			t.Error("find_references must not be batchable")
+		}
+	}
+}
+
+func TestLookupSharedProjectParserPreservesBackendConfiguration(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("lookup")
+	if !ok {
+		t.Fatal("lookup registry entry missing")
+	}
+	request, err := entry.Parse(map[string]any{
+		"symbol":             "Widget",
+		"file":               "src/Widget.java",
+		"language":           "java",
+		"trust_workspace":    true,
+		"jdtls_home":         "/jdtls",
+		"java_bin":           "/java",
+		"import_maven":       true,
+		"metals_home":        "/metals",
+		"metals_bin":         "/metals/bin",
+		"java_version":       "21",
+		"standalone_haskell": true,
+		"ghc_bin":            "/ghc",
+		"hls_bin":            "/hls",
+		"ghc_version":        "9.10",
+		"hls_version":        "2.11",
+		"kotlin_bin":         "/kotlin",
+		"bash_bin":           "/bash",
+		"make_bin":           "/make",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	lookup, ok := request.(operation.LookupReq)
+	if !ok {
+		t.Fatalf("parsed request type = %T, want LookupReq", request)
+	}
+	want := backend.ProjectContext{
+		File:              "src/Widget.java",
+		Language:          backend.LanguageJava,
+		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: true},
+		Java:              backend.JavaConfig{JDTLSHome: "/jdtls", JavaBin: "/java", ImportMaven: true},
+		Scala:             backend.ScalaConfig{MetalsHome: "/metals", MetalsBin: "/metals/bin", JavaBin: "/java", JavaVersion: "21"},
+		Haskell:           backend.HaskellConfig{Standalone: true, GHCBin: "/ghc", HLSBin: "/hls", GHCVersion: "9.10", HLSVersion: "2.11"},
+		HaskellStandalone: true,
+		Kotlin:            backend.KotlinConfig{KotlinBin: "/kotlin"},
+		Bash:              backend.BashConfig{BashBin: "/bash"},
+		Make:              backend.MakeConfig{MakeBin: "/make"},
+		KotlinBin:         "/kotlin",
+	}
+	if !reflect.DeepEqual(lookup.Project, want) {
+		t.Errorf("lookup project = %#v, want %#v", lookup.Project, want)
+	}
+	if lookup.Symbol != "Widget" {
+		t.Errorf("lookup symbol = %q, want Widget", lookup.Symbol)
+	}
+}
+
+func TestOutlineDirectoryDispatchUsesEffectiveRootBeforeLanguageSelection(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/outline\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "generated.java")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "source.go"), []byte("package sample\nfunc Ready() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, explicitLanguage := range []bool{false, true} {
+		name := "auto language"
+		raw := map[string]any{"path": "generated.java"}
+		if explicitLanguage {
+			name = "explicit language"
+			raw["language"] = "go"
+		}
+		t.Run(name, func(t *testing.T) {
+			cc := operation.NewCallContext(root, backend.ProjectContext{RootDir: root})
+			result, err := cc.Registry.Dispatch(cc, "outline", raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outline, ok := result.(*backend.OutlineResult)
+			if !ok {
+				t.Fatalf("result type = %T, want *backend.OutlineResult", result)
+			}
+			if outline.Scope.Path != "generated.java" || len(outline.Files) != 1 || outline.Files[0].File != "generated.java/source.go" {
+				t.Fatalf("outline = %#v, want selected directory contents", outline)
+			}
+		})
+	}
+}
+
+func TestFindReferencesRegistryAliases(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	if _, ok := registry.LookupKey("find_references"); !ok {
+		t.Fatal("LookupKey(find_references) missed")
+	}
+	if _, ok := registry.LookupMCP("semantic_find_references"); !ok {
+		t.Fatal("LookupMCP(semantic_find_references) missed")
+	}
+	if _, ok := registry.LookupCLI("find-references"); !ok {
+		t.Fatal("LookupCLI(find-references) missed")
 	}
 }

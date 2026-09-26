@@ -24,6 +24,9 @@ func sortBenchmarkComparisons(comparisons []*BenchComparisonSummary) {
 		if comparisons[i].PromptVariant != comparisons[j].PromptVariant {
 			return comparisons[i].PromptVariant < comparisons[j].PromptVariant
 		}
+		if comparisons[i].SemeditArmRestrict != comparisons[j].SemeditArmRestrict {
+			return comparisons[i].SemeditArmRestrict < comparisons[j].SemeditArmRestrict
+		}
 		return displayMCPServerInstructions(comparisons[i].MCPServerInstructions, comparisons[i].LegacyMCPInstructions) <
 			displayMCPServerInstructions(comparisons[j].MCPServerInstructions, comparisons[j].LegacyMCPInstructions)
 	})

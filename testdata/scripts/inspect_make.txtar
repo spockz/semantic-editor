@@ -1,0 +1,21 @@
+# Make inspect returns the complete server-projected range and exact variable line.
+exec semedit inspect-symbol --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Read.mk --symbol all
+stdout '"source": "all:\\n\\t@echo one\\n\\t@echo two"'
+stdout '"source_extent": "server_range"'
+stdout 'interrupted recipe spans remain incomplete server projections'
+! stdout '"source": "next:"'
+exec semedit inspect-symbol --language make --trust-workspace --make-bin $SEMEDIT_TEST_MAKE_LS --file Variables.mk --symbol X
+stdout '"source": "X = a"'
+stdout '"complete": false'
+cmp Variables.mk want-variables.mk
+
+-- Read.mk --
+all:
+	@echo one
+	@echo two
+next:
+	@echo next
+-- Variables.mk --
+X = a
+-- want-variables.mk --
+X = a

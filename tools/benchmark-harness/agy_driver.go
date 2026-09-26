@@ -3,8 +3,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,7 +44,7 @@ func agyToolFunctionalStatus(status string) ToolCallStatus {
 	}
 }
 
-func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) {
+func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) error {
 	res.Turns = resp.NumTurns
 	res.PromptTokens = resp.Usage.InputTokens
 	res.CachedPromptTokens = resp.Usage.CacheReadTokens
@@ -54,14 +56,17 @@ func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) {
 	res.OutputTokens = resp.Usage.OutputTokens
 	res.ReasoningTokens = resp.Usage.ThinkingTokens
 	res.agentResponse = strings.TrimSpace(resp.Response)
-	if resp.ConversationID != "" {
-		extractAgyTools(resp.ConversationID, res)
+	if resp.ConversationID == "" {
+		return fmt.Errorf("agy response did not include a conversation ID")
 	}
+	return extractAgyTools(resp.ConversationID, res)
 }
 
 func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
 	agyBin := "/Users/alessandro/.local/bin/agy"
-	if _, err := os.Stat(agyBin); err != nil {
+	if r.agyExecutable != "" {
+		agyBin = r.agyExecutable
+	} else if _, err := os.Stat(agyBin); err != nil {
 		agyBin = "agy"
 	}
 
@@ -109,19 +114,32 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	var resp AgyResponse
 	decodeErr := json.Unmarshal(out, &resp)
 	if decodeErr == nil {
-		recordAgyResponseMetrics(res, resp)
+		if recordErr := recordAgyResponseMetrics(res, resp); recordErr != nil {
+			decodeErr = recordErr
+		}
 	}
+	var responseErr error
 	if runErr != nil {
-		return "", fmt.Errorf("agy exec error: %w (output: %s)", runErr, string(out))
+		responseErr = fmt.Errorf("agy exec error: %w (output: %s)", runErr, string(out))
 	}
 	if decodeErr != nil {
-		return "", fmt.Errorf("unmarshal agy json response: %w (raw: %s)", decodeErr, string(out))
+		responseErr = errors.Join(responseErr, fmt.Errorf("decode Agy response and transcript: %w (raw: %s)", decodeErr, string(out)))
 	}
-	if resp.Status != "SUCCESS" && resp.Error != "" {
-		return "", fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error)
+	if decodeErr == nil && resp.Status != "SUCCESS" {
+		responseErr = errors.Join(responseErr, fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error))
 	}
-	if resp.ConversationID == "" {
-		return "", fmt.Errorf("agy did not emit a conversation ID")
+	if resp.ConversationID == "" && decodeErr == nil {
+		responseErr = errors.Join(responseErr, fmt.Errorf("agy did not emit a conversation ID"))
+	}
+	if responseErr != nil {
+		res.toolObservationState = ToolObservationPartial
+		res.toolObservationReason = responseErr.Error()
+	} else {
+		res.toolObservationState = ToolObservationUnknown
+		res.toolObservationReason = "Agy adapter has no validated terminal transcript marker"
+	}
+	if responseErr != nil {
+		return resp.ConversationID, responseErr
 	}
 	return resp.ConversationID, nil
 }
@@ -156,40 +174,50 @@ func isMCPDiscoveryTool(name string) bool {
 		strings.Contains(clean, "describe")
 }
 
-func extractAgyTools(convID string, res *RunResult) {
+func extractAgyTools(convID string, res *RunResult) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return
+		return fmt.Errorf("resolve Agy transcript home: %w", err)
 	}
 	candidates := []string{
 		filepath.Join(home, ".gemini", "antigravity-cli", "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
 		filepath.Join(home, ".gemini", "antigravity", "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
 	}
-
+	var lastErr error
 	for _, transcriptPath := range candidates {
-		// #nosec G304 -- reading agy transcript within user home directory
+		// #nosec G304 -- transcript paths use Agy’s fixed home log layout and provider-issued conversation ID.
 		data, err := os.ReadFile(transcriptPath)
 		if err != nil {
+			lastErr = err
 			continue
 		}
-		parseAgyTranscript(data, res)
-		break
+		if err := parseAgyTranscript(data, res); err != nil {
+			return fmt.Errorf("parse Agy transcript %s: %w", transcriptPath, err)
+		}
+		return nil
 	}
+	return fmt.Errorf("read Agy transcript for conversation %q: %w", convID, lastErr)
 }
 
-func parseAgyTranscript(data []byte, res *RunResult) {
+func parseAgyTranscript(data []byte, res *RunResult) error {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	internalTurns := 0
 	initialLoadTurns := 0
 	mcpLoadTurns := 0
 	mutatingSeen := false
 	var pending []int
-
+	lineNumber := 0
 	for scanner.Scan() {
-		var step agyTranscriptStep
-		if err := json.Unmarshal(scanner.Bytes(), &step); err != nil {
+		lineNumber++
+		line := append([]byte(nil), scanner.Bytes()...)
+		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
+		var step agyTranscriptStep
+		if err := json.Unmarshal(line, &step); err != nil {
+			return fmt.Errorf("decode transcript line %d: %w", lineNumber, err)
+		}
+		res.rawEvents = append(res.rawEvents, json.RawMessage(line))
 		if step.Type == "PLANNER_RESPONSE" {
 			internalTurns++
 		}
@@ -210,11 +238,10 @@ func parseAgyTranscript(data []byte, res *RunResult) {
 			cleanName := strings.Trim(toolName, "\"")
 			arguments, err := json.Marshal(tc.Args)
 			if err != nil {
-				arguments = nil
+				return fmt.Errorf("encode arguments on transcript line %d: %w", lineNumber, err)
 			}
 			callIndex := appendToolCall(res, ToolCall{Name: cleanName, Server: serverName, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
 			pending = append(pending, callIndex)
-
 			isMutating := isSemanticTool(cleanName, serverName) || isMutatingTool(cleanName)
 			if isMutating {
 				mutatingSeen = true
@@ -237,7 +264,9 @@ func parseAgyTranscript(data []byte, res *RunResult) {
 			refreshMCPVerified(res)
 		}
 	}
-
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scan Agy transcript: %w", err)
+	}
 	if internalTurns > 0 {
 		res.InternalTurns = internalTurns
 	}
@@ -245,6 +274,7 @@ func parseAgyTranscript(data []byte, res *RunResult) {
 	res.MCPLoadTurns = mcpLoadTurns
 	res.ToolCount = len(res.ToolCalls)
 	refreshMCPVerified(res)
+	return nil
 }
 
 func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {

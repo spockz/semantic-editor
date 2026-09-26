@@ -1,0 +1,16 @@
+# Outline one trusted Scala source file with the pinned tools and preserve its exact source bytes.
+exec cp src/Widget.scala expected.scala
+exec semedit outline --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --path src/Widget.scala --include-unexported
+stdout '"kind":\s*"selected_file"'
+stdout '"language":\s*"scala"'
+stdout '"name":\s*"Widget"'
+stdout '"revision":\s*"[0-9a-f]{64}"'
+! stderr .+
+exec cmp src/Widget.scala expected.scala
+! semedit outline --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --path src --include-unexported
+stderr 'selected files only'
+! semedit outline --language scala --trust-workspace --metals-bin $SEMEDIT_TEST_METALS --java-bin $SEMEDIT_TEST_JAVA --java-version 21 --path src/Widget.scala --include-unexported=false
+stderr 'visibility filtering'
+
+-- src/Widget.scala --
+object Widget {}

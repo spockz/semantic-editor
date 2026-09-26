@@ -1,0 +1,20 @@
+# Inspect the exact declaration source and revision through trusted JDT LS.
+exec cp src/Widget.java expected.java
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+exec semedit inspect-symbol --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --symbol Widget
+stdout '"kind":\s*"selected_file"'
+stdout '"name":\s*"Widget"'
+stdout '"source":\s*"class Widget\{\}"'
+stdout '"source_extent":\s*"declaration"'
+stdout '"revision":\s*"[0-9a-f]{64}"'
+! stderr .+
+exec cmp src/Widget.java expected.java
+
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+
+-- tools/jdtls/config_mac/.keep --
+placeholder
+
+-- src/Widget.java --
+class Widget{}

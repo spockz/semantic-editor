@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	neutralbackend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/backend/readlsp"
 	"semedit/internal/lsp"
 	"semedit/internal/pipeline"
 )
@@ -125,7 +125,7 @@ func (*RustBackend) Language() neutralbackend.LanguageID { return neutralbackend
 
 // Capabilities declares Rust's read-only lookup capability.
 func (*RustBackend) Capabilities() neutralbackend.Capabilities {
-	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationRename)
+	return neutralbackend.NewCapabilitiesRequiringWorkspaceTrust(neutralbackend.OperationLookup, neutralbackend.OperationRename, neutralbackend.OperationOutline)
 }
 
 // CapabilityMatrix returns the declarative documentation matrix for the Rust backend.
@@ -148,6 +148,15 @@ func (*RustBackend) CapabilityMatrix() neutralbackend.LanguageMatrix {
 				CLICommand:   "semedit lookup --language rust --file <path.rs> --symbol <sym>",
 				MCPTool:      "resolve_symbol_location",
 				PlacementKey: false,
+			},
+			"outline": {
+				Supported:    true,
+				Description:  "Return the complete selected-file Rust declaration tree from a trusted rust-analyzer session; directory scopes and visibility filtering are unsupported.",
+				CLICommand:   "semedit outline --language rust --path <path.rs> --trust-workspace",
+				MCPTool:      "semantic_outline",
+				PlacementKey: false,
+				Level:        "symbol",
+				ReadOnly:     true,
 			},
 		},
 		Limitations: []neutralbackend.Constraint{
@@ -186,6 +195,86 @@ func (b *RustBackend) Close() error {
 	return err
 }
 
+func (b *RustBackend) closeSessionLocked() error {
+	if b.session == nil {
+		b.root = ""
+		return nil
+	}
+	err := b.session.Close()
+	b.session = nil
+	b.root = ""
+	return err
+}
+
+func (b *RustBackend) readRustDocumentSymbolsLocked(ctx context.Context, root, file string, source []byte, query, operation string) ([]rustDocumentSymbol, error) {
+	if b.session != nil && b.root != root {
+		return nil, &RustError{Op: operation, Workspace: root, Err: ErrRustSessionConflict}
+	}
+	if b.session == nil {
+		if b.factory == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		session, err := b.factory(ctx, root)
+		if err != nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: err}
+		}
+		if session == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		b.session, b.root = session, root
+		if err := initializeRustSession(ctx, session, root); err != nil {
+			closeErr := b.closeSessionLocked()
+			return nil, &RustError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
+		}
+	}
+
+	session := b.session
+	uri := pathutil.FileURI(file)
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{
+		"uri": uri, "languageId": "rust", "version": 1, "text": string(source),
+	}}); err != nil {
+		closeErr := b.closeSessionLocked()
+		return nil, &RustError{Op: "didOpen", File: file, Err: errors.Join(err, closeErr)}
+	}
+	raw, requestErr := session.Request(ctx, "textDocument/documentSymbol", map[string]any{
+		lspTextDocumentKey: map[string]string{"uri": uri},
+	})
+	var symbols []rustDocumentSymbol
+	if requestErr == nil {
+		symbols, requestErr = decodeRustDocumentSymbols(raw, root, source)
+	}
+	if requestErr == nil {
+		requestErr = validateRustDocumentSymbolURI(symbols, uri)
+	}
+	closeErr := session.Notify(ctx, "textDocument/didClose", map[string]any{
+		lspTextDocumentKey: map[string]string{"uri": uri},
+	})
+	if closeErr != nil {
+		retireErr := b.closeSessionLocked()
+		return nil, &RustError{Op: "didClose", File: file, Symbol: query, Err: errors.Join(requestErr, closeErr, retireErr)}
+	}
+	if requestErr != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: requestErr}
+	}
+	return symbols, nil
+}
+
+func validateRustDocumentSymbolURI(symbols []rustDocumentSymbol, selectedURI string) error {
+	var visit func([]rustDocumentSymbol) error
+	visit = func(items []rustDocumentSymbol) error {
+		for _, item := range items {
+			if item.URI != "" && item.URI != selectedURI {
+				return fmt.Errorf("%w: symbol URI does not match selected document", ErrRustMalformedResponse)
+			}
+			if err := visit(item.Children); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return visit(symbols)
+}
+
 // Lookup resolves one exact hierarchical symbol in the selected Rust file.
 func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.ProjectContext, query string) (*neutralbackend.LookupResult, error) {
 	if ctx == nil {
@@ -201,50 +290,11 @@ func (b *RustBackend) Lookup(ctx context.Context, project neutralbackend.Project
 	if strings.TrimSpace(query) == "" {
 		return nil, &RustError{Op: "lookup", File: file, Symbol: query, Err: ErrRustMalformedResponse}
 	}
-
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.session != nil && b.root != root {
-		return nil, &RustError{Op: "lookup", Workspace: root, Err: ErrRustSessionConflict}
-	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-		}
-		session, factoryErr := b.factory(ctx, root)
-		if factoryErr != nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: factoryErr}
-		}
-		if session == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-		}
-		b.session, b.root = session, root
-		if err := initializeRustSession(ctx, session, root); err != nil {
-			_ = session.Close()
-			b.session, b.root = nil, ""
-			return nil, &RustError{Op: "initialize", Workspace: root, Err: err}
-		}
-	}
-
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{
-		lspTextDocumentKey: map[string]any{
-			"uri":        pathutil.FileURI(file),
-			"languageId": "rust",
-			"version":    1,
-			"text":       string(source),
-		},
-	}); err != nil {
-		return nil, &RustError{Op: "didOpen", File: file, Err: err}
-	}
-	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{
-		lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)},
-	})
+	symbols, err := b.readRustDocumentSymbolsLocked(ctx, root, file, source, query, "lookup")
 	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
-	}
-	symbols, err := decodeRustDocumentSymbols(raw, root, source)
-	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Symbol: query, Err: err}
+		return nil, err
 	}
 	return selectRustSymbol(query, root, file, source, symbols)
 }
@@ -269,65 +319,79 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	if b.session != nil && b.root != root {
 		return nil, &RustError{Op: "rename", Workspace: root, Err: ErrRustSessionConflict}
 	}
-	if b.session == nil {
-		if b.factory == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+	perform := func() (*neutralbackend.RenameResult, error) {
+		if b.session == nil {
+			if b.factory == nil {
+				return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+			}
+			session, factoryErr := b.factory(ctx, root)
+			if factoryErr != nil {
+				return nil, &RustError{Op: "start", Workspace: root, Err: factoryErr}
+			}
+			if session == nil {
+				return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+			}
+			b.session, b.root = session, root
+			if initErr := initializeRustSession(ctx, session, root); initErr != nil {
+				closeErr := b.closeSessionLocked()
+				return nil, &RustError{Op: "initialize", Workspace: root, Err: errors.Join(initErr, closeErr)}
+			}
 		}
-		s, factoryErr := b.factory(ctx, root)
-		if factoryErr != nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: factoryErr}
+		session := b.session
+		uri := pathutil.FileURI(file)
+		if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+			return nil, &RustError{Op: "didOpen", File: file, Err: err}
 		}
-		if s == nil {
-			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
+		if err != nil {
+			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 		}
-		b.session, b.root = s, root
-		if initErr := initializeRustSession(ctx, s, root); initErr != nil {
-			_ = s.Close()
-			b.session, b.root = nil, ""
-			return nil, &RustError{Op: "initialize", Workspace: root, Err: initErr}
+		symbols, err := decodeRustDocumentSymbols(raw, root, source)
+		if err != nil {
+			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 		}
+		if err := validateRustDocumentSymbolURI(symbols, uri); err != nil {
+			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+		}
+		lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
+		if err != nil {
+			return nil, err
+		}
+		prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": lookup.Location.Range.Start})
+		if err != nil {
+			return nil, &RustError{Op: "prepareRename", File: file, Err: err}
+		}
+		if !validPrepareRename(prepRaw) {
+			return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
+		}
+		editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": lookup.Location.Range.Start, "newName": request.To})
+		if err != nil {
+			return nil, &RustError{Op: "rename", File: file, Err: err}
+		}
+		oldName := request.Symbol
+		if parts := strings.Split(oldName, "::"); len(parts) > 0 {
+			oldName = strings.TrimSpace(parts[len(parts)-1])
+		}
+		updated, err := applyRustWorkspaceEdit(file, source, editRaw, oldName)
+		if err != nil {
+			return nil, &RustError{Op: "rename", File: file, Err: err}
+		}
+		if err := pipeline.WriteAtomic(file, updated); err != nil {
+			return nil, &RustError{Op: "write", File: file, Err: err}
+		}
+		return &neutralbackend.RenameResult{Lookup: lookup}, nil
 	}
-	session := b.session
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
-		return nil, &RustError{Op: "didOpen", File: file, Err: err}
+	result, runErr := perform()
+	if runErr != nil {
+		closeErr := b.closeSessionLocked()
+		if closeErr != nil {
+			return nil, errors.Join(runErr, fmt.Errorf("close Rust session after failed rename: %w", closeErr))
+		}
+		return nil, runErr
 	}
-	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
-	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
-	}
-	symbols, err := decodeRustDocumentSymbols(raw, root, source)
-	if err != nil {
-		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
-	}
-	lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
-	if err != nil {
-		return nil, err
-	}
-	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
-	if err != nil {
-		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
-	}
-	if !validPrepareRename(prepRaw) {
-		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
-	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
-	if err != nil {
-		return nil, &RustError{Op: "rename", File: file, Err: err}
-	}
-	oldName := request.Symbol
-	if parts := strings.Split(oldName, "::"); len(parts) > 0 {
-		oldName = strings.TrimSpace(parts[len(parts)-1])
-	}
-	updated, err := applyRustWorkspaceEdit(file, source, editRaw, oldName)
-	if err != nil {
-		return nil, &RustError{Op: "rename", File: file, Err: err}
-	}
-	if err := pipeline.WriteAtomic(file, updated); err != nil {
-		return nil, &RustError{Op: "write", File: file, Err: err}
-	}
-	_ = session.Close()
-	b.session, b.root = nil, ""
-	return &neutralbackend.RenameResult{Lookup: lookup}, nil
+	// The edit is committed once WriteAtomic succeeds, so cleanup cannot revoke the result.
+	_ = b.closeSessionLocked()
+	return result, nil
 }
 
 const lspTextDocumentKey = "textDocument"
@@ -605,6 +669,7 @@ type rustDocumentSymbol struct {
 	SelectionRange rustRange
 	Children       []rustDocumentSymbol
 	URI            string
+	Detail         string
 }
 
 type rustRange struct {
@@ -650,6 +715,11 @@ func decodeRustDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	}
 	if err := json.Unmarshal(object["kind"], &symbol.Kind); err != nil {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: invalid kind", ErrRustMalformedResponse)
+	}
+	if detailRaw, ok := object["detail"]; ok && string(detailRaw) != "null" {
+		if err := json.Unmarshal(detailRaw, &symbol.Detail); err != nil {
+			return rustDocumentSymbol{}, fmt.Errorf("%w: invalid detail", ErrRustMalformedResponse)
+		}
 	}
 	if err := json.Unmarshal(object["range"], &symbol.Range); err != nil || !validRustRange(symbol.Range, source) {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: invalid range", ErrRustMalformedResponse)
@@ -796,50 +866,122 @@ func rustCandidate(root, file string, source []byte, symbol rustDocumentSymbol, 
 }
 
 func rustByteOffset(source []byte, position rustPosition) (int, error) {
-	if position.Line < 0 || position.Character < 0 {
-		return 0, errors.New("negative position")
-	}
-	line := 0
-	start := 0
-	for i, b := range source {
-		if b == '\n' {
-			if line == position.Line {
-				offset, err := rustCharacterOffset(source[start:i], position.Character)
-				return start + offset, err
-			}
-			line++
-			start = i + 1
-		}
-	}
-	if line != position.Line {
-		return 0, errors.New("line outside source")
-	}
-	offset, err := rustCharacterOffset(source[start:], position.Character)
-	return start + offset, err
+	return readlsp.ByteOffset(source, neutralbackend.Position(position))
 }
 
-func rustCharacterOffset(line []byte, character int) (int, error) {
-	units := 0
-	for offset := 0; offset < len(line); {
-		runeValue, size := utf8.DecodeRune(line[offset:])
-		if runeValue == utf8.RuneError && size == 1 {
-			return 0, errors.New("invalid UTF-8 source")
-		}
-		runeUnits := 1
-		if runeValue > 0xffff {
-			runeUnits = 2
-		}
-		if units == character {
-			return offset, nil
-		}
-		if units < character && character < units+runeUnits {
-			return 0, errors.New("UTF-16 position splits a code point")
-		}
-		units += runeUnits
-		offset += size
+func rustOutlineKind(kind int) string {
+	switch kind {
+	case 2:
+		return "module"
+	case 5, 26, 23:
+		return "type"
+	case 6:
+		return "method"
+	case 7:
+		return "property"
+	case 8:
+		return "field"
+	case 10:
+		return "enum"
+	case 11:
+		return "trait"
+	case 12:
+		return "function"
+	case 13:
+		return "variable"
+	case 14:
+		return "constant"
+	case 19:
+		return "object"
+	case 22:
+		return "enum_member"
+	default:
+		return ""
 	}
-	if units == character {
-		return len(line), nil
+}
+
+func mapRustReadSymbols(items []rustDocumentSymbol, file, parent string) ([]neutralbackend.ReadSymbol, error) {
+	result := make([]neutralbackend.ReadSymbol, 0, len(items))
+	for _, item := range items {
+		kind := rustOutlineKind(item.Kind)
+		if kind == "" {
+			return nil, fmt.Errorf("%w: unsupported rust-analyzer symbol kind %d", ErrRustUnsupportedResponse, item.Kind)
+		}
+		qualified := item.Name
+		if parent != "" {
+			qualified = parent + "::" + item.Name
+		}
+		children, err := mapRustReadSymbols(item.Children, file, qualified)
+		if err != nil {
+			return nil, err
+		}
+		mapped := neutralbackend.ReadSymbol{Name: item.Name, QualifiedName: qualified, Kind: kind, File: file, Range: neutralbackend.Range{Start: neutralbackend.Position(item.Range.Start), End: neutralbackend.Position(item.Range.End)}, SelectionRange: neutralbackend.Range{Start: neutralbackend.Position(item.SelectionRange.Start), End: neutralbackend.Position(item.SelectionRange.End)}, Children: children}
+		if item.Detail != "" {
+			detail := item.Detail
+			mapped.ServerDetail = &detail
+		}
+		result = append(result, mapped)
 	}
-	return 0, errors.New("character outside source")
+	return result, nil
+}
+
+// Outline returns the selected Rust file's validated hierarchical declarations.
+func (b *RustBackend) Outline(ctx context.Context, request neutralbackend.OutlineRequest) (*neutralbackend.OutlineResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	selected := request.Path
+	if selected == "" {
+		selected = request.Project.File
+	}
+	if strings.TrimSpace(selected) == "" {
+		return nil, fmt.Errorf("outline path is required")
+	}
+	base := request.Project.RootDir
+	if base == "" {
+		var err error
+		base, err = os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve outline path: %w", err)
+		}
+	}
+	if !filepath.IsAbs(selected) {
+		selected = filepath.Join(base, selected)
+	}
+	selected, err := filepath.Abs(selected)
+	if err != nil {
+		return nil, fmt.Errorf("resolve outline path: %w", err)
+	}
+	info, err := os.Stat(selected)
+	if err != nil {
+		return nil, fmt.Errorf("inspect outline path: %w", err)
+	}
+	request.Path = selected
+	if err := readlsp.ValidateOutlineRequest(request, info.IsDir()); err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("rust outline requires a regular source file")
+	}
+	project := request.Project
+	project.File = selected
+	root, file, source, err := resolveRustProject(project)
+	if err != nil {
+		return nil, err
+	}
+	if !project.WorkspaceTrust.Allows(root) {
+		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageRust, Workspace: root}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rawSymbols, err := b.readRustDocumentSymbolsLocked(ctx, root, file, source, "", "outline")
+	if err != nil {
+		return nil, err
+	}
+	symbols, err := mapRustReadSymbols(rawSymbols, file, "")
+	if err != nil {
+		return nil, err
+	}
+	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageRust, Source: source, Symbols: symbols, Complete: true}
+	return readlsp.Outline(document, request)
 }

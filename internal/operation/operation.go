@@ -60,10 +60,13 @@ type Def[Req any, Res any] struct {
 	PlacementKey bool
 	Batchable    bool
 	ReadOnly     bool
-	Parse        func(map[string]any) (Req, error)
-	Handlers     map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
-	Format       func(Res) (string, error)
-	ExampleRaw   map[string]any
+	// PrepareProject normalizes a concrete project after ambient context merges and before language dispatch.
+	// Operations should set this only when a selected path must be classified from that effective root.
+	PrepareProject func(backend.ProjectContext) (backend.ProjectContext, error)
+	Parse          func(map[string]any) (Req, error)
+	Handlers       map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
+	Format         func(Res) (string, error)
+	ExampleRaw     map[string]any
 }
 
 // Entry is the type-erased view of a Def stored in a Registry.
@@ -163,6 +166,12 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 				ctx = context.Background()
 			}
 			project := effectiveProject(cc, projectOf(request))
+			if def.PrepareProject != nil {
+				project, err = def.PrepareProject(project)
+				if err != nil {
+					return nil, fmt.Errorf("prepare %q project: %w", def.Key, err)
+				}
+			}
 			setProject(&request, project)
 			// A lone LanguageAuto handler marks a language-independent operation:
 			// invoke directly without backend language resolution.
