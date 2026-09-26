@@ -96,19 +96,33 @@ func Format(ctx context.Context, workDir string, paths ...string) error {
 	finish := telemetry.Start(ctx, telemetry.PhaseFormattingGofmt)
 	defer finish()
 
-	args := append([]string{"-w"}, paths...)
-	// #nosec G204 -- canonical formatter invocation
-	cmd := exec.CommandContext(ctx, "gofmt", args...)
-	if workDir != "" {
-		cmd.Dir = workDir
+	files, err := GoFiles(workDir, paths...)
+	if err != nil {
+		return fmt.Errorf("%w: select Go files: %w", ErrFormatFailed, err)
 	}
-	cmd.Env = os.Environ()
-
-	var errBuf bytes.Buffer
-	cmd.Stderr = &errBuf
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrFormatFailed, strings.TrimSpace(errBuf.String()), err)
+	for _, file := range files {
+		formatted, err := runGofmt(ctx, workDir, "", []string{file})
+		if err != nil {
+			return err
+		}
+		target := file
+		if !filepath.IsAbs(target) && workDir != "" {
+			target = filepath.Join(workDir, target)
+		}
+		target, err = filepath.EvalSymlinks(target)
+		if err != nil {
+			return fmt.Errorf("%w: resolve formatted Go file %q: %w", ErrFormatFailed, file, err)
+		}
+		before, err := os.ReadFile(target)
+		if err != nil {
+			return fmt.Errorf("%w: read formatted Go file %q: %w", ErrFormatFailed, file, err)
+		}
+		if bytes.Equal(before, []byte(formatted)) {
+			continue
+		}
+		if err := WriteAtomic(target, []byte(formatted)); err != nil {
+			return fmt.Errorf("%w: write formatted Go file %q: %w", ErrFormatFailed, file, err)
+		}
 	}
 	return nil
 }
@@ -436,4 +450,263 @@ func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
 		}
 	}
 	return diagnostics, nil
+}
+
+// GoFiles selects source files using shared formatting and verification exclusions. Explicit file symlinks are honored; recursive discovery skips all symlinks.
+func GoFiles(workDir string, paths ...string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+
+	base := workDir
+	if base == "" {
+		base = "."
+	}
+	base, err := filepath.Abs(base)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Go workspace %q: %w", workDir, err)
+	}
+	cacheRoots, err := configuredGoCacheRoots(base)
+	if err != nil {
+		return nil, err
+	}
+
+	selected := make(map[string]string)
+	for _, source := range paths {
+		if source == "" {
+			return nil, fmt.Errorf("empty Go source path")
+		}
+		target := source
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(base, target)
+		}
+		target, err = filepath.Abs(target)
+		if err != nil {
+			return nil, fmt.Errorf("resolve Go source path %q: %w", source, err)
+		}
+		info, err := os.Lstat(target)
+		if err != nil {
+			return nil, fmt.Errorf("stat Go source path %q: %w", source, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			targetInfo, err := os.Stat(target)
+			if err != nil {
+				return nil, fmt.Errorf("stat Go source symlink %q: %w", source, err)
+			}
+			if targetInfo.IsDir() {
+				continue
+			}
+			if targetInfo.Mode().IsRegular() {
+				addGoFile(selected, target, source)
+			}
+			continue
+		}
+		if !info.IsDir() {
+			if info.Mode().IsRegular() {
+				addGoFile(selected, target, source)
+			}
+			continue
+		}
+		walkCacheRoots, err := cacheRootsForGoDirectory(target, cacheRoots)
+		if err != nil {
+			return nil, err
+		}
+		if err := collectGoDirectory(base, target, source, walkCacheRoots, selected); err != nil {
+			return nil, err
+		}
+	}
+
+	files := make([]string, 0, len(selected))
+	for _, path := range selected {
+		files = append(files, path)
+	}
+	slices.Sort(files)
+	return files, nil
+}
+
+// NeedsFormatting reports whether selected Go files differ from gofmt output.
+func NeedsFormatting(ctx context.Context, workDir string, paths ...string) (bool, error) {
+	files, err := GoFiles(workDir, paths...)
+	if err != nil {
+		return false, err
+	}
+	if len(files) == 0 {
+		return false, nil
+	}
+	output, err := runGofmt(ctx, workDir, "-l", files)
+	if err != nil {
+		return false, err
+	}
+	return len(bytes.TrimSpace([]byte(output))) > 0, nil
+}
+
+// runGofmt invokes gofmt in bounded argument batches and never starts with no file arguments.
+func runGofmt(ctx context.Context, workDir, flag string, files []string) (string, error) {
+	if len(files) == 0 {
+		return "", nil
+	}
+
+	const maxArgumentBytes = 16 * 1024
+	var output strings.Builder
+	for start := 0; start < len(files); {
+		end := start
+		argumentBytes := len(flag) + len("--") + 2
+		for end < len(files) {
+			nextBytes := argumentBytes + len(files[end]) + 1
+			if nextBytes > maxArgumentBytes {
+				break
+			}
+			argumentBytes = nextBytes
+			end++
+		}
+		if end == start {
+			return "", fmt.Errorf("%w: gofmt file path exceeds safe argument size", ErrFormatFailed)
+		}
+
+		args := make([]string, 0, end-start+2)
+		if flag != "" {
+			args = append(args, flag)
+		}
+		args = append(args, "--")
+		args = append(args, files[start:end]...)
+		// #nosec G204 -- fixed gofmt invocation with validated, selected source paths.
+		cmd := exec.CommandContext(ctx, "gofmt", args...)
+		if workDir != "" {
+			cmd.Dir = workDir
+		}
+		cmd.Env = os.Environ()
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			return "", fmt.Errorf("%w: %s: %w", ErrFormatFailed, strings.TrimSpace(stderr.String()), err)
+		}
+		output.Write(stdout.Bytes())
+		start = end
+	}
+	return output.String(), nil
+}
+
+func configuredGoCacheRoots(base string) ([]string, error) {
+	roots := make([]string, 0, 8)
+	add := func(name, path string) error {
+		if path == "" {
+			return nil
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(base, path)
+		}
+		path, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("resolve Go cache path %q: %w", path, err)
+		}
+		roots = append(roots, filepath.Clean(path))
+		canonical, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			roots = append(roots, filepath.Clean(canonical))
+			return nil
+		}
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("resolve configured Go cache %s %q: %w", name, path, err)
+	}
+
+	for _, key := range []string{"GOMODCACHE", "GOCACHE", "GOTMPDIR"} {
+		if err := add(key, os.Getenv(key)); err != nil {
+			return nil, err
+		}
+	}
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolve default Go path: %w", err)
+		}
+		gopath = filepath.Join(home, "go")
+	}
+	for _, path := range filepath.SplitList(gopath) {
+		if err := add("GOPATH module cache", filepath.Join(path, "pkg", "mod")); err != nil {
+			return nil, err
+		}
+	}
+	return roots, nil
+}
+
+func goPathWithin(path, parent string) bool {
+	relative, err := filepath.Rel(parent, path)
+	return err == nil && relative != ".." && !filepath.IsAbs(relative) && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+func isConfiguredGoCache(path string, roots []string) (bool, error) {
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return false, fmt.Errorf("resolve traversed Go directory %q: %w", path, err)
+	}
+	for _, root := range roots {
+		if goPathWithin(path, root) || goPathWithin(canonical, root) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func skipGoDirectory(path string, entry os.DirEntry, cacheRoots []string) (bool, error) {
+	switch entry.Name() {
+	case ".scratch", ".git", "vendor":
+		return true, nil
+	}
+	return isConfiguredGoCache(path, cacheRoots)
+}
+
+func addGoFile(selected map[string]string, path, argument string) {
+	clean := filepath.Clean(path)
+	if previous, ok := selected[clean]; !ok || argument < previous {
+		selected[clean] = argument
+	}
+}
+
+func collectGoDirectory(base, target, source string, cacheRoots []string, selected map[string]string) error {
+	return filepath.WalkDir(target, func(current string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("walk Go source path %q: %w", source, walkErr)
+		}
+		if current != target && entry.IsDir() {
+			skip, err := skipGoDirectory(current, entry, cacheRoots)
+			if err != nil {
+				return err
+			}
+			if skip {
+				return filepath.SkipDir
+			}
+		}
+		if entry.IsDir() || !entry.Type().IsRegular() || filepath.Ext(current) != ".go" {
+			return nil
+		}
+		argument := current
+		if !filepath.IsAbs(source) {
+			var err error
+			argument, err = filepath.Rel(base, current)
+			if err != nil {
+				return fmt.Errorf("make Go source path relative to workspace: %w", err)
+			}
+		}
+		addGoFile(selected, current, argument)
+		return nil
+	})
+}
+
+func cacheRootsForGoDirectory(target string, roots []string) ([]string, error) {
+	canonical, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return nil, fmt.Errorf("resolve selected Go directory %q: %w", target, err)
+	}
+	nested := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if goPathWithin(target, root) || goPathWithin(canonical, root) {
+			continue
+		}
+		nested = append(nested, root)
+	}
+	return nested, nil
 }

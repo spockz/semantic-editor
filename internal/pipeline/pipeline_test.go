@@ -274,3 +274,222 @@ func main() {
 		t.Fatalf("existing import alias was not updated:\n%s", content)
 	}
 }
+
+func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
+	root := t.TempDir()
+	unformatted := []byte("package   main\n\nfunc   main(  )   {}\n")
+	invalid := []byte("package invalid {\n")
+	fixtures := map[string][]byte{
+		"valid.go":                      unformatted,
+		".scratch/cache.go":             invalid,
+		".git/generated.go":             invalid,
+		"vendor/module/dependency.go":   invalid,
+		"module-cache/example/cache.go": invalid,
+		"mod/build/ordinary.go":         unformatted,
+	}
+	for name, data := range fixtures {
+		target := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			t.Fatalf("create fixture directory %q: %v", name, err)
+		}
+		if err := os.WriteFile(target, data, 0o640); err != nil {
+			t.Fatalf("write fixture %q: %v", name, err)
+		}
+	}
+	cacheRoot := filepath.Join(root, "module-cache")
+	t.Setenv("GOMODCACHE", cacheRoot)
+
+	outside := t.TempDir()
+	outsideFile := filepath.Join(outside, "outside.go")
+	if err := os.WriteFile(outsideFile, unformatted, 0o640); err != nil {
+		t.Fatalf("write outside source: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "linked-directory")); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	if err := os.Symlink(outsideFile, filepath.Join(root, "linked.go")); err != nil {
+		t.Skipf("file symlinks are unavailable: %v", err)
+	}
+
+	relativeFiles, err := pipeline.GoFiles(root, ".")
+	if err != nil {
+		t.Fatalf("select relative workspace root: %v", err)
+	}
+	if got, want := strings.Join(relativeFiles, ","), "mod/build/ordinary.go,valid.go"; got != want {
+		t.Fatalf("selected relative files = %q, want %q", got, want)
+	}
+	absoluteFiles, err := pipeline.GoFiles(root, root)
+	if err != nil {
+		t.Fatalf("select absolute workspace root: %v", err)
+	}
+	if len(absoluteFiles) != len(relativeFiles) || !filepath.IsAbs(absoluteFiles[0]) {
+		t.Fatalf("selected absolute files = %v, want two absolute source paths", absoluteFiles)
+	}
+	explicitScratch, err := pipeline.GoFiles(root, filepath.Join(".scratch", "cache.go"))
+	if err != nil {
+		t.Fatalf("select explicit scratch file: %v", err)
+	}
+	if len(explicitScratch) != 1 {
+		t.Fatalf("explicit scratch selection = %v, want its source file", explicitScratch)
+	}
+	emptyDir := filepath.Join(root, "empty")
+	if err := os.Mkdir(emptyDir, 0o700); err != nil {
+		t.Fatalf("create empty directory: %v", err)
+	}
+	emptyFiles, err := pipeline.GoFiles(root, emptyDir)
+	if err != nil {
+		t.Fatalf("select empty directory: %v", err)
+	}
+	if len(emptyFiles) != 0 {
+		t.Fatalf("empty directory selected files: %v", emptyFiles)
+	}
+	if err := pipeline.Format(context.Background(), root); err != nil {
+		t.Fatalf("format without paths: %v", err)
+	}
+	if err := pipeline.Format(context.Background(), root, emptyDir); err != nil {
+		t.Fatalf("format empty directory: %v", err)
+	}
+	if _, err := pipeline.GoFiles(root, filepath.Join(root, "missing")); err == nil {
+		t.Fatal("selecting a missing path succeeded")
+	}
+	if err := pipeline.Format(context.Background(), root, filepath.Join(root, "missing")); err == nil {
+		t.Fatal("formatting a missing path succeeded")
+	}
+
+	needsFormatting, err := pipeline.NeedsFormatting(context.Background(), root, ".")
+	if err != nil {
+		t.Fatalf("check workspace formatting: %v", err)
+	}
+	if !needsFormatting {
+		t.Fatal("workspace with unformatted sources was reported formatted")
+	}
+	if err := pipeline.Format(context.Background(), root, "."); err != nil {
+		t.Fatalf("format selected workspace sources: %v", err)
+	}
+	needsFormatting, err = pipeline.NeedsFormatting(context.Background(), root, ".")
+	if err != nil {
+		t.Fatalf("recheck workspace formatting: %v", err)
+	}
+	if needsFormatting {
+		t.Fatal("workspace remains unformatted after formatting")
+	}
+
+	for name, want := range fixtures {
+		target := filepath.Join(root, name)
+		got, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("read fixture %q: %v", name, err)
+		}
+		if name == "valid.go" || name == "mod/build/ordinary.go" {
+			if string(got) != "package main\n\nfunc main() {}\n" {
+				t.Errorf("formatted fixture %q = %q", name, got)
+			}
+			info, err := os.Stat(target)
+			if err != nil {
+				t.Fatalf("stat formatted fixture %q: %v", name, err)
+			}
+			if gotMode := info.Mode().Perm(); gotMode != 0o640 {
+				t.Errorf("formatted fixture %q mode = %o, want %o", name, gotMode, 0o640)
+			}
+			continue
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("excluded fixture %q changed: got %q, want %q", name, got, want)
+		}
+	}
+	gotOutside, err := os.ReadFile(outsideFile)
+	if err != nil {
+		t.Fatalf("read outside source: %v", err)
+	}
+	if !bytes.Equal(gotOutside, unformatted) {
+		t.Errorf("source reachable through symlinks changed: %q", gotOutside)
+	}
+	directoryLink, err := pipeline.GoFiles(root, filepath.Join(root, "linked-directory"))
+	if err != nil {
+		t.Fatalf("select explicit directory symlink: %v", err)
+	}
+	if len(directoryLink) != 0 {
+		t.Fatalf("directory symlink selected files: %v", directoryLink)
+	}
+	explicitLink, err := pipeline.GoFiles(root, filepath.Join(root, "linked.go"))
+	if err != nil {
+		t.Fatalf("select explicit file symlink: %v", err)
+	}
+	if len(explicitLink) != 1 {
+		t.Fatalf("explicit file symlink selection = %v, want one source", explicitLink)
+	}
+}
+
+func TestGoFilesSkipsCanonicalGoCacheAlias(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := filepath.Join(root, "module-cache")
+	cacheFile := filepath.Join(cacheRoot, "example", "cache.go")
+	if err := os.MkdirAll(filepath.Dir(cacheFile), 0o700); err != nil {
+		t.Fatalf("create module cache: %v", err)
+	}
+	if err := os.WriteFile(cacheFile, []byte("package cached {\n"), 0o600); err != nil {
+		t.Fatalf("write module cache source: %v", err)
+	}
+	aliasRoot := t.TempDir()
+	alias := filepath.Join(aliasRoot, "go-module-cache")
+	if err := os.Symlink(cacheRoot, alias); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	t.Setenv("GOMODCACHE", alias)
+
+	files, err := pipeline.GoFiles(root, ".")
+	if err != nil {
+		t.Fatalf("select workspace with aliased module cache: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("module cache through canonical path was selected: %v", files)
+	}
+}
+
+func TestFormatTreatsDashAsExplicitFilename(t *testing.T) {
+	root := t.TempDir()
+	target := filepath.Join(root, "-")
+	if err := os.WriteFile(target, []byte("package   main\n\nfunc   main(  )   {}\n"), 0o600); err != nil {
+		t.Fatalf("write dash-named source: %v", err)
+	}
+	if err := pipeline.Format(context.Background(), root, "-"); err != nil {
+		t.Fatalf("format explicit dash-named source: %v", err)
+	}
+	formatted, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read dash-named source: %v", err)
+	}
+	if string(formatted) != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("dash-named source = %q", formatted)
+	}
+}
+
+func TestFormatExplicitFileSymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	target := filepath.Join(outside, "source.go")
+	if err := os.WriteFile(target, []byte("package   main\n\nfunc   main(  )   {}\n"), 0o600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	link := filepath.Join(root, "selected.go")
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	if err := pipeline.Format(context.Background(), root, link); err != nil {
+		t.Fatalf("format explicitly selected source symlink: %v", err)
+	}
+	formatted, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read symlink target: %v", err)
+	}
+	if string(formatted) != "package main\n\nfunc main() {}\n" {
+		t.Fatalf("formatted symlink target = %q", formatted)
+	}
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("stat selected symlink: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("formatting selected symlink replaced the link")
+	}
+}

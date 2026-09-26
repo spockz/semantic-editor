@@ -2,16 +2,15 @@
 package operation
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"semedit/internal/backend"
 	"semedit/internal/backends"
 	"semedit/internal/capability"
+	"semedit/internal/pipeline"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
@@ -420,17 +419,11 @@ func shouldRunGofmt(project backend.ProjectContext, path string) bool {
 
 // gofmtListsFiles reports whether gofmt would reformat sources under path.
 func gofmtListsFiles(ctx context.Context, rootDir, path string) (bool, error) {
-	// #nosec G204 -- canonical formatter invocation with caller-selected path.
-	cmd := exec.CommandContext(ctx, "gofmt", "-l", path)
-	if rootDir != "" {
-		cmd.Dir = rootDir
-	}
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	if err := cmd.Run(); err != nil {
+	formatted, err := pipeline.NeedsFormatting(ctx, rootDir, path)
+	if err != nil {
 		return false, fmt.Errorf("gofmt -l %s: %w", path, err)
 	}
-	return len(bytes.TrimSpace(output.Bytes())) > 0, nil
+	return formatted, nil
 }
 
 func formatLookup(result *backend.LookupResult) (string, error) {
