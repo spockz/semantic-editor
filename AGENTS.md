@@ -16,6 +16,8 @@ Before proposing architectural shifts, consult the indexed decisions and researc
 * **ADRs**: [`docs/adr/README.md`](docs/adr/README.md)
 * **Research Spikes**: [`docs/research/README.md`](docs/research/README.md)
 
+For benchmark harness or benchmark publication changes, start with [the benchmark architecture guide](tools/benchmark-harness/README.md). It maps responsibilities to source files and tests; update the guide when those boundaries move.
+
 ---
 
 ## 2. Documentation Governance (ADR & Research Lifecycle)

@@ -270,5 +270,6 @@ The table below contrasts existing tools across the three tiers against `semedit
    * **Elm**: The Elm compiler is famous for generating the most precise, human-readable, and machine-parsable error messages in software engineering. Verification and automated diagnostic repair loops are simpler in Elm than in virtually any other ecosystem.
 
 For architectural invariants and historical decisions, see the [Architecture Decision Records (ADRs)](docs/adr/README.md).
+For benchmark harness entry points, state ownership, and a change-to-file map, start with [the benchmark architecture guide](tools/benchmark-harness/README.md).
 For unresolved spikes and open technical challenges, see the [Research Questions Index](docs/research/README.md).
 For development workflow, testing standards, and test authoring guides, see [CONTRIBUTING.md](CONTRIBUTING.md).

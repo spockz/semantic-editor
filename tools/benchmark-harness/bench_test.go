@@ -73,7 +73,7 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 		{name: "success empty stderr", stdout: threadStarted},
 		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: threadStarted},
 		{name: "failure retains stderr", stderr: "server failed to start", stdout: threadStarted, exit: 7, wantErr: true, wantStatus: 7},
-		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n" + threadStarted},
+		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n" + threadStarted, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -110,8 +110,8 @@ func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 					t.Fatal("oversized stderr payload was not retained up to the boundary")
 				}
 			}
-			if tc.name == "malformed stdout" && res.Turns != 1 {
-				t.Fatalf("malformed stdout changed turns to %d", res.Turns)
+			if tc.name == "malformed stdout" && res.Turns != 0 {
+				t.Fatalf("malformed event stream manufactured task turns: %d", res.Turns)
 			}
 			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0 || res.agentResponse != "") {
 				t.Fatalf("malformed stdout contaminated metrics: %#v", res)

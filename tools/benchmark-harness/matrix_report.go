@@ -9,22 +9,22 @@ import (
 	"time"
 )
 
-func saveMatrixReports(resultDir, benchDir string, allRuns []*RunResult) {
+func saveMatrixReports(resultDir, benchDir string, allRuns []*RunResult) error {
 	repoRoot, err := os.Getwd()
 	if err != nil {
-		fmt.Printf("❌ Failed to find repository root: %v\n", err)
-		return
+		return fmt.Errorf("find repository root: %w", err)
 	}
 	type benchKey struct {
 		taskBase              string
 		target                string
 		repeat                int
 		mcpServerInstructions MCPServerInstructionMode
+		semeditArmRestrict    SemeditArmRestriction
 	}
 	benchGroups := make(map[benchKey][]*RunResult)
 	for _, r := range allRuns {
-		base := normalizeTaskBase(r.TaskID)
-		k := benchKey{taskBase: base, target: r.Target.String(), repeat: r.Repeat, mcpServerInstructions: r.MCPServerInstructions}
+		base := comparisonTaskIdentity(r)
+		k := benchKey{taskBase: base, target: r.Target.String(), repeat: r.Repeat, mcpServerInstructions: r.MCPServerInstructions, semeditArmRestrict: r.SemeditArmRestrict}
 		benchGroups[k] = append(benchGroups[k], r)
 	}
 
@@ -43,10 +43,12 @@ func saveMatrixReports(resultDir, benchDir string, allRuns []*RunResult) {
 		if instructionMode := normalizeMCPServerInstructions(k.mcpServerInstructions); instructionMode != MCPServerInstructionsNone {
 			targetSlug += "-mcp-server-instructions-" + string(instructionMode)
 		}
+		if k.semeditArmRestrict != "" {
+			targetSlug += "-semedit-arm-restrict-" + safePathFragment(string(k.semeditArmRestrict))
+		}
 		taskOutDir := filepath.Join(resultDir, k.taskBase)
 		if err := os.MkdirAll(taskOutDir, 0o750); err != nil {
-			fmt.Printf("❌ Failed to create task out dir %s: %v\n", taskOutDir, err)
-			continue
+			return fmt.Errorf("create task output directory %s: %w", taskOutDir, err)
 		}
 
 		benchComparisons := BuildComparisons(runs)
@@ -64,9 +66,9 @@ func saveMatrixReports(resultDir, benchDir string, allRuns []*RunResult) {
 		jsonFile := filepath.Join(taskOutDir, targetSlug+".json")
 		mdFile := filepath.Join(taskOutDir, targetSlug+".md")
 		if err := SaveReport(singleReport, jsonFile, mdFile); err != nil {
-			fmt.Printf("❌ Failed to save benchmark %s (%s): %v\n", k.taskBase, k.target, err)
-		} else {
-			fmt.Printf(" Saved benchmark results: %s\n", jsonFile)
+			return fmt.Errorf("save benchmark %s (%s): %w", k.taskBase, k.target, err)
 		}
+		fmt.Printf(" Saved benchmark results: %s\n", jsonFile)
 	}
+	return nil
 }

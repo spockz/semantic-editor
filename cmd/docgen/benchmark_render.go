@@ -145,7 +145,7 @@ func formatDocConfiguration(comp *BenchComparisonSummary) string {
 	if promptVariant == "" {
 		promptVariant = "default"
 	}
-	return fmt.Sprintf("%s prompt · %s MCP instructions", promptVariant, displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
+	return fmt.Sprintf("%s prompt · %s MCP instructions · %s semedit restriction", promptVariant, displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions), displaySemeditArmRestriction(comp.SemeditArmRestrict))
 }
 
 func writeDocConfigurationDetails(sb *strings.Builder, comp *BenchComparisonSummary) {
@@ -160,6 +160,7 @@ func writeDocConfigurationDetails(sb *strings.Builder, comp *BenchComparisonSumm
 	fmt.Fprintf(sb, "| Target | `%s` |\n", comp.Target.String())
 	fmt.Fprintf(sb, "| Prompt variant | `%s` |\n", promptVariant)
 	fmt.Fprintf(sb, "| MCP server instructions | `%s` |\n", displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions))
+	fmt.Fprintf(sb, "| Semedit arm restriction | `%s` |\n", displaySemeditArmRestriction(comp.SemeditArmRestrict))
 	if comp.SelectedRunID != "" {
 		fmt.Fprintf(sb, "| Selected source run | [%s](/docs/benchmarks/runs/%s/) |\n", comp.SelectedRunID, comp.SelectedRunID)
 	}
@@ -774,4 +775,11 @@ func formatDocDelta(pct float64, diff float64, direction docDeltaDirection, mcpV
 		return fmt.Sprintf("<span class=\"benchmark-delta-negative\">%s</span>", delta)
 	}
 	return delta
+}
+
+func displaySemeditArmRestriction(policy string) string {
+	if policy == "" {
+		return "unspecified"
+	}
+	return policy
 }

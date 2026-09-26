@@ -3,8 +3,15 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
+
+type benchmarkPolicyReport struct {
+	policy string
+	best   []bestBenchmarkPair
+	runs   []benchmarkDocumentationRun
+}
 
 func renderBestBenchmarksDoc(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) string {
 	comparisons := make([]*BenchComparisonSummary, 0, len(best))
@@ -106,20 +113,12 @@ func benchmarkReduction(baseline, semedit float64) (float64, bool) {
 }
 
 func renderBestBenchmarkPreamble(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) string {
-	summary := summarizeBestBenchmarkPairs(best, runs)
 	var sb strings.Builder
 	sb.WriteString("## Best measured improvements\n\n")
-	sb.WriteString("| Measure | Result | Evidence |\n| :--- | :--- | :--- |\n")
-	writeBenchmarkHeadlineMetric(&sb, "Best speed increase", summary.bestSpeed, "faster")
-	writeBenchmarkHeadlineMetric(&sb, "Best token reduction", summary.bestToken, "fewer cache-adjusted token units")
-	if summary.initialPairCount == 0 {
-		sb.WriteString("| MCP first-time-right edits | — | No publishable standard-context first attempts recorded yet |\n")
-	} else {
-		baselineRate := float64(summary.initialBaselineFirstTimeRight) / float64(summary.initialPairCount) * 100
-		mcpRate := float64(summary.initialMCPFirstTimeRight) / float64(summary.initialPairCount) * 100
-		fmt.Fprintf(&sb, "| MCP first-time-right edits | MCP %d/%d (%.1f%%) vs Vanilla %d/%d (%.1f%%), %+.1f pp | Initial oracle pass across all publishable standard-context paired observations |\n", summary.initialMCPFirstTimeRight, summary.initialPairCount, mcpRate, summary.initialBaselineFirstTimeRight, summary.initialPairCount, baselineRate, mcpRate-baselineRate)
+	for _, group := range partitionBenchmarkPolicies(best, runs) {
+		fmt.Fprintf(&sb, "### Semedit restriction: `%s`\n\n", group.policy)
+		sb.WriteString(renderBenchmarkPolicyHeadline(group.best, group.runs))
 	}
-	sb.WriteString(renderCorrectiveTurnHistogram(runs))
 
 	sb.WriteString(`
 
@@ -127,7 +126,7 @@ Speed and token figures include only selected pairs where both Vanilla and MCP p
 
 ## Best-case outcomes measured so far
 
-This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, lower model cost resolves speed ties within five percentage points. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, and counts thinking tokens at the output rate.
+This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, semedit restriction policy, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, lower model cost resolves speed ties within five percentage points. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, and counts thinking tokens at the output rate.
 
 [Open the interactive benchmark browser](/docs/benchmarks/browser/). [View min, max, and average metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.
 
@@ -207,4 +206,60 @@ func correctiveInteractiveTurns(run *BenchRunResult) (int, bool) {
 func renderBenchmarkRunDoc(run benchmarkDocumentationRun) string {
 	preamble := fmt.Sprintf("This page contains exactly the publishable benchmark observations recorded in run `%s`; it does not select or aggregate them. [Return to best-case outcomes](/docs/benchmarks/) or [view aggregate metrics](/docs/benchmarks/aggregates/).\n\n", run.ID)
 	return renderBenchmarkComparisonsDoc("Benchmark run "+run.ID, "Complete empirical benchmark observations for run "+run.ID+".", preamble, run.Comparisons)
+}
+
+func partitionBenchmarkPolicies(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) []benchmarkPolicyReport {
+	groups := make(map[string]*benchmarkPolicyReport)
+	get := func(policy string) *benchmarkPolicyReport {
+		name := displaySemeditArmRestriction(policy)
+		if groups[name] == nil {
+			groups[name] = &benchmarkPolicyReport{policy: name}
+		}
+		return groups[name]
+	}
+	for _, pair := range best {
+		group := get(pair.comparison.SemeditArmRestrict)
+		group.best = append(group.best, pair)
+	}
+	for _, run := range runs {
+		partition := make(map[string][]*BenchComparisonSummary)
+		for _, comparison := range run.Comparisons {
+			group := get(comparison.SemeditArmRestrict)
+			partition[group.policy] = append(partition[group.policy], comparison)
+		}
+		for policy, comparisons := range partition {
+			groups[policy].runs = append(groups[policy].runs, benchmarkDocumentationRun{ID: run.ID, Comparisons: comparisons})
+		}
+	}
+	if len(groups) == 0 {
+		get("")
+	}
+	names := make([]string, 0, len(groups))
+	for name := range groups {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	result := make([]benchmarkPolicyReport, 0, len(names))
+	for _, name := range names {
+		result = append(result, *groups[name])
+	}
+	return result
+}
+
+func renderBenchmarkPolicyHeadline(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) string {
+	summary := summarizeBestBenchmarkPairs(best, runs)
+	var sb strings.Builder
+	sb.WriteString("| Measure | Result | Evidence |\n| :--- | :--- | :--- |\n")
+	writeBenchmarkHeadlineMetric(&sb, "Best speed increase", summary.bestSpeed, "faster")
+	writeBenchmarkHeadlineMetric(&sb, "Best token reduction", summary.bestToken, "fewer cache-adjusted token units")
+	if summary.initialPairCount == 0 {
+		sb.WriteString("| MCP first-time-right edits | — | No publishable standard-context first attempts recorded yet |\n")
+	} else {
+		baselineRate := float64(summary.initialBaselineFirstTimeRight) / float64(summary.initialPairCount) * 100
+		mcpRate := float64(summary.initialMCPFirstTimeRight) / float64(summary.initialPairCount) * 100
+		fmt.Fprintf(&sb, "| MCP first-time-right edits | MCP %d/%d (%.1f%%) vs Vanilla %d/%d (%.1f%%), %+.1f pp | Initial oracle pass across all publishable standard-context paired observations |\n", summary.initialMCPFirstTimeRight, summary.initialPairCount, mcpRate, summary.initialBaselineFirstTimeRight, summary.initialPairCount, baselineRate, mcpRate-baselineRate)
+	}
+	sb.WriteString(renderCorrectiveTurnHistogram(runs))
+
+	return sb.String()
 }

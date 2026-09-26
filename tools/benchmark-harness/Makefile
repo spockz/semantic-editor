@@ -12,11 +12,12 @@ VARIANTS ?= small,large
 CONCURRENCY ?= 2
 REPEATS ?= 1
 MCP_SERVER_INSTRUCTIONS ?= none
+SEMEDIT_ARM_RESTRICT ?= write
 # PROVENANCE records technical execution context without creating comparison cells.
 PROVENANCE ?=
 # CLASSIFIERS is retained as a compatibility alias for PROVENANCE.
 CLASSIFIERS ?=
-TASK ?= task-01-rename-local
+TASK ?=
 
 ifndef .DEFAULT_GOAL
 .DEFAULT_GOAL := bench-help
@@ -33,13 +34,15 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/free-top10"
 	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/cohere/north-mini-code:free REPEATS=3"
 	@echo "  make bench-all TARGET=opencode/openrouter/free-top10 REPEATS=2"
+	@echo "  make bench TASK=task-01-rename-local SEMEDIT_ARM_RESTRICT=readwrite"
+	@echo "  SEMEDIT_ARM_RESTRICT accepts read, write (default), or readwrite"
 	@echo "  go run ./tools/benchmark-harness --list-openrouter-free"
 	@echo "  make bench-all"
 	@echo "  make docgen"
 
 .PHONY: list-benchmarks bench-list
 list-benchmarks: ## List all available benchmark tasks and prompt variants
-	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness list --dir "$(BENCH_DIR)"
+	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness --list --dir "$(BENCH_DIR)"
 
 bench-list: list-benchmarks ## Alias for list-benchmarks
 
@@ -64,13 +67,13 @@ endif
 bench-all: ## Run all benchmarks in small and large context with all prompt variants
 	@echo "==> Running all benchmarks for target $(TARGET) across variants $(VARIANTS)..."
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness \
-		--matrix \
 		--target "$(TARGET)" \
 		--tasks all \
 		--variants "$(VARIANTS)" \
 		--concurrency "$(CONCURRENCY)" \
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
+		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
@@ -79,19 +82,15 @@ bench-all: ## Run all benchmarks in small and large context with all prompt vari
 
 .PHONY: bench
 bench: ## Run a specific benchmark in small and large context (e.g. make bench TASK=generate_template_main)
-	@if [ -z "$(TASK)" ]; then \
-		echo "Error: TASK variable is required (e.g. make bench TASK=task-01-rename-local)"; \
-		exit 1; \
-	fi
 	@echo "==> Running benchmark $(TASK) for target $(TARGET) across variants $(VARIANTS)..."
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness \
-		--matrix \
 		--target "$(TARGET)" \
-		--task "$(TASK)" \
+		$(if $(TASK),--task "$(TASK)") \
 		--variants "$(VARIANTS)" \
 		--concurrency "$(CONCURRENCY)" \
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
+		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \

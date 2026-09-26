@@ -44,32 +44,51 @@ func shouldRetainWorkDir(ctx context.Context, runErr error) bool {
 	return errors.As(runErr, &exitErr) && exitErr.ExitCode() == -1
 }
 
-// ExecuteAgentDriver runs a task via an external harness (codex or agy) and captures telemetry.
 func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Target, arm ArmType, variant string) (*RunResult, error) {
-	start := time.Now()
+	execution, err := ResolveAgentExecution(task, target, arm, variant, r.semeditArmRestriction)
+	if err != nil {
+		return nil, err
+	}
+	return r.ExecuteAgent(ctx, execution)
+}
+
+func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (result *RunResult, executeErr error) {
+	task, target, arm, variant := execution.Task, execution.Target, execution.Arm, execution.Variant
+	if task == nil {
+		return nil, fmt.Errorf("execute agent: task is nil")
+	}
+	adapter, err := selectProvider(r, target)
+	if err != nil {
+		return nil, err
+	}
+	started := time.Now()
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
-
 	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
 	if err := os.MkdirAll(workDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create work dir: %w", err)
 	}
-	var result *RunResult
-	retainWorkDir := false
+	session, err := newAgentSession(adapter, r.baseScratchDir, runID, workDir)
+	if err != nil {
+		// #nosec G703 -- cleanup isolated workspace when session initialization fails.
+		removeErr := os.RemoveAll(workDir)
+		return nil, errors.Join(err, removeErr)
+	}
+	session.execution = execution
+	session.started = started
 	defer func() {
-		if !retainWorkDir {
-			// #nosec G703 -- cleanup ephemeral test harness work directory
-			_ = os.RemoveAll(workDir)
-			return
-		}
-		if result != nil {
-			if result.Provenance == nil {
-				result.Provenance = make(ProvenanceSet)
+		if closeErr := session.close(); closeErr != nil {
+			if session.result != nil {
+				session.result.Success = false
+				if strings.TrimSpace(session.result.Error) == "" {
+					session.result.Error = closeErr.Error()
+				} else {
+					session.result.Error = session.result.Error + "\n" + closeErr.Error()
+				}
 			}
-			result.Provenance["retained_working_directory"] = workDir
+			executeErr = errors.Join(executeErr, closeErr)
 		}
 	}()
-
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return nil, fmt.Errorf("extract task fixture: %w", err)
 	}
@@ -78,99 +97,87 @@ func (r *Runner) ExecuteAgentDriver(ctx context.Context, task *Task, target Targ
 			return nil, fmt.Errorf("prepare Codex fixture instructions: %w", err)
 		}
 	}
-	beforeFiles, err := snapshotWorkspaceFiles(workDir)
+	session.beforeFiles, err = snapshotWorkspaceFiles(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot benchmark workspace: %w", err)
 	}
-
 	targetFile := task.Metadata.Oracle.AST.File
 	if targetFile == "" {
 		targetFile = "api/server.go"
 	}
-
-	beforeContent := ""
-	initialPath := filepath.Join(workDir, filepath.FromSlash(targetFile))
-	// #nosec G304,G703 -- reading initial state file inside isolated benchmark workspace
-	if data, err := os.ReadFile(initialPath); err == nil {
-		beforeContent = strings.TrimSpace(string(data))
+	session.initialPath = filepath.Join(workDir, filepath.FromSlash(targetFile))
+	// #nosec G304,G703 -- initialPath is derived from the selected fixture oracle path.
+	if data, err := os.ReadFile(session.initialPath); err == nil {
+		session.beforeContent = strings.TrimSpace(string(data))
 	}
-
-	mcpServerInstructions := MCPServerInstructionsNone
+	mcpInstructions := MCPServerInstructionsNone
 	if target.Harness == string(HarnessCodex) || target.Harness == string(HarnessOpenCode) {
-		mcpServerInstructions = r.mcpServerInstructionsMode
+		mcpInstructions = r.mcpServerInstructionsMode
 	}
-
 	res := &RunResult{
-		TaskID:                task.Metadata.TaskID,
-		Variant:               variant,
-		MCPServerInstructions: mcpServerInstructions,
-		Provenance:            r.provenanceFor(),
-		Target:                target,
-		Arm:                   arm,
-		BeforeState:           beforeContent,
+		TaskID: task.Metadata.TaskID, Variant: variant,
+		PromptVariant:                promptVariantFromExecution(execution),
+		SemeditArmRestrict:           execution.Policy,
+		SemeditArmRestrictionApplied: arm == ArmSemedit,
+		MCPServerInstructions:        mcpInstructions,
+		Provenance:                   r.provenanceFor(), Target: target, Arm: arm, BeforeState: session.beforeContent,
 	}
-	result = res
-
-	prompt, err := prepareAgentPrompt(task, arm, variant, res)
-	if err != nil {
-		return nil, err
+	session.result = res
+	if strings.HasPrefix(target.Model, "openrouter/") {
+		if res.Provenance == nil {
+			res.Provenance = make(ProvenanceSet)
+		}
+		res.Provenance["openrouter_auth"] = "environment"
+		if strings.HasSuffix(target.Model, ":free") {
+			res.Provenance["openrouter_catalog_as_of"] = openRouterFreeCatalogAsOf
+			res.Provenance["openrouter_catalog_source"] = openRouterFreeCatalogURL
+		}
+	}
+	prompt := execution.Prompt
+	if prompt == "" {
+		return nil, fmt.Errorf("planned agent execution has empty initial prompt")
 	}
 	res.Prompt = prompt
-
-	var sessionID string
-	switch target.Harness {
-	case string(HarnessCodex):
-		sessionID, err = r.runCodex(ctx, workDir, target, prompt, res, "")
-		if err != nil {
-			res.WallClock = time.Since(start)
-			retainWorkDir = shouldRetainWorkDir(ctx, err)
-			res.Error = fmt.Sprintf("codex execution: %v", err)
-			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
-			return res, nil
-		}
-	case string(HarnessAgy):
-		sessionID, err = r.runAgy(ctx, workDir, target, prompt, res, "")
-		if err != nil {
-			res.WallClock = time.Since(start)
-			retainWorkDir = shouldRetainWorkDir(ctx, err)
-			res.Error = fmt.Sprintf("agy execution: %v", err)
-			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
-			return res, nil
-		}
-	case string(HarnessOpenCode):
-		sessionID, err = r.runOpenCode(ctx, workDir, target, prompt, res, "")
-		if err != nil {
-			res.WallClock = time.Since(start)
-			retainWorkDir = shouldRetainWorkDir(ctx, err)
-			res.Error = fmt.Sprintf("opencode execution: %v", err)
-			res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
-			return res, nil
-		}
-	default:
-		return nil, fmt.Errorf("unsupported harness: %s", target.Harness)
+	if res.Provenance == nil {
+		res.Provenance = make(ProvenanceSet)
 	}
-	res.WallClock = time.Since(start)
-
-	if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, res); err != nil {
-		res.WallClock = time.Since(start)
-		retainWorkDir = shouldRetainWorkDir(ctx, err)
+	res.Provenance["session_transcript"] = session.transcriptPath
+	err = session.runTurn(ctx, target, prompt, "task", res)
+	if err != nil {
+		res.WallClock = time.Since(started)
+		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
+		res.Error = fmt.Sprintf("%s execution: %v", target.Harness, err)
+		res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
+		return res, nil
+	}
+	res.WallClock = time.Since(started)
+	if err := session.evaluate(ctx, res); err != nil {
+		res.WallClock = time.Since(started)
+		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = err.Error()
 		res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
 		return res, nil
 	}
 	res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
-	sessionID, retainWorkDir = r.runInteractiveFollowups(ctx, task, workDir, beforeFiles, initialPath, beforeContent, target, arm, start, sessionID, res)
-	res.WallClock = time.Since(start)
+	_, session.retainWorkDir = session.runFollowups(ctx)
+	sessionID := session.resumeID
+	res.WallClock = time.Since(started)
 	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
-		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticBatchReflectionPrompt)
+		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, session, target, semanticBatchReflectionPrompt)
 	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {
-		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, workDir, target, sessionID, semanticToolReflectionPrompt)
+		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, session, target, semanticToolReflectionPrompt)
 	}
-
 	return res, nil
 }
 
-func prepareAgentPrompt(task *Task, arm ArmType, variant string, res *RunResult) (string, error) {
+func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *RunResult, policy ...SemeditArmRestriction) (string, error) {
+	effectivePolicy := SemeditArmRestrictWrite
+	if len(policy) > 1 {
+		return "", fmt.Errorf("prepare agent prompt accepts at most one semedit arm restriction")
+	}
+	if len(policy) == 1 {
+		effectivePolicy = policy[0]
+	}
 	baseInstruction := task.Metadata.Instruction
 	promptVarName := ""
 	if _, after, ok := strings.Cut(variant, ":"); ok {
@@ -182,64 +189,22 @@ func prepareAgentPrompt(task *Task, arm ArmType, variant string, res *RunResult)
 		}
 	}
 	res.PromptVariant = promptVarName
-
 	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
 		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
 	}
 	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
-
-	switch arm {
-	case ArmSemedit:
-		return fmt.Sprintf("%s Do not read source code with shell or terminal commands, including `sed`, `cat`, or equivalent commands. Use built-in code inspection tools to inspect source and semedit semantic operations for applicable edits. Use `semantic_lookup` to locate target symbols whenever supported and available. Do not silently fall back to shell-based source reads. If you cannot use `semantic_lookup` because it is unavailable, unsupported for the target, blocked by an unmet precondition, or fails, state the specific reason in your response, then finish with DONE.", baseInstruction), nil
-	case ArmBaseline:
+	if arm == ArmSemedit {
+		steering, err := semeditRestrictionSteering(effectivePolicy)
+		if err != nil {
+			return "", err
+		}
+		baseInstruction = strings.TrimSpace(baseInstruction + " " + steering)
+		return fmt.Sprintf("%s When done, output DONE.", baseInstruction), nil
+	}
+	if arm == ArmBaseline {
 		return fmt.Sprintf("%s Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.", baseInstruction), nil
-	default:
-		return "", fmt.Errorf("unsupported arm for agent driver: %s", arm)
 	}
-}
-
-func (r *Runner) runInteractiveFollowups(ctx context.Context, task *Task, workDir string, beforeFiles workspaceSnapshot, initialPath, beforeContent string, target Target, arm ArmType, started time.Time, sessionID string, res *RunResult) (string, bool) {
-	retainWorkDir := false
-	for index, followup := range task.Metadata.InteractiveFollowups {
-		if res.Success {
-			break
-		}
-		followup = withMutationPolicyGuidance(followup, task, true)
-		turn := &RunResult{Target: target, Arm: arm, Prompt: followup}
-		turnStarted := time.Now()
-		var runErr error
-		switch target.Harness {
-		case string(HarnessCodex):
-			sessionID, runErr = r.runCodex(ctx, workDir, target, followup, turn, sessionID)
-		case string(HarnessAgy):
-			sessionID, runErr = r.runAgy(ctx, workDir, target, followup, turn, sessionID)
-		case string(HarnessOpenCode):
-			sessionID, runErr = r.runOpenCode(ctx, workDir, target, followup, turn, sessionID)
-		}
-		if runErr != nil {
-			turn.WallClock = time.Since(turnStarted)
-			turn.Error = runErr.Error()
-			res.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
-			res.WallClock = time.Since(started)
-			retainWorkDir = shouldRetainWorkDir(ctx, runErr)
-			mergeTurn(res, turn)
-			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
-			break
-		}
-		turn.WallClock = time.Since(turnStarted)
-		if err := evaluateAgentResult(ctx, task, workDir, beforeFiles, initialPath, beforeContent, turn); err != nil {
-			turn.Error = err.Error()
-			res.Error = err.Error()
-			res.WallClock = time.Since(started)
-			retainWorkDir = shouldRetainWorkDir(ctx, err)
-			mergeTurn(res, turn)
-			res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
-			break
-		}
-		res.InteractionSteps = append(res.InteractionSteps, interactionStep(index+2, followup, turn))
-		mergeTurn(res, turn)
-	}
-	return sessionID, retainWorkDir
+	return "", fmt.Errorf("unsupported arm for agent driver: %s", arm)
 }
 
 // writeBenchmarkAGENTSOverride confines inherited Codex instructions to the synthetic fixture.
@@ -299,20 +264,10 @@ func semanticToolBaseName(name string) string {
 	return clean
 }
 
-func (r *Runner) requestSemanticToolReflection(ctx context.Context, workDir string, target Target, sessionID, prompt string) *SemanticToolReflection {
+func (r *Runner) requestSemanticToolReflection(ctx context.Context, session *agentSession, target Target, prompt string) *SemanticToolReflection {
 	turn := &RunResult{Target: target, Arm: ArmSemedit, Prompt: prompt}
 	started := time.Now()
-	var runErr error
-	switch target.Harness {
-	case string(HarnessCodex):
-		_, runErr = r.runCodex(ctx, workDir, target, prompt, turn, sessionID)
-	case string(HarnessAgy):
-		_, runErr = r.runAgy(ctx, workDir, target, prompt, turn, sessionID)
-	case string(HarnessOpenCode):
-		_, runErr = r.runOpenCode(ctx, workDir, target, prompt, turn, sessionID)
-	default:
-		runErr = fmt.Errorf("unsupported harness: %s", target.Harness)
-	}
+	runErr := session.runTurn(ctx, target, prompt, "diagnostic_reflection", turn)
 	reflection := &SemanticToolReflection{
 		Prompt:    prompt,
 		Response:  turn.agentResponse,
@@ -395,8 +350,12 @@ func mergeTurn(total, turn *RunResult) {
 	total.UncachedPromptTokens += turn.UncachedPromptTokens
 	total.OutputTokens += turn.OutputTokens
 	total.ReasoningTokens += turn.ReasoningTokens
+	total.MCPVerified = total.MCPVerified || turn.MCPVerified
 	if turn.Oracle != nil {
 		total.Oracle, total.Success = turn.Oracle, turn.Success
+	}
+	if turn.Error != "" {
+		total.Error = turn.Error
 	}
 }
 

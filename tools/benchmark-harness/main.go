@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"cmp"
 	"context"
 	"flag"
@@ -9,9 +10,11 @@ import (
 	"io"
 	"maps"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"text/tabwriter"
 	"time"
 )
@@ -21,213 +24,7 @@ func main() {
 }
 
 func run() int {
-	var taskID string
-	var tasksFlag string
-	var benchDir string
-	var arm string
-	var harness string
-	var variantsFlag string
-	var matrixMode bool
-	var targets TargetList
-	var outJSON string
-	var outMD string
-	var outDir string
-	var runID string
-	var extractTo string
-	var evalDir string
-	var timeout time.Duration
-	var concurrency int
-	var repeats int
-	var listMode bool
-	var listOpenRouterFree bool
-	var openRouterFreeTop10 bool
-	var mcpServerInstructionsRaw string
-	var provenance ProvenanceSet
-
-	flag.StringVar(&taskID, "task", "", "Specific benchmark task ID to run (e.g. 'task-01-rename-local', empty for all)")
-	flag.StringVar(&tasksFlag, "tasks", "", "Comma-separated list of task base names to run in matrix mode")
-	flag.StringVar(&benchDir, "dir", "testdata/bench", "Path to benchmark fixtures directory containing txtar archives")
-	flag.StringVar(&arm, "arm", "control", "Evaluation arm to execute (control, semedit, baseline-diff)")
-	flag.StringVar(&harness, "harness", "control", "Agent harness to drive (control, codex, agy, opencode)")
-	flag.Var(&targets, "target", "Execution target harness[/model[/effort]] (repeatable, e.g. -target codex/gpt-5.6-luna/high)")
-	flag.IntVar(&repeats, "repeats", 1, "Number of independent trials for each selected target/task/variant/arm")
-	flag.StringVar(&variantsFlag, "variants", "small,large", "Comma-separated context variants to run in matrix mode (small, large)")
-	flag.BoolVar(&matrixMode, "matrix", false, "Execute full combinatorial matrix across targets, tasks, variants, and arms")
-	flag.IntVar(&concurrency, "concurrency", 4, "Number of concurrent matrix benchmark workers")
-	flag.StringVar(&outJSON, "out-json", "", "Optional path to save telemetry stats JSON")
-	flag.StringVar(&outMD, "out-md", "", "Optional path to save rendered Markdown report")
-	flag.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped benchmark results JSON and MD")
-	flag.StringVar(&runID, "run-id", "", "Required identifier for a matrix result directory below -out-dir")
-	flag.StringVar(&extractTo, "extract-to", "", "Extract fixture to target directory and exit (for agent eval trials)")
-	flag.StringVar(&evalDir, "eval-dir", "", "Evaluate target directory with task oracle (for agent eval trials)")
-	flag.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark task")
-	flag.StringVar(&mcpServerInstructionsRaw, "mcp-server-instructions", "none", "Server-wide semedit MCP instruction mode (none, descriptive, prescriptive; Codex and OpenCode)")
-	flag.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable; does not group results)")
-	flag.Var(&provenance, "classifier", "Deprecated alias for -provenance")
-	flag.BoolVar(&listMode, "list", false, "List all available benchmark tasks and their prompt variants")
-	flag.BoolVar(&listOpenRouterFree, "list-openrouter-free", false, "List the pinned top coding-oriented OpenRouter free-model catalog")
-	flag.BoolVar(&openRouterFreeTop10, "openrouter-free-top10", false, "Add the pinned top 10 coding-oriented OpenRouter free models to the matrix")
-	flag.Parse()
-
-	if listOpenRouterFree {
-		return listOpenRouterFreeModels()
-	}
-	if listMode || (len(flag.Args()) > 0 && flag.Args()[0] == "list") {
-		return listBenchmarks(benchDir)
-	}
-
-	if extractTo != "" {
-		if taskID == "" {
-			fmt.Fprintln(os.Stderr, "-task is required when using -extract-to")
-			return 1
-		}
-		fixtureFile := filepath.Join(benchDir, taskID+".txtar")
-		if _, err := os.Stat(fixtureFile); err != nil {
-			fixtureFile = filepath.Join(benchDir, strings.ReplaceAll(taskID, "-", "_")+".txtar")
-		}
-		if err := extractFixture(fixtureFile, extractTo); err != nil {
-			fmt.Fprintf(os.Stderr, "extract error: %v\n", err)
-			return 1
-		}
-		return 0
-	}
-
-	if evalDir != "" {
-		if taskID == "" {
-			fmt.Fprintln(os.Stderr, "-task is required when using -eval-dir")
-			return 1
-		}
-		fixtureFile := filepath.Join(benchDir, taskID+".txtar")
-		if _, err := os.Stat(fixtureFile); err != nil {
-			fixtureFile = filepath.Join(benchDir, strings.ReplaceAll(taskID, "-", "_")+".txtar")
-		}
-		if err := evaluateDir(fixtureFile, evalDir, []string{"api/server.go"}); err != nil {
-			fmt.Fprintf(os.Stderr, "evaluate error: %v\n", err)
-			return 1
-		}
-		return 0
-	}
-
-	mcpServerInstructions, err := ParseMCPServerInstructionMode(mcpServerInstructionsRaw)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "invalid -mcp-server-instructions: %v\n", err)
-		return 1
-	}
-
-	scratchDir := filepath.Join(".scratch", "benchmarks")
-	runner := NewRunner(scratchDir, WithMCPServerInstructions(mcpServerInstructions), WithProvenance(provenance))
-
-	if openRouterFreeTop10 {
-		targets = append(targets, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free-top10"})
-	}
-	if matrixMode || len(targets) > 0 {
-		return runMatrix(runner, benchDir, targets, tasksFlag, taskID, variantsFlag, outDir, runID, outJSON, outMD, timeout, concurrency, repeats)
-	}
-
-	// Legacy single-run path
-	return runSingle(runner, benchDir, taskID, harness, arm, outJSON, outMD, timeout)
-}
-
-func runMatrix(runner *Runner, benchDir string, targets []Target, tasksFlag, singleTask, variantsFlag, outDir, runID, outJSON, outMD string, timeout time.Duration, concurrency, repeats int) int {
-	if repeats < 1 {
-		fmt.Fprintln(os.Stderr, "-repeats must be at least 1")
-		return 1
-	}
-	if len(targets) == 0 {
-		targets = []Target{{Harness: "codex"}, {Harness: "agy"}}
-	}
-	targets = expandOpenRouterFreeTargets(targets)
-
-	var taskBases []string
-	switch {
-	case tasksFlag == "all" || tasksFlag == "*":
-		entries, err := os.ReadDir(benchDir)
-		if err == nil {
-			for _, e := range entries {
-				if strings.HasSuffix(e.Name(), ".txtar") && !strings.Contains(e.Name(), "large_context") {
-					taskBases = append(taskBases, strings.TrimSuffix(e.Name(), ".txtar"))
-				}
-			}
-		}
-		taskBases = append(taskBases, "generate_template_main")
-		slices.Sort(taskBases)
-		taskBases = slices.Compact(taskBases)
-	case tasksFlag != "":
-		for t := range strings.SplitSeq(tasksFlag, ",") {
-			t = strings.TrimSpace(t)
-			if t != "" {
-				taskBases = append(taskBases, t)
-			}
-		}
-	case singleTask != "":
-		taskBases = []string{singleTask}
-	default:
-		taskBases = []string{"task-01-rename-local"}
-	}
-
-	var variants []string
-	for v := range strings.SplitSeq(variantsFlag, ",") {
-		v = strings.TrimSpace(strings.ToLower(v))
-		if v != "" {
-			variants = append(variants, v)
-		}
-	}
-
-	arms := []ArmType{ArmBaseline, ArmSemedit}
-
-	if concurrency < 1 {
-		concurrency = 1
-	}
-
-	resultDir := ""
-	if outDir != "" {
-		var err error
-		resultDir, err = createBenchmarkRunDir(outDir, runID)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid benchmark result directory: %v\n", err)
-			return 1
-		}
-	}
-
-	fmt.Printf("==> Starting Matrix Benchmark (Concurrency: %d)\n", concurrency)
-	fmt.Printf("    Targets:  %v\n", targets)
-	fmt.Printf("    Tasks:    %v\n", taskBases)
-	fmt.Printf("    Variants: %v\n", variants)
-	fmt.Printf("    Arms:     %v\n\n", arms)
-	fmt.Printf("    Repeats:  %d\n", repeats)
-	fmt.Printf("    MCP server instructions: %s\n", runner.mcpServerInstructionsMode)
-	if resultDir != "" {
-		fmt.Printf("    Result run: %s\n", resultDir)
-	}
-	if runner.provenance.String() != "" {
-		fmt.Printf("    Provenance: %s\n", runner.provenance)
-	}
-	fmt.Println()
-
-	jobs := buildMatrixJobs(benchDir, taskBases, targets, variants, arms, repeats)
-	allRuns := executeMatrixJobs(runner, jobs, timeout, concurrency)
-
-	report := &BenchmarkReport{
-		Timestamp:   time.Now(),
-		Runs:        allRuns,
-		Comparisons: BuildComparisons(allRuns),
-	}
-
-	if resultDir != "" {
-		saveMatrixReports(resultDir, benchDir, allRuns)
-	}
-
-	if outJSON != "" || outMD != "" {
-		if err := SaveReport(report, outJSON, outMD); err != nil {
-			fmt.Printf("❌ Failed to save reports: %v\n", err)
-			return 1
-		}
-		if outMD != "" {
-			fmt.Printf("\n==> Rendered Markdown Comparison Table:\n\n%s\n", report.RenderMarkdown())
-		}
-	}
-
-	return 0
+	return runPlannedCLI()
 }
 
 func createBenchmarkRunDir(outDir, runID string) (string, error) {
@@ -289,87 +86,6 @@ func validateBenchmarkRunID(runID string) error {
 		}
 	}
 	return nil
-}
-
-func runSingle(runner *Runner, benchDir, taskSelector, harnessStr, armStr, outJSON, outMD string, timeout time.Duration) int {
-	entries, err := os.ReadDir(benchDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error reading bench dir: %v\n", err)
-		return 1
-	}
-
-	harness := HarnessType(strings.ToLower(harnessStr))
-	arm := ArmType(strings.ToLower(armStr))
-	target := Target{Harness: string(harness)}
-
-	var reportRuns []*RunResult
-
-	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".txtar") {
-			continue
-		}
-
-		fixturePath := filepath.Join(benchDir, entry.Name())
-		// #nosec G304 -- reading benchmark txtar fixture files
-		data, err := os.ReadFile(filepath.Clean(fixturePath))
-		if err != nil {
-			fmt.Printf("read fixture error: %v\n", err)
-			return 1
-		}
-
-		task, err := ParseTask(data)
-		if err != nil {
-			fmt.Printf("parse fixture error: %v\n", err)
-			return 1
-		}
-
-		if taskSelector != "" && task.Metadata.TaskID != taskSelector && !strings.Contains(task.Metadata.TaskID, taskSelector) {
-			continue
-		}
-
-		variant := "small"
-		if strings.Contains(task.Metadata.TaskID, "large") {
-			variant = "large"
-		}
-		variants := []string{variant}
-		if harness != HarnessControl && arm != ArmControl {
-			variants = matrixPromptVariants(task, variant)
-			if len(variants) == 0 {
-				fmt.Printf("Skipping benchmark %s: no non-empty prompt_variants declared in its txtar fixture\n", task.Metadata.TaskID)
-				continue
-			}
-		}
-
-		for _, variant := range variants {
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			var res *RunResult
-			if harness == HarnessControl || arm == ArmControl {
-				res, err = runner.ExecuteControl(ctx, task)
-			} else {
-				res, err = runner.ExecuteAgentDriver(ctx, task, target, arm, variant)
-			}
-			cancel()
-
-			if err != nil {
-				fmt.Printf("❌ Task %s failed: %v\n", task.Metadata.TaskID, err)
-				continue
-			}
-			reportRuns = append(reportRuns, res)
-		}
-	}
-
-	if outJSON != "" || outMD != "" {
-		report := &BenchmarkReport{
-			Timestamp: time.Now(),
-			Runs:      reportRuns,
-		}
-		if err := SaveReport(report, outJSON, outMD); err != nil {
-			fmt.Printf("error saving report: %v\n", err)
-			return 1
-		}
-	}
-
-	return 0
 }
 
 func resolveFixturePath(benchDir, taskBase, _ string) string {
@@ -533,4 +249,242 @@ func listBenchmarks(benchDir string) int {
 	}
 	PrintBenchmarksList(os.Stdout, benchmarks)
 	return 0
+}
+
+func runPlannedCLI() int {
+	cli, err := parseBenchmarkCLI(os.Args[1:])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "benchmark CLI: %v\n", err)
+		return 1
+	}
+	if cli.ListFree {
+		return listOpenRouterFreeModels()
+	}
+	if cli.List {
+		return listBenchmarks(cli.Plan.BenchDir)
+	}
+	if cli.ExtractTo != "" || cli.EvalDir != "" {
+		return runFixtureUtility(cli)
+	}
+	plan, err := BuildBenchmarkPlan(cli.Plan)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "planning error: %v\n", err)
+		return 1
+	}
+	return executeBenchmarkPlan(plan)
+}
+
+type benchmarkCLIOptions struct {
+	Plan      PlanOptions
+	List      bool
+	ListFree  bool
+	ExtractTo string
+	EvalDir   string
+	TaskID    string
+}
+
+func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
+	fs := flag.NewFlagSet("benchmark-harness", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var settings benchmarkCLIOptions
+	var taskID, tasksRaw, arm, harness, variantsRaw string
+	var targets TargetList
+	var matrixMode, listMode, listFree, openRouterFreeTop10 bool
+	var outJSON, outMD, outDir, runID string
+	var timeout time.Duration
+	var concurrency, repeats int
+	var mcpRaw, policyRaw string
+	var provenance ProvenanceSet
+	fs.StringVar(&taskID, "task", "", "Benchmark task ID; default selects all discoverable fixtures")
+	fs.StringVar(&tasksRaw, "tasks", "", "Comma-separated benchmark task IDs; default selects all fixtures")
+	fs.StringVar(&settings.Plan.BenchDir, "dir", "testdata/bench", "Benchmark fixture directory")
+	fs.StringVar(&arm, "arm", "", "Deprecated; use --target (explicit use is rejected)")
+	fs.StringVar(&harness, "harness", "", "Deprecated single-target alias for --target")
+	fs.Var(&targets, "target", "Execution target harness[/model[/effort]] (repeatable)")
+	fs.IntVar(&repeats, "repeats", 1, "Number of independent trials")
+	fs.StringVar(&variantsRaw, "variants", "small,large", "Comma-separated contexts with optional prompt")
+	fs.BoolVar(&matrixMode, "matrix", false, "Deprecated no-op; all runs use the resolved plan pipeline")
+	fs.IntVar(&concurrency, "concurrency", 4, "Concurrent benchmark jobs")
+	fs.StringVar(&outJSON, "out-json", "", "Optional report JSON output path")
+	fs.StringVar(&outMD, "out-md", "", "Optional report Markdown output path")
+	fs.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped results; empty disables run output")
+	fs.StringVar(&runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
+	fs.StringVar(&settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
+	fs.StringVar(&settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
+	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
+	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Server-wide MCP instruction mode")
+	fs.StringVar(&policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
+	fs.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable)")
+	fs.Var(&provenance, "classifier", "Deprecated alias for provenance")
+	fs.BoolVar(&listMode, "list", false, "List benchmark fixtures and prompt variants")
+	fs.BoolVar(&listFree, "list-openrouter-free", false, "List the OpenRouter free-model catalog")
+	fs.BoolVar(&openRouterFreeTop10, "openrouter-free-top10", false, "Add the pinned free-model target")
+	if err := fs.Parse(args); err != nil {
+		return settings, fmt.Errorf("parse flags: %w", err)
+	}
+	explicit := make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
+	if len(fs.Args()) > 0 && (len(fs.Args()) != 1 || fs.Args()[0] != "list") {
+		return settings, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
+	}
+	settings.ListFree = listFree
+	settings.List = listMode || len(fs.Args()) == 1
+	settings.TaskID = taskID
+	if explicit["repeats"] && repeats < 1 {
+		return settings, fmt.Errorf("--repeats must be at least 1")
+	}
+	if explicit["concurrency"] && concurrency < 1 {
+		return settings, fmt.Errorf("--concurrency must be at least 1")
+	}
+	if explicit["timeout"] && timeout <= 0 {
+		return settings, fmt.Errorf("--timeout must be positive")
+	}
+	if explicit["arm"] {
+		return settings, fmt.Errorf("--arm is no longer supported; use --target to request paired baseline and semedit jobs")
+	}
+	if explicit["harness"] && len(targets) > 0 {
+		return settings, fmt.Errorf("--harness cannot be combined with --target")
+	}
+	if explicit["task"] && tasksRaw != "" {
+		return settings, fmt.Errorf("--task cannot be combined with --tasks")
+	}
+	if explicit["harness"] {
+		target, err := ParseTarget(harness)
+		if err != nil {
+			return settings, fmt.Errorf("invalid --harness: %w", err)
+		}
+		targets = append(targets, target)
+	}
+	if openRouterFreeTop10 {
+		targets = append(targets, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free-top10"})
+	}
+	if explicit["harness"] && len(targets) > 1 {
+		return settings, fmt.Errorf("--harness selects exactly one target")
+	}
+	tasks := make([]string, 0)
+	if taskID != "" {
+		tasks = append(tasks, taskID)
+	}
+	for value := range strings.SplitSeq(tasksRaw, ",") {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			tasks = append(tasks, value)
+		}
+	}
+	variants := make([]string, 0)
+	for value := range strings.SplitSeq(variantsRaw, ",") {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			variants = append(variants, value)
+		}
+	}
+	policy, err := ParseSemeditArmRestriction(policyRaw)
+	if err != nil {
+		return settings, fmt.Errorf("invalid --semedit-arm-restrict: %w", err)
+	}
+	mcpMode, err := ParseMCPServerInstructionMode(mcpRaw)
+	if err != nil {
+		return settings, fmt.Errorf("invalid --mcp-server-instructions: %w", err)
+	}
+	settings.Plan.TaskIDs = tasks
+	settings.Plan.Targets = targets
+	settings.Plan.Variants = variants
+	settings.Plan.Repeats = repeats
+	settings.Plan.Concurrency = concurrency
+	settings.Plan.Timeout = timeout
+	settings.Plan.OutDir = outDir
+	settings.Plan.RunID = runID
+	settings.Plan.OutJSON = outJSON
+	settings.Plan.OutMD = outMD
+	settings.Plan.MCPServerInstructions = mcpMode
+	settings.Plan.SemeditArmRestriction = policy
+	settings.Plan.Provenance = provenance.Clone()
+	return settings, nil
+}
+
+func runFixtureUtility(cli benchmarkCLIOptions) int {
+	if cli.TaskID == "" {
+		fmt.Fprintln(os.Stderr, "-task is required for extraction or evaluation")
+		return 1
+	}
+	fixturePath := filepath.Join(cli.Plan.BenchDir, cli.TaskID+".txtar")
+	if _, err := os.Stat(fixturePath); err != nil {
+		fixturePath = filepath.Join(cli.Plan.BenchDir, strings.ReplaceAll(cli.TaskID, "-", "_")+".txtar")
+	}
+	if cli.ExtractTo != "" {
+		if err := extractFixture(fixturePath, cli.ExtractTo); err != nil {
+			fmt.Fprintf(os.Stderr, "extract error: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+	if err := evaluateDir(fixturePath, cli.EvalDir, []string{"api/server.go"}); err != nil {
+		fmt.Fprintf(os.Stderr, "evaluate error: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func executeBenchmarkPlan(plan *BenchmarkPlan) int {
+	buffered := bufio.NewWriter(os.Stdout)
+	if err := RenderBenchmarkPlan(buffered, plan); err != nil {
+		fmt.Fprintf(os.Stderr, "print plan: %v\n", err)
+		return 1
+	}
+	if err := buffered.Flush(); err != nil {
+		fmt.Fprintf(os.Stderr, "flush plan: %v\n", err)
+		return 1
+	}
+	resultDir := ""
+	var err error
+	if plan.Options.OutDir != "" {
+		resultDir, err = createBenchmarkRunDir(plan.Options.OutDir, plan.Options.RunID)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "invalid benchmark result directory: %v\n", err)
+			return 1
+		}
+	}
+	runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(plan.Options.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithProvenance(plan.Options.Provenance))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	outcomes, progressErr := ExecutePlan(ctx, plan, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
+		if job.Arm == ArmControl {
+			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
+		}
+		return runner.ExecuteAgent(ctx, job.Execution)
+	})
+	results := make([]*RunResult, 0, len(outcomes))
+	failed := progressErr != nil
+	for _, outcome := range outcomes {
+		results = append(results, outcome.Result)
+		if outcome.Err != nil || outcome.Result == nil || !outcome.Result.Success {
+			failed = true
+		}
+	}
+	report := &BenchmarkReport{Timestamp: time.Now(), Runs: results, Comparisons: BuildComparisons(results)}
+	if err := saveRunReports(resultDir, plan, results, report); err != nil {
+		fmt.Fprintf(os.Stderr, "save benchmark reports: %v\n", err)
+		return 1
+	}
+	if progressErr != nil {
+		fmt.Fprintf(os.Stderr, "write progress: %v\n", progressErr)
+	}
+	if failed {
+		return 1
+	}
+	return 0
+}
+
+func saveRunReports(resultDir string, plan *BenchmarkPlan, results []*RunResult, report *BenchmarkReport) error {
+	if resultDir != "" {
+		if err := saveMatrixReports(resultDir, plan.Options.BenchDir, results); err != nil {
+			return fmt.Errorf("save run reports: %w", err)
+		}
+	}
+	if plan.Options.OutJSON != "" || plan.Options.OutMD != "" {
+		if err := SaveReport(report, plan.Options.OutJSON, plan.Options.OutMD); err != nil {
+			return fmt.Errorf("save reports: %w", err)
+		}
+	}
+	return nil
 }
