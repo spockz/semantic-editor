@@ -1,275 +1,221 @@
+<!-- This README introduces the implemented product, evidence, and boundaries; detailed contracts live in the linked code and decision records. -->
 # semantic-editor (`semedit`)
 
-**Intent-driven code editing for AI agents: LLMs plan intent, host compilers execute zero-token AST refactorings (up to 100x fewer tokens, 10x faster).**
+**Intent-driven code editing for AI agents: LLMs describe the change; local compiler, AST, and language-server tools perform the transformation.**
 
-`semedit` separates **semantic intent** (decided by the LLM) from **mechanical syntax transformation** (executed by local host CPU compilers, LSPs, and AST tools).
+`semedit` exposes a command-line interface (CLI) and a Model Context Protocol (MCP) server. Go has the broadest editing support. Seven additional language backends provide explicitly bounded lookup, rename, or diagnostics capabilities.
 
----
+The efficiency ambition remains **up to 100× fewer generated edit tokens and 10× faster execution** in favorable refactoring scenarios. These are analytical upper bounds we aim to approach. Current benchmarks demonstrate speed and token savings in individual cases; improved first-attempt correctness remains a goal.
 
-## 1. Problem Statement
+## 1. Why semantic editing
 
-Modern coding agents rely on probabilistic token prediction to perform deterministic text manipulation:
-
-* **Token Asymmetry & Churn**: Renaming a symbol across 10 files or extracting a helper function forces the LLM to re-emit hundreds of lines of diffs.
-* **Context Exhaustion**: Large diffs consume context window budget, accelerating context compaction and degrading the model's reasoning capacity for subsequent turns.
-* **Fragile Transitions**: Line-based search/replace tools frequently fail due to whitespace shifts, unclosed braces, or partial generation, triggering expensive remote repair loops.
-* **Provider & Infrastructure Drift**: Hosted model performance fluctuates with diurnal traffic cycles, silent provider-side quantization adjustments, KV-cache eviction policies, and API congestion. Offloading mechanical edits to the host CPU removes this variance from routine syntax operations.
-
----
-
-## 2. Core Thesis & The Inverted Model
-
-> **LLMs should issue semantic editing commands, not generate textual patches.**
+A rename or declaration move can require a text-editing agent to read and reproduce code across many files. With semantic editing, the agent names the symbol and the intended change, and local tooling handles coordinates and mechanical edits.
 
 ```text
-Traditional Agent Flow (Fragile Text Loop):
-LLM Plan ──► LLM Streams 1000s of Diff Tokens ──► Network Latency ──► Disk Edit ──► [Syntax Failure / Retry]
-
-Semantic Agent Flow (Deterministic Execution):
-LLM Plan ──► LLM Emits 1 Intent (~20 tokens) ──► Host Tooling Transforms Code ──► Compiler Reports Diagnostics
+Agent intent → CLI or MCP → Registered operation → Language tooling → Result and diagnostics
 ```
 
-Established local development toolchains (compiler typecheckers, language servers such as `gopls`, `rust-analyzer`, `tsserver`, `jdtls`, and AST utilities) already perform precise structural modifications deterministically on the host CPU.
+This reduces generated diffs, repeated source reads, and opportunities for patch-application mistakes. Go symbol lookup uses Go's AST; other backends use native language-server symbols. A rename or move can reuse existing source without asking the model to reproduce it. Insertion and replacement still require the model to supply new source, and tool schemas, results, reasoning, and verification all contribute to total session cost.
 
-`semedit` bridges AI agents directly to these engines.
+Deterministic editing does not prove the agent chose the correct change. Operations can fail, language tools can time out, and an applied edit can introduce compiler diagnostics. The workflow exposes these outcomes so an agent can continue a multi-step refactoring.
 
----
+## 2. Performance: ambition and measured evidence
 
-## 3. Core Hypotheses
+### Analytical targets
 
-1. **Efficiency**: Local CPU code manipulation executes in milliseconds and consumes near-zero remote tokens, costing fractions of a cent per operation.
-2. **Determinism**: Semantic transformations preserve syntactic validity across state transitions ($S_n \to S_{n+1}$). Syntax errors and diff-application drift are eliminated for supported operations.
-3. **Provider & Network Resiliency**: Offloading editing to the host CPU protects agent sessions from remote API throttling, timeouts, dropped connections, and provider-side inference degradations.
-4. **Economics & Planning Horizon Scaling**:
-   * *Preserves Context Budget*: Text diffs consume context proportional to file and change size ($\mathcal{O}(\text{diff size})$). Semantic commands scale with intent ($\mathcal{O}(1)$ tokens per edit), preserving context for architecture and reasoning.
-   * *Lowers Viability Threshold*: Makes micro-refactoring (renaming, inlining, stubbing) economically viable to delegate.
-   * *Preserves Flow State*: Millisecond-range local execution maintains real-time pair programming cadence.
-   * *Bounded Blast Radius*: Tooling alters only targeted symbols, eliminating accidental deletions of unrelated lines or comments.
+The original multi-file refactoring model estimates the potential benefit of replacing repeated text-editing turns with a compact semantic request:
 
-### Efficiency & Turn Mechanics (The "Up to 100x / 10x" Rationale)
+| Mechanism | Favorable analytical scenario | Target |
+| :--- | :--- | :--- |
+| Generated edit tokens | Roughly 2,000–3,000 diff tokens replaced by about 25 argument tokens for a rename | Up to 100× fewer output tokens |
+| Remote turns and latency | A sequence of searches, reads, edits, and repairs replaced by one semantic request plus local execution | Up to 10× faster completion |
+| Context reuse | Less repeated source and repair history in subsequent prompts | Lower context consumption and model cost |
+| Edit reliability | Structural validation removes classes of malformed text patches | Fewer repair loops; improved first-attempt correctness remains to be demonstrated |
 
-The claim of **up to $100\times$ token reduction and $10\times$ lower latency** is derived analytically from the token mechanics of agentic tool loops and observed multi-file refactoring traces:
+These are theoretical upper-bound scenarios, not average measured performance or guarantees. End-to-end results depend on task, model, harness, cache behavior, language-server startup, and verification cost. [RQ-0014](docs/research/RQ-0014-benchmarking-token-latency-and-eval-harness.md) and [RQ-0015](docs/research/RQ-0015-multi-dimensional-benchmark-matrix.md) track the broader evaluation.
 
-| Metric | Baseline Agent Text-Diff Flow | `semedit` Semantic Intent Flow | Efficiency Delta |
-| :--- | :--- | :--- | :---: |
-| **Tool Calls / Turns** | **12–20 turns**: iterative `grep_search` $\to$ `view_file` $\to$ `replace_file_content` per file $\to$ compile repair | **1 turn**: single semantic tool call (`semantic_rename`) | **$10\times - 20\times$ fewer turns** |
-| **Output Tokens** | **2,000–3,000 tokens**: verbatim multi-line code diffs across 10+ files | **~25 tokens**: tool arguments only (`symbol`, `new_name`) | **Up to $100\times$ token reduction** |
-| **Input Context Churn** | **150k–300k tokens**: quadratic prompt accumulation ($\sum_{t=1}^N \text{history}_t$) as conversation grows | **~1k–5k tokens**: single turn with no accumulated repair history | **$20\times - 50\times$ context savings** |
-| **Wall-Clock Latency** | **45–60 seconds**: sequential network round-trips and streaming token generation | **~2–3 seconds**: 1 round-trip + 120ms local AST execution | **$10\times - 20\times$ faster** |
-| **Failure / Retry Rate** | **20–30%**: whitespace drift, indentation errors, or unclosed braces | **0%**: compiler-grade deterministic AST modifications | **Eliminates diff drift** |
+### Measured results as of 2026-09-26
 
-> [!NOTE]
-> **Empirical Validation**: These metrics are analytical upper bounds derived from standard multi-file refactoring operations. Empirical verification across heterogeneous harnesses (Antigravity, Claude Code, direct API), models, and reasoning levels is tracked under [RQ-0014](docs/research/RQ-0014-benchmarking-token-latency-and-eval-harness.md) and [RQ-0015](docs/research/RQ-0015-multi-dimensional-benchmark-matrix.md).
+The generated benchmark documentation reports these three headline metrics for historical runs whose semedit restriction policy is recorded as `unspecified`:
 
----
+| Measure | Result | Evidence |
+| :--- | :--- | :--- |
+| Best speed improvement | **56.9% less elapsed time**, about **2.32×** speedup | `task-07-generate-template-main`, standard small context, [Codex prescriptive run](data/benchmarks/results/run-20260924-codex-prescriptive/task-07-generate-template-main/) |
+| Best token reduction | **87.5% fewer cache-adjusted token units** | `task-11-mixed-sink-api-migration`, standard small context, [Codex prescriptive run](data/benchmarks/results/run-20260924-codex-prescriptive/task-11-mixed-sink-api-migration/) |
+| First-time right | **MCP 195/209 (93.3%) vs baseline 196/209 (93.8%)**, −0.5 percentage points | Initial correctness-oracle results across all publishable standard-context paired observations |
 
-## 4. Value-Add on Top of Existing Tooling
+The speed and token figures are separate best cases where both the baseline and semedit arms passed their correctness oracle. They are not averages or necessarily the same model/task pair. Cache-adjusted token units are uncached input + visible output + reasoning + cached input / 10; they differ from the generated-output-token target above. The first-time-right comparison excludes verified/self-correction contexts and shows no improvement yet.
 
-Why not just have the LLM call `gopls`, `rust-analyzer`, or `ast-grep` directly?
+[ADR-0043](docs/adr/0043-benchmark-run-aggregation-and-best-case-publication.md) defines publication and selection rules. The generated site includes complete run evidence, aggregate ranges, and an interactive benchmark browser. Run `make docs` to generate it under `dist/docs/`; the underlying [run records](data/benchmarks/results/) remain available in the repository.
 
-Existing language servers and CLI tools were built for **interactive human IDE sessions** or **static CI rules**, not autonomous AI agents. `semedit` provides the missing coordination layer:
+The harness now resolves one execution plan, retains every terminal job outcome, and distinguishes `read`, `write`, and `readwrite` semedit policies. New runs default to `write`; historical unspecified policies remain separate. Diagnostic questioning about tool use stays outside measured task tokens, time, turns, and correctness outcomes. See [ADR-0050](docs/adr/0050-benchmark-planning-sessions-and-arm-policy.md) and the [benchmark architecture guide](tools/benchmark-harness/README.md).
 
-| Gap / Missing Capability | Why Existing Tools Fall Short | Solution Layer in `semedit` | Implementation Mechanism |
-| :--- | :--- | :--- | :--- |
-| **1. Intent Addressing (The Coordinate Tax)** | LSPs strictly require exact byte offsets or line/col numbers (`foo.go:42:15`). Models waste 2–3 turns hunting coordinates. | **Symbol Resolver** | Agents name symbols (`User.SetName`) directly, so local Tree-sitter AST queries perform the offset calculation and remove a source of location mistakes. |
-| **2. Unified Agent Contract** | Each language exposes different CLIs and RPC mechanisms (`gopls` vs `rust-analyzer` vs `tsserver`). | **Broker API / MCP** | One consistent intent schema (CLI & MCP) across Go, Rust, TS, Java, Haskell, Elixir, and Elm. |
-| **3. Broken-Code Resilience** | LSPs refuse to start or drop type tables when code has syntax errors, locking the agent out. | **Dual-Engine Dispatcher** | Hierarchical routing: routes to LSP when healthy, drops down to CST pattern tools (`ast-grep`) when uncompilable. |
-| **4. Staged Execution & Feedback Loop** | Raw CLI tools mutate files without running formatters or returning unified diagnostic feedback. | **Execution Pipeline** | Stages edits, runs auto-formatters (`gofmt`, `rustfmt`), runs compiler checks, and returns structured diagnostics to the agent. |
-| **5. Model Inertia** | Models reflexively generate raw text diffs due to pretraining habits, ignoring tool options. | **Agent Steering Skills** | Ready-to-use `SKILL.md` rules teaching LLMs when to invoke semantic tools over text edits. |
+## 3. Current language support
 
----
+Support is operation-specific. A shared interface does not imply that every language supports every edit.
 
-## 5. Architecture
+| Language | Tooling | Implemented scope |
+| :--- | :--- | :--- |
+| **Go** | Go parser/AST, `gopls`, Go formatting/import tooling | Symbol lookup, workspace rename, construct insertion/replacement/movement, body and declaration replacement, scaffolding, imports, dependencies, assertion transforms, and verification |
+| **Rust** | `rust-analyzer` | Trusted selected-file lookup and rename; edits outside the selected `.rs` file are rejected. No Cargo execution or general verification |
+| **Java** | Eclipse JDT LS; separate bounded Maven actions | Trusted selected-file lookup, rename, formatting, import organization, and diagnostics; explicit Maven import; fixed Maven `test-compile` and `test` actions |
+| **Scala** | Metals | Trusted selected-file lookup only; no build import or mutation |
+| **Haskell** | Haskell Language Server and matching GHC | Explicitly standalone, trusted `.hs` lookup only; project cradles, compilation, and mutation are unavailable |
+| **Kotlin** | `kotlin-language-server` | Trusted selected-file `.kt`/`.kts` lookup and diagnostics in a source-only scratch workspace; no mutation |
+| **Bash** | `bash-language-server` | Trusted selected-file `.sh`/`.bash` lookup and diagnostics in a source-only scratch workspace; no mutation or script execution by the backend |
+| **Makefile** | `make-ls` | Trusted selected-file target and assignment-variable lookup; no conditional-symbol lookup, diagnostics, mutation, or recipe execution by the backend |
 
-`semedit` is **not a new parser, AST library, or rewrite engine**. It is strictly an **orchestration broker and adapter layer** that coordinates existing language servers and utilities.
+External-tool backends require preinstalled tooling and explicit request-scoped workspace trust. Some require configured distribution paths and recorded runtime versions. Kotlin and Bash verification require an explicit matching diagnostics report; silence does not mean the file is clean. Scratch workspaces limit the copied source but are not an operating-system sandbox: external tools may perform additional reads or launch their own helpers after trust.
 
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                          AI Agent / LLM                                │
-└───────────────────────────────────┬────────────────────────────────────┘
-                                    │ High-level Intent (CLI or MCP)
-                                    ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                   Semantic Broker (`semeditd`)                         │
-│                                                                        │
-│  ┌───────────────────────┐             ┌────────────────────────────┐  │
-│  │ Symbol Resolver       │             │ Execution Pipeline         │  │
-│  │ (Tree-sitter queries) │             │ (Format, Verify, Snapshot) │  │
-│  └───────────┬───────────┘             └─────────────┬──────────────┘  │
-└──────────────┼───────────────────────────────────────┼─────────────────┘
-               ▼                                       ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                          Backend Adapters                              │
-├──────────────────────────┬─────────────────────────┬───────────────────┤
-│ Tier 1: Compiler / LSP   │ Tier 2: Semantic LST    │ Tier 3: Error-    │
-│ (Type-Checked Graph)     │ (Language Frameworks)   │ Tolerant CST      │
-├──────────────────────────┼─────────────────────────┼───────────────────┤
-│ • Go: gopls              │ • Java: OpenRewrite     │ • ast-grep        │
-│ • Rust: rust-analyzer    │ • Python: Rope / LibCST │ • Tree-sitter     │
-│ • TS: tsserver           │ • Elixir: Sourceror     │ • Comby           │
-│ • Java: Eclipse jdtls    │                         │                   │
-│ • Haskell: HLS           │                         │                   │
-│ • Elm: elm-lang-server   │                         │                   │
-└──────────────────────────┴─────────────────────────┴───────────────────┘
+Java's JDT LS operations do not execute Maven or Gradle. Maven import requires explicit opt-in; the separate Maven commands run fixed goals against a trusted in-workspace root POM, with scratch-local state and offline mode by default. See [ADR-0035](docs/adr/0035-java-maven-import-boundary.md), [ADR-0036](docs/adr/0036-java-bounded-verify-actions.md), and [ADR-0037](docs/adr/0037-java-bounded-maven-actions.md).
+
+Kotlin, Bash, and Makefile boundaries are documented in [ADR-0047](docs/adr/0047-kotlin-read-only-backend.md) and [ADR-0048](docs/adr/0048-bash-and-makefile-read-only-backends.md). TypeScript/JavaScript, Python, C#, Elixir, Elm, Dart, and C/C++ do not currently have registered runtime backends.
+
+## 4. Editing operations
+
+Registered semantic operations share CLI and MCP definitions. Use command help or the active MCP tool schema for exact parameters and language constraints.
+
+| Intent | CLI command | MCP tool |
+| :--- | :--- | :--- |
+| Locate a symbol | `lookup` | `semantic_lookup` |
+| Rename a symbol and supported references | `rename` | `semantic_rename` |
+| Add a Go construct | `insert-construct` | `semantic_insert_construct` |
+| Replace or upsert a Go construct | `replace-construct` | `semantic_replace_construct` |
+| Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
+| Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
+| Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
+| Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
+| Organize Go imports | `organize-imports` | `semantic_organize_imports` |
+| Add a Go module dependency | `add-build-dependency` | `semantic_add_build_dependency` |
+| Change supported Go test assertion failure modes | `assertion-mode` | `semantic_assertion_mode` |
+| Format/check supported sources | `verify` | `semantic_verify` |
+| Compile or run Java tests | `maven-compile`, `maven-test` | `semantic_maven_compile`, `semantic_maven_test` |
+| Capture or restore a workspace snapshot | `snapshot`, `undo` | `semantic_snapshot`, `semantic_undo` |
+
+[ADR-0049](docs/adr/0049-ast-construct-taxonomy-and-mutation-lifecycle.md) separates the construct lifecycle:
+
+* **Insert** creates a new construct at a chosen location and rejects declaration collisions. It cannot overwrite existing code.
+* **Replace** changes a construct in place. Declaration upsert can insert an absent declaration at its canonical layout position; replacement has no placement parameter.
+* **Move** relocates an existing declaration within its file, carrying attached comments without requiring its source again.
+
+These operations currently execute Go edits. The broader construct taxonomy in the ADRs does not enable mutation in other languages. The former discrete insertion tools, including `insert-declaration`, `insert-function`, `insert-type`, `insert-decl`, and `insert-case`, have been retired from the registry.
+
+The MCP-only `semantic_batch` runs registered edits sequentially against the supplied workspace, coalesces deferred formatting and diagnostics, and returns a final diff. Earlier successful edits remain applied if a later edit fails. CLI batch exposure remains an [open investigation](docs/research/RQ-0030-registry-backed-cli-batches.md).
+
+`report_feedback` is a separate MCP utility that returns a structured issue draft for user review and manual posting. It does not save or submit the report. Development-only `semantic_reload` is available when the server starts with `--live-reload`.
+
+## 5. Architecture and mutation boundaries
+
+The implementation is Go-native. It combines Go AST transformations with adapters around external language tools; it does not implement a universal AST or its own typechecker.
+
+```mermaid
+flowchart TD
+    Agent[Agent intent] --> CLI[CLI]
+    Agent --> MCP[MCP server]
+    CLI --> Operations[Typed operation registry]
+    MCP --> Operations
+    Operations --> Service[Backend selection and capability gates]
+    Operations --> AST[Go AST operations]
+    Service --> Go[Go resolver and gopls adapter]
+    Service --> External[Bounded external language-server adapters]
+    AST --> Pipeline[Atomic writes, formatting, and diagnostics]
+    Go --> Pipeline
+    External --> Results[Structured results and errors]
+    Pipeline --> Results
 ```
 
-### Four Primary Components
+[ADR-0021](docs/adr/0021-language-backend-service-boundary.md) defines the backend service boundary; [ADR-0034](docs/adr/0034-central-operation-registry.md) defines the operation registry. Language backends own their native lookup, trusted edit validation, and diagnostics. The MCP server publishes structured output schemas and timing metrics alongside human-readable results ([ADR-0042](docs/adr/0042-mcp-structured-tool-output-schemas.md)).
 
-1. **Agent Interface & Session Broker**:
-   Exposes high-level commands over both CLI (`semedit rename`) and MCP (`semedit mcp`). Manages daemon lifecycle and session state.
-2. **Symbol Resolver (Intent Addressing)**:
-   Uses Tree-sitter queries to index symbols within files. Translates high-level agent targets (`TokenService.Validate`) into exact file/byte offsets required by LSPs.
-3. **Execution & Diagnostic Pipeline**:
-   * Applies the transformation to the file system.
-   * Automatically executes language formatters (`gofmt`, `rustfmt`, `prettier`, `ruff`).
-   * Runs compiler/typechecker passes and returns structured diagnostics directly to the LLM.
-   * Provides on-demand snapshotting/undo if the agent or user decides to revert a change. (Edits do *not* automatically revert on compile errors, allowing multi-step refactorings that temporarily break code).
-4. **Backend Adapters**:
-   * **Tier 1 (Compiler/LSP)**: Direct adapters for language servers (`gopls`, `rust-analyzer`, `tsserver`, `jdtls`, `HLS`, `elm-language-server`).
-   * **Tier 2 (Semantic Frameworks)**: Adapters for rich language-specific AST engines (`OpenRewrite`, `Rope`, `Sourceror`).
-   * **Tier 3 (Error-Tolerant CST)**: Fallback rewriters (`ast-grep`, `Comby`) used when the codebase contains syntax errors that prevent compiler tools from running.
+Source updates use atomic replacement and advancing timestamps. Edits may remain applied with compiler diagnostics so multi-step refactorings can pass through temporarily broken states. Snapshots provide explicit, conflict-checked undo. Direct batches do not provide transaction-wide rollback or an isolated working copy; callers own any workspace isolation they need. See [ADR-0010](docs/adr/0010-disk-synchronization-and-cache-invalidation.md), [ADR-0018](docs/adr/0018-transactional-snapshots-and-undo.md), and [ADR-0032](docs/adr/0032-direct-and-isolated-batch-execution.md).
 
----
+Verification is operation-specific and can write files: Go verification formats before collecting diagnostics, and Java formatting/import modes also mutate the selected file. Workspace manifests such as `go.work` are not created or changed implicitly; explicit dependency operations can update `go.mod` and `go.sum`.
 
-## 6. Language Strategy & Ecosystem Roadmap
+The original dual-engine design includes an error-tolerant CST fallback. Automatic routing to Tree-sitter, `ast-grep`, or Comby is not implemented. The current Go resolver uses `go/parser`, and Go edits use native AST tooling. There is no automatic discovery of another server's `gopls` MCP tools or short-circuit routing through that server.
 
-`semedit` does not implement a universal AST. Syntax trees cannot resolve cross-file types or inheritance. We build a universal **intent broker** that delegates to native compiler tools.
+## 6. Build and use
 
-### Tier 1: Initial Targets
+Use the Go version declared in [go.mod](go.mod), `make`, and the tools required by the selected backend. Go semantic rename requires `gopls`. Development checks also need the repository's configured formatters, linters, and Hugo tooling; see [CONTRIBUTING.md](CONTRIBUTING.md) and the [Makefile](Makefile).
 
-| Language | Primary Engine | Mechanism | Strategic Notes |
-| :--- | :--- | :--- | :--- |
-| **Go** | `gopls` | Native CLI & LSP | Delegates to `gopls` directly (see section below). |
-| **Rust** | `rust-analyzer` | Headless stdio LSP | Code actions: extract function, inline, assists, rename. |
-| **TypeScript / JS** | `tsserver` | JSON Server Protocol | Direct `getEditsForRefactor`, file renames, organize imports. |
-| **Java** | Eclipse `jdtls` / `OpenRewrite` | LSP / Gradle / Maven | JDT for interactive edits; OpenRewrite for repository migrations. |
-
-### Tier 2: Secondary & Functional Language Expansion
-
-* **Python**: `Rope` + `LibCST` (heuristic type resolution; dynamic runtime bounds).
-* **C#**: `Roslyn` (compiler-as-a-library; premier refactoring engine).
-* **Haskell**: `Haskell Language Server (HLS)` for explicitly standalone, trusted, read-only hierarchical `.hs` symbol lookup. Project cradles, compilation, diagnostics, rename, `retrie`, and `hlint` remain unavailable.
-* **Elixir**: `ElixirLS` / `Lexical` (LSP) for symbol navigation and refactorings paired with `Sourceror` / `Igniter` for lossless AST rewriting that preserves comments and formatting.
-* **Elm**: `elm-language-server` paired with `elm-review --fix` and `elm-format`. Elm's compiler provides exceptionally deterministic error payloads, making the automated verification loop nearly zero-friction.
-* **Dart**: `Dart Analysis Server` (explicit `edit.getRefactoring` RPC protocol).
-* **Scala**: `Metals` + `Scalafix`.
-
-### Explicit Non-Goals (Phase 1)
-
-* **Concurrent Polyglot Language Servers**: Running multiple language servers for different languages concurrently in a single workspace is postponed. Focus is strictly on single-language workspaces (though single-language multi-project repos are supported).
-* **C / C++**: Complex compilation databases (`compile_commands.json`) and preprocessor macros require heavy per-project setup.
-* **Untyped languages without mature AST refactoring libraries**: Low ROI for strict semantic validation.
-
----
-
-## 7. How We Handle Go: Delegation vs. Reinvention
-
-`gopls` already provides a CLI (`gopls rename`, `gopls codeaction`) and an experimental MCP server (`gopls mcp`).
-
-**We do not reinvent Go semantic refactoring.** `semedit` delegates Go operations directly to `gopls`:
-
-```text
-LLM Intent: `semedit rename --symbol "Server.Start" --to "Serve"`
-                               │
-                ┌──────────────┴──────────────┐
-                │ If gopls MCP is active:     │
-                │   Short-circuit to gopls    │
-                │ Else:                       │
-                │   Drive gopls CLI / LSP     │
-                └──────────────┬──────────────┘
-                               │
-               Resolve symbol coordinates via AST
-                               │
-            Execute `gopls rename -w file.go:#offset`
-                               │
-            Auto-run `goimports` + report diagnostics
+```sh
+make check
+make build
+./bin/semedit-next --help
+./bin/semedit-next lookup --file main.go --symbol main
 ```
 
-### What `semedit` Adds on Top of `gopls`
+`make build` produces the development binary `bin/semedit-next`. `make promote` runs checks and promotes it to the stable `bin/semedit` used by long-lived integrations.
 
-1. **Coordinate Resolution**: `gopls` requires byte offsets or line/col numbers. `semedit` resolves symbol names to offsets via local Tree-sitter indexing.
-2. **Unified Agent Contract**: The agent uses the same commands across Go, Rust, and TypeScript.
-3. **Execution Pipeline**: `gopls` modifies files directly without running formatting, test validation, or reporting structured diagnostic summaries back to the agent.
+For a Go project, run the binary from the intended workspace and name the declaration rather than calculating coordinates:
 
----
+```sh
+semedit rename --file server.go --symbol Server.Start --to Serve
+semedit replace-body --file server.go --symbol Server.Serve --body 'return nil'
+```
 
-## 8. Deliverables: Engine + Skills
+The second example assumes `Server.Serve` returns an error. The replacement body contains statements without outer braces.
 
-A tool catalog alone is insufficient. Due to pre-training habits, frontier models default to generating raw diffs even when semantic tools are available.
+Start a stdio MCP server from the intended workspace:
 
-`semedit` ships two synchronized artifacts:
+```sh
+semedit mcp --enabled-languages=go
+```
 
-1. **The Execution Binary (`semedit`)**:
-   * **CLI Mode**: `semedit rename`, `semedit extract`, `semedit verify`. Sub-millisecond shell commands for scripts and agents.
-   * **MCP Server Mode**: `semedit mcp`. Exposes high-level tools to Claude Code, Cursor, Windsurf, Antigravity, and other MCP clients.
-2. **The Steering Layer (`SKILL.md`)**:
-   * Agent rules and decision trees teaching models when to invoke semantic tools over text edits.
-   * Prompts and heuristics for formulating symbol-based queries without hallucinating line numbers.
+`--profile=full` is the default; `--profile=mutations-only` omits lookup tools. `--enabled-languages` limits the exposed language set. Go subprocess state defaults to `.scratch/go` beneath the server working directory, with `--go-base-dir` available to select another location. Configure the client with the executable path and working directory explicitly. The [semedit steering skill](skills/semedit/SKILL.md) explains intent selection and operation boundaries.
 
----
+## 7. Open research and future scope
 
-## 9. Proposed Project Layout
+The [ADR index](docs/adr/README.md) records accepted decisions and their evolution; the [research index](docs/research/README.md) tracks investigations. A resolved feasibility question does not necessarily mean its integration has shipped.
+
+* **Broader refactoring support:** extraction, inlining, richer disambiguation, and additional language mutations remain future work. Bash and Makefile construct editing need parser evidence beyond language-server symbol ranges ([RQ-0024](docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md), [RQ-0037](docs/research/RQ-0037-bash-language-server-and-construct-editing.md), [RQ-0038](docs/research/RQ-0038-makefile-language-server-versus-parser.md)).
+* **Post-edit context and normalization:** bounded result projections, project quality policy, and configurable normalization remain under investigation ([RQ-0027](docs/research/RQ-0027-preventing-read-files.md) through [RQ-0029](docs/research/RQ-0029-project-normalization-configuration.md)).
+* **Benchmark integration:** native instruction-delivery channels have been identified, but the transport implementation described in [RQ-0039](docs/research/RQ-0039-benchmark-policy-instruction-transport.md) remains deferred. [ADR-0044](docs/adr/0044-benchmark-experiment-dimensions-and-result-semantics.md) remains proposed.
+* **Runtime and workspace evolution:** persistent server lifecycle, caching, and broader workspace topologies remain research topics. Concurrent polyglot server orchestration and embedded speculative workspace isolation are not current features.
+
+## 8. Development and documentation
+
+`make check` runs mechanical fixes, formatting, dependency tidying, linting, tests, and generated-documentation checks. Public semantic behavior is exercised through CLI [txtar contracts](testdata/scripts/), with comparable coverage for each implemented language-operation pair. Unit and property tests complement those contracts ([ADR-0028](docs/adr/0028-cross-language-cli-txtar-coverage.md)).
+
+The Go documentation generator combines registry-derived capabilities, executable examples, and benchmark evidence into a Hugo/Hextra site. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for development and [the benchmark architecture guide](tools/benchmark-harness/README.md) for benchmark changes.
+
+## 9. Repository Layout
+
+The main source, documentation, and test directories are:
 
 ```text
 semedit/
-├── cmd/
-│   └── semedit/            # Main entry point (CLI and `semedit mcp` daemon)
+├── main.go                 # Executable entry point for CLI and MCP modes
+├── cmd/docgen/             # Documentation site and benchmark publication generator
 ├── internal/
-│   ├── broker/             # Intent router and session management
-│   ├── symbol/             # Tree-sitter locator (symbol query -> file:offset)
-│   ├── pipeline/           # Staging, formatting, diagnostics, snapshotting
-│   ├── fallback/           # Tier 3 syntax rewriters (ast-grep / comby integration)
-│   └── adapters/           # Language-specific drivers
-│       ├── golang/         # gopls CLI / LSP driver
-│       ├── rust/           # rust-analyzer headless client
-│       ├── typescript/     # tsserver JSON driver
-│       ├── java/           # jdtls / OpenRewrite runner
-│       ├── haskell/        # HLS / retrie runner
-│       ├── elixir/         # ElixirLS / Sourceror runner
-│       └── elm/            # elm-language-server runner
-├── skills/
-│   └── semedit/            # Agent skill definitions (SKILL.md, system rules)
-├── Makefile                # Standardized check, test, build recipes
+│   ├── cli/                # CLI commands generated from the operation registry
+│   ├── mcp/                # MCP server, tool schemas, and feedback reports
+│   ├── operation/          # Shared operation definitions, dispatch, and batch execution
+│   ├── capability/         # Language capability documentation contracts
+│   ├── backend/            # Language-neutral service and language implementations
+│   ├── backends/           # Default backend registration and runtime configuration
+│   ├── adapters/golang/    # gopls integration and Go dependency operations
+│   ├── astedit/            # Go AST construct insertion, replacement, and relocation
+│   ├── symbol/             # Go AST symbol resolution
+│   ├── lsp/                # Bounded stdio JSON-RPC transport for language servers
+│   ├── pipeline/           # Atomic writes, formatting, and compiler diagnostics
+│   ├── snapshot/           # Snapshot journal and conflict-checked undo
+│   ├── maven/              # Bounded Java Maven verification actions
+│   ├── integration/        # Agent harness installation and configuration
+│   ├── gocache/            # Project-local Go runtime state
+│   ├── telemetry/          # Operation timing and metrics
+│   ├── assertmode/         # Go test assertion transformations
+│   └── testtools/          # Shared test support
+├── tools/benchmark-harness/ # Benchmark planning, execution, and correctness oracles
+├── data/benchmarks/         # Benchmark run records and supporting data
+├── testdata/
+│   ├── scripts/            # CLI txtar contracts for public operations
+│   ├── bench/              # Benchmark task fixtures
+│   └── bench-oracles/      # Hidden benchmark acceptance tests
+├── docs/
+│   ├── adr/                # Architecture decisions and index
+│   └── research/           # Research questions, findings, and index
+├── skills/                 # Agent steering and documentation review skills
+├── .github/                # CI and repository automation
+├── Makefile                # Formatting, linting, tests, builds, and documentation checks
+├── CONTRIBUTING.md         # Development workflow and test authoring guide
 └── README.md
 ```
-
----
-
-## Appendix: Prior Art & Tooling Capability Matrix
-
-The table below contrasts existing tools across the three tiers against `semedit`:
-
-| Tool / System | Primary Tier & Scope | Type & Compiler Aware? | Resilient to Syntax Errors? | Intent Addressing (No Line/Col)? | Diagnostic Feedback Loop? | Multi-Language Unified? | Core Strength / Limitations |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :--- |
-| **`gopls`** | Tier 1 (Go LSP / CLI) | **Yes** | No | No (requires byte/line/col) | Raw stderr | No (Go only) | Native Go compiler backing; raw CLI requires offset calculation. |
-| **`rust-analyzer`** | Tier 1 (Rust LSP) | **Yes** | Partial | No (requires text ranges) | LSP diagnostics | No (Rust only) | Industry standard Rust refactorings; no standalone edit CLI. |
-| **`tsserver`** | Tier 1 (TypeScript) | **Yes** | Partial | No (requires line/col) | JSON events | No (TS/JS only) | First-class refactor API; protocol coupled to editor state. |
-| **Eclipse `jdtls`** | Tier 1 (Java LSP) | **Yes** | No | No (requires line/col) | LSP diagnostics | No (Java only) | Deepest classic refactoring catalog; heavy startup overhead. |
-| **`OpenRewrite`** | Tier 2 (Java / Polyglot) | **Yes** (LST) | No | **Yes** (Recipe queries) | Build logs | Partial | Gold standard for repo-wide migrations; slow for one-off edits. |
-| **`Rope`** | Tier 2 (Python) | Heuristic | No | Partial (Python scopes) | Python exceptions | No (Python only) | Best-in-class Python semantic refactorer; dynamic typing limits. |
-| **`HLS`** | Tier 1 (Haskell lookup) | **Yes** | No | Partial | Not requested | No (Haskell only) | Standalone UTF-16 hierarchical document symbols; project cradles and source mutation remain outside the slice. |
-| **`ElixirLS` / `Sourceror`** | Tier 1/2 (Elixir) | Partial | Partial | Partial (Sourceror AST) | Mix diagnostics | No (Elixir only) | Lossless CST preserves comments/formatting; homoiconic AST transforms. |
-| **`elm-language-server`** | Tier 1 (Elm LSP) | **Yes** | No | No (requires line/col) | Elm compiler JSON | No (Elm only) | Pure compiler guarantees; exceptionally deterministic diagnostic payloads. |
-| **`ast-grep` (`sg`)** | Tier 3 (Polyglot CST) | No | **Yes** | **Yes** (Pattern queries) | Syntax check only | **Yes** (Tree-sitter) | Extremely fast pattern rewrites; type-blind across packages. |
-| **`GritQL` / Marzano** | Tier 3 (Polyglot CST) | Partial | **Yes** | **Yes** (Declarative pattern) | Dry-run diffs | **Yes** (Tree-sitter) | Declarative AST transformations; lacks full compiler type graph. |
-| **`Comby`** | Tier 3 (Polyglot Syntax) | No | **Yes** (Maximum) | **Yes** (Delimiter matching) | None | **Yes** (Any language) | Indestructible syntax search/replace; zero semantic awareness. |
-| **`agent-lsp`** | Agent Bridge (MCP) | **Yes** | No | Partial (has symbol lookup) | LSP diagnostics | **Yes** (30+ LSPs) | Exposes raw LSP to agents; lacks broken-code fallback & intent cache. |
-| **`semedit` (This Project)** | **Unified Orchestrator** | **Yes** (Tier 1) | **Yes** (Tier 3 Fallback) | **Yes** (Symbol resolver) | **Yes** (Automated pipeline) | **Yes** (Go, Rust, TS, Java, Haskell, Elixir, Elm, Python) | Bridges compiler power to agents with intent routing and safety guards. |
-
-### Detailed Notes on Tool Specializations
-
-1. **Why `gopls` / `rust-analyzer` are not competitors**:
-   `semedit` does not implement type-checkers or compiler front-ends. It uses `gopls` and `rust-analyzer` as backend execution workers. The value is bridging the gap between an LLM's natural way of thinking ("Rename function X") and the language server's rigid requirements ("Offset 1042 in buffer 3").
-2. **Why `ast-grep` is a partner, not a replacement**:
-   Tree-sitter and `ast-grep` are exceptionally good at parsing invalid code and finding structural patterns, but cannot distinguish between two methods with identical names belonging to different types across modules. `semedit` pairs `ast-grep` for local structural repairs with LSPs for project-wide semantic edits.
-3. **Why `OpenRewrite` complements interactive refactoring**:
-   `OpenRewrite` operates at the batch/recipe layer (e.g. migrating 500 files to a new logging framework). `semedit` delegates batch migration tasks in Java to OpenRewrite while using `jdtls` for granular, interactive single-step edits.
-4. **Functional & Pure Language Advantages (Haskell, Elixir, Elm)**:
-   * **Haskell**: Enables *equational rewriting* via `retrie`: transformations can replace expressions according to algebraic laws while GHC guarantees semantic equivalence.
-   * **Elixir**: Homoiconic syntax enables lossless AST manipulation via `Sourceror` and `Igniter`, allowing the agent to perform safe pattern replacements that respect comments and formatting.
-   * **Elm**: The Elm compiler is famous for generating the most precise, human-readable, and machine-parsable error messages in software engineering. Verification and automated diagnostic repair loops are simpler in Elm than in virtually any other ecosystem.
-
-For architectural invariants and historical decisions, see the [Architecture Decision Records (ADRs)](docs/adr/README.md).
-For benchmark harness entry points, state ownership, and a change-to-file map, start with [the benchmark architecture guide](tools/benchmark-harness/README.md).
-For unresolved spikes and open technical challenges, see the [Research Questions Index](docs/research/README.md).
-For development workflow, testing standards, and test authoring guides, see [CONTRIBUTING.md](CONTRIBUTING.md).
