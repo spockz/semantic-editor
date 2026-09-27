@@ -1,0 +1,22 @@
+# Reject flattened batch arguments with indexed guidance before any workspace operation.
+stdin input.json
+exec semedit mcp
+stdout 'isError":true'
+stdout 'edit 0 params'
+stdout 'semantic_rename'
+stdout 'put operation arguments under params'
+grep 'func Old' file.go
+! grep 'func New' file.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_rename","symbol":"Old","to":"New"}]}}}
+
+-- go.mod --
+module example.com/batchparams
+
+go 1.23
+
+-- file.go --
+package batchparams
+
+func Old() {}

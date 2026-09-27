@@ -29,6 +29,30 @@ func rawLookup(raw map[string]any, jsonName, cliName string) (any, bool) {
 // CheckParams validates required presence and enum membership for every contract.
 // Empty strings count as absent so optional enum parameters accept the zero value.
 func CheckParams(raw map[string]any, params []ParameterContract) error {
+	allowed := make(map[string]struct{}, len(params)*2)
+	for _, param := range params {
+		if param.JSONName != "" {
+			allowed[param.JSONName] = struct{}{}
+		}
+		if param.CLIName != "" {
+			allowed[param.CLIName] = struct{}{}
+		}
+	}
+	unknown := make([]string, 0)
+	for key := range raw {
+		if _, ok := allowed[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) > 0 {
+		slices.Sort(unknown)
+		supported := make([]string, 0, len(allowed))
+		for key := range allowed {
+			supported = append(supported, key)
+		}
+		slices.Sort(supported)
+		return fmt.Errorf("unknown param %q; supported keys are [%s]: %w", unknown[0], strings.Join(supported, ", "), ErrInvalidParams)
+	}
 	for _, param := range params {
 		value, present := rawLookup(raw, param.JSONName, param.CLIName)
 		if !present || value == nil {

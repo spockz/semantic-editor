@@ -153,6 +153,32 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 	}
 }
 
+func TestOperationExamplesUseSupportedJSONParameters(t *testing.T) {
+	t.Parallel()
+
+	for _, entry := range operation.DefaultRegistry().All() {
+		if entry.ExampleRaw == nil {
+			continue
+		}
+		t.Run(entry.Key, func(t *testing.T) {
+			t.Parallel()
+
+			supported := make(map[string]struct{}, len(entry.Params))
+			for _, param := range entry.Params {
+				supported[param.JSONName] = struct{}{}
+			}
+			for key := range entry.ExampleRaw {
+				if _, ok := supported[key]; !ok {
+					t.Errorf("ExampleRaw key %q is not a supported JSON parameter", key)
+				}
+			}
+			if _, err := entry.Parse(entry.ExampleRaw); err != nil {
+				t.Errorf("ExampleRaw violates the operation parameter contract: %v", err)
+			}
+		})
+	}
+}
+
 func TestRegistryLookupsCoverWiredOperations(t *testing.T) {
 	t.Parallel()
 
@@ -341,5 +367,29 @@ func TestFindReferencesRegistryAliases(t *testing.T) {
 	}
 	if _, ok := registry.LookupCLI("find-references"); !ok {
 		t.Fatal("LookupCLI(find-references) missed")
+	}
+}
+
+func TestOperationParamsRejectUnknownKeysAndAcceptCLIAliases(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_verify")
+	if !ok {
+		t.Fatal("verify registry entry missing")
+	}
+	if _, err := entry.Parse(map[string]any{"files": []string{"src/Widget.java"}}); err == nil || !strings.Contains(err.Error(), "supported keys") || !strings.Contains(err.Error(), "file") {
+		t.Fatalf("unknown verify parameter error = %v, want supported-key list", err)
+	}
+	request, err := entry.Parse(map[string]any{
+		"file":            "src/Widget.java",
+		"language":        "java",
+		"trust-workspace": true,
+		"jdtls-home":      "/jdtls",
+		"java-bin":        "/java",
+	})
+	if err != nil {
+		t.Fatalf("valid CLI aliases rejected: %v", err)
+	}
+	verify, ok := request.(operation.VerifyReq)
+	if !ok || !verify.Project.WorkspaceTrust.Trusted || verify.Project.Java.JDTLSHome != "/jdtls" || verify.Project.Java.JavaBin != "/java" {
+		t.Fatalf("parsed verify request = %#v", request)
 	}
 }

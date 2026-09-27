@@ -123,9 +123,9 @@ func (r *InsertFunctionReq) SetProjectContext(project backend.ProjectContext) { 
 
 var insertFunctionParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
-	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Function or method Go source code snippet", Required: true},
+	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One complete Go function or method declaration, including parameters, results, and body", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
-	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
+	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private. Protected and package-private are unsupported in Go.", Enums: []string{"infer", "public", "private"}},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
@@ -154,7 +154,7 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 	return Def[InsertFunctionReq, FileEditRes]{
 		Key:     "insert_function",
-		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go function or method to an existing file. Supply one function or method declaration; exported names require public access. Automatically clusters methods near their receiver types and enforces public vs private section partitioning." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of replace_file_content or write_to_file to add one complete Go function or method declaration to an existing file. Provide the full declaration, including parameters, results, and body. Exported names are public and lowercase names are private; access must match the name. Methods are clustered near receiver methods, with public declarations before private declarations. Example: func (s *Server) Stop(ctx context.Context) error { return nil }." + automaticVerificationGuidance,
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",

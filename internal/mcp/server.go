@@ -496,18 +496,42 @@ func reloadOutputSchema() map[string]any {
 }
 
 func operationInputSchema(entry operation.Entry) map[string]any {
-	return operationInputSchemaForParams(entry.Params)
+	schema := operationInputSchemaForParams(entry.Params)
+	addOperationExample(schema, entry.ExampleRaw, entry.Params)
+	return schema
 }
 
 func operationInputSchemaForBackends(entry operation.Entry, backends []backend.Backend) map[string]any {
-	return operationInputSchemaForParams(operation.ParametersForBackends(entry, backends))
+	params := operation.ParametersForBackends(entry, backends)
+	schema := operationInputSchemaForParams(params)
+	addOperationExample(schema, entry.ExampleRaw, params)
+	return schema
+}
+
+func addOperationExample(schema map[string]any, example map[string]any, params []operation.ParameterContract) {
+	if example == nil {
+		return
+	}
+
+	supported := make(map[string]struct{}, len(params))
+	for _, param := range params {
+		supported[param.JSONName] = struct{}{}
+	}
+
+	filtered := make(map[string]any, len(example))
+	for key, value := range example {
+		if _, ok := supported[key]; ok {
+			filtered[key] = value
+		}
+	}
+	schema["examples"] = []map[string]any{filtered}
 }
 
 func operationInputSchemaForParams(params []operation.ParameterContract) map[string]any {
 	properties := make(map[string]any, len(params))
 	required := make([]string, 0, len(params))
 	for _, param := range params {
-		property := map[string]any{"description": param.Description}
+		property := map[string]any{toolFieldDescription: param.Description}
 		switch param.Type {
 		case operation.ParamBoolean:
 			property["type"] = "boolean"
@@ -536,7 +560,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) map[str
 }
 
 func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend) map[string]any {
-	const batchDescription = "Use this tool instead of a sequence of built-in text patches when several registered semantic edits must run in order. It writes directly to the supplied workspace: if a later edit fails, earlier successful edits remain applied and are not rolled back. Returns a final_diff covering semantic edits and deferred formatting/import changes; successful batches also return one final diagnostic_delta."
+	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation's arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Successful batches return final_diff and diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		branches = append(branches, map[string]any{
@@ -550,16 +574,18 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 		})
 	}
 	return map[string]any{
-		"name": "semantic_batch", "description": batchDescription,
-		"inputSchema": map[string]any{
+		"name":               "semantic_batch",
+		toolFieldDescription: batchDescription,
+		toolFieldInputSchema: map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
 				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 			},
-			"required": []string{"edits"},
+			"required":             []string{"edits"},
+			"additionalProperties": false,
 		},
-		"outputSchema": standardOutputSchema(batchOutputSchema()),
+		toolFieldOutputSchema: standardOutputSchema(batchOutputSchema()),
 	}
 }
 

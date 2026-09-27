@@ -46,6 +46,40 @@ type BatchResponse struct {
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	for index, batchEntry := range edits {
+		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
+		if !ok || !entry.Batchable {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d: tool is not batchable: %s", index, batchEntry.Tool)})
+			return response, nil
+		}
+		raw := map[string]any{}
+		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			return response, nil
+		}
+		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
+			return response, nil
+		}
+		if raw == nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			return response, nil
+		}
+		if _, err := entry.Parse(raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			return response, nil
+		}
+		if err := s.validateLanguageAllowed(entry, raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			return response, nil
+		}
+	}
 	workspaceBefore, err := snapshotBatchWorkspace(s.workDir)
 	if err != nil {
 		return nil, fmt.Errorf("snapshot workspace before batch: %w", err)
@@ -301,9 +335,9 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	if response.Status == "error" {
 		s.recordToolMetrics(timing)
 		s.sendResult(id, map[string]any{
-			"content":            []map[string]any{{"type": "text", "text": string(text)}},
-			"isError":            true,
-			structuredContentKey: timing.structuredContentWithResult(response),
+			"content":           []map[string]any{{"type": "text", "text": string(text)}},
+			"isError":           true,
+			"structuredContent": timing.structuredContentWithResult(response),
 		})
 		return
 	}

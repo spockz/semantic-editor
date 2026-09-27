@@ -137,6 +137,25 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 	}
 }
 
+func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
+	tmpDir := t.TempDir()
+	var out bytes.Buffer
+	server := mcp.NewServer("full", tmpDir, &out)
+	response, err := server.ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+		Tool: "semantic_rename",
+	}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Status != "error" || len(response.Results) != 1 {
+		t.Fatalf("response = %#v", response)
+	}
+	message := response.Results[0].Error
+	if !strings.Contains(message, "edit 0 params") || !strings.Contains(message, `"params"`) || !strings.Contains(message, `"symbol":"Old"`) {
+		t.Fatalf("error = %q, want indexed params-shape guidance and example", message)
+	}
+}
+
 func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batchemptydiff\n\ngo 1.23\n"), 0o600); err != nil {
@@ -409,5 +428,32 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 	}
 	if !strings.Contains(response.Results[1].Error, "injected-gofmt-failure") {
 		t.Fatalf("post-process error = %+v", response.Results[1])
+	}
+}
+
+func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file.go")
+	original := []byte("package testpkg\n\nfunc Foo() int { return 1 }\n")
+	if err := os.WriteFile(file, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := mcp.NewServer("full", root, &bytes.Buffer{})
+	response, err := srv.ExecuteBatch(context.Background(), []mcp.BatchEntry{
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2"}`)},
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2","unexpected":true}`)},
+	}, false)
+	if err != nil {
+		t.Fatalf("ExecuteBatch returned error: %v", err)
+	}
+	if response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "supported keys") || !strings.Contains(response.Results[0].Error, "file") {
+		t.Fatalf("batch response = %+v, want unknown parameter error with supported keys", response)
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("batch changed file before rejecting invalid params:\n%s", got)
 	}
 }

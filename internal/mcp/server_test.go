@@ -705,6 +705,98 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	}
 }
 
+func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
+		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
+		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			Tools []struct {
+				Name        string `json:"name"`
+				InputSchema struct {
+					Properties map[string]struct {
+						Type  string            `json:"type"`
+						Enum  []json.RawMessage `json:"enum"`
+						Items struct {
+							Type string `json:"type"`
+						} `json:"items"`
+					} `json:"properties"`
+					Required []string                     `json:"required"`
+					Examples []map[string]json.RawMessage `json:"examples"`
+				} `json:"inputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	responses := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(responses) == 0 {
+		t.Fatal("tools/list produced no response")
+	}
+	if err := json.Unmarshal([]byte(responses[len(responses)-1]), &response); err != nil {
+		t.Fatal(err)
+	}
+
+	exampleCount := 0
+	for _, tool := range response.Result.Tools {
+		for _, example := range tool.InputSchema.Examples {
+			exampleCount++
+			for _, required := range tool.InputSchema.Required {
+				if _, ok := example[required]; !ok {
+					t.Errorf("%s example is missing required parameter %q", tool.Name, required)
+				}
+			}
+			for key, raw := range example {
+				property, ok := tool.InputSchema.Properties[key]
+				if !ok {
+					t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
+					continue
+				}
+				var value any
+				if err := json.Unmarshal(raw, &value); err != nil {
+					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
+					continue
+				}
+				validType := false
+				switch property.Type {
+				case "string":
+					_, validType = value.(string)
+				case "boolean":
+					_, validType = value.(bool)
+				case "array":
+					if items, ok := value.([]any); ok {
+						validType = true
+						for _, item := range items {
+							if _, ok := item.(string); !ok || property.Items.Type != "string" {
+								validType = false
+							}
+						}
+					}
+				default:
+					t.Errorf("%s parameter %q has unexpected schema type %q", tool.Name, key, property.Type)
+				}
+				if !validType {
+					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
+				}
+				if len(property.Enum) > 0 {
+					matched := false
+					for _, allowed := range property.Enum {
+						matched = matched || string(allowed) == string(raw)
+					}
+					if !matched {
+						t.Errorf("%s example parameter %q is outside its enum", tool.Name, key)
+					}
+				}
+			}
+		}
+	}
+	if exampleCount == 0 {
+		t.Fatal("tools/list did not advertise any operation examples")
+	}
+}
+
 func TestFeedbackToolAdvertisesStructuredSchemaAndPrivacyGuidance(t *testing.T) {
 	t.Parallel()
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
@@ -867,5 +959,66 @@ func TestMCPFullProfileListsFindReferences(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "\"semantic_find_references\"") {
 		t.Fatalf("tools/list response lacks semantic_find_references: %s", output.String())
+	}
+}
+
+func TestMCPRejectsUnknownVerifyParamsBeforeFormatting(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "main.go")
+	original := []byte("package main\nfunc main(){ println(\"ok\") }\n")
+	if err := os.WriteFile(file, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := `{"files":["main.go"],"language":"go"}`
+	input := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":%s}}`+"\n", args)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(context.Background(), bytes.NewBufferString(input)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "supported keys") || !strings.Contains(out.String(), "path") {
+		t.Fatalf("semantic_verify response = %s, want unknown-parameter error with supported keys", out.String())
+	}
+	got, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, original) {
+		t.Fatalf("semantic_verify formatted file before rejecting invalid params:\n%s", got)
+	}
+}
+
+func TestMCPScaffoldFilePreservesPurposeHeader(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/scaffold\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "existing.go"), []byte("package service\n"), 0o600); err != nil {
+		t.Fatalf("write sibling: %v", err)
+	}
+
+	const header = "// WHY: This file groups service adapters."
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_scaffold_file","arguments":{"file":"generated.go","package":"infer","purpose_header":"// WHY: This file groups service adapters."}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatalf("Serve failed: %v", err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal MCP response: %v", err)
+	}
+	if response.Result.IsError {
+		t.Fatalf("MCP scaffold returned an error: %s", out.String())
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "generated.go"))
+	if err != nil {
+		t.Fatalf("read scaffolded file: %v", err)
+	}
+	want := header + "\n\npackage service\n"
+	if string(content) != want {
+		t.Fatalf("scaffolded content = %q, want %q", content, want)
 	}
 }

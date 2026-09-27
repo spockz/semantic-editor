@@ -235,10 +235,10 @@ func (r *InsertCaseReq) SetProjectContext(project backend.ProjectContext) { r.Pr
 
 var insertCaseParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
-	{Name: "func", CLIName: "func", JSONName: "func", Type: ParamString, Description: "name of the function containing the switch", Required: true},
-	{Name: "switch_on", CLIName: "switch-on", JSONName: "switch_on", Type: ParamString, Description: "the switch discriminant expression, e.g. 'method'; omit for tagless switch"},
-	{Name: "switch_path", CLIName: "switch-path", JSONName: "switch_path", Type: ParamString, Description: "matching-switch path such as 0 or 0.1; use a path reported by an ambiguity error"},
-	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "full case clause source, e.g. 'case \"foo\":\\n\\treturn bar'", Required: true},
+	{Name: "func", CLIName: "func", JSONName: "func", Type: ParamString, Description: "Name of the existing function or method containing the target switch", Required: true},
+	{Name: "switch_on", CLIName: "switch-on", JSONName: "switch_on", Type: ParamString, Description: "Existing switch discriminant expression, e.g. method; omit only for a tagless switch"},
+	{Name: "switch_path", CLIName: "switch-path", JSONName: "switch_path", Type: ParamString, Description: "Path selecting one of multiple matching switches, e.g. 0 or 0.1; use the ambiguity diagnostic's path"},
+	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "Complete case clause, including colon and statements, e.g. case \"foo\":\\n\\treturn bar", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
 	{Name: "anchor", CLIName: "anchor", JSONName: "anchor", Type: ParamString, Description: "case value to insert before/after when placement is 'before' or 'after'"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after insertion (default false)"},
@@ -295,7 +295,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
 		Key:     "insert_case",
-		Summary: "Use this tool instead of text insertion or replacing the enclosing function when adding a case clause to an existing Go switch statement. Locates the switch by its containing function name and optional discriminant expression (omit switch_on to match a tagless switch). If multiple switches match, use switch_path from the ambiguity diagnostic. Validates the case source in memory before writing.",
+		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Supply the existing function name and, for tagged switches, the exact existing discriminant expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy switch_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",
@@ -305,7 +305,7 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 			backend.LanguageGo: runInsertCase,
 		},
 		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "func": "Serve", "case": "case \"stop\":\n\treturn nil"},
+		ExampleRaw: map[string]any{"file": wireExampleFile, "func": "Serve", "switch_on": "request.Method", "case": "case \"stop\":\n\treturn nil"},
 		Batchable:  true,
 	}
 }

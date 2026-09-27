@@ -39,7 +39,7 @@ var insertStructureParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Source file target; relative paths resolve from the active semedit workspace root", Required: true},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Structural construct kind supported by the selected language backend", Required: true, DynamicEnums: executableStructureKinds},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Structural construct source code snippet", Required: true},
-	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
+	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier supported by the selected backend", Enums: accessEnum},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol, first, last, before, after, before_default", Enums: structurePlacementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol or anchor case identifier required for relative placement"},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for declarations: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},

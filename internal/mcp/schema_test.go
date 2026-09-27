@@ -621,11 +621,86 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_assertion_mode.trust_workspace", paramDescription("semantic_assertion_mode", "trust_workspace"), "Must be true", "non-dry-run")
 	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select scope for Rust or Java rename", "active semedit workspace root")
 	assertContains("semantic_insert_declaration.source", paramDescription("semantic_insert_declaration", "source"), "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
-	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one Go function or method", "instead of replace_file_content")
+	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one complete Go function or method", "parameters, results, and body")
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
 	assertContains("semantic_insert_decl description", toolDescription("semantic_insert_decl"), "one Go constant or variable", "instead of replace_file_content")
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_structure description", toolDescription("semantic_insert_structure"), "structural construct", "instead of replace_file_content")
+	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "never beside tool", "zero-based edit index", `"symbol":"Run"`)
+	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact existing discriminant expression", "kind=case alone does not identify", "switch_path")
+	assertContains("semantic_insert_case.switch_on", paramDescription("semantic_insert_case", "switch_on"), "Existing switch discriminant", "tagless switch")
+}
+
+func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
+	tools := listTools(t, "full")
+	var verifySchema, batchSchema, insertFunctionSchema map[string]any
+	for _, tool := range tools {
+		switch tool["name"] {
+		case "semantic_verify":
+			verifySchema = tool["inputSchema"].(map[string]any)
+		case "semantic_batch":
+			batchSchema = tool["inputSchema"].(map[string]any)
+		case "semantic_insert_function":
+			insertFunctionSchema = tool["inputSchema"].(map[string]any)
+		}
+	}
+	if verifySchema == nil || batchSchema == nil || insertFunctionSchema == nil {
+		t.Fatal("tools/list omitted semantic_verify, semantic_batch, or semantic_insert_function")
+	}
+	for name, schema := range map[string]map[string]any{"semantic_verify": verifySchema, "semantic_batch": batchSchema} {
+		if schema["additionalProperties"] != false {
+			t.Errorf("%s additionalProperties = %#v, want false", name, schema["additionalProperties"])
+		}
+	}
+	access := insertFunctionSchema["properties"].(map[string]any)["access_modifier"].(map[string]any)
+	if !reflect.DeepEqual(access["enum"], []any{"infer", "public", "private"}) {
+		t.Fatalf("Go insert-function access enum = %#v, want only infer/public/private", access["enum"])
+	}
+	edits := batchSchema["properties"].(map[string]any)["edits"].(map[string]any)
+	branches := edits["items"].(map[string]any)["oneOf"].([]any)
+	foundReplaceBody := false
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] != "semantic_replace_body" {
+			continue
+		}
+		foundReplaceBody = true
+		params := properties["params"].(map[string]any)
+		if params["additionalProperties"] != false {
+			t.Errorf("semantic_batch semantic_replace_body params additionalProperties = %#v, want false", params["additionalProperties"])
+		}
+	}
+	if !foundReplaceBody {
+		t.Fatal("semantic_batch omitted semantic_replace_body")
+	}
+}
+
+func TestScaffoldPurposeHeaderSchemaIsOptional(t *testing.T) {
+	tools := listTools(t, "full")
+	for _, tool := range tools {
+		if tool["name"] != "semantic_scaffold_file" {
+			continue
+		}
+		input := tool["inputSchema"].(map[string]any)
+		properties := input["properties"].(map[string]any)
+		header, ok := properties["purpose_header"].(map[string]any)
+		if !ok || header["type"] != "string" {
+			t.Fatalf("purpose_header schema = %#v, want string", properties["purpose_header"])
+		}
+		if got := input["required"]; got != nil {
+			for _, name := range got.([]any) {
+				if name == "purpose_header" {
+					t.Fatal("purpose_header must remain optional")
+				}
+			}
+		}
+		if description, _ := header["description"].(string); !strings.Contains(description, "why the file exists") {
+			t.Errorf("purpose_header description = %q, want file-purpose guidance", description)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_scaffold_file")
 }
 
 func toAnySlice(values []string) []any {
