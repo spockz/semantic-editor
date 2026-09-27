@@ -1,0 +1,1560 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 87808,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:55:24.884115Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:24.884133Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:25.197611Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:25.197622Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-e0ad4dd45928e4e2",
+        "diff": "File config/config.go modified (15 lines -\u003e 19 lines)",
+        "first_event_to_first_tool_call_ms": 4418,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 836,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\"",
+                "transport_status": "unknown"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 18390
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-0b1286db4184ead2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 836,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 530,
+        "process_start_to_first_event_ms": 123,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 97820,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large-default_task-09-composite-refactor_1790463324783456000.json"
+        },
+        "reasoning_tokens": 73,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\"",
+            "transport_status": "unknown"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+          "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 10012,
+        "variant": "large:default",
+        "wall_clock_ms": 19230
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 262144,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:55:44.116351Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.116371Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.520857Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.520868Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-e0ad4dd45928e4e2",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "first_event_to_first_tool_call_ms": 4339,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 697,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg --files'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat config/config_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "language": "go",
+                  "symbol": "Config"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "language": "go",
+                  "symbol": "Config.Port",
+                  "to": "ListenPort"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "access_modifier": "public",
+                  "file": "config/config.go",
+                  "placement": "after_symbol",
+                  "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}",
+                  "target_symbol": "Config"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 53058
+          }
+        ],
+        "internal_turns": 11,
+        "job_id": "job-038da6533e858c42",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 697,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1080,
+        "process_start_to_first_event_ms": 130,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 284047,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-default_task-09-composite-refactor_1790463344016509000.json"
+        },
+        "reasoning_tokens": 402,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I used separate semantic MCP calls because I treated rename, function insertion, and import cleanup as independent operations. Batching was available and suitable; I should have combined them with `semantic_batch`."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg --files'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat config/config_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "language": "go",
+              "symbol": "Config"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "language": "go",
+              "symbol": "Config.Port",
+              "to": "ListenPort"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "access_modifier": "public",
+              "file": "config/config.go",
+              "placement": "after_symbol",
+              "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}",
+              "target_symbol": "Config"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 11,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+          "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+          "/bin/zsh -lc 'rg --files'",
+          "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+          "/bin/zsh -lc 'cat config/config_test.go'",
+          "semantic_inspect_symbol",
+          "semantic_rename",
+          "semantic_insert_function",
+          "semantic_organize_imports",
+          "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+          "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 21903,
+        "variant": "large:default",
+        "wall_clock_ms": 53759
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "default",
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 104960,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:52:11.386740Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.386758Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.778500Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.778511Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-4d7e5c186a957861",
+        "diff": "File config/config.go modified (15 lines -\u003e 19 lines)",
+        "first_event_to_first_tool_call_ms": 5134,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 5,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 444,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat config/config_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 25936
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-2b653d012653be6e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 444,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 880,
+        "process_start_to_first_event_ms": 138,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 116877,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-09-composite-refactor_1790463131327023000.json"
+        },
+        "reasoning_tokens": 218,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat config/config_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "/bin/zsh -lc 'cat config/config_test.go'",
+          "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 11917,
+        "variant": "small:default",
+        "wall_clock_ms": 26381
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 277504,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:52:36.458919Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.458937Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.788970Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.788983Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-4d7e5c186a957861",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "first_event_to_first_tool_call_ms": 4441,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 464,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "language": "go",
+                  "symbol": "Config"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "language": "go",
+                  "symbol": "Config"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "language": "go",
+                  "symbol": "Config.Port"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg --files'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "language": "go",
+                  "symbol": "Config.Port",
+                  "to": "ListenPort"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "access_modifier": "public",
+                  "auto_organize_imports": true,
+                  "file": "config/config.go",
+                  "placement": "public_start",
+                  "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "language": "go",
+                  "symbol": "DefaultConfig"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 69101
+          }
+        ],
+        "internal_turns": 12,
+        "job_id": "job-eb0d08675f0b401f",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 464,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1399,
+        "process_start_to_first_event_ms": 119,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 299164,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-09-composite-refactor_1790463156400753000.json"
+        },
+        "reasoning_tokens": 580,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "Batching was discovered, but I did not use `semantic_batch` because I treated the rename, function insertion, and import cleanup as separate operations instead of combining them. It was suitable for those edits; there was no technical reason it could not be used."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "language": "go",
+              "symbol": "Config"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "language": "go",
+              "symbol": "Config"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "language": "go",
+              "symbol": "Config.Port"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg --files'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "language": "go",
+              "symbol": "Config.Port",
+              "to": "ListenPort"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "access_modifier": "public",
+              "auto_organize_imports": true,
+              "file": "config/config.go",
+              "placement": "public_start",
+              "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "language": "go",
+              "symbol": "DefaultConfig"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 12,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+          "/bin/zsh -lc 'rg --files'",
+          "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+          "semantic_rename",
+          "semantic_insert_function",
+          "semantic_organize_imports",
+          "semantic_inspect_symbol"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 21660,
+        "variant": "small:default",
+        "wall_clock_ms": 69566
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-09-composite-refactor",
+      "txtar_path": "testdata/bench/task_09_composite_refactor.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/c03f3625ef877adfd183a978ca333ca208eff0f0/testdata/bench/task_09_composite_refactor.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 104960,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:52:11.386740Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.386758Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.778500Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:11.778511Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-4d7e5c186a957861",
+      "diff": "File config/config.go modified (15 lines -\u003e 19 lines)",
+      "first_event_to_first_tool_call_ms": 5134,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 5,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 444,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat config/config_test.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 25936
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-2b653d012653be6e",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 444,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 880,
+      "process_start_to_first_event_ms": 138,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 116877,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-09-composite-refactor_1790463131327023000.json"
+      },
+      "reasoning_tokens": 218,
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat config/config_test.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc \"cat config/config.go \u0026\u0026 rg -n '\\\\.Port\\\\b|\\\\bPort\\\\s*:' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+        "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|default.*(host|port)|localhost|8080|Config\\\\{' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+        "/bin/zsh -lc 'cat config/config_test.go'",
+        "/bin/zsh -lc \"cat \u003e config/config.go \u003c\u003c'EOF'\npackage config\n\nimport \\\"fmt\\\"\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \\\"localhost\\\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\\\"%s:%d\\\", c.Host, c.ListenPort)\n}\nEOF\ncat config/config.go\ngit status --short\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 11917,
+      "variant": "small:default",
+      "wall_clock_ms": 26381
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 277504,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:52:36.458919Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.458937Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.788970Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:52:36.788983Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-4d7e5c186a957861",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "first_event_to_first_tool_call_ms": 4441,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 464,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "language": "go",
+                "symbol": "Config"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "language": "go",
+                "symbol": "Config"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "language": "go",
+                "symbol": "Config.Port"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+              "transport_status": "unknown"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'rg --files'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "language": "go",
+                "symbol": "Config.Port",
+                "to": "ListenPort"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "access_modifier": "public",
+                "auto_organize_imports": true,
+                "file": "config/config.go",
+                "placement": "public_start",
+                "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "language": "go",
+                "symbol": "DefaultConfig"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 69101
+        }
+      ],
+      "internal_turns": 12,
+      "job_id": "job-eb0d08675f0b401f",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 464,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1399,
+      "process_start_to_first_event_ms": 119,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 299164,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-09-composite-refactor_1790463156400753000.json"
+      },
+      "reasoning_tokens": 580,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "Batching was discovered, but I did not use `semantic_batch` because I treated the rename, function insertion, and import cleanup as separate operations instead of combining them. It was suitable for those edits; there was no technical reason it could not be used."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "language": "go",
+            "symbol": "Config"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "language": "go",
+            "symbol": "Config"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "language": "go",
+            "symbol": "Config.Port"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+          "transport_status": "unknown"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'rg --files'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "language": "go",
+            "symbol": "Config.Port",
+            "to": "ListenPort"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "access_modifier": "public",
+            "auto_organize_imports": true,
+            "file": "config/config.go",
+            "placement": "public_start",
+            "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "language": "go",
+            "symbol": "DefaultConfig"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 12,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'config/config.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*' | head -80 \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"cat config/config.go \u0026\u0026 find . -maxdepth 2 -type f \\\\( -name 'PROJECT_BRIEF.md' -o -name 'README*' -o -name 'Makefile' \\\\) -print\"",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_lookup",
+        "/bin/zsh -lc \"rg -n 'DefaultConfig|ListenPort|config\\\\.Config|Config\\\\{|Host:|Port:' --glob '\"'!**/*_test.go'\"' .\"",
+        "/bin/zsh -lc 'rg --files'",
+        "/bin/zsh -lc 'cat config/config_test.go \u0026\u0026 cat go.mod'",
+        "semantic_rename",
+        "semantic_insert_function",
+        "semantic_organize_imports",
+        "semantic_inspect_symbol"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 21660,
+      "variant": "small:default",
+      "wall_clock_ms": 69566
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 87808,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:55:24.884115Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:24.884133Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:25.197611Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:25.197622Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-e0ad4dd45928e4e2",
+      "diff": "File config/config.go modified (15 lines -\u003e 19 lines)",
+      "first_event_to_first_tool_call_ms": 4418,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 836,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\"",
+              "transport_status": "unknown"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 18390
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-0b1286db4184ead2",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 836,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 530,
+      "process_start_to_first_event_ms": 123,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 97820,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large-default_task-09-composite-refactor_1790463324783456000.json"
+      },
+      "reasoning_tokens": 73,
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\"",
+          "transport_status": "unknown"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'go.mod' -g 'go.sum' | sort \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"cat AGENTS.override.md 2\u003e/dev/null || true; cat config/config.go; rg -n '\\\\.Port|Port:' --glob '\"'!**/*_test.go'\"' --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' .\"",
+        "/bin/zsh -lc \"rg -n 'Config\\\\{|DefaultConfig|ListenPort|Host:' --glob '\"'!**/*_test.go'\"' .\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 10012,
+      "variant": "large:default",
+      "wall_clock_ms": 19230
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 262144,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T22:55:44.116351Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.116371Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.520857Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T22:55:44.520868Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-e0ad4dd45928e4e2",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "first_event_to_first_tool_call_ms": 4339,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 5,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 697,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'rg --files'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat config/config_test.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "language": "go",
+                "symbol": "Config"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "language": "go",
+                "symbol": "Config.Port",
+                "to": "ListenPort"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "access_modifier": "public",
+                "file": "config/config.go",
+                "placement": "after_symbol",
+                "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}",
+                "target_symbol": "Config"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 53058
+        }
+      ],
+      "internal_turns": 11,
+      "job_id": "job-038da6533e858c42",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 697,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1080,
+      "process_start_to_first_event_ms": 130,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 284047,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-default_task-09-composite-refactor_1790463344016509000.json"
+      },
+      "reasoning_tokens": 402,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I used separate semantic MCP calls because I treated rename, function insertion, and import cleanup as independent operations. Batching was available and suitable; I should have combined them with `semantic_batch`."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'rg --files'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat config/config_test.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "language": "go",
+            "symbol": "Config"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "language": "go",
+            "symbol": "Config.Port",
+            "to": "ListenPort"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "access_modifier": "public",
+            "file": "config/config.go",
+            "placement": "after_symbol",
+            "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}",
+            "target_symbol": "Config"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 11,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'config.go' -g 'README*' | head -80 \u0026\u0026 ls -la\"",
+        "/bin/zsh -lc \"cat AGENTS.override.md \u0026\u0026 cat config/config.go \u0026\u0026 rg -n '\\\\.Port|Port:' --glob '*.go' .\"",
+        "/bin/zsh -lc 'rg --files'",
+        "/bin/zsh -lc \"rg -n 'Config|ListenPort|:8080|Port|Host' --glob '*.go' --glob '\"'!**/*_test.go'\"' . \u0026\u0026\"",
+        "/bin/zsh -lc 'cat config/config_test.go'",
+        "semantic_inspect_symbol",
+        "semantic_rename",
+        "semantic_insert_function",
+        "semantic_organize_imports",
+        "/bin/zsh -lc 'git diff -- config/config.go \u0026\u0026 git status --short'",
+        "/bin/zsh -lc 'cat config/config.go \u0026\u0026 git rev-parse --show-toplevel \u0026\u0026 git status --short -- config/config.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 21903,
+      "variant": "large:default",
+      "wall_clock_ms": 53759
+    }
+  ],
+  "timestamp": "2026-09-27T01:46:00.925216+02:00"
+}

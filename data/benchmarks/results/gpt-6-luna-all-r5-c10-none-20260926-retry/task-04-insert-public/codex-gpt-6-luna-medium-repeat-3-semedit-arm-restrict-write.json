@@ -1,0 +1,1114 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 67584,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:52.984328Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:52.984372Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:53.299197Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:53.299214Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f44fc92d15a7230b",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 5415,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 571,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 16274
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-ede5a5a32d7b524e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 571,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 504,
+        "process_start_to_first_event_ms": 368,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 76697,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large-default_task-04-insert-public_1790455792670680000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+          "/bin/zsh -lc 'cat api/server_test.go'",
+          "/bin/zsh -lc 'cat api/server.go'",
+          "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 9113,
+        "variant": "large:default",
+        "wall_clock_ms": 16851
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 91904,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:57.540515Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.540538Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.958179Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.958196Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f44fc92d15a7230b",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 5159,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 552,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "access_modifier": "public",
+                  "file": "api/server.go",
+                  "placement": "before_symbol",
+                  "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+                  "target_symbol": "internalRun"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "language": "go",
+                  "symbol": "InitServer"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 30114
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-25d216fba539a4d5",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 552,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 471,
+        "process_start_to_first_event_ms": 144,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 112768,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-default_task-04-insert-public_1790455797425779000.json"
+        },
+        "reasoning_tokens": 139,
+        "repeat": 3,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I used two consecutive calls: `semantic_insert_function` to add the constructor and `semantic_inspect_symbol` to confirm it. I did not batch them because inspection was only needed after insertion to verify the result; the operations were sequentially dependent."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "access_modifier": "public",
+              "file": "api/server.go",
+              "placement": "before_symbol",
+              "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+              "target_symbol": "internalRun"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "language": "go",
+              "symbol": "InitServer"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+          "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+          "semantic_insert_function",
+          "semantic_inspect_symbol"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 20864,
+        "variant": "large:default",
+        "wall_clock_ms": 30669
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "none",
+      "prompt_variant": "default",
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 54528,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:33.654337Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:33.654388Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-3de4016417d8916c",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 7352,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 855,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 17876
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-ffd04c31b5b43a17",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 855,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 362,
+        "process_start_to_first_event_ms": 1606,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 76375,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-04-insert-public_1790455772253691000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 21847,
+        "variant": "small:default",
+        "wall_clock_ms": 18733
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+        "cached_prompt_tokens": 138752,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:33.612993Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:33.613018Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-3de4016417d8916c",
+        "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 8587,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 505,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "language": "go",
+                  "symbol": "Server"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "language": "go",
+                  "symbol": "Server"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "include_unexported": true,
+                  "language": "go",
+                  "path": "api/server.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "access_modifier": "public",
+                  "file": "api/server.go",
+                  "placement": "public_start",
+                  "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_insert_function",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 34411
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-8eb9769f6607628a",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 505,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 463,
+        "process_start_to_first_event_ms": 1368,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 167241,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-04-insert-public_1790455772254133000.json"
+        },
+        "reasoning_tokens": 114,
+        "repeat": 3,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I used consecutive semantic lookups and inspection calls to find and understand `Server`, then made one semantic insertion call. These read-only discovery calls followed by a single edit did not need batching; `semantic_batch` was available but unsuitable for that sequence."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-04-insert-public",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "language": "go",
+              "symbol": "Server"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "language": "go",
+              "symbol": "Server"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "include_unexported": true,
+              "language": "go",
+              "path": "api/server.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "access_modifier": "public",
+              "file": "api/server.go",
+              "placement": "public_start",
+              "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_insert_function",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_outline",
+          "semantic_insert_function"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 28489,
+        "variant": "small:default",
+        "wall_clock_ms": 34917
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "txtar_path": "testdata/bench/task_04_insert_public.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/c03f3625ef877adfd183a978ca333ca208eff0f0/testdata/bench/task_04_insert_public.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 54528,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:33.654337Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:33.654388Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-3de4016417d8916c",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 7352,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 855,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 17876
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-ffd04c31b5b43a17",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 855,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 362,
+      "process_start_to_first_event_ms": 1606,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 76375,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-04-insert-public_1790455772253691000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g '*.go' -g '\"'!vendor'\"' | head -80 \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'cat api/server.go \u0026\u0026 cat api/server_test.go'",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\np = Path('api/server.go')\ns = p.read_text()\nold = 'func (s *Server) Start() {}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nnew = 'func (s *Server) Start() {}\\\\n\\\\nfunc InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\nfunc (s *Server) internalRun() {}\\\\n'\nif old not in s:\n    raise SystemExit('expected insertion point not found')\np.write_text(s.replace(old, new, 1))\nPY\ncat api/server.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 21847,
+      "variant": "small:default",
+      "wall_clock_ms": 18733
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 138752,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:33.612993Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:33.613018Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-3de4016417d8916c",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 8587,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 505,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "language": "go",
+                "symbol": "Server"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "language": "go",
+                "symbol": "Server"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "include_unexported": true,
+                "language": "go",
+                "path": "api/server.go"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_outline",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "access_modifier": "public",
+                "file": "api/server.go",
+                "placement": "public_start",
+                "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 34411
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-8eb9769f6607628a",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 505,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 463,
+      "process_start_to_first_event_ms": 1368,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 167241,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-04-insert-public_1790455772254133000.json"
+      },
+      "reasoning_tokens": 114,
+      "repeat": 3,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I used consecutive semantic lookups and inspection calls to find and understand `Server`, then made one semantic insertion call. These read-only discovery calls followed by a single edit did not need batching; `semantic_batch` was available but unsuitable for that sequence."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "language": "go",
+            "symbol": "Server"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "language": "go",
+            "symbol": "Server"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "include_unexported": true,
+            "language": "go",
+            "path": "api/server.go"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_outline",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "access_modifier": "public",
+            "file": "api/server.go",
+            "placement": "public_start",
+            "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_outline",
+        "semantic_insert_function"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 28489,
+      "variant": "small:default",
+      "wall_clock_ms": 34917
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 67584,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:52.984328Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:52.984372Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:53.299197Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:53.299214Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-f44fc92d15a7230b",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 5415,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 571,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat api/server_test.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat api/server.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 16274
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-ede5a5a32d7b524e",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 571,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 504,
+      "process_start_to_first_event_ms": 368,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 76697,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large-default_task-04-insert-public_1790455792670680000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat api/server_test.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat api/server.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc 'rg -n \"type Server|func .*Server|''^func \" --glob '\"'*.go' .\"",
+        "/bin/zsh -lc 'cat api/server_test.go'",
+        "/bin/zsh -lc 'cat api/server.go'",
+        "/bin/zsh -lc \"python3 -c 'from pathlib import Path; p=Path(\\\"api/server.go\\\"); s=p.read_text(); old=\\\"type Server struct {\\\\n\\\\tPort int\\\\n}\\\\n\\\\n\\\"; new=old+\\\"func InitServer() *Server {\\\\n\\\\treturn \u0026Server{}\\\\n}\\\\n\\\\n\\\"; assert old in s and \\\"func InitServer()\\\" not in s; p.write_text(s.replace(old,new,1))'\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 9113,
+      "variant": "large:default",
+      "wall_clock_ms": 16851
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct {\n\tPort int\n}\n\nfunc (s *Server) Start() {}\n\nfunc (s *Server) internalRun() {}",
+      "cached_prompt_tokens": 91904,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:49:57.540515Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.540538Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.958179Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:49:57.958196Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-f44fc92d15a7230b",
+      "diff": "File api/server.go modified (9 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 5159,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 552,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "access_modifier": "public",
+                "file": "api/server.go",
+                "placement": "before_symbol",
+                "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+                "target_symbol": "internalRun"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_insert_function",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "language": "go",
+                "symbol": "InitServer"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 30114
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-25d216fba539a4d5",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 552,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 471,
+      "process_start_to_first_event_ms": 144,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAdd public constructor func InitServer() *Server placed before private helpers. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 112768,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-default_task-04-insert-public_1790455797425779000.json"
+      },
+      "reasoning_tokens": 139,
+      "repeat": 3,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I used two consecutive calls: `semantic_insert_function` to add the constructor and `semantic_inspect_symbol` to confirm it. I did not batch them because inspection was only needed after insertion to verify the result; the operations were sequentially dependent."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-04-insert-public",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "access_modifier": "public",
+            "file": "api/server.go",
+            "placement": "before_symbol",
+            "source": "func InitServer() *Server {\n\treturn \u0026Server{}\n}",
+            "target_symbol": "internalRun"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_insert_function",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "language": "go",
+            "symbol": "InitServer"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'README.md' -g '*.go' -g 'AGENTS.md' -g 'AGENTS.override.md' | head -100\"",
+        "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go'",
+        "semantic_insert_function",
+        "semantic_inspect_symbol"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 20864,
+      "variant": "large:default",
+      "wall_clock_ms": 30669
+    }
+  ],
+  "timestamp": "2026-09-26T23:10:12.311162+02:00"
+}

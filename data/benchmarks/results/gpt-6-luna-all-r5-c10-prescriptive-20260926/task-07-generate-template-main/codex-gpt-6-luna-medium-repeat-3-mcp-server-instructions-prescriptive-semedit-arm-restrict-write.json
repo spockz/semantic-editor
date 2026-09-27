@@ -1,0 +1,1808 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "crypto_rand",
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 68608,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:55:24.900531Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:24.900563Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:25.540578Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:25.540653Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:28.223037Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:29.194909Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:29.197164Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152b763a1d96e5-AMS\n2026-09-26T20:55:31.223135Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:31.223249Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 189ms)... turn_id=01a0df80-59aa-7061-b55c-a649a040a973 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152b833c060528-AMS\n",
+        "comparison_pair_id": "pair-8a6058ed00abb223",
+        "diff": "File main.go modified (4 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 11065,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 1968,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 27436
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-25a10c5bedbcba5f",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 1968,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 583,
+        "process_start_to_first_event_ms": 2458,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 76603,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-crypto_rand_task-07-generate-template-main_1790456123341624000.json"
+        },
+        "reasoning_tokens": 121,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 7995,
+        "variant": "small:crypto_rand",
+        "wall_clock_ms": 29408
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 145664,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:55:33.977227Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:33.977260Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:34.544123Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:34.544141Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-8a6058ed00abb223",
+        "diff": "File main.go modified (4 lines -\u003e 22 lines)",
+        "first_event_to_first_tool_call_ms": 14816,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 333,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "main.go",
+                  "language": "go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "main.go",
+                  "language": "go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "body": "value, err := rand.Int(rand.Reader, big.NewInt(1000))\nif err != nil {\n\tpanic(err)\n}\nmessage, err := template.New(\"greeting\").Parse(\"Hello World {{.}}\")\nif err != nil {\n\tpanic(err)\n}\nif err := message.Execute(os.Stdout, value); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "add": [
+                    "crypto/rand",
+                    "math/big",
+                    "os",
+                    "text/template"
+                  ],
+                  "file": "main.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "main.go",
+                  "language": "go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 94907
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-6a98e9aee88d1564",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 333,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 658,
+        "process_start_to_first_event_ms": 471,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 162401,
+        "prompt_variant": "crypto_rand",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-crypto_rand_task-07-generate-template-main_1790456133735594000.json"
+        },
+        "reasoning_tokens": 206,
+        "repeat": 3,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I didn’t use `semantic_batch` because I treated replacing the function body and organizing imports as separate sequential steps: the import set depended on the new body. Batching could have been suitable if the tool supported sequencing those operations with that dependency, but I didn’t check or use it."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "main.go",
+              "language": "go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "main.go",
+              "language": "go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "body": "value, err := rand.Int(rand.Reader, big.NewInt(1000))\nif err != nil {\n\tpanic(err)\n}\nmessage, err := template.New(\"greeting\").Parse(\"Hello World {{.}}\")\nif err != nil {\n\tpanic(err)\n}\nif err := message.Execute(os.Stdout, value); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "add": [
+                "crypto/rand",
+                "math/big",
+                "os",
+                "text/template"
+              ],
+              "file": "main.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "main.go",
+              "language": "go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_replace_body",
+          "semantic_organize_imports",
+          "semantic_inspect_symbol"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 16737,
+        "variant": "small:crypto_rand",
+        "wall_clock_ms": 95242
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/c03f3625ef877adfd183a978ca333ca208eff0f0/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "default",
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 66560,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:10.601721Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:10.601738Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:11.530065Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:11.530080Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:12.007229Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:12.442587Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:12.443400Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c831c018699-AMS\n2026-09-26T20:56:13.239114Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:13.239211Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 196ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c89b94ffb87-AMS\n2026-09-26T20:56:13.969626Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:13.969683Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 411ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c8e38ea6699-AMS\n2026-09-26T20:56:14.817417Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:14.817710Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 847ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c93a8f3590c-AMS\n2026-09-26T20:56:16.459360Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:16.459458Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.655s)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c9cda12fe9a-AMS\n2026-09-26T20:56:18.623392Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.623470Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.217s)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cab6d159701-AMS\n2026-09-26T20:56:22.311452Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:22.311521Z  WARN codex_core::client: falling back to HTTP\n",
+        "comparison_pair_id": "pair-4e7d67f89e3e3408",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 15236,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 314,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 32455
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-581b9af8db4c8b32",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 314,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 526,
+        "process_start_to_first_event_ms": 439,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 75999,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-07-generate-template-main_1790456170406071000.json"
+        },
+        "reasoning_tokens": 233,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 9439,
+        "variant": "small:default",
+        "wall_clock_ms": 32771
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 167936,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:16.655003Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:16.655024Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.037677Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.037688Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.290442Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:17.290910Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca31f70320a-AMS\n2026-09-26T20:56:17.324885Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.063717Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.063810Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 217ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca7ea9119f7-AMS\n2026-09-26T20:56:18.685911Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.686002Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 364ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cabfae4fba8-AMS\n2026-09-26T20:56:19.367392Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:19.367452Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 780ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cb03a62fff2-AMS\n2026-09-26T20:56:20.488926Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:20.488988Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.517s)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cb71f25fff5-AMS\n2026-09-26T20:56:22.386042Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:22.386116Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.465s)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cc30c7b9875-AMS\n2026-09-26T20:56:26.276589Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:26.276651Z  WARN codex_core::client: falling back to HTTP\n2026-09-26T20:56:50.385916Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca2fc46d8cc-AMS\n",
+        "comparison_pair_id": "pair-4e7d67f89e3e3408",
+        "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+        "first_event_to_first_tool_call_ms": 33595,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 744,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "main.go",
+                  "language": "go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "main.go",
+                  "language": "go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "add": [
+                    "text/template"
+                  ],
+                  "file": "main.go",
+                  "remove": [
+                    "html/template"
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_organize_imports",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- main.go'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go run .'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 110512
+          }
+        ],
+        "internal_turns": 8,
+        "job_id": "job-4a27dc26c7d7a800",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 744,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 989,
+        "process_start_to_first_event_ms": 243,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 185389,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-07-generate-template-main_1790456176485540000.json"
+        },
+        "reasoning_tokens": 348,
+        "repeat": 3,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not combine them because I treated each semantic edit and its import cleanup as separate steps, and did not check whether `semantic_batch` could sequence them. Batching was not discovered."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "main.go",
+              "language": "go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "main.go",
+              "language": "go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "add": [
+                "text/template"
+              ],
+              "file": "main.go",
+              "remove": [
+                "html/template"
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_organize_imports",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- main.go'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go run .'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 8,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+          "semantic_inspect_symbol",
+          "semantic_replace_body",
+          "semantic_inspect_symbol",
+          "semantic_replace_body",
+          "semantic_organize_imports",
+          "/bin/zsh -lc 'git diff -- main.go'",
+          "/bin/zsh -lc 'go run .'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 17453,
+        "variant": "small:default",
+        "wall_clock_ms": 111259
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/c03f3625ef877adfd183a978ca333ca208eff0f0/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package main\n\nfunc main() {\n}",
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "prefer_discover_semedit",
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 89856,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:55.406059Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.406122Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.872343Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.872359Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-8f45ebbb8458f25e",
+        "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+        "first_event_to_first_tool_call_ms": 10938,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 278,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 24902
+          }
+        ],
+        "internal_turns": 2,
+        "job_id": "job-7cc3e14fb0a5bb57",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 278,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 955,
+        "process_start_to_first_event_ms": 268,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 101314,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-prefer_discover_semedit_task-07-generate-template-main_1790456215249432000.json"
+        },
+        "reasoning_tokens": 349,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 2,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+          "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 11458,
+        "variant": "small:prefer_discover_semedit",
+        "wall_clock_ms": 25181
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package main\n\nfunc main() {\n}",
+        "cached_prompt_tokens": 141824,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:59.819377Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:59.819402Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.246983Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.246991Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.443049Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:00.531908Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:00.532299Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db16b7e660f-AMS\n2026-09-26T20:57:01.222743Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:01.222807Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 217ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db5aba9df76-AMS\n2026-09-26T20:57:01.878034Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:01.878137Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 392ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db9f954c200-AMS\n2026-09-26T20:57:02.758625Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:02.758693Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 863ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dbf49486681-AMS\n2026-09-26T20:57:04.100415Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:04.100474Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.577s)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dc7b9f10828-AMS\n2026-09-26T20:57:06.069391Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:06.069453Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.165s)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dd3a82206c6-AMS\n2026-09-26T20:57:09.651092Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:09.651174Z  WARN codex_core::client: falling back to HTTP\n2026-09-26T20:57:29.571787Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db0e9c7aec8-AMS\n2026-09-26T20:57:30.197846Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:30.197920Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/1 in 217ms)... turn_id=01a0df82-3cc1-7b21-b53f-c44f8f60e87f retries=1 max_retries=1 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152e68e9eab8ca-AMS\n2026-09-26T20:57:30.757618Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:30.757699Z  WARN codex_core::client: falling back to HTTP\n",
+        "comparison_pair_id": "pair-8f45ebbb8458f25e",
+        "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+        "first_event_to_first_tool_call_ms": 18247,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 263,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "body": "tmpl, err := template.New(\"greeting\").Parse(\"Hello World {{.Random}}\\n\")\nif err != nil {\n\tpanic(err)\n}\n\ndata := struct {\n\tRandom int\n}{\n\tRandom: rand.Intn(100),\n}\n\nif err := tmpl.Execute(os.Stdout, data); err != nil {\n\tpanic(err)\n}",
+                  "file": "main.go",
+                  "symbol": "main"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_body",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 43701
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-a6cd8813fddb7e7c",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 263,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 708,
+        "process_start_to_first_event_ms": 132,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 162506,
+        "prompt_variant": "prefer_discover_semedit",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-prefer_discover_semedit_task-07-generate-template-main_1790456219760361000.json"
+        },
+        "reasoning_tokens": 224,
+        "repeat": 3,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-07-generate-template-main",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "body": "tmpl, err := template.New(\"greeting\").Parse(\"Hello World {{.Random}}\\n\")\nif err != nil {\n\tpanic(err)\n}\n\ndata := struct {\n\tRandom int\n}{\n\tRandom: rand.Intn(100),\n}\n\nif err := tmpl.Execute(os.Stdout, data); err != nil {\n\tpanic(err)\n}",
+              "file": "main.go",
+              "symbol": "main"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_body",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "semantic_replace_body",
+          "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 20682,
+        "variant": "small:prefer_discover_semedit",
+        "wall_clock_ms": 43965
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "txtar_path": "testdata/scripts/generate_template_main.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/c03f3625ef877adfd183a978ca333ca208eff0f0/testdata/scripts/generate_template_main.txtar",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 68608,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:55:24.900531Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:24.900563Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:25.540578Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:25.540653Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:28.223037Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:29.194909Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:29.197164Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152b763a1d96e5-AMS\n2026-09-26T20:55:31.223135Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:55:31.223249Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 189ms)... turn_id=01a0df80-59aa-7061-b55c-a649a040a973 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152b833c060528-AMS\n",
+      "comparison_pair_id": "pair-8a6058ed00abb223",
+      "diff": "File main.go modified (4 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 11065,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 1968,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 27436
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-25a10c5bedbcba5f",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 1968,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 583,
+      "process_start_to_first_event_ms": 2458,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 76603,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-crypto_rand_task-07-generate-template-main_1790456123341624000.json"
+      },
+      "reasoning_tokens": 121,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\t\\\"crypto/rand\\\"\n\t\\\"fmt\\\"\n\t\\\"math/big\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\tn, err := rand.Int(rand.Reader, big.NewInt(100))\n\tif err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n\n\ttmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}'\"\\\\\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, n); err \"'!= nil {\n\t\tfmt.Fprintln(os.Stderr, err)\n\t\tos.Exit(1)\n\t}\n}\n'\"'''\ntmp = path.with_name(path.name + '.tmp')\nwith open(tmp, 'w', encoding='utf-8') as f:\n    f.write(content)\n    f.flush()\n    os.fsync(f.fileno())\nos.replace(tmp, path)\nPY\n\ngofmt -w main.go\ngit status --short\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 7995,
+      "variant": "small:crypto_rand",
+      "wall_clock_ms": 29408
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 145664,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:55:33.977227Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:33.977260Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:34.544123Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:55:34.544141Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-8a6058ed00abb223",
+      "diff": "File main.go modified (4 lines -\u003e 22 lines)",
+      "first_event_to_first_tool_call_ms": 14816,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 333,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "main.go",
+                "language": "go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "main.go",
+                "language": "go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "body": "value, err := rand.Int(rand.Reader, big.NewInt(1000))\nif err != nil {\n\tpanic(err)\n}\nmessage, err := template.New(\"greeting\").Parse(\"Hello World {{.}}\")\nif err != nil {\n\tpanic(err)\n}\nif err := message.Execute(os.Stdout, value); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "add": [
+                  "crypto/rand",
+                  "math/big",
+                  "os",
+                  "text/template"
+                ],
+                "file": "main.go"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "main.go",
+                "language": "go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 94907
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-6a98e9aee88d1564",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 333,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 658,
+      "process_start_to_first_event_ms": 471,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer from crypto/rand, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 162401,
+      "prompt_variant": "crypto_rand",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-crypto_rand_task-07-generate-template-main_1790456133735594000.json"
+      },
+      "reasoning_tokens": 206,
+      "repeat": 3,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I didn’t use `semantic_batch` because I treated replacing the function body and organizing imports as separate sequential steps: the import set depended on the new body. Batching could have been suitable if the tool supported sequencing those operations with that dependency, but I didn’t check or use it."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "main.go",
+            "language": "go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "main.go",
+            "language": "go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "body": "value, err := rand.Int(rand.Reader, big.NewInt(1000))\nif err != nil {\n\tpanic(err)\n}\nmessage, err := template.New(\"greeting\").Parse(\"Hello World {{.}}\")\nif err != nil {\n\tpanic(err)\n}\nif err := message.Execute(os.Stdout, value); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "add": [
+              "crypto/rand",
+              "math/big",
+              "os",
+              "text/template"
+            ],
+            "file": "main.go"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "main.go",
+            "language": "go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 6,
+      "tools_used": [
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'Makefile' -g 'README*'\"",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_replace_body",
+        "semantic_organize_imports",
+        "semantic_inspect_symbol"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 16737,
+      "variant": "small:crypto_rand",
+      "wall_clock_ms": 95242
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 66560,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:10.601721Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:10.601738Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:11.530065Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:11.530080Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:12.007229Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:12.442587Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:12.443400Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c831c018699-AMS\n2026-09-26T20:56:13.239114Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:13.239211Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 196ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c89b94ffb87-AMS\n2026-09-26T20:56:13.969626Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:13.969683Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 411ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c8e38ea6699-AMS\n2026-09-26T20:56:14.817417Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:14.817710Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 847ms)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c93a8f3590c-AMS\n2026-09-26T20:56:16.459360Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:16.459458Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.655s)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152c9cda12fe9a-AMS\n2026-09-26T20:56:18.623392Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.623470Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.217s)... turn_id=01a0df81-0976-7e52-8554-8438eb35290b retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cab6d159701-AMS\n2026-09-26T20:56:22.311452Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:22.311521Z  WARN codex_core::client: falling back to HTTP\n",
+      "comparison_pair_id": "pair-4e7d67f89e3e3408",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 15236,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 314,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 32455
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-581b9af8db4c8b32",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 314,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 526,
+      "process_start_to_first_event_ms": 439,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 75999,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-07-generate-template-main_1790456170406071000.json"
+      },
+      "reasoning_tokens": 233,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'go.mod' -g 'go.sum' -g 'README*' -g 'Makefile' -g 'AGENTS*'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+        "/bin/zsh -lc \"cat \u003e main.go \u003c\u003c'EOF'\npackage main\n\nimport (\n\t\\\"math/rand\\\"\n\t\\\"os\\\"\n\t\\\"text/template\\\"\n)\n\nfunc main() {\n\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\n\\\"))\n\tif err := tmpl.Execute(os.Stdout, rand.Int()); err \"'!= nil {\n\t\tpanic(err)\n\t}\n}\nEOF\ngofmt -w main.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 9439,
+      "variant": "small:default",
+      "wall_clock_ms": 32771
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 167936,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:16.655003Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:16.655024Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.037677Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.037688Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:17.290442Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:17.290910Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca31f70320a-AMS\n2026-09-26T20:56:17.324885Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.063717Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.063810Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 217ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca7ea9119f7-AMS\n2026-09-26T20:56:18.685911Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:18.686002Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 364ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cabfae4fba8-AMS\n2026-09-26T20:56:19.367392Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:19.367452Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 780ms)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cb03a62fff2-AMS\n2026-09-26T20:56:20.488926Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:20.488988Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.517s)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cb71f25fff5-AMS\n2026-09-26T20:56:22.386042Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:22.386116Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.465s)... turn_id=01a0df81-2074-7820-a7c7-fa9afafb8784 retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152cc30c7b9875-AMS\n2026-09-26T20:56:26.276589Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:56:26.276651Z  WARN codex_core::client: falling back to HTTP\n2026-09-26T20:56:50.385916Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152ca2fc46d8cc-AMS\n",
+      "comparison_pair_id": "pair-4e7d67f89e3e3408",
+      "diff": "File main.go modified (4 lines -\u003e 20 lines)",
+      "first_event_to_first_tool_call_ms": 33595,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 744,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "main.go",
+                "language": "go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "main.go",
+                "language": "go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "add": [
+                  "text/template"
+                ],
+                "file": "main.go",
+                "remove": [
+                  "html/template"
+                ]
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_organize_imports",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- main.go'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go run .'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 110512
+        }
+      ],
+      "internal_turns": 8,
+      "job_id": "job-4a27dc26c7d7a800",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 744,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 989,
+      "process_start_to_first_event_ms": 243,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 185389,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-07-generate-template-main_1790456176485540000.json"
+      },
+      "reasoning_tokens": 348,
+      "repeat": 3,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not combine them because I treated each semantic edit and its import cleanup as separate steps, and did not check whether `semantic_batch` could sequence them. Batching was not discovered."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "main.go",
+            "language": "go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "tmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, rand.Int()); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "main.go",
+            "language": "go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "n, err := rand.Int(rand.Reader, big.NewInt(100))\nif err != nil {\n\tpanic(err)\n}\ntmpl := template.Must(template.New(\"greeting\").Parse(\"Hello World {{.}}\\n\"))\nif err := tmpl.Execute(os.Stdout, n.Int64()); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "add": [
+              "text/template"
+            ],
+            "file": "main.go",
+            "remove": [
+              "html/template"
+            ]
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_organize_imports",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- main.go'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go run .'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 8,
+      "tools_used": [
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'Makefile' -g 'main.go' -g 'AGENTS.md' -g 'AGENTS.override.md'\"",
+        "semantic_inspect_symbol",
+        "semantic_replace_body",
+        "semantic_inspect_symbol",
+        "semantic_replace_body",
+        "semantic_organize_imports",
+        "/bin/zsh -lc 'git diff -- main.go'",
+        "/bin/zsh -lc 'go run .'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 17453,
+      "variant": "small:default",
+      "wall_clock_ms": 111259
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 89856,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:55.406059Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.406122Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.872343Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:55.872359Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-8f45ebbb8458f25e",
+      "diff": "File main.go modified (4 lines -\u003e 14 lines)",
+      "first_event_to_first_tool_call_ms": 10938,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 278,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 24902
+        }
+      ],
+      "internal_turns": 2,
+      "job_id": "job-7cc3e14fb0a5bb57",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 278,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 955,
+      "process_start_to_first_event_ms": 268,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 101314,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-prefer_discover_semedit_task-07-generate-template-main_1790456215249432000.json"
+      },
+      "reasoning_tokens": 349,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 2,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' \u0026\u0026 git status --short \u0026\u0026 cat main.go\"",
+        "/bin/zsh -lc \"python3 - \u003c\u003c'PY'\nfrom pathlib import Path\nimport os\nimport tempfile\n\npath = Path('main.go')\ncontent = '''package main\n\nimport (\n\\\\t\\\"math/rand\\\"\n\\\\t\\\"os\\\"\n\\\\t\\\"text/template\\\"\n)\n\nfunc main() {\n\\\\ttmpl := template.Must(template.New(\\\"greeting\\\").Parse(\\\"Hello World {{.}}\\\\\\\\n\\\"))\n\\\\tif err := tmpl.Execute(os.Stdout, rand.Intn(100)); err \"'!= nil {\n'\"\\\\t\\\\tpanic(err)\n\\\\t}\n}\n'''\nfd, temporary = tempfile.mkstemp(prefix='.main.go.', dir='.')\ntry:\n    with os.fdopen(fd, 'w') as stream:\n        stream.write(content)\n        stream.flush()\n        os.fsync(stream.fileno())\n    os.replace(temporary, path)\nexcept BaseException:\n    try:\n        os.unlink(temporary)\n    except FileNotFoundError:\n        pass\n    raise\nPY\ngofmt -w main.go\ncat main.go\ngit status --short\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 11458,
+      "variant": "small:prefer_discover_semedit",
+      "wall_clock_ms": 25181
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package main\n\nfunc main() {\n}",
+      "cached_prompt_tokens": 141824,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-26T20:56:59.819377Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:56:59.819402Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.246983Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.246991Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-26T20:57:00.443049Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:00.531908Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:00.532299Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db16b7e660f-AMS\n2026-09-26T20:57:01.222743Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:01.222807Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 217ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db5aba9df76-AMS\n2026-09-26T20:57:01.878034Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:01.878137Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 392ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db9f954c200-AMS\n2026-09-26T20:57:02.758625Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:02.758693Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 863ms)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dbf49486681-AMS\n2026-09-26T20:57:04.100415Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:04.100474Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.577s)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dc7b9f10828-AMS\n2026-09-26T20:57:06.069391Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:06.069453Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (5/5 in 3.165s)... turn_id=01a0df81-c906-79d3-bd07-eaec588715f3 retries=5 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152dd3a82206c6-AMS\n2026-09-26T20:57:09.651092Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:09.651174Z  WARN codex_core::client: falling back to HTTP\n2026-09-26T20:57:29.571787Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152db0e9c7aec8-AMS\n2026-09-26T20:57:30.197846Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:30.197920Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/1 in 217ms)... turn_id=01a0df82-3cc1-7b21-b53f-c44f8f60e87f retries=1 max_retries=1 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a4152e68e9eab8ca-AMS\n2026-09-26T20:57:30.757618Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-09-26T20:57:30.757699Z  WARN codex_core::client: falling back to HTTP\n",
+      "comparison_pair_id": "pair-8f45ebbb8458f25e",
+      "diff": "File main.go modified (4 lines -\u003e 24 lines)",
+      "first_event_to_first_tool_call_ms": 18247,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 263,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "body": "tmpl, err := template.New(\"greeting\").Parse(\"Hello World {{.Random}}\\n\")\nif err != nil {\n\tpanic(err)\n}\n\ndata := struct {\n\tRandom int\n}{\n\tRandom: rand.Intn(100),\n}\n\nif err := tmpl.Execute(os.Stdout, data); err != nil {\n\tpanic(err)\n}",
+                "file": "main.go",
+                "symbol": "main"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_body",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 43701
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-a6cd8813fddb7e7c",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 263,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 708,
+      "process_start_to_first_event_ms": 132,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nBefore editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. In main.go, implement main() to execute a text/template that prints 'Hello World' along with a random integer, ensuring all necessary standard library packages are imported cleanly. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 162506,
+      "prompt_variant": "prefer_discover_semedit",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-prefer_discover_semedit_task-07-generate-template-main_1790456219760361000.json"
+      },
+      "reasoning_tokens": 224,
+      "repeat": 3,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-07-generate-template-main",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "body": "tmpl, err := template.New(\"greeting\").Parse(\"Hello World {{.Random}}\\n\")\nif err != nil {\n\tpanic(err)\n}\n\ndata := struct {\n\tRandom int\n}{\n\tRandom: rand.Intn(100),\n}\n\nif err := tmpl.Execute(os.Stdout, data); err != nil {\n\tpanic(err)\n}",
+            "file": "main.go",
+            "symbol": "main"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_body",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'main.go' -g 'PROJECT_BRIEF.md' -g 'README*' -g 'go.mod' -g 'go.sum' -g 'AGENTS*'\"",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 cat go.mod'",
+        "semantic_replace_body",
+        "/bin/zsh -lc 'cat main.go \u0026\u0026 go run . \u0026\u0026 git diff -- go.mod go.sum \u0026\u0026 git status --short'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 20682,
+      "variant": "small:prefer_discover_semedit",
+      "wall_clock_ms": 43965
+    }
+  ],
+  "timestamp": "2026-09-26T23:14:21.144181+02:00"
+}
