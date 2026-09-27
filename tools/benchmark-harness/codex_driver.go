@@ -419,11 +419,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed Codex event records", tracker.eventDecodeErrors))
 	}
 	if waitErr != nil {
-		if diagnostic := strings.TrimSpace(res.CodexStderr); diagnostic != "" {
-			providerErr = errors.Join(providerErr, fmt.Errorf("run codex: %w: %s", waitErr, diagnostic))
-		} else {
-			providerErr = errors.Join(providerErr, fmt.Errorf("run codex: %w", waitErr))
-		}
+		providerErr = errors.Join(providerErr, codexWaitFailure(ctx, waitErr, cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == -1, res.CodexStderr))
 	}
 	setCodexObservationState(res, providerErr, sawTerminalTurn)
 	if providerErr == nil && sawTerminalTurn && tracker.observationErrors > 0 {
@@ -515,4 +511,30 @@ func setCodexObservationState(result *RunResult, providerErr error, terminalTurn
 		result.toolObservationState = ToolObservationPartial
 		result.toolObservationReason = "Codex stream ended without a terminal turn.completed event"
 	}
+}
+
+func codexTerminationOrigin(ctx context.Context, signaled bool) string {
+	if !signaled {
+		return ""
+	}
+	switch ctx.Err() {
+	case context.DeadlineExceeded:
+		return "harness_timeout"
+	case context.Canceled:
+		return "harness_cancellation"
+	default:
+		return "outside_harness"
+	}
+}
+
+func codexWaitFailure(ctx context.Context, waitErr error, signaled bool, stderr string) error {
+	origin := codexTerminationOrigin(ctx, signaled)
+	terminationDetails := ""
+	if origin != "" {
+		terminationDetails = fmt.Sprintf(" [termination_origin=%s]", origin)
+	}
+	if diagnostic := strings.TrimSpace(stderr); diagnostic != "" {
+		return fmt.Errorf("run codex: %w%s: %s", waitErr, terminationDetails, diagnostic)
+	}
+	return fmt.Errorf("run codex: %w%s", waitErr, terminationDetails)
 }

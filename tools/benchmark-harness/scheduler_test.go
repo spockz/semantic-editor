@@ -139,3 +139,33 @@ func (w *gatedProgressWriter) String() string {
 	defer w.mu.Unlock()
 	return w.buf.String()
 }
+
+func TestExecutePlanLogsRunAndJobForResultErrors(t *testing.T) {
+	plan := &BenchmarkPlan{
+		Options: PlanOptions{Concurrency: 1, Timeout: time.Second, RunID: "benchmark-run-17"},
+		Jobs: []Job{{
+			ID:     "job-killed",
+			TaskID: "task",
+			Target: Target{Harness: "codex"},
+			Arm:    ArmSemedit,
+		}},
+	}
+	var output strings.Builder
+	outcomes, err := ExecutePlan(context.Background(), plan, &output, func(context.Context, Job) (*RunResult, error) {
+		return &RunResult{Error: "codex execution: run codex: signal: killed"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(outcomes) != 1 || outcomes[0].Result.Success {
+		t.Fatalf("unexpected outcome: %+v", outcomes)
+	}
+	for _, want := range []string{
+		"FAIL run_id=benchmark-run-17 job=job-killed",
+		"error=codex execution: run codex: signal: killed",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Errorf("progress log missing %q: %s", want, output.String())
+		}
+	}
+}

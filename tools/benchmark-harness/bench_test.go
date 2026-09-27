@@ -1164,3 +1164,67 @@ esac
 		})
 	}
 }
+
+func TestCodexTerminationOrigin(t *testing.T) {
+	t.Parallel()
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	deadlineCtx, cancelDeadline := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancelDeadline()
+	cases := []struct {
+		name     string
+		ctx      context.Context
+		signaled bool
+		want     string
+	}{
+		{name: "normal exit", ctx: context.Background(), want: ""},
+		{name: "outside signal", ctx: context.Background(), signaled: true, want: "outside_harness"},
+		{name: "harness cancellation", ctx: canceledCtx, signaled: true, want: "harness_cancellation"},
+		{name: "harness timeout", ctx: deadlineCtx, signaled: true, want: "harness_timeout"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := codexTerminationOrigin(tc.ctx, tc.signaled); got != tc.want {
+				t.Fatalf("codexTerminationOrigin() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
+	workDir := t.TempDir()
+	repositoryRoot := t.TempDir()
+	env, err := fixtureGoEnvironment(t.Context(), workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAgyMCPConfig(workDir, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(workDir, ".agents", "mcp_config.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Servers map[string]struct {
+			Args []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if err := json.Unmarshal(data, &config); err != nil {
+		t.Fatal(err)
+	}
+	server, ok := config.Servers["semedit"]
+	if !ok {
+		t.Fatalf("Agy MCP config missing semedit: %s", data)
+	}
+	expectedRoot, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range len(server.Args) {
+		if server.Args[i] == "--expected-root" && i+1 < len(server.Args) && server.Args[i+1] == expectedRoot {
+			return
+		}
+	}
+	t.Errorf("Agy MCP args = %#v, want --expected-root %q", server.Args, expectedRoot)
+}

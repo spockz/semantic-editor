@@ -241,9 +241,11 @@ func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, exe
 		} else if !item.outcome.Result.Success {
 			status = "FAIL"
 		}
-		line := fmt.Sprintf("[%d/%d completed · %d remaining] %s job=%s pair=%s task=%s target=%s arm=%s", done, len(plan.Jobs), remaining, status, item.outcome.Job.ID, emptyAsDash(item.outcome.Job.PairID), item.outcome.Job.TaskID, item.outcome.Job.Target.String(), item.outcome.Job.Arm)
+		line := fmt.Sprintf("[%d/%d completed · %d remaining] %s run_id=%s job=%s pair=%s task=%s target=%s arm=%s", done, len(plan.Jobs), remaining, status, emptyAsDash(plan.Options.RunID), item.outcome.Job.ID, emptyAsDash(item.outcome.Job.PairID), item.outcome.Job.TaskID, item.outcome.Job.Target.String(), item.outcome.Job.Arm)
 		if item.outcome.Err != nil {
-			line += " error=" + strings.ReplaceAll(item.outcome.Err.Error(), "\n", " ")
+			line += " error=" + compactBenchmarkProgressError(item.outcome.Err.Error())
+		} else if item.outcome.Result.Error != "" {
+			line += " error=" + compactBenchmarkProgressError(item.outcome.Result.Error)
 		}
 		if _, err := fmt.Fprintln(output, line); err != nil {
 			progressErr = errors.Join(progressErr, fmt.Errorf("write job progress: %w", err))
@@ -643,4 +645,14 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		jobs = append(jobs, job)
 	}
 	return jobs, nil
+}
+
+func compactBenchmarkProgressError(message string) string {
+	message = strings.Join(strings.Fields(message), " ")
+	const maxLength = 512
+	runes := []rune(message)
+	if len(runes) > maxLength {
+		return string(runes[:maxLength]) + "…"
+	}
+	return message
 }
