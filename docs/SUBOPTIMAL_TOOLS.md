@@ -87,6 +87,10 @@ The goal is to track:
 | **ST-0055** | 2026-09-25 | `semantic_insert_function` | `internal/astedit/loop.go`, helper `loopMatches` | The request tried to traverse loop header expressions by placing `ast.Expr` values in an `ast.BlockStmt.List`, which requires `ast.Stmt`; diagnostics showed four compile errors. | Record the failure and retry the helper using `ast.Inspect` separately on each expression. | Go's AST has distinct `ast.Expr` and `ast.Stmt` interfaces, so a block cannot represent arbitrary header expressions. | Provide AST traversal utilities for expression lists or clearer type-aware examples. |
 | **ST-0056** | 2026-09-25 | `semantic_insert_decl` | replay 3 `.scratch/replay-commented-collision.go` | A bare `ErrSymbolCollision = ...` assignment failed snippet validation with `expected declaration`. | Retry with `var ErrSymbolCollision = ...` and the leading comment; the corrected call succeeded. | Client omitted the required top-level declaration keyword. | Keep the full-declaration example in the tool schema. |
 | **ST-0057** | 2026-09-25 | `semantic_verify` | replay 3 scratch fixture | The client supplied unsupported `files: [".scratch/replay-commented-collision.go"]`; the call instead used the default path and failed from `gofmt -l .` while traversing unrelated scratch content. | Retry with the advertised `path` parameter; no source mutation was observed. | The caller guessed a parameter, and the operation did not reject the unknown key before acting on its default path. | Reject unknown input keys and make the default workspace-wide formatting scope explicit. |
+| **ST-0071** | 2026-09-27 | `semantic_inspect_symbol` | lookup in `internal/mcp/server.go` | Lookup for `executeBatch` failed because that symbol does not exist in the selected file. | Re-query the correct function name via outline; no source mutation occurred. | The caller guessed a symbol name instead of resolving it from the outline. | Resolve candidate names before inspecting declarations. |
+| **ST-0072** | 2026-09-27 | `semantic_replace_body` | `internal/mcp/server.go` batch schema | Replacement used an undefined identifier for the MCP tool name, and diagnostics reported a compile error. | Replace the identifier with the literal `semantic_batch` through the semantic editor; no unrelated file changes. | The source snippet accidentally substituted a descriptive local constant that does not exist. | Check semantic-edit diagnostics and correct generated source immediately. |
+| **ST-0073** | 2026-09-27 | `semantic_replace_body` | `internal/mcp/batch.go` | Lookup for `ExecuteBatch` failed because the method must be addressed by its receiver-qualified name. | Re-query the declaration as `Server.ExecuteBatch`; no source mutation occurred. | The caller omitted the method receiver qualifier required by the semantic editor. | Use the qualified method name returned by semantic outline or inspection. |
+| **ST-0074** | 2026-09-27 | `semantic_insert_function` | `internal/operation/wire_backend_test.go` | The inserted assertion treated `backend.WorkspaceTrust` as a boolean, and diagnostics reported a compile error. | Inspect the workspace trust contract and correct the assertion with a struct field check. | The test author guessed the trust representation instead of inspecting its type. | Inspect field types before writing semantic assertions. |
 | **ST-0058** | 2026-09-25 | `semantic_replace_decl` | replay 3 grouped var fixture, symbol `ErrReplayBase` | Source `// ErrReplayBase ...\nvar ErrReplayBase = errors.New("base")` failed with `expected IDENT, found var` while replacing one grouped spec; the file stayed unchanged. | Fixture comment was added with a logged atomic edit; `bf6e142` fixes this in the engine and adds AST plus CLI before/after regressions. | The spec extractor assumed `var` was the first formatted token, so a leading doc comment left the keyword inside the group. | Resolved in `bf6e142`; verify with a fresh promoted binary. |
 | **ST-0059** | 2026-09-25 | `semantic_lookup` | replay 3 `internal/astedit/errors.go`, new `ErrDeclCollision` | Lookup returned symbol not found before the new sentinel existed. | Insert the new symbol with `semantic_insert_decl`; the corrected grouped insertion succeeded. | Expected negative lookup against the baseline, not a server defect. | Check whether a declaration exists before choosing lookup versus insertion. |
 | **ST-0060** | 2026-09-25 | `semantic_insert_function` | replay 3 `replaceLoopDef` | A one-line `Def` composite snippet omitted a required comma and failed validation without writing source. | Retry with a multiline composite literal and explicit trailing commas. | Client supplied invalid Go syntax. | Include a multiline operation-definition example. |
@@ -373,3 +377,460 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Workaround: no outline workaround applied; report the limitation and preserve the request results.
 - Root cause: the Make read projection cannot map continued declarations to source ranges.
 
+### 2026-09-26: semantic function insertion rejected test visibility
+
+- Tool: `semantic_insert_function`
+- Target: `tools/benchmark-harness/bench_test.go`, `TestCodexTerminationOrigin`
+- Failure: insertion rejected because explicit `private` access modifier conflicts with the exported casing required for a Go test function; no file was changed.
+- Workaround: retry insertion with inferred visibility.
+- Root cause: the requested visibility did not match Go test function naming conventions.
+
+- Tool: `semantic_insert_function`
+  - Target: `tools/benchmark-harness/bench_test.go`, `TestCodexTerminationOrigin`
+  - Failure: retry without explicit visibility was rejected because `private_end` placement violates the section policy for the exported Go test function; no file was changed.
+  - Workaround: insert at file end, outside a visibility-specific section.
+  - Root cause: private section placement is incompatible with exported test identifiers.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/benchmark_aggregate.go`, `writeBenchmarkBrowserViewerAssets`
+  - Failure: selector `writeGeneratedFile(shortcodePath` did not match an `if` construct; no source change was made.
+  - Workaround: retry using a discriminator supported by the construct selector.
+  - Root cause: the construct matcher did not accept the full call expression as a discriminator.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/benchmark_aggregate.go`, `writeBenchmarkBrowserViewerAssets`
+  - Failure: selector `err := writeGeneratedFile(shortcodePath, []byte(benchmarkBrowserShortcode))` also failed to match the `if` construct; no source change was made.
+  - Workaround: retry with a unique identifier discriminator.
+  - Root cause: the selector appears to match condition text more narrowly than the full construct expression.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/benchmark_aggregate.go`, `writeBenchmarkBrowserViewerAssets`
+  - Failure: selector `benchmarkBrowserShortcode` was not recognized inside the selected function; no source change was made.
+  - Workaround: replace the containing function body using a different semantic operation.
+  - Root cause: this function generated-write condition could not be selected by the construct operation.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/benchmarks_test.go`, `TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAssets`
+  - Failure: two identical `strings.Contains` conditions made the selected `if` ambiguous; no source change was made.
+  - Workaround: retry with the construct path returned by the tool.
+  - Root cause: the test function has two containment checks with the same condition.
+
+- Tool: `semantic_replace_construct`
+  - Target: `cmd/docgen/benchmarks_test.go`, shortcode assertion in `TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAssets`
+  - Failure: replacement was rejected because it contained two statements instead of one complete `if` construct; no source change was made.
+  - Workaround: express expectation normalization inside the single replacement condition.
+  - Root cause: this operation accepts exactly one complete construct.
+
+- Tool: `semantic_rename`
+  - Target: `cmd/docgen/benchmarks_test.go`, `TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages`
+  - Failure: workspace rename could not resolve the test function symbol; no source change was made.
+  - Workaround: retain the existing test name.
+  - Root cause: the rename backend did not index or resolve this test declaration for the request.
+
+### 2026-09-26: semantic type overwrite duplicated Server
+
+- Tool: `semantic_insert_structure` with `kind=type` and `overwrite=true`
+- Target: `internal/mcp/server.go`, `Server`
+- Failure: the tool inserted a second `Server` declaration instead of replacing the existing type, leaving a duplicate declaration and an unresolved `toolMetricsRecord` field type.
+- Workaround: undo the insertion before applying a different edit strategy.
+- Root cause: the overwrite option did not replace an existing struct type in this operation.
+
+### 2026-09-27: semantic type overwrite duplicated ScaffoldOptions
+
+- Tool: `semantic_insert_type` with `overwrite=true`
+- Target: `internal/astedit/scaffold.go`, `ScaffoldOptions`
+- Failure: the tool inserted a duplicate type instead of replacing the existing struct declaration, producing Go redeclaration diagnostics.
+- Workaround: remove the duplicate declaration and use a supported declaration replacement operation.
+- Root cause: the type insertion operation ignored overwrite for an existing struct type.
+
+### 2026-09-27: semantic function insertion rejected multiple declarations
+
+- Tool: `semantic_insert_function`
+- Target: `internal/astedit/function_test.go`, duplicate insertion tests
+- Failure: insertion was rejected because the snippet contained two function declarations; no source change was made.
+- Workaround: insert each test function with a separate semantic operation.
+- Root cause: this operation accepts exactly one function or method declaration.
+
+### 2026-09-27: semantic_replace_decl rejected struct replacement
+
+- Tool: `semantic_replace_decl`
+- Target: `internal/astedit/scaffold.go`, `ScaffoldOptions`
+- Failure: replacing the existing struct declaration failed with `requires a type alias`.
+- Workaround: use a narrow atomic source edit to remove the accidental duplicate and update the struct.
+- Root cause: this operation supports type aliases but not struct type declarations.
+
+### 2026-09-27: semantic_insert_function rejected multiple declarations
+
+- Tool: `semantic_insert_function`
+- Target: `internal/astedit/scaffold_test.go`, scaffold header tests
+- Failure: the tool rejected two function declarations supplied in one source snippet with `expected single function declaration`.
+- Workaround: submit each test function through a separate semantic insertion call.
+- Root cause: this operation accepts one function declaration per call.
+
+### 2026-09-27: semantic_insert_function rejected test visibility
+
+- Tool: `semantic_insert_function` with `access_modifier=private`
+- Target: `internal/astedit/scaffold_test.go`, exported-style test function
+- Failure: validation rejected the `Test...` name because its capitalization implies public visibility.
+- Workaround: insert the test function with inferred/public access.
+- Root cause: the explicit access modifier conflicted with Go identifier casing.
+
+### 2026-09-27: semantic symbol inspection used an invalid file path
+
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/params.go`, `ParseString`
+- Failure: the requested source file path did not exist, so symbol inspection could not resolve the declaration.
+- Workaround: locate the declaration file with repository file search, then inspect the symbol in its actual file.
+- Root cause: the helper implementation lives outside the assumed `params.go` path.
+
+### 2026-09-27: semantic outline selected a nonexistent CLI directory
+
+- Tool: `semantic_outline`
+- Target: `cmd/semedit`
+- Failure: the repository has no `cmd/semedit` directory; outline returned a path resolution error.
+- Workaround: locate the executable entrypoint with repository file search and inspect `main.go`.
+- Root cause: assumed a conventional command subdirectory without confirming the repository layout.
+
+### 2026-09-27: semantic symbol inspection used a nonexistent registry path
+
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/registry.go`, `ToolDefinitions`
+- Failure: the requested file path did not exist, so the symbol could not be inspected.
+- Workaround: use confirmed source paths from the repository file list and targeted search.
+- Root cause: assumed a registry filename without checking the package layout.
+
+### 2026-09-27: semantic body replacement could not resolve an MCP method
+
+- Tool: `semantic_replace_body`
+- Target: `internal/mcp/server.go`, `Server.Initialize`
+- Failure: using the unqualified method name `Initialize` returned `symbol not found`; no source change was made.
+- Workaround: retry with the receiver-qualified method identifier.
+- Root cause: method body replacement requires a resolvable receiver-qualified symbol in this workspace.
+
+### 2026-09-27: semantic symbol inspection used incorrect test names
+
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/mcp/server_test.go`, `TestOperationInputSchema`; `internal/operation/wire_backend_test.go`, `TestOperationExampleContracts`
+- Failure: neither guessed test name exists, so both symbol inspections returned `symbol not found`.
+- Workaround: locate the actual test function names with a targeted source search, then inspect those declarations.
+- Root cause: assumed test identifiers before locating the existing tests.
+
+### 2026-09-27: semantic construct replacement could not resolve MCP method
+
+- Tool: `semantic_replace_construct`
+- Target: `internal/mcp/server.go`, `Server.toolsList`
+- Failure: the receiver-qualified method name was not found; no source change was made.
+- Workaround: locate the exact method name and replace the relevant construct using its registered symbol.
+- Root cause: assumed a method name from a nearby tool description without confirming its declaration identifier.
+
+### 2026-09-27: semantic lookup used incorrect MCP method name
+
+- Tool: `semantic_lookup`
+- Target: `internal/mcp/server.go`, `toolsList`
+- Failure: lookup returned `symbol not found`; no source change was made.
+- Workaround: locate the actual declaration identifier with a targeted source search.
+- Root cause: the method is named `listTools`, not `toolsList`.
+
+### 2026-09-27: semantic construct replacement could not match batch parse preflight
+
+- Tool: `semantic_replace_construct`
+- Target: `internal/mcp/batch.go`, `Server.ExecuteBatch`
+- Failure: the discriminator `entry.Parse(raw)` did not match a supported construct selector; no source change was made.
+- Workaround: inspect the selector diagnostics or use the exact conditional expression and candidate path.
+- Root cause: the construct matcher does not match the `if` initializer using the supplied expression.
+
+### ST-0075: benchmark symbol-resolution misses
+
+- Date: 2026-09-27
+- Tool(s): `semantic_lookup`, `semantic_inspect_symbol`, `semantic_replace_body`
+- Source: `gpt-6-luna-all-r10-c5-prescriptive-20260927-retry`; 21 failed calls across `task-09-composite-refactor` and `task-11-mixed-sink-api-migration`.
+- Failure: calls used guessed, outdated, or unsupported symbol spellings and received `symbol not found` (examples include `Load`, `DefaultConfig`, `NormalizeKind`, and `BufferedSink.Write`).
+- Workaround: inspect the current declaration outline/source and use exact qualified symbols; some failures followed earlier edits that removed or renamed the target.
+- Root cause: model symbol selection drifted from the current file/catalog state; determine whether candidate suggestions and clearer qualified-name contracts reduce repeated failed probes.
+
+### ST-0076: benchmark calls supplied empty required symbols
+
+- Date: 2026-09-27
+- Tool(s): `semantic_inspect_symbol`, `semantic_lookup`
+- Source: same benchmark; 9 failed calls split across `task-09-composite-refactor` (4) and `task-11-mixed-sink-api-migration` (5).
+- Failure: empty `symbol` values were rejected as required parameters.
+- Workaround: populate the symbol from the user request or inspect the file outline before calling.
+- Root cause: model emitted incomplete calls while exploring an ambiguous target; consider whether the error response should include a compact next step or whether prompt/schema guidance can prevent empty strings.
+
+### ST-0077: benchmark tool calls rejected by automatic safety review
+
+- Date: 2026-09-27
+- Tool(s): `semantic_verify` (11), `semantic_rename` (3), `report_feedback` (1)
+- Source: same benchmark; 15 failed calls, primarily in `task-11-mixed-sink-api-migration`.
+- Failure: host review rejected workspace-wide verification/rename because the task forbade test or protected-file changes. One `report_feedback` call was also rejected for alleged external disclosure.
+- Workaround: use narrowly scoped/read-only checks where available; do not retry rejected actions through an indirect path.
+- Root cause: the verification/rename outcomes reflect task prohibitions and broad tool side effects, not semedit execution defects. The current feedback handler appears to return a draft without posting or saving it, so the external-disclosure rationale for that one rejection is unsubstantiated and may be a reviewer false positive; retain it as a host outcome, not a semedit defect.
+
+### ST-0078: package diagnostics blocked semantic reference analysis
+
+- Date: 2026-09-27
+- Tool(s): `semantic_find_references`
+- Source: same benchmark; 4 failed calls in `task-09-composite-refactor`.
+- Failure: package loading failed after the agent left an unused import or temporarily removed `DefaultConfig`, so the Go package no longer type-checked.
+- Workaround: restore a compilable intermediate package before requesting references.
+- Root cause: semantic analysis correctly depends on a valid package snapshot, but the agent invoked it between mutation steps; consider clearer diagnostics that make the transient source problem and recovery action prominent.
+
+### ST-0079: benchmark calls used parameter names absent from tool contracts
+
+- Date: 2026-09-27
+- Tool(s): `semantic_insert_function`, `semantic_outline`, `semantic_rename`, `semantic_lookup`
+- Source: same benchmark; 4 failed calls across `task-07-generate-template-main` and `task-11-mixed-sink-api-migration`.
+- Failure: arguments used `declaration` instead of `source`, `file` instead of `path`, `new_name` instead of `to`, and `path` instead of `file`.
+- Workaround: follow the advertised schema keys.
+- Root cause: similar operations use inconsistent names and the model supplied familiar aliases unsupported by these tools; assess cross-tool naming consistency and examples in the generated schema.
+
+### ST-0080: benchmark function insertion rejected multiple declarations
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Source: same benchmark; 3 failed calls in `task-11-mixed-sink-api-migration`.
+- Failure: a single-function operation received snippets containing two function declarations and rejected them.
+- Workaround: insert each function as a separate call (or use a batch of single-function calls).
+- Root cause: the call contract accepts one declaration, while the model grouped related helpers into one snippet; check whether the error and examples make the single-declaration boundary clear.
+
+### ST-0081: benchmark function insertion rejected `package-private`
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Source: same benchmark; 1 failed call in `task-11-mixed-sink-api-migration`.
+- Failure: the Go backend rejected `access_modifier: package-private`; it supports `infer`, `public`, and `private`.
+- Workaround: use `private` or omit the access modifier for inference.
+- Root cause: the shared access-modifier vocabulary includes values that Go cannot accept; backend-filtered enum guidance should prevent this call.
+
+### ST-0082: benchmark batch requests failed JSON argument decoding
+
+- Date: 2026-09-27
+- Tool: `semantic_batch`
+- Source: same benchmark; 2 failed calls in tasks 09 and 11.
+- Failure: the submitted edit objects flattened operation fields beside `tool` and omitted the required nested `params` object, producing `invalid arguments: unexpected end of JSON input` for `semantic_rename` and `semantic_insert_function`.
+- Workaround: encode each edit as `{"tool": ..., "params": {...}}` according to the advertised batch schema.
+- Root cause: the model did not follow the nested batch payload contract; check whether the schema/examples make that nesting sufficiently clear and ensure malformed entries identify the missing `params` field.
+
+### ST-0083: benchmark used `switch` where the construct selector requires `case`
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Source: same benchmark; 1 failed call in `task-11-mixed-sink-api-migration`.
+- Failure: the call supplied `kind: switch` and a complete switch statement whose selector also changed; the operation supports branch constructs, with enum kind `case`, not replacement of a whole switch statement.
+- Workaround: identify the intended branch and provide its `case` clause as the replacement source, or use a broader operation when changing the whole switch.
+- Root cause: the tool description says “switch branch” but does not make the branch-only source contract explicit; clarify scope and add a branch-shaped example.
+
+### ST-0084: benchmark body replacement received an incomplete Go body
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Source: same benchmark; 1 failed call in `task-07-generate-template-main`.
+- Failure: replacement body ended before closing the final `if`, so parsing failed with `expected '}', found 'EOF'`.
+- Workaround: provide the complete body, including all closing braces.
+- Root cause: the model truncated a multi-construct body; determine whether the syntax error could identify the incomplete construct more locally.
+
+### ST-0085: scaffold rejected prose purpose header
+
+- Date: 2026-09-27
+- Tool: `semantic_scaffold_file`
+- Source: implementation of ADR-0054 in `.scratch/worktrees/verify-config/internal/projectverify/types.go`.
+- Failure: `purpose_header` was provided as plain prose and the scaffold parser rejected it with `syntax error: invalid purpose header: scaffold.go:1:1: expected 'package', found This`.
+- Workaround: retry with a Go comment as the purpose header.
+- Root cause: the call did not encode the required Go comment syntax in the header.
+
+### ST-0086: structural type insertion rejected replacement
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_structure`
+- Source: ADR-0054 `projectverify` public types in `.scratch/worktrees/verify-config/internal/projectverify/types.go`.
+- Failure: attempted to update the newly added `Hook` and `HookResult` structs with `overwrite: true`; the tool rejected the request with `overwrite is unsupported for type structure insertion`.
+- Workaround: reconstruct the package type file through semantic scaffolding and insert the complete updated declarations.
+- Root cause: the structural insertion tool does not support replacing an existing type even though its shared schema exposes the overwrite field.
+
+### ST-0087: verification request struct replacement is unsupported
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_decl`
+- Target: `internal/backend/backend.go`, `VerifyRequest`, in the verification integration worktree.
+- Failure: the declaration replacement rejected a struct because it only accepts type aliases.
+- Workaround: use an AST-aware rewrite for the unsupported struct-field change, preserving atomic publication.
+- Root cause: the declaration replacement operation does not cover struct definitions.
+
+### ST-0088: Body replacement did not resolve a worktree-prefixed path
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/backend/golang/backend.go` in the integration worktree.
+- Failure: The body lookup failed after symbol inspection had resolved the declaration.
+- Workaround: Use a checked AST rewrite for this unsupported worktree path; preserve the isolated worktree.
+- Root cause: Inconsistent resolution of a worktree-prefixed relative path between inspection and mutation.
+
+### ST-0089: Automatic import resolution introduced a package cycle
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/pipeline/pipeline.go`.
+- Failure: Replacing CheckDiagnostics added an adapter import, producing an import cycle because the adapter depends on pipeline.
+- Workaround: Move shared gopls discovery to godiagnostics and delegate from both callers.
+- Root cause: Import organization resolves imports without validating the package dependency graph before writing.
+
+### ST-0090: Test insertion rejected private access modifier
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Target: `internal/godiagnostics/diagnostics_test.go`.
+- Failure: A Test-prefixed function was rejected with access_modifier private.
+- Workaround: Retry with public access to match Go identifier casing.
+- Root cause: The visibility contract applies to test declarations too.
+
+### ST-0091: Body replacement temporarily mismatched a helper signature
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/godiagnostics/diagnostics.go`.
+- Failure: The new caller expected loader findings before the helper signature was updated; diagnostics reported an assignment mismatch.
+- Workaround: Update the helper contract before final verification.
+- Root cause: The multi-declaration contract change was split across calls.
+
+### ST-0092: Scaffold purpose header requires comment syntax
+
+- Date: 2026-09-27
+- Tool: `semantic_scaffold_file`
+- Target: `internal/godiagnostics/diagnostics_internal_test.go`.
+- Failure: The plain-text purpose header was rejected.
+- Workaround: Retry with a // comment prefix.
+- Root cause: The argument description does not make the Go-comment requirement apparent.
+
+### ST-0093: Function insertion rejected multiple declaration kinds
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Target: `internal/godiagnostics/diagnostics.go`.
+- Failure: A snippet with a type and two functions was rejected.
+- Workaround: Insert each declaration separately.
+- Root cause: The tool accepts exactly one function declaration.
+
+### ST-0094: function insertion access did not match exported name
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Source: ADR-0054 discovery functions in `.scratch/worktrees/verify-config/internal/projectverify/config.go`.
+- Failure: the batch marked all functions private, and insertion rejected exported `Discover` with `visibility mismatch`.
+- Workaround: let insertion infer visibility from function casing.
+- Root cause: the batch-level edit applied a single explicit access modifier to public and private declarations.
+
+### ST-0095: construct replacement selector was ambiguous
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Source: LSP validation in `.scratch/worktrees/verify-config/internal/projectverify/config.go`.
+- Failure: replacing `if item.LSP != nil` in `convertHooks` matched both the form counter and the LSP conversion branch, so the tool rejected the edit and returned both candidate paths.
+- Workaround: select the reported construct path for the conversion branch.
+- Root cause: repeated equivalent conditions require `construct_path` to disambiguate.
+
+### ST-0096: structural function insertion rejected overwrite
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_structure`
+- Source: context-aware staging helper in `.scratch/worktrees/verify-config/internal/projectverify/executor.go`.
+- Failure: attempted to update the existing `copyWorkspace` signature with `overwrite: true`; the tool rejected it with `overwrite is unsupported for function structure insertion`.
+- Workaround: retain the existing helper as a background-context wrapper and add a context-aware helper under a distinct symbol for runtime use.
+- Root cause: structural insertion does not support replacing existing functions despite the shared overwrite parameter.
+
+### ST-0097: construct replacement included two statements
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Source: hook-status handling in `.scratch/worktrees/verify-config/internal/projectverify/executor.go`.
+- Failure: the replacement payload contained the original `if` plus a following `if`, and the tool rejected it because a construct replacement must contain exactly one complete construct.
+- Workaround: make the status change within an existing construct or use a bounded full function-body replacement.
+- Root cause: the edit payload crossed the selected AST construct boundary.
+
+### ST-0098: semantic_replace_body rejected invalid hook invocation payload
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/projectverify/executor.go`, `runCheck`
+- Observed failure: the replacement body omitted a closing parenthesis in the final `runCommand` call, so the tool rejected the candidate Go syntax before writing.
+- Workaround: corrected the payload syntax and retry with the semantic tool.
+- Root cause: malformed agent-generated replacement body.
+
+### ST-0099: semantic_replace_construct rejected multi-if payload
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Target: `internal/projectverify/executor.go`, `RunPhase`
+- Observed failure: the request tried to replace an existing single `if` with two consecutive `if` constructs; the tool requires exactly one construct and rejected it without writing.
+- Workaround: use a single replacement branch or restructure with supported single-construct edits.
+- Root cause: payload shape did not match the semantic construct operation contract.
+
+### ST-0100: semantic_replace_construct selector used full if statement instead of selector
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Target: `internal/projectverify/executor.go`, `runNormalization`
+- Observed failure: the selector passed the entire short `if` statement instead of its short initializer or condition; the tool returned available construct paths and made no change.
+- Workaround: retry using the listed construct path for the intended command execution branch.
+- Root cause: misunderstanding of the operation discriminator field.
+
+### ST-0101: semantic_replace_construct rejected environment setup sequence
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_construct`
+- Target: `internal/projectverify/executor.go`, `runNormalization`
+- Observed failure: the replacement contained an environment setup statement followed by an `if`, while the operation accepts a single complete `if` construct. No change was made.
+- Workaround: wrap setup and command execution in one if initializer expression.
+- Root cause: replacement payload shape exceeded the tool operation contract.
+
+### ST-0102: semantic_insert_function rejected test access classification
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Target: `internal/projectverify/config_test.go`
+- Observed failure: the test function name begins with `Test` and is exported by Go casing, but the request explicitly selected private access. The tool rejected it without writing.
+- Workaround: retry with inferred access.
+- Root cause: test function naming convention conflicts with explicit private classification.
+
+### ST-0103: semantic_insert_function rejected two-function payload
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Target: `internal/projectverify/executor_test.go`
+- Observed failure: the request contained two function declarations; the insertion operation accepts exactly one declaration and made no change.
+- Workaround: insert each test function separately.
+- Root cause: bundled independent tests in one semantic mutation.
+
+### ST-0104: semantic_replace_body rejected command helper payload
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/projectverify/executor.go`, `runHookCommand`
+- Observed failure: the final `runCommandWithEnv` call was missing its closing parenthesis, and the tool rejected the candidate syntax without writing.
+- Workaround: correct the call syntax and retry.
+- Root cause: malformed generated body.
+
+### ST-0105: body replacement needs a qualified method name after lookup
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/backend/golang/backend.go`, `GoBackend.Verify`.
+- Failure: `symbol: Verify` returned symbol not found although lookup and inspection accepted it and returned this method.
+- Workaround: retry with the receiver-qualified symbol from lookup.
+- Root cause: method selector resolution differs between inspection and body replacement.
+
+### ST-0106: body replacement left a new standard-library reference unresolved
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `internal/mcp/batch.go`, `Server.ExecuteBatch`.
+- Failure: the replacement succeeded with a new `reflect.DeepEqual` reference but no reflect import; make check caught the undefined identifier.
+- Workaround: run semantic import organization before compiling again.
+- Root cause: body replacement did not infer the new import in this call.
+
+### ST-0107: semantic_replace_construct could not resolve ExecuteBatch selector
+
+- Tool: `semantic_replace_construct`
+- Target: `internal/mcp/batch.go`, `(*Server).ExecuteBatch`
+- Observed failure: the request selected `ExecuteBatch` without its `Server` receiver qualifier, so the semantic backend did not find the function and made no change.
+- Workaround: retry using the receiver-qualified function name.
+- Root cause: method selector requires its full receiver-qualified name.
