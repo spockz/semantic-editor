@@ -205,3 +205,81 @@ func privateOne() {}
 		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
 	}
 }
+
+func TestInsertFunction_DuplicateNameFailsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "model.go")
+	initial := "package model\n\n// Keep this documentation.\nfunc Load() string { return \"old\" }\n\nfunc Other() {}\n"
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	err := InsertFunction(context.Background(), file, "func Load() string { return \"new\" }", FunctionOptions{})
+	if !errors.Is(err, ErrDeclCollision) {
+		t.Fatalf("InsertFunction error = %v, want ErrDeclCollision", err)
+	}
+	got, readErr := os.ReadFile(file)
+	if readErr != nil {
+		t.Fatalf("read file: %v", readErr)
+	}
+	if string(got) != initial {
+		t.Fatalf("file changed after duplicate function insert:\n%s", got)
+	}
+}
+
+func TestInsertFunction_DuplicateReceiverMethodFailsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "model.go")
+	initial := "package model\n\ntype Widget struct{}\ntype Gadget struct{}\n\n// Keep the existing method documentation.\nfunc (Widget) Name() string { return \"old\" }\n\nfunc (Gadget) Name() string { return \"other type\" }\n"
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	err := InsertFunction(context.Background(), file, "func (w *Widget) Name() string { return \"new\" }", FunctionOptions{})
+	if !errors.Is(err, ErrDeclCollision) {
+		t.Fatalf("InsertFunction method error = %v, want ErrDeclCollision", err)
+	}
+	got, readErr := os.ReadFile(file)
+	if readErr != nil {
+		t.Fatalf("read file: %v", readErr)
+	}
+	if string(got) != initial {
+		t.Fatalf("file changed after duplicate method insert:\n%s", got)
+	}
+}
+
+func TestInsertStructure_RejectsUnsupportedOverwriteUnchanged(t *testing.T) {
+	tests := []struct {
+		name   string
+		kind   StructureKind
+		source string
+	}{
+		{name: "type", kind: StructureKindType, source: "type Config struct { Port int }"},
+		{name: "function", kind: StructureKindFunction, source: "func Load() string { return \"new\" }"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			file := filepath.Join(dir, "model.go")
+			initial := "package model\n\n// Keep type documentation.\ntype Config struct { Host string }\n\n// Keep function documentation.\nfunc Load() string { return \"old\" }\n\ntype Other struct{}\n"
+			if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+				t.Fatalf("write initial file: %v", err)
+			}
+
+			_, err := InsertStructure(context.Background(), file, test.source, StructureOptions{
+				Kind:      test.kind,
+				Overwrite: true,
+			})
+			if err == nil || !strings.Contains(err.Error(), "overwrite is unsupported") {
+				t.Fatalf("InsertStructure error = %v, want unsupported overwrite error", err)
+			}
+			got, readErr := os.ReadFile(file)
+			if readErr != nil {
+				t.Fatalf("read file: %v", readErr)
+			}
+			if string(got) != initial {
+				t.Fatalf("file changed after rejected overwrite:\n%s", got)
+			}
+		})
+	}
+}

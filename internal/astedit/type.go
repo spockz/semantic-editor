@@ -73,6 +73,9 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 	if err != nil && fileNode == nil {
 		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
 	}
+	if err := checkStructureDeclarationCollision(cleanPath, fileNode, genDecl); err != nil {
+		return fmt.Errorf("check declaration collision: %w", err)
+	}
 
 	insertOffset, err := calculateTypeOffset(fset, fileNode, content, genDecl, typeName, effectiveAccess, opts)
 	if err != nil {

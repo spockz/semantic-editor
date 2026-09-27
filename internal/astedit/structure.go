@@ -67,6 +67,9 @@ func InsertStructure(ctx context.Context, filePath string, source string, opts S
 
 	switch kind {
 	case StructureKindFunction, StructureKindMethod:
+		if opts.Overwrite {
+			return StructureResult{}, fmt.Errorf("overwrite is unsupported for %s structure insertion", kind)
+		}
 		err := insertFunctionImpl(ctx, filePath, source, FunctionOptions{
 			AccessModifier:      opts.AccessModifier,
 			Placement:           opts.Placement,
@@ -76,6 +79,9 @@ func InsertStructure(ctx context.Context, filePath string, source string, opts S
 		return StructureResult{}, err
 
 	case StructureKindType:
+		if opts.Overwrite {
+			return StructureResult{}, fmt.Errorf("overwrite is unsupported for %s structure insertion", kind)
+		}
 		err := insertTypeImpl(ctx, filePath, source, TypeOptions{
 			AccessModifier:      opts.AccessModifier,
 			Placement:           opts.Placement,

@@ -130,3 +130,24 @@ func Run() {}
 		t.Errorf("expected valid Pos in SyntaxError, got %v", synErr.Pos)
 	}
 }
+
+func TestInsertType_DuplicateNameFailsUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "model.go")
+	initial := "package model\n\n// Keep this documentation.\ntype Config struct {\n\tHost string\n}\n\ntype Other struct{}\n"
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write initial file: %v", err)
+	}
+
+	err := InsertType(context.Background(), file, "type Config struct { Port int }", TypeOptions{})
+	if !errors.Is(err, ErrDeclCollision) {
+		t.Fatalf("InsertType error = %v, want ErrDeclCollision", err)
+	}
+	got, readErr := os.ReadFile(file)
+	if readErr != nil {
+		t.Fatalf("read file: %v", readErr)
+	}
+	if string(got) != initial {
+		t.Fatalf("file changed after duplicate type insert:\n%s", got)
+	}
+}

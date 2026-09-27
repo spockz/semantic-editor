@@ -74,6 +74,9 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	if err != nil && fileNode == nil {
 		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
 	}
+	if err := checkStructureDeclarationCollision(cleanPath, fileNode, fnDecl); err != nil {
+		return fmt.Errorf("check declaration collision: %w", err)
+	}
 
 	insertOffset, err := calculateFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)
 	if err != nil {

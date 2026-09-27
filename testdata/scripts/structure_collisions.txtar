@@ -1,0 +1,35 @@
+# Structural type and function insertions reject duplicates and unsupported overwrites without changing source.
+! exec semedit insert-structure --file api/model.go --kind type --source 'type Config struct { Port int }'
+stderr 'Config.*already exists'
+! exec semedit insert-structure --file api/model.go --kind type --overwrite --source 'type Config struct { Port int }'
+stderr 'overwrite is unsupported for type structure insertion'
+! exec semedit insert-structure --file api/model.go --kind function --source 'func Load() string { return "new" }'
+stderr 'Load.*already exists'
+! exec semedit insert-structure --file api/model.go --kind method --source 'func (w *Widget) Name() string { return "new" }'
+stderr 'method Widget.Name already exists'
+grep 'Keep the existing documentation' api/model.go
+grep 'type Config struct' api/model.go
+grep 'Widget' api/model.go
+grep 'Keep this function documentation' api/model.go
+grep 'func Load\(\) string' api/model.go
+grep 'Other' api/model.go
+
+-- go.mod --
+module example.com/structurecollision
+
+go 1.23
+
+-- api/model.go --
+package api
+
+// Keep the existing documentation.
+type Config struct { Host string }
+
+type Widget struct{}
+
+func (Widget) Name() string { return "old" }
+
+// Keep this function documentation.
+func Load() string { return "old" }
+
+type Other struct{}

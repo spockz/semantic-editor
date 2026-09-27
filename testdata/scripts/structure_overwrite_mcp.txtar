@@ -1,0 +1,23 @@
+# Structural overwrite requests fail through the public MCP tool without changing source.
+stdin input.json
+exec semedit mcp
+stdout 'overwrite is unsupported for type structure insertion'
+grep 'Keep this comment' api/model.go
+grep 'type Config struct' api/model.go
+grep 'Other' api/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":"api/model.go","kind":"type","source":"type Config struct { Port int }","overwrite":true}}}
+
+-- go.mod --
+module example.com/structureoverwrite
+
+go 1.23
+
+-- api/model.go --
+package api
+
+// Keep this comment.
+type Config struct { Host string }
+
+type Other struct{}
