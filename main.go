@@ -54,6 +54,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	var liveReload bool
 	var instructions string
 	var goBaseDir string
+	var expectedRoot string
 	var enabledLanguages string
 	cmd := &cobra.Command{
 		Use:           "mcp",
@@ -61,7 +62,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithEnabledLanguages(enabledLanguages))
+			srv := mcp.NewServer(profile, workDir, os.Stdout, mcp.WithLiveReload(liveReload), mcp.WithInstructions(instructions), mcp.WithGoBaseDir(goBaseDir), mcp.WithExpectedRoot(expectedRoot), mcp.WithEnabledLanguages(enabledLanguages))
 			if err := srv.Serve(cmd.Context(), os.Stdin); err != nil {
 				fmt.Fprintf(os.Stderr, "mcp server error: %v\\n", err)
 				return cli.ErrCommandFailed
@@ -73,6 +74,7 @@ func newMCPCmd(workDir string) *cobra.Command {
 	cmd.Flags().BoolVar(&liveReload, "live-reload", false, "Enable in-place live-reload and dynamic tool schema discovery")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Optional server-wide MCP instructions returned during initialization")
 	cmd.Flags().StringVar(&goBaseDir, "go-base-dir", "", "Directory for Go subprocess state; defaults to .scratch/go below the server working directory")
+	cmd.Flags().StringVar(&expectedRoot, "expected-root", "", "Require the client-selected workspace root to match this canonical root")
 	cmd.Flags().StringVar(&enabledLanguages, "enabled-languages", "", "Comma-separated language allowlist for MCP tools (go,rust,java,scala,haskell,kotlin,bash,make)")
 	return cmd
 }

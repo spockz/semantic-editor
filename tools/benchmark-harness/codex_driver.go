@@ -316,7 +316,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	if target.Effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", target.Effort))
 	}
-	if override, err := r.codexMCPOverride(res.Arm); err != nil {
+	if override, err := r.codexMCPOverride(res.Arm, workDir); err != nil {
 		return "", err
 	} else if override != "" {
 		args = append(args, "-c", override)
@@ -452,12 +452,12 @@ func appendCodexAgentResponse(res *RunResult, item *codexItem) {
 	res.agentResponse += text
 }
 
-func (r *Runner) codexMCPOverride(arm ArmType) (string, error) {
+func (r *Runner) codexMCPOverride(arm ArmType, workDir string) (string, error) {
 	switch arm {
 	case ArmBaseline:
 		return "mcp_servers.semedit.enabled=false", nil
 	case ArmSemedit:
-		return r.codexMCPServerInstructionsOverride()
+		return r.codexMCPServerInstructionsOverride(workDir)
 	default:
 		return "", fmt.Errorf("unsupported Codex benchmark arm %q", arm)
 	}
@@ -465,6 +465,18 @@ func (r *Runner) codexMCPOverride(arm ArmType) (string, error) {
 
 func fixtureGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
 	return gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
+}
+
+func canonicalFixtureRoot(workDir string) (string, error) {
+	absoluteRoot, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture root %q: %w", workDir, err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(absoluteRoot)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize fixture root %q: %w", absoluteRoot, err)
+	}
+	return filepath.Clean(canonicalRoot), nil
 }
 
 func codexMCPGoEnvironmentOverride() string {
@@ -480,24 +492,26 @@ func (r *Runner) codexMCPBinaryOverride() string {
 	return "mcp_servers.semedit.command=" + strconv.Quote(filepath.Join(repositoryRoot, "bin", "semedit-next"))
 }
 
-func (r *Runner) codexMCPServerInstructionsOverride() (string, error) {
+func (r *Runner) codexMCPServerInstructionsOverride(workDir string) (string, error) {
+	root, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
-		return `mcp_servers.semedit.args=["mcp","--profile","full"]`, nil
-	case MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive:
-		instructions := mcp.DescriptiveInstructions
-		if r.mcpServerInstructionsMode == MCPServerInstructionsPrescriptive {
-			instructions = mcp.PrescriptiveInstructions
-		}
-		args := []string{"mcp", "--profile", "full", "--instructions", instructions}
-		quoted := make([]string, len(args))
-		for index, arg := range args {
-			quoted[index] = strconv.Quote(arg)
-		}
-		return "mcp_servers.semedit.args=[" + strings.Join(quoted, ",") + "]", nil
+	case MCPServerInstructionsDescriptive:
+		args = append(args, "--instructions", mcp.DescriptiveInstructions)
+	case MCPServerInstructionsPrescriptive:
+		args = append(args, "--instructions", mcp.PrescriptiveInstructions)
 	default:
 		return "", fmt.Errorf("unsupported MCP server instruction mode %q", r.mcpServerInstructionsMode)
 	}
+	quoted := make([]string, len(args))
+	for index, arg := range args {
+		quoted[index] = strconv.Quote(arg)
+	}
+	return "mcp_servers.semedit.args=[" + strings.Join(quoted, ",") + "]", nil
 }
 
 func setCodexObservationState(result *RunResult, providerErr error, terminalTurn bool) {

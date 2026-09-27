@@ -234,6 +234,13 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if !found {
 		t.Fatal("semedit MCP server is absent")
 	}
+	expectedRoot, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(server.Command, "--expected-root") || !slices.Contains(server.Command, expectedRoot) {
+		t.Errorf("MCP command = %#v, want expected root %q", server.Command, expectedRoot)
+	}
 	if got, want := server.Command[len(server.Command)-2:], []string{"--instructions", mcp.PrescriptiveInstructions}; !slices.Equal(got, want) {
 		t.Errorf("MCP command suffix = %#v, want %#v", got, want)
 	}
@@ -417,19 +424,24 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 		t.Fatal("unknown instruction mode unexpectedly parsed")
 	}
 
+	fixtureRoot := t.TempDir()
+	expectedRoot, err := canonicalFixtureRoot(fixtureRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for mode, want := range map[MCPServerInstructionMode]string{
-		MCPServerInstructionsNone:         "mcp_servers.semedit.args=[\"mcp\",\"--profile\",\"full\"]",
+		MCPServerInstructionsNone:         "",
 		MCPServerInstructionsDescriptive:  "Semedit semantic tools are available",
 		MCPServerInstructionsPrescriptive: "Inspect the complete tool inventory",
 	} {
 		runner := NewRunner(t.TempDir(), WithMCPServerInstructions(mode))
-		override, err := runner.codexMCPServerInstructionsOverride()
+		override, err := runner.codexMCPServerInstructionsOverride(fixtureRoot)
 		if err != nil {
 			t.Fatalf("build %s override: %v", mode, err)
 		}
-		parts := []string{"mcp_servers.semedit.args=", want}
-		if mode != MCPServerInstructionsNone {
-			parts = append(parts, "--instructions")
+		parts := []string{"mcp_servers.semedit.args=", "--expected-root", expectedRoot}
+		if want != "" {
+			parts = append(parts, want, "--instructions")
 		}
 		for _, part := range parts {
 			if !strings.Contains(override, part) {
@@ -437,7 +449,7 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 			}
 		}
 	}
-	if got, err := NewRunner(t.TempDir(), WithMCPServerInstructions(MCPServerInstructionsPrescriptive)).codexMCPOverride(ArmBaseline); err != nil || got != "mcp_servers.semedit.enabled=false" {
+	if got, err := NewRunner(t.TempDir(), WithMCPServerInstructions(MCPServerInstructionsPrescriptive)).codexMCPOverride(ArmBaseline, fixtureRoot); err != nil || got != "mcp_servers.semedit.enabled=false" {
 		t.Errorf("baseline Codex MCP override = %q, %v; want semedit disabled", got, err)
 	}
 	for _, key := range []string{"GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOBIN", "GOPATH", "GOFLAGS", "GOWORK"} {

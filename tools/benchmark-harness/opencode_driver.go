@@ -249,7 +249,7 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	if arm != ArmSemedit {
 		return nil, fmt.Errorf("unsupported OpenCode benchmark arm %q", arm)
 	}
-	args, err := r.openCodeMCPArguments()
+	args, err := r.openCodeMCPArguments(workDir)
 	if err != nil {
 		return nil, err
 	}
@@ -268,17 +268,22 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	return config, nil
 }
 
-func (r *Runner) openCodeMCPArguments() ([]string, error) {
+func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
+	root, err := canonicalFixtureRoot(workDir)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
-		return []string{"mcp", "--profile", "full"}, nil
 	case MCPServerInstructionsDescriptive:
-		return []string{"mcp", "--profile", "full", "--instructions", mcp.DescriptiveInstructions}, nil
+		args = append(args, "--instructions", mcp.DescriptiveInstructions)
 	case MCPServerInstructionsPrescriptive:
-		return []string{"mcp", "--profile", "full", "--instructions", mcp.PrescriptiveInstructions}, nil
+		args = append(args, "--instructions", mcp.PrescriptiveInstructions)
 	default:
 		return nil, fmt.Errorf("unsupported MCP server instruction mode %q", r.mcpServerInstructionsMode)
 	}
+	return args, nil
 }
 
 func environmentMap(env []string) map[string]string {

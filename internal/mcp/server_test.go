@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1020,5 +1021,97 @@ func TestMCPScaffoldFilePreservesPurposeHeader(t *testing.T) {
 	want := header + "\n\npackage service\n"
 	if string(content) != want {
 		t.Fatalf("scaffolded content = %q, want %q", content, want)
+	}
+}
+
+func TestMCPExpectedRootGuard(t *testing.T) {
+	expectedRoot := t.TempDir()
+	actualRoot := t.TempDir()
+	marker := filepath.Join(actualRoot, "preserve.txt")
+	if err := os.WriteFile(marker, []byte("unchanged"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rawParams, err := json.Marshal(map[string]any{"rootPath": actualRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", expectedRoot, &out, mcp.WithExpectedRoot(expectedRoot))
+	_, err = srv.Initialize(t.Context(), rawParams)
+	if err == nil {
+		t.Fatal("Initialize succeeded with a mismatched workspace root")
+	}
+	for _, want := range []string{"workspace root mismatch", backend.CanonicalWorkspaceRoot(expectedRoot), backend.CanonicalWorkspaceRoot(actualRoot)} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Initialize error %q does not include %q", err, want)
+		}
+	}
+	if got, err := os.ReadFile(marker); err != nil || string(got) != "unchanged" {
+		t.Errorf("mismatch changed fixture marker: contents=%q error=%v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(actualRoot, ".scratch")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("mismatch initialized fixture Go state: %v", err)
+	}
+
+	matchingRoot := t.TempDir()
+	matchingServer := mcp.NewServer("full", matchingRoot, &out, mcp.WithExpectedRoot(filepath.Join(matchingRoot, ".")))
+	result, err := matchingServer.Initialize(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("Initialize rejected matching expected root: %v", err)
+	}
+	if got, want := result["workspaceRoot"], backend.CanonicalWorkspaceRoot(matchingRoot); got != want {
+		t.Errorf("Initialize workspaceRoot = %v, want %q", got, want)
+	}
+	serverInfo, ok := result["serverInfo"].(map[string]any)
+	if !ok {
+		t.Fatalf("Initialize serverInfo = %#v, want object", result["serverInfo"])
+	}
+	for _, key := range []string{"binaryPath", "profile", "toolCatalog"} {
+		if serverInfo[key] == "" {
+			t.Errorf("Initialize serverInfo missing %q: %#v", key, serverInfo)
+		}
+	}
+}
+
+func TestMCPExpectedRootGuardDecodesWorkspaceFileURI(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "fixture with spaces")
+	if err := os.MkdirAll(root, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	rootURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(root)}).String()
+	rawParams, err := json.Marshal(map[string]any{"rootUri": rootURI})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", root, &out, mcp.WithExpectedRoot(root))
+	result, err := srv.Initialize(t.Context(), rawParams)
+	if err != nil {
+		t.Fatalf("Initialize rejected URI-escaped matching root %q: %v", rootURI, err)
+	}
+	if got, want := result["workspaceRoot"], backend.CanonicalWorkspaceRoot(root); got != want {
+		t.Errorf("Initialize workspaceRoot = %v, want %q", got, want)
+	}
+}
+
+func TestMCPExpectedRootMismatchCannotBeRetriedWithoutClientRoot(t *testing.T) {
+	expectedRoot := t.TempDir()
+	actualRoot := t.TempDir()
+	rawParams, err := json.Marshal(map[string]any{"rootPath": actualRoot})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	srv := mcp.NewServer("full", expectedRoot, &out, mcp.WithExpectedRoot(expectedRoot))
+	if _, err := srv.Initialize(t.Context(), rawParams); err == nil {
+		t.Fatal("Initialize succeeded with a mismatched root")
+	}
+	if _, err := srv.Initialize(t.Context(), nil); err == nil {
+		t.Fatal("Initialize retried without client root after a root mismatch")
+	}
+	if _, err := os.Stat(filepath.Join(expectedRoot, ".scratch")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("failed initialization created expected-root state: %v", err)
 	}
 }

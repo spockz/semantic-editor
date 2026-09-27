@@ -20,6 +20,7 @@ import (
 
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/backends"
 	"semedit/internal/gocache"
 	"semedit/internal/maven"
@@ -30,27 +31,29 @@ import (
 
 // Server handles MCP JSON-RPC requests over stdio streams.
 type Server struct {
-	profile             string
-	workDir             string
-	service             *backend.Service
-	registry            *operation.Registry
-	liveReload          bool
-	instructions        string
-	goBaseDir           string
-	explicitGoBaseDir   bool
-	workspaceTrust      backend.WorkspaceTrust
-	enabledLanguageText string
-	enabledLanguages    []backend.LanguageID
-	enabledLanguageErr  error
-	startedAt           time.Time
-	sessionMu           sync.Mutex
-	initializedAt       time.Time
-	firstSemanticCallAt time.Time
-	metricsMu           sync.Mutex
-	metricSequence      uint64
-	recentMetrics       []toolMetricsRecord
-	outMu               sync.Mutex
-	out                 io.Writer
+	profile              string
+	workDir              string
+	expectedRoot         string
+	service              *backend.Service
+	registry             *operation.Registry
+	liveReload           bool
+	instructions         string
+	goBaseDir            string
+	explicitGoBaseDir    bool
+	workspaceTrust       backend.WorkspaceTrust
+	initializationFailed bool
+	enabledLanguageText  string
+	enabledLanguages     []backend.LanguageID
+	enabledLanguageErr   error
+	startedAt            time.Time
+	sessionMu            sync.Mutex
+	initializedAt        time.Time
+	firstSemanticCallAt  time.Time
+	metricsMu            sync.Mutex
+	metricSequence       uint64
+	recentMetrics        []toolMetricsRecord
+	outMu                sync.Mutex
+	out                  io.Writer
 }
 
 const structuredContentKey = "structuredContent"
@@ -87,6 +90,23 @@ func WithGoBaseDir(baseDir string) Option {
 			s.explicitGoBaseDir = true
 		}
 	}
+}
+
+// WithExpectedRoot rejects client initialization that selects a different workspace.
+func WithExpectedRoot(root string) Option {
+	return func(s *Server) {
+		if root = strings.TrimSpace(root); root != "" {
+			s.expectedRoot = backend.CanonicalWorkspaceRoot(root)
+		}
+	}
+}
+
+func workspaceRootFromURI(raw string) (string, error) {
+	root, err := pathutil.FilePathFromURI(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse workspace root URI %q: %w", raw, err)
+	}
+	return root, nil
 }
 
 // WithEnabledLanguages constrains language-specific tools to an explicit allowlist.
@@ -198,6 +218,9 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map[string]any, error) {
 	s.sessionMu.Lock()
 	defer s.sessionMu.Unlock()
+	if s.initializationFailed {
+		return nil, errors.New("MCP initialization previously failed")
+	}
 
 	var initParams struct {
 		RootURI          string `json:"rootUri"`
@@ -216,26 +239,44 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 			return nil, fmt.Errorf("parse initialize params: %w", err)
 		}
 	}
+	selectedRoot := s.workDir
 	switch {
 	case initParams.RootURI != "":
-		s.workDir = strings.TrimPrefix(initParams.RootURI, "file://")
+		root, err := workspaceRootFromURI(initParams.RootURI)
+		if err != nil {
+			return nil, err
+		}
+		selectedRoot = root
 	case initParams.RootPath != "":
-		s.workDir = initParams.RootPath
+		selectedRoot = initParams.RootPath
 	case len(initParams.WorkspaceFolders) > 0 && initParams.WorkspaceFolders[0].URI != "":
-		s.workDir = strings.TrimPrefix(initParams.WorkspaceFolders[0].URI, "file://")
+		root, err := workspaceRootFromURI(initParams.WorkspaceFolders[0].URI)
+		if err != nil {
+			return nil, err
+		}
+		selectedRoot = root
 	case initParams.InitializationOptions.RootURI != "":
-		s.workDir = strings.TrimPrefix(initParams.InitializationOptions.RootURI, "file://")
+		root, err := workspaceRootFromURI(initParams.InitializationOptions.RootURI)
+		if err != nil {
+			return nil, err
+		}
+		selectedRoot = root
 	case initParams.InitializationOptions.WorkspaceRoot != "":
-		s.workDir = initParams.InitializationOptions.WorkspaceRoot
+		selectedRoot = initParams.InitializationOptions.WorkspaceRoot
 	}
-	if s.workDir == "" {
+	if selectedRoot == "" {
 		if wd, err := os.Getwd(); err == nil {
-			s.workDir = wd
+			selectedRoot = wd
 		} else {
-			s.workDir = "."
+			selectedRoot = "."
 		}
 	}
-	s.workDir = backend.CanonicalWorkspaceRoot(s.workDir)
+	actualRoot := backend.CanonicalWorkspaceRoot(selectedRoot)
+	if s.expectedRoot != "" && actualRoot != s.expectedRoot {
+		s.initializationFailed = true
+		return nil, fmt.Errorf("MCP workspace root mismatch: expected %q, actual %q", s.expectedRoot, actualRoot)
+	}
+	s.workDir = actualRoot
 	if !s.explicitGoBaseDir || s.goBaseDir == "" {
 		s.goBaseDir = filepath.Join(s.workDir, ".scratch", "go")
 	}
@@ -248,10 +289,23 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		s.initializedAt = time.Now()
 	}
 
+	serverInfo := map[string]any{
+		"name":        "semedit",
+		"version":     "0.1.0",
+		"profile":     s.profile,
+		"toolCatalog": "operation-registry",
+	}
+	if binaryPath, err := os.Executable(); err == nil {
+		if resolvedPath, err := filepath.EvalSymlinks(binaryPath); err == nil {
+			binaryPath = resolvedPath
+		}
+		serverInfo["binaryPath"] = binaryPath
+	}
 	result := map[string]any{
 		"protocolVersion": "2025-06-18",
 		"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
-		"serverInfo":      map[string]any{"name": "semedit", "version": "0.1.0"},
+		"serverInfo":      serverInfo,
+		"workspaceRoot":   s.workDir,
 	}
 	if s.instructions != "" {
 		result["instructions"] = s.instructions
