@@ -139,6 +139,17 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			continue
 		}
 		if len(request.ID) == 0 {
+			if request.Method == "textDocument/didOpen" && (os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" || os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "") {
+				var opened struct {
+					TextDocument struct {
+						URI string `json:"uri"`
+					} `json:"textDocument"`
+				}
+				_ = json.Unmarshal(request.Params, &opened)
+				params, _ := json.Marshal(map[string]any{"uri": opened.TextDocument.URI, "version": 1, "diagnostics": []any{}})
+				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+				_ = writer.WriteMessage(notification)
+			}
 			if request.Method == "textDocument/didOpen" && (os.Getenv("SEMEDIT_TEST_KOTLIN_VERIFY") != "" || os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "") {
 				var opened struct {
 					TextDocument struct {

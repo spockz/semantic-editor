@@ -41,6 +41,8 @@ func effectiveProject(cc CallContext, project backend.ProjectContext) backend.Pr
 	if project.Language == "" {
 		project.Language = cc.Project.Language
 	}
-	project.WorkspaceTrust = backend.NewWorkspaceTrust(project.RootDir, project.WorkspaceTrust.Trusted)
+	requestTrust := project.WorkspaceTrust.Trusted && (project.WorkspaceTrust.WorkspaceRoot == "" || project.WorkspaceTrust.Allows(project.RootDir))
+	trusted := requestTrust || cc.Project.WorkspaceTrust.Allows(project.RootDir)
+	project.WorkspaceTrust = backend.NewWorkspaceTrust(project.RootDir, trusted)
 	return project
 }

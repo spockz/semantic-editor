@@ -17,6 +17,9 @@ import (
 
 func TestBatch_SuccessfulExecution(t *testing.T) {
 	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	file1 := filepath.Join(tmpDir, "file1.go")
 	if err := os.WriteFile(file1, []byte("package testpkg\n\nfunc Foo() string {\n\treturn \"old\"\n}\n"), 0o600); err != nil {
@@ -61,8 +64,8 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 		t.Fatalf("final workspace diff omitted batch edits: %s", resp.FinalDiff)
 	}
 	snapshot := metrics.Snapshot(0)
-	if before, after := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationAfter)].Count; before != 1 || after != 1 {
-		t.Fatalf("diagnostic invocation counts = before:%d after:%d, want 1 each", before, after)
+	if before, diagnostics := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationDiagnostics)].Count; before != 1 || diagnostics != 1 {
+		t.Fatalf("diagnostic invocation counts = before:%d diagnostics:%d, want one baseline and one outer verification", before, diagnostics)
 	}
 	if resp.Results[0].Status != "ok" || resp.Results[1].Status != "ok" {
 		t.Errorf("expected all results ok: %+v", resp.Results)
@@ -197,6 +200,9 @@ func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
 
 func TestBatch_FailFast(t *testing.T) {
 	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	file1 := filepath.Join(tmpDir, "file1.go")
 	if err := os.WriteFile(file1, []byte("package testpkg\n\nfunc Foo() string {\n\treturn \"old\"\n}\n"), 0o600); err != nil {
@@ -272,6 +278,9 @@ func TestBatch_FailFast(t *testing.T) {
 
 func TestBatch_SameFileSequential(t *testing.T) {
 	tmpDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	file1 := filepath.Join(tmpDir, "calc.go")
 	initial := `package calc
@@ -420,7 +429,7 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := envelope.Result.StructuredContent.Result
-	if !envelope.Result.IsError || response.Status != "error" || len(response.Results) != 2 || response.Results[1].Tool != "post_process" {
+	if !envelope.Result.IsError || response.Status != "error" || len(response.Results) != 2 || response.Results[1].Tool != "semantic_verify" {
 		t.Fatalf("partial response = %+v; wire output: %s", envelope.Result, out.String())
 	}
 	if !strings.Contains(response.FinalDiff, "return 2") {

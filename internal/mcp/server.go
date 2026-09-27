@@ -25,6 +25,7 @@ import (
 	"semedit/internal/gocache"
 	"semedit/internal/maven"
 	"semedit/internal/operation"
+	"semedit/internal/projectverify"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
 )
@@ -54,6 +55,7 @@ type Server struct {
 	recentMetrics        []toolMetricsRecord
 	outMu                sync.Mutex
 	out                  io.Writer
+	verificationPlan     projectverify.Plan
 }
 
 const structuredContentKey = "structuredContent"
@@ -285,6 +287,11 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		return nil, fmt.Errorf("prepare MCP Go base directory: %w", err)
 	}
 	s.workspaceTrust = backend.NewWorkspaceTrust(s.workDir, initParams.InitializationOptions.TrustWorkspace)
+	plan, err := projectverify.Discover(s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("discover project verification plan: %w", err)
+	}
+	s.verificationPlan = plan
 	if s.initializedAt.IsZero() {
 		s.initializedAt = time.Now()
 	}
@@ -712,6 +719,22 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	finishDispatch()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
+		finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
+		text, formatErr := entry.Format(result)
+		finishResponse()
+		if formatErr != nil {
+			s.sendToolErrorWithTiming(id, formatErr.Error(), timing, formatErr)
+			return
+		}
+		s.recordToolMetrics(timing)
+		s.sendResult(id, map[string]any{
+			"content":            []map[string]any{{"type": "text", "text": text}},
+			"isError":            true,
+			structuredContentKey: timing.structuredContentWithResult(verify),
+		})
 		return
 	}
 	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)

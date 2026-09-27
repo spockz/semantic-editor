@@ -6,13 +6,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go/build"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"semedit/internal/gocache"
+	"semedit/internal/godiagnostics"
 )
 
 var (
@@ -24,31 +22,11 @@ var (
 
 // FindGopls locates the gopls binary across system PATH and Go environment directories.
 func FindGopls() (string, error) {
-	if p, err := exec.LookPath("gopls"); err == nil {
-		return p, nil
+	executable, err := godiagnostics.FindGopls()
+	if errors.Is(err, godiagnostics.ErrGoplsNotFound) {
+		return "", fmt.Errorf("%w: %w", ErrGoplsNotFound, err)
 	}
-
-	candidates := []string{
-		filepath.Join(os.Getenv("GOBIN"), "gopls"),
-		filepath.Join(os.Getenv("GOPATH"), "bin", "gopls"),
-		filepath.Join(build.Default.GOPATH, "bin", "gopls"),
-		filepath.Join(os.Getenv("HOME"), "go", "bin", "gopls"),
-		"/opt/homebrew/bin/gopls",
-		"/usr/local/bin/gopls",
-	}
-
-	for _, cand := range candidates {
-		if cand == "gopls" || cand == "" {
-			continue
-		}
-		cleanCand := filepath.Clean(cand)
-		// #nosec G703 -- verifying known compiler candidate binary paths
-		if info, err := os.Stat(cleanCand); err == nil && !info.IsDir() {
-			return cleanCand, nil
-		}
-	}
-
-	return "", ErrGoplsNotFound
+	return executable, err
 }
 
 // Rename executes gopls rename against an exact file coordinate.

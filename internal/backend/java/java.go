@@ -597,9 +597,6 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if !request.Project.WorkspaceTrust.Allows(root) {
 		return nil, &backend.WorkspaceTrustError{Operation: backend.OperationVerify, Language: backend.LanguageJava, Workspace: root}
 	}
-	if !request.FormatSelectedFile && !request.OrganizeImports {
-		return nil, &backend.Error{Operation: backend.OperationVerify, Language: backend.LanguageJava, Err: backend.ErrUnsupportedOperation}
-	}
 	config := effectiveJavaConfig(request.Project)
 	fingerprint, err := javaImportFingerprint(root, config)
 	if err != nil {

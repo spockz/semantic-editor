@@ -17,8 +17,8 @@ import (
 
 func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
 	result := &backend.RenameResult{Diagnostics: backend.DiagnosticDelta{After: []string{"existing", "new"}, Introduced: []string{"new"}}}
-	err := (&backend.RenameDiagnosticsError{Result: result}).Error()
-	if !strings.Contains(err, "1 introduced compilation diagnostics") || !strings.Contains(err, "new") {
+	err := (&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"new"}}).Error()
+	if !strings.Contains(err, "1 introduced error diagnostics") || !strings.Contains(err, "new") {
 		t.Fatalf("error = %q", err)
 	}
 }

@@ -1,5 +1,10 @@
 # Verify a trusted Java selected file through the central CLI operation registry.
 env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+# Check-only suppresses both mutation flags.
+cp src/Widget.java original.txt
+exec semedit verify --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --format-selected-file --organize-imports --check-only
+cmp src/Widget.java original.txt
+
 env SEMEDIT_ASSERT_JAVA_VERIFY=1
 exec semedit verify --language java --trust-workspace --java-bin $SEMEDIT_TEST_JAVA --jdtls-home tools/jdtls --file src/Widget.java --format-selected-file --organize-imports
 stdout 'Verification clean: 0 diagnostics'

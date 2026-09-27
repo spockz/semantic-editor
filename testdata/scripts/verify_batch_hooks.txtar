@@ -1,0 +1,45 @@
+# An outer batch runs normalization and checks once, after both edits are committed.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+cmp verification-order.txt want-order.txt
+cmp value.go want-value.txt
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"First","body":"return 1"}},{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Second","body":"return 2"}}]}}}
+-- go.mod --
+module example.com/batchhooks
+
+go 1.23
+-- value.go --
+package batchhooks
+
+func First() int { return 0 }
+func Second() int { return 0 }
+-- .semedit.yaml --
+version: 1
+verify:
+  normalize:
+    - id: normalize-once
+      languages: [go]
+      shell:
+        executable: sh
+        args: [-c]
+        script: 'grep -q "return 1" value.go && grep -q "return 2" value.go && printf "normalize\n" >> verification-order.txt'
+  check:
+    - id: check-once
+      languages: [go]
+      exec: [sh, -c, 'test -f verification-order.txt && printf "check\n" >> verification-order.txt']
+-- want-order.txt --
+normalize
+check
+-- want-value.txt --
+package batchhooks
+
+func First() int {
+	return 1
+}
+func Second() int {
+	return 2
+}

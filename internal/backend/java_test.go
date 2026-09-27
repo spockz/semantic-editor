@@ -636,18 +636,19 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 		codeAction json.RawMessage
 		format     bool
 		organize   bool
+		wantError  bool
 	}{
-		{name: "no actions", project: trustedJavaProject},
+		{name: "diagnostics only", project: trustedJavaProject},
 		{name: "untrusted", project: func(root, file string) backend.ProjectContext {
 			return backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageJava}
-		}, format: true},
+		}, format: true, wantError: true},
 		{name: "non java", project: func(root, file string) backend.ProjectContext {
 			p := trustedJavaProject(root, file)
 			p.File = filepath.Join(root, "Thing.txt")
 			return p
-		}, format: true},
-		{name: "overlap formatting", project: trustedJavaProject, formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":6}},"newText":"x"},{"range":{"start":{"line":0,"character":5},"end":{"line":0,"character":11}},"newText":"y"}]`), format: true},
-		{name: "organize command", project: trustedJavaProject, codeAction: json.RawMessage(`[{"kind":"source.organizeImports","command":{"title":"run"}}]`), organize: true},
+		}, format: true, wantError: true},
+		{name: "overlap formatting", project: trustedJavaProject, formatting: json.RawMessage(`[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":6}},"newText":"x"},{"range":{"start":{"line":0,"character":5},"end":{"line":0,"character":11}},"newText":"y"}]`), format: true, wantError: true},
+		{name: "organize command", project: trustedJavaProject, codeAction: json.RawMessage(`[{"kind":"source.organizeImports","command":{"title":"run"}}]`), organize: true, wantError: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -663,8 +664,11 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 				return session, nil
 			})
 			_, err = underTest.Verify(context.Background(), backend.VerifyRequest{Project: tc.project(root, file), FormatSelectedFile: tc.format, OrganizeImports: tc.organize})
-			if err == nil {
+			if err == nil && tc.wantError {
 				t.Fatal("Verify unexpectedly succeeded")
+			}
+			if err != nil && !tc.wantError {
+				t.Fatalf("diagnostics-only verify failed: %v", err)
 			}
 			contents, readErr := os.ReadFile(file)
 			if readErr != nil {
@@ -673,10 +677,13 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 			if !bytes.Equal(contents, original) {
 				t.Fatalf("unsafe request changed file to %q", contents)
 			}
-			if tc.name == "no actions" || tc.name == "untrusted" || tc.name == "non java" {
+			if tc.name == "untrusted" || tc.name == "non java" {
 				if started {
 					t.Fatal("unsafe request started a Java session")
 				}
+			}
+			if tc.name == "diagnostics only" && (!started || session.waitDiagnosticsCalls != 1) {
+				t.Fatalf("diagnostics-only verify started=%v waits=%d, want a diagnostics session", started, session.waitDiagnosticsCalls)
 			}
 		})
 	}

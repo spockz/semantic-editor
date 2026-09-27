@@ -1,0 +1,29 @@
+# Identical relative diagnostics in separate modules remain distinct in a batch delta.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"introduced":\["\[b\] value.go'
+stdout '"resolved":\["\[a\] value.go'
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"a/value.go","symbol":"Value","body":"return 1"}},{"tool":"semantic_replace_body","params":{"file":"b/value.go","symbol":"Value","body":"return missing"}}]}}}
+-- a/go.mod --
+module example.com/a
+
+go 1.23
+-- b/go.mod --
+module example.com/b
+
+go 1.23
+-- a/value.go --
+package value
+
+func Value() int {
+	return missing
+}
+-- b/value.go --
+package value
+
+func Value() int {
+	return 1
+}

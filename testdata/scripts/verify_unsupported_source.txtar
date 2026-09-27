@@ -1,0 +1,10 @@
+# Selecting an unsupported verifier does not send a foreign source to Go formatting.
+! exec semedit verify --file sample.rs
+stdout 'verification is unsupported for language'
+! stdout 'gofmt'
+cmp sample.rs original.txt
+
+-- sample.rs --
+pub fn value() -> i32 { 1 }
+-- original.txt --
+pub fn value() -> i32 { 1 }

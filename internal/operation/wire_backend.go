@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"semedit/internal/backend"
+	"semedit/internal/backend/pathutil"
 	"semedit/internal/backends"
 	"semedit/internal/capability"
 	"semedit/internal/pipeline"
+	"semedit/internal/projectverify"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
@@ -65,6 +69,7 @@ type VerifyReq struct {
 	Path               string
 	FormatSelectedFile bool
 	OrganizeImports    bool
+	CheckOnly          bool
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -81,8 +86,13 @@ type RenameRes = backend.RenameResult
 
 // VerifyRes reports compiler diagnostics and whether gofmt reformatted sources.
 type VerifyRes struct {
-	Diagnostics []backend.Diagnostic
-	Formatted   bool
+	Diagnostics     []backend.Diagnostic `json:"diagnostics,omitempty"`
+	Formatted       bool                 `json:"formatted,omitempty"`
+	NormalizeReport projectverify.Report `json:"normalize"`
+	CheckReport     projectverify.Report `json:"checks"`
+	Scope           projectverify.Scope  `json:"scope"`
+	Failure         string               `json:"failure,omitempty"`
+	Coverage        []LanguageCoverage   `json:"coverage,omitempty"`
 }
 
 var lookupParams = readRequestParams(
@@ -114,6 +124,8 @@ var verifyParams = []ParameterContract{
 	{Name: "organize_imports", CLIName: "organize-imports", JSONName: "organize_imports", Description: "Apply bounded JDT LS source.organizeImports to the selected Java file", Type: ParamBoolean, Default: false},
 	{Name: "kotlin_bin", CLIName: "kotlin-bin", JSONName: "kotlin_bin", Description: "Path to a preinstalled fwcd/kotlin-language-server executable", Type: ParamString},
 	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable", Type: ParamString},
+	{Name: "make_bin", CLIName: "make-bin", JSONName: "make_bin", Description: "Path to a preinstalled make-ls executable", Type: ParamString},
+	{Name: "check_only", CLIName: "check-only", JSONName: "check_only", Description: "Skip all formatting and normalization hooks; verify the current files only", Type: ParamBoolean, Default: false},
 }
 
 func parseLookup(raw map[string]any) (LookupReq, error) {
@@ -239,6 +251,14 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 	if err != nil {
 		return VerifyReq{}, err
 	}
+	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
+	checkOnly, err := ParseBool(raw, "check_only", "check-only", false)
+	if err != nil {
+		return VerifyReq{}, err
+	}
 	return VerifyReq{
 		Project: backend.ProjectContext{
 			File:           path,
@@ -247,11 +267,12 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 			Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
 			Kotlin:         backend.KotlinConfig{KotlinBin: kotlinBin},
 			Bash:           backend.BashConfig{BashBin: bashBin},
+			Make:           backend.MakeConfig{MakeBin: makeBin},
 			KotlinBin:      kotlinBin,
 		},
 		Path:               path,
 		FormatSelectedFile: formatSelected,
-		OrganizeImports:    organizeImports,
+		OrganizeImports:    organizeImports, CheckOnly: checkOnly,
 	}, nil
 }
 
@@ -291,35 +312,153 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		ctx = context.Background()
 	}
 	project := effectiveProject(cc, request.Project)
-	path := request.Path
-	if strings.TrimSpace(path) == "" {
+	path := strings.TrimSpace(request.Path)
+	if path == "" {
 		path = "."
 	}
-	formatted := false
-	if shouldRunGofmt(project, path) {
-		var err error
-		formatted, err = gofmtListsFiles(ctx, project.RootDir, path)
+	path, err := canonicalVerifyPath(project.RootDir, path)
+	if err != nil {
+		return VerifyRes{}, err
+	}
+	if project.File != "" {
+		project.File, err = canonicalVerifyPath(project.RootDir, project.File)
 		if err != nil {
 			return VerifyRes{}, err
 		}
 	}
-	service := cc.Service
-	if service == nil {
-		service = backends.NewDefaultService()
+	if path != "." {
+		if _, statErr := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path))); statErr != nil {
+			return VerifyRes{}, fmt.Errorf("verification path %q: %w", path, statErr)
+		}
 	}
-	result, err := service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path, FormatSelectedFile: request.FormatSelectedFile, OrganizeImports: request.OrganizeImports})
+	plan, err := projectverify.Discover(project.RootDir)
 	if err != nil {
-		return VerifyRes{}, err
+		return VerifyRes{}, fmt.Errorf("discover project verification plan: %w", err)
 	}
-	return VerifyRes{Diagnostics: result.Diagnostics, Formatted: formatted}, nil
+	requestedScope := projectverify.Scope{}
+	if path != "." {
+		requestedScope.Paths = []string{path}
+	}
+	actualPaths := scopedSourcePaths(plan, requestedScope)
+	if len(actualPaths) == 0 && path != "." {
+		actualPaths = []string{path}
+	}
+	scope := requestedScope
+	service := serviceForContext(cc)
+	response := VerifyRes{Scope: projectverify.Scope{Paths: actualPaths}}
+	if !request.CheckOnly && shouldRunGofmt(project, path) {
+		needsFormatting, err := gofmtListsFiles(ctx, project.RootDir, path)
+		if err != nil {
+			return response, fmt.Errorf("check Go formatting before verification: %w", err)
+		}
+		if needsFormatting {
+			if err := pipeline.Format(ctx, project.RootDir, path); err != nil {
+				return response, fmt.Errorf("format Go files before verification: %w", err)
+			}
+			response.Formatted = true
+		}
+	}
+	if !request.CheckOnly {
+		if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Normalize, scope); trustErr != nil {
+			return response, trustErr
+		} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
+			response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
+			return response, nil
+		}
+		response.NormalizeReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize))
+		if err != nil {
+			response.Failure = err.Error()
+			// Preserve hook results while ingress maps Failure to a failed operation.
+			return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
+		}
+		if request.FormatSelectedFile || request.OrganizeImports {
+			_, err = service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path, FormatSelectedFile: request.FormatSelectedFile, OrganizeImports: request.OrganizeImports})
+			if err != nil {
+				response.Failure = fmt.Errorf("apply selected backend normalization: %w", err).Error()
+				// Preserve completed normalization details in the public result.
+				return response, nil
+			}
+		}
+		plan, err = projectverify.Discover(project.RootDir)
+		if err != nil {
+			response.Failure = fmt.Errorf("rediscover project verification plan: %w", err).Error()
+			// Preserve completed normalization details in the public result.
+			return response, nil
+		}
+		response.Scope = projectverify.Scope{Paths: scopedSourcePaths(plan, scope)}
+		if len(response.Scope.Paths) == 0 && len(scope.Paths) > 0 {
+			response.Scope = scope
+		}
+	}
+	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope)
+	if err != nil {
+		response.Failure = err.Error()
+		// Preserve diagnostics gathered before the failed hook.
+		return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
+	}
+	if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Checks, scope); trustErr != nil {
+		return response, trustErr
+	} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
+		response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
+		return response, nil
+	}
+	response.CheckReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck))
+	if err != nil {
+		response.Failure = err.Error()
+	}
+	return response, nil
 }
 
 func shouldRunGofmt(project backend.ProjectContext, path string) bool {
 	language := project.Language
-	if language == backend.LanguageAuto {
-		language = backend.LanguageIDFromFile(path)
+	if language != "" && language != backend.LanguageAuto {
+		return language == backend.LanguageGo
 	}
-	return language != backend.LanguageJava && language != backend.LanguageKotlin && language != backend.LanguageBash && language != backend.LanguageMake
+	language = backend.LanguageIDFromFile(path)
+	if language != "" && language != backend.LanguageAuto {
+		return language == backend.LanguageGo
+	}
+	info, err := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path)))
+	return err == nil && info.IsDir()
+}
+
+func canonicalVerifyPath(root, requested string) (string, error) {
+	if !filepath.IsAbs(requested) {
+		clean := filepath.Clean(requested)
+		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return "", fmt.Errorf("verification path %q is outside workspace %q", requested, pathutil.CanonicalWorkspaceRoot(root))
+		}
+		requested = filepath.Join(root, clean)
+	}
+	canonicalRoot := pathutil.CanonicalWorkspaceRoot(root)
+	canonicalPath := pathutil.CanonicalWorkspaceRoot(requested)
+	if !pathutil.PathWithin(canonicalRoot, canonicalPath) {
+		return "", fmt.Errorf("verification path %q is outside workspace %q", requested, canonicalRoot)
+	}
+	rel, err := filepath.Rel(canonicalRoot, canonicalPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve verification path %q relative to workspace: %w", requested, err)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func scopedSourcePaths(plan projectverify.Plan, scope projectverify.Scope) []string {
+	paths := make([]string, 0)
+	for _, source := range plan.Sources {
+		if sourceInScope(source.Path, scope) {
+			paths = append(paths, source.Path)
+		}
+	}
+	return paths
+}
+
+func hasMutatingLSPHooks(hooks []projectverify.Hook) bool {
+	for _, hook := range hooks {
+		if hook.LSP != nil && (hook.LSP.ActionKind != "" || hook.LSP.Command != "") {
+			return true
+		}
+	}
+	return false
 }
 
 // gofmtListsFiles reports whether gofmt would reformat sources under path.
@@ -347,14 +486,36 @@ func formatRename(result *backend.RenameResult) (string, error) {
 }
 
 func formatVerify(result VerifyRes) (string, error) {
-	if len(result.Diagnostics) == 0 {
-		return "Verification clean: 0 diagnostics.", nil
-	}
 	messages := make([]string, 0, len(result.Diagnostics))
 	for _, diagnostic := range result.Diagnostics {
 		messages = append(messages, diagnostic.Message)
 	}
-	return fmt.Sprintf("Verification: %d diagnostics:\n%s", len(messages), strings.Join(messages, "\n")), nil
+	text := "Verification clean: 0 diagnostics."
+	if len(messages) > 0 {
+		text = fmt.Sprintf("Verification: %d diagnostics:\n%s", len(messages), strings.Join(messages, "\n"))
+	}
+	if result.Failure != "" {
+		text = "Verification failed: " + result.Failure
+	}
+	if result.Formatted {
+		text += "\nGo formatting changes were applied."
+	}
+	report := struct {
+		Scope       projectverify.Scope  `json:"scope"`
+		Normalize   projectverify.Report `json:"normalize"`
+		Checks      projectverify.Report `json:"checks"`
+		Diagnostics []backend.Diagnostic `json:"diagnostics,omitempty"`
+		Coverage    []LanguageCoverage   `json:"coverage"`
+		Failure     string               `json:"failure,omitempty"`
+	}{
+		Scope: result.Scope, Normalize: result.NormalizeReport, Checks: result.CheckReport,
+		Diagnostics: result.Diagnostics, Coverage: result.Coverage, Failure: result.Failure,
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		return "", fmt.Errorf("marshal verification report: %w", err)
+	}
+	return text + "\nVerification report: " + string(data), nil
 }
 
 func lookupDef() Def[LookupReq, *backend.LookupResult] {
@@ -418,7 +579,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 func verifyDef() Def[VerifyReq, VerifyRes] {
 	return Def[VerifyReq, VerifyRes]{
 		Key:     capability.OpVerify,
-		Summary: "Use this tool instead of ad hoc diagnostic commands when checking supported Go sources or selected Java, Kotlin, and Bash files. Go verification runs formatting before diagnostics and can write files. There is no dry-run. Java formatting/import organization may write files; read-only server diagnostics reject formatting modes.",
+		Summary: "Use this tool instead of ad hoc diagnostic commands to verify source files with detected or explicitly selected language servers. Go verification formats files before diagnostics; check-only skips all normalization.",
 		Params:  verifyParams,
 		Level:   LevelBuild,
 		CLIName: "verify",
@@ -429,6 +590,8 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 			backend.LanguageJava:   verifyRun,
 			backend.LanguageKotlin: verifyRun,
 			backend.LanguageBash:   verifyRun,
+			backend.LanguageMake:   verifyRun,
+			backend.LanguageAuto:   verifyRun,
 		},
 		Format: formatVerify,
 		ExampleRaw: map[string]any{

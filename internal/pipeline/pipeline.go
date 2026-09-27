@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"semedit/internal/gocache"
+	"semedit/internal/godiagnostics"
 	"semedit/internal/telemetry"
 
 	"golang.org/x/tools/imports"
@@ -414,40 +415,35 @@ func FindModuleRoot(dir string) string {
 	return dir
 }
 
-// CheckDiagnostics collects compiler/linter diagnostics without rolling back intermediate states (ADR-0004).
+// CheckDiagnostics requests root-wide gopls diagnostics under the selected project root.
 func CheckDiagnostics(ctx context.Context, workDir string) ([]string, error) {
+	diagnostics, err := CheckDiagnosticDetails(ctx, workDir)
+	return godiagnostics.Messages(diagnostics), err
+}
+
+// CheckDiagnosticDetails returns root-wide typed gopls diagnostics under the selected project root.
+func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostics.Diagnostic, error) {
 	finish := telemetry.Start(ctx, telemetry.PhaseVerificationDiagnostics)
 	defer finish()
 
-	effectiveDir := FindModuleRoot(workDir)
-
-	cmd := exec.CommandContext(ctx, "go", "vet", "./...")
-	if effectiveDir != "" {
-		cmd.Dir = effectiveDir
+	if strings.TrimSpace(workDir) == "" {
+		workDir = "."
 	}
-	var err error
-	cmd.Env, err = gocache.Environment(ctx, effectiveDir)
+	effectiveDir, err := filepath.Abs(filepath.Clean(workDir))
 	if err != nil {
-		return nil, fmt.Errorf("prepare go diagnostics environment: %w", err)
+		return nil, fmt.Errorf("resolve Go diagnostics root %q: %w", workDir, err)
 	}
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-
-	_ = cmd.Run() // Exit status may be non-zero on compiler errors, which is normal for diagnostic reporting.
-
-	output := out.String()
-	if output == "" {
-		return nil, nil
+	goplsPath, err := godiagnostics.FindGopls()
+	if err != nil {
+		return nil, fmt.Errorf("find gopls for Go diagnostics: %w", err)
 	}
-
-	var diagnostics []string
-	for line := range bytes.SplitSeq([]byte(output), []byte("\n")) {
-		trimmed := bytes.TrimSpace(line)
-		if len(trimmed) > 0 {
-			diagnostics = append(diagnostics, string(trimmed))
-		}
+	environment, err := gocache.Environment(ctx, effectiveDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare gopls diagnostics environment: %w", err)
+	}
+	diagnostics, err := godiagnostics.CheckDetailed(ctx, effectiveDir, goplsPath, environment)
+	if err != nil {
+		return nil, fmt.Errorf("check Go diagnostics with gopls: %w", err)
 	}
 	return diagnostics, nil
 }

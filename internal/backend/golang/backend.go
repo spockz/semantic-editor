@@ -11,6 +11,7 @@ import (
 	"semedit/internal/astedit"
 	backend "semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
+	"semedit/internal/godiagnostics"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
@@ -202,9 +203,9 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 	if lookup.Ambiguous {
 		return nil, &backend.Error{Operation: backend.OperationRename, Err: backend.ErrAmbiguous}
 	}
-	var before []string
+	var before []godiagnostics.Diagnostic
 	if !request.DeferVerification {
-		before, err = pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
+		before, err = pipeline.CheckDiagnosticDetails(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), request.Project.RootDir)
 		if err != nil {
 			return nil, err
 		}
@@ -223,20 +224,23 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 			}
 		}
 	}
-	var after []string
+	var after []godiagnostics.Diagnostic
 	if !request.DeferVerification {
-		after, err = pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), request.Project.RootDir)
+		after, err = pipeline.CheckDiagnosticDetails(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), request.Project.RootDir)
 		if err != nil {
 			return nil, err
 		}
 	}
-	delta := pipeline.ComputeDelta(before, after)
+	beforeMessages := godiagnostics.Messages(before)
+	afterMessages := godiagnostics.Messages(after)
+	delta := pipeline.ComputeDelta(beforeMessages, afterMessages)
+	introducedErrors := introducedDiagnosticErrors(before, after)
 	result := &backend.RenameResult{Lookup: lookup, Diagnostics: backend.DiagnosticDelta{
 		Before: delta.Before, After: delta.After, NetDelta: delta.NetDelta,
 		Introduced: delta.Introduced, Resolved: delta.Resolved, Suggestions: delta.Suggestions,
-	}, Active: after}
-	if !request.DeferVerification && len(result.Diagnostics.Introduced) > 0 {
-		return result, &backend.RenameDiagnosticsError{Result: result}
+	}, Active: afterMessages}
+	if !request.DeferVerification && len(introducedErrors) > 0 {
+		return result, &backend.RenameDiagnosticsError{Result: result, IntroducedErrors: introducedErrors}
 	}
 	return result, nil
 }
@@ -247,18 +251,61 @@ func (GoBackend) Verify(ctx context.Context, request backend.VerifyRequest) ([]b
 	if path == "" {
 		path = "."
 	}
-	if err := pipeline.Format(ctx, project.RootDir, path); err != nil {
-		return nil, err
+	if !request.CheckOnly {
+		if err := pipeline.Format(ctx, project.RootDir, path); err != nil {
+			return nil, err
+		}
 	}
-	diagnostics, err := pipeline.CheckDiagnostics(ctx, project.RootDir)
+	diagnostics, err := pipeline.CheckDiagnosticDetails(ctx, project.RootDir)
 	if err != nil {
 		return nil, err
 	}
 	result := make([]backend.Diagnostic, 0, len(diagnostics))
-	for _, message := range diagnostics {
-		result = append(result, backend.Diagnostic{Message: message, Severity: 1})
+	for _, diagnostic := range diagnostics {
+		var location *backend.SourceLocation
+		if diagnostic.Source != "package" {
+			file := diagnostic.Path
+			if !filepath.IsAbs(file) {
+				file = filepath.Join(project.RootDir, filepath.FromSlash(file))
+			}
+			position := backend.Position{}
+			if diagnostic.Line > 0 {
+				position.Line = diagnostic.Line - 1
+			}
+			if diagnostic.Column > 0 {
+				position.Character = diagnostic.Column - 1
+			}
+			location = &backend.SourceLocation{URI: pathutil.FileURI(file), Range: backend.Range{Start: position, End: position}}
+		}
+		result = append(result, backend.Diagnostic{Message: diagnostic.String(), Severity: diagnostic.Severity, Location: location})
 	}
 	return result, nil
+}
+
+func introducedDiagnosticErrors(before, after []godiagnostics.Diagnostic) []string {
+	counts := make(map[string]int)
+	for _, diagnostic := range before {
+		if diagnostic.Severity == 1 {
+			counts[diagnosticIdentity(diagnostic)]++
+		}
+	}
+	introduced := make([]string, 0)
+	for _, diagnostic := range after {
+		if diagnostic.Severity != 1 {
+			continue
+		}
+		identity := diagnosticIdentity(diagnostic)
+		if counts[identity] > 0 {
+			counts[identity]--
+			continue
+		}
+		introduced = append(introduced, diagnostic.String())
+	}
+	return introduced
+}
+
+func diagnosticIdentity(diagnostic godiagnostics.Diagnostic) string {
+	return diagnostic.Path + "\x00" + diagnostic.Source + "\x00" + diagnostic.Message
 }
 
 // Inspect resolves a Go declaration and returns its exact source snapshot.

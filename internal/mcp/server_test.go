@@ -338,10 +338,11 @@ func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	var config backend.JavaConfig
-	var session *mcpVerifySession
+	var sessions []*mcpVerifySession
 	java := javabackend.NewJavaBackendWithFactory(func(_ context.Context, _ string, got backend.JavaConfig) (javabackend.JavaSession, error) {
 		config = got
-		session = &mcpVerifySession{}
+		session := &mcpVerifySession{}
+		sessions = append(sessions, session)
 		return session, nil
 	})
 	registry, err := backend.NewRegistry(java)
@@ -363,13 +364,19 @@ func TestMCPRegistrySemanticVerifyForwardsJavaContract(t *testing.T) {
 	}
 	for _, want := range []string{"textDocument/formatting", "textDocument/codeAction"} {
 		found := false
-		for _, got := range session.methods {
-			if got == want {
-				found = true
+		for _, session := range sessions {
+			for _, got := range session.methods {
+				if got == want {
+					found = true
+				}
 			}
 		}
 		if !found {
-			t.Fatalf("missing %s request: %v", want, session.methods)
+			methods := make([]string, 0)
+			for _, session := range sessions {
+				methods = append(methods, session.methods...)
+			}
+			t.Fatalf("missing %s request: %v", want, methods)
 		}
 	}
 }

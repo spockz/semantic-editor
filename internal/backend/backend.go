@@ -385,14 +385,19 @@ type RenameResult struct {
 // RenameDiagnosticsError reports diagnostics introduced by an applied rename.
 // The edit remains on disk so callers can continue a staged refactoring.
 type RenameDiagnosticsError struct {
-	Result *RenameResult
+	Result           *RenameResult
+	IntroducedErrors []string
 }
 
 func (e *RenameDiagnosticsError) Error() string {
 	if e == nil || e.Result == nil {
 		return "rename applied with compilation diagnostics"
 	}
-	return fmt.Sprintf("rename applied with %d introduced compilation diagnostics: %s", len(e.Result.Diagnostics.Introduced), strings.Join(e.Result.Diagnostics.Introduced, "; "))
+	introduced := e.IntroducedErrors
+	if introduced == nil {
+		introduced = e.Result.Diagnostics.Introduced
+	}
+	return fmt.Sprintf("rename applied with %d introduced error diagnostics: %s", len(introduced), strings.Join(introduced, "; "))
 }
 
 // VerifyRequest describes a verification operation.
@@ -401,6 +406,7 @@ type VerifyRequest struct {
 	Path               string
 	FormatSelectedFile bool
 	OrganizeImports    bool
+	CheckOnly          bool
 }
 
 // VerifyResult contains diagnostics in their protocol-neutral form.
@@ -574,6 +580,10 @@ func (s *Service) Rename(ctx context.Context, request RenameRequest) (*RenameRes
 
 // Verify formats and checks diagnostics through the selected backend.
 func (s *Service) Verify(ctx context.Context, request VerifyRequest) (*VerifyResult, error) {
+	if request.CheckOnly {
+		request.FormatSelectedFile = false
+		request.OrganizeImports = false
+	}
 	b, err := s.backendFor(request.Project, OperationVerify)
 	if err != nil {
 		return nil, err

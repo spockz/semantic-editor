@@ -1,139 +1,120 @@
 # RQ-0029: Project Normalization Configuration
 
-* **Status**: Open
+* **Status**: Resolved
 * **Date**: 2026-09-21
+* **Resolved**: 2026-09-27
 * **Category**: Configuration & Quality
 
-## 1. Question
+## Question
 
-Should `semedit` support a checked-in declarative project configuration, with
-`.semantic-editing.yaml` as a candidate name, that defines default behavior
-for automatic formatting, import optimization, and lint-supported fixes after
-semantic edits?
+How should project-owned hooks select external commands and language-server
+actions while preserving scope, ordering, and explicit failure reporting?
 
-## 2. Context
+## Resolution
 
-RQ-0028 considers registry-backed `check` and `fix` operations that connect
-semantic editing with a project's existing quality policy. A project needs a
-way to decide whether a mutation should normally leave its affected files
-formatted, its imports organized, and safe lint fixes applied. These decisions
-are policy, not language-engine facts: teams vary in their appetite for
-automatic rewrites and in the tools and versions configured through files such
-as `.golangci.yml` and `.markdownlint-cli2.yaml`.
-
-The configuration must not replace those tool-specific files or reproduce
-their rule sets. It controls only whether `semedit` invokes an available
-normalizer by default. The normalizer itself continues to honor the project's
-existing configuration and only performs repairs it explicitly supports.
-
-## 3. Candidate Shape
-
-The following is an exploratory shape, not a committed schema or filename:
+[ADR-0054](../adr/0054-project-verification-hooks.md) accepts a versioned
+`.semedit.yaml` at the selected project root. The earlier candidate filename
+`.semantic-editing.yaml` and prohibition on command definitions are superseded.
+External tools own style and ordering policy; semedit orchestrates their execution.
 
 ```yaml
 version: 1
-normalization:
-  format: true
-  organize_imports: true
-  lint_fix: false
+verify:
+  normalize:
+    - id: go-lint-fixes
+      languages: [go]
+      timeout: 2m
+      exec: [golangci-lint, run, --fix, ./...]
+    - id: java-imports
+      languages: [java]
+      lsp:
+        language: java
+        action_kind: source.organizeImports
+  check:
+    - id: go-tests
+      languages: [go]
+      exec: [go, test, ./...]
 ```
 
-The three defaults intentionally have independent values. Formatting and
-import organization commonly maintain validity and local consistency after a
-structural edit. Lint fixes can make a wider set of changes, even when tools
-label them automatic, so projects may reasonably require explicit `fix`
-invocation or set `lint_fix: true` only after review. The research must test
-whether this distinction holds across languages and repositories rather than
-hard-code it as universal policy.
+Each enabled hook requires `id`, `languages`, and exactly one execution form:
 
-Future extensions might allow language-scoped settings while preserving a
-small, auditable core:
+* `exec`: executable and arguments as a list, without shell interpolation.
+* `shell`: `executable`, `args`, and `script`. For example, `executable: sh`,
+  `args: [-c]`, and `script: make check`. There is no implicit shell.
+* `lsp`: `language` and either `action_kind` or `command`, with optional structured
+  `arguments`. Execution is limited to backend-supported capabilities.
+
+An optional `cwd` names an existing directory relative to the project root.
+`timeout` is a positive Go duration up to one hour; the default is two minutes.
+Unknown fields, duplicate IDs within a phase, unsupported versions, unknown
+languages, and invalid execution combinations fail during discovery.
+
+Lists execute in order. Explicit checks precede detected checks. An explicit
+check with ID `golangci-lint` replaces the detected golangci checks, including
+nested scopes. To disable them:
 
 ```yaml
-normalization:
-  format: true
-languages:
-  go:
-    organize_imports: true
-    lint_fix: false
+version: 1
+verify:
+  check:
+    - id: golangci-lint
+      disabled: true
 ```
 
-## 4. Configuration Contract to Investigate
+## Discovery and scope
 
-1. The file is declarative data only. It cannot name arbitrary commands,
-   download tools, or relax workspace trust requirements.
-2. Absence of the file produces documented built-in defaults, preserving
-   current behavior for existing projects.
-3. Explicit operation arguments override the project default for one
-   invocation; the result receipt records both the effective value and its
-   source.
-4. Language capability and tool availability bound configuration. Setting
-   `lint_fix: true` cannot make an unsupported backend or unavailable linter
-   appear available.
-5. The resolver finds one project configuration from the selected workspace
-   root and does not silently inherit a parent repository's policy across a
-   workspace boundary.
-6. Invalid, unknown, or future-version configuration fails with an actionable
-   diagnostic rather than falling back to a surprising permissive policy.
-7. Configuration is read before a mutation plan is committed, so every
-   automatic normalization step is predictable and reported.
+Discovery runs against the resolved workspace after MCP initialization establishes
+its root and Go base directory. It is refreshed at verification boundaries.
+No parent `.semedit.yaml` is merged. Source and configuration signals select
+checks; installed executables alone do not select filesystem lint checks.
 
-## 5. Alternatives
+Go uses its required gopls default. Bash and Make can be automatically selected
+when matching files and their server executables are present. Other languages
+need configured launchers or explicit selection. Unsupported selected verification
+fails; detected unconfigured languages remain visible as excluded coverage.
 
-### A. No semedit Configuration
+Golangci configuration applies to its descendant sources until a nearer config
+takes over. Each detected check uses an explicit config path and Go module working
+directory, with buildable package arguments intersected with the selected sources.
+Go LSP verification groups sources by module and reports each scan root, the
+`./...` package pattern, and build exclusions. A narrower file selection may
+require a module diagnostic pass; a selected subproject does not expand upward
+to its parent module.
 
-Require flags for every call and leave project defaults solely in build tools.
-This maximizes per-call explicitness but forces agents and users to repeat
-policy decisions and makes consistent defaults difficult to discover.
+Language filters determine hook applicability. Commands receive their configured
+arguments unchanged; semedit does not append source paths or interpolate shell
+text. Project-authored commands therefore own their checking scope. Normalization
+publication is independently limited to the requested file or directory scope.
 
-### B. Declarative Project Configuration
+## Execution and publication
 
-Use a repository file such as `.semantic-editing.yaml` for a narrow set of
-defaults, with CLI and MCP overrides. This makes policy reviewable in version
-control and preserves normal project ownership of linter configuration.
+Explicit verification and the outer batch boundary run the hook chain once.
+Child-edit diagnostic passes do not re-enter it. Check-only skips normalization
+and mutating server actions. Project configuration cannot grant workspace trust.
+Applicable command hooks, including detected golangci checks, require explicit
+workspace trust; unrelated and disabled hooks do not.
 
-### C. Reuse a Build System Target
+External normalization runs in a staged project copy. On success, semedit checks
+all changed paths and publishes accepted files through the existing atomic-write
+pipeline. Deletions, workspace-manifest edits, symlinks, special files, and changes
+outside the requested scope fail before publication. A later publication failure
+reports files already published. The staging directory is not an OS sandbox.
 
-Treat a target such as `make fix` as the sole policy source. This avoids a new
-file but couples semantic defaults to arbitrary build-script behavior and
-cannot reliably separate safe local normalization from broad dependency,
-generation, or test side effects.
+After normalization is published, fresh backend diagnostics run, followed by
+filesystem check hooks on the committed project. Check hooks must be non-mutating.
+Checks stop at the first failure, retaining completed results, exit status,
+bounded stdout/stderr, changed paths, and partial completion. Cancellation and
+hook deadlines propagate as failures. Required tools are never installed implicitly.
 
-## 6. Evaluation Plan
+## Capability boundaries
 
-1. Survey representative Go projects for formatting, import, and lint-fix
-   expectations, including repositories that intentionally defer lint fixes.
-2. Prototype parsing and validation for the minimal three-setting schema
-   without enabling mutation from configuration.
-3. Add txtar coverage for no config, each default, explicit CLI/MCP override,
-   invalid version, unknown key, unsupported language, and nested workspace
-   roots.
-4. Verify that repeated edits with the same configuration are idempotent and
-   that receipts explain which defaults took effect.
-5. Evaluate a second language backend before fixing cross-language names or
-   default values in an ADR.
+The initial LSP hook implementation supports Java `source.organizeImports`
+normalization. Other action kinds and named server commands fail explicitly;
+configuration cannot grant a backend an unimplemented capability. Additional
+actions require backend-owned selection, execution, and CLI coverage.
 
-## 7. Open Questions
-
-1. Is `.semantic-editing.yaml` discoverable and distinctive enough, or should
-   the project use a different name or a section in an existing configuration
-   convention?
-2. Should default settings apply after every mutation, only batch completion,
-   or only explicit workspace `fix` operations?
-3. What precedence should apply among built-in defaults, project config,
-   language-specific config, and per-call flags?
-4. Are booleans sufficient, or should settings express modes such as `never`,
-   `changed_files`, and `workspace`?
-5. How are multiple module roots and nested repositories resolved without
-   surprising configuration inheritance?
-6. Should configuration select tool versions, or must that remain exclusively
-   the responsibility of the project's package and build tooling?
-
-## 8. Next Steps
-
-1. Decide the exact default behavior to preserve when no configuration exists.
-2. Compare filename, discovery, and precedence choices with the project's
-   workspace-root safety rules.
-3. Define a strict versioned schema and diagnostic format.
-4. Defer implementation and an ADR until RQ-0028 resolves the scope and
-   authority of semantic `check` and `fix` operations.
+Gopls verification uses explicit pull results from a fresh session, preserving
+severity and reporting incomplete coverage or protocol errors. Diagnostics do
+not claim that a standalone build or test ran. Builds and tests are separately
+configured checks. New error-severity diagnostics can fail an applied rename;
+warnings and informational findings remain visible.

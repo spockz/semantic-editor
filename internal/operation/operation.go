@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"semedit/internal/backend"
+	"semedit/internal/capability"
 )
 
 // Level identifies the scope an operation acts upon.
@@ -186,6 +187,11 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			}
 			language, err := resolveLanguage(cc, project)
 			if err != nil {
+				if def.Key == capability.OpVerify {
+					if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
+						return handler(ctx, cc, request)
+					}
+				}
 				return nil, err
 			}
 			if handler, ok := def.Handlers[language]; ok && handler != nil {

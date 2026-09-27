@@ -1,0 +1,110 @@
+# Verify enables filesystem checks from project signals, not installed executables alone.
+exec chmod +x bin/golangci-lint
+env PATH=$WORK/bin:$PATH
+exec semedit verify --language go --check-only --trust-workspace
+! exists checks.log
+cmp sample.go original.txt
+
+# A detected linter configuration enables the filesystem check.
+cp lint-config.txt .golangci.yml
+! exec semedit verify --language go --check-only
+! exists checks.log
+exec semedit verify --language go --check-only --trust-workspace
+cmp checks.log one-check.txt
+
+# Explicit configuration selects an alternative without a golangci configuration.
+rm .golangci.yml
+cp semedit-config.txt .semedit.yaml
+exec semedit verify --language go --check-only --trust-workspace
+cmp checks.log two-checks.txt
+cmp sample.go original.txt
+
+# Explicit overrides replace the detected check, rather than running both.
+cp lint-config.txt .golangci.yml
+cp override-config.txt .semedit.yaml
+exec semedit verify --language go --check-only --trust-workspace
+cmp checks.log three-checks.txt
+
+# Explicit disable removes the detected check.
+cp disabled-config.txt .semedit.yaml
+exec semedit verify --language go --check-only --trust-workspace
+cmp checks.log three-checks.txt
+
+# An unrelated hook does not require trust or run for the selected Go scope.
+cp unrelated-config.txt .semedit.yaml
+exec semedit verify --language go --check-only
+cmp checks.log three-checks.txt
+
+# A required configured check failure is a failed CLI invocation.
+cp failed-config.txt .semedit.yaml
+! exec semedit verify --language go --check-only --trust-workspace
+cmp sample.go original.txt
+
+-- go.mod --
+module example.com/signals
+
+go 1.23
+-- sample.go --
+package signals
+
+func Value() int {return 1}
+-- original.txt --
+package signals
+
+func Value() int {return 1}
+-- bin/golangci-lint --
+#!/bin/sh
+set -eu
+case "$*" in
+  *--config*) ;;
+  *) printf 'missing explicit linter configuration\n' >&2; exit 2 ;;
+esac
+test -f sample.go
+printf 'lint\n' >> checks.log
+-- lint-config.txt --
+version: "2"
+-- semedit-config.txt --
+version: 1
+verify:
+  check:
+    - id: alternative
+      languages: [go]
+      exec: [sh, -c, 'test -f sample.go && printf "explicit\n" >> checks.log']
+-- one-check.txt --
+lint
+-- two-checks.txt --
+lint
+explicit
+-- override-config.txt --
+version: 1
+verify:
+  check:
+    - id: golangci-lint
+      languages: [go]
+      exec: [sh, -c, 'printf "override\n" >> checks.log']
+-- disabled-config.txt --
+version: 1
+verify:
+  check:
+    - id: golangci-lint
+      disabled: true
+-- failed-config.txt --
+version: 1
+verify:
+  check:
+    - id: golangci-lint
+      languages: [go]
+      exec: [sh, -c, 'exit 7']
+-- three-checks.txt --
+lint
+explicit
+override
+-- unrelated-config.txt --
+version: 1
+verify:
+  check:
+    - id: golangci-lint
+      disabled: true
+    - id: unrelated-java
+      languages: [java]
+      exec: [sh, -c, 'exit 99']

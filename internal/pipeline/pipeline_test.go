@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bytes"
+
 	"semedit/internal/pipeline"
 )
 
@@ -492,5 +493,55 @@ func TestFormatExplicitFileSymlink(t *testing.T) {
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("formatting selected symlink replaced the link")
+	}
+}
+
+func TestCheckDiagnosticsUsesGopls(t *testing.T) {
+	moduleDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module diagnostics.test\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "source.go"), []byte("package sample\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	diagnostics, err := pipeline.CheckDiagnostics(context.Background(), moduleDir)
+	if err != nil && strings.Contains(err.Error(), "gopls executable not found") {
+		t.Skipf("gopls is unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("CheckDiagnostics() error = %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("CheckDiagnostics() diagnostics = %v, want clean result", diagnostics)
+	}
+}
+
+func TestCheckDiagnosticDetailsRespectsSelectedSubproject(t *testing.T) {
+	moduleDir := t.TempDir()
+	selectedDir := filepath.Join(moduleDir, "selected")
+	siblingDir := filepath.Join(moduleDir, "broken-sibling")
+	for _, dir := range []string{selectedDir, siblingDir} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(moduleDir, "go.mod"), []byte("module diagnostics.test\n\ngo 1.27.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(selectedDir, "source.go"), []byte("package selected\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(siblingDir, "broken.go"), []byte("package broken\n\nfunc Broken( {\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	diagnostics, err := pipeline.CheckDiagnosticDetails(context.Background(), selectedDir)
+	if err != nil && strings.Contains(err.Error(), "gopls executable not found") {
+		t.Skipf("gopls is unavailable: %v", err)
+	}
+	if err != nil {
+		t.Fatalf("CheckDiagnosticDetails() error = %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("selected project diagnostics = %v, want no findings from the clean selected subtree", diagnostics)
 	}
 }

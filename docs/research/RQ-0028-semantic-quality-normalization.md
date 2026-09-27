@@ -162,3 +162,89 @@ model with backend-owned normalizers and make all extra authority visible.
    idempotence, error, and receipt behavior.
 4. Create an ADR only after the scope, atomicity, and partial-failure policy
    have empirical support.
+
+## 9. External Declaration Ordering Investigation (2026-09-27)
+
+Declaration ordering should remain owned by the project's language tools.
+The integration question for semedit is how to invoke configured normalization
+and report its results, rather than implementing another declaration sorter.
+This direction informs the alternatives above; it does not establish a new
+hook schema or change the accepted verification contracts.
+
+### Go Upstream History
+
+The public issue and pull request history of funcorder was inspected, including
+closed attempts and the current draft:
+
+* [Issue 28](https://github.com/manuelarte/funcorder/issues/28) requested
+  `golangci-lint run --fix` support.
+* [PR 29](https://github.com/manuelarte/funcorder/pull/29) implemented suggested
+  fixes. The [changelog](https://github.com/manuelarte/funcorder/blob/main/CHANGELOG.md)
+  records both the v0.4.0 addition and v0.5.0 rollback on 2025-05-09.
+* [Issue 32](https://github.com/manuelarte/funcorder/issues/32) demonstrated
+  removal of comments inside moved methods and constructors.
+* [PR 37](https://github.com/manuelarte/funcorder/pull/37) was closed without
+  merging. The maintainer objected to combining all fixes into one diagnostic,
+  in addition to concerns about the size of the rewrites.
+* [PR 52](https://github.com/manuelarte/funcorder/pull/52), opened 2025-11-17,
+  remains an open draft at the investigation date. It uses a decorated syntax
+  tree and an opt-in `autofix` setting, with comment-preservation tests. The
+  GitHub API reports merge conflicts; its head is
+  `660b1eedc250ec029730bf63e80d6759870e283b`.
+
+A contribution should build on the existing draft or address a bounded gap,
+rather than open a duplicate implementation. Static inspection of PR 52 shows
+that its analyzer writes files directly and assumes driver fix flags reach
+analyzer flags. The current
+[golangci-lint adapter](https://github.com/golangci/golangci-lint/blob/main/pkg/golinters/funcorder/funcorder.go)
+passes only the four existing ordering settings. Compatibility with
+`golangci-lint run --fix` therefore needs an integration test, not just the
+analyzer's opt-in tests. No draft code was executed in this investigation.
+
+A useful contribution scope is to agree the fix boundary upstream, preserve
+source comments and directives, avoid overlapping edits, leave `init` order and
+initialization-sensitive declarations unchanged, and prove idempotence and
+actual driver integration. If maintainers prefer a separate formatter to
+suggested fixes, a project normalization hook can invoke that formatter instead.
+
+### Existing Cross-Language Tools
+
+* Java has Eclipse member sorting, also exposed by
+  [Spotless's Eclipse integration](https://github.com/diffplug/spotless/blob/main/plugin-gradle/README.md#sort-members).
+  A project can configure ordering and invoke its normal apply/check tasks.
+  Field and initializer reordering needs the tool's semantics-preserving policy;
+  method-order normalization must not imply arbitrary field reordering.
+* Scala has an
+  [IntelliJ rearranger](https://github.com/JetBrains/intellij-scala/blob/f0bc7bb81f3d5d252239174f04c8ab2d7ba9ef14/scala/scala-impl/src/org/jetbrains/plugins/scala/lang/rearranger/ScalaRearranger.scala).
+  An IDE feature is not evidence of an available command-line or language-server
+  operation. A project hook needs a supported automation entry point. Scalafmt's
+  documented import and modifier sorting should not be presented as arbitrary
+  method ordering.
+
+### Verification Integration Direction
+
+Investigate a project-owned normalization hook followed by existing verification:
+
+```text
+semantic edit or batch -> configured normalization -> diagnostics and tests
+```
+
+The project owns tool installation, pinned versions, sorting policy, and the
+command or supported language-server action. Semedit invokes the configured
+capability and reports changed files, tool versions, exit status, and remaining
+diagnostics. A missing tool or failed hook must remain an explicit failure.
+Run normalization once at the selected batch or verification boundary rather
+than after every child edit.
+
+Keep check-only behavior distinct from an explicitly enabled mutating phase.
+[ADR-0054](../adr/0054-project-verification-hooks.md) now selects project-owned
+`.semedit.yaml` shell/LSP hooks. [RQ-0029](RQ-0029-project-normalization-configuration.md)
+tracks the exact schema, scope, and execution mechanics; its earlier prohibition
+on command definitions is superseded. Runtime hook execution remains unimplemented.
+Existing Java verification also has a narrower accepted boundary in ADR-0036
+and ADR-0037; a build-tool formatter hook would be a distinct capability.
+
+Before implementation, specify hook scope, workspace trust, timeouts, failure
+and partial-edit reporting, and how external writes satisfy atomic-update
+requirements. This investigation changes no runtime behavior and publishes no
+upstream issue, comment, or pull request.

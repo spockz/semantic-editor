@@ -606,7 +606,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 		}
 	}
 
-	assertContains("semantic_verify description", toolDescription("semantic_verify"), "Go verification runs formatting before diagnostics and can write files", "There is no dry-run")
+	assertContains("semantic_verify description", toolDescription("semantic_verify"), "Go verification formats files before diagnostics", "check-only skips all normalization")
 	assertContains("semantic_verify.path", paramDescription("semantic_verify", "path"), "relative paths resolve from the active semedit workspace root", "runs formatting before diagnostics and can write files")
 	assertContains("semantic_batch description", toolDescription("semantic_batch"), "earlier successful edits remain applied", "are not rolled back")
 	for _, name := range []string{"semantic_maven_compile", "semantic_maven_test"} {

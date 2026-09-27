@@ -1,0 +1,14 @@
+# An installed Make server enables detection, then reports its unsupported verify capability.
+exec mkdir -p bin
+exec chmod +x bin/make-ls
+env PATH=$WORK/bin:$PATH
+! exec semedit verify --trust-workspace
+stdout '"status":"unsupported"'
+stdout 'verification is unsupported for language "make"'
+
+-- bin/make-ls --
+#!/bin/sh
+exec "$SEMEDIT_TEST_MAKE_LS" "$@"
+-- Makefile --
+all:
+	@echo ready

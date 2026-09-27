@@ -280,6 +280,15 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 				}
 				return ErrCommandFailed
 			}
+			if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
+				if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), text); writeErr != nil {
+					return fmt.Errorf("write %s result: %w", entry.CLIName, writeErr)
+				}
+				if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", entry.CLIName, verify.Failure); writeErr != nil {
+					return fmt.Errorf("write %s verification error: %w", entry.CLIName, writeErr)
+				}
+				return ErrCommandFailed
+			}
 			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
 				return fmt.Errorf("write %s result: %w", entry.CLIName, err)
 			}

@@ -26,7 +26,12 @@ However, real-world refactoring is frequently a multi-step process that inherent
 ## Invariants
 
 * The engine must never automatically revert code without explicit instruction from the agent or user.
-* Every edit must return actionable compiler/linter diagnostics.
+* Every edit must return actionable compiler/linter diagnostics with their
+  original severity. Warnings, information, and hints remain visible in the
+  full diagnostic delta. Only newly introduced error-severity diagnostics
+  trigger an applied-rename compilation failure; advisory findings do not.
+  Configured external lint checks enforce additional project policy through
+  their own reported outcomes (ADR-0054).
 * A standalone diagnostic delta compares the workspace state immediately before
   and after its edit. Batches may share one pre-edit baseline and one final
   post-processing capture across their ordered operations as specified by

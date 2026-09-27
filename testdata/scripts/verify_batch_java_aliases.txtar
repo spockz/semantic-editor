@@ -1,0 +1,23 @@
+# Batch verification preserves accepted launcher and trust aliases from the child operation.
+mkdir bin
+cp $SEMEDIT_TEST_JAVA bin/java
+exec chmod +x bin/java
+env PATH=$WORK/bin:$PATH
+env SEMEDIT_ASSERT_JAVA_SETTINGS=disabled
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"language":"java","status":"verified"'
+stdout '"diagnostic_delta_note":"diagnostic delta omitted'
+cmp src/Widget.java want.txt
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_rename","params":{"language":"java","trust-workspace":true,"java-bin":"java","jdtls-home":"tools/jdtls","file":"src/Widget.java","symbol":"Widget","to":"Gadget"}}]}}}
+-- tools/jdtls/plugins/org.eclipse.equinox.launcher_1.0.0.jar --
+placeholder
+-- tools/jdtls/config_mac/.keep --
+placeholder
+-- src/Widget.java --
+class Widget {}
+-- want.txt --
+class Gadget {}

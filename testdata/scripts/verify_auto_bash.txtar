@@ -1,0 +1,11 @@
+# Auto verification selects Bash when a matching source and language server are available.
+exec mkdir -p bin
+cp $SEMEDIT_TEST_BASH_LS bin/bash-language-server
+exec chmod +x bin/bash-language-server
+env PATH=$WORK/bin:$PATH
+exec semedit verify --trust-workspace
+stdout '"language":"bash"'
+
+-- scripts/check.sh --
+#!/bin/sh
+printf 'ready\n'
