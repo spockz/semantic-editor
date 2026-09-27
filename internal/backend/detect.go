@@ -5,20 +5,14 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"semedit/internal/sourcefiles"
 	"slices"
 	"strings"
 )
 
-var sourceExtensions = map[string]LanguageID{
-	".go": LanguageGo, ".rs": LanguageRust, ".java": LanguageJava,
-	".scala": LanguageScala, ".hs": LanguageHaskell,
-	".kt": LanguageKotlin, ".kts": LanguageKotlin, ".sh": LanguageBash, ".bash": LanguageBash,
-}
+var sourceExtensions = sourcefiles.ExtensionMap[LanguageID]()
 
-var ignoredSourceDirectories = map[string]bool{
-	".git": true, ".scratch": true, ".cache": true, ".gradle": true,
-	"vendor": true, "node_modules": true, "target": true, "build": true, "dist": true,
-}
+var ignoredSourceDirectories = sourcefiles.IgnoredDirectories()
 
 // DetectLanguages returns source languages present under root, ordered by language ID.
 // It skips generated, dependency, and worktree directories so repository tooling does
@@ -59,8 +53,8 @@ func DetectLanguages(root string) ([]LanguageID, error) {
 
 // LanguageIDFromFile maps a recognized source-file path to its language ID.
 func LanguageIDFromFile(path string) LanguageID {
-	if strings.EqualFold(filepath.Base(path), "makefile") || strings.EqualFold(filepath.Base(path), "gnumakefile") || strings.EqualFold(filepath.Ext(path), ".mk") {
-		return LanguageMake
+	if language := sourcefiles.LanguageForPath(path); language != "" {
+		return LanguageID(language)
 	}
 	return sourceExtensions[strings.ToLower(filepath.Ext(path))]
 }
