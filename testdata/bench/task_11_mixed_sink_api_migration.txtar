@@ -1,18 +1,18 @@
 task_id: task-11-mixed-sink-api-migration
 category: semantic_routing
-instruction: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+instruction: "Audit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
 contexts:
   - small
   - large
-verification_constraint: "Run go test ./... before concluding."
+verification_constraint: "Run go test ./... and ensure all tests pass before concluding."
 prompt_variants:
-  default: "Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
-  prefer_discover_semedit: "Before editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. Audit event kinds may contain inconsistent whitespace and casing. Normalize them at the delivery boundary before persistence, and treat probe events as control traffic. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+  default: "Audit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
+  prefer_discover_semedit: "Before editing, inspect the complete available tool inventory, including deferred or lazy tools. If applicable semantic editing tools are callable, prefer them for source mutations. Audit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified."
 interactive_followups:
-  - "Add the missing audit-kind normalization behavior at its designated audit boundary without changing unrelated protocols."
-  - "Update audit event classification so the normalized control event specified by the task is classified correctly."
-  - "Ensure the service delivery path applies audit normalization to an event before handing that event to its configured sink."
-  - "Add audit.NormalizeKind using strings.ToLower(strings.TrimSpace(kind)); classify normalized probe events as control while retaining health control classification; set event.Kind = audit.NormalizeKind(event.Kind) in Dispatcher.Record before sink.Write; then run go test ./...."
+  - "Normalize audit event kinds by removing surrounding whitespace and lowercasing them before persistence. Keep metrics and legacy export behavior unchanged."
+  - "A normalized probe is control traffic, like health, for classification. It is still an event: do not filter or drop it; the configured sink must receive it with its normalized kind."
+  - "Apply normalization at the service delivery boundary immediately before handing the event to the configured sink. Keep the change scoped to that path; do not alter unrelated sink, replay, metrics, or legacy behavior."
+  - "Acceptance behavior: provide the public audit.NormalizeKind(kind string) string normalization contract in audit/normalize.go; classify normalized probe and health kinds as control and ordinary kinds as data; and ensure Dispatcher.Record delivers exactly one normalized event to its configured sink. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
 oracle:
   diagnostic_expected_tools:
     - semantic_lookup

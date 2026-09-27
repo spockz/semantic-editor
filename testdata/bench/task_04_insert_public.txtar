@@ -7,9 +7,9 @@ contexts:
 prompt_variants:
   default: "Add public constructor func InitServer() *Server placed before private helpers."
 interactive_followups:
-  - "Add the requested exported constructor if api/server.go still lacks it; ensure it returns a usable server instance."
-  - "Review declaration placement and move the constructor into the public section before private helpers."
-  - "In api/server.go, insert func InitServer() *Server { return &Server{} } before func (s *Server) internalRun(), then run go test ./...."
+  - "InitServer must be callable without arguments and return a non-nil *Server. No new configuration arguments or server startup behavior are required."
+  - "Place the exported constructor in api/server.go before the private helper methods, including Server.internalRun. Preserve the existing Server type and method behavior."
+  - "Acceptance behavior: func InitServer() *Server returns a non-nil server and is declared before Server.internalRun in api/server.go. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
 oracle:
   level_1_mutation_policy:
     disallowed_files:

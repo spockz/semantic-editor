@@ -6,9 +6,9 @@ contexts:
   - large
 verification_constraint: "Verify your changes and ensure 'go test ./...' passes with zero errors before concluding."
 interactive_followups:
-  - "Inspect the declaration of the requested method and correct its API name if it still differs from the task."
-  - "Inspect every caller of that method in the fixture and make their invocation consistent with its requested API."
-  - "In api/server.go, rename the Server.oldName declaration to newName and change Run to call s.newName(), then run go test ./...."
+  - "This is a rename of the existing unexported Server method. Preserve its receiver, signature, and behavior; the oldName method should no longer exist alongside newName."
+  - "Update every call to that method in the api package, including Run. Run must continue to return `ok` through the renamed method; unrelated names and behavior should stay unchanged."
+  - "Acceptance behavior: Server.newName replaces Server.oldName in api/server.go, all callers use the new name, and Run still returns `ok`. Preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
 oracle:
   level_1_mutation_policy:
     disallowed_files:

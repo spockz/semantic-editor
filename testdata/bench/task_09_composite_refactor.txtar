@@ -1,16 +1,16 @@
 task_id: task-09-composite-refactor
 category: composition
-instruction: "In config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports."
+instruction: "In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports."
 contexts:
   - small
   - large
 prompt_variants:
-  default: "In config/config.go: rename Config.Port to Config.ListenPort, insert helper function DefaultConfig() *Config returning default values, and clean up unused imports."
+  default: "In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports."
 interactive_followups:
-  - "Review the Config field migration and make the requested field name consistent at its declaration and uses."
-  - "Add the requested default-config helper if it is absent, choosing values that make the package's visible configuration behavior usable."
-  - "Review config/config.go imports and remove dependencies that the completed implementation no longer uses."
-  - "In config/config.go, rename Config.Port and c.Port to ListenPort, add DefaultConfig returning &Config{Host: \"localhost\", ListenPort: 8080}, remove archive/tar, and run go test ./...."
+  - "Rename the Config field from Port to ListenPort and update its uses, including Addr. Addr must continue to format the configured Host and port; unrelated Port fields in other packages are outside this change."
+  - "DefaultConfig() *Config should return a non-nil configuration with Host set to `localhost` and ListenPort set to 8080, so its Addr() is `localhost:8080` without caller initialization."
+  - "Clean up imports left unused in config/config.go while preserving Addr behavior for caller-supplied host and port values, not just the defaults."
+  - "Acceptance behavior: Config exposes ListenPort instead of Port; DefaultConfig() *Config supplies Host `localhost` and ListenPort 8080; and Addr formats the current configuration values. Remove unused imports, preserve tests and module metadata, then run go test ./... and ensure all tests pass before concluding."
 oracle:
   level_1_mutation_policy:
     disallowed_files:
@@ -59,13 +59,18 @@ func TestDefaultConfig(t *testing.T) {
 	if c == nil {
 		t.Fatal("expected non-nil config")
 	}
-	if c.ListenPort == 0 {
-		c.ListenPort = 8080
+	if c.Host != "localhost" {
+		t.Errorf("expected default host localhost, got %q", c.Host)
 	}
-	if c.Host == "" {
-		c.Host = "localhost"
+	if c.ListenPort != 8080 {
+		t.Errorf("expected default listen port 8080, got %d", c.ListenPort)
 	}
-	if c.Addr() != "localhost:8080" {
-		t.Fatalf("expected localhost:8080, got %s", c.Addr())
+	if got := c.Addr(); got != "localhost:8080" {
+		t.Errorf("expected localhost:8080, got %s", got)
+	}
+	c.Host = "example.test"
+	c.ListenPort = 9090
+	if got := c.Addr(); got != "example.test:9090" {
+		t.Errorf("expected example.test:9090, got %s", got)
 	}
 }
