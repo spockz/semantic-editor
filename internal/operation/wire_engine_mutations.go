@@ -43,10 +43,10 @@ func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.P
 
 var replaceConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Path to the Go source file", Required: true},
-	{Name: "function", CLIName: "function", JSONName: "function", Type: ParamString, Description: "Name of the containing function or method (e.g. 'TestWriteAssets' or '(*Server).Serve')", Required: true},
+	{Name: "function", CLIName: "function", JSONName: "function", Type: ParamString, Description: "Name of the containing function or receiver-qualified method (e.g. 'TestWriteAssets' or '(*Server).Serve')", Required: true},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
-	{Name: "discriminator", CLIName: "discriminator", JSONName: "discriminator", Type: ParamString, Description: "Optional condition, expression, case label, or defer call identifying the construct"},
-	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
+	{Name: "discriminator", CLIName: "discriminator", JSONName: "discriminator", Type: ParamString, Description: "Optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct"},
+	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity or no-match diagnostic, such as 0 or 0.1"},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement Go construct source", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
 }
@@ -353,7 +353,7 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 	return Def[ReplaceConstructReq, FileEditRes]{
 		Key:     "replace_construct",
-		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go loop, conditional, else block, switch or select branch, or defer statement. Select with kind and an optional discriminator; use construct_path when ambiguous. It changes only the selected construct.",
+		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go loop, conditional, else block, switch or select branch, or defer statement. Select with kind and an optional discriminator; for if statements the discriminator may be the condition or short initializer. Errors list candidate paths and selectors; use construct_path to choose one. The function parameter accepts a function name or receiver-qualified method (for example, (*Server).Serve).",
 		Params:  replaceConstructParams,
 		Level:   LevelFile,
 		CLIName: "replace-construct",

@@ -277,3 +277,42 @@ func TestInsertDeclFindsSiblingPackageCollision(t *testing.T) {
 		t.Fatalf("expected sibling collision, got %v", err)
 	}
 }
+
+func TestReplaceConstruct_SelectsIfByShortInitializerAndPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ifs.go")
+	initial := "package sample\nfunc Check() { if err := writeGeneratedFile(\"first\"); err != nil { first() }; if err := writeGeneratedFile(\"second\"); err != nil { second() } }\n"
+	writeGo(t, path, initial)
+	replace := "if changed { updated() }"
+
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "", replace, astedit.ConstructOptions{})
+	if err == nil || !strings.Contains(err.Error(), "construct_path 0") || !strings.Contains(err.Error(), "construct_path 1") || !strings.Contains(err.Error(), "writeGeneratedFile") {
+		t.Fatalf("expected actionable ambiguity candidates, got %v", err)
+	}
+	_, err = astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "missing", replace, astedit.ConstructOptions{})
+	if err == nil || !strings.Contains(err.Error(), "not found") || !strings.Contains(err.Error(), "construct_path 0") || !strings.Contains(err.Error(), "construct_path 1") {
+		t.Fatalf("expected available candidates for bad selector, got %v", err)
+	}
+	_, err = astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "", replace, astedit.ConstructOptions{ConstructPath: "9"})
+	if err == nil || !strings.Contains(err.Error(), "available candidates") || !strings.Contains(err.Error(), "construct_path 0") || !strings.Contains(err.Error(), "construct_path 1") {
+		t.Fatalf("expected available candidates for bad path, got %v", err)
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("ambiguous or bad selection changed source:\n%s", got)
+	}
+
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "err := writeGeneratedFile(\"first\")", replace, astedit.ConstructOptions{}); err != nil {
+		t.Fatalf("select if by short initializer: %v", err)
+	}
+	got := readGo(t, path)
+	if !strings.Contains(got, "if changed {\n\t\tupdated()") || !strings.Contains(got, "writeGeneratedFile(\"second\")") || strings.Contains(got, "writeGeneratedFile(\"first\")") {
+		t.Fatalf("initializer selector replaced the wrong if:\n%s", got)
+	}
+
+	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructIf, "", "if final { secondUpdated() }", astedit.ConstructOptions{ConstructPath: "1"}); err != nil {
+		t.Fatalf("select remaining if by path: %v", err)
+	}
+	got = readGo(t, path)
+	if !strings.Contains(got, "if final {\n\t\tsecondUpdated()") || strings.Contains(got, "second()") {
+		t.Fatalf("construct_path did not select the remaining if:\n%s", got)
+	}
+}

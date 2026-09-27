@@ -106,12 +106,12 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 			}
 		}
 		if len(selected) == 0 {
-			return "", fmt.Errorf("construct_path %q does not match %s %q in %s; candidates:\n%s", opts.ConstructPath, kind, discriminator, funcName, formatConstructCandidates(fset, matches, kind))
+			return "", fmt.Errorf("construct_path %q does not select %s %q in %s; available candidates:\n%s", opts.ConstructPath, kind, discriminator, funcName, formatConstructCandidates(fset, candidates, kind))
 		}
 		matches = selected
 	}
 	if len(matches) == 0 {
-		return "", fmt.Errorf("%s %q not found in %s", kind, discriminator, funcName)
+		return "", fmt.Errorf("%s %q not found in %s; available candidates (select an if by its condition or short initializer, or set construct_path):\n%s", kind, discriminator, funcName, formatConstructCandidates(fset, candidates, kind))
 	}
 	if len(matches) > 1 {
 		return "", fmt.Errorf("ambiguous %s %q in %s; set construct_path to one of:\n%s", kind, discriminator, funcName, formatConstructCandidates(fset, matches, kind))
@@ -247,8 +247,11 @@ func candidateMatches(fset *token.FileSet, c constructCandidate, kind ConstructK
 	if kind == ConstructElse {
 		return c.key == needle
 	}
+	if conditional, ok := c.node.(*ast.IfStmt); ok {
+		return conditional.Init != nil && nodeText(fset, conditional.Init) == needle
+	}
 	if kind == ConstructIf {
-		return c.key == needle
+		return false
 	}
 	if clause, ok := c.node.(*ast.CaseClause); ok {
 		for _, expression := range clause.List {
@@ -261,7 +264,6 @@ func candidateMatches(fset *token.FileSet, c constructCandidate, kind ConstructK
 	if clause, ok := c.node.(*ast.CommClause); ok {
 		return clause.Comm != nil && nodeText(fset, clause.Comm) == needle
 	}
-	// Identifiers are useful selectors for expressions such as defer calls and case values.
 	var found bool
 	ast.Inspect(c.node, func(node ast.Node) bool {
 		if ident, ok := node.(*ast.Ident); ok && ident.Name == needle {
@@ -276,7 +278,14 @@ func candidateMatches(fset *token.FileSet, c constructCandidate, kind ConstructK
 func formatConstructCandidates(fset *token.FileSet, matches []constructCandidate, kind ConstructKind) string {
 	lines := make([]string, 0, len(matches))
 	for _, c := range matches {
-		lines = append(lines, fmt.Sprintf("construct_path %s at %s: %s %s", c.path, fset.Position(c.node.Pos()), kind, c.key))
+		label := fmt.Sprintf("%s %s", kind, c.key)
+		if conditional, ok := c.node.(*ast.IfStmt); ok && conditional.Init != nil {
+			label = fmt.Sprintf("%s init %q; condition %q", kind, nodeText(fset, conditional.Init), nodeText(fset, conditional.Cond))
+		}
+		lines = append(lines, fmt.Sprintf("construct_path %s at %s: %s", c.path, fset.Position(c.node.Pos()), label))
+	}
+	if len(lines) == 0 {
+		return "(no matching constructs found)"
 	}
 	return strings.Join(lines, "\n")
 }
