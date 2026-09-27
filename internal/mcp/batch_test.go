@@ -129,8 +129,8 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 	if !strings.Contains(response.Result.StructuredContent.Result.FinalDiff, "file.go") {
 		t.Fatalf("structured batch response omitted final_diff: %+v", response.Result.StructuredContent.Result)
 	}
-	if response.Result.StructuredContent.Metrics == nil {
-		t.Fatal("structured batch response omitted metrics")
+	if response.Result.StructuredContent.Metrics != nil {
+		t.Fatal("structured batch response unexpectedly includes inline metrics")
 	}
 	if len(response.Result.Content) != 1 || !strings.Contains(response.Result.Content[0].Text, "diagnostic_delta") {
 		t.Fatalf("batch content lost human-readable response: %#v", response.Result.Content)

@@ -107,6 +107,17 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				switch name {
 				case "semantic_batch":
 					assertBatchOutputSchema(t, tool["outputSchema"])
+				case "semantic_metrics":
+					assertStandardOutputSchema(t, tool["outputSchema"], "object")
+					result := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+					records := result["properties"].(map[string]any)["records"].(map[string]any)
+					item := records["items"].(map[string]any)
+					if item["properties"].(map[string]any)["metrics"] == nil {
+						t.Fatal("semantic_metrics record schema omitted metrics")
+					}
+					if !reflect.DeepEqual(result["required"], []any{"records"}) {
+						t.Fatalf("semantic_metrics result required = %#v", result["required"])
+					}
 				case "report_feedback":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)
@@ -158,15 +169,18 @@ func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
 	if schema["type"] != "object" {
 		t.Fatalf("outputSchema type = %#v, want object", schema["type"])
 	}
-	if got := schema["required"]; !reflect.DeepEqual(got, []any{"result", "metrics"}) {
-		t.Fatalf("outputSchema required = %#v, want result and metrics", got)
+	if got := schema["required"]; !reflect.DeepEqual(got, []any{"result"}) {
+		t.Fatalf("outputSchema required = %#v, want result only", got)
 	}
 	properties := schema["properties"].(map[string]any)
 	if got := properties["result"].(map[string]any)["type"]; got != resultType {
 		t.Fatalf("outputSchema result type = %#v, want %s", got, resultType)
 	}
-	if properties["metrics"].(map[string]any)["type"] != "object" {
-		t.Fatalf("outputSchema metrics = %#v, want object", properties["metrics"])
+	if _, ok := properties["metrics"]; ok {
+		t.Fatalf("standard outputSchema must not include per-call metrics: %#v", properties["metrics"])
+	}
+	if _, ok := properties["session_metrics"]; ok {
+		t.Fatalf("standard outputSchema must not include session metrics: %#v", properties["session_metrics"])
 	}
 }
 

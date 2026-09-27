@@ -46,15 +46,24 @@ type Server struct {
 	sessionMu           sync.Mutex
 	initializedAt       time.Time
 	firstSemanticCallAt time.Time
+	metricsMu           sync.Mutex
+	metricSequence      uint64
+	recentMetrics       []toolMetricsRecord
 	outMu               sync.Mutex
 	out                 io.Writer
 }
+
+const structuredContentKey = "structuredContent"
 
 const (
 	// DescriptiveInstructions advertises semantic operations without requiring their use.
 	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
 	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
 	PrescriptiveInstructions = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
+	toolFieldDescription     = "description"
+	toolFieldInputSchema     = "inputSchema"
+	toolFieldOutputSchema    = "outputSchema"
+	additionalPropertiesKey  = "additionalProperties"
 )
 
 // Option configures a Server instance.
@@ -285,7 +294,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 }
 
 func (s *Server) listTools() ([]map[string]any, error) {
-	tools := make([]map[string]any, 0, len(s.registry.All())+3)
+	tools := make([]map[string]any, 0, len(s.registry.All())+4)
 	batchable := make([]operation.Entry, 0)
 	languages, err := s.activeLanguages()
 	if err != nil {
@@ -304,12 +313,12 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			batchable = append(batchable, entry)
 		}
 	}
-	tools = append(tools, batchToolSchemaForLanguages(batchable, activeBackends))
+	tools = append(tools, batchToolSchemaForLanguages(batchable, activeBackends), metricsToolSchema())
 	if s.liveReload {
 		tools = append(tools, map[string]any{
-			"name": "semantic_reload", "description": "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
-			"inputSchema":  map[string]any{"type": "object", schemaPropertiesKey: map[string]any{}, "additionalProperties": false},
-			"outputSchema": reloadOutputSchema(),
+			"name": "semantic_reload", toolFieldDescription: "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
+			toolFieldInputSchema:  map[string]any{"type": "object", schemaPropertiesKey: map[string]any{}, additionalPropertiesKey: false},
+			toolFieldOutputSchema: reloadOutputSchema(),
 		})
 	}
 	tools = append(tools, feedbackToolSchema())
@@ -386,10 +395,10 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) m
 
 func toolSchema(entry operation.Entry) map[string]any {
 	return map[string]any{
-		"name":         entry.MCPName,
-		"description":  entry.Summary,
-		"inputSchema":  operationInputSchema(entry),
-		"outputSchema": standardOutputSchema(map[string]any{"type": "string"}),
+		"name":                entry.MCPName,
+		toolFieldDescription:  entry.Summary,
+		toolFieldInputSchema:  operationInputSchema(entry),
+		toolFieldOutputSchema: standardOutputSchema(map[string]any{"type": "string"}),
 	}
 }
 
@@ -397,11 +406,9 @@ func standardOutputSchema(resultSchema map[string]any) map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"result":          resultSchema,
-			"metrics":         metricsOutputSchema(),
-			"session_metrics": sessionMetricsOutputSchema(),
+			"result": resultSchema,
 		},
-		"required": []string{"result", "metrics"},
+		"required": []string{"result"},
 	}
 }
 
@@ -412,8 +419,8 @@ func metricsOutputSchema() map[string]any {
 			"schema_version": map[string]any{"type": "integer"},
 			"total_ms":       map[string]any{"type": "integer"},
 			"phases": map[string]any{
-				"type":                 "object",
-				"additionalProperties": map[string]any{"type": "object", schemaPropertiesKey: map[string]any{"count": map[string]any{"type": "integer"}, "duration_ms": map[string]any{"type": "integer"}}},
+				"type":                  "object",
+				additionalPropertiesKey: map[string]any{"type": "object", schemaPropertiesKey: map[string]any{"count": map[string]any{"type": "integer"}, "duration_ms": map[string]any{"type": "integer"}}},
 			},
 		},
 	}
@@ -521,7 +528,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) map[str
 			required = append(required, param.JSONName)
 		}
 	}
-	schema := map[string]any{"type": "object", schemaPropertiesKey: properties}
+	schema := map[string]any{"type": "object", schemaPropertiesKey: properties, "additionalProperties": false}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -571,6 +578,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.handleReload(id)
 		return
 	}
+	if params.Name == "semantic_metrics" {
+		s.handleMetricsCall(id, params.Arguments)
+		return
+	}
 	if params.Name == "report_feedback" {
 		s.handleFeedbackReport(ctx, id, params.Arguments)
 		return
@@ -594,6 +605,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		return
 	}
 	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
+	timing.toolName = params.Name
 	ctx = timing.Context(ctx)
 	raw := map[string]any{}
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
@@ -684,9 +696,9 @@ func (s *Server) handleReload(id json.RawMessage) {
 
 func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text string, structuredContent map[string]any) {
 	s.sendResult(id, map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": text}},
-		"isError":           false,
-		"structuredContent": structuredContent,
+		"content":            []map[string]any{{"type": "text", "text": text}},
+		"isError":            false,
+		structuredContentKey: structuredContent,
 	})
 }
 
@@ -695,10 +707,11 @@ func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timi
 }
 
 func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {
+	s.recordToolMetrics(timing)
 	s.sendResult(id, map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": text}},
-		"isError":           false,
-		"structuredContent": timing.structuredContentWithResult(result),
+		"content":            []map[string]any{{"type": "text", "text": text}},
+		"isError":            false,
+		structuredContentKey: timing.structuredContentWithResult(result),
 	})
 }
 
@@ -717,16 +730,12 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 }
 
 func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, errs ...error) {
-	result := map[string]any{
-		"content":           []map[string]any{{"type": "text", "text": text}},
-		"isError":           true,
-		"structuredContent": timing.structuredContent(),
-	}
+	s.recordToolMetrics(timing)
+	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
 	if len(errs) > 0 && errs[0] != nil {
 		var mavenErr *maven.Error
 		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
-			result["structuredContent"].(map[string]any)["error"] = text
-			result["structuredContent"].(map[string]any)["result"] = mavenErr.MavenResult()
+			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}
 		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
 			result["location"] = loc
@@ -736,9 +745,10 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 }
 
 type toolRequestTiming struct {
-	metrics *telemetry.Metrics
-	started time.Time
-	session *StartupMetrics
+	metrics  *telemetry.Metrics
+	started  time.Time
+	session  *StartupMetrics
+	toolName string
 }
 
 func newToolRequestTiming(_ context.Context, session *StartupMetrics) *toolRequestTiming {
@@ -754,11 +764,7 @@ func (t *toolRequestTiming) Snapshot() telemetry.Snapshot {
 }
 
 func (t *toolRequestTiming) structuredContent() map[string]any {
-	content := map[string]any{"metrics": t.Snapshot()}
-	if t.session != nil {
-		content["session_metrics"] = t.session
-	}
-	return content
+	return map[string]any{}
 }
 
 func (t *toolRequestTiming) structuredContentWithResult(result any) map[string]any {
@@ -876,6 +882,7 @@ func (s *Server) notifyToolsListChanged() {
 
 func (s *Server) handleFeedbackReport(ctx context.Context, id json.RawMessage, arguments json.RawMessage) {
 	timing := newToolRequestTiming(ctx, nil)
+	timing.toolName = "report_feedback"
 	ctx = timing.Context(ctx)
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
 	decoder := json.NewDecoder(strings.NewReader(string(arguments)))
@@ -969,13 +976,13 @@ func feedbackToolSchema() map[string]any {
 	return map[string]any{
 		"name":         "report_feedback",
 		descriptionKey: "Use this tool instead of manually drafting a tool issue when a semedit command or MCP tool fails, surprises you, or needs a manual touch-up. Prepare a structured report about that friction. Use after an unexpected result, an error, or a required manual touch-up. The report is a draft for the user to review for accuracy and sensitive content, then post manually as a GitHub issue if appropriate; this tool does not save or post feedback. Privacy: do not include source code, credentials, personal or customer data, private paths, proprietary business details, or intellectual property. For an open-source project, public project and tool details are generally okay to include, but still omit secrets and private information. If unsure whether a detail is safe to share or whether the project is open source, ask the user first and leave uncertain details out until approved.",
-		"inputSchema": map[string]any{
+		toolFieldInputSchema: map[string]any{
 			"type":                  "object",
 			schemaPropertiesKey:     properties,
 			"required":              []string{"intent", "interface", "command", "parameters", "observed_result", "unexpected_reason", "manual_touchups"},
 			additionalPropertiesKey: false,
 		},
-		"outputSchema": standardOutputSchema(map[string]any{
+		toolFieldOutputSchema: standardOutputSchema(map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
 				"status":   map[string]any{"const": "draft_only"},
@@ -1014,4 +1021,106 @@ func validateFeedbackReport(report feedbackReport) error {
 		return errors.New("feedback field \"interface\" must be mcp, cli, or other")
 	}
 	return nil
+}
+
+type toolMetricsRecord struct {
+	Sequence       uint64             `json:"sequence"`
+	Tool           string             `json:"tool"`
+	CompletedAt    time.Time          `json:"completed_at"`
+	Metrics        telemetry.Snapshot `json:"metrics"`
+	SessionMetrics *StartupMetrics    `json:"session_metrics,omitempty"`
+}
+
+func (s *Server) recordToolMetrics(timing *toolRequestTiming) {
+	if timing == nil || timing.toolName == "" || timing.toolName == "semantic_metrics" {
+		return
+	}
+	completedAt := time.Now()
+	record := toolMetricsRecord{
+		Tool:           timing.toolName,
+		CompletedAt:    completedAt,
+		Metrics:        timing.Snapshot(),
+		SessionMetrics: timing.session,
+	}
+	s.metricsMu.Lock()
+	defer s.metricsMu.Unlock()
+	s.metricSequence++
+	record.Sequence = s.metricSequence
+	const maxRetainedToolMetrics = 100
+	if len(s.recentMetrics) == maxRetainedToolMetrics {
+		copy(s.recentMetrics, s.recentMetrics[1:])
+		s.recentMetrics = s.recentMetrics[:maxRetainedToolMetrics-1]
+	}
+	s.recentMetrics = append(s.recentMetrics, record)
+}
+
+func metricsToolSchema() map[string]any {
+	recordSchema := map[string]any{
+		"type": "object",
+		schemaPropertiesKey: map[string]any{
+			"sequence":        map[string]any{"type": "integer"},
+			"tool":            map[string]any{"type": "string"},
+			"completed_at":    map[string]any{"type": "string", "format": "date-time"},
+			"metrics":         metricsOutputSchema(),
+			"session_metrics": sessionMetricsOutputSchema(),
+		},
+		"required": []string{"sequence", "tool", "completed_at", "metrics"},
+	}
+	return map[string]any{
+		"name":               "semantic_metrics",
+		toolFieldDescription: "Use this tool instead of expecting timing data in each semantic response; retrieve measurements from recent calls in this server session. Returns the most recent records first, up to the requested limit. This query is not itself recorded.",
+		toolFieldInputSchema: map[string]any{
+			"type": "object",
+			schemaPropertiesKey: map[string]any{
+				"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
+			},
+			"additionalProperties": false,
+		},
+		toolFieldOutputSchema: standardOutputSchema(map[string]any{
+			"type": "object",
+			schemaPropertiesKey: map[string]any{
+				"records": map[string]any{"type": "array", "items": recordSchema},
+			},
+			"required": []string{"records"},
+		}),
+	}
+}
+
+func (s *Server) recentToolMetrics(limit int) []toolMetricsRecord {
+	s.metricsMu.Lock()
+	defer s.metricsMu.Unlock()
+	count := min(limit, len(s.recentMetrics))
+	records := make([]toolMetricsRecord, 0, count)
+	for index := len(s.recentMetrics) - 1; index >= 0 && len(records) < limit; index-- {
+		records = append(records, s.recentMetrics[index])
+	}
+	return records
+}
+
+func (s *Server) handleMetricsCall(id json.RawMessage, arguments json.RawMessage) {
+	var request struct {
+		Limit int `json:"limit"`
+	}
+	if len(arguments) > 0 && string(arguments) != "null" {
+		if err := json.Unmarshal(arguments, &request); err != nil {
+			s.sendToolError(id, fmt.Sprintf("invalid semantic_metrics arguments: %v", err))
+			return
+		}
+	}
+	if request.Limit == 0 {
+		request.Limit = 10
+	}
+	if request.Limit < 1 || request.Limit > 100 {
+		s.sendToolError(id, "semantic_metrics limit must be between 1 and 100")
+		return
+	}
+	records := s.recentToolMetrics(request.Limit)
+	text := fmt.Sprintf("Returned %d timing records, newest first.", len(records))
+	s.sendResult(id, map[string]any{
+		"content": []map[string]any{{"type": "text", "text": text}},
+		"isError": false,
+		"structuredContent": map[string]any{
+			"result": map[string]any{"records": records},
+		},
+	})
 }

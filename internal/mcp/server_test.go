@@ -172,37 +172,56 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sessiontiming\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_verify\",\"arguments\":{\"path\":\".\",\"language\":\"go\"}}}\n", root)
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_verify\",\"arguments\":{\"path\":\".\",\"language\":\"go\"}}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_metrics\",\"arguments\":{\"limit\":1}}}\n", root)
 	var out bytes.Buffer
 	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 2 {
-		t.Fatalf("response lines = %d, want 2: %s", len(lines), out.String())
+	if len(lines) != 3 {
+		t.Fatalf("response lines = %d, want 3: %s", len(lines), out.String())
 	}
-	var response struct {
+	var toolResponse struct {
+		Result struct {
+			StructuredContent map[string]json.RawMessage `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &toolResponse); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := toolResponse.Result.StructuredContent["result"]; !ok {
+		t.Fatalf("semantic result missing structured result: %s", lines[1])
+	}
+	if _, ok := toolResponse.Result.StructuredContent["metrics"]; ok {
+		t.Fatalf("semantic response included inline metrics: %s", lines[1])
+	}
+	if _, ok := toolResponse.Result.StructuredContent["session_metrics"]; ok {
+		t.Fatalf("semantic response included inline session metrics: %s", lines[1])
+	}
+	var metricsResponse struct {
 		Result struct {
 			StructuredContent struct {
-				Result         string              `json:"result"`
-				Metrics        map[string]any      `json:"metrics"`
-				SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+				Result struct {
+					Records []struct {
+						Tool           string              `json:"tool"`
+						Metrics        map[string]any      `json:"metrics"`
+						SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+					} `json:"records"`
+				} `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(lines[1]), &response); err != nil {
+	if err := json.Unmarshal([]byte(lines[2]), &metricsResponse); err != nil {
 		t.Fatal(err)
 	}
-	if response.Result.StructuredContent.SessionMetrics == nil {
-		t.Fatalf("first semantic response missing session_metrics: %s", lines[1])
+	records := metricsResponse.Result.StructuredContent.Result.Records
+	if len(records) != 1 || records[0].Tool != "semantic_verify" {
+		t.Fatalf("metrics records = %#v, want latest semantic_verify call", records)
 	}
-	if response.Result.StructuredContent.Result == "" {
-		t.Fatalf("first semantic response missing structured result: %s", lines[1])
+	if records[0].Metrics["schema_version"] == nil {
+		t.Fatalf("separate metrics record has no timings: %#v", records[0])
 	}
-	if response.Result.StructuredContent.Metrics == nil {
-		t.Fatalf("first semantic response missing structured metrics: %s", lines[1])
-	}
-	if got := response.Result.StructuredContent.SessionMetrics; got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
+	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
 	}
 }
@@ -390,8 +409,8 @@ func TestMCPMavenTestFailureIncludesStructuredResult(t *testing.T) {
 	if response.Result.StructuredContent.Result == nil {
 		t.Fatal("MCP Maven failure must include structuredContent.result")
 	}
-	if response.Result.StructuredContent.Metrics.SchemaVersion != 1 {
-		t.Fatalf("MCP Maven failure metrics schema = %d, want 1", response.Result.StructuredContent.Metrics.SchemaVersion)
+	if response.Result.StructuredContent.Metrics.SchemaVersion != 0 {
+		t.Fatalf("MCP Maven failure unexpectedly includes inline metrics: %#v", response.Result.StructuredContent.Metrics)
 	}
 }
 
@@ -478,8 +497,10 @@ func Existing() {}
 	if len(responses) != len(messages) {
 		t.Fatalf("MCP response count = %d, want %d", len(responses), len(messages))
 	}
-	if got := responses[0].Result.StructuredContent.Metrics; got.SchemaVersion != 1 || got.Phases["verification.before_diagnostics"].Count != 1 || got.Phases["verification.after_diagnostics"].Count != 1 {
-		t.Errorf("first mutation metrics = %#v, want request metrics with before/after diagnostics", got)
+	for i, response := range responses {
+		if got := response.Result.StructuredContent.Metrics; got.SchemaVersion != 0 || got.Phases != nil {
+			t.Errorf("mutation %d unexpectedly includes inline metrics: %#v", i+1, got)
+		}
 	}
 
 	data, err := os.ReadFile(filepath.Clean(filePath))
@@ -797,7 +818,7 @@ func TestReportFeedbackReturnsStructuredLocalDraft(t *testing.T) {
 			t.Errorf("feedback draft is missing %q", phrase)
 		}
 	}
-	if response.Result.StructuredContent.Metrics == nil || len(response.Result.Content) != 1 || response.Result.Content[0].Text != result.Markdown {
+	if response.Result.StructuredContent.Metrics != nil || len(response.Result.Content) != 1 || response.Result.Content[0].Text != result.Markdown {
 		t.Fatalf("feedback response is missing its standard MCP envelope: %s", out.String())
 	}
 	gotLog, err := os.ReadFile(logPath)

@@ -267,6 +267,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		}
 	}
 	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
+	timing.toolName = "semantic_batch"
 	ctx = timing.Context(ctx)
 	var request struct {
 		Edits               []BatchEntry `json:"edits"`
@@ -298,10 +299,11 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		return
 	}
 	if response.Status == "error" {
+		s.recordToolMetrics(timing)
 		s.sendResult(id, map[string]any{
-			"content":           []map[string]any{{"type": "text", "text": string(text)}},
-			"isError":           true,
-			"structuredContent": timing.structuredContentWithResult(response),
+			"content":            []map[string]any{{"type": "text", "text": string(text)}},
+			"isError":            true,
+			structuredContentKey: timing.structuredContentWithResult(response),
 		})
 		return
 	}
