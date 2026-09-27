@@ -14,30 +14,17 @@ type benchmarkPolicyReport struct {
 }
 
 func renderBestBenchmarksDoc(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) string {
-	comparisons := make([]*BenchComparisonSummary, 0, len(best))
-	for _, pair := range best {
-		comparison := *pair.comparison
-		comparison.SelectedRunID = pair.runID
-		comparison.SmallBaseline, comparison.SmallSemedit = nil, nil
-		comparison.LargeBaseline, comparison.LargeSemedit = nil, nil
-		comparison.SmallVerifiedBaseline, comparison.SmallVerifiedSemedit = nil, nil
-		comparison.LargeVerifiedBaseline, comparison.LargeVerifiedSemedit = nil, nil
-		setBenchmarkPairRuns(&comparison, pair.context, pair.baseline, pair.semedit)
-		comparisons = append(comparisons, &comparison)
-	}
-
-	preamble := renderBestBenchmarkPreamble(best, runs)
-	page := renderBenchmarkComparisonsDoc("Empirical Benchmarks", "Best-case measured Vanilla LLM versus Semedit MCP outcomes, with complete per-run evidence and aggregate statistics.", preamble, comparisons)
-	if len(runs) == 0 {
-		return page
-	}
-
-	var links strings.Builder
-	links.WriteString("\n## Individual benchmark runs\n\n")
+	var sb strings.Builder
+	sb.WriteString("The benchmark runs below link to pages containing each run's detailed observations and a browser scoped to that run. Use the [cross-run browser](/docs/benchmarks/browser/) to explore all published runs, or see [aggregate metrics](/docs/benchmarks/aggregates/).\n\n")
+	fmt.Fprintf(&sb, "Published runs: %d. Selected best-case pairs: %d.\n\n", len(runs), len(best))
+	sb.WriteString("## Benchmark runs\n\n")
 	for _, run := range runs {
-		fmt.Fprintf(&links, "- [%s](/docs/benchmarks/runs/%s/)\n", run.ID, run.ID)
+		fmt.Fprintf(&sb, "- [%s](/docs/benchmarks/runs/%s/) (%d comparison records)\n", run.ID, run.ID, len(run.Comparisons))
 	}
-	return page + links.String()
+	if len(runs) == 0 {
+		sb.WriteString("No publishable benchmark runs are available yet.\n")
+	}
+	return sb.String()
 }
 
 type benchmarkHeadlineMetric struct {
@@ -204,7 +191,7 @@ func correctiveInteractiveTurns(run *BenchRunResult) (int, bool) {
 }
 
 func renderBenchmarkRunDoc(run benchmarkDocumentationRun) string {
-	preamble := fmt.Sprintf("This page contains exactly the publishable benchmark observations recorded in run `%s`; it does not select or aggregate them. [Return to best-case outcomes](/docs/benchmarks/) or [view aggregate metrics](/docs/benchmarks/aggregates/).\n\n", run.ID)
+	preamble := fmt.Sprintf("This page contains exactly the publishable benchmark observations recorded in run `%s`; it does not select or aggregate them. [Return to the run index](/docs/benchmarks/) or [view aggregate metrics](/docs/benchmarks/aggregates/).\n\n## Interactive browser\n\n{{< benchmark-browser run=%q >}}\n\n## Detailed observations\n\n", run.ID, run.ID)
 	return renderBenchmarkComparisonsDoc("Benchmark run "+run.ID, "Complete empirical benchmark observations for run "+run.ID+".", preamble, run.Comparisons)
 }
 

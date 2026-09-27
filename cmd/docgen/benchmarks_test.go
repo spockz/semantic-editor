@@ -196,8 +196,8 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 		t.Fatalf("read benchmark browser shortcode: %v", err)
 	}
 	for _, want := range []string{"MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `Grouped cost, turns, elapsed time, and token counts use averages by default`, `Input tokens exclude cached tokens; cached input appears separately`, `Use a column’s Edit control to choose average, minimum, or maximum`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each restriction policy, target, and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant"],`, `columns: ["baseline_cost", "semedit_cost", "cost_delta"`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })))`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant", "arm"]`, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"]`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
-		if !strings.Contains(string(shortcode), want) {
-			t.Errorf("benchmark browser shortcode missing %q", want)
+		if expected := strings.Replace(want, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1); !strings.Contains(string(shortcode), expected) {
+			t.Errorf("benchmark browser shortcode missing %q", expected)
 		}
 	}
 	for _, want := range []string{`id="benchmark-browser-model-filter"`, `id="benchmark-browser-comparison-model-filter"`, `for (const control of [modelFilter, comparisonModelFilter]) populateDimensionFilter(control, "target__model")`} {
@@ -284,19 +284,17 @@ func TestLoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
 
 func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *testing.T) {
 	t.Parallel()
-
 	rootDir := t.TempDir()
 	writeBenchmarkDocumentationReport(t, rootDir, "run-a", &BenchComparisonSummary{
 		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
 		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
-		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+800*time.Millisecond, 1000),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second, 900),
 	})
 	writeBenchmarkDocumentationReport(t, rootDir, "run-b", &BenchComparisonSummary{
 		TaskID: "task-speed", Target: BenchTarget{Harness: "codex", Model: "gpt-5.6-luna", Effort: "medium"},
 		SmallBaseline: benchmarkDocumentationRunResult(true, 10*time.Second, 1000),
-		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second+500*time.Millisecond, 300),
+		SmallSemedit:  benchmarkDocumentationRunResult(true, 9*time.Second, 800),
 	})
-
 	documentation, err := renderBenchmarkDocumentation(rootDir)
 	if err != nil {
 		t.Fatalf("render benchmark documentation: %v", err)
@@ -305,37 +303,25 @@ func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *tes
 		t.Fatalf("got %d run pages, want 2", len(documentation.Runs))
 	}
 	for _, want := range []string{
-		"## Best measured improvements",
-		"| Best speed increase | 5.0% faster |",
-		"| Best token reduction | 70.0% fewer cache-adjusted token units |",
-		"| MCP first-time-right edits | MCP 2/2 (100.0%) vs Vanilla 2/2 (100.0%), +0.0 pp |",
-		"## Required corrective turns",
-		"| 0 | 2 | 2 |",
-		"best-case evidence, not an average",
-		"MCP (Small) | Δ (Small)",
-		"9.50s",
-		"/docs/benchmarks/aggregates/",
+		"Published runs: 2.",
+		"## Benchmark runs",
 		"/docs/benchmarks/runs/run-a/",
 		"/docs/benchmarks/runs/run-b/",
+		"/docs/benchmarks/browser/",
+		"/docs/benchmarks/aggregates/",
 	} {
 		if !strings.Contains(documentation.Index, want) {
-			t.Errorf("best-case index missing %q", want)
+			t.Errorf("benchmark run index missing %q", want)
 		}
 	}
-	if strings.Index(documentation.Index, "## Best measured improvements") > strings.Index(documentation.Index, "## Benchmark Methodology & Transparency") {
-		t.Fatal("headline table must appear before the benchmark methodology")
+	if strings.Contains(documentation.Index, "|") || strings.Contains(documentation.Index, "9.00s") {
+		t.Fatalf("benchmark index should not contain result tables: %s", documentation.Index)
 	}
-	if strings.Contains(documentation.Index, "9.80s") {
-		t.Fatal("best-case index must use the lower-cost run when speeds are comparable")
-	}
-	if !strings.Contains(documentation.Aggregates, "| Wall-clock latency | 2 | 9.50s | 9.80s | 9.65s |") {
-		t.Errorf("aggregate page does not contain run range: %s", documentation.Aggregates)
-	}
-	if !strings.Contains(documentation.Aggregates, "| Cost | 2 | 0.0015 | 0.0050 | 0.0033 |") {
-		t.Errorf("aggregate page does not contain model cost range: %s", documentation.Aggregates)
-	}
-	if got := renderBenchmarkRunDoc(documentation.Runs[0]); !strings.Contains(got, "9.80s") {
-		t.Errorf("run-a page must retain its unaggregated observation: %s", got)
+	runPage := renderBenchmarkRunDoc(documentation.Runs[0])
+	for _, want := range []string{"{{< benchmark-browser run=\"run-a\" >}}", "## Detailed observations", "9.00s", "|"} {
+		if !strings.Contains(runPage, want) {
+			t.Errorf("run page missing %q", want)
+		}
 	}
 }
 
@@ -988,5 +974,82 @@ func TestHeadlineRatesAndCorrectionHistogramsStayWithinPolicy(t *testing.T) {
 	}
 	if !strings.Contains(renderBestBenchmarkPreamble(nil, nil), "No publishable standard-context first attempts") {
 		t.Error("empty fallback disappeared")
+	}
+}
+
+func TestWriteBenchmarkBrowserAssetsSeparatesRunData(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	for _, runID := range []string{"run-a", "run-b"} {
+		baseline := benchmarkDocumentationRunResult(true, 10*time.Second, 1000)
+		baseline.Arm = "baseline"
+		semedit := benchmarkDocumentationRunResult(true, 9*time.Second, 900)
+		semedit.Arm = "semedit"
+		writeBenchmarkDocumentationReport(t, rootDir, runID, &BenchComparisonSummary{
+			TaskID:        "task-" + runID,
+			Target:        BenchTarget{Harness: "codex", Model: "gpt-6-luna", Effort: "medium"},
+			SmallBaseline: baseline,
+			SmallSemedit:  semedit,
+		})
+	}
+	vendorDir := filepath.Join(rootDir, "cmd", "docgen", "assets", "vendor", "perspective", "css")
+	if err := os.MkdirAll(vendorDir, 0o750); err != nil {
+		t.Fatalf("create Perspective vendor directory: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(vendorDir, "pro.css"), []byte("light theme"), 0o600); err != nil {
+		t.Fatalf("write Perspective vendor asset: %v", err)
+	}
+	outputDir := t.TempDir()
+	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
+		t.Fatalf("write benchmark browser assets: %v", err)
+	}
+	readRows := func(path string) []map[string]json.RawMessage {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read browser rows %s: %v", path, err)
+		}
+		var rows []map[string]json.RawMessage
+		if err := json.Unmarshal(data, &rows); err != nil {
+			t.Fatalf("decode browser rows %s: %v", path, err)
+		}
+		return rows
+	}
+	allRows := readRows(filepath.Join(outputDir, "static", "data", "benchmarks.json"))
+	if len(allRows) != 4 {
+		t.Fatalf("cross-run browser rows = %d, want 4", len(allRows))
+	}
+	for _, runID := range []string{"run-a", "run-b"} {
+		rows := readRows(filepath.Join(outputDir, "static", "data", "benchmarks", "runs", runID+".json"))
+		if len(rows) != 2 {
+			t.Fatalf("%s browser rows = %d, want 2", runID, len(rows))
+		}
+		for _, row := range rows {
+			var got string
+			if err := json.Unmarshal(row["_run_id"], &got); err != nil || got != runID {
+				t.Errorf("%s browser contains row for %q, decode error %v", runID, got, err)
+			}
+		}
+	}
+	shortcode, err := os.ReadFile(filepath.Join(outputDir, "layouts", "shortcodes", "benchmark-browser.html"))
+	if err != nil {
+		t.Fatalf("read scoped browser shortcode: %v", err)
+	}
+	for _, want := range []string{`data-data-url="{{ if .Get "run" }}`, `data/benchmarks/runs/%s.json`, `dataset.dataUrl`, `id="benchmark-browser-fullscreen"`} {
+		if !strings.Contains(string(shortcode), want) {
+			t.Errorf("scoped browser shortcode missing %q", want)
+		}
+	}
+}
+
+func TestSetBenchmarkPairRuns(t *testing.T) {
+	t.Parallel()
+	baseline := &BenchRunResult{Arm: "baseline"}
+	semedit := &BenchRunResult{Arm: "semedit"}
+	comparison := &BenchComparisonSummary{}
+	setBenchmarkPairRuns(comparison, benchmarkPairSmall, baseline, semedit)
+	gotBaseline, gotSemedit := benchmarkPairRuns(comparison, benchmarkPairSmall)
+	if gotBaseline != baseline || gotSemedit != semedit {
+		t.Fatalf("small pair = (%p, %p), want (%p, %p)", gotBaseline, gotSemedit, baseline, semedit)
 	}
 }

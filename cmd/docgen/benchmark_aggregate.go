@@ -285,16 +285,21 @@ func writeBenchmarkBrowserAssets(rootDir, outputDir string) error {
 			}
 		}
 	}
-	encodedRows, err := json.Marshal(rows)
-	if err != nil {
-		return fmt.Errorf("encode benchmark browser data: %w", err)
+	if err := writeBenchmarkBrowserData(outputDir, "data/benchmarks.json", rows); err != nil {
+		return err
 	}
-	if err := os.MkdirAll(filepath.Join(outputDir, "static", "data"), 0o750); err != nil {
-		return fmt.Errorf("create benchmark browser data directory: %w", err)
+	rowsByRun := make(map[string][]map[string]json.RawMessage)
+	for _, row := range rows {
+		var runID string
+		if err := json.Unmarshal(row["_run_id"], &runID); err != nil {
+			return fmt.Errorf("decode benchmark browser run identifier: %w", err)
+		}
+		rowsByRun[runID] = append(rowsByRun[runID], row)
 	}
-	dataPath := filepath.Join(outputDir, "static", "data", "benchmarks.json")
-	if err := writeGeneratedFile(dataPath, encodedRows); err != nil {
-		return fmt.Errorf("write benchmark browser data: %w", err)
+	for runID, runRows := range rowsByRun {
+		if err := writeBenchmarkBrowserData(outputDir, filepath.Join("data", "benchmarks", "runs", runID+".json"), runRows); err != nil {
+			return fmt.Errorf("write benchmark browser data for run %s: %w", runID, err)
+		}
 	}
 	return writeBenchmarkBrowserViewerAssets(rootDir, outputDir)
 }
@@ -828,13 +833,12 @@ func writeBenchmarkBrowserViewerAssets(rootDir, outputDir string) error {
 	if err != nil {
 		return fmt.Errorf("unpack Perspective vendor assets: %w", err)
 	}
-
 	shortcodeDir := filepath.Join(outputDir, "layouts", "shortcodes")
 	if err := os.MkdirAll(shortcodeDir, 0o750); err != nil {
 		return fmt.Errorf("create benchmark browser shortcode directory: %w", err)
 	}
 	shortcodePath := filepath.Join(shortcodeDir, "benchmark-browser.html")
-	if err := writeGeneratedFile(shortcodePath, []byte(benchmarkBrowserShortcode)); err != nil {
+	if err := writeGeneratedFile(shortcodePath, []byte(scopedBenchmarkBrowserShortcode())); err != nil {
 		return fmt.Errorf("write benchmark browser shortcode: %w", err)
 	}
 	page := `---
@@ -854,4 +858,29 @@ weight: 20
 		return fmt.Errorf("write benchmark browser page: %w", err)
 	}
 	return nil
+}
+
+func writeBenchmarkBrowserData(outputDir, relativePath string, rows []map[string]json.RawMessage) error {
+	encodedRows, err := json.Marshal(rows)
+	if err != nil {
+		return fmt.Errorf("encode benchmark browser data: %w", err)
+	}
+	dataPath := filepath.Join(outputDir, "static", filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(dataPath), 0o750); err != nil {
+		return fmt.Errorf("create benchmark browser data directory: %w", err)
+	}
+	if err := writeGeneratedFile(dataPath, encodedRows); err != nil {
+		return fmt.Errorf("write benchmark browser data: %w", err)
+	}
+	return nil
+}
+
+func scopedBenchmarkBrowserShortcode() string {
+	shortcode := strings.Replace(
+		benchmarkBrowserShortcode,
+		`<div class="benchmark-browser">`,
+		`<div class="benchmark-browser" data-data-url="{{ if .Get "run" }}{{ printf "data/benchmarks/runs/%s.json" (.Get "run") | relURL }}{{ else }}{{ "data/benchmarks.json" | relURL }}{{ end }}">`,
+		1,
+	)
+	return strings.Replace(shortcode, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
 }
