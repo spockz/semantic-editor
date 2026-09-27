@@ -19,6 +19,7 @@ import (
 type ScaffoldOptions struct {
 	Overwrite           bool
 	AutoOrganizeImports bool // accepted for schema uniformity; no-op
+	PurposeHeader       string
 }
 
 // ScaffoldFile creates a new Go source file initialized with a package clause.
@@ -70,18 +71,35 @@ func ScaffoldFile(ctx context.Context, filePath, packageName string, opts Scaffo
 	}
 
 	src := fmt.Sprintf("package %s\n", resolvedPkg)
-	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
-	formatted, err := format.Source([]byte(src))
-	finishFormatting()
-	if err != nil {
-		return "", fmt.Errorf("format scaffold: %w", err)
+	if opts.PurposeHeader != "" {
+		src = opts.PurposeHeader
+		if !strings.HasSuffix(src, "\n") {
+			src += "\n"
+		}
+		src += fmt.Sprintf("\npackage %s\n", resolvedPkg)
+		fset := token.NewFileSet()
+		node, err := parser.ParseFile(fset, "scaffold.go", src, parser.ParseComments)
+		if err != nil || len(node.Comments) == 0 || node.Name == nil || node.Name.Name != resolvedPkg || len(node.Decls) != 0 {
+			if err != nil {
+				return "", fmt.Errorf("%w: invalid purpose header: %w", ErrSyntax, err)
+			}
+			return "", fmt.Errorf("%w: purpose header must contain only Go comments", ErrSyntax)
+		}
+	} else {
+		finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
+		formatted, err := format.Source([]byte(src))
+		finishFormatting()
+		if err != nil {
+			return "", fmt.Errorf("format scaffold: %w", err)
+		}
+		src = string(formatted)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(cleanPath), 0o750); err != nil {
 		return "", fmt.Errorf("create parent directory: %w", err)
 	}
 
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomic(cleanPath, []byte(src)); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
 

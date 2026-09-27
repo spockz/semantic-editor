@@ -3,8 +3,15 @@
 exec semedit scaffold-file --file service/helper.go --package infer
 # 2. Scaffold new file with explicit package name
 exec semedit scaffold-file --file service/sub/types.go --package sub
+# 3. Preserve optional purpose headers in CLI scaffolds
+exec semedit scaffold-file --file service/documented.go --package infer --purpose-header '// WHY: This file documents the service package.'
+# 4. Reject invalid header syntax before creating the file
+! exec semedit scaffold-file --file service/invalid.go --package infer --purpose-header 'type Invalid struct {'
+stderr 'invalid purpose header'
+! exists service/invalid.go
 cmp service/helper.go want/service/helper.go
 cmp service/sub/types.go want/service/sub/types.go
+cmp service/documented.go want/service/documented.go
 
 -- go.mod --
 module example.com/test
@@ -22,3 +29,7 @@ package service_test
 package service
 -- want/service/sub/types.go --
 package sub
+-- want/service/documented.go --
+// WHY: This file documents the service package.
+
+package service

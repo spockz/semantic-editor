@@ -128,10 +128,11 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 
 // ScaffoldFileReq creates one new Go source file with its package clause.
 type ScaffoldFileReq struct {
-	Project   backend.ProjectContext
-	File      string
-	Package   string
-	Overwrite bool
+	Project       backend.ProjectContext
+	File          string
+	Package       string
+	PurposeHeader string
+	Overwrite     bool
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -153,6 +154,7 @@ func (r ScaffoldFileRes) WrittenFile() string { return r.File }
 var scaffoldFileParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path for the new file", Required: true},
 	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')"},
+	{Name: "purpose_header", CLIName: "purpose-header", JSONName: "purpose_header", Type: ParamString, Description: "optional Go comment header explaining why the file exists"},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "replace existing file (default false)"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "no-op for new files; present for schema uniformity"},
 }
@@ -170,6 +172,9 @@ func parseScaffoldFile(raw map[string]any) (ScaffoldFileReq, error) {
 	if req.Package, err = ParseStringDefault(raw, "package", "package", "infer"); err != nil {
 		return req, err
 	}
+	if req.PurposeHeader, err = ParseStringDefault(raw, "purpose_header", "purpose-header", ""); err != nil {
+		return req, err
+	}
 	if req.Overwrite, err = ParseBool(raw, "overwrite", "overwrite", false); err != nil {
 		return req, err
 	}
@@ -181,6 +186,7 @@ func runScaffoldFile(ctx context.Context, cc CallContext, req ScaffoldFileReq) (
 	pkgName, err := astedit.ScaffoldFile(ctx, targetPath, req.Package, astedit.ScaffoldOptions{
 		Overwrite:           req.Overwrite,
 		AutoOrganizeImports: effectiveAutoOrganize(cc, false),
+		PurposeHeader:       req.PurposeHeader,
 	})
 	if err != nil {
 		return ScaffoldFileRes{}, err

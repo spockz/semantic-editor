@@ -139,3 +139,56 @@ func TestScaffoldFile_EmptyDirInfer(t *testing.T) {
 		t.Fatalf("expected ErrInferNoSiblings, got: %v", err)
 	}
 }
+
+func TestScaffoldFile_PurposeHeaderPreservedForExplicitAndInferredPackages(t *testing.T) {
+	const header = "// WHY: This file groups the service adapters.\n// Keep this wording exactly."
+	tests := []struct {
+		name        string
+		packageName string
+		wantPackage string
+	}{
+		{name: "explicit", packageName: "models", wantPackage: "models"},
+		{name: "inferred", packageName: "infer", wantPackage: "service"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			if test.packageName == "infer" {
+				if err := os.WriteFile(filepath.Join(tmpDir, "service.go"), []byte("package service\n"), 0o600); err != nil {
+					t.Fatalf("write sibling: %v", err)
+				}
+			}
+			targetPath := filepath.Join(tmpDir, "generated.go")
+			pkg, err := astedit.ScaffoldFile(context.Background(), targetPath, test.packageName, astedit.ScaffoldOptions{PurposeHeader: header})
+			if err != nil {
+				t.Fatalf("ScaffoldFile failed: %v", err)
+			}
+			if pkg != test.wantPackage {
+				t.Fatalf("package = %q, want %q", pkg, test.wantPackage)
+			}
+			content, err := os.ReadFile(targetPath)
+			if err != nil {
+				t.Fatalf("read scaffolded file: %v", err)
+			}
+			want := header + "\n\npackage " + test.wantPackage + "\n"
+			if string(content) != want {
+				t.Errorf("content = %q, want %q", content, want)
+			}
+		})
+	}
+}
+
+func TestScaffoldFile_InvalidPurposeHeaderDoesNotCreateFile(t *testing.T) {
+	targetPath := filepath.Join(t.TempDir(), "nested", "generated.go")
+	_, err := astedit.ScaffoldFile(context.Background(), targetPath, "models", astedit.ScaffoldOptions{PurposeHeader: "type Invalid struct {"})
+	if !errors.Is(err, astedit.ErrSyntax) {
+		t.Fatalf("error = %v, want ErrSyntax", err)
+	}
+	if _, err := os.Stat(targetPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat scaffolded file error = %v, want file not created", err)
+	}
+	if _, err := os.Stat(filepath.Dir(targetPath)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("stat parent directory error = %v, want parent not created", err)
+	}
+}
