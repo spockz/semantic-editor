@@ -243,7 +243,7 @@ func Route(mode string) string {
 	if !errors.Is(err, astedit.ErrSwitchAmbiguous) {
 		t.Fatalf("expected ErrSwitchAmbiguous, got: %v", err)
 	}
-	for _, want := range []string{"0  cases:", "0.1  cases:", `"outer"`, `"inner"`, "switch_path"} {
+	for _, want := range []string{"0  cases:", "0.1  cases:", `"outer"`, `"inner"`, "construct_path"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("ambiguity error missing %q: %v", want, err)
 		}

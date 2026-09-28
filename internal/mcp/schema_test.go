@@ -93,6 +93,20 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	}
 }
 
+func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	if err := mcp.ValidateSourceFields(registry.All()); err != nil {
+		t.Fatal(err)
+	}
+	broken := append(registry.All(), operation.Entry{
+		MCPName: "semantic_broken_source",
+		Params:  []operation.ParameterContract{{Name: "symbol", JSONName: "symbol", SourceFields: []string{"semantic_lookup.offset"}}},
+	})
+	if err := mcp.ValidateSourceFields(broken); err == nil || !strings.Contains(err.Error(), "semantic_lookup.offset") {
+		t.Fatalf("invalid SourceFields reference error = %v", err)
+	}
+}
+
 func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
@@ -105,6 +119,20 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
+				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
+					assertStandardOutputSchema(t, tool["outputSchema"], "string")
+					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
+					for _, field := range map[string][]string{
+						"semantic_lookup":            {"symbol", "file", "kind", "line", "column"},
+						"semantic_rename":            {"symbol", "file"},
+						"semantic_replace_body":      {"symbol", "file"},
+						"semantic_replace_construct": {"file", "in_function"},
+						"semantic_insert_case":       {"file", "in_function", "discriminator"},
+					}[name] {
+						if _, ok := properties[field]; !ok {
+							t.Errorf("%s outputSchema omitted continuation field %q", name, field)
+						}
+					}
 				case "semantic_batch":
 					assertBatchOutputSchema(t, tool["outputSchema"])
 				case "semantic_metrics":
@@ -204,7 +232,7 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	if !ok {
 		t.Fatal("batch result omitted diagnostic_delta schema")
 	}
-	if got := delta["required"]; !reflect.DeepEqual(got, []any{"before", "after", "net_delta", "introduced", "resolved"}) {
+	if got := delta["required"]; !reflect.DeepEqual(got, []any{"net_delta", "introduced", "resolved"}) {
 		t.Fatalf("diagnostic_delta required = %#v", got)
 	}
 }
@@ -369,8 +397,8 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	}{
 		{
 			name:             "semantic_replace_construct",
-			required:         []string{"file", "function", "kind", "source"},
-			stringProperties: []string{"file", "function", "kind", "discriminator", "construct_path", "source"},
+			required:         []string{"file", "in_function", "kind", "source"},
+			stringProperties: []string{"file", "in_function", "kind", "discriminator", "construct_path", "source"},
 		},
 		{
 			name:             "semantic_replace_decl",
@@ -619,7 +647,8 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_assertion_mode description", toolDescription("semantic_assertion_mode"), "trust_workspace=true", "dry_run=true", "without trust or file writes")
 	assertContains("semantic_assertion_mode.dry_run", paramDescription("semantic_assertion_mode", "dry_run"), "without writing", "trust_workspace is not required")
 	assertContains("semantic_assertion_mode.trust_workspace", paramDescription("semantic_assertion_mode", "trust_workspace"), "Must be true", "non-dry-run")
-	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select scope for Rust or Java rename", "active semedit workspace root")
+	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select Rust or Java rename scope", "paths are relative to the workspace root", "Copy from the file field of a preceding semantic_lookup")
+	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Target: qualified symbol identifier", "Copy from the symbol field of a preceding semantic_lookup")
 	assertContains("semantic_insert_declaration.source", paramDescription("semantic_insert_declaration", "source"), "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one complete Go function or method", "parameters, results, and body")
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
@@ -627,8 +656,9 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_structure description", toolDescription("semantic_insert_structure"), "structural construct", "instead of replace_file_content")
 	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "never beside tool", "zero-based edit index", `"symbol":"Run"`)
-	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact existing discriminant expression", "kind=case alone does not identify", "switch_path")
-	assertContains("semantic_insert_case.switch_on", paramDescription("semantic_insert_case", "switch_on"), "Existing switch discriminant", "tagless switch")
+	assertContains("semantic_lookup description", toolDescription("semantic_lookup"), "Returns symbol, file, kind, line, and column", "file-navigation reads", "not accepted as semedit tool parameters")
+	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact discriminator expression", "kind=case alone does not identify", "construct_path")
+	assertContains("semantic_insert_case.discriminator", paramDescription("semantic_insert_case", "discriminator"), "Selector: switch discriminant expression", "tagless switch", "Copy from the discriminator field")
 }
 
 func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {

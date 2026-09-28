@@ -82,13 +82,15 @@ func surroundingDelta(ctx context.Context, workDir string, deferVerification boo
 
 // FileEditRes reports a single-file mutation for response rendering and batch post-processing.
 type FileEditRes struct {
-	File     string
-	Display  string
-	Symbol   string
-	Diff     string
-	Detail   string
-	Delta    pipeline.DiagnosticDelta
-	HasDelta bool
+	File          string
+	Display       string
+	Symbol        string
+	InFunction    string
+	Discriminator string
+	Diff          string
+	Detail        string
+	Delta         pipeline.DiagnosticDelta
+	HasDelta      bool
 }
 
 // WrittenFile returns the resolved mutated path for batch post-processing.

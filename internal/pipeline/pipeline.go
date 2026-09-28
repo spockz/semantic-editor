@@ -130,8 +130,8 @@ func Format(ctx context.Context, workDir string, paths ...string) error {
 
 // DiagnosticDelta records compiler diagnostic shifts across an edit (ADR-0004, RQ-0006).
 type DiagnosticDelta struct {
-	Before      []string `json:"before"`
-	After       []string `json:"after"`
+	Before      []string `json:"-"`
+	After       []string `json:"-"`
 	NetDelta    int      `json:"net_delta"`
 	Introduced  []string `json:"introduced"`
 	Resolved    []string `json:"resolved"`

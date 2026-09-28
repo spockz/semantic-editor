@@ -4,14 +4,15 @@ stderr 'Revision.*already exists'
 cmp api/settings.go want/api/settings_before.go
 exec semedit insert-decl --file api/settings.go --source 'var Revision = 2' --overwrite
 exec semedit replace-decl --file api/settings.go --symbol DefaultLimit --source 'const DefaultLimit = 10'
-exec semedit replace-construct --file api/messages_test.go --function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha", "beta"} { if want == "" { t.Fatal(want) } }'
+! exec semedit replace-construct --file api/messages_test.go --function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha"} { t.Log(want) }'
+exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha", "beta"} { if want == "" { t.Fatal(want) } }'
 cmp api/settings.go want/api/settings.go
-! exec semedit replace-construct --file api/loops_test.go --function TestAmbiguousLoops --kind loop --discriminator item --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
+! exec semedit replace-construct --file api/loops_test.go --in-function TestAmbiguousLoops --kind loop --discriminator item --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
 stderr 'ambiguous loop'
 cmp api/loops_test.go want/api/loops_before.go
-exec semedit replace-construct --file api/loops_test.go --function TestAmbiguousLoops --kind loop --discriminator item --construct-path 0 --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
-exec semedit replace-construct --file api/messages_test.go --function TestMessages --kind if --discriminator 'len(original) == 0' --source 'if len(original) > 0 { t.Log("present") } else { t.Log("fallback") }'
-exec semedit replace-construct --file api/messages_test.go --function TestMessages --kind else --discriminator 'len(original) > 0' --source '{ t.Fatal("fallback") }'
+exec semedit replace-construct --file api/loops_test.go --in-function TestAmbiguousLoops --kind loop --discriminator item --construct-path 0 --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
+exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind if --discriminator 'len(original) == 0' --source 'if len(original) > 0 { t.Log("present") } else { t.Log("fallback") }'
+exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) > 0' --source '{ t.Fatal("fallback") }'
 cmp api/loops_test.go want/api/loops_test.go
 cmp api/messages_test.go want/api/messages_test.go
 exec go test ./api

@@ -47,8 +47,8 @@ var outlineReadParams = readRequestParams(
 )
 
 var inspectReadParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Go symbol name to inspect", Type: ParamString, Required: true},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional source file that selects the symbol lookup scope", Type: ParamString},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 )
 
 func parseInspectRead(raw map[string]any) (InspectReq, error) {

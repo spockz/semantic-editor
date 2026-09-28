@@ -28,11 +28,26 @@ const (
 )
 
 const (
-	wireTrustWorkspace      = "trust_workspace"
-	wireAutoOrganizeImports = "auto_organize_imports"
-	wireExampleFile         = "api/server.go"
-	wireTargetSymbol        = "target_symbol"
-	wireDiscriminator       = "discriminator"
+	wireTrustWorkspace          = "trust_workspace"
+	wireAutoOrganizeImports     = "auto_organize_imports"
+	wireExampleFile             = "api/server.go"
+	wireTargetSymbol            = "target_symbol"
+	wireDiscriminator           = "discriminator"
+	wireInFunction              = "in_function"
+	wireConstructPath           = "construct_path"
+	wireTargetCase              = "target_case"
+	wireTargetGoFileDescription = "Target: Go source file to modify; path is relative to the workspace root"
+
+	sourceLookupSymbol               = "semantic_lookup.symbol"
+	sourceRenameSymbol               = "semantic_rename.symbol"
+	sourceReplaceBodySymbol          = "semantic_replace_body.symbol"
+	sourceLookupFile                 = "semantic_lookup.file"
+	sourceRenameFile                 = "semantic_rename.file"
+	sourceReplaceBodyFile            = "semantic_replace_body.file"
+	sourceReplaceConstructFile       = "semantic_replace_construct.file"
+	sourceReplaceConstructInFunction = "semantic_replace_construct.in_function"
+	sourceInsertCaseInFunction       = "semantic_insert_case.in_function"
+	sourceInsertCaseDiscriminator    = "semantic_insert_case.discriminator"
 )
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
@@ -96,14 +111,14 @@ type VerifyRes struct {
 }
 
 var lookupParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file path to constrain search", Type: ParamString},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 )
 
 var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Server.Start or ValidateToken)", Type: ParamString, Required: true},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional source file containing the declaration; relative paths resolve from the active semedit workspace root. Required to select scope for Rust or Java rename", Type: ParamString},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
@@ -114,7 +129,7 @@ var renameParams = []ParameterContract{
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selected Java, Kotlin, or Bash source file, relative to the active semedit workspace root; required for external language verification", Type: ParamString},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
@@ -522,7 +537,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 	run := lookupRun
 	return Def[LookupReq, *backend.LookupResult]{
 		Key:     capability.OpLookup,
-		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed.",
+		Summary: "Use this tool instead of grep or text search when locating a named symbol in Go or a selected trusted source file. Omit file for Go workspace lookup. Rust, Java, Scala, Kotlin, Bash, Makefile, and Haskell lookup are read-only and require explicit workspace trust; external tools must already be installed. Returns symbol, file, kind, line, and column. Pass symbol and file to follow-up semedit calls. Use line and column only for file-navigation reads; they are not accepted as semedit tool parameters.",
 		Params:  lookupParams,
 		Level:   LevelSymbol,
 		// Lookup is read-only; edit and verification operations can change source.

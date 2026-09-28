@@ -165,6 +165,125 @@ func TestMCPServerReturnsConfiguredInstructions(t *testing.T) {
 	}
 }
 
+func TestMCPStructuredContinuationFields(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/continuation\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := "package continuation\n\nfunc Hello() string { return \"before\" }\n"
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Hello\"}}}\n{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_replace_body\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Hello\",\"body\":\"return \\\"after\\\"\"}}}\n", root)
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("responses = %d, want 3: %s", len(lines), out.String())
+	}
+	var lookup, edit struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &lookup); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[2]), &edit); err != nil {
+		t.Fatal(err)
+	}
+	if lookup.Result.IsError || edit.Result.IsError {
+		t.Fatalf("tool calls failed: %s", out.String())
+	}
+	for label, content := range map[string]map[string]any{"lookup": lookup.Result.Structured, "replace_body": edit.Result.Structured} {
+		if content["result"] == nil {
+			t.Errorf("%s structuredContent omitted existing result: %#v", label, content)
+		}
+		if content["symbol"] != "Hello" {
+			t.Errorf("%s structured symbol = %#v", label, content["symbol"])
+		}
+		if content["file"] != "main.go" {
+			t.Errorf("%s structured file = %#v", label, content["file"])
+		}
+		for _, hidden := range []string{"offset", "receiver"} {
+			if _, ok := content[hidden]; ok {
+				t.Errorf("%s structuredContent contains %q: %#v", label, hidden, content)
+			}
+		}
+	}
+	if lookup.Result.Structured["line"] == nil || lookup.Result.Structured["column"] == nil || lookup.Result.Structured["kind"] != "function" {
+		t.Errorf("lookup navigation fields = %#v", lookup.Result.Structured)
+	}
+}
+
+func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/renamecontinuation\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package renamecontinuation\n\nfunc Hello() string { return \"ok\" }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	renameInput := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_rename\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Hello\",\"to\":\"Welcome\"}}}\n", root)
+	var renameOut bytes.Buffer
+	if err := mcp.NewServer("full", root, &renameOut).Serve(t.Context(), strings.NewReader(renameInput)); err != nil {
+		t.Fatal(err)
+	}
+	responses := strings.Split(strings.TrimSpace(renameOut.String()), "\n")
+	if len(responses) != 2 {
+		t.Fatalf("rename responses = %d: %s", len(responses), renameOut.String())
+	}
+	var rename struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(responses[1]), &rename); err != nil {
+		t.Fatal(err)
+	}
+	if rename.Result.IsError {
+		t.Fatalf("rename failed: %s", responses[1])
+	}
+	continuedSymbol, ok := rename.Result.Structured["symbol"].(string)
+	if !ok || continuedSymbol != "Welcome" {
+		t.Fatalf("rename continuation symbol = %#v, want Welcome", rename.Result.Structured["symbol"])
+	}
+	if rename.Result.Structured["file"] != "main.go" {
+		t.Fatalf("rename continuation file = %#v, want main.go", rename.Result.Structured["file"])
+	}
+	for _, field := range []string{"kind", "line", "column"} {
+		if _, exists := rename.Result.Structured[field]; exists {
+			t.Errorf("rename structuredContent contains unadvertised field %q: %#v", field, rename.Result.Structured)
+		}
+	}
+
+	lookupInput := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":\"main.go\",\"symbol\":%q}}}\n", root, continuedSymbol)
+	var lookupOut bytes.Buffer
+	if err := mcp.NewServer("full", root, &lookupOut).Serve(t.Context(), strings.NewReader(lookupInput)); err != nil {
+		t.Fatal(err)
+	}
+	lookupResponses := strings.Split(strings.TrimSpace(lookupOut.String()), "\n")
+	if len(lookupResponses) != 2 {
+		t.Fatalf("lookup responses = %d: %s", len(lookupResponses), lookupOut.String())
+	}
+	var lookup struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lookupResponses[1]), &lookup); err != nil {
+		t.Fatal(err)
+	}
+	if lookup.Result.IsError || lookup.Result.Structured["symbol"] != continuedSymbol {
+		t.Fatalf("follow-up lookup did not resolve rename continuation: %s", lookupResponses[1])
+	}
+}
+
 func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/sessiontiming\n\ngo 1.24\n"), 0o600); err != nil {

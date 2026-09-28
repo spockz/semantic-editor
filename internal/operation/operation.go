@@ -48,6 +48,8 @@ type ParameterContract struct {
 	Default      any
 	Enums        []string
 	DynamicEnums func(backend.Backend) []string
+	// SourceFields names top-level structured output fields that can feed this parameter.
+	SourceFields []string
 }
 
 // Def declares one semantic operation with typed parse, per-language handlers, and formatting.

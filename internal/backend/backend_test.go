@@ -3,6 +3,7 @@ package backend_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -20,6 +21,56 @@ func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
 	err := (&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"new"}}).Error()
 	if !strings.Contains(err, "1 introduced error diagnostics") || !strings.Contains(err, "new") {
 		t.Fatalf("error = %q", err)
+	}
+}
+
+func TestDiagnosticDeltaJSONOmitsInternalSnapshots(t *testing.T) {
+	encoded, err := json.Marshal(backend.DiagnosticDelta{Before: []string{"old"}, After: []string{"new"}, NetDelta: 0, Introduced: []string{"new"}, Resolved: []string{"old"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"before", "after"} {
+		if _, ok := fields[field]; ok {
+			t.Errorf("serialized diagnostic delta contains %q: %s", field, encoded)
+		}
+	}
+	for _, field := range []string{"net_delta", "introduced", "resolved"} {
+		if _, ok := fields[field]; !ok {
+			t.Errorf("serialized diagnostic delta omits %q: %s", field, encoded)
+		}
+	}
+}
+
+func TestLookupJSONOmitsReceiverAndOffset(t *testing.T) {
+	encoded, err := json.Marshal(backend.LookupResult{
+		Symbol: "(*Server).Handle", Offset: 42, Receiver: "(*Server)",
+		Candidates: []*backend.SymbolCandidate{{Name: "Handle", Receiver: "(*Server)", QualifiedName: "(*Server).Handle", Offset: 42, Kind: "method", File: "server.go"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(encoded, &fields); err != nil {
+		t.Fatal(err)
+	}
+	if fields["symbol"] != "(*Server).Handle" {
+		t.Errorf("serialized symbol = %#v", fields["symbol"])
+	}
+	for _, field := range []string{"receiver", "offset"} {
+		if _, ok := fields[field]; ok {
+			t.Errorf("serialized lookup contains %q: %s", field, encoded)
+		}
+	}
+	candidates := fields["candidates"].([]any)
+	candidate := candidates[0].(map[string]any)
+	for _, field := range []string{"receiver", "offset"} {
+		if _, ok := candidate[field]; ok {
+			t.Errorf("serialized candidate contains %q: %s", field, encoded)
+		}
 	}
 }
 

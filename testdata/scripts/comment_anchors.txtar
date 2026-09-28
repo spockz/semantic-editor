@@ -2,7 +2,7 @@
 exec semedit insert --file api/anchors.go --placement before_symbol --target Keep --source 'func AddedBefore() {}'
 exec semedit insert --file api/anchors.go --placement after_symbol --target Target --source 'func AddedAfter() {}'
 cmp api/anchors.go want/api/anchors.go
-exec semedit insert-case --file api/handler.go --func Handle --switch-on value --placement before_default --case 'case "added": return "added"'
+exec semedit insert-case --file api/handler.go --in-function Handle --discriminator value --placement before_default --case 'case "added": return "added"'
 cmp api/handler.go want/api/handler.go
 exec go test ./...
 

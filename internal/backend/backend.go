@@ -221,8 +221,8 @@ type Diagnostic struct {
 
 // DiagnosticDelta reports verification changes without exposing pipeline internals.
 type DiagnosticDelta struct {
-	Before      []string `json:"before"`
-	After       []string `json:"after"`
+	Before      []string `json:"-"`
+	After       []string `json:"-"`
 	NetDelta    int      `json:"net_delta"`
 	Introduced  []string `json:"introduced"`
 	Resolved    []string `json:"resolved"`
@@ -324,13 +324,13 @@ type MakeConfig struct {
 // SymbolCandidate is the neutral representation of an ambiguous symbol.
 type SymbolCandidate struct {
 	Name           string         `json:"name"`
-	Receiver       string         `json:"receiver,omitempty"`
+	Receiver       string         `json:"-"`
 	QualifiedName  string         `json:"qualified_name,omitempty"`
 	Kind           string         `json:"kind"`
 	File           string         `json:"file"`
 	Line           int            `json:"line,omitempty"`
 	Column         int            `json:"column,omitempty"`
-	Offset         int            `json:"offset,omitempty"`
+	Offset         int            `json:"-"`
 	SelectionRange *Range         `json:"selection_range,omitempty"`
 	Location       SourceLocation `json:"-"`
 }
@@ -341,9 +341,9 @@ type LookupResult struct {
 	File       string           `json:"file,omitempty"`
 	Line       int              `json:"line,omitempty"`
 	Column     int              `json:"column,omitempty"`
-	Offset     int              `json:"offset,omitempty"`
+	Offset     int              `json:"-"`
 	Kind       string           `json:"kind,omitempty"`
-	Receiver   string           `json:"receiver,omitempty"`
+	Receiver   string           `json:"-"`
 	Definition *SymbolCandidate `json:"definition,omitempty"`
 	// Usages are syntactic local binding declarations, not semantic references.
 	Usages     []*SymbolCandidate `json:"usages,omitempty"`

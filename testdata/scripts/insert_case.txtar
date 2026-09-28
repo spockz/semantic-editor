@@ -1,16 +1,17 @@
 # Insert case clause into switch statement
 # 1. Insert case before default clause
-exec semedit insert-case --file router/handler.go --func Dispatch --switch-on method --placement before_default --case 'case "POST": return handlePost()'
+! exec semedit insert-case --file router/handler.go --func Dispatch --discriminator method --case 'case "POST": return handlePost()'
+exec semedit insert-case --file router/handler.go --in-function Dispatch --discriminator method --placement before_default --case 'case "POST": return handlePost()'
 cmp router/handler.go want/router/handler.go
 
 # Repeated switch selectors must fail without changing either switch.
-! exec semedit insert-case --file router/nested.go --func Route --switch-on mode --placement before_default --case 'case "new": return "new"'
+! exec semedit insert-case --file router/nested.go --in-function Route --discriminator mode --placement before_default --case 'case "new": return "new"'
 stderr 'ambiguous switch selector'
 stderr '0  cases: "outer", default'
 stderr '0.1  cases: "inner", default'
 cmp router/nested.go want/router/nested.go
 
-exec semedit insert-case --file router/nested.go --func Route --switch-on mode --switch-path 0.1 --placement before_default --case 'case "new": return "new"'
+exec semedit insert-case --file router/nested.go --in-function Route --discriminator mode --construct-path 0.1 --placement before_default --case 'case "new": return "new"'
 cmp router/nested.go want/router/nested-path.go
 
 -- go.mod --

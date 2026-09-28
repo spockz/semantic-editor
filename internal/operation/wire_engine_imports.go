@@ -25,7 +25,7 @@ func (r OrganizeImportsReq) GetProjectContext() backend.ProjectContext { return 
 func (r *OrganizeImportsReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var organizeImportsParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Optional Go file or directory path, relative to the active semedit workspace root. Omit it to organize imports across the entire workspace, which may write multiple files"},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: optional file to constrain search scope. Optional Go file or directory path, relative to the active semedit workspace root. Omit it to organize imports across the entire workspace, which may write multiple files"},
 	{Name: "add", CLIName: "add", JSONName: "add", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly add. Supports 'path', 'alias path', or '_ path'."},
 	{Name: "remove", CLIName: "remove", JSONName: "remove", Type: ParamStringSlice, Description: "Optional list of import paths to explicitly remove."},
 }

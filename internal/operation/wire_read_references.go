@@ -27,8 +27,8 @@ func (request *ReferencesReq) SetProjectContext(project backend.ProjectContext) 
 }
 
 var referencesParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target symbol identifier (e.g. Store.Read or Widget)", Type: ParamString, Required: true},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Optional file containing the target declaration; search still covers the selected Go module", Type: ParamString},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Store.Read' or 'Widget')", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file containing the target declaration; search still covers the selected Go module", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 )
 
 func parseReferences(raw map[string]any) (ReferencesReq, error) {

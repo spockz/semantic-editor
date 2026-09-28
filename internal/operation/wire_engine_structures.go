@@ -36,7 +36,7 @@ func (r *InsertStructureReq) SetProjectContext(project backend.ProjectContext) {
 }
 
 var insertStructureParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Source file target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Structural construct kind supported by the selected language backend", Required: true, DynamicEnums: executableStructureKinds},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Structural construct source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier supported by the selected backend", Enums: accessEnum},

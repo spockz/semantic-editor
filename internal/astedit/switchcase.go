@@ -226,7 +226,7 @@ func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, swit
 		return selected.body, nil
 	}
 	if countSwitchMatches(matches) > 1 {
-		return nil, fmt.Errorf("%w for %q; candidates:\n%s\nselect one with switch_path", ErrSwitchAmbiguous, targetSwitchOn, formatSwitchCandidates(matches, fset))
+		return nil, fmt.Errorf("%w for %q; candidates:\n%s\nselect one with construct_path", ErrSwitchAmbiguous, targetSwitchOn, formatSwitchCandidates(matches, fset))
 	}
 	return matches[0].body, nil
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"go/token"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -455,12 +456,172 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) m
 }
 
 func toolSchema(entry operation.Entry) map[string]any {
+	description := entry.Summary
+	output := standardOutputSchema(map[string]any{"type": "string"})
+	properties := output[schemaPropertiesKey].(map[string]any)
+	maps.Copy(properties, continuationOutputFieldSchemas(entry.MCPName))
 	return map[string]any{
 		"name":                entry.MCPName,
-		toolFieldDescription:  entry.Summary,
+		toolFieldDescription:  description,
 		toolFieldInputSchema:  operationInputSchema(entry),
-		toolFieldOutputSchema: standardOutputSchema(map[string]any{"type": "string"}),
+		toolFieldOutputSchema: output,
 	}
+}
+
+// ValidateSourceFields verifies every parameter continuation references an advertised top-level output field.
+func ValidateSourceFields(entries []operation.Entry) error {
+	outputFields := make(map[string]map[string]any, len(entries))
+	for _, entry := range entries {
+		tool := toolSchema(entry)
+		output := tool[toolFieldOutputSchema].(map[string]any)
+		properties, _ := output[schemaPropertiesKey].(map[string]any)
+		outputFields[entry.MCPName] = properties
+	}
+	for _, entry := range entries {
+		for _, param := range entry.Params {
+			for _, source := range param.SourceFields {
+				tool, field, ok := strings.Cut(source, ".")
+				if !ok || tool == "" || field == "" {
+					return fmt.Errorf("operation %q parameter %q has invalid SourceFields entry %q; want tool.field", entry.MCPName, param.JSONName, source)
+				}
+				properties, exists := outputFields[tool]
+				if !exists {
+					return fmt.Errorf("operation %q parameter %q SourceFields entry %q names unknown output tool", entry.MCPName, param.JSONName, source)
+				}
+				if _, exists := properties[field]; !exists {
+					return fmt.Errorf("operation %q parameter %q SourceFields entry %q names a field absent from %s outputSchema", entry.MCPName, param.JSONName, source, tool)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func continuationOutputFieldSchemas(toolName string) map[string]any {
+	fields := map[string]any{}
+	switch toolName {
+	case "semantic_lookup":
+		fields["symbol"] = map[string]any{"type": "string"}
+		fields["file"] = map[string]any{"type": "string"}
+		fields["kind"] = map[string]any{"type": "string"}
+		fields["line"] = map[string]any{"type": "integer"}
+		fields["column"] = map[string]any{"type": "integer"}
+	case "semantic_rename", "semantic_replace_body":
+		fields["symbol"] = map[string]any{"type": "string"}
+		fields["file"] = map[string]any{"type": "string"}
+	case "semantic_replace_construct", "semantic_insert_case":
+		fields["file"] = map[string]any{"type": "string"}
+		fields["in_function"] = map[string]any{"type": "string"}
+		if toolName == "semantic_insert_case" {
+			fields["discriminator"] = map[string]any{"type": "string"}
+		}
+	}
+	return fields
+}
+
+func structuredContinuationFields(toolName string, result any, root string, arguments map[string]any) map[string]any {
+	fields := map[string]any{}
+	addLookup := func(lookup *backend.LookupResult) {
+		if lookup == nil {
+			return
+		}
+		if lookup.Symbol != "" {
+			fields["symbol"] = lookup.Symbol
+		}
+		if file := continuationPath(root, lookup.File); file != "" {
+			fields["file"] = file
+		}
+		if lookup.Kind != "" {
+			fields["kind"] = lookup.Kind
+		}
+		if lookup.Line > 0 {
+			fields["line"] = lookup.Line
+		}
+		if lookup.Column > 0 {
+			fields["column"] = lookup.Column
+		}
+	}
+	switch toolName {
+	case "semantic_lookup":
+		if lookup, ok := result.(*backend.LookupResult); ok {
+			addLookup(lookup)
+		}
+	case "semantic_rename":
+		if rename, ok := result.(*backend.RenameResult); ok && rename != nil {
+			if rename.Lookup != nil {
+				if symbol := renamedQualifiedSymbol(rename.Lookup.Symbol, rawString(arguments, "to")); symbol != "" {
+					fields["symbol"] = symbol
+				}
+				if file := continuationPath(root, rename.Lookup.File); file != "" {
+					fields["file"] = file
+				}
+			}
+		}
+	case "semantic_replace_body":
+		if edit, ok := result.(operation.FileEditRes); ok {
+			if edit.Symbol != "" {
+				fields["symbol"] = edit.Symbol
+			}
+			if file := continuationPath(root, edit.File); file != "" {
+				fields["file"] = file
+			}
+		}
+	case "semantic_replace_construct", "semantic_insert_case":
+		if edit, ok := result.(operation.FileEditRes); ok {
+			if file := continuationPath(root, edit.File); file != "" {
+				fields["file"] = file
+			}
+			if edit.InFunction != "" {
+				fields["in_function"] = edit.InFunction
+			}
+			if toolName == "semantic_insert_case" && edit.Discriminator != "" {
+				fields["discriminator"] = edit.Discriminator
+			}
+		}
+	}
+	return fields
+}
+
+func rawString(arguments map[string]any, key string) string {
+	value, _ := arguments[key].(string)
+	return backend.NormalizeRenameInput(value)
+}
+
+func renamedQualifiedSymbol(previous, next string) string {
+	if previous == "" || next == "" {
+		return ""
+	}
+	separator := strings.LastIndex(previous, "::")
+	separatorWidth := 2
+	if dot := strings.LastIndex(previous, "."); dot > separator {
+		separator = dot
+		separatorWidth = 1
+	}
+	if separator < 0 {
+		return next
+	}
+	return previous[:separator+separatorWidth] + next
+}
+
+func continuationPath(root, source string) string {
+	if strings.TrimSpace(source) == "" {
+		return ""
+	}
+	root = pathutil.CanonicalWorkspaceRoot(root)
+	var absolute string
+	if filepath.IsAbs(source) {
+		absolute = filepath.Clean(source)
+	} else {
+		absolute = filepath.Join(root, filepath.Clean(source))
+	}
+	if !pathutil.PathWithin(root, absolute) {
+		return ""
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil || relative == "." {
+		return ""
+	}
+	return filepath.ToSlash(relative)
 }
 
 func standardOutputSchema(resultSchema map[string]any) map[string]any {
@@ -531,14 +692,12 @@ func diagnosticDeltaSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"before":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"after":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"net_delta":   map[string]any{"type": "integer"},
 			"introduced":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"resolved":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 			"suggestions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
-		"required": []string{"before", "after", "net_delta", "introduced", "resolved"},
+		"required": []string{"net_delta", "introduced", "resolved"},
 	}
 }
 
@@ -588,11 +747,41 @@ func addOperationExample(schema map[string]any, example map[string]any, params [
 	schema["examples"] = []map[string]any{filtered}
 }
 
+func parameterDescription(param operation.ParameterContract) string {
+	if len(param.SourceFields) == 0 {
+		return param.Description
+	}
+	fieldTools := make(map[string][]string)
+	fieldOrder := make([]string, 0)
+	for _, source := range param.SourceFields {
+		tool, field, ok := strings.Cut(source, ".")
+		if !ok || tool == "" || field == "" {
+			continue
+		}
+		if _, exists := fieldTools[field]; !exists {
+			fieldOrder = append(fieldOrder, field)
+		}
+		if !slices.Contains(fieldTools[field], tool) {
+			fieldTools[field] = append(fieldTools[field], tool)
+		}
+	}
+	var description strings.Builder
+	description.WriteString(param.Description)
+	for _, field := range fieldOrder {
+		tools := fieldTools[field]
+		if len(tools) == 0 {
+			continue
+		}
+		fmt.Fprintf(&description, " Copy from the %s field of a preceding %s result.", field, strings.Join(tools, " or "))
+	}
+	return description.String()
+}
+
 func operationInputSchemaForParams(params []operation.ParameterContract) map[string]any {
 	properties := make(map[string]any, len(params))
 	required := make([]string, 0, len(params))
 	for _, param := range params {
-		property := map[string]any{toolFieldDescription: param.Description}
+		property := map[string]any{toolFieldDescription: parameterDescription(param)}
 		switch param.Type {
 		case operation.ParamBoolean:
 			property["type"] = "boolean"
@@ -744,7 +933,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
-	s.sendToolSuccessWithTiming(id, text, timing)
+	s.sendToolSuccessWithContinuation(id, text, timing, structuredContinuationFields(params.Name, result, s.workDir, raw))
 }
 
 func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {
@@ -805,8 +994,15 @@ func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text s
 	})
 }
 
-func (s *Server) sendToolSuccessWithTiming(id json.RawMessage, text string, timing *toolRequestTiming) {
-	s.sendToolSuccessWithTimingAndResult(id, text, text, timing)
+func (s *Server) sendToolSuccessWithContinuation(id json.RawMessage, text string, timing *toolRequestTiming, fields map[string]any) {
+	s.recordToolMetrics(timing)
+	structured := timing.structuredContentWithResult(text)
+	maps.Copy(structured, fields)
+	s.sendResult(id, map[string]any{
+		"content":            []map[string]any{{"type": "text", "text": text}},
+		"isError":            false,
+		structuredContentKey: structured,
+	})
 }
 
 func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {

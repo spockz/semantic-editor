@@ -42,11 +42,11 @@ func (r ReplaceBodyReq) GetProjectContext() backend.ProjectContext { return r.Pr
 func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Path to the Go source file", Required: true},
-	{Name: "function", CLIName: "function", JSONName: "function", Type: ParamString, Description: "Name of the containing function or receiver-qualified method (e.g. 'TestWriteAssets' or '(*Server).Serve')", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: []string{sourceReplaceConstructInFunction, sourceInsertCaseInFunction}},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
-	{Name: "discriminator", CLIName: "discriminator", JSONName: "discriminator", Type: ParamString, Description: "Optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct"},
-	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity or no-match diagnostic, such as 0 or 0.1"},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct."},
+	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement Go construct source", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
 }
@@ -65,8 +65,8 @@ func executableConstructKinds(candidate backend.Backend) []string {
 }
 
 var replaceBodyParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "function or method name, e.g. 'Foo' or '(*T).Foo'", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
 }
@@ -152,7 +152,7 @@ type ScaffoldFileRes struct {
 func (r ScaffoldFileRes) WrittenFile() string { return r.File }
 
 var scaffoldFileParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path for the new file", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: relative path for the new file", Required: true},
 	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')"},
 	{Name: "purpose_header", CLIName: "purpose-header", JSONName: "purpose_header", Type: ParamString, Description: "optional Go comment header explaining why the file exists"},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "replace existing file (default false)"},
@@ -234,13 +234,13 @@ func (r InsertCaseReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertCaseReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertCaseParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "relative path to the Go source file", Required: true},
-	{Name: "func", CLIName: "func", JSONName: "func", Type: ParamString, Description: "Name of the existing function or method containing the target switch", Required: true},
-	{Name: "switch_on", CLIName: "switch-on", JSONName: "switch_on", Type: ParamString, Description: "Existing switch discriminant expression, e.g. method; omit only for a tagless switch"},
-	{Name: "switch_path", CLIName: "switch-path", JSONName: "switch_path", Type: ParamString, Description: "Path selecting one of multiple matching switches, e.g. 0 or 0.1; use the ambiguity diagnostic's path"},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: []string{sourceReplaceConstructInFunction, sourceInsertCaseInFunction}},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", SourceFields: []string{sourceInsertCaseDiscriminator}},
+	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "Complete case clause, including colon and statements, e.g. case \"foo\":\\n\\treturn bar", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
-	{Name: "anchor", CLIName: "anchor", JSONName: "anchor", Type: ParamString, Description: "case value to insert before/after when placement is 'before' or 'after'"},
+	{Name: wireTargetCase, CLIName: "target-case", JSONName: wireTargetCase, Type: ParamString, Description: "Selector: case value to insert before or after when placement is 'before' or 'after' (e.g. 'nil', '\"foo\"'). Not a symbol address."},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after insertion (default false)"},
 }
 
@@ -254,13 +254,13 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
 	}
-	if req.Func, err = ParseString(raw, "func", "func", true); err != nil {
+	if req.Func, err = ParseString(raw, wireInFunction, "in-function", true); err != nil {
 		return req, err
 	}
-	if req.SwitchOn, err = ParseString(raw, "switch_on", "switch-on", false); err != nil {
+	if req.SwitchOn, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
-	if req.SwitchPath, err = ParseString(raw, "switch_path", "switch-path", false); err != nil {
+	if req.SwitchPath, err = ParseString(raw, wireConstructPath, "construct-path", false); err != nil {
 		return req, err
 	}
 	if req.Case, err = ParseString(raw, "case", "case", true); err != nil {
@@ -269,7 +269,7 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 	if req.Placement, err = ParseStringDefault(raw, "placement", "placement", "before_default"); err != nil {
 		return req, err
 	}
-	if req.Anchor, err = ParseString(raw, "anchor", "anchor", false); err != nil {
+	if req.Anchor, err = ParseString(raw, wireTargetCase, "target-case", false); err != nil {
 		return req, err
 	}
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, false); err != nil {
@@ -289,13 +289,13 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Func, Diff: diff, Detail: "Successfully inserted case into " + req.Func + " in %s."}, nil
+	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Func, InFunction: req.Func, Discriminator: req.SwitchOn, Diff: diff, Detail: "Successfully inserted case into " + req.Func + " in %s."}, nil
 }
 
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
 		Key:     "insert_case",
-		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Supply the existing function name and, for tagged switches, the exact existing discriminant expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy switch_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
+		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Supply the existing in_function selector and, for tagged switches, the exact discriminator expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy construct_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",
@@ -305,7 +305,7 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 			backend.LanguageGo: runInsertCase,
 		},
 		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "func": "Serve", "switch_on": "request.Method", "case": "case \"stop\":\n\treturn nil"},
+		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
 		Batchable:  true,
 	}
 }
@@ -320,7 +320,7 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
 	}
-	if req.Function, err = ParseString(raw, "function", "function", true); err != nil {
+	if req.Function, err = ParseString(raw, wireInFunction, "in-function", true); err != nil {
 		return req, err
 	}
 	kind, err := ParseString(raw, "kind", "kind", true)
@@ -328,10 +328,10 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 		return req, err
 	}
 	req.Kind = astedit.ConstructKind(kind)
-	if req.Discriminator, err = ParseString(raw, "discriminator", "discriminator", false); err != nil {
+	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
-	if req.ConstructPath, err = ParseString(raw, "construct_path", "construct-path", false); err != nil {
+	if req.ConstructPath, err = ParseString(raw, wireConstructPath, "construct-path", false); err != nil {
 		return req, err
 	}
 	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {
@@ -353,13 +353,13 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Function, Diff: diff, Detail: "Successfully replaced " + string(req.Kind) + " construct in " + req.Function + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Function, InFunction: req.Function, Diff: diff, Detail: "Successfully replaced " + string(req.Kind) + " construct in " + req.Function + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
 }
 
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 	return Def[ReplaceConstructReq, FileEditRes]{
 		Key:     "replace_construct",
-		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go loop, conditional, else block, switch or select branch, or defer statement. Select with kind and an optional discriminator; for if statements the discriminator may be the condition or short initializer. Errors list candidate paths and selectors; use construct_path to choose one. The function parameter accepts a function name or receiver-qualified method (for example, (*Server).Serve).",
+		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go loop, conditional, else block, switch or select branch, or defer statement. Select with kind and an optional discriminator; for if statements the discriminator may be the condition or short initializer. Errors list candidate paths and selectors; use construct_path to choose one. The in_function selector accepts a function name or receiver-qualified method (for example, (*Server).Serve).",
 		Params:  replaceConstructParams,
 		Level:   LevelFile,
 		CLIName: "replace-construct",
@@ -369,7 +369,7 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 			backend.LanguageGo: runReplaceConstruct,
 		},
 		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "function": "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		ExampleRaw: map[string]any{"file": wireExampleFile, "in_function": "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
 		Batchable:  true,
 	}
 }

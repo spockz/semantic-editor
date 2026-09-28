@@ -25,8 +25,8 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target Go source file", Required: true},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Existing constant, global variable, or type alias identifier", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
 }
@@ -42,7 +42,7 @@ type insertDeclarationFields struct {
 }
 
 var insertDeclarationParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One top-level Go declaration. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, types, constants, and variables", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Placement qualifier: file_start, file_end (default), public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
@@ -122,7 +122,7 @@ func (r InsertFunctionReq) GetProjectContext() backend.ProjectContext { return r
 func (r *InsertFunctionReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One complete Go function or method declaration, including parameters, results, and body", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private. Protected and package-private are unsupported in Go.", Enums: []string{"infer", "public", "private"}},
@@ -180,7 +180,7 @@ func (r InsertTypeReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertTypeReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertTypeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Type definition Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
@@ -263,7 +263,7 @@ func (r InsertDeclReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertDeclReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Go source target; relative paths resolve from the active semedit workspace root", Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Declaration Go source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
