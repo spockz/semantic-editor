@@ -93,6 +93,14 @@ This research remains **Open**: the architectural direction is accepted, but LSP
 
 ---
 
+## Protocol Surface and Adoption Boundary
+
+The architectural direction remains a shared semantic engine with multiple ingress adapters; this does not establish LSP as the only interface. Before adding LSP ingress, enumerate the client and server methods in the targeted LSP version and map each method to an existing semedit operation, a possible adapter-only feature, or an explicit non-goal. Keep protocol methods distinct from product operations: matching names do not imply matching semantics, safety, or workspace scope.
+
+For each overlap, record whether standard LSP already supplies the user value, whether semedit adds intent-level selection or stronger validation, and what extra state an LSP adapter would require (document synchronization, versions, cancellation, progress, client-applied edits, capabilities, and partial-failure reporting). Evaluate a full LSP-only ingress against the supported MCP and CLI harnesses, including whether each can register a stdio LSP server as an agent tool and preserve semantic tool schemas and steering. Retain MCP/CLI unless evidence shows equivalent discovery, invocation, and result handling across target harnesses.
+
+Related investigations: [RQ-0010](RQ-0010-agent-harness-integration-matrix.md) tracks harness protocol support; [RQ-0013](RQ-0013-mcp-tool-overlap-and-lsp-coexistence.md) tracks overlap and coexistence; [RQ-0038](RQ-0038-makefile-language-server-versus-parser.md) tracks Makefile LSP/parser evidence.
+
 ## 6. Sources & Prior Art
 
 * **LSP 3.17 Specification on WorkspaceEdit**: [WorkspaceEdit](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspaceEdit).

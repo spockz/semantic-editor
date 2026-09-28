@@ -51,6 +51,12 @@ Ensure `semedit` tool names never collide with standard LSP method names:
 
 ---
 
+### C. LSP Method-to-Operation Inventory
+
+Build a versioned inventory of LSP client requests, server requests, notifications, and lifecycle methods relevant to semantic lookup, references, diagnostics, rename, code actions, formatting, and workspace edits. Map each to semedit's operation registry as exact semantic overlap, partial overlap, transport support only, or no counterpart. Record capability negotiation and state requirements, not just method-name similarity. Include Makefile's existing `make-ls`-backed selected-file lookup under [ADR-0048](../adr/0048-bash-and-makefile-read-only-backends.md); [RQ-0038](RQ-0038-makefile-language-server-versus-parser.md) governs whether its parser can safely support mutation.
+
+Do not treat an LSP method inventory as a migration decision. Compare client/harness integration, operation intent and schemas, unsaved-buffer semantics, server lifecycle, cross-language scope, and client-applied edit behavior through [RQ-0012](RQ-0012-lsp-multiplexing-vs-multi-daemon-orchestration.md) and [RQ-0010](RQ-0010-agent-harness-integration-matrix.md).
+
 ## 4. Sources & Prior Art
 
 * **MCP Specification**: [modelcontextprotocol.io](https://modelcontextprotocol.io).

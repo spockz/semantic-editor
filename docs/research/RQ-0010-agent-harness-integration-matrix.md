@@ -42,6 +42,10 @@ The following matrix documents connection protocols, integration tiers, configur
 
 ---
 
+### LSP-Native Integration
+
+The existing matrix focuses on MCP and CLI. Extend it with verified LSP client and agent-harness support: registration and transport, whether an LSP server can be exposed to the model as callable tools, supported request/notification methods, schema or instruction steering, and handling of returned `WorkspaceEdit` values. Distinguish an editor speaking LSP to a server from an agent planner discovering and invoking that server. Record primary-source evidence and tested versions; do not infer agent-tool support from editor protocol support. This evidence informs the full-LSP versus multi-ingress comparison in [RQ-0012](RQ-0012-lsp-multiplexing-vs-multi-daemon-orchestration.md).
+
 ## 3. MCP Tool Discovery Protocol Documentation Strings (`tools/list`)
 
 When an agent harness connects to `semedit`, it dispatches the `tools/list` JSON-RPC method. The server returns a list of tool objects containing `name`, `description`, and `inputSchema`. The harness transforms these JSON structures into the target model's tool-calling definitions (e.g., Anthropic Tools, Gemini Function Declarations, OpenAI Tool Schemas).

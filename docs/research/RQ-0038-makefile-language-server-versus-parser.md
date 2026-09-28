@@ -7,6 +7,8 @@
 
 ## Question
 
+ADR-0048 records the current Makefile LSP boundary: trusted selected-file lookup through `make-ls`, with verification and mutation unavailable. This investigation reuses that decision; it does not propose replacing it with a new backend ADR until parser and safety evidence supports a capability change.
+
 Which parser can safely support replacement of `rule`, `if`, `else`, `variable`, and `include` constructs now that a bounded read-only lookup ingress is available?
 
 ## Current evidence

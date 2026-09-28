@@ -76,6 +76,34 @@ as well as a short human-readable outcome. The receipt is authoritative for the
 revision that the operation wrote; it is not a cache guarantee after another
 writer changes the workspace.
 
+### Invariant: Continuation Field–Parameter Isomorphism
+
+Every field in a structured tool result that is intended for use as a follow-up
+tool argument **must match the parameter name and granularity that the target
+tool's input schema declares**. No field may require the model to reassemble,
+rename, or reinterpret its value before passing it to a subsequent semedit call.
+
+Concretely:
+
+* A result field named `symbol` must carry the fully-qualified symbol string
+  accepted verbatim by `semantic_rename`, `semantic_replace_body`,
+  `semantic_inspect_symbol`, and `semantic_find_references` (e.g.
+  `"Server.HandleRequest"`, not `"HandleRequest"` + a separate `receiver` field).
+* A result field named `file` must carry the canonical project-relative path
+  accepted verbatim by all file-scoped tools.
+* A result field named `kind` must use the same enum vocabulary as the `kind`
+  parameter of `semantic_replace_construct` — not Go AST token names, not LSP
+  `SymbolKind` integers.
+* Fields with no corresponding tool parameter (`line`, `column`, `offset`,
+  `receiver` as a standalone field, raw `before`/`after` diagnostic arrays)
+  must be absent from structured continuation data. They may appear in the
+  human-readable text content layer but never in `structuredContent`.
+
+This invariant applies to every continuation block in an edit receipt and to
+every navigation result that carries addressable output. Its purpose is to make
+the model's next argument a verbatim copy from the preceding result, removing
+reassembly inference entirely from the tool-call trajectory.
+
 ```json
 {
   "schema_version": "semedit.edit-receipt/v1",
@@ -375,7 +403,159 @@ receipt size, and the proportion of reads correctly classified as necessary.
 Report medians, IQRs, and paired confidence intervals; do not aggregate token
 cost across providers as if units were interchangeable.
 
-## 8. Repository Implications and Open Decisions
+## 8. Holistic Input/Output Parameter Harmonization
+
+The continuation field–parameter isomorphism invariant (§4) requires that
+output fields feed directly into follow-up tool inputs. That invariant is only
+meaningful if the input schemas themselves use consistent names and granularity
+for the same logical concept across all tools. Both sides of the interface must
+be harmonized together.
+
+### Invariant: Schema-Wide Parameter Name Consistency
+
+A logical concept must use the same JSON parameter name in every tool that
+accepts or returns it. No two tools may use different names for the same thing,
+and no name may carry different semantics in different tools.
+
+### Current Inconsistencies (Audit 2026-09-28)
+
+The following table records every parameter name divergence identified in
+`internal/operation/`. Each row is a blocking inconsistency: an output field
+conforming to one name cannot feed verbatim into a tool using the other name.
+
+| Concept | Consistent name | Divergent names found | Affected tools |
+| :--- | :--- | :--- | :--- |
+| **Containing function for construct ops** | `in_function` (selector role, not `symbol`) | `function` (`semantic_replace_construct`), `func` (`semantic_insert_case`) | replace_construct uses `function`; insert_case uses `func` |
+| **Relative case placement anchor** | `target_case` | `anchor` (`semantic_insert_case`) — collides with symbol-addressed `target_symbol` in other tools | insert_case vs all other insertion tools |
+| **File scope** | `file` | `path` (`semantic_outline` accepts files and directories; `semantic_verify` uses both `path` and `file` with different semantics) | outline, verify |
+| **Replacement source text** | distinguish `body` (bare statements) from `source` (complete declaration) | `semantic_replace_construct` uses `source` for a complete construct — a third meaning | replace_construct vs replace_body vs insert_* |
+| **Ambiguity path** | `construct_path` | `switch_path` (`semantic_insert_case`) — same concept, different name | replace_construct vs insert_case |
+| **Switch discriminant** | `discriminator` | `switch_on` (`semantic_insert_case`) — same concept, different name | replace_construct vs insert_case |
+| **Kind vocabulary** | one shared semedit enum | `LookupResult.Kind` uses Go AST token strings; `kinds` filter in outline uses a broader cross-language vocabulary; mutation `kind` inputs use a third vocabulary | navigation results vs outline filter vs mutation inputs |
+
+### Parameter Role Distinction: Target vs Selector
+
+Before deciding canonical names, every parameter must have a declared role:
+
+* **Target** — the thing the operation acts on directly. The receipt's
+  continuation fields echo target parameters back so the next tool can address
+  the same unit. Examples: `symbol` in `semantic_rename` and
+  `semantic_replace_body`; `file` in `semantic_organize_imports`.
+* **Selector** — a scope constraint that narrows where the engine searches for
+  the real target. The engine uses it to resolve ambiguity; it is not the thing
+  being changed. Examples: `file` as optional scope disambiguator in
+  `semantic_rename`; the containing function in construct operations.
+
+`semantic_replace_construct` and `semantic_insert_case` both take a containing
+function parameter. That parameter is a **selector**, not a target — it says
+"look inside this function," while `kind` and `discriminator` identify the
+actual construct to mutate. Renaming it to `symbol` would be wrong: `symbol` is
+reserved for the primary target across the entire tool surface, and a receipt
+field named `symbol` must refer to the operated-on unit, not its container.
+
+The correct canonical name for the containing-function selector is `in_function`.
+It is unambiguous (`symbol` is the target; `in_function` is the scope), it
+reads as a preposition phrase, and it does not collide with any other parameter.
+A result receipt for a construct operation would therefore look like:
+
+```json
+{
+  "file": "api/server.go",
+  "in_function": "Server.ServeHTTP",
+  "kind": "if",
+  "discriminator": "err != nil"
+}
+```
+
+where `in_function` and `file` together supply the scope selectors for a
+follow-up `semantic_replace_construct` call, and `kind` + `discriminator`
+identify the construct within that scope.
+
+### Design Decisions Required Before Harmonization
+
+1. **`function`/`func` → `in_function`**: Rename both to `in_function` in
+   `semantic_replace_construct` and `semantic_insert_case`. Do not rename to
+   `symbol`; the containing function is a scope selector, not the operation
+   target, and conflating the two roles would break the isomorphism invariant
+   for receipts.
+
+2. **`source` vs `body`**: These are legitimately distinct scopes — `body` is
+   bare statements without braces; `source` is a complete declaration. They
+   should keep different names. `semantic_replace_construct`'s `source` is a
+   third scope (complete construct including keyword and braces); its parameter
+   description must state this explicitly. Do not collapse all three to one name.
+
+3. **`path` vs `file`**: `semantic_outline` uses `path` because it accepts
+   both files and directories. `semantic_verify` uses `path` for Go scope and
+   `file` for external language scope — a load-bearing distinction. Consider
+   unifying both to `path` with documented single-file vs directory semantics,
+   or splitting verify into language-specific parameter sets.
+
+4. **`anchor` → `target_case`**: Rename insert_case's `anchor` to
+   `target_case` to remove ambiguity with symbol-addressed `target_symbol`
+   placement.
+
+5. **`switch_path` → `construct_path`**: Unify to `construct_path` across
+   insert_case and replace_construct.
+
+6. **`switch_on` → `discriminator`**: Unify to `discriminator` across both
+   tools.
+
+7. **Kind vocabulary**: Define one shared kind enum used in mutation inputs,
+   navigation filters, and continuation outputs. The enum must not use Go AST
+   token names or LSP SymbolKind integers.
+
+8. **Diagnostic delta serialization**: `DiagnosticDelta.Before` and
+   `DiagnosticDelta.After` (full pre- and post-edit diagnostic lists) must be
+   tagged `json:"-"` in both `pipeline.DiagnosticDelta` and
+   `backend.DiagnosticDelta`. Only `introduced`, `resolved`, `net_delta`, and
+   `suggestions` reach the model. The full arrays remain in the Go struct for
+   internal delta computation and must never be serialized into tool results.
+
+9. **`LookupResult` field policy**:
+   * `Receiver` as a standalone field must be omitted from structured output.
+     The qualified `symbol` value already encodes it (e.g. `"(*Server).Handle"`);
+     a separate `receiver` field forces the model to reconstruct what the engine
+     already resolved.
+   * `Offset` must be omitted from structured output entirely. It is an internal
+     Go LSP byte-offset artifact with no tool-parameter mapping.
+   * `Line` and `Column` must remain as flat fields in results (no sub-object
+     wrapper). They are valid for file-navigation reads but are not semedit tool
+     parameters. Their tool description must state this explicitly (see item 10).
+
+10. **Tool description cross-reference requirement**: Every tool description
+    must explicitly state which result fields are continuation arguments for
+    semedit tools and which are navigation-only hints. Example for
+    `semantic_lookup`:
+
+    > Returns `symbol`, `file`, `kind`, `line`, and `column`. Pass `symbol`
+    > and `file` to follow-up semedit calls. Use `line` and `column` only for
+    > file-navigation reads; they are not accepted as semedit tool parameters.
+
+    Every input parameter description must also state which result field(s) feed
+    it (Direction A cross-reference). Example for `semantic_rename.symbol`:
+
+    > Target: qualified symbol being renamed (e.g. `Server.ServeHTTP`,
+    > `(*Client).Do`, `ValidateToken`). Copy verbatim from the `symbol` field of
+    > any preceding `semantic_lookup`, `semantic_rename`, or mutation receipt.
+
+11. **`SourceFields` registry annotation**: Add a `SourceFields []string` field
+    to `ParameterContract` in `internal/operation/`. The schema generator must
+    append the Direction A cross-reference clause to the parameter description
+    automatically when `SourceFields` is non-empty, keeping descriptions
+    consistent without manual maintenance. A registry build-time check must
+    verify that every named source field exists in the referenced tool's output
+    schema, catching broken cross-references before release.
+
+### Prerequisite for Receipt Implementation
+
+The continuation field–parameter isomorphism invariant cannot be correctly
+implemented while input-schema divergences exist. A receipt that emits `symbol`
+for the containing function cannot feed `semantic_replace_construct` which
+currently expects `function`. Resolve the input schemas first, then implement
+the receipt shape against the canonical names.
+
+## 9. Repository Implications and Open Decisions
 
 The ongoing CLI/MCP unification is a prerequisite, not an assumed implementation
 detail. Do not attach this feature to the current transitional response paths.
@@ -398,8 +578,12 @@ Open decisions:
 4. Whether a scope projection is generated by each backend or a shared
    post-write source mapper after the unification review.
 5. Which harnesses reliably surface server instructions and structured output.
+6. Whether `body` and `source` should be distinct named parameters or collapsed
+   to one name with scope declared in the description.
+7. Whether `path` (file or directory) and `file` (file only) should be unified
+   or kept distinct with documented semantics.
 
-## 9. Sources
+## 10. Sources
 
 * [ReAct: Synergizing Reasoning and Acting in Language Models](https://arxiv.org/abs/2210.03629): action observations update later plans, framing tool results as decision context.
 * [Writing effective tools for AI agents](https://www.anthropic.com/engineering/writing-tools-for-agents): return identifiers needed by subsequent calls; bound large results with pagination, range selection, filtering, or truncation.
@@ -408,16 +592,18 @@ Open decisions:
 * [REPOFUSE: Repository-Level Code Completion with Fused Dual Context](https://arxiv.org/abs/2402.14323): repository code context benefits from relevance-aware restricted-size selection.
 * [Hierarchical Context Pruning](https://arxiv.org/abs/2406.18294): removing function implementations while retaining dependency structure can reduce context without significantly reducing repository-level completion accuracy.
 
-## 10. Next Steps
+## 11. Next Steps
 
 1. Extend the benchmark result schema to capture redacted, normalized tool
    traces and post-mutation result sizes; re-run task-007 before assigning a
    definitive cause to each read.
-2. After the CLI/MCP unification lands, review its result and define the
+2. Resolve the seven input-schema divergences in §8 before implementing the
+   receipt shape; record the canonical names in an ADR as a schema invariant.
+3. After the CLI/MCP unification lands, review its result and define the
    receipt integration boundary, AST projection rules, and minimal versioned
    schema; implement them behind an experiment flag for one single-file and one
    multi-file operation.
-3. Run the response-policy matrix, then choose a default cap and continuation
+4. Run the response-policy matrix, then choose a default cap and continuation
    representation from completion and efficiency evidence.
-4. If the result contract is accepted, record its invariants in an ADR and add
+5. If the result contract is accepted, record its invariants in an ADR and add
    CLI txtar coverage for emitted receipt fields and stale-continuation errors.
