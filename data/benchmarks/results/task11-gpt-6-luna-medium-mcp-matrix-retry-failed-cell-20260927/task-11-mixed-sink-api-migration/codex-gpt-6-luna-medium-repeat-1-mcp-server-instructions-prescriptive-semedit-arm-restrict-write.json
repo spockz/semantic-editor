@@ -1,0 +1,926 @@
+{
+  "comparisons": [
+    {
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "default",
+      "repeat": 1,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 150528,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-27T14:41:47.791765Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.791789Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.886072Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.886083Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-1d25f5a53b112133",
+        "diagnostic_tool_coverage": {
+          "complete": true,
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "observation_state": "complete",
+          "observed": [
+            "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no",
+            "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"dispatcher|record\\\\(|health|probe|control\\\" audit",
+            "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'agents*' -g 'project_brief.md' -g 'go.mod' -g 'go.sum' -g 'makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short",
+            "/bin/zsh -lc \"rg -n \\\"type dispatcher|func \\\\(.*\\\\) record|persist|sink|classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod",
+            "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+            "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'"
+          ]
+        },
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 10 lines)",
+        "first_event_to_first_tool_call_ms": 6175,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 1410,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 44632
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-615dbb28f2ef5bb0",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 1410,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1137,
+        "process_start_to_first_event_ms": 473,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 162006,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-11-mixed-sink-api-migration_1790520107363451000.json"
+        },
+        "reasoning_tokens": 295,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+          "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+          "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+          "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+          "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 11478,
+        "variant": "small:default",
+        "wall_clock_ms": 46046
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+        "cached_prompt_tokens": 158208,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-09-27T14:42:33.919279Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:33.919319Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:34.017259Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:34.017269Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-1d25f5a53b112133",
+        "diagnostic_tool_coverage": {
+          "complete": true,
+          "expected": [
+            "semantic_inspect_symbol",
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "expected_satisfied": false,
+          "missing": [
+            "semantic_lookup",
+            "semantic_replace_body"
+          ],
+          "observation_state": "complete",
+          "observed": [
+            "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80",
+            "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat makefile'",
+            "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+            "/bin/zsh -lc 'go test ./...'",
+            "semantic_batch",
+            "semantic_inspect_symbol",
+            "semantic_outline",
+            "semantic_verify"
+          ]
+        },
+        "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+        "first_event_to_first_tool_call_ms": 8484,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "oracle": {
+              "duration_ms": 1447,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "include_unexported": true,
+                  "path": "audit"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_outline",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+                "transport_status": "unknown"
+              },
+              {
+                "arguments": {
+                  "symbol": "Classify"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Record"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "auto_organize_imports": true,
+                  "edits": [
+                    {
+                      "params": {
+                        "access_modifier": "public",
+                        "file": "audit/normalize.go",
+                        "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+                      },
+                      "tool": "semantic_insert_function"
+                    },
+                    {
+                      "params": {
+                        "auto_organize_imports": true,
+                        "body": "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)",
+                        "file": "service/dispatch.go",
+                        "symbol": "(*Dispatcher).Record"
+                      },
+                      "tool": "semantic_replace_body"
+                    },
+                    {
+                      "params": {
+                        "body": "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}",
+                        "file": "audit/summary.go",
+                        "symbol": "Classify"
+                      },
+                      "tool": "semantic_replace_body"
+                    }
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "language": "go"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_verify",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "wall_clock_ms": 57573
+          }
+        ],
+        "internal_turns": 9,
+        "job_id": "job-9a25ca6bee380506",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 1447,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 910,
+        "process_start_to_first_event_ms": 471,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 187263,
+        "prompt_variant": "default",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-11-mixed-sink-api-migration_1790520153483373000.json"
+        },
+        "reasoning_tokens": 245,
+        "repeat": 1,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-11-mixed-sink-api-migration",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "include_unexported": true,
+              "path": "audit"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_outline",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+            "transport_status": "unknown"
+          },
+          {
+            "arguments": {
+              "symbol": "Classify"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Record"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "auto_organize_imports": true,
+              "edits": [
+                {
+                  "params": {
+                    "access_modifier": "public",
+                    "file": "audit/normalize.go",
+                    "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+                  },
+                  "tool": "semantic_insert_function"
+                },
+                {
+                  "params": {
+                    "auto_organize_imports": true,
+                    "body": "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)",
+                    "file": "service/dispatch.go",
+                    "symbol": "(*Dispatcher).Record"
+                  },
+                  "tool": "semantic_replace_body"
+                },
+                {
+                  "params": {
+                    "body": "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}",
+                    "file": "audit/summary.go",
+                    "symbol": "Classify"
+                  },
+                  "tool": "semantic_replace_body"
+                }
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "language": "go"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_verify",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 9,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+          "semantic_outline",
+          "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+          "semantic_inspect_symbol",
+          "semantic_inspect_symbol",
+          "semantic_batch",
+          "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+          "/bin/zsh -lc 'go test ./...'",
+          "semantic_verify"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 29055,
+        "variant": "small:default",
+        "wall_clock_ms": 59024
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-11-mixed-sink-api-migration",
+      "txtar_path": "testdata/bench/task_11_mixed_sink_api_migration.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/83d88a5482d8614eee37246b1ddc53ebb78d4435/testdata/bench/task_11_mixed_sink_api_migration.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "cached_prompt_tokens": 150528,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-27T14:41:47.791765Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.791789Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.886072Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:41:47.886083Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-1d25f5a53b112133",
+      "diagnostic_tool_coverage": {
+        "complete": true,
+        "expected": [
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "semantic_replace_body"
+        ],
+        "expected_satisfied": false,
+        "missing": [
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "semantic_replace_body"
+        ],
+        "observation_state": "complete",
+        "observed": [
+          "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no",
+          "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"dispatcher|record\\\\(|health|probe|control\\\" audit",
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'agents*' -g 'project_brief.md' -g 'go.mod' -g 'go.sum' -g 'makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short",
+          "/bin/zsh -lc \"rg -n \\\"type dispatcher|func \\\\(.*\\\\) record|persist|sink|classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod",
+          "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+          "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'"
+        ]
+      },
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 10 lines)",
+      "first_event_to_first_tool_call_ms": 6175,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 1410,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 44632
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-615dbb28f2ef5bb0",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 1410,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1137,
+      "process_start_to_first_event_ms": 473,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 162006,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small-default_task-11-mixed-sink-api-migration_1790520107363451000.json"
+      },
+      "reasoning_tokens": 295,
+      "repeat": 1,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-11-mixed-sink-api-migration",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 6,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS*' -g 'PROJECT_BRIEF.md' -g 'go.mod' -g 'go.sum' -g 'Makefile' -g 'audit/**' -g 'docs/**' | head -80 \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 sed -n '1,260p' audit/event.go \u0026\u0026 rg -n \\\"Dispatcher|Record\\\\(|health|probe|control\\\" audit\"",
+        "/bin/zsh -lc \"rg -n \\\"type Dispatcher|func \\\\(.*\\\\) Record|persist|Sink|Classify\\\" . -g '*.go' -g '\"'!**/*_test.go'\"' \u0026\u0026 sed -n '1,240p' audit/sink.go \u0026\u0026 cat audit/summary.go \u0026\u0026 cat go.mod\"",
+        "/bin/zsh -lc 'cat service/dispatch.go \u0026\u0026 rg --files'",
+        "/bin/zsh -lc 'gofmt -w audit/normalize.go audit/summary.go service/dispatch.go \u0026\u0026 go test ./... \u0026\u0026 git diff -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum \u0026\u0026 git status --short -- audit/normalize.go audit/summary.go service/dispatch.go go.mod go.sum'",
+        "/bin/zsh -lc \"cat audit/normalize.go \u0026\u0026 cat audit/summary.go \u0026\u0026 sed -n '9,20p' service/dispatch.go \u0026\u0026 git status --short --untracked-files=no\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 11478,
+      "variant": "small:default",
+      "wall_clock_ms": 46046
+    },
+    {
+      "arm": "semedit",
+      "before_state": "// Package audit leaves room for normalization rules owned by the delivery boundary.\npackage audit",
+      "cached_prompt_tokens": 158208,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-09-27T14:42:33.919279Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:33.919319Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:34.017259Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-09-27T14:42:34.017269Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-1d25f5a53b112133",
+      "diagnostic_tool_coverage": {
+        "complete": true,
+        "expected": [
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "semantic_replace_body"
+        ],
+        "expected_satisfied": false,
+        "missing": [
+          "semantic_lookup",
+          "semantic_replace_body"
+        ],
+        "observation_state": "complete",
+        "observed": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80",
+          "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat makefile'",
+          "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+          "/bin/zsh -lc 'go test ./...'",
+          "semantic_batch",
+          "semantic_inspect_symbol",
+          "semantic_outline",
+          "semantic_verify"
+        ]
+      },
+      "diff": "File audit/normalize.go modified (2 lines -\u003e 8 lines)",
+      "first_event_to_first_tool_call_ms": 8484,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "oracle": {
+            "duration_ms": 1447,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "include_unexported": true,
+                "path": "audit"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_outline",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+              "transport_status": "unknown"
+            },
+            {
+              "arguments": {
+                "symbol": "Classify"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Record"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "auto_organize_imports": true,
+                "edits": [
+                  {
+                    "params": {
+                      "access_modifier": "public",
+                      "file": "audit/normalize.go",
+                      "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+                    },
+                    "tool": "semantic_insert_function"
+                  },
+                  {
+                    "params": {
+                      "auto_organize_imports": true,
+                      "body": "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)",
+                      "file": "service/dispatch.go",
+                      "symbol": "(*Dispatcher).Record"
+                    },
+                    "tool": "semantic_replace_body"
+                  },
+                  {
+                    "params": {
+                      "body": "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}",
+                      "file": "audit/summary.go",
+                      "symbol": "Classify"
+                    },
+                    "tool": "semantic_replace_body"
+                  }
+                ]
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_batch",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "language": "go"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_verify",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "wall_clock_ms": 57573
+        }
+      ],
+      "internal_turns": 9,
+      "job_id": "job-9a25ca6bee380506",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 1447,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 910,
+      "process_start_to_first_event_ms": 471,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nAudit event kinds may contain inconsistent whitespace and casing. Add the public audit.NormalizeKind(kind string) string function in audit/normalize.go to remove surrounding whitespace and lowercase the kind. Apply it in Dispatcher.Record before persistence, and classify normalized probe events as control traffic, like health. Do not change the metrics or legacy export protocols. Preserve the module metadata and tests, and leave the workspace verified. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 187263,
+      "prompt_variant": "default",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/sources/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-default_task-11-mixed-sink-api-migration_1790520153483373000.json"
+      },
+      "reasoning_tokens": 245,
+      "repeat": 1,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-11-mixed-sink-api-migration",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "include_unexported": true,
+            "path": "audit"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_outline",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+          "transport_status": "unknown"
+        },
+        {
+          "arguments": {
+            "symbol": "Classify"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Record"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "auto_organize_imports": true,
+            "edits": [
+              {
+                "params": {
+                  "access_modifier": "public",
+                  "file": "audit/normalize.go",
+                  "source": "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}"
+                },
+                "tool": "semantic_insert_function"
+              },
+              {
+                "params": {
+                  "auto_organize_imports": true,
+                  "body": "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)",
+                  "file": "service/dispatch.go",
+                  "symbol": "(*Dispatcher).Record"
+                },
+                "tool": "semantic_replace_body"
+              },
+              {
+                "params": {
+                  "body": "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}",
+                  "file": "audit/summary.go",
+                  "symbol": "Classify"
+                },
+                "tool": "semantic_replace_body"
+              }
+            ]
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_batch",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "language": "go"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_verify",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 9,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g '\"'!*.sum'\"' -g '\"'!go.mod'\"' | head -80\"",
+        "semantic_outline",
+        "/bin/zsh -lc 'cat audit/normalize.go \u0026\u0026 cat Makefile'",
+        "semantic_inspect_symbol",
+        "semantic_inspect_symbol",
+        "semantic_batch",
+        "/bin/zsh -lc 'git status --short \u0026\u0026 git diff -- go.mod go.sum'",
+        "/bin/zsh -lc 'go test ./...'",
+        "semantic_verify"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 29055,
+      "variant": "small:default",
+      "wall_clock_ms": 59024
+    }
+  ],
+  "timestamp": "2026-09-27T16:43:32.617757+02:00"
+}
