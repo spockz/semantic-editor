@@ -243,25 +243,34 @@ type benchmarkMetric struct {
 }
 
 type benchmarkMetricSummary struct {
-	count int
-	min   float64
-	max   float64
-	total float64
+	count  int
+	values []float64
 }
 
 func (summary *benchmarkMetricSummary) add(value float64) {
-	if summary.count == 0 {
-		summary.min, summary.max = value, value
-	} else {
-		summary.min = min(summary.min, value)
-		summary.max = max(summary.max, value)
-	}
 	summary.count++
-	summary.total += value
+	summary.values = append(summary.values, value)
 }
 
-func (summary benchmarkMetricSummary) average() float64 {
-	return summary.total / float64(summary.count)
+func (summary benchmarkMetricSummary) quantile(p float64) float64 {
+	if len(summary.values) == 0 {
+		return 0
+	}
+	p = max(0, min(1, p))
+	values := append([]float64(nil), summary.values...)
+	sort.Float64s(values)
+	position := p * float64(len(values)-1)
+	lower := int(math.Floor(position))
+	upper := int(math.Ceil(position))
+	if lower == upper {
+		return values[lower]
+	}
+	fraction := position - float64(lower)
+	return values[lower] + fraction*(values[upper]-values[lower])
+}
+
+func (summary benchmarkMetricSummary) median() float64 {
+	return summary.quantile(0.5)
 }
 
 type benchmarkAggregateGroup struct {
@@ -277,21 +286,7 @@ type benchmarkAggregateGroup struct {
 
 func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string {
 	var sb strings.Builder
-	sb.WriteString(`---
-title: "Benchmark metric aggregates"
-description: "Minimum, maximum, and average empirical benchmark telemetry for each experimental condition and arm."
-icon: "chart-bar"
-draft: false
-weight: 21
----
-
-## Metric ranges across benchmark runs
-
-Every table holds one experimental condition, context variant, and arm. **N** is the count of publishable observations with that metric. Technical provenance remains audit metadata and does not split aggregation cells. Tables display cached input raw and as **cache-adjusted token units**: uncached input + output + reasoning + cached input / 10. **Cost** reflects model-specific credits calculated from the per-million-token rates in ADR-0043: (uncached input × input credits + cached input × cached credits + (reasoning + visible output) × output credits) / 1,000,000. The table omits cost when the target model has no declared rate schedule.
-
-[Return to best-case outcomes](/docs/benchmarks/).
-
-`)
+	sb.WriteString("---\ntitle: \"Benchmark metric aggregates\"\ndescription: \"Median, interquartile range, p90, maximum, and pass rates for each experimental condition and arm.\"\nicon: \"chart-bar\"\ndraft: false\nweight: 21\n---\n\n## Metric distributions across benchmark runs\n\nEach table covers one experimental condition, context variant, and arm. **N** counts publishable observations with that metric. Numeric summaries use linearly interpolated quantiles over sorted observations: median (p50), IQR (p75 − p25), p90, and maximum. Boolean metrics are reported as passes over N and a success rate. Technical provenance remains audit metadata and does not split groups. Cached input is shown raw and in cache-adjusted token units: uncached input + output + reasoning + cached input / 10. Model-specific cost uses the declared per-million-token rates in ADR-0043 and is omitted when no rate schedule exists.\n\n[Return to best-case outcomes](/docs/benchmarks/).\n\n")
 
 	groups := aggregateBenchmarkMetrics(comparisons)
 	if len(groups) == 0 {
@@ -301,15 +296,42 @@ Every table holds one experimental condition, context variant, and arm. **N** is
 
 	metrics := benchmarkMetrics()
 	for _, group := range groups {
-		fmt.Fprintf(&sb, "### `%s` · `%s` · %s · `%s` arm\n\n", group.task, group.target, group.context, group.arm)
-		fmt.Fprintf(&sb, "Prompt variant: `%s` · MCP server instructions: `%s` · Semedit restriction: `%s`\n\n", group.prompt, group.instructions, group.restriction)
-		sb.WriteString("| Metric | N | Min | Max | Average |\n| :--- | ---: | ---: | ---: | ---: |\n")
+		fmt.Fprintf(&sb, "### %s · %s · %s · %s arm\n\n", group.task, group.target, group.context, group.arm)
+		fmt.Fprintf(&sb, "Prompt variant: %s · MCP server instructions: %s · Semedit restriction: %s\n\n", group.prompt, group.instructions, group.restriction)
+		sb.WriteString("| Metric | N | Median | IQR | p90 | Max |\n| :--- | ---: | ---: | ---: | ---: | ---: |\n")
 		for _, metric := range metrics {
+			if metric.unit == "binary" {
+				continue
+			}
 			summary := group.metrics[metric.name]
 			if summary == nil {
 				continue
 			}
-			fmt.Fprintf(&sb, "| %s | %d | %s | %s | %s |\n", metric.name, summary.count, formatBenchmarkMetric(metric.unit, summary.min), formatBenchmarkMetric(metric.unit, summary.max), formatBenchmarkMetric(metric.unit, summary.average()))
+			fmt.Fprintf(&sb, "| %s | %d | %s | %s | %s | %s |\n",
+				metric.name,
+				summary.count,
+				formatBenchmarkMetric(metric.unit, summary.median()),
+				formatBenchmarkMetric(metric.unit, summary.quantile(0.75)-summary.quantile(0.25)),
+				formatBenchmarkMetric(metric.unit, summary.quantile(0.9)),
+				formatBenchmarkMetric(metric.unit, summary.quantile(1)))
+		}
+		sb.WriteString("\nPass rates (true observations count as passes):\n\n")
+		sb.WriteString("| Measure | N | Passes | Success rate |\n| :--- | ---: | ---: | ---: |\n")
+		for _, metric := range metrics {
+			if metric.unit != "binary" {
+				continue
+			}
+			summary := group.metrics[metric.name]
+			if summary == nil || summary.count == 0 {
+				continue
+			}
+			passed := 0
+			for _, value := range summary.values {
+				if value >= 0.5 {
+					passed++
+				}
+			}
+			fmt.Fprintf(&sb, "| %s | %d | %d/%d | %.1f%% |\n", metric.name, summary.count, passed, summary.count, float64(passed)/float64(summary.count)*100)
 		}
 		sb.WriteString("\n")
 	}

@@ -67,7 +67,7 @@ func TestBuildBenchmarkPlanRejectsInvalidContexts(t *testing.T) {
 func TestBuildBenchmarkPlanPreservesVerifiedAndUsesConditionIDs(t *testing.T) {
 	dir := t.TempDir()
 	writePlanningFixture(t, dir, "agent", "contexts:\n  - small\n  - large\nprompt_variants:\n  default: concise\n")
-	options := PlanOptions{BenchDir: dir, OutDir: "", Targets: []Target{{Harness: "codex"}}, Variants: []string{"small-verified:default"}, MCPServerInstructions: MCPServerInstructionsDescriptive}
+	options := PlanOptions{BenchDir: dir, OutDir: "", Targets: []Target{{Harness: "codex"}}, Variants: []string{"small-verified:default"}, MCPServerInstructions: []MCPServerInstructionMode{MCPServerInstructionsDescriptive}}
 	plan, err := BuildBenchmarkPlan(options)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +75,7 @@ func TestBuildBenchmarkPlanPreservesVerifiedAndUsesConditionIDs(t *testing.T) {
 	if len(plan.Jobs) != 2 || plan.Jobs[0].Context != "small+verified" || plan.Jobs[0].PairID != plan.Jobs[1].PairID {
 		t.Fatalf("verified context or pair not preserved: %+v", plan.Jobs)
 	}
-	options.MCPServerInstructions = MCPServerInstructionsPrescriptive
+	options.MCPServerInstructions = []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}
 	other, err := BuildBenchmarkPlan(options)
 	if err != nil {
 		t.Fatal(err)
@@ -112,5 +112,47 @@ func TestBenchmarkMakeListUsesFlagsBeforePositionalArguments(t *testing.T) {
 	}
 	if !strings.Contains(string(output), "--list --dir") {
 		t.Fatalf("list target uses unsupported positional flag order:\n%s", output)
+	}
+}
+
+func TestBuildBenchmarkPlanExpandsInstructionModesAndKeepsControlSingle(t *testing.T) {
+	dir := t.TempDir()
+	writePlanningFixture(t, dir, "mode-matrix", "contexts:\n  - small\nprompt_variants:\n  default: concise\n")
+	plan, err := BuildBenchmarkPlan(PlanOptions{
+		BenchDir:              dir,
+		OutDir:                "",
+		Targets:               []Target{{Harness: "codex"}, {Harness: "control"}},
+		Variants:              []string{"small"},
+		MCPServerInstructions: []MCPServerInstructionMode{MCPServerInstructionsNone, MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Jobs) != 7 {
+		t.Fatalf("jobs = %d, want six agent jobs and one control: %+v", len(plan.Jobs), plan.Jobs)
+	}
+	controls := 0
+	armsByMode := make(map[MCPServerInstructionMode]map[ArmType]string)
+	for _, job := range plan.Jobs {
+		if job.Arm == ArmControl {
+			controls++
+			if job.PairID != "" || job.MCPServerInstructions != MCPServerInstructionsNone {
+				t.Errorf("control inherited a mode cell: %+v", job)
+			}
+			continue
+		}
+		if armsByMode[job.MCPServerInstructions] == nil {
+			armsByMode[job.MCPServerInstructions] = make(map[ArmType]string)
+		}
+		armsByMode[job.MCPServerInstructions][job.Arm] = job.PairID
+	}
+	if controls != 1 {
+		t.Errorf("control jobs = %d, want 1", controls)
+	}
+	for _, mode := range []MCPServerInstructionMode{MCPServerInstructionsNone, MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive} {
+		arms := armsByMode[mode]
+		if arms[ArmBaseline] == "" || arms[ArmBaseline] != arms[ArmSemedit] {
+			t.Errorf("mode %q is not an agent pair: %v", mode, arms)
+		}
 	}
 }

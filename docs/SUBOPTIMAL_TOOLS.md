@@ -834,3 +834,66 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the request selected `ExecuteBatch` without its `Server` receiver qualifier, so the semantic backend did not find the function and made no change.
 - Workaround: retry using the receiver-qualified function name.
 - Root cause: method selector requires its full receiver-qualified name.
+
+### ST-0108: semantic batch rejected plan-rendering body string
+
+- Date: 2026-09-27
+- Tool: `semantic_batch` with `semantic_replace_body`
+- Target: `tools/benchmark-harness/planner.go`, `RenderBenchmarkPlan`
+- Failure: the replacement payload contained unescaped newline characters inside Go string literals, so the tool rejected the body before writing it. Earlier independent edits in the batch had already succeeded.
+- Workaround: log the failure and retry the remaining body with correctly escaped Go string literals.
+- Root cause: newline escaping was lost while constructing the nested tool payload.
+
+### ST-0109: semantic_insert_function rejected multiline test strings
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_function`
+- Target: `tools/benchmark-harness/cli_integration_test.go`
+- Failure: the inserted test payload had an unescaped newline inside a Go string literal, so syntax validation rejected it without writing.
+- Workaround: preserve backslashes in nested source text with a raw string payload and retry.
+- Root cause: source escaping was lost in the outer JavaScript template literal.
+
+### ST-0110: semantic_insert_structure does not replace an existing type
+
+- Date: 2026-09-27
+- Tool: `semantic_insert_structure`
+- Target: `cmd/docgen/benchmark_compare.go`, `benchmarkMetricSummary`
+- Observed failure: requesting `overwrite: true` returned `overwrite is unsupported for type structure insertion`; no source change was made.
+- Workaround: use a structural AST edit supported by the available tools, or make a narrowly scoped atomic declaration edit if no semantic replacement operation exists.
+- Root cause: this operation only inserts type structures; its schema rejects replacement despite exposing an overwrite field.
+
+### ST-0111: semantic_rename blocked by a temporarily incomplete aggregate type edit
+
+- Date: 2026-09-27
+- Tool: `semantic_rename`
+- Target: `cmd/docgen/benchmark_compare.go`, `benchmarkMetricSummary.average`
+- Observed failure: renaming `average` to `median` was rejected because the preceding type edit had removed fields still referenced by the average method. No rename was applied.
+- Workaround: finish the dependent method updates so the package parses, then retry the semantic rename.
+- Root cause: the rename backend requires a clean package and the type and method updates were applied in separate operations.
+
+### ST-0112: semantic_replace_body emitted malformed nested browser replacement code
+
+- Date: 2026-09-27
+- Tool: `semantic_replace_body`
+- Target: `cmd/docgen/benchmark_aggregate.go`, `scopedBenchmarkBrowserShortcode`
+- Observed failure: replacement text containing JavaScript template newlines broke the enclosing Go raw string and produced a compile diagnostic after the edit had been applied.
+- Workaround: replace the function body with escaped Go string literals and re-run semantic verification.
+- Root cause: nested Go and JavaScript template quoting was not preserved by the submitted payload.
+
+### ST-0113: semantic_lookup did not resolve Go test functions
+
+- Date: 2026-09-28
+- Tool: `semantic_lookup`
+- Target: Go test functions in `main_test.go`, `internal/backend/rust_test.go`, `internal/pipeline/pipeline_test.go`, `internal/backend/backend_test.go`, `internal/projectverify/executor_test.go`, and `cmd/docgen/benchmarks_test.go`
+- Observed failure: lookup returned `symbol not found` for each named test function; no source was changed.
+- Workaround: use `rg` to locate test declarations and apply narrowly scoped atomic renames that change only the test identifiers.
+- Root cause: the semantic lookup backend does not index Go test functions in this workspace.
+
+### ST-0114: semantic_inspect_symbol requested from the wrong file
+
+- Date: 2026-09-28
+- Tool: `semantic_inspect_symbol`
+- Target: `renderBenchmarkAggregatesDoc` in `cmd/docgen/benchmark_aggregate.go`
+- Observed failure: the request returned no structured symbol result; no source was changed.
+- Workaround: locate the declaration first, then inspect it in its actual file.
+- Root cause: the caller supplied an incorrect file path for the symbol.

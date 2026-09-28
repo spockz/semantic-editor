@@ -860,8 +860,126 @@ weight: 20
 	return nil
 }
 
+func summarizeBenchmarkBrowserRows(rows []map[string]json.RawMessage) ([]map[string]json.RawMessage, error) {
+	targetDimensions := make(map[string]struct{})
+	for _, row := range rows {
+		for key := range row {
+			if strings.HasPrefix(key, "target__") {
+				targetDimensions[key] = struct{}{}
+			}
+		}
+	}
+	dimensions := make([]string, 0, 6+len(targetDimensions))
+	dimensions = append(dimensions, "task_id", "semedit_arm_restrict", "context_variant", "arm", "prompt_variant", "mcp_server_instructions")
+	for dimension := range targetDimensions {
+		dimensions = append(dimensions, dimension)
+	}
+	sort.Strings(dimensions)
+	metrics := []string{"cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens", "baseline_cost", "semedit_cost", "cost_delta", "baseline_turns", "semedit_turns", "turns_delta", "baseline_wall_clock_seconds", "semedit_wall_clock_seconds", "wall_clock_seconds_delta", "baseline_input_tokens", "semedit_input_tokens", "input_tokens_delta", "baseline_cached_input_tokens", "semedit_cached_input_tokens", "cached_input_tokens_delta", "baseline_output_tokens", "semedit_output_tokens", "output_tokens_delta", "baseline_reasoning_tokens", "semedit_reasoning_tokens", "reasoning_tokens_delta"}
+	booleanMetrics := []string{"success", "oracle_pass", "expected_semantic_tools_used"}
+	type metricGroup struct {
+		row    map[string]json.RawMessage
+		values map[string][]float64
+		passes map[string]int
+		boolN  map[string]int
+	}
+	groups := make(map[string]*metricGroup)
+	for _, row := range rows {
+		keyValues := make([]json.RawMessage, 0, len(dimensions))
+		groupRow := make(map[string]json.RawMessage, len(dimensions)+len(metrics)*5)
+		for _, dimension := range dimensions {
+			keyValues = append(keyValues, row[dimension])
+			if value, ok := row[dimension]; ok {
+				groupRow[dimension] = append(json.RawMessage(nil), value...)
+			} else {
+				groupRow[dimension] = json.RawMessage("null")
+			}
+		}
+		key, err := json.Marshal(keyValues)
+		if err != nil {
+			return nil, fmt.Errorf("encode benchmark summary group: %w", err)
+		}
+		group := groups[string(key)]
+		if group == nil {
+			group = &metricGroup{row: groupRow, values: make(map[string][]float64), passes: make(map[string]int), boolN: make(map[string]int)}
+			groups[string(key)] = group
+		}
+		for _, metric := range metrics {
+			var value float64
+			if isBenchmarkNumber(row[metric], &value) {
+				group.values[metric] = append(group.values[metric], value)
+			}
+		}
+		for _, metric := range booleanMetrics {
+			var value bool
+			if json.Unmarshal(row[metric], &value) == nil {
+				group.boolN[metric]++
+				if value {
+					group.passes[metric]++
+				}
+			}
+		}
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]map[string]json.RawMessage, 0, len(keys))
+	for _, key := range keys {
+		group := groups[key]
+		for metric, values := range group.values {
+			sort.Float64s(values)
+			quantile := func(p float64) float64 {
+				position := p * float64(len(values)-1)
+				lower := int(position)
+				upper := min(lower+1, len(values)-1)
+				fraction := position - float64(lower)
+				return values[lower] + (values[upper]-values[lower])*fraction
+			}
+			for suffix, value := range map[string]float64{"p50": quantile(0.5), "iqr": quantile(0.75) - quantile(0.25), "p90": quantile(0.9), "max": values[len(values)-1], "n": float64(len(values))} {
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return nil, fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
+				}
+				group.row[metric+"__"+suffix] = encoded
+			}
+		}
+		for _, metric := range booleanMetrics {
+			passes, count := group.passes[metric], group.boolN[metric]
+			for suffix, value := range map[string]any{"passes": passes, "success_rate": nil, "n": count} {
+				if suffix == "success_rate" && count > 0 {
+					value = float64(passes) / float64(count)
+				}
+				encoded, err := json.Marshal(value)
+				if err != nil {
+					return nil, fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
+				}
+				group.row[metric+"__"+suffix] = encoded
+			}
+		}
+		for _, metric := range []string{"oracle_pass", "expected_semantic_tools_used"} {
+			encoded := json.RawMessage("null")
+			if group.boolN[metric] > 0 {
+				var err error
+				encoded, err = json.Marshal(group.passes[metric] == group.boolN[metric])
+				if err != nil {
+					return nil, fmt.Errorf("encode benchmark filter %s: %w", metric, err)
+				}
+			}
+			group.row[metric] = encoded
+		}
+		result = append(result, group.row)
+	}
+	return result, nil
+}
+
 func writeBenchmarkBrowserData(outputDir, relativePath string, rows []map[string]json.RawMessage) error {
-	encodedRows, err := json.Marshal(rows)
+	summaryRows, err := summarizeBenchmarkBrowserRows(rows)
+	if err != nil {
+		return fmt.Errorf("summarize benchmark browser rows: %w", err)
+	}
+	encodedRows, err := json.Marshal(summaryRows)
 	if err != nil {
 		return fmt.Errorf("encode benchmark browser data: %w", err)
 	}
@@ -876,11 +994,15 @@ func writeBenchmarkBrowserData(outputDir, relativePath string, rows []map[string
 }
 
 func scopedBenchmarkBrowserShortcode() string {
-	shortcode := strings.Replace(
-		benchmarkBrowserShortcode,
-		`<div class="benchmark-browser">`,
-		`<div class="benchmark-browser" data-data-url="{{ if .Get "run" }}{{ printf "data/benchmarks/runs/%s.json" (.Get "run") | relURL }}{{ else }}{{ "data/benchmarks.json" | relURL }}{{ end }}">`,
-		1,
-	)
-	return strings.Replace(shortcode, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
+	shortcode := strings.Replace(benchmarkBrowserShortcode, `<div class="benchmark-browser">`, `<div class="benchmark-browser" data-data-url="{{ if .Get "run" }}{{ printf "data/benchmarks/runs/%s.json" (.Get "run") | relURL }}{{ else }}{{ "data/benchmarks.json" | relURL }}{{ end }}">`, 1)
+	shortcode = strings.Replace(shortcode, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
+	shortcode = strings.ReplaceAll(shortcode, " settings>", ">")
+	shortcode = strings.Replace(shortcode, "The browser groups results by restriction policy, target, context, and arm. Grouped cost, turns, elapsed time, and token counts use averages by default. Input tokens exclude cached tokens; cached input appears separately. Use a column’s Edit control to choose average, minimum, or maximum.", "Rows are pre-aggregated by task, target, prompt variant, MCP-instruction mode, context, arm, and restriction. Numeric values show median (p50), IQR, p90, maximum, and sample count. Boolean checks show pass counts and success rates. Filters apply to these summary groups; per-run observations remain available on their run pages.", 1)
+	shortcode = strings.Replace(shortcode, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant", "arm"],`, `group_by: [],`, 1)
+	shortcode = strings.Replace(shortcode, `group_by: ["semedit_arm_restrict", "target__harness", "target__model", "target__effort", "context_variant"],`, `group_by: [],`, 1)
+	shortcode = strings.ReplaceAll(shortcode, `columns: ["cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"],`, `columns: [...new Set(rows.flatMap(Object.keys))],`)
+	shortcode = strings.ReplaceAll(shortcode, `columns: ["baseline_cost", "semedit_cost", "cost_delta", "baseline_turns", "semedit_turns", "turns_delta", "baseline_wall_clock_seconds", "semedit_wall_clock_seconds", "wall_clock_seconds_delta", "baseline_input_tokens", "semedit_input_tokens", "input_tokens_delta", "baseline_cached_input_tokens", "semedit_cached_input_tokens", "cached_input_tokens_delta", "baseline_output_tokens", "semedit_output_tokens", "output_tokens_delta", "baseline_reasoning_tokens", "semedit_reasoning_tokens", "reasoning_tokens_delta"],`, `columns: [...new Set(rows.flatMap(Object.keys))],`)
+	shortcode = strings.Replace(shortcode, `    aggregates: { baseline_cost:`, "    filter: [[\"arm\", \"==\", \"semedit\"]],\n    aggregates: { baseline_cost:", 1)
+	shortcode = strings.ReplaceAll(shortcode, "await Promise.all(viewers.map(currentViewer => currentViewer.restore({ filter: filters })));", "await viewer.restore({ filter: filters });\n    await comparisonViewer.restore({ filter: [...filters, [\"arm\", \"==\", \"semedit\"]] });")
+	return shortcode
 }

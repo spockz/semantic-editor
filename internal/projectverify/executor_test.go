@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestRunPhasePreservesHookOrderAndPartialFailure(t *testing.T) {
+func TestREQ007RunPhasePreservesHookOrderAndPartialFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)

@@ -6,6 +6,8 @@ This directory contains records of all foundational architectural decisions, sys
 
 To preserve the LLM context budget during development, consult this index first and view individual ADR files only when you need detailed context on a specific decision.
 
+Before creating an ADR, check whether an existing record already covers the decision and update it when the scope matches. Create a new ADR only for a distinct architectural decision; do not split a continuing decision into additional records merely because it has new consequences or implementation details.
+
 ---
 
 ## Architectural Summary
@@ -22,9 +24,22 @@ Benchmarking treats task and steering choices as explicit experiment conditions,
 
 ---
 
+## Active Requirements (Invariants)
+
+These stable-ID requirements summarize accepted decisions. The linked ADRs define their scope and exceptions. Keep each requirement testable and maintain an explicit test link as described in the [README testing policy](../../README.md#requirements-and-invariant-tests).
+
+* **REQ-001 — Semantic intent.** Agents MUST express code changes as semantic intent when a registered operation covers the task; the host engine MUST perform syntax-aware transformations. ([ADR-0001](0001-intent-driven-orchestration.md), [ADR-0002](0002-dual-engine-architecture.md), [ADR-0007](0007-semantic-mcp-tool-naming-and-descriptions.md))
+* **REQ-002 — Public operation surfaces.** Every public operation MUST be available through the CLI and MCP, and the typed operation registry MUST define dispatch and advertised capabilities. ([ADR-0006](0006-dual-interface-delivery-and-agent-skills.md), [ADR-0034](0034-central-operation-registry.md))
+* **REQ-003 — Backend boundaries.** Language backends MUST own language-specific semantic policy; shared services MUST select registered capabilities without weakening backend validation. ([ADR-0021](0021-language-backend-service-boundary.md), [ADR-0029](0029-backend-owned-trusted-lsp-rename-boundary.md))
+* **REQ-004 — Mutation safety.** Writes MUST be validated before publication, atomic on disk, and coherent with tool caches; applied edits with diagnostics MUST remain explicit rather than being silently rolled back. ([ADR-0004](0004-staged-execution-and-diagnostic-feedback.md), [ADR-0010](0010-disk-synchronization-and-cache-invalidation.md), [ADR-0018](0018-transactional-snapshots-and-undo.md))
+* **REQ-005 — External tool boundaries.** External language tools MUST run only within declared trust, scope, and lifecycle boundaries; unsupported or incomplete capability coverage MUST be reported explicitly. ([ADR-0005](0005-workspace-manifest-safety-and-monorepo-scoping.md), [ADR-0022](0022-bounded-lsp-transport.md), [ADR-0048](0048-bash-and-makefile-read-only-backends.md), [ADR-0054](0054-project-verification-hooks.md))
+* **REQ-006 — Public behavior coverage.** Every advertised language-operation pair MUST have comparable CLI txtar contract coverage unless its capability registry explicitly marks the operation unsupported. ([ADR-0028](0028-cross-language-cli-txtar-coverage.md))
+* **REQ-007 — Project-owned quality policy.** Project formatting, ordering, lint, and verification policy SHOULD remain project-owned and MUST run only through explicit supported hooks or recognized project signals. ([ADR-0054](0054-project-verification-hooks.md))
+* **REQ-008 — Benchmark evidence.** Benchmarks MUST preserve task conditions, oracle outcomes, and per-run evidence so comparisons remain reproducible and interpretable. ([ADR-0038](0038-benchmark-experiment-conditions-and-provenance.md), [ADR-0039](0039-benchmark-result-validity-and-tool-telemetry.md), [ADR-0040](0040-benchmark-fixture-and-oracle-isolation.md), [ADR-0043](0043-benchmark-run-aggregation-and-best-case-publication.md), [ADR-0050](0050-benchmark-planning-sessions-and-arm-policy.md))
+
 ## Index of Decisions
 
-ADR-0023 was revoked and removed. Its number is not reused.
+ADR-0023 was revoked; its number is not reused. See the [archived ADR register](ARCHIVED.md).
 
 | ID | Title | Status | Date | Core Invariant / Summary |
 | :--- | :--- | :---: | :---: | :--- |
@@ -69,13 +84,13 @@ ADR-0023 was revoked and removed. Its number is not reused.
 | [ADR-0040](0040-benchmark-fixture-and-oracle-isolation.md) | Benchmark Fixture and Oracle Isolation | **Accepted** | 2026-09-21 | Visible prompts may state declared file protections; realistic source stays separate from post-run hidden acceptance tests and oracle checks. |
 | [ADR-0041](0041-mcp-runtime-configuration-and-project-local-go-state.md) | MCP Runtime Configuration and Project-Local Go State | **Accepted** | 2026-09-21 | Use complete absolute MCP registration and project-local Go state; resolve workspace and base directories during initialization before detecting language and verification signals. |
 | [ADR-0042](0042-mcp-structured-tool-output-schemas.md) | MCP Structured Tool Output Schemas | **Accepted** | 2026-09-22 | Advertise `2025-06-18` output schemas for every MCP tool and return schema-conforming structured success envelopes while preserving text content and timing metrics. |
-| [ADR-0043](0043-benchmark-run-aggregation-and-best-case-publication.md) | Benchmark Run Aggregation and Best-Case Publication | **Accepted** | 2026-09-22 | Publish best-case paired evidence, per-condition metric ranges, complete per-run records, and model credit costs with absolute oracle outcomes and one-shot tie-breaking. |
+| [ADR-0043](0043-benchmark-run-aggregation-and-best-case-publication.md) | Benchmark Run Aggregation and Best-Case Publication | **Accepted** | 2026-09-22 | Publish best-case paired evidence, per-condition median/IQR/p90/maximum and pass rates, complete per-run records, and model credit costs with absolute oracle outcomes and one-shot tie-breaking. |
 | [ADR-0044](0044-benchmark-experiment-dimensions-and-result-semantics.md) | Benchmark Experiment Dimensions and Result Semantics | **Proposed** | 2026-09-23 | Record explicit conditions and repeatable observations without requiring a hypothesis; preserve deterministic strategy evaluation and existing comparison rules. |
 | [ADR-0045](0045-structured-mcp-feedback-reports.md) | Structured MCP Feedback Reports | **Accepted** | 2026-09-25 | Collect command friction in a privacy-guided draft for user review and manual issue posting; do not save or submit automatically. |
 | [ADR-0046](0046-construct-level-ast-replacement-and-declarative-updates.md) | Construct-Level AST Replacement and Declarative Updates | **Accepted** | 2026-09-25 | Target control-flow constructs (loops, conditionals, branches, coroutines, resource guards) via dynamic kind enums across Go, Rust, Java, Kotlin, Scala, C#, and Python; pre-empt declaration collisions and support constant/variable replacement. |
 | [ADR-0047](0047-kotlin-read-only-backend.md) | Trusted Read-Only Kotlin Backend | **Accepted** | 2026-09-25 | Trusted `.kt`/`.kts` lookup and selected-file diagnostics use source-only scratch workspaces, fresh bounded server sessions, and explicit matching diagnostic receipts; Kotlin mutations remain unavailable. |
 | [ADR-0048](0048-bash-and-makefile-read-only-backends.md) | Trusted Read-Only Bash and Makefile Backends | **Accepted** | 2026-09-25 | Trusted isolated selected-file lookup for Bash and Make; Bash alone exposes matching-receipt diagnostics, with mutation deferred. |
-| [ADR-0050](0050-benchmark-planning-sessions-and-arm-policy.md) | Benchmark Planning, Sessions, and Arm Policy | **Accepted** | 2026-09-26 | Resolve one execution plan, preserve terminal job outcomes, isolate diagnostic questioning, and distinguish read/write/readwrite semedit policies with explicit write default and retain new fixture identities. [Implementation map](../../tools/benchmark-harness/README.md). |
+| [ADR-0050](0050-benchmark-planning-sessions-and-arm-policy.md) | Benchmark Planning, Sessions, and Arm Policy | **Accepted** | 2026-09-26 | Resolve one execution plan, preserve terminal job outcomes, isolate diagnostic questioning, and distinguish read/write/readwrite semedit policies with explicit write default, expand MCP instruction mode arrays into paired conditions, and retain new fixture identities. [Implementation map](../../tools/benchmark-harness/README.md). |
 | [ADR-0051](0051-semantic-code-inspection-and-outline-operations.md) | Semantic Code Inspection and Outline Operations | **Accepted** | 2026-09-26 | Provide symbol inspection, body-elided outline trees, and typed reference discovery across Go, Java, Kotlin, Rust, Scala, Make, and Bash under read-restriction policies. |
 | [ADR-0052](0052-opt-in-mcp-timing-metrics.md) | Opt-In MCP Timing Metrics | **Accepted** | 2026-09-26 | Remove timing payloads from ordinary MCP results; retain bounded recent measurements behind `semantic_metrics`. |
 | [ADR-0053](0053-whole-construct-and-body-replacement.md) | Whole-Construct and Body Replacement | **Proposed** | 2026-09-27 | Follow up ADR-0046 with whole-construct and body-only replacement across supported declaration and control-flow kinds; replace the unreleased body-edit API without compatibility aliases; reserve extraction and relocation for explicit refactoring tools, and delegate automatic ordering to project tools; ADR-0054 implements the independent verification coordinator. |

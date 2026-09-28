@@ -40,18 +40,19 @@ type FixtureExclusion struct {
 }
 
 type Job struct {
-	ID            string
-	PairID        string
-	TaskID        string
-	FixturePath   string
-	Context       string
-	PromptVariant string
-	Target        Target
-	Arm           ArmType
-	Repeat        int
-	Policy        SemeditArmRestriction
-	Task          *Task
-	Execution     AgentExecution
+	ID                    string
+	PairID                string
+	TaskID                string
+	FixturePath           string
+	Context               string
+	PromptVariant         string
+	Target                Target
+	Arm                   ArmType
+	Repeat                int
+	Policy                SemeditArmRestriction
+	Task                  *Task
+	Execution             AgentExecution
+	MCPServerInstructions MCPServerInstructionMode
 }
 
 type PlanOptions struct {
@@ -66,7 +67,7 @@ type PlanOptions struct {
 	RunID                 string
 	OutJSON               string
 	OutMD                 string
-	MCPServerInstructions MCPServerInstructionMode
+	MCPServerInstructions []MCPServerInstructionMode
 	SemeditArmRestriction SemeditArmRestriction
 	Provenance            ProvenanceSet
 }
@@ -104,7 +105,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 		return err
 	}
 	options := plan.Options
-	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s out-dir=%q run-id=%q out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, options.MCPServerInstructions, options.SemeditArmRestriction, options.OutDir, options.RunID, options.OutJSON, options.OutMD); err != nil {
+	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s out-dir=%q run-id=%q out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.OutDir, options.RunID, options.OutJSON, options.OutMD); err != nil {
 		return err
 	}
 	for index, job := range plan.Jobs {
@@ -115,7 +116,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 			policy = "-"
 			applies = false
 		}
-		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d policy=%s policy-applies=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, policy, applies); err != nil {
+		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d MCP-instructions=%s policy=%s policy-applies=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, job.MCPServerInstructions, policy, applies); err != nil {
 			return err
 		}
 		if job.Execution.Prompt != "" {
@@ -197,13 +198,11 @@ func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, exe
 				result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
 				result.SemeditArmRestrictionApplied = job.Arm == ArmSemedit
 				result.Prompt = job.Execution.Prompt
+				result.MCPServerInstructions = job.MCPServerInstructions
 				if job.Arm == ArmControl {
 					result.SemeditArmRestrict = ""
 					result.SemeditArmRestrictionApplied = false
 					result.Prompt = ""
-					result.MCPServerInstructions = MCPServerInstructionsNone
-				} else {
-					result.MCPServerInstructions = plan.Options.MCPServerInstructions
 				}
 				if result.Provenance == nil {
 					result.Provenance = make(ProvenanceSet)
@@ -514,11 +513,15 @@ func normalizePlanOptions(options PlanOptions) (PlanOptions, error) {
 		return PlanOptions{}, fmt.Errorf("invalid semedit arm restriction: %w", err)
 	}
 	options.SemeditArmRestriction = policy
-	mcpMode, err := ParseMCPServerInstructionMode(string(options.MCPServerInstructions))
-	if err != nil {
-		return PlanOptions{}, fmt.Errorf("invalid MCP server instruction mode: %w", err)
+	if len(options.MCPServerInstructions) == 0 {
+		options.MCPServerInstructions = []MCPServerInstructionMode{MCPServerInstructionsNone}
+	} else {
+		modes, err := ParseMCPServerInstructionModes(strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","))
+		if err != nil {
+			return PlanOptions{}, fmt.Errorf("invalid MCP server instruction modes: %w", err)
+		}
+		options.MCPServerInstructions = modes
 	}
-	options.MCPServerInstructions = mcpMode
 	options.Variants, err = normalizeVariantSelections(options.Variants)
 	if err != nil {
 		return PlanOptions{}, err
@@ -614,35 +617,41 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		variant += ":" + specification.PromptVariant
 	}
 	isControl := specification.Target.Harness == string(HarnessControl)
-	arms := []ArmType{ArmControl}
-	pairID := ""
 	policy := options.SemeditArmRestriction
-	mode := string(options.MCPServerInstructions)
-	if !isControl {
-		arms = []ArmType{ArmBaseline, ArmSemedit}
-		pairID = stablePlanID("pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), mode)
+	modes := options.MCPServerInstructions
+	if isControl {
+		modes = []MCPServerInstructionMode{MCPServerInstructionsNone}
 	}
-	jobs := make([]Job, 0, len(arms))
-	for _, arm := range arms {
-		idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), mode}
-		if arm != ArmControl {
-			idParts = append(idParts, string(policy))
+	jobs := make([]Job, 0, len(modes)*2)
+	for _, mode := range modes {
+		arms := []ArmType{ArmControl}
+		pairID := ""
+		if !isControl {
+			arms = []ArmType{ArmBaseline, ArmSemedit}
+			pairID = stablePlanID("pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode))
 		}
-		job := specification
-		job.ID = stablePlanID(idParts...)
-		job.PairID = pairID
-		job.Arm = arm
-		if arm == ArmSemedit {
-			job.Policy = policy
-		}
-		if arm != ArmControl {
-			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy)
-			if err != nil {
-				return nil, err
+		for _, arm := range arms {
+			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode)}
+			if arm != ArmControl {
+				idParts = append(idParts, string(policy))
 			}
-			job.Execution = execution
+			job := specification
+			job.ID = stablePlanID(idParts...)
+			job.PairID = pairID
+			job.Arm = arm
+			job.MCPServerInstructions = mode
+			if arm == ArmSemedit {
+				job.Policy = policy
+			}
+			if arm != ArmControl {
+				execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy)
+				if err != nil {
+					return nil, err
+				}
+				job.Execution = execution
+			}
+			jobs = append(jobs, job)
 		}
-		jobs = append(jobs, job)
 	}
 	return jobs, nil
 }
@@ -655,4 +664,12 @@ func compactBenchmarkProgressError(message string) string {
 		return string(runes[:maxLength]) + "…"
 	}
 	return message
+}
+
+func mcpInstructionModeStrings(modes []MCPServerInstructionMode) []string {
+	values := make([]string, len(modes))
+	for index, mode := range modes {
+		values[index] = string(mode)
+	}
+	return values
 }

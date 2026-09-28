@@ -34,6 +34,14 @@ Provider adapters retain protocol-specific decoding. Every terminal job outcome,
 including setup failure and cancellation before dispatch, is retained. Progress
 uses completion order; final results retain plan order.
 
+The MCP server instruction selection is an ordered array of modes. The CLI accepts
+`--mcp-server-instructions=none,descriptive,prescriptive`; a single mode remains
+valid and the default is `none`. Planning normalizes and deduplicates modes,
+rejects empty or invalid entries, and expands each agent condition into a separate
+baseline/semedit pair per mode. Each job carries its resolved mode through runtime
+configuration, terminal results, comparison identities, and output files. Direct
+control jobs do not multiply across this agent-only dimension.
+
 The command-line interface (CLI) exposes
 `--semedit-arm-restrict=read|write|readwrite`. The explicitly selected default is
 `write`, including the benchmark Makefile variable `SEMEDIT_ARM_RESTRICT`.

@@ -134,7 +134,7 @@ func (t *codexToolTracker) record(res *RunResult, id string, call ToolCall, obse
 
 func isCodexToolItem(itemType string) bool {
 	switch itemType {
-	case "tool_call", "mcp_tool_call", "function_call", "command_execution":
+	case "tool_call", "mcp_tool_call", "function_call", "command_execution", "file_change":
 		return true
 	default:
 		return false
@@ -142,6 +142,9 @@ func isCodexToolItem(itemType string) bool {
 }
 
 func codexToolName(item *codexItem) string {
+	if item.Type == "file_change" {
+		return "file_change"
+	}
 	for _, name := range []string{item.Tool, item.Command, item.Text} {
 		if clean := strings.TrimSpace(name); clean != "" {
 			return clean

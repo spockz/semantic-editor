@@ -78,7 +78,7 @@ func TestMain(m *testing.M) {
 	})
 }
 
-func TestScripts(t *testing.T) {
+func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir: filepath.Join("testdata", "scripts"),
 		Setup: func(env *testscript.Env) error {
@@ -126,7 +126,7 @@ func TestScripts(t *testing.T) {
 	})
 }
 
-func TestTxtarsCoverRegistryCommandsByLanguage(t *testing.T) {
+func TestREQ002REQ006PublicRegistryAndCLIContractCoverage(t *testing.T) {
 	type fixture struct {
 		comment string
 		files   map[string]string

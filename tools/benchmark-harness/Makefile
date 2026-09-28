@@ -12,6 +12,7 @@ VARIANTS ?= small,large
 CONCURRENCY ?= 2
 REPEATS ?= 1
 MCP_SERVER_INSTRUCTIONS ?= none
+# MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive.
 SEMEDIT_ARM_RESTRICT ?= write
 # PROVENANCE records technical execution context without creating comparison cells.
 PROVENANCE ?=
@@ -36,6 +37,7 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make bench-all TARGET=opencode/openrouter/free-top10 REPEATS=2"
 	@echo "  make bench TASK=task-01-rename-local SEMEDIT_ARM_RESTRICT=readwrite"
 	@echo "  SEMEDIT_ARM_RESTRICT accepts read, write (default), or readwrite"
+	@echo "  MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive"
 	@echo "  go run ./tools/benchmark-harness --list-openrouter-free"
 	@echo "  make bench-all"
 	@echo "  make docgen"

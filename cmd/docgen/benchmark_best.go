@@ -103,21 +103,11 @@ func renderBestBenchmarkPreamble(best []bestBenchmarkPair, runs []benchmarkDocum
 	var sb strings.Builder
 	sb.WriteString("## Best measured improvements\n\n")
 	for _, group := range partitionBenchmarkPolicies(best, runs) {
-		fmt.Fprintf(&sb, "### Semedit restriction: `%s`\n\n", group.policy)
+		fmt.Fprintf(&sb, "### Semedit restriction: %c%s%c\n\n", 96, group.policy, 96)
 		sb.WriteString(renderBenchmarkPolicyHeadline(group.best, group.runs))
 	}
 
-	sb.WriteString(`
-
-Speed and token figures include only selected pairs where both Vanilla and MCP passed their oracle. “First-time right” compares the initial oracle pass rate across all publishable standard-context paired observations, excluding verified/self-correction contexts.
-
-## Best-case outcomes measured so far
-
-This page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, semedit restriction policy, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, lower model cost resolves speed ties within five percentage points. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, and counts thinking tokens at the output rate.
-
-[Open the interactive benchmark browser](/docs/benchmarks/browser/). [View min, max, and average metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.
-
-`)
+	sb.WriteString("\n\nSpeed and token figures include only selected pairs where both Vanilla and MCP passed their oracle. “First-time right” compares the initial oracle pass rate across all publishable standard-context paired observations, excluding verified/self-correction contexts.\n\n## Best-case outcomes measured so far\n\nThis page presents the most beneficial complete Vanilla/MCP pair measured so far for each testcase, target, prompt variant, MCP-instruction mode, semedit restriction policy, and context variant. It is **best-case evidence, not an average**. Selection favors an MCP oracle pass over a failure, then relative wall-clock improvement when both arms pass. A model-cost improvement of at least 10× can outweigh a non-comparable speed regression; otherwise, lower model cost resolves speed ties within five percentage points. When costs are also within five percentage points, a Semedit one-shot completion wins. Cost uses the target's declared per-million-token credits for uncached input, cached input, reasoning, and visible output, and counts thinking tokens at the output rate.\n\n[Open the interactive benchmark browser](/docs/benchmarks/browser/). [View median, IQR, p90, max, and success-rate metrics](/docs/benchmarks/aggregates/). The complete observations remain available on the individual run pages below.\n\n")
 	return sb.String()
 }
 

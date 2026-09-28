@@ -1240,3 +1240,51 @@ func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
 	}
 	t.Errorf("Agy MCP args = %#v, want --expected-root %q", server.Args, expectedRoot)
 }
+
+func TestParseMCPServerInstructionModesCanonicalizesAndDeduplicates(t *testing.T) {
+	modes, err := ParseMCPServerInstructionModes("NONE, descriptive, directive, prescriptive")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []MCPServerInstructionMode{MCPServerInstructionsNone, MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive}
+	if !slices.Equal(modes, want) {
+		t.Fatalf("modes = %v, want %v", modes, want)
+	}
+	for _, raw := range []string{"", ",none", "none,", "none,,descriptive", "unsupported"} {
+		if _, err := ParseMCPServerInstructionModes(raw); err == nil {
+			t.Errorf("ParseMCPServerInstructionModes(%q) unexpectedly succeeded", raw)
+		}
+	}
+}
+
+func TestCodexFileChangeCapturedAsToolCall(t *testing.T) {
+	t.Parallel()
+
+	lines := []string{
+		`{"type":"item.started","item":{"id":"edit","type":"file_change","changes":[{"path":"/tmp/api/server.go","kind":"update"}],"status":"in_progress"}}`,
+		`{"type":"item.completed","item":{"id":"edit","type":"file_change","changes":[{"path":"/tmp/api/server.go","kind":"update"}],"status":"completed"}}`,
+	}
+	res := &RunResult{}
+	tracker := codexToolTracker{}
+	for _, line := range lines {
+		var event CodexEvent
+		if err := json.Unmarshal([]byte(line), &event); err != nil {
+			t.Fatalf("unmarshal Codex event: %v", err)
+		}
+		tracker.observe(res, event.Item, time.Now())
+	}
+
+	if len(res.ToolCalls) != 1 {
+		t.Fatalf("tool calls = %d, want 1", len(res.ToolCalls))
+	}
+	got := res.ToolCalls[0]
+	if got.Name != "file_change" || got.TransportStatus != ToolCallStatusSucceeded || got.FunctionalStatus != ToolCallStatusSucceeded {
+		t.Fatalf("file change call = %#v, want captured successful file_change", got)
+	}
+	if !isMutatingTool(got.Name) {
+		t.Fatalf("file_change classified mutating = false, want true")
+	}
+	if tracker.initialLoadTurns != 0 {
+		t.Fatalf("initial load turns = %d, want 0", tracker.initialLoadTurns)
+	}
+}

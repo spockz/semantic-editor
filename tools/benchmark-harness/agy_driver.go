@@ -159,7 +159,8 @@ func isMutatingTool(name string) bool {
 	if strings.Contains(clean, "write") || strings.Contains(clean, "replace") ||
 		strings.Contains(clean, "edit") || strings.Contains(clean, "patch") ||
 		strings.Contains(clean, "insert") || strings.Contains(clean, "delete") ||
-		strings.Contains(clean, "rename") || strings.Contains(clean, "semantic_") {
+		strings.Contains(clean, "rename") || strings.Contains(clean, "semantic_") ||
+		clean == "file_change" {
 		return true
 	}
 	return false

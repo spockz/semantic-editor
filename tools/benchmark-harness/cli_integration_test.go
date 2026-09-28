@@ -209,6 +209,63 @@ func TestCLIControlSharesSchedulerAndRetainsFailure(t *testing.T) {
 	}
 }
 
+func TestCLIMCPInstructionModeMatrixUsesPerJobRuntimeSettings(t *testing.T) {
+	trial := runCLITrial(t, []string{"--mcp-server-instructions=none,descriptive,directive,prescriptive"}, false)
+	if trial.Err != nil {
+		t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
+	}
+	if len(trial.Invocations) != 6 || len(trial.Report.Runs) != 6 {
+		t.Fatalf("invocations=%d results=%d, want three paired mode cells\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	}
+	wantModes := []MCPServerInstructionMode{MCPServerInstructionsNone, MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive}
+	pairByMode := make(map[MCPServerInstructionMode]string)
+	jobIDs := make(map[string]bool)
+	counts := make(map[MCPServerInstructionMode]int)
+	for _, run := range trial.Report.Runs {
+		mode := run.MCPServerInstructions
+		counts[mode]++
+		if counts[mode] == 1 {
+			pairByMode[mode] = run.ComparisonPairID
+		} else if pairByMode[mode] != run.ComparisonPairID {
+			t.Errorf("mode %q has mismatched pair ids", mode)
+		}
+		if run.JobID == "" || jobIDs[run.JobID] {
+			t.Errorf("missing or duplicate job id %q", run.JobID)
+		}
+		jobIDs[run.JobID] = true
+	}
+	for _, mode := range wantModes {
+		if counts[mode] != 2 || pairByMode[mode] == "" {
+			t.Errorf("mode %q has %d runs and pair %q, want two paired arms", mode, counts[mode], pairByMode[mode])
+		}
+		for _, other := range wantModes {
+			if mode != other && pairByMode[mode] != "" && pairByMode[mode] == pairByMode[other] {
+				t.Errorf("modes %q and %q share a comparison pair", mode, other)
+			}
+		}
+	}
+	if len(trial.Report.Comparisons) != len(wantModes) {
+		t.Errorf("comparisons=%d, want one per canonical mode", len(trial.Report.Comparisons))
+	}
+	descriptive := 0
+	prescriptive := 0
+	for _, invocation := range trial.Invocations {
+		arguments := strings.Join(invocation.Args, " ")
+		if strings.Contains(arguments, "mcp_servers.semedit.enabled=false") {
+			continue
+		}
+		if strings.Contains(arguments, "Semedit semantic tools are available") {
+			descriptive++
+		}
+		if strings.Contains(arguments, "Inspect the complete tool inventory") {
+			prescriptive++
+		}
+	}
+	if descriptive != 1 || prescriptive != 1 {
+		t.Errorf("runtime instruction args: descriptive=%d prescriptive=%d, want 1 each", descriptive, prescriptive)
+	}
+}
+
 type cliTrial struct {
 	Output      string
 	Invocations []cliProviderInvocation

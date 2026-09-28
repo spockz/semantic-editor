@@ -54,7 +54,7 @@ func (f *fakeRustSession) Request(ctx context.Context, method string, params any
 	return f.symbols, nil
 }
 
-func TestRustRenameRejectsUnsafeWorkspaceEditWithoutWrite(t *testing.T) {
+func TestREQ003BackendRejectsUnsafeRenameWithoutWrite(t *testing.T) {
 	root, file := rustProject(t, "fn value() {}\n")
 	session := &fakeRustSession{symbols: json.RawMessage(`[{"name":"value","kind":12,"range":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"selectionRange":{"start":{"line":0,"character":3},"end":{"line":0,"character":8}},"children":[]}]`), rename: json.RawMessage(`{"changes":{"file:///foreign.rs":[]}}`)}
 	b := rustbackend.NewRustBackendWithFactory(func(context.Context, string) (rustbackend.RustSession, error) { return session, nil })

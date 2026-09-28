@@ -16,7 +16,7 @@ import (
 	"semedit/internal/backends"
 )
 
-func TestRenameDiagnosticsErrorReportsIntroducedDiagnostics(t *testing.T) {
+func TestREQ004RenameReportsIntroducedDiagnostics(t *testing.T) {
 	result := &backend.RenameResult{Diagnostics: backend.DiagnosticDelta{After: []string{"existing", "new"}, Introduced: []string{"new"}}}
 	err := (&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"new"}}).Error()
 	if !strings.Contains(err, "1 introduced error diagnostics") || !strings.Contains(err, "new") {
@@ -234,7 +234,7 @@ func TestServiceRejectsUnsupportedCapability(t *testing.T) {
 	}
 }
 
-func TestWorkspaceTrustRequiresExplicitCanonicalConsent(t *testing.T) {
+func TestREQ005WorkspaceTrustRequiresExplicitCanonicalConsent(t *testing.T) {
 	root := t.TempDir()
 	registry, err := backend.NewRegistry(testBackend{
 		language:     "external",

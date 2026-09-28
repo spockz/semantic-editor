@@ -312,7 +312,7 @@ func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
 	fs.StringVar(&settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
 	fs.StringVar(&settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
-	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Server-wide MCP instruction mode")
+	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
 	fs.StringVar(&policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
 	fs.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable)")
 	fs.Var(&provenance, "classifier", "Deprecated alias for provenance")
@@ -382,7 +382,7 @@ func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
 	if err != nil {
 		return settings, fmt.Errorf("invalid --semedit-arm-restrict: %w", err)
 	}
-	mcpMode, err := ParseMCPServerInstructionMode(mcpRaw)
+	mcpModes, err := ParseMCPServerInstructionModes(mcpRaw)
 	if err != nil {
 		return settings, fmt.Errorf("invalid --mcp-server-instructions: %w", err)
 	}
@@ -396,7 +396,7 @@ func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
 	settings.Plan.RunID = runID
 	settings.Plan.OutJSON = outJSON
 	settings.Plan.OutMD = outMD
-	settings.Plan.MCPServerInstructions = mcpMode
+	settings.Plan.MCPServerInstructions = mcpModes
 	settings.Plan.SemeditArmRestriction = policy
 	settings.Plan.Provenance = provenance.Clone()
 	return settings, nil
@@ -444,10 +444,10 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 			return 1
 		}
 	}
-	runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(plan.Options.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithProvenance(plan.Options.Provenance))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	outcomes, progressErr := ExecutePlan(ctx, plan, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithProvenance(plan.Options.Provenance))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}

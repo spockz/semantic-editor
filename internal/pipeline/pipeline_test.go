@@ -38,7 +38,7 @@ func TestWriteAtomic(t *testing.T) {
 	}
 }
 
-func TestWriteAtomicPreservesPermissionsAndAdvancesMtime(t *testing.T) {
+func TestREQ004WriteAtomicPreservesPermissionsAndAdvancesMtime(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	target := filepath.Join(dir, "test.txt")

@@ -65,11 +65,12 @@ Oracle outcome is absolute: no speed, token, or one-shot advantage can cause a
 failed arm to outrank a passing arm. The tenfold override applies only after
 the pair outcome class is equal.
 
-The aggregate page reports minimum, maximum, and arithmetic mean for every
-numeric telemetry metric and binary oracle outcomes, separately for each task,
-target, prompt variant, MCP instruction mode, context variant, and arm.
-Technical provenance remains auditable metadata and does not create aggregate
-cells.
+The aggregate page reports the median, interquartile range, 90th percentile,
+and maximum for every numeric telemetry metric, plus pass counts and rates for
+binary outcomes. Quantiles use linear interpolation between adjacent ordered
+observations. Summaries are separated by task, target, prompt variant, MCP
+instruction mode, context variant, and arm. Technical provenance remains
+auditable metadata and does not split aggregate cells.
 
 ## Invariants
 

@@ -171,13 +171,34 @@ The [ADR index](docs/adr/README.md) records accepted decisions and their evoluti
 * **Benchmark integration:** native instruction-delivery channels have been identified, but the transport implementation described in [RQ-0039](docs/research/RQ-0039-benchmark-policy-instruction-transport.md) remains deferred. [ADR-0044](docs/adr/0044-benchmark-experiment-dimensions-and-result-semantics.md) remains proposed.
 * **Runtime and workspace evolution:** persistent server lifecycle, caching, and broader workspace topologies remain research topics. Concurrent polyglot server orchestration and embedded speculative workspace isolation are not current features.
 
-## 8. Development and documentation
+## 8. Requirements and invariant tests
+
+The [active requirements catalog](docs/adr/README.md#active-requirements-invariants) is the project-level source of architectural invariants. Each requirement has a stable `REQ-NNN` identifier and links to the ADRs that define its scope. Treat these invariants as requirements, not as a complete description of the test suite.
+
+Every active requirement MUST have at least one regression test that exercises the observable behavior. Make the link mechanically discoverable in one of two ways: include the exact requirement ID in the test or subtest name (for example, `TestREQ004AtomicMutation` or a txtar scenario named `req-006-rename-go`), or have the test case output record the requirement ID together with the observed and expected invariant value. Test names and output should identify the requirement directly; a prose-only mapping is not sufficient.
+
+A test need not map to an invariant. Unit, property, integration, protocol-failure, regression, and benchmark tests may cover behavior outside the invariant catalog. Requirement coverage and overall suite size are different measures. A change that adds or changes an invariant MUST update its requirement entry and add or update its linked regression test in the same change.
+
+Current test anchors use the requirement ID in the Go test name:
+
+| Requirement | Regression test anchor |
+| :--- | :--- |
+| REQ-001 | [`TestREQ001SemanticIntentCLIContracts`](main_test.go) |
+| REQ-002 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](main_test.go) |
+| REQ-003 | [`TestREQ003BackendRejectsUnsafeRenameWithoutWrite`](internal/backend/rust_test.go) |
+| REQ-004 | [`TestREQ004WriteAtomicPreservesPermissionsAndAdvancesMtime`](internal/pipeline/pipeline_test.go), [`TestREQ004RenameReportsIntroducedDiagnostics`](internal/backend/backend_test.go) |
+| REQ-005 | [`TestREQ005WorkspaceTrustRequiresExplicitCanonicalConsent`](internal/backend/backend_test.go) |
+| REQ-006 | [`TestREQ002REQ006PublicRegistryAndCLIContractCoverage`](main_test.go) |
+| REQ-007 | [`TestREQ007RunPhasePreservesHookOrderAndPartialFailure`](internal/projectverify/executor_test.go) |
+| REQ-008 | [`TestREQ008LoadAllBenchmarkComparisonsExcludesIncompleteRuns`](cmd/docgen/benchmarks_test.go) |
+
+## 9. Development and documentation
 
 `make check` runs mechanical fixes, formatting, dependency tidying, linting, tests, and generated-documentation checks. Public semantic behavior is exercised through CLI [txtar contracts](testdata/scripts/), with comparable coverage for each implemented language-operation pair. Unit and property tests complement those contracts ([ADR-0028](docs/adr/0028-cross-language-cli-txtar-coverage.md)).
 
 The Go documentation generator combines registry-derived capabilities, executable examples, and benchmark evidence into a Hugo/Hextra site. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for development and [the benchmark architecture guide](tools/benchmark-harness/README.md) for benchmark changes.
 
-## 9. Repository Layout
+## 10. Repository Layout
 
 The main source, documentation, and test directories are:
 

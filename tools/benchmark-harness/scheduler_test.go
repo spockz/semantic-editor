@@ -14,9 +14,9 @@ import (
 func TestExecutePlanReturnsPlanOrderAndCompleteConditionMetadata(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	writer := &gatedProgressWriter{firstLine: make(chan string, 1)}
-	plan := &BenchmarkPlan{Options: PlanOptions{Concurrency: 2, Timeout: time.Second, SemeditArmRestriction: SemeditArmRestrictRead, MCPServerInstructions: MCPServerInstructionsPrescriptive, Provenance: ProvenanceSet{"owner": "plan"}}, Jobs: []Job{
-		{ID: "first", PairID: "pair", TaskID: "task", Context: "small", PromptVariant: "Default", Target: Target{Harness: "codex"}, Arm: ArmBaseline, Repeat: 1},
-		{ID: "second", PairID: "pair", TaskID: "task", Context: "large+verified", PromptVariant: "Default", Target: Target{Harness: "codex"}, Arm: ArmSemedit, Repeat: 2},
+	plan := &BenchmarkPlan{Options: PlanOptions{Concurrency: 2, Timeout: time.Second, SemeditArmRestriction: SemeditArmRestrictRead, MCPServerInstructions: []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}, Provenance: ProvenanceSet{"owner": "plan"}}, Jobs: []Job{
+		{ID: "first", PairID: "pair", TaskID: "task", MCPServerInstructions: MCPServerInstructionsPrescriptive, Context: "small", PromptVariant: "Default", Target: Target{Harness: "codex"}, Arm: ArmBaseline, Repeat: 1},
+		{ID: "second", PairID: "pair", TaskID: "task", MCPServerInstructions: MCPServerInstructionsPrescriptive, Context: "large+verified", PromptVariant: "Default", Target: Target{Harness: "codex"}, Arm: ArmSemedit, Repeat: 2},
 	}}
 	type resultSet struct {
 		outcomes []JobOutcome

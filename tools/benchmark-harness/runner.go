@@ -453,6 +453,28 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	return res, nil
 }
 
+// ParseMCPServerInstructionModes parses and canonicalizes a comma-separated mode list.
+func ParseMCPServerInstructionModes(raw string) ([]MCPServerInstructionMode, error) {
+	parts := strings.Split(raw, ",")
+	modes := make([]MCPServerInstructionMode, 0, len(parts))
+	seen := make(map[MCPServerInstructionMode]bool, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			return nil, fmt.Errorf("MCP instruction mode list contains an empty entry")
+		}
+		mode, err := ParseMCPServerInstructionMode(part)
+		if err != nil {
+			return nil, err
+		}
+		if seen[mode] {
+			continue
+		}
+		seen[mode] = true
+		modes = append(modes, mode)
+	}
+	return modes, nil
+}
+
 func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObservationState, reason string) *DiagnosticToolCoverage {
 	expectedSet := make(map[string]struct{}, len(expected))
 	for _, name := range expected {
