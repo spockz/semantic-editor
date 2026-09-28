@@ -24,7 +24,7 @@ flowchart TD
     Reports --> Publication[cmd/docgen: publication and browser]
 ```
 
-`main.go:executeBenchmarkPlan` connects these components. Read that function first to trace a complete invocation. For an individual agent job, continue at `driver.go:Runner.ExecuteAgent`.
+`main.go:executeBenchmarkPlan` connects these components. Read that function first to trace a complete invocation. For an individual agent job, continue at `driver.go:Runner.ExecuteAgent`. The `task-00-hi-overhead` fixture has no source files and uses `disallowed_files: ["*"]` to require no workspace changes. The `task-12-rename-scale-*` fixtures measure 1, 2, 4, 8, and 16 coordinated method renames under one task contract. Compare paired arms within each edit count; the no-op probe is an overhead diagnostic, not the intercept of an edit-count fit.
 
 ## Where to change what
 

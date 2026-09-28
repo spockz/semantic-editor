@@ -605,13 +605,47 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 		}
 
 		// Verify go.mod was extracted
-		if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); err != nil {
-			t.Errorf("task %s failed to extract go.mod: %v", entry.Name(), err)
+		if len(task.Archive.Files) > 0 {
+			if _, err := os.Stat(filepath.Join(tmpDir, "go.mod")); err != nil {
+				t.Errorf("task %s failed to extract go.mod: %v", entry.Name(), err)
+			}
 		}
 	}
 
 	if foundTasks < expectedTasks {
 		t.Errorf("expected at least %d benchmark tasks, found %d", expectedTasks, foundTasks)
+	}
+}
+
+func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_00_hi_overhead.txtar"))
+	if err != nil {
+		t.Fatalf("read no-op fixture: %v", err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatalf("parse no-op fixture: %v", err)
+	}
+	if len(task.Archive.Files) != 0 {
+		t.Fatalf("empty fixture contains %d files", len(task.Archive.Files))
+	}
+	workDir := t.TempDir()
+	if err := task.ExtractTo(workDir); err != nil {
+		t.Fatalf("extract no-op fixture: %v", err)
+	}
+	passed, err := Evaluate(context.Background(), task, workDir, nil)
+	if err != nil {
+		t.Fatalf("evaluate unchanged workspace: %v", err)
+	}
+	if !passed.Passed {
+		t.Fatalf("unchanged workspace failed: %s", passed.ErrorMessage)
+	}
+	changed, err := Evaluate(context.Background(), task, workDir, []string{"unexpected.txt"})
+	if err != nil {
+		t.Fatalf("evaluate changed workspace: %v", err)
+	}
+	if changed.Passed || changed.FailureStage != "level_1_mutation_policy" {
+		t.Fatalf("changed workspace result = %+v", changed)
 	}
 }
 

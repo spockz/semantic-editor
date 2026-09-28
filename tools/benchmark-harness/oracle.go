@@ -301,6 +301,12 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 	}
 
 	// Level 1: Mutation Policy
+	if slices.Contains(task.Metadata.Oracle.MutationPolicy.DisallowedFiles, "*") && len(modifiedFiles) > 0 {
+		res.FailureStage = "level_1_mutation_policy"
+		res.ErrorMessage = fmt.Sprintf("workspace must remain unchanged; modified: %s", strings.Join(modifiedFiles, ", "))
+		res.Duration = time.Since(start)
+		return res, nil
+	}
 	if len(task.Metadata.Oracle.MutationPolicy.DisallowedFiles) > 0 {
 		for _, mod := range modifiedFiles {
 			relMod := filepath.ToSlash(mod)

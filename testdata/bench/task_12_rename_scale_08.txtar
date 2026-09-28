@@ -1,0 +1,93 @@
+task_id: task-12-rename-scale-08
+category: edit_scaling
+instruction: "Apply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing."
+contexts:
+  - small
+prompt_variants:
+  default: "Apply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "rename-plan.md"
+      - "pipeline/workflow_test.go"
+  level_2_ast:
+    file: "pipeline/workflow.go"
+    must_contain_symbols:
+      - "Processor.ReadRequest"
+      - "Processor.ValidateRequest"
+      - "Processor.CanonicalizeValue"
+      - "Processor.ProjectFields"
+      - "Processor.DispatchValue"
+      - "Processor.AnnotateEvent"
+      - "Processor.TallyItems"
+      - "Processor.CombineParts"
+    must_not_contain_symbols:
+      - "LoadInput"
+      - "CheckInput"
+      - "NormalizeValue"
+      - "MapFields"
+      - "RouteValue"
+      - "StampEvent"
+      - "CountItems"
+      - "MergeParts"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/editscale
+
+go 1.23
+-- rename-plan.md --
+# Processing stage rename plan
+
+Apply each method rename below. Keep the stage order and behavior unchanged.
+
+| Current method | New method |
+| :--- | :--- |
+| `LoadInput` | `ReadRequest` |
+| `CheckInput` | `ValidateRequest` |
+| `NormalizeValue` | `CanonicalizeValue` |
+| `MapFields` | `ProjectFields` |
+| `RouteValue` | `DispatchValue` |
+| `StampEvent` | `AnnotateEvent` |
+| `CountItems` | `TallyItems` |
+| `MergeParts` | `CombineParts` |
+-- pipeline/workflow.go --
+// Package pipeline provides independent processing stages for the rename scale benchmark.
+package pipeline
+
+type Processor struct{}
+
+func (Processor) LoadInput(value int) int { return value + 1 }
+func (Processor) CheckInput(value int) int { return value + 2 }
+func (Processor) NormalizeValue(value int) int { return value + 3 }
+func (Processor) MapFields(value int) int { return value + 4 }
+func (Processor) RouteValue(value int) int { return value + 5 }
+func (Processor) StampEvent(value int) int { return value + 6 }
+func (Processor) CountItems(value int) int { return value + 7 }
+func (Processor) MergeParts(value int) int { return value + 8 }
+
+func Run(processor Processor, value int) int {
+	value = processor.LoadInput(value)
+	value = processor.CheckInput(value)
+	value = processor.NormalizeValue(value)
+	value = processor.MapFields(value)
+	value = processor.RouteValue(value)
+	value = processor.StampEvent(value)
+	value = processor.CountItems(value)
+	value = processor.MergeParts(value)
+	return value
+}
+-- pipeline/workflow_test.go --
+// Package pipeline tests the behavior that stage renames must preserve.
+package pipeline
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	if got, want := Run(Processor{}, 7), 43; got != want {
+		t.Fatalf("Run() = %d, want %d", got, want)
+	}
+}

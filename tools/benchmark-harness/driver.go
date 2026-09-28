@@ -292,6 +292,9 @@ func withMutationPolicyGuidance(prompt string, task *Task, remediate bool) strin
 	if len(protected) == 0 {
 		return prompt
 	}
+	if slices.Contains(protected, "*") {
+		return fmt.Sprintf("Do not modify any workspace files.\n\n%s", prompt)
+	}
 	slices.Sort(protected)
 	hasTests := false
 	otherFiles := make([]string, 0, len(protected))

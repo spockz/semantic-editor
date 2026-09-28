@@ -1,0 +1,58 @@
+task_id: task-12-rename-scale-01
+category: edit_scaling
+instruction: "Apply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing."
+contexts:
+  - small
+prompt_variants:
+  default: "Apply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "rename-plan.md"
+      - "pipeline/workflow_test.go"
+  level_2_ast:
+    file: "pipeline/workflow.go"
+    must_contain_symbols:
+      - "Processor.ReadRequest"
+    must_not_contain_symbols:
+      - "LoadInput"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/editscale
+
+go 1.23
+-- rename-plan.md --
+# Processing stage rename plan
+
+Apply each method rename below. Keep the stage order and behavior unchanged.
+
+| Current method | New method |
+| :--- | :--- |
+| `LoadInput` | `ReadRequest` |
+-- pipeline/workflow.go --
+// Package pipeline provides independent processing stages for the rename scale benchmark.
+package pipeline
+
+type Processor struct{}
+
+func (Processor) LoadInput(value int) int { return value + 1 }
+
+func Run(processor Processor, value int) int {
+	value = processor.LoadInput(value)
+	return value
+}
+-- pipeline/workflow_test.go --
+// Package pipeline tests the behavior that stage renames must preserve.
+package pipeline
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	if got, want := Run(Processor{}, 7), 8; got != want {
+		t.Fatalf("Run() = %d, want %d", got, want)
+	}
+}

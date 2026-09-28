@@ -30,6 +30,16 @@ stored outside the extracted fixture and copied only after the agent exits.
 The copy path is root-scoped so an agent-created symlink cannot redirect a
 hidden test outside the benchmark workspace.
 
+An empty txtar fixture may probe fixed agent overhead. The mutation policy
+entry `disallowed_files: ["*"]` rejects changes to regular workspace files,
+including newly created files, using the post-extraction snapshot. The snapshot
+excludes `.git` and `.scratch` and does not track directory entries. Such a
+no-op probe cannot
+validate the response text and does not estimate the crossover point for
+semantic editing. An edit-count fixture family must use the same task contract
+and independently checked structural and behavioral postconditions at each
+count.
+
 New semantic-routing scenarios should require several coordinated edits across
 related but inconsistent code, while preserving unrelated protocols with
 similar names. Task 11 is the reference shape: normalize an audit delivery
