@@ -160,6 +160,20 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
+				case "semantic_remove_construct":
+					assertStandardOutputSchema(t, tool["outputSchema"], "object")
+					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
+					for _, field := range []string{"file", "symbol", "in_function", "discriminator", "target_case", "construct_path"} {
+						if _, ok := output[field]; !ok {
+							t.Errorf("remove outputSchema omitted continuation field %q", field)
+						}
+					}
+					result := output["result"].(map[string]any)
+					for _, field := range []string{"status", "safe_delete", "checks_run"} {
+						if _, ok := result["properties"].(map[string]any)[field]; !ok {
+							t.Errorf("remove result schema omitted %q", field)
+						}
+					}
 				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)

@@ -480,6 +480,9 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) m
 func toolSchema(entry operation.Entry) map[string]any {
 	description := entry.Summary
 	output := standardOutputSchema(map[string]any{"type": "string"})
+	if entry.MCPName == "semantic_remove_construct" {
+		output = standardOutputSchema(removeConstructResultSchema())
+	}
 	properties := output[schemaPropertiesKey].(map[string]any)
 	continuations := continuationOutputFieldSchemas(entry.MCPName)
 	maps.Copy(properties, continuations)
@@ -505,6 +508,23 @@ func toolSchema(entry operation.Entry) map[string]any {
 		toolFieldDescription:  description,
 		toolFieldInputSchema:  operationInputSchema(entry),
 		toolFieldOutputSchema: output,
+	}
+}
+
+func removeConstructResultSchema() map[string]any {
+	return map[string]any{
+		"type": "object",
+		schemaPropertiesKey: map[string]any{
+			"status":            map[string]any{"type": "string", "enum": []string{"removed", "refused"}},
+			"safe_delete":       map[string]any{"type": "boolean"},
+			"checks_run":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"refusal":           map[string]any{"type": "string"},
+			"diff":              map[string]any{"type": "string"},
+			"diagnostic_status": map[string]any{"type": "string"},
+			"diagnostic_delta":  map[string]any{"type": "object", additionalPropertiesKey: true},
+		},
+		"required":              []string{"status", "safe_delete", "checks_run"},
+		additionalPropertiesKey: false,
 	}
 }
 
@@ -555,6 +575,13 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 		if toolName == "semantic_insert_case" {
 			fields["discriminator"] = map[string]any{"type": "string"}
 		}
+	case "semantic_remove_construct":
+		fields["file"] = map[string]any{"type": "string"}
+		fields["symbol"] = map[string]any{"type": "string"}
+		fields["in_function"] = map[string]any{"type": "string"}
+		fields["discriminator"] = map[string]any{"type": "string"}
+		fields["target_case"] = map[string]any{"type": "string"}
+		fields["construct_path"] = map[string]any{"type": "string"}
 	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
 		fields["symbol"] = map[string]any{"type": "string"}
@@ -625,6 +652,8 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 				fields["line"] = edit.Line
 			}
 		}
+	case "semantic_remove_construct":
+		addRemoveContinuationFields(fields, result, root)
 	case "semantic_replace_construct", "semantic_insert_case", semanticInsertStructureTool:
 		if edit, ok := result.(operation.FileEditRes); ok {
 			if toolName == semanticInsertStructureTool && edit.Symbol != "" {
@@ -654,6 +683,24 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 		}
 	}
 	return fields
+}
+
+func addRemoveContinuationFields(fields map[string]any, result any, root string) {
+	edit, ok := result.(operation.RemoveRes)
+	if !ok {
+		return
+	}
+	if file := continuationPath(root, edit.File); file != "" {
+		fields["file"] = file
+	}
+	for key, value := range map[string]string{
+		"symbol": edit.Symbol, "in_function": edit.InFunction, "discriminator": edit.Discriminator,
+		"target_case": edit.TargetCase, "construct_path": edit.ConstructPath,
+	} {
+		if value != "" {
+			fields[key] = value
+		}
+	}
 }
 
 func regularFile(path string) bool {
@@ -1105,6 +1152,9 @@ func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text str
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
 	if len(errs) > 0 && errs[0] != nil {
+		if refusal, ok := errors.AsType[*operation.SafeDeleteRefusalError](errs[0]); ok {
+			result[structuredContentKey] = safeDeleteRefusalContent(refusal)
+		}
 		var mavenErr *maven.Error
 		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
 			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}
@@ -1116,10 +1166,32 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 	s.sendResult(id, result)
 }
 
+func safeDeleteRefusalContent(refusal *operation.SafeDeleteRefusalError) map[string]any {
+	result := map[string]any{
+		"result": map[string]any{
+			"status": "refused", "safe_delete": true,
+			"checks_run": refusal.ChecksRun, "refusal": refusal.Reason,
+		},
+	}
+	for key, value := range map[string]string{
+		"file": refusal.File, "symbol": refusal.Symbol, "in_function": refusal.InFunction,
+		"discriminator": refusal.Discriminator, "target_case": refusal.TargetCase,
+		"construct_path": refusal.ConstructPath,
+	} {
+		if value != "" {
+			result[key] = value
+		}
+	}
+	return result
+}
+
 func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, errs ...error) {
 	s.recordToolMetrics(timing)
 	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
 	if len(errs) > 0 && errs[0] != nil {
+		if refusal, ok := errors.AsType[*operation.SafeDeleteRefusalError](errs[0]); ok {
+			result[structuredContentKey] = safeDeleteRefusalContent(refusal)
+		}
 		var mavenErr *maven.Error
 		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
 			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}

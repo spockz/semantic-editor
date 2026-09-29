@@ -1479,3 +1479,44 @@ func TestMCPExpectedRootMismatchCannotBeRetriedWithoutClientRoot(t *testing.T) {
 		t.Errorf("failed initialization created expected-root state: %v", err)
 	}
 }
+
+func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safedelete\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	source := "package safedelete\nfunc obsolete() {}\n"
+	file := filepath.Join(root, "main.go")
+	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_remove_construct\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"function\",\"symbol\":\"obsolete\",\"safe_delete\":true}}}\n"
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError    bool `json:"isError"`
+			Structured struct {
+				Result struct {
+					Status  string   `json:"status"`
+					Checks  []string `json:"checks_run"`
+					Refusal string   `json:"refusal"`
+				} `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("decode MCP response: %v\n%s", err, output.String())
+	}
+	if !response.Result.IsError || response.Result.Structured.Result.Status != "refused" || response.Result.Structured.Result.Refusal == "" {
+		t.Fatalf("safe delete response did not expose an explicit refusal: %+v", response.Result)
+	}
+	if len(response.Result.Structured.Result.Checks) != 3 || response.Result.Structured.Result.Checks[0] != "go_syntax_parse" || response.Result.Structured.Result.Checks[1] != "target_resolution" || response.Result.Structured.Result.Checks[2] != "safe_delete_scope_check" {
+		t.Fatalf("checks_run = %v", response.Result.Structured.Result.Checks)
+	}
+	if got, err := os.ReadFile(file); err != nil || string(got) != source {
+		t.Fatalf("refused operation changed source: %q, %v", got, err)
+	}
+}

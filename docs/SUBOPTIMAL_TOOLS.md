@@ -978,3 +978,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the check-only request returned an error because the verification hook `golangci-lint` requires workspace trust; its response also contained stale unrelated gopls diagnostics.
 - Workaround: use repository-local `make check`, which completed formatting, lint, tests, and documentation verification.
 - Root cause: the verification tool applied a trust gate before hooks and diagnostics that need full workspace context.
+
+### ST-0124: semantic_scaffold_file inserted a blank line after the package comment
+
+- Date: 2026-09-29
+- Tool: `semantic_scaffold_file`
+- Target: `internal/astedit/remove.go`
+- Observed failure: the scaffold created a blank line between the package comment and package declaration, and `make check` reported a detached package comment.
+- Workaround: remove the blank line and rerun repository checks.
+- Root cause: the scaffold formatter preserved spacing that violates the repository's package-comments lint rule.
+
+### ST-0125: semantic_insert_function rejected multiple declarations
+
+- Date: 2026-09-29
+- Tool: `semantic_insert_function`
+- Target: `internal/operation/wire_remove.go`
+- Observed failure: the request contained several constants, variables, and functions; the tool rejected it because it accepts one function declaration only. No source changed.
+- Workaround: insert each declaration with its matching semantic insertion operation.
+- Root cause: the tool validates a single function snippet and does not accept a file-sized declaration batch.

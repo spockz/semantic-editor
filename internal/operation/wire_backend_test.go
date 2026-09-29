@@ -65,8 +65,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 23 {
-		t.Errorf("registered operations = %d, want 23", len(entries))
+	if len(entries) != 24 {
+		t.Errorf("registered operations = %d, want 24", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -391,5 +391,23 @@ func TestOperationParamsRejectUnknownKeysAndAcceptCLIAliases(t *testing.T) {
 	verify, ok := request.(operation.VerifyReq)
 	if !ok || !verify.Project.WorkspaceTrust.Trusted || verify.Project.Java.JDTLSHome != "/jdtls" || verify.Project.Java.JavaBin != "/java" {
 		t.Fatalf("parsed verify request = %#v", request)
+	}
+}
+
+func TestRemoveConstructSelectorContract(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("remove-construct")
+	if !ok {
+		t.Fatal("remove-construct registry entry missing")
+	}
+	request, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "in_function": "Route", "discriminator": "route", "target_case": `"old"`, "safe_delete": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	remove, ok := request.(operation.RemoveReq)
+	if !ok || remove.Symbol != "" || remove.InFunction != "Route" || remove.TargetCase != `"old"` || !remove.SafeDelete {
+		t.Fatalf("parsed remove request = %#v", request)
+	}
+	if _, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "symbol": "Route", "in_function": "Route"}); err == nil || !strings.Contains(err.Error(), "symbol is a declaration target") {
+		t.Fatalf("case selection with symbol should fail: %v", err)
 	}
 }

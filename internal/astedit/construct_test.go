@@ -9,6 +9,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -314,5 +315,91 @@ func TestReplaceConstruct_SelectsIfByShortInitializerAndPath(t *testing.T) {
 	got = readGo(t, path)
 	if !strings.Contains(got, "if final {\n\t\tsecondUpdated()") || strings.Contains(got, "second()") {
 		t.Fatalf("construct_path did not select the remaining if:\n%s", got)
+	}
+}
+
+func TestRemoveGroupedDeclarationPreservesSiblingComment(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decls.go")
+	writeGo(t, path, "package sample\nvar (\n // Keep documents the sibling.\n Keep = 1\n // Remove documents the target.\n Remove = 2\n)\n")
+	if _, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "Remove"}, false); err != nil || refusal != "" {
+		t.Fatalf("Remove: refusal=%q err=%v", refusal, err)
+	}
+	got := readGo(t, path)
+	for _, want := range []string{"Keep = 1", "Keep documents the sibling"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("remaining grouped declaration missing %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"Remove = 2", "Remove documents the target"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("removed declaration retained %q:\n%s", unwanted, got)
+		}
+	}
+}
+
+func TestRemoveCaseUsesFunctionAndSwitchSelectors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "switch.go")
+	initial := "package sample\nfunc Route(route string) {\n switch route {\n case \"old\":\n  old()\n case \"keep\":\n  keep()\n }\n}\n"
+	writeGo(t, path, initial)
+	if _, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "case", InFunction: "Route", Discriminator: "route", TargetCase: `"old"`}, false); err != nil || refusal != "" {
+		t.Fatalf("Remove case: refusal=%q err=%v", refusal, err)
+	}
+	got := readGo(t, path)
+	if strings.Contains(got, "old()") || !strings.Contains(got, "keep()") {
+		t.Fatalf("wrong switch case removed:\n%s", got)
+	}
+}
+
+func TestRemoveSafeDeleteRefusesWithoutCompletePreflights(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decls.go")
+	initial := "package sample\n// Keep the attached documentation.\nfunc obsolete() {}\nfunc keep() {}\n"
+	writeGo(t, path, initial)
+	_, checks, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "obsolete", SafeDelete: true}, false)
+	if err != nil || refusal == "" {
+		t.Fatalf("expected safe_delete refusal, refusal=%q err=%v", refusal, err)
+	}
+	if len(checks) != 3 || checks[0] != "go_syntax_parse" || checks[1] != "target_resolution" || checks[2] != "safe_delete_scope_check" {
+		t.Fatalf("checks run = %v", checks)
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("safe_delete changed source:\n%s", got)
+	}
+}
+
+func TestRemoveRejectsSharedValueSpecWithoutWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "decls.go")
+	initial := "package sample\nvar left, right = pair()\n"
+	writeGo(t, path, initial)
+	_, _, _, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "left"}, false)
+	if err == nil || !strings.Contains(err.Error(), "shared value spec") {
+		t.Fatalf("expected shared-spec refusal, got %v", err)
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("rejected removal changed source:\n%s", got)
+	}
+}
+
+func TestRemoveSafeDeleteUnexportedStandaloneConstant(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safeconstant\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "constants.go")
+	initial := "package sample\nconst unusedLimit = 42\n"
+	writeGo(t, path, initial)
+	diff, checks, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "constant", Symbol: "unusedLimit", SafeDelete: true}, false)
+	if err != nil || refusal != "" {
+		t.Fatalf("Remove: refusal=%q err=%v", refusal, err)
+	}
+	if !strings.Contains(diff, "unusedLimit") {
+		t.Fatalf("removal diff omitted target: %q", diff)
+	}
+	if got := readGo(t, path); strings.Contains(got, "unusedLimit") {
+		t.Fatalf("constant remains after safe deletion:\n%s", got)
+	}
+	for _, check := range []string{"module_go_source_scan", "module_reference_scan_complete", "constant_resource_scope_check", "module_source_unchanged_before_write"} {
+		if !slices.Contains(checks, check) {
+			t.Errorf("checks_run omitted %q: %v", check, checks)
+		}
 	}
 }
