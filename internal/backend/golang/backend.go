@@ -57,6 +57,12 @@ func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 		Maturity:           "Production",
 		SupportedModifiers: mods,
 		Operations: map[string]backend.OpCapability{
+			"extract_function": {
+				Supported:   true,
+				Description: "Extracts contiguous top-level call statements, optionally with one leading returned local of a supported inferred type; rejects address-taken inputs or results, closure-captured inputs, direct recover calls, uncertain pointer-receiver dispatch, other local data flow, control flow, composite literals, generic owners, variadics, and owner comments.",
+				CLICommand:  "semedit extract-function --file <path> --symbol <helper> --in-function <owner> --kind <function|method> --start-line <line> --end-line <line>",
+				MCPTool:     "semantic_extract_function",
+			},
 			"rename": {
 				Supported:    true,
 				Description:  "Compiler-backed symbol renaming across identifiers, struct fields, methods, interfaces, and packages with automatic import tidying.",

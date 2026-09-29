@@ -1130,6 +1130,10 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					_, validType = value.(string)
 				case "boolean":
 					_, validType = value.(bool)
+				case "integer":
+					if number, ok := value.(float64); ok {
+						validType = number == float64(int(number))
+					}
 				case "array":
 					if items, ok := value.([]any); ok {
 						validType = true

@@ -61,6 +61,16 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 			}
 			continue
 		}
+		if param.Type == ParamInteger {
+			switch value.(type) {
+			case int, int64, float64:
+			default:
+				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
+			}
+			if typed, ok := value.(float64); ok && typed != float64(int(typed)) {
+				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
+			}
+		}
 		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
 			if param.Required {
 				return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
@@ -143,6 +153,30 @@ func ParseBool(raw map[string]any, jsonName, cliName string, def bool) (bool, er
 		}
 	default:
 		return false, fmt.Errorf("param %q must be a boolean: %w", jsonName, ErrInvalidParams)
+	}
+}
+
+// ParseInteger extracts a required JSON or CLI integer parameter.
+func ParseInteger(raw map[string]any, jsonName, cliName string, required bool) (int, error) {
+	value, present := rawLookup(raw, jsonName, cliName)
+	if !present || value == nil {
+		if required {
+			return 0, fmt.Errorf("param %q is required: %w", jsonName, ErrInvalidParams)
+		}
+		return 0, nil
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case int64:
+		return int(typed), nil
+	case float64:
+		if typed != float64(int(typed)) {
+			return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
+		}
+		return int(typed), nil
+	default:
+		return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
 	}
 }
 

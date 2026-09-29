@@ -25,6 +25,7 @@ type flagValues struct {
 	strings map[string]*string
 	bools   map[string]*bool
 	slices  map[string]*[]string
+	ints    map[string]*int
 }
 
 func stringDefault(value any) string {
@@ -42,6 +43,7 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 	values.strings = map[string]*string{}
 	values.bools = map[string]*bool{}
 	values.slices = map[string]*[]string{}
+	values.ints = map[string]*int{}
 	for _, param := range params {
 		if param.CLIName == "" {
 			continue
@@ -51,6 +53,8 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 			values.bools[param.CLIName] = cmd.Flags().Bool(param.CLIName, boolDefault(param.Default), param.Description)
 		case operation.ParamStringSlice:
 			values.slices[param.CLIName] = cmd.Flags().StringArray(param.CLIName, nil, param.Description)
+		case operation.ParamInteger:
+			values.ints[param.CLIName] = cmd.Flags().Int(param.CLIName, 0, param.Description)
 		default:
 			values.strings[param.CLIName] = cmd.Flags().String(param.CLIName, stringDefault(param.Default), param.Description)
 		}
@@ -72,6 +76,10 @@ func rawParams(entry operation.Entry, values *flagValues) map[string]any {
 		case operation.ParamStringSlice:
 			if variable, ok := values.slices[param.CLIName]; ok && len(*variable) > 0 {
 				raw[param.JSONName] = append([]string(nil), *variable...)
+			}
+		case operation.ParamInteger:
+			if variable, ok := values.ints[param.CLIName]; ok && *variable != 0 {
+				raw[param.JSONName] = *variable
 			}
 		default:
 			if variable, ok := values.strings[param.CLIName]; ok && *variable != "" {
