@@ -35,6 +35,8 @@ const (
 	ParamBoolean = "boolean"
 	// ParamStringSlice accepts a JSON string array, a repeated flag, or a single string.
 	ParamStringSlice = "string[]"
+	// ParamInteger accepts a JSON integer and an integer CLI flag.
+	ParamInteger = "integer"
 )
 
 // ParameterContract declares one operation parameter in ingress-neutral form.

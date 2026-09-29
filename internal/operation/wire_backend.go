@@ -34,6 +34,7 @@ const (
 	wireTargetSymbol            = "target_symbol"
 	wireDiscriminator           = "discriminator"
 	wireInFunction              = "in_function"
+	wireCLIInFunction           = "in-function"
 	wireConstructPath           = "construct_path"
 	wireTargetCase              = "target_case"
 	wireTargetGoFileDescription = "Target: Go source file to modify; path is relative to the workspace root"
@@ -45,6 +46,9 @@ const (
 	sourceRenameFile                   = "semantic_rename.file"
 	sourceReplaceBodyFile              = "semantic_replace_body.file"
 	sourceReplaceConstructFile         = "semantic_replace_construct.file"
+	sourceExtractFunctionFile          = "semantic_extract_function.file"
+	sourceExtractFunctionSymbol        = "semantic_extract_function.symbol"
+	sourceExtractFunctionInFunction    = "semantic_extract_function.in_function"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
 	sourceInsertFunctionFile           = "semantic_insert_function.file"
 	sourceInsertTypeFile               = "semantic_insert_type.file"
@@ -72,7 +76,7 @@ var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
 	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
-	sourceInsertStructureFile, sourceReplaceDeclFile, sourceOrganizeImportsFile,
+	sourceInsertStructureFile, sourceReplaceDeclFile, sourceExtractFunctionFile, sourceOrganizeImportsFile,
 	sourceScaffoldFile,
 }
 
@@ -80,10 +84,12 @@ var sourceSymbolContinuations = []string{
 	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
 	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
+	sourceExtractFunctionSymbol,
 }
 
 var sourceInFunctionContinuations = []string{
 	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
+	sourceExtractFunctionInFunction,
 }
 
 var sourceDiscriminatorContinuations = []string{

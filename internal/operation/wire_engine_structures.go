@@ -44,7 +44,7 @@ var insertStructureParams = []ParameterContract{
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol or anchor case identifier required for relative placement"},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for declarations: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "Replace an existing declaration with the same name (default false)"},
-	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
 	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
@@ -96,7 +96,7 @@ func parseInsertStructure(raw map[string]any) (InsertStructureReq, error) {
 	if req.Overwrite, err = ParseBool(raw, "overwrite", "overwrite", false); err != nil {
 		return req, err
 	}
-	if req.Function, err = ParseString(raw, wireInFunction, "in-function", false); err != nil {
+	if req.Function, err = ParseString(raw, wireInFunction, wireCLIInFunction, false); err != nil {
 		return req, err
 	}
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {

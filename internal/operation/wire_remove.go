@@ -84,7 +84,7 @@ var (
 		{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: removeFileSources},
 		{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Go node kind to remove: function, method, type, constant, variable, or case", Required: true, Enums: []string{"function", "method", "type", "constant", "variable", "case"}},
 		{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified top-level declaration to remove; required for function, method, type, constant, or variable, and never an owner selector", SourceFields: removeSymbolSources},
-		{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: append(append([]string{}, sourceInFunctionContinuations...), sourceRemoveInFunction)},
+		{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: append(append([]string{}, sourceInFunctionContinuations...), sourceRemoveInFunction)},
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: case value to remove (for example nil or \"foo\"); use default for a default clause", SourceFields: []string{sourceRemoveTargetCase}},
 		{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)", SourceFields: []string{sourceRemoveConstructPath}},
@@ -118,7 +118,7 @@ func parseRemove(raw map[string]any) (RemoveReq, error) {
 	if req.Symbol, err = ParseString(raw, "symbol", "symbol", false); err != nil {
 		return req, err
 	}
-	if req.InFunction, err = ParseString(raw, wireInFunction, "in-function", false); err != nil {
+	if req.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, false); err != nil {
 		return req, err
 	}
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {

@@ -84,6 +84,7 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Remove one Go declaration or switch case; safe deletion fails closed until preflights are complete | `remove-construct` | `semantic_remove_construct` |
 | Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
+| Extract a safe contiguous call-statement region into a Go helper | `extract-function` | `semantic_extract_function` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
 | Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
 | Organize Go imports | `organize-imports` | `semantic_organize_imports` |
@@ -167,7 +168,7 @@ semedit mcp --enabled-languages=go
 
 The [ADR index](docs/adr/README.md) records accepted decisions and their evolution; the [research index](docs/research/README.md) tracks investigations. A resolved feasibility question does not necessarily mean its integration has shipped.
 
-* **Broader refactoring support:** extraction, inlining, richer disambiguation, and additional language mutations remain future work. Bash and Makefile construct editing need parser evidence beyond language-server symbol ranges ([RQ-0024](docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md), [RQ-0037](docs/research/RQ-0037-bash-language-server-and-construct-editing.md), [RQ-0038](docs/research/RQ-0038-makefile-language-server-versus-parser.md)).
+* **Broader refactoring support:** expression extraction, inlining, richer disambiguation, and additional language mutations remain future work. Go statement extraction accepts direct call statements, optionally preceded by one supported single-local declaration returned from the helper, with conservative named-parameter/receiver data flow. Bash and Makefile construct editing need parser evidence beyond language-server symbol ranges ([RQ-0024](docs/research/RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md), [RQ-0037](docs/research/RQ-0037-bash-language-server-and-construct-editing.md), [RQ-0038](docs/research/RQ-0038-makefile-language-server-versus-parser.md)).
 * **Post-edit context and normalization:** bounded result projections, project quality policy, and configurable normalization remain under investigation ([RQ-0027](docs/research/RQ-0027-preventing-read-files.md) through [RQ-0029](docs/research/RQ-0029-project-normalization-configuration.md)).
 * **Benchmark integration:** native instruction-delivery channels have been identified, but the transport implementation described in [RQ-0039](docs/research/RQ-0039-benchmark-policy-instruction-transport.md) remains deferred. [ADR-0044](docs/adr/0044-benchmark-experiment-dimensions-and-result-semantics.md) remains proposed.
 * **Runtime and workspace evolution:** persistent server lifecycle, caching, and broader workspace topologies remain research topics. Concurrent polyglot server orchestration and embedded speculative workspace isolation are not current features.

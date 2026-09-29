@@ -1,0 +1,174 @@
+# Extract safe call statements through the CLI and reject local data flow without mutation.
+! exec semedit extract-function --file api/emitter.go --symbol increment --in-function Increment --kind function --start-line 12 --end-line 12
+stderr 'only one leading single-variable := declaration'
+cmp api/emitter.go original/api/emitter.go
+exec semedit extract-function --file api/emitter.go --symbol writeMessages --in-function Emit --kind function --start-line 6 --end-line 7
+stdout 'symbol: writeMessages'
+stdout 'in_function: Emit'
+stdout 'diagnostic_status:'
+cmp api/emitter.go want/api/emitter.go
+exec semedit extract-function --file api/value.go --symbol buildValue --in-function Build --kind function --start-line 6 --end-line 7
+stdout 'symbol: buildValue'
+cmp api/value.go want/api/value.go
+! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function AddressTaken --kind function --start-line 5 --end-line 5
+stderr 'address-taken in the owner body'
+cmp api/unsafe.go original/api/unsafe.go
+! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function Captured --kind function --start-line 11 --end-line 11
+stderr 'captured by a closure'
+cmp api/unsafe.go original/api/unsafe.go
+! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function Recover --kind function --start-line 16 --end-line 16
+stderr 'direct recover\(\) calls'
+cmp api/unsafe.go original/api/unsafe.go
+! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function ValueCall --kind function --start-line 24 --end-line 24
+stderr 'implicit pointer receiver'
+cmp api/unsafe.go original/api/unsafe.go
+! exec semedit extract-function --file api/unsafe.go --symbol extracted --in-function OutputAddress --kind function --start-line 28 --end-line 29
+stderr 'result local "result" is address-taken'
+cmp api/unsafe.go original/api/unsafe.go
+exec go test ./api
+
+-- api/value.go --
+package api
+
+import "fmt"
+
+func Build() {
+	result := 42
+	fmt.Println("during", result)
+	fmt.Println("after", result)
+}
+
+-- want/api/value.go --
+package api
+
+import "fmt"
+
+func Build() {
+	result := buildValue()
+	fmt.Println("after", result)
+}
+
+func buildValue() int {
+	result := 42
+	fmt.Println("during", result)
+	return result
+}
+-- go.mod --
+module example.com/extract
+
+go 1.23
+
+-- api/emitter.go --
+package api
+
+import "fmt"
+
+func Emit(prefix string, count int) {
+	fmt.Println(prefix)
+	fmt.Printf("%d", count)
+	fmt.Println("after")
+}
+
+func Increment(value int) {
+	value = value + 1
+}
+
+-- original/api/emitter.go --
+package api
+
+import "fmt"
+
+func Emit(prefix string, count int) {
+	fmt.Println(prefix)
+	fmt.Printf("%d", count)
+	fmt.Println("after")
+}
+
+func Increment(value int) {
+	value = value + 1
+}
+
+-- api/unsafe.go --
+package api
+
+func AddressTaken(value int) {
+	ptr := &value
+	println(value)
+	_ = ptr
+}
+
+func Captured(value int) {
+	use := func() { println(value) }
+	println(value)
+	_ = use
+}
+
+func Recover() {
+	recover()
+}
+
+type Box struct{}
+
+func (b *Box) Touch() {}
+
+func ValueCall(b Box) {
+	b.Touch()
+}
+
+func OutputAddress() {
+	result := 42
+	println(&result)
+	println(result)
+}
+
+-- original/api/unsafe.go --
+package api
+
+func AddressTaken(value int) {
+	ptr := &value
+	println(value)
+	_ = ptr
+}
+
+func Captured(value int) {
+	use := func() { println(value) }
+	println(value)
+	_ = use
+}
+
+func Recover() {
+	recover()
+}
+
+type Box struct{}
+
+func (b *Box) Touch() {}
+
+func ValueCall(b Box) {
+	b.Touch()
+}
+
+func OutputAddress() {
+	result := 42
+	println(&result)
+	println(result)
+}
+
+-- want/api/emitter.go --
+package api
+
+import "fmt"
+
+func Emit(prefix string, count int) {
+	writeMessages(prefix, count)
+	fmt.Println("after")
+}
+
+func writeMessages(prefix string, count int) {
+	fmt.Println(prefix)
+	fmt.Printf("%d", count)
+}
+
+func Increment(value int) {
+	value = value + 1
+}
