@@ -69,6 +69,7 @@ type ASTConfig struct {
 	File                  string          `json:"file"                     yaml:"file"`
 	MustContainSymbols    []string        `json:"must_contain_symbols"     yaml:"must_contain_symbols"`
 	MustNotContainSymbols []string        `json:"must_not_contain_symbols" yaml:"must_not_contain_symbols"`
+	MustCallFunctions     []string        `json:"must_call_functions"      yaml:"must_call_functions"`
 	MustContainImports    []string        `json:"must_contain_imports"     yaml:"must_contain_imports"`
 	MustNotContainImports []string        `json:"must_not_contain_imports" yaml:"must_not_contain_imports"`
 	SymbolBefore          SymbolAdjacency `json:"symbol_before"            yaml:"symbol_before"`
@@ -186,6 +187,8 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 				meta.Oracle.AST.MustContainSymbols = append(meta.Oracle.AST.MustContainSymbols, itemVal)
 			case "oracle.level_2_ast.must_not_contain_symbols":
 				meta.Oracle.AST.MustNotContainSymbols = append(meta.Oracle.AST.MustNotContainSymbols, itemVal)
+			case "oracle.level_2_ast.must_call_functions":
+				meta.Oracle.AST.MustCallFunctions = append(meta.Oracle.AST.MustCallFunctions, itemVal)
 			case "oracle.level_2_ast.must_contain_imports":
 				meta.Oracle.AST.MustContainImports = append(meta.Oracle.AST.MustContainImports, itemVal)
 			case "oracle.level_2_ast.must_not_contain_imports":
@@ -681,6 +684,34 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 		}
 		if astContainsExactIdent(fileNode, sym) {
 			return fmt.Errorf("disallowed symbol reference %q persists in %s", sym, cfg.File)
+		}
+	}
+
+	for _, requirement := range cfg.MustCallFunctions {
+		functionName, calleeName, ok := strings.Cut(requirement, "->")
+		if !ok || functionName == "" || calleeName == "" {
+			return fmt.Errorf("invalid function-call assertion %q (want Function->callee)", requirement)
+		}
+		found := false
+		for _, decl := range fileNode.Decls {
+			function, ok := decl.(*ast.FuncDecl)
+			if !ok || function.Name.Name != functionName || function.Body == nil {
+				continue
+			}
+			ast.Inspect(function.Body, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				callee, ok := call.Fun.(*ast.Ident)
+				if ok && callee.Name == calleeName {
+					found = true
+				}
+				return true
+			})
+		}
+		if !found {
+			return fmt.Errorf("required call %s -> %s not found in %s", functionName, calleeName, cfg.File)
 		}
 	}
 

@@ -933,3 +933,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the call used `query` instead of the supported `symbol` parameter, so validation failed before source inspection; no source changed.
 - Workaround: retry using `symbol` and `file`.
 - Root cause: incorrect caller parameter shape.
+
+### ST-0119: semantic_lookup did not resolve a Go oracle test
+
+- Date: 2026-09-29
+- Tool: `semantic_lookup`
+- Target: `TestResponseAndRequestIDsStayDistinct` in `testdata/bench-oracles/task-12-request-identity-migration/response/response_hidden_test.go`
+- Observed failure: lookup returned `symbol not found`; no source was changed.
+- Workaround: use `rg` to locate the Go test and make narrowly scoped atomic edits to hidden oracle test bodies.
+- Root cause: the semantic lookup backend does not index Go test functions in the hidden oracle tree.

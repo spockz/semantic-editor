@@ -1,0 +1,349 @@
+task_id: task-12-request-identity-migration
+category: semantic_refactoring
+instruction: "Migrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command."
+prompt_variants:
+  default: "Migrate the request identity API in this large multi-package Go service. Rename only Request.ID to Request.RequestID and update every semantic use across packages; Response.ID and Review.ID are separate identities and must remain unchanged, including the many syntactically identical r.ID expressions. Add a package sentinel ErrInvalidRequest and return it from Validate when the request ID is empty, preserving error wrapping and callers. Extract the normalization block from the existing exported request.Normalize function into an unexported normalizeKind helper and keep Normalize exported with the same behavior and signature. Preserve module metadata and existing tests. Verification differs by editing method: when making ordinary file edits, run the project build and tests and ensure both pass; when using semedit, treat clean compiler diagnostic deltas returned by its mutation commands as build-clean evidence and do not run a separate build or test command."
+contexts:
+  - small
+  - large
+oracle:
+  diagnostic_expected_tools:
+    - semantic_lookup
+    - semantic_inspect_symbol
+    - semantic_find_references
+    - semantic_rename
+    - semantic_insert_declaration
+    - semantic_insert_function
+    - semantic_replace_body
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "request/request.go"
+    must_contain_symbols:
+      - "RequestID"
+      - "ErrInvalidRequest"
+      - "normalizeKind"
+      - "Normalize"
+    must_call_functions:
+      - "Normalize->normalizeKind"
+    must_not_contain_symbols:
+      - "ID"
+  level_3_build:
+    clean_compile: false
+  level_4_test:
+    pass_tests: true
+    hidden_test_dir: "testdata/bench-oracles/task-12-request-identity-migration"
+-- go.mod --
+module example.com/identityservice
+
+go 1.23
+-- request/request.go --
+package request
+
+import (
+	"errors"
+	"strings"
+)
+
+type Request struct {
+	ID      string
+	Kind    string
+	Payload []byte
+}
+
+func (r Request) Validate() error {
+	if r.ID == "" {
+		return errors.New("invalid request")
+	}
+	return nil
+}
+
+func Normalize(kind string) string {
+	kind = strings.TrimSpace(kind)
+	kind = strings.ToLower(kind)
+	return kind
+}
+
+func FindByID(requests []Request, id string) (Request, bool) {
+	for _, r := range requests {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return Request{}, false
+}
+-- response/response.go --
+package response
+
+type Response struct {
+	ID      string
+	RequestID string
+	Status  int
+}
+
+func (r Response) CorrelationID() string {
+	return r.ID
+}
+
+func Index(responses []Response, id string) (Response, bool) {
+	for _, r := range responses {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return Response{}, false
+}
+-- review/review.go --
+package review
+
+type Review struct {
+	ID      string
+	RequestID string
+	Verdict string
+}
+
+func (r Review) Key() string {
+	return r.ID
+}
+
+func ByID(reviews []Review, id string) (Review, bool) {
+	for _, r := range reviews {
+		if r.ID == id {
+			return r, true
+		}
+	}
+	return Review{}, false
+}
+-- gateway/handler.go --
+package gateway
+
+import (
+	"fmt"
+	"example.com/identityservice/request"
+	"example.com/identityservice/response"
+)
+
+type Client interface {
+	Send(request.Request) (response.Response, error)
+}
+
+type Handler struct { client Client }
+
+func (h Handler) Submit(r request.Request) (response.Response, error) {
+	if err := r.Validate(); err != nil {
+		return response.Response{}, fmt.Errorf("submit %s: %w", r.ID, err)
+	}
+	resp, err := h.client.Send(r)
+	if err != nil {
+		return response.Response{}, err
+	}
+	if resp.ID == "" {
+		return response.Response{}, fmt.Errorf("upstream response missing identity")
+	}
+	return resp, nil
+}
+-- storage/requests.go --
+package storage
+
+import "example.com/identityservice/request"
+
+type RequestRecord struct {
+	ID string
+	Request request.Request
+}
+
+func Lookup(records []RequestRecord, r request.Request) (RequestRecord, bool) {
+	for _, record := range records {
+		if record.ID == r.ID {
+			return record, true
+		}
+	}
+	return RequestRecord{}, false
+}
+-- response/audit.go --
+package response
+
+type AuditRow struct { ID string }
+
+func SameID(r Response, row AuditRow) bool {
+	return r.ID == row.ID
+}
+-- docs/identity-model.md --
+# Identity model
+
+Requests, responses, reviews, and storage records have distinct identity domains. A response or review may carry a request correlation ID, but its own ID remains the identity used by its indexes. Request kinds are normalized at the public request boundary.
+-- request/request_test.go --
+package request
+
+import "testing"
+
+func TestValidateRejectsMissingRequestID(t *testing.T) {
+	err := (Request{Kind: "audit"}).Validate()
+	if err == nil {
+		t.Fatal("Validate() accepted an empty request identity")
+	}
+}
+
+func TestNormalizeTrimsAndLowercases(t *testing.T) {
+	if got := Normalize("  Audit "); got != "audit" {
+		t.Fatalf("Normalize() = %q, want audit", got)
+	}
+}
+
+func TestFindByIDUsesRequestIdentity(t *testing.T) {
+	want := Request{"req-7", "audit", nil}
+	got, ok := FindByID([]Request{{"other", "audit", nil}, want}, "req-7")
+	if !ok || got.Kind != want.Kind {
+		t.Fatalf("FindByID() = %#v, %t; want %#v, true", got, ok, want)
+	}
+}
+-- response/response_test.go --
+package response
+
+import "testing"
+
+func TestResponseOwnIDRemainsDistinct(t *testing.T) {
+	want := Response{ID: "resp-3", RequestID: "req-7", Status: 202}
+	got, ok := Index([]Response{want}, "resp-3")
+	if !ok || got.ID != "resp-3" || got.RequestID != "req-7" {
+		t.Fatalf("Index() = %#v, %t", got, ok)
+	}
+}
+
+func TestAuditRowUsesItsOwnID(t *testing.T) {
+	if !SameID(Response{ID: "same"}, AuditRow{ID: "same"}) {
+		t.Fatal("SameID() did not compare the independent IDs")
+	}
+}
+-- review/review_test.go --
+package review
+
+import "testing"
+
+func TestReviewOwnIDRemainsDistinct(t *testing.T) {
+	want := Review{ID: "review-2", RequestID: "req-7", Verdict: "approve"}
+	got, ok := ByID([]Review{want}, "review-2")
+	if !ok || got.ID != "review-2" || got.RequestID != "req-7" {
+		t.Fatalf("ByID() = %#v, %t", got, ok)
+	}
+}
+-- gateway/handler_test.go --
+package gateway
+
+import (
+	"testing"
+	"example.com/identityservice/request"
+	"example.com/identityservice/response"
+)
+
+type testClient struct { got request.Request }
+
+func (c *testClient) Send(r request.Request) (response.Response, error) {
+	c.got = r
+	return response.Response{ID: "resp-1", RequestID: "req-1", Status: 202}, nil
+}
+
+func TestSubmitCarriesRequestAndResponseIdentities(t *testing.T) {
+	client := &testClient{}
+	resp, err := (Handler{client: client}).Submit(request.Request{"req-1", "audit", nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.got.Kind != "audit" || resp.ID != "resp-1" || resp.RequestID != "req-1" {
+		t.Fatalf("request=%#v response=%#v", client.got, resp)
+	}
+}
+-- storage/requests_test.go --
+package storage
+
+import (
+	"testing"
+	"example.com/identityservice/request"
+)
+
+func TestLookupMatchesRequestIdentity(t *testing.T) {
+	got, ok := Lookup([]RequestRecord{{ID: "req-1"}, {ID: "req-2"}}, request.Request{"req-2", "", nil})
+	if !ok || got.ID != "req-2" {
+		t.Fatalf("Lookup() = %#v, %t", got, ok)
+	}
+}
+-- queue/queue.go --
+package queue
+
+import "example.com/identityservice/request"
+
+type Entry struct { Key string; Value request.Request }
+
+func Contains(entries []Entry, r request.Request) bool {
+	for _, entry := range entries {
+		if entry.Key == r.ID { return true }
+	}
+	return false
+}
+
+func BatchKeys(requests []request.Request) []string {
+	keys := make([]string, 0, len(requests))
+	for _, r := range requests { keys = append(keys, r.ID) }
+	return keys
+}
+-- notifications/notifier.go --
+package notifications
+
+import "example.com/identityservice/request"
+
+type Notice struct { Request request.Request; Destination string }
+
+func DestinationFor(r request.Request) string {
+	if r.ID == "" { return "unassigned" }
+	return "request:" + r.ID
+}
+
+func IDs(notices []Notice) []string {
+	ids := make([]string, 0, len(notices))
+	for _, r := range notices { ids = append(ids, r.Request.ID) }
+	return ids
+}
+-- reporting/report.go --
+package reporting
+
+import "example.com/identityservice/request"
+
+type Row struct { Request request.Request; Label string }
+
+func Group(rows []Row) map[string][]Row {
+	grouped := make(map[string][]Row)
+	for _, r := range rows { grouped[r.Request.ID] = append(grouped[r.Request.ID], r) }
+	return grouped
+}
+-- scheduler/jobs.go --
+package scheduler
+
+import "example.com/identityservice/request"
+
+type Job struct { Request request.Request; Attempts int }
+
+func SameRequest(left, right Job) bool {
+	return left.Request.ID == right.Request.ID
+}
+
+func Pending(jobs []Job, r request.Request) []Job {
+	var pending []Job
+	for _, job := range jobs {
+		if job.Request.ID == r.ID && job.Attempts == 0 { pending = append(pending, job) }
+	}
+	return pending
+}
+-- correlation/identities.go --
+package correlation
+
+import (
+	"example.com/identityservice/request"
+	"example.com/identityservice/response"
+	"example.com/identityservice/review"
+)
+
+func IDs(r request.Request, resp response.Response, review review.Review) []string {
+	return []string{r.ID, resp.ID, review.ID}
+}
