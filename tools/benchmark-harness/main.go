@@ -314,6 +314,7 @@ func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
 	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
 	fs.StringVar(&policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
+	fs.BoolVar(&settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", false, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
 	fs.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable)")
 	fs.Var(&provenance, "classifier", "Deprecated alias for provenance")
 	fs.BoolVar(&listMode, "list", false, "List benchmark fixtures and prompt variants")
@@ -447,7 +448,7 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	outcomes, progressErr := ExecutePlan(ctx, plan, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
-		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithProvenance(plan.Options.Provenance))
+		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}

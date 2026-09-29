@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"semedit/internal/gocache"
@@ -468,6 +469,37 @@ func (r *Runner) codexMCPOverride(arm ArmType, workDir string) (string, error) {
 
 func fixtureGoEnvironment(ctx context.Context, workDir string) ([]string, error) {
 	return gocache.Environment(gocache.WithBaseDir(ctx, filepath.Join(workDir, ".scratch", "go")), workDir)
+}
+
+func runSemeditVerifyWarmup(ctx context.Context, workDir, file, binaryPath string) (time.Duration, error) {
+	if !filepath.IsLocal(filepath.FromSlash(file)) {
+		return 0, fmt.Errorf("prewarm verify file %q must be fixture-local", file)
+	}
+	env, err := fixtureGoEnvironment(ctx, workDir)
+	if err != nil {
+		return 0, fmt.Errorf("prepare prewarm Go environment: %w", err)
+	}
+	for _, subdir := range []string{"build", "mod"} {
+		cacheDir := filepath.Join(workDir, ".scratch", "go", subdir)
+		entries, err := os.ReadDir(cacheDir)
+		if err != nil {
+			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, err)
+		}
+		if len(entries) != 0 {
+			return 0, fmt.Errorf("prewarm %s cache is not empty in %s", subdir, cacheDir)
+		}
+	}
+	// #nosec G204 -- binaryPath is the repository-owned semedit-next binary selected by the runner.
+	cmd := exec.CommandContext(ctx, binaryPath, "verify", "--file", filepath.FromSlash(file), "--language", "go", "--check-only")
+	cmd.Dir = workDir
+	cmd.Env = env
+	started := time.Now()
+	output, err := cmd.CombinedOutput()
+	duration := time.Since(started)
+	if err != nil {
+		return duration, fmt.Errorf("prewarm semedit verify: %w: %s", err, boundedDiagnostic(output, 2048))
+	}
+	return duration, nil
 }
 
 func canonicalFixtureRoot(workDir string) (string, error) {

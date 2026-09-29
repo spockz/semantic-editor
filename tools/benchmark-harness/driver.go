@@ -61,7 +61,8 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if err != nil {
 		return nil, err
 	}
-	started := time.Now()
+	var started time.Time
+	var prewarmDuration time.Duration
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
 	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
@@ -75,7 +76,6 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		return nil, errors.Join(err, removeErr)
 	}
 	session.execution = execution
-	session.started = started
 	defer func() {
 		if closeErr := session.close(); closeErr != nil {
 			if session.result != nil {
@@ -95,6 +95,16 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if target.Harness == string(HarnessCodex) {
 		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
 			return nil, fmt.Errorf("prepare Codex fixture instructions: %w", err)
+		}
+	}
+	if arm == ArmSemedit && r.semeditPrewarmVerify {
+		if target.Harness != string(HarnessCodex) {
+			return nil, fmt.Errorf("semedit verify prewarm requires Codex target")
+		}
+		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(r.baseScratchDir)), "bin", "semedit-next")
+		prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
+		if err != nil {
+			return nil, err
 		}
 	}
 	session.beforeFiles, err = snapshotWorkspaceFiles(workDir)
@@ -120,6 +130,8 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		PromptVariant:                promptVariantFromExecution(execution),
 		SemeditArmRestrict:           execution.Policy,
 		SemeditArmRestrictionApplied: arm == ArmSemedit,
+		SemeditPrewarmVerify:         arm == ArmSemedit && r.semeditPrewarmVerify,
+		SemeditPrewarmDurationMS:     prewarmDuration.Milliseconds(),
 		MCPServerInstructions:        mcpInstructions,
 		Provenance:                   r.provenanceFor(), Target: target, Arm: arm, BeforeState: session.beforeContent,
 	}
@@ -143,6 +155,12 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		res.Provenance = make(ProvenanceSet)
 	}
 	res.Provenance["session_transcript"] = session.transcriptPath
+	if res.SemeditPrewarmVerify {
+		res.Provenance["semedit_prewarm"] = "verify_cli_check_only"
+		res.Provenance["go_cache_initial_state"] = "empty"
+	}
+	started = time.Now()
+	session.started = started
 	err = session.runTurn(ctx, target, prompt, "task", res)
 	if err != nil {
 		res.WallClock = time.Since(started)

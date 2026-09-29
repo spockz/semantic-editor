@@ -14,6 +14,7 @@ REPEATS ?= 1
 MCP_SERVER_INSTRUCTIONS ?= none
 # MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive.
 SEMEDIT_ARM_RESTRICT ?= write
+SEMEDIT_PREWARM_VERIFY ?= false
 # PROVENANCE records technical execution context without creating comparison cells.
 PROVENANCE ?=
 # CLASSIFIERS is retained as a compatibility alias for PROVENANCE.
@@ -76,6 +77,7 @@ bench-all: ## Run all benchmarks in small and large context with all prompt vari
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
+		--semedit-prewarm-verify="$(SEMEDIT_PREWARM_VERIFY)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
@@ -93,6 +95,7 @@ bench: ## Run a specific benchmark in small and large context (e.g. make bench T
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
+		--semedit-prewarm-verify="$(SEMEDIT_PREWARM_VERIFY)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \

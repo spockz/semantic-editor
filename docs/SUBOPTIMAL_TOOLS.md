@@ -906,3 +906,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the body edit succeeded, but import cleanup selected `gopkg.in/yaml.v2`; this repository requires `gopkg.in/yaml.v3`, so diagnostics reported an unavailable module and undefined `yaml`.
 - Workaround: replace the import with the existing `gopkg.in/yaml.v3` module and run the repository checks.
 - Root cause: automatic import resolution selected a similarly named module without honoring the existing `go.mod` dependency.
+
+### ST-0116: semantic_insert_function rejected an exported benchmark declaration
+
+- Date: 2026-09-29
+- Tool: `semantic_insert_function`
+- Target: `internal/mcp/startup_bench_test.go`
+- Observed failure: the call rejected an exported benchmark function with an explicitly private access modifier.
+- Workaround: retry with inferred access.
+- Root cause: the requested modifier conflicted with Go identifier casing.
+
+### ST-0117: semantic_verify reached workspace-wide hooks
+
+- Date: 2026-09-29
+- Tool: `semantic_verify`
+- Target: `internal/mcp/startup_bench_test.go`
+- Observed failure: verification surfaced an unrelated harness G204 diagnostic and refused a workspace-wide lint hook without workspace trust.
+- Workaround: fix the harness diagnostic and run the repository's `make check` gate.
+- Root cause: the selected-file operation also invokes workspace-wide verification hooks.

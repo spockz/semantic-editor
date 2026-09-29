@@ -69,6 +69,7 @@ type PlanOptions struct {
 	OutMD                 string
 	MCPServerInstructions []MCPServerInstructionMode
 	SemeditArmRestriction SemeditArmRestriction
+	SemeditPrewarmVerify  bool
 	Provenance            ProvenanceSet
 }
 
@@ -105,7 +106,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 		return err
 	}
 	options := plan.Options
-	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s out-dir=%q run-id=%q out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.OutDir, options.RunID, options.OutJSON, options.OutMD); err != nil {
+	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s semedit-prewarm-verify=%t out-dir=%q run-id=%q out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.SemeditPrewarmVerify, options.OutDir, options.RunID, options.OutJSON, options.OutMD); err != nil {
 		return err
 	}
 	for index, job := range plan.Jobs {
@@ -633,12 +634,19 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		pairID := ""
 		if !isControl {
 			arms = []ArmType{ArmBaseline, ArmSemedit}
-			pairID = stablePlanID("pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode))
+			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode)}
+			if options.SemeditPrewarmVerify {
+				pairParts = append(pairParts, "prewarm-verify")
+			}
+			pairID = stablePlanID(pairParts...)
 		}
 		for _, arm := range arms {
 			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode)}
 			if arm != ArmControl {
 				idParts = append(idParts, string(policy))
+				if options.SemeditPrewarmVerify {
+					idParts = append(idParts, "prewarm-verify")
+				}
 			}
 			job := specification
 			job.ID = stablePlanID(idParts...)

@@ -216,6 +216,8 @@ type RunResult struct {
 	PromptVariant                    string                   `json:"prompt_variant,omitempty"`
 	SemeditArmRestrict               SemeditArmRestriction    `json:"semedit_arm_restrict,omitempty"`
 	SemeditArmRestrictionApplied     bool                     `json:"semedit_arm_restriction_applied"`
+	SemeditPrewarmVerify             bool                     `json:"semedit_prewarm_verify"`
+	SemeditPrewarmDurationMS         int64                    `json:"semedit_prewarm_duration_ms,omitempty"`
 	MCPServerInstructions            MCPServerInstructionMode `json:"mcp_server_instructions,omitempty"`
 	Provenance                       ProvenanceSet            `json:"provenance,omitempty"`
 	Target                           Target                   `json:"target"`
@@ -266,6 +268,7 @@ type Runner struct {
 	baseScratchDir            string
 	mcpServerInstructionsMode MCPServerInstructionMode
 	semeditArmRestriction     SemeditArmRestriction
+	semeditPrewarmVerify      bool
 	provenance                ProvenanceSet
 	agyExecutable             string
 }
@@ -276,6 +279,10 @@ type RunnerOption func(*Runner)
 // WithMCPServerInstructions selects the server instruction experiment mode for all runs made by a runner.
 func WithMCPServerInstructions(mode MCPServerInstructionMode) RunnerOption {
 	return func(r *Runner) { r.mcpServerInstructionsMode = mode }
+}
+
+func WithSemeditPrewarmVerify(enabled bool) RunnerOption {
+	return func(r *Runner) { r.semeditPrewarmVerify = enabled }
 }
 
 // WithProvenance attaches immutable execution provenance to every benchmark result.

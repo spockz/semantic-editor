@@ -499,6 +499,38 @@ func TestFixtureGoEnvironmentIsWorkspaceLocal(t *testing.T) {
 	}
 }
 
+func TestSemeditVerifyWarmupUsesEmptyFixtureLocalCaches(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "fixture")
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte("module example.com/warmup\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package warmup\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(root, "fake-semedit")
+	script := "#!/bin/sh\n" +
+		"test \"$1\" = verify && test \"$2\" = --file && test \"$3\" = main.go && test \"$4\" = --language && test \"$5\" = go && test \"$6\" = --check-only || exit 9\n" +
+		"test \"$GOMODCACHE\" = \"$PWD/.scratch/go/mod\" || exit 10\n" +
+		"test \"$GOCACHE\" = \"$PWD/.scratch/go/build\" || exit 11\n" +
+		"mkdir \"$GOMODCACHE/seed\"\n"
+	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runSemeditVerifyWarmup(t.Context(), workDir, "main.go", binary); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, ".scratch", "go", "mod", "seed")); err != nil {
+		t.Fatalf("warmup did not use fixture-local cache: %v", err)
+	}
+	if _, err := runSemeditVerifyWarmup(t.Context(), workDir, "main.go", binary); err == nil {
+		t.Fatal("warmup accepted a non-empty module cache")
+	}
+}
+
 func TestWriteBenchmarkAGENTSOverride(t *testing.T) {
 	workDir := t.TempDir()
 	if err := writeBenchmarkAGENTSOverride(workDir); err != nil {

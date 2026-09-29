@@ -31,6 +31,14 @@ which checks apply; filesystem checks execute only after edit publication.
 ADR-0054 implements this verification-signal integration at the resolved
 initialization boundary.
 
+An optional `--semedit-prewarm-verify` treatment runs the promoted semedit
+`verify --check-only` CLI on the extracted Go fixture before starting the
+semedit agent. It uses the same fixture-local Go environment as the Codex
+process and refuses a non-empty initial build or module cache. The preflight
+runs in a separate process; it may populate disk caches but does not retain a
+`gopls` process. Fixture setup and preflight time are recorded separately from
+agent wall time. The baseline arm does not receive this treatment.
+
 The benchmark harness passes the complete semantic MCP registration through
 per-launch Codex configuration overrides: `enabled=true`, the absolute
 `bin/semedit-next` command, and `mcp --profile full` arguments. Fixture
@@ -76,7 +84,6 @@ registration explicitly forwards those variables to its stdio child.
 MCP operation is reproducible in fixture sandboxes and fails early when the
 configured state location is invalid. The server owns more process-environment
 setup, but callers no longer need bespoke cache exports for semantic tool
-calls. Fixtures begin with isolated Go state. A future speed optimization may
-explicitly preseed that state through the harness, but must not fall back to a
-mutable host cache; ADR-0038 governs the seed and its provenance. The inherited
+calls. Fixtures begin with isolated Go state. The optional verify preflight is an explicit per-fixture cache seed; it does
+not fall back to a mutable host cache. ADR-0038 governs its provenance. The inherited
 `GOPROXY` and `GOTOOLCHAIN` policy remains benchmark provenance.
