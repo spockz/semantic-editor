@@ -14,6 +14,21 @@ import (
 	"semedit/internal/operation"
 )
 
+func TestMoveConstructDefaultsDestinationToSourceFile(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("move-construct")
+	if !ok {
+		t.Fatal("move_construct registry entry missing")
+	}
+	request, err := entry.Parse(map[string]any{"file": "pkg/source.go", "symbol": "MoveMe"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	move, ok := request.(operation.MoveConstructReq)
+	if !ok || move.DestinationFile != "pkg/source.go" {
+		t.Fatalf("parsed move request = %#v, want destination defaulted to source file", request)
+	}
+}
+
 func TestJavaVerifyRegistryRequestAndDispatch(t *testing.T) {
 	entry, ok := operation.DefaultRegistry().LookupCLI("verify")
 	if !ok {
@@ -65,8 +80,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 23 {
-		t.Errorf("registered operations = %d, want 23", len(entries))
+	if len(entries) != 24 {
+		t.Errorf("registered operations = %d, want 24", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {

@@ -978,3 +978,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the check-only request returned an error because the verification hook `golangci-lint` requires workspace trust; its response also contained stale unrelated gopls diagnostics.
 - Workaround: use repository-local `make check`, which completed formatting, lint, tests, and documentation verification.
 - Root cause: the verification tool applied a trust gate before hooks and diagnostics that need full workspace context.
+
+### ST-0124: semantic inspection tools targeted the parent checkout
+
+- Date: 2026-09-29
+- Tool: `semantic_outline`, `semantic_lookup`
+- Target: `internal/astedit/move_construct.go` and declarations in `internal/operation` and `internal/backend/golang` in the assigned `.scratch/worktrees/refactor-move` worktree
+- Observed failure: semantic outline/lookup requests resolved against the parent checkout instead of this assigned worktree; the move file was reported missing, and a lookup for `ReplaceConstruct` returned not found despite the declaration being in a different file.
+- Workaround: use local repository inspection and edits confined to the assigned branch.
+- Root cause: the MCP semantic service is bound to the parent checkout and exposes no worktree selector.
+
+### ST-0125: semantic_insert_function inferred an unavailable import
+
+- Date: 2026-09-29
+- Tool: `semantic_insert_function` via local `semedit insert-func`
+- Target: `mergeMoveImports` in `internal/astedit/move_construct.go`
+- Observed failure: the insertion reported success but added `golang.org/x/tools/go/ast/astutil`, which the current module does not provide; the resulting package failed to import.
+- Workaround: replace the helper with standard-library AST import construction and remove the invalid dependency.
+- Root cause: automatic import organization treated a package path as available without confirming it exists in the configured module dependency graph.

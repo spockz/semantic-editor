@@ -1,0 +1,134 @@
+# Move construct relocates a function within a file with comments intact.
+exec semedit move-construct --file api/server.go --symbol Run --placement before_symbol --target-symbol Init
+stdout 'Successfully moved construct'
+cmp api/server.go want/api/server.go
+
+# A self-anchor still resolves the symbol before returning success.
+exec semedit move-construct --file api/server.go --symbol Init --placement before_symbol --target-symbol Init
+! exec semedit move-construct --file api/server.go --symbol Missing --placement before_symbol --target-symbol Missing
+stderr 'symbol.*not found'
+cmp api/server.go want/api/server.go
+
+# Move a function between files in the same package and carry its required import.
+exec semedit move-construct --file api/source.go --destination-file api/dest.go --symbol Normalize --placement file_end
+cmp api/source.go want/api/source.go
+cmp api/dest.go want/api/dest.go
+stdout 'import'
+
+# Resolve an implicit import name from the package instead of guessing from its path.
+exec semedit move-construct --file api/alias_source.go --destination-file api/alias_dest.go --symbol UseNamed --placement file_end
+cmp api/alias_source.go want/api/alias_source.go
+cmp api/alias_dest.go want/api/alias_dest.go
+
+# Cross-package moves currently fail closed before either file changes.
+! exec semedit move-construct --file other/source.go --destination-file api/cross.go --symbol MoveMe --placement file_end
+stderr 'cross-package move is not supported'
+cmp other/source.go want/other/source.go
+cmp api/cross.go want/api/cross.go
+
+# A selected member of a grouped declaration fails without moving its siblings.
+! exec semedit move-construct --file api/group.go --destination-file api/dest.go --symbol First --placement file_end
+stderr 'cannot move one member of a grouped declaration'
+cmp api/group.go want/api/group.go
+exec go test ./...
+
+-- go.mod --
+module example.com/move
+
+go 1.23
+
+-- api/server.go --
+package api
+
+// Init initializes the server.
+func Init() {}
+
+// Run starts the server execution.
+func Run() {}
+
+-- want/api/server.go --
+package api
+
+// Run starts the server execution.
+func Run() {}
+
+// Init initializes the server.
+func Init() {}
+-- api/source.go --
+package api
+
+import "strings"
+
+func Normalize(value string) string { return strings.TrimSpace(value) }
+
+-- api/dest.go --
+package api
+
+func Existing() {}
+
+-- want/api/source.go --
+package api
+-- want/api/dest.go --
+package api
+
+import (
+	"strings"
+)
+
+func Existing() {}
+
+func Normalize(value string) string { return strings.TrimSpace(value) }
+-- other/source.go --
+package other
+
+func MoveMe() {}
+-- want/other/source.go --
+package other
+
+func MoveMe() {}
+-- api/cross.go --
+package api
+
+func ExistingCross() {}
+-- pkgdir/named.go --
+package actualname
+
+func Value() string { return "ok" }
+-- api/alias_source.go --
+package api
+
+import "example.com/move/pkgdir"
+
+func UseNamed() string { return actualname.Value() }
+-- want/api/alias_source.go --
+package api
+-- api/alias_dest.go --
+package api
+-- want/api/alias_dest.go --
+package api
+
+import (
+	actualname "example.com/move/pkgdir"
+)
+
+func UseNamed() string { return actualname.Value() }
+-- want/api/cross.go --
+package api
+
+func ExistingCross() {}
+-- api/group.go --
+package api
+
+const (
+	First = 1
+	Second = 2
+)
+
+-- want/api/group.go --
+package api
+
+const (
+	First = 1
+	Second = 2
+)
+
