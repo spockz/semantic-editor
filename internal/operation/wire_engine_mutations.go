@@ -48,7 +48,7 @@ func (r *MoveConstructReq) SetProjectContext(project backend.ProjectContext) { r
 
 var moveConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file; same-package moves require a file in the source directory. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.destination_file"}},
+	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.destination_file"}},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, "semantic_move_construct.symbol"}},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Destination placement: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement"},
@@ -101,7 +101,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration when relocating it within one Go file or between files in the same package. Cross-package moves are currently unsupported.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: false}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: false}
 }
 
 // GetProjectContext returns the request project for registry dispatch.

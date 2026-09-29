@@ -1,0 +1,56 @@
+# Cross-package move refuses methods, unexported functions, source-local dependencies, and hidden callers.
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol Widget.Method --placement file_end
+stderr 'cross-package move requires an exported free function name'
+cmp legacy/decls.go _want/legacy/decls.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol privateFunc --placement file_end
+stderr 'cross-package move requires an exported free function name'
+cmp legacy/decls.go _want/legacy/decls.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol NeedsHelper --placement file_end
+stderr 'source-package dependency "helper"'
+cmp legacy/decls.go _want/legacy/decls.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol HiddenTarget --placement file_end
+stderr 'possible reference to "HiddenTarget"'
+cmp legacy/decls.go _want/legacy/decls.go
+cmp api/dest.go _want/api/dest.go
+
+-- go.mod --
+module example.com/refuse
+
+go 1.23
+
+-- legacy/decls.go --
+package legacy
+
+type Widget struct{}
+
+func (Widget) Method() {}
+func helper() {}
+func NeedsHelper() { helper() }
+func privateFunc() {}
+func HiddenTarget() {}
+
+-- _want/legacy/decls.go --
+package legacy
+
+type Widget struct{}
+
+func (Widget) Method() {}
+func helper() {}
+func NeedsHelper() { helper() }
+func privateFunc() {}
+func HiddenTarget() {}
+
+-- api/dest.go --
+package api
+
+-- _want/api/dest.go --
+package api
+
+-- hidden/hidden.go --
+//go:build never
+
+package hidden
+
+import "example.com/refuse/legacy"
+
+func Hidden() { legacy.HiddenTarget() }

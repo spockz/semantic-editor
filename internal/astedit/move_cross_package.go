@@ -1,0 +1,730 @@
+// Package astedit isolates cross-package relocation here because its module-wide preflight and reference rewrite have different safety requirements from same-package moves.
+package astedit
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/scanner"
+	"go/token"
+	"go/types"
+	"io"
+	"io/fs"
+	"maps"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+
+	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/packages"
+	"semedit/internal/pipeline"
+	"semedit/internal/symbol"
+)
+
+// moveConstructAcrossPackages moves one exported free function inside a module
+// and rewrites references only when go/packages can prove their identities.
+//
+//nolint:funlen // The ordered preflight and publication stages share one immutable plan.
+func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPath, symbolQuery string, opts MoveConstructOptions) (string, error) {
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	sourcePath, destinationPath = filepath.Clean(sourcePath), filepath.Clean(destinationPath)
+	if strings.Contains(symbolQuery, ".") || strings.HasPrefix(symbolQuery, "(") || !token.IsIdentifier(symbolQuery) || !ast.IsExported(symbolQuery) {
+		return "", fmt.Errorf("cross-package move requires an exported free function name")
+	}
+	moduleRoot, err := moveModuleRoot(sourcePath)
+	if err != nil {
+		return "", err
+	}
+	sourcePath, err = filepath.Abs(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve source path: %w", err)
+	}
+	destinationPath, err = filepath.Abs(destinationPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve destination path: %w", err)
+	}
+	if !moveWithin(moduleRoot, destinationPath) {
+		return "", fmt.Errorf("cross-package move requires source and destination in the same Go module")
+	}
+	if err := rejectMoveSymlinkPath(moduleRoot, sourcePath); err != nil {
+		return "", err
+	}
+	if err := rejectMoveSymlinkPath(moduleRoot, destinationPath); err != nil {
+		return "", err
+	}
+	original, err := inspectMoveModuleFiles(moduleRoot, sourcePath, destinationPath, symbolQuery)
+	if err != nil {
+		return "", err
+	}
+	for _, path := range []string{sourcePath, destinationPath} {
+		if _, ok := original[path]; !ok {
+			return "", fmt.Errorf("source and destination must be existing Go files in the selected module: %s", path)
+		}
+	}
+	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
+	cfg := &packages.Config{Context: ctx, Dir: moduleRoot, Mode: mode, Tests: true}
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		return "", fmt.Errorf("load Go module packages: %w", err)
+	}
+	if len(pkgs) == 0 {
+		return "", fmt.Errorf("load Go module packages: no packages found")
+	}
+	for _, pkg := range pkgs {
+		if len(pkg.Errors) != 0 {
+			return "", fmt.Errorf("cannot establish complete Go references: package %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
+		}
+	}
+	sourcePkg, destinationPkg := packageForMoveFile(pkgs, sourcePath), packageForMoveFile(pkgs, destinationPath)
+	if sourcePkg == nil || destinationPkg == nil {
+		return "", fmt.Errorf("source and destination must be active Go files in the selected module")
+	}
+	if sourcePkg.ID == destinationPkg.ID || sourcePkg.PkgPath == destinationPkg.PkgPath {
+		return "", fmt.Errorf("cross-package move requires distinct Go packages")
+	}
+	if sourcePkg.Module == nil || destinationPkg.Module == nil || !sourcePkg.Module.Main || !destinationPkg.Module.Main || sourcePkg.Module.Path != destinationPkg.Module.Path {
+		return "", fmt.Errorf("cross-package move requires source and destination in the same Go module")
+	}
+	if strings.HasSuffix(sourcePath, "_test.go") || strings.HasSuffix(destinationPath, "_test.go") {
+		return "", fmt.Errorf("cross-package move does not support test files")
+	}
+	sourceFile := syntaxForMoveFile(sourcePkg, sourcePath)
+	destinationFile := syntaxForMoveFile(destinationPkg, destinationPath)
+	if sourceFile == nil || destinationFile == nil {
+		return "", fmt.Errorf("source and destination must be active Go files")
+	}
+	decl, targetObj := findExportedMoveFunction(sourcePkg, sourceFile, sourcePath, symbolQuery)
+	if decl == nil || targetObj == nil {
+		return "", &symbol.SymbolError{Op: "move_construct", File: sourcePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
+	}
+	if decl.Recv != nil {
+		return "", fmt.Errorf("cross-package move does not support receiver methods")
+	}
+	if !ast.IsExported(decl.Name.Name) {
+		return "", fmt.Errorf("cross-package move requires an exported function")
+	}
+	if declarationNameCollision(destinationFile, decl) {
+		return "", fmt.Errorf("destination already declares %q", symbolQuery)
+	}
+	if err := rejectSourceLocalMoveDependencies(sourcePkg, decl); err != nil {
+		return "", err
+	}
+	start, end := moveDeclOffsets(sourcePkg.Fset, decl, sourceFile, original[sourcePath])
+	if start < 0 || end < start || end > len(original[sourcePath]) {
+		return "", fmt.Errorf("invalid source declaration bounds for %q", symbolQuery)
+	}
+	declText := original[sourcePath][start:end]
+	neededImports, err := moveImportsForTypedDeclaration(decl, sourceFile, sourcePkg)
+	if err != nil {
+		return "", err
+	}
+	targetPos := sourcePkg.Fset.Position(targetObj.Pos())
+	refs, err := rewriteMoveReferences(pkgs, sourcePkg.PkgPath, targetObj.Name(), sourcePath, targetPos.Offset, start, end, destinationPath, destinationPkg.PkgPath, destinationPkg.Name)
+	if err != nil {
+		return "", err
+	}
+	changes := refs
+	destinationBase := original[destinationPath]
+	if rewritten, ok := changes[destinationPath]; ok {
+		destinationBase = rewritten
+	}
+	destinationFset := token.NewFileSet()
+	destinationNode, err := parser.ParseFile(destinationFset, destinationPath, destinationBase, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", fmt.Errorf("parse destination after reference rewrites: %w", err)
+	}
+	insertOffset, err := calculateMoveOffset(destinationFset, destinationNode, destinationBase, opts)
+	if err != nil {
+		return "", err
+	}
+	var destinationBuffer bytes.Buffer
+	destinationBuffer.Write(destinationBase[:insertOffset])
+	if insertOffset > 0 && !bytes.HasSuffix(destinationBuffer.Bytes(), []byte("\n\n")) {
+		if bytes.HasSuffix(destinationBuffer.Bytes(), []byte("\n")) {
+			destinationBuffer.WriteByte('\n')
+		} else {
+			destinationBuffer.WriteString("\n\n")
+		}
+	}
+	destinationBuffer.Write(declText)
+	destinationRest := bytes.TrimLeft(destinationBase[insertOffset:], "\r\n")
+	if len(destinationRest) == 0 {
+		destinationBuffer.WriteByte('\n')
+	} else {
+		destinationBuffer.WriteString("\n\n")
+	}
+	destinationBuffer.Write(destinationRest)
+	formattedDestination, err := format.Source(destinationBuffer.Bytes())
+	if err != nil {
+		return "", fmt.Errorf("format destination after move: %w", err)
+	}
+	destinationFset = token.NewFileSet()
+	destinationNode, err = parser.ParseFile(destinationFset, destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", fmt.Errorf("parse destination after declaration insertion: %w", err)
+	}
+	if err := mergeMoveImports(destinationNode, neededImports); err != nil {
+		return "", err
+	}
+	var mergedDestination bytes.Buffer
+	if err := format.Node(&mergedDestination, destinationFset, destinationNode); err != nil {
+		return "", fmt.Errorf("format destination imports: %w", err)
+	}
+	formattedDestination, err = format.Source(mergedDestination.Bytes())
+	if err != nil {
+		return "", fmt.Errorf("format destination imports: %w", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), sourcePath, changes[sourcePath], parser.ParseComments|parser.AllErrors); err != nil {
+		return "", fmt.Errorf("validate source after move: %w", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors); err != nil {
+		return "", fmt.Errorf("validate destination after move: %w", err)
+	}
+	changes[destinationPath] = formattedDestination
+	for path := range changes {
+		if _, ok := original[path]; !ok {
+			return "", fmt.Errorf("reference file is outside the preflight module snapshot: %s", path)
+		}
+	}
+	if err := typecheckMoveOverlay(ctx, moduleRoot, changes); err != nil {
+		return "", err
+	}
+	paths := make([]string, 0, len(changes))
+	for path := range changes {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	// Compare all snapshots immediately before publication. New declaration first,
+	// references second, and source removal last keeps every partial state explicit.
+	for path := range changes {
+		before := original[path]
+		// #nosec G304 -- each changed path was resolved from the preflight module snapshot.
+		current, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return "", fmt.Errorf("recheck file before move publication %s: %w", path, readErr)
+		}
+		if !bytes.Equal(current, before) {
+			return "", fmt.Errorf("file changed during move preflight: %s", path)
+		}
+	}
+	order := publicationOrder(paths, destinationPath, sourcePath)
+	written := make([]string, 0, len(order))
+	for _, path := range order {
+		if err := pipeline.WriteAtomic(path, changes[path]); err != nil {
+			if len(written) != 0 {
+				return "", fmt.Errorf("partial cross-package move: wrote %s; failed writing %s: %w", strings.Join(written, ", "), path, err)
+			}
+			return "", fmt.Errorf("write move file %s atomically: %w", path, err)
+		}
+		written = append(written, path)
+	}
+	var diffs []string
+	for _, path := range paths {
+		persisted, readErr := os.ReadFile(path) // #nosec G304 -- path is a validated in-module Go file from the preflight snapshot.
+		if readErr != nil {
+			return "", fmt.Errorf("cross-package move wrote %s but could not read persisted result %s: %w", strings.Join(written, ", "), path, readErr)
+		}
+		diff := UnifiedDiff(path, string(original[path]), string(persisted))
+		if diff != "" {
+			diffs = append(diffs, diff)
+		}
+	}
+	return strings.Join(diffs, "\n"), nil
+}
+
+func moveModuleRoot(sourcePath string) (string, error) {
+	abs, err := filepath.Abs(sourcePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve source path: %w", err)
+	}
+	for dir := filepath.Dir(abs); ; dir = filepath.Dir(dir) {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("inspect module root: %w", err)
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+	}
+	return "", fmt.Errorf("cross-package move requires a Go module")
+}
+
+func moveWithin(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+}
+
+func inspectMoveModuleFiles(root, sourcePath, destinationPath, symbolName string) (map[string][]byte, error) {
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open Go module root: %w", err)
+	}
+	snapshot := map[string][]byte{}
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("inspect module file %s: %w", path, err)
+		}
+		if path == root {
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" || entry.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			if path != root {
+				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("resolve module-relative Go file %s: %w", path, relErr)
+		}
+		file, openErr := rootFS.Open(rel)
+		if openErr != nil {
+			return fmt.Errorf("open Go file during move preflight %s: %w", path, openErr)
+		}
+		data, readErr := io.ReadAll(file)
+		closeErr := file.Close()
+		if readErr != nil {
+			_ = file.Close()
+			return fmt.Errorf("read Go file during move preflight %s: %w", path, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close Go file during move preflight %s: %w", path, closeErr)
+		}
+		snapshot[filepath.Clean(path)] = data
+		text := string(data)
+		generated := strings.Contains(text, "Code generated ") && strings.Contains(text, "DO NOT EDIT.")
+		constrained := moveFilenameBuildConstraint(path) != "" || strings.Contains(text, "//go:build ") || strings.Contains(text, "// +build ")
+		selected := filepath.Clean(path) == filepath.Clean(sourcePath) || filepath.Clean(path) == filepath.Clean(destinationPath)
+		if selected && (generated || constrained) {
+			return fmt.Errorf("cross-package move refuses generated or build-constrained source or destination %s", path)
+		}
+		if (generated || constrained) && containsMoveIdentifier(data, symbolName) {
+			return fmt.Errorf("cross-package move refuses possible reference to %q in generated or build-constrained file %s", symbolName, path)
+		}
+		return nil
+	})
+	closeErr := rootFS.Close()
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close Go module root: %w", closeErr)
+	}
+	return snapshot, nil
+}
+
+func containsMoveIdentifier(source []byte, name string) bool {
+	fset := token.NewFileSet()
+	file := fset.AddFile("move-scan.go", -1, len(source))
+	var scanner scanner.Scanner
+	scanner.Init(file, source, nil, 0)
+	for {
+		_, tok, literal := scanner.Scan()
+		if tok == token.EOF {
+			return false
+		}
+		if tok == token.IDENT && literal == name {
+			return true
+		}
+	}
+}
+
+func rejectMoveSymlinkPath(root, path string) error {
+	if !moveWithin(root, path) {
+		return fmt.Errorf("cross-package move path escapes module: %s", path)
+	}
+	for current := path; moveWithin(root, current); current = filepath.Dir(current) {
+		info, err := os.Lstat(current)
+		if err != nil {
+			return fmt.Errorf("inspect move path %s: %w", current, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("cross-package move refuses symlink path %s", current)
+		}
+		if current == root {
+			break
+		}
+	}
+	return nil
+}
+
+func packageForMoveFile(pkgs []*packages.Package, path string) *packages.Package {
+	for _, pkg := range pkgs {
+		if pkg.Module == nil || !pkg.Module.Main || pkg.ID != pkg.PkgPath {
+			continue
+		}
+		for _, file := range pkg.CompiledGoFiles {
+			abs, _ := filepath.Abs(file)
+			if filepath.Clean(abs) == filepath.Clean(path) {
+				return pkg
+			}
+		}
+	}
+	return nil
+}
+
+func syntaxForMoveFile(pkg *packages.Package, path string) *ast.File {
+	for _, file := range pkg.Syntax {
+		if pkg.Fset.Position(file.Pos()).Filename == path {
+			return file
+		}
+	}
+	return nil
+}
+
+func findExportedMoveFunction(pkg *packages.Package, file *ast.File, path, name string) (*ast.FuncDecl, *types.Func) {
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if !ok || fn.Recv != nil || fn.Name.Name != name {
+			continue
+		}
+		obj, ok := pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+		if ok && obj.Pkg() != nil && obj.Pkg().Path() == pkg.PkgPath && pkg.Fset.Position(obj.Pos()).Filename == path {
+			return fn, obj
+		}
+	}
+	return nil, nil
+}
+
+func rejectSourceLocalMoveDependencies(pkg *packages.Package, decl *ast.FuncDecl) error {
+	var reason string
+	ast.Inspect(decl, func(node ast.Node) bool {
+		ident, ok := node.(*ast.Ident)
+		if !ok || reason != "" {
+			return true
+		}
+		obj := pkg.TypesInfo.Uses[ident]
+		if obj == nil || obj.Pkg() == nil || obj.Pkg().Path() != pkg.PkgPath || obj.Parent() != pkg.Types.Scope() {
+			return true
+		}
+		if obj == pkg.TypesInfo.Defs[decl.Name] {
+			return true
+		}
+		if _, ok := obj.(*types.PkgName); ok {
+			return true
+		}
+		reason = fmt.Sprintf("cross-package move refuses source-package dependency %q", obj.Name())
+		return false
+	})
+	if reason != "" {
+		return fmt.Errorf("%s", reason)
+	}
+	return nil
+}
+
+func moveImportsForTypedDeclaration(decl ast.Decl, source *ast.File, pkg *packages.Package) (*ast.File, error) {
+	used := map[string]bool{}
+	ast.Inspect(decl, func(node ast.Node) bool {
+		if selector, ok := node.(*ast.SelectorExpr); ok {
+			if ident, ok := selector.X.(*ast.Ident); ok {
+				used[ident.Name] = true
+			}
+		}
+		return true
+	})
+	imports := &ast.File{}
+	for _, spec := range source.Imports {
+		path, err := strconvUnquote(spec.Path.Value)
+		if err != nil {
+			return nil, fmt.Errorf("decode source import: %w", err)
+		}
+		if spec.Name != nil && spec.Name.Name == "." {
+			return nil, fmt.Errorf("cannot move declaration from a file with a dot import")
+		}
+		if spec.Name != nil && spec.Name.Name == "_" {
+			continue
+		}
+		var local string
+		var alias *ast.Ident
+		if spec.Name != nil {
+			local, alias = spec.Name.Name, ast.NewIdent(spec.Name.Name)
+		} else if imported, ok := pkg.TypesInfo.Implicits[spec].(*types.PkgName); ok {
+			local = imported.Imported().Name()
+		} else {
+			return nil, fmt.Errorf("cannot resolve source import name for %q", path)
+		}
+		if used[local] {
+			imports.Imports = append(imports.Imports, &ast.ImportSpec{Name: alias, Path: &ast.BasicLit{Kind: token.STRING, Value: strconvQuote(path)}})
+		}
+	}
+	return imports, nil
+}
+
+func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, sourcePath string, targetOffset, declarationStart, declarationEnd int, destinationPath, destinationImport, destinationName string) (map[string][]byte, error) {
+	changes := map[string][]byte{}
+	for _, pkg := range pkgs {
+		if pkg.Module == nil || !pkg.Module.Main {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			path := filepath.Clean(pkg.Fset.Position(file.Pos()).Filename)
+			if pkg.Module.Dir == "" || !moveWithin(pkg.Module.Dir, path) {
+				continue
+			}
+			if (path == sourcePath || path == destinationPath) && pkg.ID != pkg.PkgPath {
+				continue
+			}
+			fileChanged := false
+			if path == sourcePath {
+				removeMovedFunction(file, pkg.Fset, targetName, targetOffset, declarationStart, declarationEnd)
+				fileChanged = true
+			}
+			alias := ""
+			astutil.Apply(file, func(cursor *astutil.Cursor) bool {
+				if selector, ok := cursor.Node().(*ast.SelectorExpr); ok && isTargetMoveReference(pkg, selector.Sel, sourceImport, targetName, sourcePath, targetOffset) {
+					if pkg.PkgPath == destinationImport {
+						cursor.Replace(ast.NewIdent(selector.Sel.Name))
+					} else {
+						if alias == "" {
+							alias = moveImportAlias(file, destinationImport, destinationName)
+						}
+						selector.X = ast.NewIdent(alias)
+					}
+					fileChanged = true
+					return false
+				}
+				ident, ok := cursor.Node().(*ast.Ident)
+				if !ok || !isTargetMoveReference(pkg, ident, sourceImport, targetName, sourcePath, targetOffset) {
+					return true
+				}
+				if _, selectorName := cursor.Parent().(*ast.SelectorExpr); selectorName {
+					return true
+				}
+				if pkg.PkgPath == destinationImport {
+					return true
+				}
+				if alias == "" {
+					alias = moveImportAlias(file, destinationImport, destinationName)
+				}
+				cursor.Replace(&ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(ident.Name)})
+				fileChanged = true
+				return false
+			}, nil)
+			if !fileChanged {
+				continue
+			}
+			if alias != "" {
+				if err := setMoveImport(file, destinationImport, alias, destinationName); err != nil {
+					return nil, fmt.Errorf("update imports in %s: %w", path, err)
+				}
+			}
+			if err := removeUnusedMoveImports(file, pkg.TypesInfo, destinationImport, destinationName); err != nil {
+				return nil, fmt.Errorf("clean imports in %s: %w", path, err)
+			}
+			var out bytes.Buffer
+			if err := format.Node(&out, pkg.Fset, file); err != nil {
+				return nil, fmt.Errorf("format references in %s: %w", path, err)
+			}
+			formatted, err := format.Source(out.Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("format reference file %s: %w", path, err)
+			}
+			changes[path] = formatted
+		}
+	}
+	return changes, nil
+}
+
+func isTargetMoveReference(pkg *packages.Package, ident *ast.Ident, sourceImport, targetName, sourcePath string, targetOffset int) bool {
+	obj := pkg.TypesInfo.Uses[ident]
+	if obj == nil || obj.Pkg() == nil || obj.Pkg().Path() != sourceImport || obj.Name() != targetName {
+		return false
+	}
+	position := pkg.Fset.Position(obj.Pos())
+	return filepath.Clean(position.Filename) == filepath.Clean(sourcePath) && position.Offset == targetOffset
+}
+
+func removeMovedFunction(file *ast.File, fset *token.FileSet, name string, nameOffset, declarationStart, declarationEnd int) {
+	decls := file.Decls[:0]
+	for _, declaration := range file.Decls {
+		fn, ok := declaration.(*ast.FuncDecl)
+		if ok && fn.Recv == nil && fn.Name.Name == name && fset.Position(fn.Name.Pos()).Offset == nameOffset {
+			continue
+		}
+		decls = append(decls, declaration)
+	}
+	file.Decls = decls
+	comments := file.Comments[:0]
+	for _, group := range file.Comments {
+		start := fset.Position(group.Pos()).Offset
+		end := fset.Position(group.End()).Offset
+		if start >= declarationStart && end <= declarationEnd {
+			continue
+		}
+		comments = append(comments, group)
+	}
+	file.Comments = comments
+}
+
+func moveImportAlias(file *ast.File, importPath, packageName string) string {
+	for _, spec := range file.Imports {
+		path, err := strconvUnquote(spec.Path.Value)
+		if err == nil && path == importPath {
+			if spec.Name == nil {
+				return packageName
+			}
+			return spec.Name.Name
+		}
+	}
+	used := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		if ident, ok := node.(*ast.Ident); ok {
+			used[ident.Name] = true
+		}
+		return true
+	})
+	alias := packageName
+	if !token.IsIdentifier(alias) || alias == "" {
+		alias = "movedpkg"
+	}
+	for n := 2; used[alias]; n++ {
+		alias = fmt.Sprintf("%s%d", packageName, n)
+	}
+	return alias
+}
+
+func setMoveImport(file *ast.File, importPath, alias, packageName string) error {
+	for _, spec := range file.Imports {
+		path, err := strconvUnquote(spec.Path.Value)
+		if err != nil {
+			return err
+		}
+		if path == importPath {
+			if spec.Name != nil && spec.Name.Name == "." {
+				return fmt.Errorf("dot import cannot be updated safely")
+			}
+			if spec.Name != nil && spec.Name.Name == "_" {
+				return fmt.Errorf("blank import cannot be used for a moved reference")
+			}
+			return nil
+		}
+	}
+	var spec *ast.ImportSpec
+	if alias == packageName && filepath.Base(importPath) == packageName {
+		spec = &ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: strconvQuote(importPath)}}
+	} else {
+		spec = &ast.ImportSpec{Name: ast.NewIdent(alias), Path: &ast.BasicLit{Kind: token.STRING, Value: strconvQuote(importPath)}}
+	}
+	for _, decl := range file.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			gen.Specs = append(gen.Specs, spec)
+			file.Imports = append(file.Imports, spec)
+			return nil
+		}
+	}
+	gen := &ast.GenDecl{Tok: token.IMPORT, Specs: []ast.Spec{spec}}
+	file.Decls = append([]ast.Decl{gen}, file.Decls...)
+	file.Imports = append(file.Imports, spec)
+	return nil
+}
+
+func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport, destinationName string) error {
+	used := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		if sel, ok := node.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.X.(*ast.Ident); ok {
+				used[ident.Name] = true
+			}
+		}
+		return true
+	})
+	for _, spec := range file.Imports {
+		if spec.Name != nil && spec.Name.Name == "." {
+			return fmt.Errorf("dot import is ambiguous")
+		}
+		if spec.Name != nil && spec.Name.Name == "_" {
+			continue
+		}
+	}
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT {
+			continue
+		}
+		kept := gen.Specs[:0]
+		for _, item := range gen.Specs {
+			spec := item.(*ast.ImportSpec)
+			path, err := strconvUnquote(spec.Path.Value)
+			if err != nil {
+				return err
+			}
+			var name string
+			if spec.Name != nil {
+				name = spec.Name.Name
+			} else if path == destinationImport {
+				name = destinationName
+			} else if imported, ok := info.Implicits[spec].(*types.PkgName); ok {
+				name = imported.Imported().Name()
+			} else {
+				return fmt.Errorf("cannot resolve package name for import %q", path)
+			}
+			if name == "_" || used[name] {
+				kept = append(kept, spec)
+			}
+		}
+		gen.Specs = kept
+	}
+	file.Imports = file.Imports[:0]
+	for _, decl := range file.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			for _, spec := range gen.Specs {
+				file.Imports = append(file.Imports, spec.(*ast.ImportSpec))
+			}
+		}
+	}
+	return nil
+}
+
+func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][]byte) error {
+	overlay := make(map[string][]byte, len(changes))
+	maps.Copy(overlay, changes)
+	cfg := &packages.Config{Context: ctx, Dir: root, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule, Tests: true, Overlay: overlay}
+	pkgs, err := packages.Load(cfg, "./...")
+	if err != nil {
+		return fmt.Errorf("preflight moved package types: %w", err)
+	}
+	if len(pkgs) == 0 {
+		return fmt.Errorf("preflight moved package types: no packages found")
+	}
+	for _, pkg := range pkgs {
+		if len(pkg.Errors) != 0 {
+			return fmt.Errorf("cross-package move failed type preflight in %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
+		}
+	}
+	return nil
+}
+
+func publicationOrder(paths []string, destination, source string) []string {
+	order := make([]string, 0, len(paths))
+	order = append(order, destination)
+	for _, path := range paths {
+		if path != source && path != destination {
+			order = append(order, path)
+		}
+	}
+	order = append(order, source)
+	return order
+}
+
+func strconvUnquote(s string) (string, error) { return strconv.Unquote(s) }
+func strconvQuote(s string) string            { return strconv.Quote(s) }

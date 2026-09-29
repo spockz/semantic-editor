@@ -266,7 +266,7 @@ func findSymbolBoundaryOffset(fset *token.FileSet, fileNode *ast.File, targetSym
 func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	sourcePath, destinationPath = filepath.Clean(sourcePath), filepath.Clean(destinationPath)
 	if filepath.Dir(sourcePath) != filepath.Dir(destinationPath) {
-		return "", fmt.Errorf("cross-package move is not supported for %q", symbolQuery)
+		return moveConstructAcrossPackages(ctx, sourcePath, destinationPath, symbolQuery, opts)
 	}
 	source, err := os.ReadFile(sourcePath)
 	if err != nil {

@@ -81,10 +81,11 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Rename a symbol and supported references | `rename` | `semantic_rename` |
 | Add a Go construct | `insert-construct` | `semantic_insert_construct` |
 | Replace or upsert a Go construct | `replace-construct` | `semantic_replace_construct` |
-| Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
+| Move a Go declaration within a file or between files in one package; cross-package moves support exported free functions within one module | `move-construct` | `semantic_move_construct` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
 | Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
+
 | Organize Go imports | `organize-imports` | `semantic_organize_imports` |
 | Add a Go module dependency | `add-build-dependency` | `semantic_add_build_dependency` |
 | Change supported Go test assertion failure modes | `assertion-mode` | `semantic_assertion_mode` |
@@ -92,11 +93,13 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Compile or run Java tests | `maven-compile`, `maven-test` | `semantic_maven_compile`, `semantic_maven_test` |
 | Capture or restore a workspace snapshot | `snapshot`, `undo` | `semantic_snapshot`, `semantic_undo` |
 
+Cross-package construct moves are limited to exported free functions in the same Go module. Methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build-tagged or generated references are refused.
+
 [ADR-0049](docs/adr/0049-ast-construct-taxonomy-and-mutation-lifecycle.md) separates the construct lifecycle:
 
 * **Insert** creates a new construct at a chosen location and rejects declaration collisions. It cannot overwrite existing code.
 * **Replace** changes a construct in place. Declaration upsert can insert an absent declaration at its canonical layout position; replacement has no placement parameter.
-* **Move** relocates an existing declaration within its file, carrying attached comments without requiring its source again.
+* **Move** relocates an existing declaration within its file or package, or a supported exported free function across packages, carrying attached comments without requiring its source again.
 
 These operations currently execute Go edits. The broader construct taxonomy in the ADRs does not enable mutation in other languages. The former discrete insertion tools, including `insert-declaration`, `insert-function`, `insert-type`, `insert-decl`, and `insert-case`, have been retired from the registry.
 
