@@ -172,6 +172,79 @@ esac
 	}
 }
 
+func TestExecuteAgentSkipsPrewarmWithoutGoTargetAndTimesCodexProcess(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(bin, "codex")
+	program := `#!/bin/sh
+sleep 0.03
+printf '{"type":"thread.started","thread_id":"fake-session"}\n'
+printf '{"type":"turn.started"}\n'
+printf '{"type":"item.completed","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"completed"}}\n'
+printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"hi"}}\n'
+printf '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n'
+`
+	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
+	result, err := NewRunner(filepath.Join(root, "scratch"), WithSemeditPrewarmVerify(true)).ExecuteAgent(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success {
+		t.Fatalf("empty fixture run failed: %s", result.Error)
+	}
+	if result.SemeditPrewarmVerify || result.Provenance["semedit_prewarm_skipped"] == "" {
+		t.Fatalf("prewarm should skip a fixture without a Go target: %+v", result)
+	}
+	if result.processStartedAt.IsZero() || result.WallClock < 30*time.Millisecond {
+		t.Fatalf("wall clock must include Codex execution from its process start: start=%s duration=%s", result.processStartedAt, result.WallClock)
+	}
+	if result.WallClock > time.Since(result.processStartedAt) {
+		t.Fatalf("wall clock includes time before Codex process start: measured=%s elapsed=%s", result.WallClock, time.Since(result.processStartedAt))
+	}
+}
+
+func TestExecuteAgentRecordsNoWallTimeBeforeCodexStarts(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", root)
+	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmBaseline, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
+	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.processStartedAt.IsZero() {
+		t.Fatalf("missing Codex executable started a process at %s", result.processStartedAt)
+	}
+	if result.WallClock != 0 || len(result.InteractionSteps) != 1 || result.InteractionSteps[0].WallClock != 0 {
+		t.Fatalf("failed Codex launch recorded prelaunch wall time: %+v", result)
+	}
+	if result.Error == "" {
+		t.Fatal("missing Codex executable produced no error")
+	}
+}
+
 func TestAgyResumeFailureKeepsOnlyNewTranscriptMetrics(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")

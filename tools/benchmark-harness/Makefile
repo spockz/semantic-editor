@@ -14,7 +14,7 @@ REPEATS ?= 1
 MCP_SERVER_INSTRUCTIONS ?= none
 # MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive.
 SEMEDIT_ARM_RESTRICT ?= write
-SEMEDIT_PREWARM_VERIFY ?= false
+SEMEDIT_PREWARM_VERIFY ?= true
 # PROVENANCE records technical execution context without creating comparison cells.
 PROVENANCE ?=
 # CLASSIFIERS is retained as a compatibility alias for PROVENANCE.

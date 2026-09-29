@@ -314,7 +314,7 @@ func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
 	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
 	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
 	fs.StringVar(&policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
-	fs.BoolVar(&settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", false, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
+	fs.BoolVar(&settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", true, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
 	fs.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable)")
 	fs.Var(&provenance, "classifier", "Deprecated alias for provenance")
 	fs.BoolVar(&listMode, "list", false, "List benchmark fixtures and prompt variants")

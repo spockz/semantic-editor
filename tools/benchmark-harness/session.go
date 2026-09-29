@@ -16,6 +16,7 @@ import (
 func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, classification string, result *RunResult) error {
 	started := time.Now()
 	resumeID, runErr := s.adapter.run(ctx, s.workDir, target, prompt, result, s.resumeID)
+	started = result.wallClockStart(started)
 	if classification == "task" {
 		if runErr != nil && result.toolObservationState != ToolObservationPartial {
 			result.toolObservationState = ToolObservationPartial
@@ -128,25 +129,26 @@ func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
 		turnStarted := time.Now()
 		runErr := s.runTurn(ctx, target, followup, "task", turn)
 		if runErr != nil {
-			turn.WallClock = time.Since(turnStarted)
+			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = runErr.Error()
 			result.Error = fmt.Sprintf("interactive step %d: %v", index+2, runErr)
-			result.WallClock = time.Since(s.started)
+			result.WallClock = elapsedTaskTime(s.started)
 			s.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
 			mergeTurn(result, turn)
 			result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 			return s.resumeID, s.retainWorkDir
 		}
-		turn.WallClock = time.Since(turnStarted)
 		if err := s.evaluate(ctx, turn); err != nil {
+			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = err.Error()
 			result.Error = err.Error()
-			result.WallClock = time.Since(s.started)
+			result.WallClock = elapsedTaskTime(s.started)
 			s.retainWorkDir = shouldRetainWorkDir(ctx, err)
 			mergeTurn(result, turn)
 			result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 			return s.resumeID, s.retainWorkDir
 		}
+		turn.WallClock = turn.measuredWallClock(turnStarted)
 		result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 		mergeTurn(result, turn)
 	}
@@ -163,34 +165,34 @@ func (s *agentSession) runStagedFollowups(ctx context.Context) (string, bool) {
 		turnStarted := time.Now()
 		runErr := s.runTurn(ctx, target, followup.Instruction, "task", turn)
 		if runErr != nil {
-			turn.WallClock = time.Since(turnStarted)
+			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = runErr.Error()
 			result.Error = fmt.Sprintf("staged step %d: %v", index+2, runErr)
 			s.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
 			mergeTurn(result, turn)
 			result.Success = false
 			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
-			result.WallClock = time.Since(s.started)
+			result.WallClock = elapsedTaskTime(s.started)
 			return s.resumeID, s.retainWorkDir
 		}
 		if err := s.evaluateStage(ctx, turn, followup.Oracle); err != nil {
-			turn.WallClock = time.Since(turnStarted)
+			turn.WallClock = turn.measuredWallClock(turnStarted)
 			turn.Error = err.Error()
 			result.Error = err.Error()
 			s.retainWorkDir = shouldRetainWorkDir(ctx, err)
 			mergeTurn(result, turn)
 			result.Success = false
 			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
-			result.WallClock = time.Since(s.started)
+			result.WallClock = elapsedTaskTime(s.started)
 			return s.resumeID, s.retainWorkDir
 		}
-		turn.WallClock = time.Since(turnStarted)
+		turn.WallClock = turn.measuredWallClock(turnStarted)
 		allPassed = allPassed && turn.Success
 		result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
 		mergeTurn(result, turn)
 		result.Success = allPassed
 	}
-	result.WallClock = time.Since(s.started)
+	result.WallClock = elapsedTaskTime(s.started)
 	return s.resumeID, s.retainWorkDir
 }
 

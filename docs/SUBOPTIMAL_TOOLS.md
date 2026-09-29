@@ -924,3 +924,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: verification surfaced an unrelated harness G204 diagnostic and refused a workspace-wide lint hook without workspace trust.
 - Workaround: fix the harness diagnostic and run the repository's `make check` gate.
 - Root cause: the selected-file operation also invokes workspace-wide verification hooks.
+
+### ST-0118: semantic_lookup rejected an unsupported parameter
+
+- Date: 2026-09-29
+- Tool: `semantic_lookup`
+- Target: `TestExecuteAgentUsesOneProcessSessionAndExcludesReflectionMetrics` in `tools/benchmark-harness/session_test.go`
+- Observed failure: the call used `query` instead of the supported `symbol` parameter, so validation failed before source inspection; no source changed.
+- Workaround: retry using `symbol` and `file`.
+- Root cause: incorrect caller parameter shape.

@@ -129,6 +129,23 @@ func TestCLIPlansBeforeExecutionAndIsolatesRestrictionPolicies(t *testing.T) {
 	}
 }
 
+func TestBenchmarkCLIPrewarmDefaultAndOptOut(t *testing.T) {
+	defaults, err := parseBenchmarkCLI([]string{"--out-dir="})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !defaults.Plan.SemeditPrewarmVerify {
+		t.Fatal("semedit verify prewarm should be enabled by default")
+	}
+	disabled, err := parseBenchmarkCLI([]string{"--out-dir=", "--semedit-prewarm-verify=false"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disabled.Plan.SemeditPrewarmVerify {
+		t.Fatal("explicit semedit verify opt-out was ignored")
+	}
+}
+
 func TestCLIPlanningFailuresNeverStartAProvider(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -321,7 +338,7 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 	}
 	resultPath := filepath.Join(root, "result.json")
 	args := make([]string, 0, 13+len(extra))
-	args = append(args, "-test.run=^TestBenchmarkProcessHelper$", "--", "--dir", fixtures, "--target", "codex", "--variants", "small", "--concurrency", "1", "--out-dir=", "--out-json", resultPath)
+	args = append(args, "-test.run=^TestBenchmarkProcessHelper$", "--", "--dir", fixtures, "--target", "codex", "--variants", "small", "--concurrency", "1", "--out-dir=", "--semedit-prewarm-verify=false", "--out-json", resultPath)
 	args = append(args, extra...)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

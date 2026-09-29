@@ -63,6 +63,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	}
 	var started time.Time
 	var prewarmDuration time.Duration
+	var prewarmApplied bool
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
 	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
@@ -97,15 +98,13 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 			return nil, fmt.Errorf("prepare Codex fixture instructions: %w", err)
 		}
 	}
-	if arm == ArmSemedit && r.semeditPrewarmVerify {
-		if target.Harness != string(HarnessCodex) {
-			return nil, fmt.Errorf("semedit verify prewarm requires Codex target")
-		}
+	if arm == ArmSemedit && r.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
 		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(r.baseScratchDir)), "bin", "semedit-next")
 		prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
 		if err != nil {
 			return nil, err
 		}
+		prewarmApplied = true
 	}
 	session.beforeFiles, err = snapshotWorkspaceFiles(workDir)
 	if err != nil {
@@ -130,7 +129,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		PromptVariant:                promptVariantFromExecution(execution),
 		SemeditArmRestrict:           execution.Policy,
 		SemeditArmRestrictionApplied: arm == ArmSemedit,
-		SemeditPrewarmVerify:         arm == ArmSemedit && r.semeditPrewarmVerify,
+		SemeditPrewarmVerify:         prewarmApplied,
 		SemeditPrewarmDurationMS:     prewarmDuration.Milliseconds(),
 		MCPServerInstructions:        mcpInstructions,
 		Provenance:                   r.provenanceFor(), Target: target, Arm: arm, BeforeState: session.beforeContent,
@@ -158,27 +157,35 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if res.SemeditPrewarmVerify {
 		res.Provenance["semedit_prewarm"] = "verify_cli_check_only"
 		res.Provenance["go_cache_initial_state"] = "empty"
+	} else if arm == ArmSemedit && r.semeditPrewarmVerify {
+		res.Provenance["semedit_prewarm_skipped"] = "no_go_target_or_unsupported_provider"
 	}
 	started = time.Now()
 	session.started = started
 	err = session.runTurn(ctx, target, prompt, "task", res)
+	if target.Harness == string(HarnessCodex) && res.processStartedAt.IsZero() {
+		started = time.Time{}
+	} else {
+		started = res.wallClockStart(started)
+	}
+	session.started = started
 	if err != nil {
-		res.WallClock = time.Since(started)
+		res.WallClock = elapsedTaskTime(started)
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = fmt.Sprintf("%s execution: %v", target.Harness, err)
 		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
 		return res, nil
 	}
-	res.WallClock = time.Since(started)
+	res.WallClock = elapsedTaskTime(started)
 	if err := session.evaluate(ctx, res); err != nil {
-		res.WallClock = time.Since(started)
+		res.WallClock = elapsedTaskTime(started)
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = err.Error()
 		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
 		return res, nil
 	}
 	if task.Metadata.InteractiveMode == "staged" {
-		res.WallClock = time.Since(started)
+		res.WallClock = elapsedTaskTime(started)
 	}
 	res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
 	if task.Metadata.InteractiveMode == "staged" {
@@ -187,7 +194,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		_, session.retainWorkDir = session.runFollowups(ctx)
 	}
 	sessionID := session.resumeID
-	res.WallClock = time.Since(started)
+	res.WallClock = elapsedTaskTime(started)
 	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
 		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, session, target, semanticBatchReflectionPrompt)
 	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {

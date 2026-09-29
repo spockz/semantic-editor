@@ -260,7 +260,29 @@ type RunResult struct {
 	OpenCodeExitCode                 *int                     `json:"opencode_exit_code,omitempty"`
 	OpenCodeStderr                   string                   `json:"opencode_stderr,omitempty"`
 	agentResponse                    string
+	processStartedAt                 time.Time
 	rawEvents                        []json.RawMessage
+}
+
+func (r *RunResult) wallClockStart(fallback time.Time) time.Time {
+	if r != nil && !r.processStartedAt.IsZero() {
+		return r.processStartedAt
+	}
+	return fallback
+}
+
+func (r *RunResult) measuredWallClock(fallback time.Time) time.Duration {
+	if r != nil && r.Target.Harness == string(HarnessCodex) && r.processStartedAt.IsZero() {
+		return 0
+	}
+	return elapsedTaskTime(r.wallClockStart(fallback))
+}
+
+func elapsedTaskTime(start time.Time) time.Duration {
+	if start.IsZero() {
+		return 0
+	}
+	return time.Since(start)
 }
 
 // Runner coordinates execution across evaluation arms and benchmarks.

@@ -347,10 +347,11 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	processStartedAt := time.Now()
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start codex: %w", err)
 	}
+	processStartedAt := time.Now()
+	res.processStartedAt = processStartedAt
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
