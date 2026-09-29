@@ -113,17 +113,19 @@ func surroundingDelta(ctx context.Context, workDir string, deferVerification boo
 
 // FileEditRes reports a single-file mutation for response rendering and batch post-processing.
 type FileEditRes struct {
-	File             string
-	Display          string
-	Symbol           string
-	Line             int
-	InFunction       string
-	Discriminator    string
-	DiagnosticStatus string
-	Diff             string
-	Detail           string
-	Delta            pipeline.DiagnosticDelta
-	HasDelta         bool
+	File               string
+	DestinationFile    string
+	DestinationDisplay string
+	Display            string
+	Symbol             string
+	Line               int
+	InFunction         string
+	Discriminator      string
+	DiagnosticStatus   string
+	Diff               string
+	Detail             string
+	Delta              pipeline.DiagnosticDelta
+	HasDelta           bool
 }
 
 // WrittenFile returns the resolved mutated path for batch post-processing.
@@ -133,6 +135,9 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	text := res.Detail
 	if res.Display != "" {
 		text += fmt.Sprintf(" file: %s.", res.Display)
+	}
+	if res.DestinationDisplay != "" {
+		text += fmt.Sprintf(" destination_file: %s.", res.DestinationDisplay)
 	}
 	if res.Symbol != "" {
 		text += fmt.Sprintf(" symbol: %s.", res.Symbol)
@@ -348,6 +353,9 @@ func registerEngineOps(registry *Registry) error {
 		return err
 	}
 	if err := Register(registry, replaceConstructDef()); err != nil {
+		return err
+	}
+	if err := Register(registry, moveConstructDef()); err != nil {
 		return err
 	}
 	if err := Register(registry, scaffoldFileDef()); err != nil {

@@ -29,6 +29,81 @@ type ReplaceConstructReq struct {
 	AutoOrganizeImports bool
 }
 
+// MoveConstructReq relocates a declaration without requiring source text.
+type MoveConstructReq struct {
+	Project             backend.ProjectContext
+	File                string
+	DestinationFile     string
+	Symbol              string
+	Placement           astedit.Placement
+	TargetSymbol        string
+	AutoOrganizeImports bool
+}
+
+// GetProjectContext returns the project used for registry dispatch.
+func (r MoveConstructReq) GetProjectContext() backend.ProjectContext { return r.Project }
+
+// SetProjectContext replaces the project during dispatch merge.
+func (r *MoveConstructReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
+var moveConstructParams = []ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file; same-package moves require a file in the source directory. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.destination_file"}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, "semantic_move_construct.symbol"}},
+	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Destination placement: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
+	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement"},
+	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Organize imports after relocation (default true)", Default: true},
+}
+
+func parseMoveConstruct(raw map[string]any) (MoveConstructReq, error) {
+	var req MoveConstructReq
+	if err := CheckParams(raw, moveConstructParams); err != nil {
+		return req, err
+	}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	var err error
+	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return req, err
+	}
+	if req.DestinationFile, err = ParseString(raw, "destination_file", "destination-file", false); err != nil {
+		return req, err
+	}
+	if req.DestinationFile == "" {
+		req.DestinationFile = req.File
+	}
+	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
+		return req, err
+	}
+	placement, err := ParseString(raw, "placement", "placement", false)
+	if err != nil {
+		return req, err
+	}
+	req.Placement = astedit.Placement(placement)
+	if req.TargetSymbol, err = ParseString(raw, wireTargetSymbol, "target-symbol", false); err != nil {
+		return req, err
+	}
+	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq) (FileEditRes, error) {
+	sourcePath := resolveWorkPath(cc.WorkDir, req.File)
+	destinationPath := resolveWorkPath(cc.WorkDir, req.DestinationFile)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	diff, err := astedit.MoveConstruct(ctx, sourcePath, req.Symbol, astedit.MoveConstructOptions{Placement: req.Placement, TargetSymbol: req.TargetSymbol, DestinationFile: destinationPath, AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports)})
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	delta, status := finishDelta()
+	return FileEditRes{File: sourcePath, Display: displayWorkPath(cc.WorkDir, req.File), DestinationFile: destinationPath, DestinationDisplay: displayWorkPath(cc.WorkDir, req.DestinationFile), Symbol: req.Symbol, Diff: diff, Detail: "Successfully moved construct.", Delta: delta, DiagnosticStatus: status, HasDelta: true}, nil
+}
+
+func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration when relocating it within one Go file or between files in the same package. Cross-package moves are currently unsupported.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: false}
+}
+
 // GetProjectContext returns the request project for registry dispatch.
 func (r ReplaceConstructReq) GetProjectContext() backend.ProjectContext { return r.Project }
 

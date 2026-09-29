@@ -582,6 +582,10 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 		fields["discriminator"] = map[string]any{"type": "string"}
 		fields["target_case"] = map[string]any{"type": "string"}
 		fields["construct_path"] = map[string]any{"type": "string"}
+	case "semantic_move_construct":
+		fields["file"] = map[string]any{"type": "string"}
+		fields["destination_file"] = map[string]any{"type": "string"}
+		fields["symbol"] = map[string]any{"type": "string"}
 	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
 		fields["symbol"] = map[string]any{"type": "string"}
@@ -596,6 +600,24 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_scaffold_file":
 		fields["file"] = map[string]any{"type": "string"}
 		fields["package"] = map[string]any{"type": "string"}
+	}
+	return fields
+}
+
+func moveConstructContinuationFields(result any, root string) map[string]any {
+	fields := map[string]any{}
+	edit, ok := result.(operation.FileEditRes)
+	if !ok {
+		return fields
+	}
+	if file := continuationPath(root, edit.File); file != "" {
+		fields["file"] = file
+	}
+	if file := continuationPath(root, edit.DestinationFile); file != "" {
+		fields["destination_file"] = file
+	}
+	if edit.Symbol != "" {
+		fields["symbol"] = edit.Symbol
 	}
 	return fields
 }
@@ -672,6 +694,8 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 				fields["discriminator"] = edit.Discriminator
 			}
 		}
+	case "semantic_move_construct":
+		maps.Copy(fields, moveConstructContinuationFields(result, root))
 	case "semantic_scaffold_file":
 		if file, ok := result.(operation.ScaffoldFileRes); ok {
 			if resolved := continuationPath(root, file.File); resolved != "" {
