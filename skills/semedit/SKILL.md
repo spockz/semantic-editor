@@ -19,6 +19,7 @@ When the request matches an operation exposed by the active semedit server, use 
 | Replace one Go control-flow construct inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |
 | Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
 | Extract contiguous Go call statements with named-parameter data flow | `semantic_extract_function` with `kind`, `start_line`, and `end_line`; refusals include aliased inputs, direct `recover()`, and uncertain pointer-receiver dispatch | Copying statements into a new helper manually |
+| Extract one exact typed whole argument from a direct single-argument Go call statement | `semantic_extract_variable` with `symbol`, `in_function`, and exact-source `discriminator`; use `construct_path` when the expression repeats | Rewriting the call around an inferred local manually |
 | Update an existing package-level Go constant, variable, or type alias | `semantic_replace_decl` | Built-in text replacement or duplicate insertion |
 | Add one Go function or method to an existing file | `semantic_insert_function` | Built-in text insertion or `replace_file_content` |
 | Add one Go struct, interface, or type alias | `semantic_insert_type` | Built-in text insertion or `replace_file_content` |

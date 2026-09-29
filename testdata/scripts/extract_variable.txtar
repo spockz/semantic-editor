@@ -1,0 +1,52 @@
+# Extract one exact typed argument expression and refuse ambiguous selection without writes.
+exec semedit extract-variable --file api/render.go --symbol total --in-function Render --discriminator 'count + 1'
+stdout 'symbol: total'
+stdout 'in_function: Render'
+stdout 'discriminator: count \+ 1\.'
+cmp api/render.go want/api/render.go
+! exec semedit extract-variable --file api/ambiguous.go --symbol value --in-function RenderAmbiguous --discriminator 'count'
+stderr 'expression selection is ambiguous'
+cmp api/ambiguous.go original/api/ambiguous.go
+exec go test ./api
+
+-- go.mod --
+module example.com/extractvariable
+
+go 1.23
+
+-- api/render.go --
+package api
+
+func Print(int) {}
+
+func Render(count int) {
+	Print(count + 1)
+}
+
+-- want/api/render.go --
+package api
+
+func Print(int) {}
+
+func Render(count int) {
+	total := count + 1
+	Print(total)
+}
+-- api/ambiguous.go --
+package api
+
+func PrintAmbiguous(int) {}
+
+func RenderAmbiguous(count int) {
+	PrintAmbiguous(count)
+	PrintAmbiguous(count)
+}
+-- original/api/ambiguous.go --
+package api
+
+func PrintAmbiguous(int) {}
+
+func RenderAmbiguous(count int) {
+	PrintAmbiguous(count)
+	PrintAmbiguous(count)
+}

@@ -87,7 +87,7 @@ var (
 		{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: append(append([]string{}, sourceInFunctionContinuations...), sourceRemoveInFunction)},
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: case value to remove (for example nil or \"foo\"); use default for a default clause", SourceFields: []string{sourceRemoveTargetCase}},
-		{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)", SourceFields: []string{sourceRemoveConstructPath}},
+		{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)", SourceFields: []string{sourceRemoveConstructPath}},
 		{Name: "safe_delete", CLIName: "safe-delete", JSONName: "safe_delete", Type: ParamBoolean, Description: "Request reference and resource preflight. Safe deletion currently supports only unexported standalone constants after a complete Go source scan; other requests fail closed and return checks run.", Default: false},
 		{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically remove imports made unused by this edit (default true)", Default: true},
 	}
@@ -127,7 +127,7 @@ func parseRemove(raw map[string]any) (RemoveReq, error) {
 	if req.TargetCase, err = ParseString(raw, "target_case", "target-case", false); err != nil {
 		return req, err
 	}
-	if req.ConstructPath, err = ParseString(raw, wireConstructPath, "construct-path", false); err != nil {
+	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
 	if req.SafeDelete, err = ParseBool(raw, "safe_delete", "safe-delete", false); err != nil {

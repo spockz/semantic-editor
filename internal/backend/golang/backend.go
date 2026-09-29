@@ -63,6 +63,12 @@ func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 				CLICommand:  "semedit extract-function --file <path> --symbol <helper> --in-function <owner> --kind <function|method> --start-line <line> --end-line <line>",
 				MCPTool:     "semantic_extract_function",
 			},
+			"extract_variable": {
+				Supported:   true,
+				Description: "Extracts one exact side-effect-free typed expression from a whole argument of a direct single-argument call statement into a preceding local; rejects comments, context-dependent or defaulted types, nested calls, and unsupported contexts.",
+				CLICommand:  "semedit extract-variable --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--construct-path <path>]",
+				MCPTool:     "semantic_extract_variable",
+			},
 			"rename": {
 				Supported:    true,
 				Description:  "Compiler-backed symbol renaming across identifiers, struct fields, methods, interfaces, and packages with automatic import tidying.",

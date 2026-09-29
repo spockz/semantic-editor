@@ -113,7 +113,7 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	} {
 		if !strings.Contains(description, source) {
 			t.Errorf("file description %q omitted relevant source tool %s", description, source)
@@ -203,7 +203,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 							t.Errorf("remove result schema omitted %q", field)
 						}
 					}
-				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_inline_variable":
+				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 					for _, field := range map[string][]string{
@@ -211,6 +211,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 						"semantic_rename":            {"symbol", "file"},
 						"semantic_replace_body":      {"symbol", "file"},
 						"semantic_extract_function":  {"symbol", "file", "in_function"},
+						"semantic_extract_variable":  {"symbol", "file", "in_function", "discriminator"},
 						"semantic_replace_construct": {"file", "in_function"},
 						"semantic_inline_variable":   {"file", "symbol", "in_function"},
 						"semantic_insert_case":       {"file", "in_function", "discriminator"},
@@ -836,7 +837,7 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	}
 	inFunctionSources := []string{
 		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_structure",
@@ -866,6 +867,9 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	assertSources("semantic_insert_decl", "file", fileSources)
 	assertSources("semantic_extract_function", "symbol", []string{"semantic_extract_function"})
 	assertSources("semantic_extract_function", "in_function", []string{"semantic_extract_function"})
+	assertSources("semantic_extract_variable", "symbol", []string{"semantic_extract_variable"})
+	assertSources("semantic_extract_variable", "in_function", []string{"semantic_extract_variable"})
+	assertSources("semantic_extract_variable", "discriminator", []string{"semantic_extract_variable"})
 	for _, tool := range inFunctionSources {
 		assertSources(tool, "in_function", inFunctionSources)
 		assertSources(tool, "discriminator", discriminatorSources)

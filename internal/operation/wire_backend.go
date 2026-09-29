@@ -36,8 +36,9 @@ const (
 	wireInFunction              = "in_function"
 	wireCLIInFunction           = "in-function"
 	wireConstructPath           = "construct_path"
+	wireCLIConstructPath        = "construct" + "-path"
 	wireTargetCase              = "target_case"
-	wireTargetGoFileDescription = "Target: Go file to modify; path is relative to the workspace root"
+	wireTargetGoFileDescription = "Target: workspace-relative Go file"
 
 	sourceLookupSymbol                 = "semantic_lookup.symbol"
 	sourceRenameSymbol                 = "semantic_rename.symbol"
@@ -52,6 +53,10 @@ const (
 	sourceInlineVariableFile           = "semantic_inline_variable.file"
 	sourceInlineVariableSymbol         = "semantic_inline_variable.symbol"
 	sourceInlineVariableInFunction     = "semantic_inline_variable.in_function"
+	sourceExtractVariableFile          = "semantic_extract_variable.file"
+	sourceExtractVariableSymbol        = "semantic_extract_variable.symbol"
+	sourceExtractVariableInFunction    = "semantic_extract_variable.in_function"
+	sourceExtractVariableDiscriminator = "semantic_extract_variable.discriminator"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
 	sourceInsertFunctionFile           = "semantic_insert_function.file"
 	sourceInsertTypeFile               = "semantic_insert_type.file"
@@ -79,7 +84,7 @@ var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
 	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile, sourceInlineVariableFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
-	sourceInsertStructureFile, sourceReplaceDeclFile, sourceExtractFunctionFile, sourceOrganizeImportsFile,
+	sourceInsertStructureFile, sourceReplaceDeclFile, sourceExtractFunctionFile, sourceExtractVariableFile, sourceOrganizeImportsFile,
 	sourceScaffoldFile,
 }
 
@@ -87,16 +92,16 @@ var sourceSymbolContinuations = []string{
 	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
 	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
-	sourceExtractFunctionSymbol, sourceInlineVariableSymbol,
+	sourceExtractFunctionSymbol, sourceExtractVariableSymbol, sourceInlineVariableSymbol,
 }
 
 var sourceInFunctionContinuations = []string{
 	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
-	sourceExtractFunctionInFunction, sourceInlineVariableInFunction,
+	sourceExtractFunctionInFunction, sourceExtractVariableInFunction, sourceInlineVariableInFunction,
 }
 
 var sourceDiscriminatorContinuations = []string{
-	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator,
+	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator, sourceExtractVariableDiscriminator,
 }
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
