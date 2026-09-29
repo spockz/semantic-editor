@@ -1,0 +1,30 @@
+<!-- Tracks the parallel implementation handoff and remaining Go refactoring roadmap for review and integration. -->
+# Refactoring implementation plan (2026-09-29)
+
+Base: main clean HEAD 7248da6a5e6529b188e9fde5504a7643adf56286 (main checkout is separate; this checkout was clean and detached at 05402cf). Create integration branch codex/refactoring-suite at main HEAD. Each implementation runs in its own `.scratch/worktrees/` checkout and dedicated branch. Review and merge sequentially into the integration branch, rebasing on the new tip and rerunning checks when necessary.
+
+## Outcome and scope
+
+Deliver Go-first semantic refactorings with CLI and MCP parity, structured receipts, diagnostic deltas, and executable txtar contracts. Preserve the project's zero-token source reuse where possible. Keep language support explicit; do not advertise a capability for other backends until implemented and covered. Do not implement speculative previews in the engine, automatic source ordering, Java hierarchy changes, or framework-specific composites.
+
+## Parallel tracks
+
+A. Restore and extend `move-construct` from `stash@{0}` (`eb18ae0`), including untracked-parent files `internal/astedit/move_construct.go`, `testdata/scripts/move_construct.txtar`, and ADR-0049. Port onto latest main rather than applying the entire stash; reconcile ADR-0055 and the new semantic receipt changes in 7248da6. Support same-file, cross-file within a Go package, and bounded cross-package relocation. Preserve source without asking the model to reproduce it; update references and imports across the affected module for cross-package moves; reject import cycles, inaccessible names, receiver methods whose type remains in another package, and other cases whose correctness cannot be established. Address comment preservation, grouped declarations, no-op/self-anchor behavior, preflight of all affected files plus atomic writes per file with explicit partial-failure reporting, and CLI/MCP tests. Use `file` for the source-file selector and a single `destination_file` parameter for the new location; infer the destination package from the target file or its sibling package files, and use the same field in receipts. Document the supported declaration kinds per scope rather than advertising unsupported forms.
+
+B. Implement Go `extract-function`/`extract-method` for a selected contiguous statement region in a named owner function. Infer parameters and returned locals; reject unsafe control flow, shadowing, ambiguous selections, or comment loss rather than applying a dubious transform. Prefer existing gopls capabilities if they meet the contract, with explicit validation. Add named CLI/MCP operation(s), receipts, txtar cases and schema tests. Keep initial scope bounded; do not claim all Go forms.
+
+C. Implement Go exact-node `remove-construct` for top-level declarations and supported cases, with `safe_delete` as an option on the same operation. `safe_delete=true` must fail closed if references or resource constraints cannot be checked; report checks run. Without it, remove only the requested node, still validate syntax and report diagnostics. Cover grouped declarations and comment ownership. Add CLI/MCP parity and txtar cases.
+
+After the first wave is merged, continue parallel tracks as capacity permits: D extract variable/constant (including repeated expression where safe), E inline variable/call, F bounded change-signature with caller updates, G implement-contract/add-member. Prefer one feature family per branch. Cross-package move belongs to track A, with explicitly bounded supported kinds and fail-closed behavior. Arbitrary signature migrations and other-language mutations remain unadvertised until guaranteed.
+
+## Architecture and parameter contract
+
+Use the central typed operation registry (`internal/operation`), Go AST and backend layers (`internal/astedit`, `internal/backend/golang`), pipeline atomic writes and diagnostics, CLI/MCP schema generation, README/capability docs, and `testdata/scripts/*.txtar`. Preserve ADR-0005, ADR-0010, ADR-0028, ADR-0034, ADR-0042, ADR-0046, ADR-0053's proposed separation of extraction/movement, and accepted ADR-0055. Consult ADR/RQ indexes before editing detailed records; update their index in the same commit whenever an ADR/RQ changes.
+
+ADR-0055 flow: `symbol` only names the primary target, never an owner selector; `file` remains the exact workspace-relative file. Use `in_function` for an enclosing function selector, `discriminator`/`construct_path` for construct selection, `target_symbol` for relative placement, `target_case` for case anchoring, and the same names and value formats in results. Define any new selection concept once across all tools. Add `SourceFields` annotations to reusable inputs, verify they resolve against output schema, and describe copyable result fields. Do not expose internal byte offsets as model-facing continuations or serialize full before/after diagnostics.
+
+## Acceptance and validation
+
+Each worker reads AGENTS.md and relevant ADR/RQ in its own worktree; uses semantic tools for supported edits and logs failures immediately in `docs/SUBOPTIMAL_TOOLS.md`; uses atomic writes; avoids go.work mutations; runs `make check` before focused tests and again before completion; adds CLI txtar cases asserting diagnostics and resulting workspace state; adds meaningful engine/schema tests for failures and edge cases; commits on its branch without AI co-author metadata. The parent independently reviews every diff, runs focused checks, reconciles conflicts and branch advancement, merges without reset/force, and runs post-merge `make check`.
+
+Critical risks: source selection ambiguity, control-flow/data-flow errors in extraction, reference completeness in safe deletion, grouped declaration ownership, attached comments, verification failure after partial writes, overlapping registry/README edits across branches. Refuse unsupported cases explicitly; do not silently weaken safety claims. Do not guess a schema or safety guarantee when repository evidence does not support it; raise it to the parent while continuing independent work.
