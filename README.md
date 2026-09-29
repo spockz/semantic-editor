@@ -85,6 +85,7 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
 | Extract a safe contiguous call-statement region into a Go helper | `extract-function` | `semantic_extract_function` |
+| Extract one exact typed call argument into a Go local | `extract-variable` | `semantic_extract_variable` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
 | Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
 | Organize Go imports | `organize-imports` | `semantic_organize_imports` |

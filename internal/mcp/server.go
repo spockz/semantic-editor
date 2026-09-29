@@ -76,6 +76,7 @@ const (
 	toolFieldInputSchema        = "inputSchema"
 	toolFieldOutputSchema       = "outputSchema"
 	semanticInsertStructureTool = "semantic_insert_structure"
+	semanticExtractVariableTool = "semantic_extract_" + "variable"
 	additionalPropertiesKey     = "additionalProperties"
 )
 
@@ -569,10 +570,13 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_rename", "semantic_replace_body":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
-	case "semantic_extract_function":
+	case "semantic_extract_function", semanticExtractVariableTool:
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
 		fields["in_function"] = map[string]any{"type": "string"}
+		if toolName == semanticExtractVariableTool {
+			fields["discriminator"] = map[string]any{"type": "string"}
+		}
 	case "semantic_replace_construct", "semantic_insert_case":
 		fields["file"] = map[string]any{"type": "string"}
 		fields["in_function"] = map[string]any{"type": "string"}
@@ -666,7 +670,7 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 		}
 	case "semantic_replace_body", "semantic_replace_decl", "semantic_insert_function",
 		"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
-		"semantic_organize_imports", "semantic_extract_function":
+		"semantic_organize_imports", "semantic_extract_function", semanticExtractVariableTool:
 		if edit, ok := result.(operation.FileEditRes); ok {
 			if edit.Symbol != "" {
 				fields["symbol"] = edit.Symbol
@@ -677,8 +681,11 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 			if edit.Line > 0 {
 				fields["line"] = edit.Line
 			}
-			if toolName == "semantic_extract_function" && edit.InFunction != "" {
+			if (toolName == "semantic_extract_function" || toolName == semanticExtractVariableTool) && edit.InFunction != "" {
 				fields["in_function"] = edit.InFunction
+			}
+			if toolName == semanticExtractVariableTool && edit.Discriminator != "" {
+				fields["discriminator"] = edit.Discriminator
 			}
 		}
 	case "semantic_remove_construct":

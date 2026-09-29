@@ -46,7 +46,7 @@ var insertStructureParams = []ParameterContract{
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "Replace an existing declaration with the same name (default false)"},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
-	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
+	{Name: "construct_path", CLIName: wireCLIConstructPath, JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
 
@@ -102,7 +102,7 @@ func parseInsertStructure(raw map[string]any) (InsertStructureReq, error) {
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
-	if req.ConstructPath, err = ParseString(raw, "construct_path", "construct-path", false); err != nil {
+	if req.ConstructPath, err = ParseString(raw, "construct_path", wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {

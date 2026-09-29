@@ -121,7 +121,7 @@ var replaceConstructParams = []ParameterContract{
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct.", SourceFields: sourceDiscriminatorContinuations},
-	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
+	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement Go construct source", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
 }
@@ -313,7 +313,7 @@ var insertCaseParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", SourceFields: sourceDiscriminatorContinuations},
-	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
+	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "Complete case clause, including colon and statements, e.g. case \"foo\":\\n\\treturn bar", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
 	{Name: wireTargetCase, CLIName: "target-case", JSONName: wireTargetCase, Type: ParamString, Description: "Selector: case value to insert before or after when placement is 'before' or 'after' (e.g. 'nil', '\"foo\"'). Not a symbol address."},
@@ -336,7 +336,7 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 	if req.SwitchOn, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
-	if req.SwitchPath, err = ParseString(raw, wireConstructPath, "construct-path", false); err != nil {
+	if req.SwitchPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
 	if req.Case, err = ParseString(raw, "case", "case", true); err != nil {
@@ -409,7 +409,7 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
-	if req.ConstructPath, err = ParseString(raw, wireConstructPath, "construct-path", false); err != nil {
+	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
 	if req.Source, err = ParseString(raw, "source", "source", true); err != nil {

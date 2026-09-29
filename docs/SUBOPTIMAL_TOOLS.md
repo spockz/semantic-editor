@@ -1014,3 +1014,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the insertion reported success but added `golang.org/x/tools/go/ast/astutil`, which the current module does not provide; the resulting package failed to import.
 - Workaround: replace the helper with standard-library AST import construction and remove the invalid dependency.
 - Root cause: automatic import organization treated a package path as available without confirming it exists in the configured module dependency graph.
+
+### ST-0128: semantic_scaffold_file rejected plain purpose text
+
+- Date: 2026-09-29
+- Tool: `semantic_scaffold_file`
+- Target: `internal/astedit/extract_variable.go`
+- Observed failure: the request supplied a plain-English `purpose_header`; the tool parsed it as Go source and returned `expected 'package', found Provides`. No file was created.
+- Workaround: retry with a Go comment-prefixed purpose header, matching the established tool behavior.
+- Root cause: `purpose_header` is interpreted as a Go comment/source prefix, but its parameter description does not make the required `//` explicit.
+
+### ST-0129: semantic tools and edits resolved against the parent checkout
+
+- Date: 2026-09-29
+- Tool: `semantic_outline`, `semantic_lookup`, `semantic_scaffold_file`, and worktree-edit shell operations
+- Target: `internal/astedit/extract_variable.go` plus README, ADR index, MCP schema, operation wire, capability, and skill files that were meant for the assigned `refactor-extract-variable` worktree
+- Observed failure: semantic inspection resolved files in the parent checkout, and an attempted scaffold request failed before creating its target. Subsequent changes intended for this branch appeared in the parent checkout. The parent preserved those changes in `.scratch/extract-variable-parent-snapshot/` and restored its integration checkout; no parent changes remain.
+- Workaround: copy the preserved patch and untracked files into the assigned worktree, then continue using only absolute worktree paths and the worktree-local CLI or atomic file updates.
+- Root cause: the shared semantic MCP service is bound to the parent checkout; a shell edit command also ran without an explicit worktree directory, allowing checkout context to drift.
