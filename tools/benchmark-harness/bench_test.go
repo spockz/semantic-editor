@@ -160,6 +160,9 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if res.processStartedAt.IsZero() || res.measuredWallClock(time.Now()) <= 0 {
+		t.Fatalf("OpenCode task was not timed from process start: %s", res.processStartedAt)
+	}
 	if sessionID != "ses-123" {
 		t.Fatalf("session ID = %q, want ses-123", sessionID)
 	}
@@ -238,6 +241,9 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	expectedRoot, err := canonicalFixtureRoot(workDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Contains(server.Command, "--metrics-file") || !slices.Contains(server.Command, benchmarkMCPMetricsPath(workDir)) {
+		t.Errorf("MCP command = %#v, want fixture-local metrics file", server.Command)
 	}
 	if !slices.Contains(server.Command, "--expected-root") || !slices.Contains(server.Command, expectedRoot) {
 		t.Errorf("MCP command = %#v, want expected root %q", server.Command, expectedRoot)
@@ -440,7 +446,7 @@ func TestMCPServerInstructionModeAndCodexOverride(t *testing.T) {
 		if err != nil {
 			t.Fatalf("build %s override: %v", mode, err)
 		}
-		parts := []string{"mcp_servers.semedit.args=", "--expected-root", expectedRoot}
+		parts := []string{"mcp_servers.semedit.args=", "--expected-root", expectedRoot, "--metrics-file", benchmarkMCPMetricsPath(fixtureRoot)}
 		if want != "" {
 			parts = append(parts, want, "--instructions")
 		}
@@ -511,11 +517,12 @@ func TestSemeditVerifyWarmupUsesEmptyFixtureLocalCaches(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workDir, "main.go"), []byte("package warmup\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv("SEMEDIT_TEST_WORKDIR", workDir)
 	binary := filepath.Join(root, "fake-semedit")
 	script := "#!/bin/sh\n" +
 		"test \"$1\" = verify && test \"$2\" = --file && test \"$3\" = main.go && test \"$4\" = --language && test \"$5\" = go && test \"$6\" = --check-only || exit 9\n" +
-		"test \"$GOMODCACHE\" = \"$PWD/.scratch/go/mod\" || exit 10\n" +
-		"test \"$GOCACHE\" = \"$PWD/.scratch/go/build\" || exit 11\n" +
+		"test \"$GOMODCACHE\" = \"$SEMEDIT_TEST_WORKDIR/.scratch/go/mod\" || exit 10\n" +
+		"test \"$GOCACHE\" = \"$SEMEDIT_TEST_WORKDIR/.scratch/go/build\" || exit 11\n" +
 		"mkdir \"$GOMODCACHE/seed\"\n"
 	if err := os.WriteFile(binary, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
@@ -1299,6 +1306,9 @@ func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
 	expectedRoot, err := canonicalFixtureRoot(workDir)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !slices.Contains(server.Args, "--metrics-file") || !slices.Contains(server.Args, benchmarkMCPMetricsPath(workDir)) {
+		t.Errorf("Agy MCP args = %#v, want fixture-local metrics file", server.Args)
 	}
 	for i := range len(server.Args) {
 		if server.Args[i] == "--expected-root" && i+1 < len(server.Args) && server.Args[i+1] == expectedRoot {

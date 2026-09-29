@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"semedit/internal/pipeline"
 	"slices"
 	"strconv"
 	"strings"
@@ -64,6 +65,59 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 	}
 	if len(turns) != 3 || turns[0].Classification != "task" || turns[1].Classification != "task" || turns[2].Classification != "diagnostic_reflection" {
 		t.Fatalf("unexpected explicit transcript turns: %+v", turns)
+	}
+}
+
+func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	if err := os.MkdirAll(filepath.Join(workDir, ".scratch"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	session, err := newAgentSession(&behavioralSessionProvider{}, root, "metrics-session", workDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
+	session.result = &RunResult{}
+	taskFinishedAt := time.Now()
+	session.turns = []sessionTurn{
+		{Classification: "task", FinishedAt: taskFinishedAt},
+		{Classification: "diagnostic_reflection", FinishedAt: taskFinishedAt.Add(time.Second)},
+	}
+	records := []map[string]any{
+		{"sequence": 1, "tool": "semantic_rename", "completed_at": taskFinishedAt.Add(-time.Millisecond), "metrics": map[string]any{"total_ms": 1250}},
+		{"sequence": 2, "tool": "semantic_lookup", "completed_at": taskFinishedAt.Add(time.Millisecond), "metrics": map[string]any{"total_ms": 10}},
+	}
+	data, err := json.Marshal(records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), data); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(workDir); !os.IsNotExist(err) {
+		t.Fatalf("workspace cleanup = %v, want removed workspace", err)
+	}
+	metricsPath := session.result.Provenance["mcp_metrics_file"]
+	if metricsPath == "" {
+		t.Fatal("result provenance omitted retained MCP metrics path")
+	}
+	data, err = os.ReadFile(metricsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var retained []struct {
+		Tool string `json:"tool"`
+	}
+	if err := json.Unmarshal(data, &retained); err != nil {
+		t.Fatal(err)
+	}
+	if len(retained) != 1 || retained[0].Tool != "semantic_rename" {
+		t.Fatalf("retained task metrics = %+v, want task call only", retained)
 	}
 }
 
@@ -245,6 +299,39 @@ func TestExecuteAgentRecordsNoWallTimeBeforeCodexStarts(t *testing.T) {
 	}
 }
 
+func TestAgentLaunchFailureHasZeroTaskTimeForBothArms(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("PATH", root)
+	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, harness := range []HarnessType{HarnessOpenCode, HarnessAgy} {
+		for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
+			t.Run(string(harness)+"/"+string(arm), func(t *testing.T) {
+				runner := NewRunner(filepath.Join(root, string(harness), string(arm), "scratch"))
+				runner.agyExecutable = filepath.Join(root, "missing-agy")
+				target := Target{Harness: string(harness), Model: "amdbeast/fake"}
+				execution := AgentExecution{Task: task, Target: target, Arm: arm, Variant: "small", Prompt: task.Metadata.Instruction, Policy: SemeditArmRestrictWrite}
+				result, err := runner.ExecuteAgent(t.Context(), execution)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if result.Error == "" || !result.processStartedAt.IsZero() || result.WallClock != 0 {
+					t.Fatalf("failed launch recorded task time: %+v", result)
+				}
+				if len(result.InteractionSteps) != 1 || result.InteractionSteps[0].WallClock != 0 {
+					t.Fatalf("failed launch recorded step time: %+v", result.InteractionSteps)
+				}
+			})
+		}
+	}
+}
+
 func TestAgyResumeFailureKeepsOnlyNewTranscriptMetrics(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
@@ -289,6 +376,9 @@ fi
 	first := &RunResult{Arm: ArmBaseline}
 	if _, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "first", first, ""); err != nil {
 		t.Fatal(err)
+	}
+	if first.processStartedAt.IsZero() || first.measuredWallClock(time.Now()) <= 0 {
+		t.Fatalf("Agy task was not timed from process start: %s", first.processStartedAt)
 	}
 	second := &RunResult{Arm: ArmBaseline}
 	_, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "followup", second, "conversation")

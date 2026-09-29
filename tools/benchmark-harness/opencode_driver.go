@@ -60,10 +60,11 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	processStartedAt := time.Now()
 	if err := cmd.Start(); err != nil {
 		return "", fmt.Errorf("start OpenCode using %s: %w", configPath, err)
 	}
+	processStartedAt := time.Now()
+	res.processStartedAt = processStartedAt
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
@@ -273,7 +274,7 @@ func (r *Runner) openCodeMCPArguments(workDir string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", root}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 	case MCPServerInstructionsDescriptive:

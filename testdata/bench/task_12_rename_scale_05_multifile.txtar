@@ -1,0 +1,122 @@
+task_id: task-12-rename-scale-05-multifile
+category: edit_scaling
+instruction: "Perform these 5 renames consecutively, possibly batched if you know how. Use rename-plan.md, update every call site, preserve behavior, and run go test ./... before finishing."
+contexts:
+  - small
+prompt_variants:
+  default: "Perform these 5 renames consecutively, possibly batched if you know how. Use rename-plan.md, update every call site, preserve behavior, and run go test ./... before finishing."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "rename-plan.md"
+      - "pipeline/workflow_test.go"
+  level_2_ast:
+    file: "pipeline/processor.go"
+    must_contain_symbols:
+      - "Processor.ReadRequest"
+      - "Processor.ValidateRequest"
+      - "Processor.CanonicalizeValue"
+      - "Processor.ProjectFields"
+      - "Processor.DispatchValue"
+    must_not_contain_symbols:
+      - "Processor.LoadInput"
+      - "Processor.CheckInput"
+      - "Processor.NormalizeValue"
+      - "Processor.MapFields"
+      - "Processor.RouteValue"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+-- go.mod --
+module example.com/renamebatch
+
+go 1.23
+-- rename-plan.md --
+# Five independent Processor renames
+
+Rename the methods below in order. Each call site is in a different source file.
+
+| Current method | New method |
+| :--- | :--- |
+| `LoadInput` | `ReadRequest` |
+| `CheckInput` | `ValidateRequest` |
+| `NormalizeValue` | `CanonicalizeValue` |
+| `MapFields` | `ProjectFields` |
+| `RouteValue` | `DispatchValue` |
+-- pipeline/processor.go --
+// Package pipeline keeps the rename targets together so the oracle can check all five declarations.
+package pipeline
+
+type Processor struct{}
+
+func (Processor) LoadInput(value int) int { return value + 1 }
+func (Processor) CheckInput(value int) int { return value + 2 }
+func (Processor) NormalizeValue(value int) int { return value + 3 }
+func (Processor) MapFields(value int) int { return value + 4 }
+func (Processor) RouteValue(value int) int { return value + 5 }
+
+-- pipeline/stage_input.go --
+// Package pipeline keeps the input call site in its own file to exercise multi-location renames.
+package pipeline
+
+func ApplyInput(processor Processor, value int) int {
+	return processor.LoadInput(value)
+}
+
+-- pipeline/stage_validation.go --
+// Package pipeline keeps the validation call site in its own file to exercise multi-location renames.
+package pipeline
+
+func ApplyValidation(processor Processor, value int) int {
+	return processor.CheckInput(value)
+}
+
+-- pipeline/stage_normalization.go --
+// Package pipeline keeps the normalization call site in its own file to exercise multi-location renames.
+package pipeline
+
+func ApplyNormalization(processor Processor, value int) int {
+	return processor.NormalizeValue(value)
+}
+
+-- pipeline/stage_mapping.go --
+// Package pipeline keeps the mapping call site in its own file to exercise multi-location renames.
+package pipeline
+
+func ApplyMapping(processor Processor, value int) int {
+	return processor.MapFields(value)
+}
+
+-- pipeline/stage_routing.go --
+// Package pipeline keeps the routing call site in its own file to exercise multi-location renames.
+package pipeline
+
+func ApplyRouting(processor Processor, value int) int {
+	return processor.RouteValue(value)
+}
+
+-- pipeline/workflow.go --
+// Package pipeline composes the five independently located processing stages.
+package pipeline
+
+func Run(processor Processor, value int) int {
+	value = ApplyInput(processor, value)
+	value = ApplyValidation(processor, value)
+	value = ApplyNormalization(processor, value)
+	value = ApplyMapping(processor, value)
+	value = ApplyRouting(processor, value)
+	return value
+}
+-- pipeline/workflow_test.go --
+// Package pipeline tests that renaming preserves the behavior of all five stages.
+package pipeline
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	if got, want := Run(Processor{}, 7), 22; got != want {
+		t.Fatalf("Run() = %d, want %d", got, want)
+	}
+}

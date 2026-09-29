@@ -272,7 +272,7 @@ func (r *RunResult) wallClockStart(fallback time.Time) time.Time {
 }
 
 func (r *RunResult) measuredWallClock(fallback time.Time) time.Duration {
-	if r != nil && r.Target.Harness == string(HarnessCodex) && r.processStartedAt.IsZero() {
+	if r != nil && r.processStartedAt.IsZero() {
 		return 0
 	}
 	return elapsedTaskTime(r.wallClockStart(fallback))

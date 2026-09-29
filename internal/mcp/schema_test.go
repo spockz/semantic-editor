@@ -93,6 +93,47 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	}
 }
 
+func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
+	var tool map[string]any
+	for _, candidate := range listTools(t, "full") {
+		if candidate["name"] == "semantic_insert_function" {
+			tool = candidate
+			break
+		}
+	}
+	if tool == nil {
+		t.Fatal("tools/list omitted semantic_insert_function")
+	}
+	properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	description := properties["file"].(map[string]any)["description"].(string)
+	if len(description) > 500 {
+		t.Fatalf("file parameter description is %d bytes, exceeds 500-byte budget: %s", len(description), description)
+	}
+	for _, source := range []string{
+		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
+		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+		"semantic_organize_imports", "semantic_scaffold_file",
+	} {
+		if !strings.Contains(description, source) {
+			t.Errorf("file description %q omitted relevant source tool %s", description, source)
+		}
+	}
+	t.Logf("semantic_insert_function.file continuation description: %d bytes", len(description))
+	for _, candidate := range listTools(t, "full") {
+		if candidate["name"] != "semantic_replace_body" {
+			continue
+		}
+		props := candidate["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		symbolDescription := props["symbol"].(map[string]any)["description"].(string)
+		if !strings.Contains(symbolDescription, "semantic_insert_function") {
+			t.Fatalf("replace_body.symbol description omitted insert_function continuation: %s", symbolDescription)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_replace_body")
+}
+
 func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
 	registry := operation.DefaultRegistry()
 	if err := mcp.ValidateSourceFields(registry.All()); err != nil {
@@ -739,4 +780,47 @@ func toAnySlice(values []string) []any {
 		result[index] = value
 	}
 	return result
+}
+
+func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
+	tools := make(map[string]map[string]any)
+	for _, tool := range listTools(t, "full") {
+		tools[tool["name"].(string)] = tool
+	}
+	fileSources := []string{
+		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
+		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+		"semantic_organize_imports", "semantic_scaffold_file",
+	}
+	inFunctionSources := []string{
+		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_structure",
+	}
+	discriminatorSources := []string{"semantic_insert_case", "semantic_insert_structure"}
+	assertSources := func(toolName, parameter string, sources []string) {
+		t.Helper()
+		tool, ok := tools[toolName]
+		if !ok {
+			t.Fatalf("tools/list omitted %s", toolName)
+		}
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		field, ok := properties[parameter].(map[string]any)
+		if !ok {
+			t.Fatalf("%s inputSchema omitted %s", toolName, parameter)
+		}
+		description, ok := field["description"].(string)
+		if !ok {
+			t.Fatalf("%s.%s has no description", toolName, parameter)
+		}
+		for _, source := range sources {
+			if !strings.Contains(description, source) {
+				t.Errorf("%s.%s description omitted %s: %s", toolName, parameter, source, description)
+			}
+		}
+	}
+	assertSources("semantic_insert_decl", "file", fileSources)
+	for _, tool := range inFunctionSources {
+		assertSources(tool, "in_function", inFunctionSources)
+		assertSources(tool, "discriminator", discriminatorSources)
+	}
 }

@@ -2,23 +2,23 @@
 
 # 1. Insert struct type into api/server.go
 exec semedit insert-type --file api/server.go --source 'type Config struct { Port int }'
-stdout 'Successfully inserted type into api/server.go'
+stdout 'Successfully inserted type\. file: api/server.go\. symbol: Config\. line \(navigation only\): [0-9]+\.'
 
 # 2. Insert public method on Server (clusters after receiver definition)
 exec semedit insert-func --file api/server.go --source 'func (s *Server) Start() error { var _ = crand.Reader; return nil }'
-stdout 'Successfully inserted function into api/server.go'
+stdout 'Successfully inserted function\. file: api/server.go\. symbol: Server.Start\. line \(navigation only\): [0-9]+\.'
 
 # 3. Insert directly after a pointer-receiver anchor.
 exec semedit insert-func --file api/server.go --placement after_symbol --target '(*Server).Start' --source 'func (s *Server) Stop() error { return nil }'
-stdout 'Successfully inserted function into api/server.go'
+stdout 'Successfully inserted function\. file: api/server.go\. symbol: Server.Stop\. line \(navigation only\): [0-9]+\.'
 
 # 4. Insert private method on Server (clusters in private section)
 exec semedit insert-func --file api/server.go --source 'func (s *Server) stop() error { return nil }'
-stdout 'Successfully inserted function into api/server.go'
+stdout 'Successfully inserted function\. file: api/server.go\.'
 
 # 5. Insert constant into existing const group
 exec semedit insert-decl --file api/server.go --source 'const DefaultPort = 8080'
-stdout 'Successfully inserted declaration into api/server.go'
+stdout 'Successfully inserted declaration\. file: api/server.go\.'
 
 # 6. Add explicit import with alias
 exec semedit imports --file api/server.go --add 'crand crypto/rand'

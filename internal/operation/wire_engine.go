@@ -4,6 +4,10 @@ package operation
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -59,6 +63,26 @@ func resolveWorkPath(workDir, file string) string {
 	return file
 }
 
+func displayWorkPath(workDir, file string) string {
+	if strings.TrimSpace(file) == "" {
+		return ""
+	}
+	root, err := filepath.Abs(workDir)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(file))
+	}
+	target := resolveWorkPath(root, file)
+	absolute, err := filepath.Abs(target)
+	if err != nil {
+		return filepath.ToSlash(filepath.Clean(file))
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return filepath.ToSlash(relative)
+	}
+	return filepath.ToSlash(filepath.Clean(file))
+}
+
 // effectiveAutoOrganize applies the batch deferral flag over the parsed default.
 func effectiveAutoOrganize(cc CallContext, parsed bool) bool {
 	if cc.DeferImports {
@@ -69,42 +93,223 @@ func effectiveAutoOrganize(cc CallContext, parsed bool) bool {
 
 const automaticVerificationGuidance = " This standalone operation automatically verifies diagnostics and has no verification opt-out; do not call semantic_verify separately."
 
-func surroundingDelta(ctx context.Context, workDir string, deferVerification bool) func() pipeline.DiagnosticDelta {
+func surroundingDelta(ctx context.Context, workDir string, deferVerification bool) func() (pipeline.DiagnosticDelta, string) {
 	if deferVerification {
-		return func() pipeline.DiagnosticDelta { return pipeline.DiagnosticDelta{} }
+		return func() (pipeline.DiagnosticDelta, string) { return pipeline.DiagnosticDelta{}, "deferred" }
 	}
-	before, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), workDir)
-	return func() pipeline.DiagnosticDelta {
-		after, _ := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
-		return pipeline.ComputeDelta(before, after)
+	before, beforeErr := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationBefore), workDir)
+	return func() (pipeline.DiagnosticDelta, string) {
+		after, afterErr := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
+		if beforeErr != nil || afterErr != nil {
+			return pipeline.DiagnosticDelta{}, "unavailable"
+		}
+		delta := pipeline.ComputeDelta(before, after)
+		if len(delta.Introduced)+len(delta.Resolved)+len(delta.Suggestions) == 0 {
+			return delta, "unchanged"
+		}
+		return delta, "changed"
 	}
 }
 
 // FileEditRes reports a single-file mutation for response rendering and batch post-processing.
 type FileEditRes struct {
-	File          string
-	Display       string
-	Symbol        string
-	InFunction    string
-	Discriminator string
-	Diff          string
-	Detail        string
-	Delta         pipeline.DiagnosticDelta
-	HasDelta      bool
+	File             string
+	Display          string
+	Symbol           string
+	Line             int
+	InFunction       string
+	Discriminator    string
+	DiagnosticStatus string
+	Diff             string
+	Detail           string
+	Delta            pipeline.DiagnosticDelta
+	HasDelta         bool
 }
 
 // WrittenFile returns the resolved mutated path for batch post-processing.
 func (r FileEditRes) WrittenFile() string { return r.File }
 
 func formatFileEdit(res FileEditRes) (string, error) {
-	text := fmt.Sprintf(res.Detail, res.Display)
+	text := res.Detail
+	if res.Display != "" {
+		text += fmt.Sprintf(" file: %s.", res.Display)
+	}
+	if res.Symbol != "" {
+		text += fmt.Sprintf(" symbol: %s.", res.Symbol)
+	}
+	if res.Line > 0 {
+		text += fmt.Sprintf(" line (navigation only): %d.", res.Line)
+	}
+	if res.InFunction != "" {
+		text += fmt.Sprintf(" in_function: %s.", res.InFunction)
+	}
+	if res.Discriminator != "" {
+		text += fmt.Sprintf(" discriminator: %s.", res.Discriminator)
+	}
 	if res.Diff != "" {
 		text += "\n" + res.Diff
 	}
 	if res.HasDelta {
-		text = AppendDiagnosticDelta(text, res.Delta)
+		text += " diagnostic_status: " + res.DiagnosticStatus + "."
+		if res.DiagnosticStatus == "changed" {
+			text = AppendDiagnosticDelta(text, res.Delta)
+		}
 	}
 	return text, nil
+}
+
+// goTargetAfterEdit reads the formatted file after mutation and returns only a
+// uniquely identifiable declaration target that is present in that file.
+func goTargetAfterEdit(filePath, source string) (string, int, error) {
+	prefix := "package p\n"
+	if strings.HasPrefix(strings.TrimSpace(source), "package ") {
+		prefix = ""
+	}
+	snippet, err := parser.ParseFile(token.NewFileSet(), "snippet.go", prefix+source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse inserted declaration after write: %w", err)
+	}
+	if len(snippet.Decls) != 1 {
+		return "", 0, nil
+	}
+	var name, receiver string
+	switch decl := snippet.Decls[0].(type) {
+	case *ast.FuncDecl:
+		name = decl.Name.Name
+		if decl.Recv != nil && len(decl.Recv.List) == 1 {
+			receiver = receiverName(decl.Recv.List[0].Type)
+			if receiver == "" {
+				return "", 0, nil
+			}
+		}
+	case *ast.GenDecl:
+		if len(decl.Specs) != 1 {
+			return "", 0, nil
+		}
+		switch spec := decl.Specs[0].(type) {
+		case *ast.TypeSpec:
+			name = spec.Name.Name
+		case *ast.ValueSpec:
+			if len(spec.Names) != 1 {
+				return "", 0, nil
+			}
+			name = spec.Names[0].Name
+		}
+	}
+	if name == "" {
+		return "", 0, nil
+	}
+	content, err := os.ReadFile(filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
+	if err != nil {
+		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
+	}
+	fset := token.NewFileSet()
+	final, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
+	}
+	var foundSymbol string
+	var foundLine int
+	for _, decl := range final.Decls {
+		switch node := decl.(type) {
+		case *ast.FuncDecl:
+			if node.Name.Name == name && receiverNameForDecl(node) == receiver {
+				if foundSymbol != "" {
+					return "", 0, nil
+				}
+				foundSymbol, foundLine = qualifiedGoTarget(receiver, name), fset.Position(node.Pos()).Line
+			}
+		case *ast.GenDecl:
+			for _, spec := range node.Specs {
+				var found bool
+				switch item := spec.(type) {
+				case *ast.TypeSpec:
+					found = item.Name.Name == name
+				case *ast.ValueSpec:
+					for _, candidate := range item.Names {
+						found = found || candidate.Name == name
+					}
+				}
+				if found {
+					if foundSymbol != "" {
+						return "", 0, nil
+					}
+					foundSymbol, foundLine = name, fset.Position(spec.Pos()).Line
+				}
+			}
+		}
+	}
+	if foundSymbol != "" {
+		return foundSymbol, foundLine, nil
+	}
+	return "", 0, fmt.Errorf("inserted declaration target %q is absent from edited file %q", name, filePath)
+}
+
+func goExistingTargetAfterEdit(filePath, symbol string) (string, int, error) {
+	content, err := os.ReadFile(filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
+	if err != nil {
+		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
+	}
+	var line int
+	count := 0
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, raw := range gen.Specs {
+			matched := false
+			switch spec := raw.(type) {
+			case *ast.TypeSpec:
+				matched = spec.Name.Name == symbol
+			case *ast.ValueSpec:
+				for _, name := range spec.Names {
+					matched = matched || name.Name == symbol
+				}
+			}
+			if matched {
+				count++
+				line = fset.Position(raw.Pos()).Line
+			}
+		}
+	}
+	if count != 1 {
+		return "", 0, nil
+	}
+	return symbol, line, nil
+}
+
+func receiverNameForDecl(decl *ast.FuncDecl) string {
+	if decl.Recv == nil || len(decl.Recv.List) != 1 {
+		return ""
+	}
+	return receiverName(decl.Recv.List[0].Type)
+}
+
+func receiverName(expr ast.Expr) string {
+	switch node := expr.(type) {
+	case *ast.StarExpr:
+		return receiverName(node.X)
+	case *ast.Ident:
+		return node.Name
+	case *ast.IndexExpr:
+		return receiverName(node.X)
+	case *ast.IndexListExpr:
+		return receiverName(node.X)
+	}
+	return ""
+}
+
+func qualifiedGoTarget(receiver, name string) string {
+	if receiver == "" {
+		return name
+	}
+	return receiver + "." + name
 }
 
 // registerEngineOps adds the host-engine file and build operations to the registry.

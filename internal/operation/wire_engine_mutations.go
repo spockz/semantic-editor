@@ -42,10 +42,10 @@ func (r ReplaceBodyReq) GetProjectContext() backend.ProjectContext { return r.Pr
 func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
-	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: []string{sourceReplaceConstructInFunction, sourceInsertCaseInFunction}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct."},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct.", SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement Go construct source", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
@@ -65,8 +65,8 @@ func executableConstructKinds(candidate backend.Backend) []string {
 }
 
 var replaceBodyParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol}},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
 }
@@ -102,7 +102,8 @@ func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (Fi
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Symbol, Diff: diff, Detail: "Successfully replaced body of " + req.Symbol + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol, Diff: diff, Detail: "Replaced body.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
@@ -153,7 +154,7 @@ func (r ScaffoldFileRes) WrittenFile() string { return r.File }
 
 var scaffoldFileParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: relative path for the new file", Required: true},
-	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')"},
+	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "package name or 'infer' (default 'infer')", SourceFields: []string{sourceScaffoldPackage}},
 	{Name: "purpose_header", CLIName: "purpose-header", JSONName: "purpose_header", Type: ParamString, Description: "optional Go comment header explaining why the file exists"},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "replace existing file (default false)"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "no-op for new files; present for schema uniformity"},
@@ -191,7 +192,7 @@ func runScaffoldFile(ctx context.Context, cc CallContext, req ScaffoldFileReq) (
 	if err != nil {
 		return ScaffoldFileRes{}, err
 	}
-	return ScaffoldFileRes{File: targetPath, Display: req.File, Package: pkgName}, nil
+	return ScaffoldFileRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Package: pkgName}, nil
 }
 
 func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
@@ -234,9 +235,9 @@ func (r InsertCaseReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertCaseReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertCaseParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
-	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: []string{sourceReplaceConstructInFunction, sourceInsertCaseInFunction}},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", SourceFields: []string{sourceInsertCaseDiscriminator}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: "construct-path", JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "Complete case clause, including colon and statements, e.g. case \"foo\":\\n\\treturn bar", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
@@ -280,6 +281,7 @@ func parseInsertCase(raw map[string]any) (InsertCaseReq, error) {
 
 func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.InsertCase(ctx, targetPath, req.Func, req.SwitchOn, req.Case, astedit.CaseOptions{
 		Placement:           astedit.CasePlacement(req.Placement),
 		AnchorCase:          req.Anchor,
@@ -289,7 +291,8 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Func, InFunction: req.Func, Discriminator: req.SwitchOn, Diff: diff, Detail: "Successfully inserted case into " + req.Func + " in %s."}, nil
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), InFunction: req.Func, Discriminator: req.SwitchOn, Diff: diff, Detail: "Inserted case.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
@@ -353,7 +356,8 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Function, InFunction: req.Function, Diff: diff, Detail: "Successfully replaced " + string(req.Kind) + " construct in " + req.Function + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), InFunction: req.Function, Discriminator: req.Discriminator, Diff: diff, Detail: "Replaced " + string(req.Kind) + " construct.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {

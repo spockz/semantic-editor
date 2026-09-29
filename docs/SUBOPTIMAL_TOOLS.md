@@ -942,3 +942,39 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: lookup returned `symbol not found`; no source was changed.
 - Workaround: use `rg` to locate the Go test and make narrowly scoped atomic edits to hidden oracle test bodies.
 - Root cause: the semantic lookup backend does not index Go test functions in the hidden oracle tree.
+
+### ST-0120: semantic_insert_structure rejected type overwrite
+
+- Date: 2026-09-29
+- Tool: `semantic_insert_structure`
+- Target: `Server` in `internal/mcp/server.go`
+- Observed failure: two attempts to update an existing struct with `kind: type` and `overwrite: true` returned `overwrite is unsupported for type structure insertion`; no source changed.
+- Workaround: use an atomic source edit for the struct fields, then continue using semantic tools for function bodies and declarations.
+- Root cause: the tool advertises a generic overwrite option but does not support replacing type declarations.
+
+### ST-0121: semantic_scaffold_file rejected a plain purpose header
+
+- Date: 2026-09-29
+- Tool: `semantic_scaffold_file`
+- Target: `tools/benchmark-harness/rename_five_fixture_test.go`
+- Observed failure: a plain-English `purpose_header` produced `expected package, found This`; no source was created.
+- Workaround: retry with a Go comment-prefixed purpose header.
+- Root cause: the purpose header is parsed as Go source and must include Go comment syntax, which the parameter description did not state.
+
+### ST-0122: semantic_replace_body omitted a required import
+
+- Date: 2026-09-29
+- Tool: `semantic_replace_body`
+- Target: `TestFiveLocationRenameFixtureRequiresAllFiveRenames` in `tools/benchmark-harness/rename_five_fixture_test.go`
+- Observed failure: inserting `exec.CommandContext` succeeded without adding `os/exec`; `make check` reported `undefined: exec`.
+- Workaround: run semantic import organization or add the missing import, then rerun repository checks.
+- Root cause: automatic import organization did not resolve the new package-qualified reference.
+
+### ST-0123: semantic_verify rejected check-only verification without workspace trust
+
+- Date: 2026-09-29
+- Tool: `semantic_verify`
+- Target: `internal/operation`
+- Observed failure: the check-only request returned an error because the verification hook `golangci-lint` requires workspace trust; its response also contained stale unrelated gopls diagnostics.
+- Workaround: use repository-local `make check`, which completed formatting, lint, tests, and documentation verification.
+- Root cause: the verification tool applied a trust gate before hooks and diagnostics that need full workspace context.

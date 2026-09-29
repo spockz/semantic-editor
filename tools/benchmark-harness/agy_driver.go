@@ -14,6 +14,7 @@ import (
 	"semedit/internal/mcp"
 	"semedit/internal/pipeline"
 	"strings"
+	"time"
 )
 
 // AgyResponse represents the JSON output from agy --output-format json -p.
@@ -109,8 +110,14 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	cmd := exec.CommandContext(ctx, agyBin, args...)
 	cmd.Dir = workDir
 	cmd.Env = env
-
-	out, runErr := cmd.Output()
+	var output bytes.Buffer
+	cmd.Stdout = &output
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("start Agy: %w", err)
+	}
+	res.processStartedAt = time.Now()
+	runErr := cmd.Wait()
+	out := output.Bytes()
 	var resp AgyResponse
 	decodeErr := json.Unmarshal(out, &resp)
 	if decodeErr == nil {
@@ -295,7 +302,7 @@ func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServ
 	if err != nil {
 		return fmt.Errorf("resolve Agy MCP expected root: %w", err)
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", expectedRoot}
+	args := []string{"mcp", "--profile", "full", "--expected-root", expectedRoot, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	disabled := arm == ArmBaseline
 	if !disabled {
 		switch mode {

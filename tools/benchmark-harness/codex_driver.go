@@ -533,7 +533,7 @@ func (r *Runner) codexMCPServerInstructionsOverride(workDir string) (string, err
 	if err != nil {
 		return "", err
 	}
-	args := []string{"mcp", "--profile", "full", "--expected-root", root}
+	args := []string{"mcp", "--profile", "full", "--expected-root", root, "--metrics-file", benchmarkMCPMetricsPath(workDir)}
 	switch r.mcpServerInstructionsMode {
 	case MCPServerInstructionsNone:
 	case MCPServerInstructionsDescriptive:

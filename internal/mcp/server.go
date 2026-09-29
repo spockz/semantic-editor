@@ -26,6 +26,7 @@ import (
 	"semedit/internal/gocache"
 	"semedit/internal/maven"
 	"semedit/internal/operation"
+	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
@@ -33,30 +34,35 @@ import (
 
 // Server handles MCP JSON-RPC requests over stdio streams.
 type Server struct {
-	profile              string
-	workDir              string
-	expectedRoot         string
-	service              *backend.Service
-	registry             *operation.Registry
-	liveReload           bool
-	instructions         string
-	goBaseDir            string
-	explicitGoBaseDir    bool
-	workspaceTrust       backend.WorkspaceTrust
-	initializationFailed bool
-	enabledLanguageText  string
-	enabledLanguages     []backend.LanguageID
-	enabledLanguageErr   error
-	startedAt            time.Time
-	sessionMu            sync.Mutex
-	initializedAt        time.Time
-	firstSemanticCallAt  time.Time
-	metricsMu            sync.Mutex
-	metricSequence       uint64
-	recentMetrics        []toolMetricsRecord
-	outMu                sync.Mutex
-	out                  io.Writer
-	verificationPlan     projectverify.Plan
+	profile               string
+	workDir               string
+	expectedRoot          string
+	service               *backend.Service
+	registry              *operation.Registry
+	registryValidationErr error
+	liveReload            bool
+	instructions          string
+	goBaseDir             string
+	explicitGoBaseDir     bool
+	workspaceTrust        backend.WorkspaceTrust
+	initializationFailed  bool
+	enabledLanguageText   string
+	enabledLanguages      []backend.LanguageID
+	enabledLanguageErr    error
+	startedAt             time.Time
+	sessionMu             sync.Mutex
+	initializedAt         time.Time
+	firstSemanticCallAt   time.Time
+	metricsMu             sync.Mutex
+	metricSequence        uint64
+	recentMetrics         []toolMetricsRecord
+	metricsFile           string
+	metricsFileLoaded     bool
+	fileMetrics           []toolMetricsRecord
+	metricsPersistErr     error
+	outMu                 sync.Mutex
+	out                   io.Writer
+	verificationPlan      projectverify.Plan
 }
 
 const structuredContentKey = "structuredContent"
@@ -65,11 +71,12 @@ const (
 	// DescriptiveInstructions advertises semantic operations without requiring their use.
 	DescriptiveInstructions = "Semedit semantic tools are available for supported source-code operations."
 	// PrescriptiveInstructions is the controlled server-level policy used by benchmark instruction experiments.
-	PrescriptiveInstructions = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
-	toolFieldDescription     = "description"
-	toolFieldInputSchema     = "inputSchema"
-	toolFieldOutputSchema    = "outputSchema"
-	additionalPropertiesKey  = "additionalProperties"
+	PrescriptiveInstructions    = "Inspect the complete tool inventory, including deferred or lazy tools provided by the current environment, before editing. Confirm that applicable semantic-editing tools are callable; do not infer that a tool is absent from an initially visible subset. Use a semantic-editing tool for applicable mutations. Use ordinary file editing only when no applicable callable semantic tool exists, or when it fails, is unsupported, or is ambiguous."
+	toolFieldDescription        = "description"
+	toolFieldInputSchema        = "inputSchema"
+	toolFieldOutputSchema       = "outputSchema"
+	semanticInsertStructureTool = "semantic_insert_structure"
+	additionalPropertiesKey     = "additionalProperties"
 )
 
 // Option configures a Server instance.
@@ -83,6 +90,11 @@ func WithLiveReload(enabled bool) Option {
 // WithInstructions sets optional server-wide guidance returned during MCP initialization.
 func WithInstructions(instructions string) Option {
 	return func(s *Server) { s.instructions = strings.TrimSpace(instructions) }
+}
+
+// WithMetricsFile preserves every timed call in a file for benchmark evidence.
+func WithMetricsFile(path string) Option {
+	return func(s *Server) { s.metricsFile = strings.TrimSpace(path) }
 }
 
 // WithGoBaseDir configures the directory used for Go subprocess state.
@@ -146,6 +158,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	for _, opt := range opts {
 		opt(s)
 	}
+	s.registryValidationErr = ValidateSourceFields(s.registry.All())
 	return s
 }
 
@@ -213,6 +226,12 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 			continue
 		}
 		s.handleRequest(ctx, &req)
+		s.metricsMu.Lock()
+		metricsErr := s.metricsPersistErr
+		s.metricsMu.Unlock()
+		if metricsErr != nil {
+			return metricsErr
+		}
 	}
 }
 
@@ -356,6 +375,9 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 }
 
 func (s *Server) listTools() ([]map[string]any, error) {
+	if s.registryValidationErr != nil {
+		return nil, fmt.Errorf("validate MCP continuation registry: %w", s.registryValidationErr)
+	}
 	tools := make([]map[string]any, 0, len(s.registry.All())+4)
 	batchable := make([]operation.Entry, 0)
 	languages, err := s.activeLanguages()
@@ -459,7 +481,25 @@ func toolSchema(entry operation.Entry) map[string]any {
 	description := entry.Summary
 	output := standardOutputSchema(map[string]any{"type": "string"})
 	properties := output[schemaPropertiesKey].(map[string]any)
-	maps.Copy(properties, continuationOutputFieldSchemas(entry.MCPName))
+	continuations := continuationOutputFieldSchemas(entry.MCPName)
+	maps.Copy(properties, continuations)
+	if len(continuations) > 0 {
+		fieldNames := make([]string, 0, len(continuations))
+		for name := range continuations {
+			switch name {
+			case "line", "column":
+				fieldNames = append(fieldNames, "`"+name+"` (navigation only)")
+			case "kind":
+				fieldNames = append(fieldNames, "`kind` (descriptive only)")
+			case "package":
+				fieldNames = append(fieldNames, "`"+name+"` (copyable resolved package name)")
+			default:
+				fieldNames = append(fieldNames, "`"+name+"` (copyable)")
+			}
+		}
+		slices.Sort(fieldNames)
+		description += " Successful structured results may include: " + strings.Join(fieldNames, ", ") + "."
+	}
 	return map[string]any{
 		"name":                entry.MCPName,
 		toolFieldDescription:  description,
@@ -503,7 +543,7 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_lookup":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
-		fields["kind"] = map[string]any{"type": "string"}
+		fields["kind"] = map[string]any{"type": "string", "description": "Descriptive symbol category; its vocabulary differs from mutation kind inputs."}
 		fields["line"] = map[string]any{"type": "integer"}
 		fields["column"] = map[string]any{"type": "integer"}
 	case "semantic_rename", "semantic_replace_body":
@@ -515,6 +555,20 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 		if toolName == "semantic_insert_case" {
 			fields["discriminator"] = map[string]any{"type": "string"}
 		}
+	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
+		fields["symbol"] = map[string]any{"type": "string"}
+		fields["file"] = map[string]any{"type": "string"}
+		fields["line"] = map[string]any{"type": "integer", "description": "Navigation hint; not an operation parameter."}
+		if toolName == semanticInsertStructureTool {
+			fields["in_function"] = map[string]any{"type": "string"}
+			fields["discriminator"] = map[string]any{"type": "string"}
+		}
+	case "semantic_organize_imports":
+		fields["file"] = map[string]any{"type": "string"}
+	case "semantic_scaffold_file":
+		fields["file"] = map[string]any{"type": "string"}
+		fields["package"] = map[string]any{"type": "string"}
 	}
 	return fields
 }
@@ -557,29 +611,54 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 				}
 			}
 		}
-	case "semantic_replace_body":
+	case "semantic_replace_body", "semantic_replace_decl", "semantic_insert_function",
+		"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
+		"semantic_organize_imports":
 		if edit, ok := result.(operation.FileEditRes); ok {
 			if edit.Symbol != "" {
+				fields["symbol"] = edit.Symbol
+			}
+			if file := continuationPath(root, edit.File); file != "" && (toolName != "semantic_organize_imports" || regularFile(edit.File)) {
+				fields["file"] = file
+			}
+			if edit.Line > 0 {
+				fields["line"] = edit.Line
+			}
+		}
+	case "semantic_replace_construct", "semantic_insert_case", semanticInsertStructureTool:
+		if edit, ok := result.(operation.FileEditRes); ok {
+			if toolName == semanticInsertStructureTool && edit.Symbol != "" {
 				fields["symbol"] = edit.Symbol
 			}
 			if file := continuationPath(root, edit.File); file != "" {
 				fields["file"] = file
 			}
-		}
-	case "semantic_replace_construct", "semantic_insert_case":
-		if edit, ok := result.(operation.FileEditRes); ok {
-			if file := continuationPath(root, edit.File); file != "" {
-				fields["file"] = file
+			if toolName == semanticInsertStructureTool && edit.Line > 0 {
+				fields["line"] = edit.Line
 			}
 			if edit.InFunction != "" {
 				fields["in_function"] = edit.InFunction
 			}
-			if toolName == "semantic_insert_case" && edit.Discriminator != "" {
+			if (toolName == "semantic_insert_case" || toolName == semanticInsertStructureTool) && edit.Discriminator != "" {
 				fields["discriminator"] = edit.Discriminator
+			}
+		}
+	case "semantic_scaffold_file":
+		if file, ok := result.(operation.ScaffoldFileRes); ok {
+			if resolved := continuationPath(root, file.File); resolved != "" {
+				fields["file"] = resolved
+			}
+			if file.Package != "" {
+				fields["package"] = file.Package
 			}
 		}
 	}
 	return fields
+}
+
+func regularFile(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func rawString(arguments map[string]any, key string) string {
@@ -678,11 +757,16 @@ func batchResultSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"tool":   map[string]any{"type": "string"},
-			"symbol": map[string]any{"type": "string"},
-			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"diff":   map[string]any{"type": "string"},
-			"error":  map[string]any{"type": "string"},
+			"tool":              map[string]any{"type": "string"},
+			"file":              map[string]any{"type": "string", "description": "Workspace-relative file path for a follow-up operation."},
+			"symbol":            map[string]any{"type": "string"},
+			"package":           map[string]any{"type": "string", "description": "Package result, not a symbol target."},
+			"in_function":       map[string]any{"type": "string"},
+			"discriminator":     map[string]any{"type": "string"},
+			"diagnostic_status": map[string]any{"type": "string"},
+			"status":            map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"diff":              map[string]any{"type": "string"},
+			"error":             map[string]any{"type": "string"},
 		},
 		"required": []string{"tool", "status"},
 	}
@@ -848,6 +932,10 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	var params toolCallParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		s.sendError(id, -32602, "Invalid params")
+		return
+	}
+	if s.registryValidationErr != nil {
+		s.sendError(id, -32603, fmt.Sprintf("validate MCP continuation registry: %v", s.registryValidationErr))
 		return
 	}
 	if params.Name == "semantic_reload" {
@@ -1334,15 +1422,32 @@ func (s *Server) recordToolMetrics(timing *toolRequestTiming) {
 	if timing == nil || timing.toolName == "" || timing.toolName == "semantic_metrics" {
 		return
 	}
-	completedAt := time.Now()
 	record := toolMetricsRecord{
 		Tool:           timing.toolName,
-		CompletedAt:    completedAt,
+		CompletedAt:    time.Now(),
 		Metrics:        timing.Snapshot(),
 		SessionMetrics: timing.session,
 	}
 	s.metricsMu.Lock()
 	defer s.metricsMu.Unlock()
+	if s.metricsFile != "" && !s.metricsFileLoaded {
+		data, err := os.ReadFile(s.metricsFile)
+		switch {
+		case err == nil:
+			if err := json.Unmarshal(data, &s.fileMetrics); err != nil {
+				s.metricsPersistErr = fmt.Errorf("decode MCP metrics file %s: %w", s.metricsFile, err)
+				return
+			}
+			if len(s.fileMetrics) > 0 {
+				s.metricSequence = s.fileMetrics[len(s.fileMetrics)-1].Sequence
+			}
+		case errors.Is(err, os.ErrNotExist):
+		default:
+			s.metricsPersistErr = fmt.Errorf("read MCP metrics file %s: %w", s.metricsFile, err)
+			return
+		}
+		s.metricsFileLoaded = true
+	}
 	s.metricSequence++
 	record.Sequence = s.metricSequence
 	const maxRetainedToolMetrics = 100
@@ -1351,6 +1456,21 @@ func (s *Server) recordToolMetrics(timing *toolRequestTiming) {
 		s.recentMetrics = s.recentMetrics[:maxRetainedToolMetrics-1]
 	}
 	s.recentMetrics = append(s.recentMetrics, record)
+	if s.metricsFile == "" {
+		return
+	}
+	records := slices.Clone(s.fileMetrics)
+	records = append(records, record)
+	data, err := json.MarshalIndent(records, "", "  ")
+	if err != nil {
+		s.metricsPersistErr = fmt.Errorf("encode MCP metrics file %s: %w", s.metricsFile, err)
+		return
+	}
+	if err := pipeline.WriteAtomic(s.metricsFile, data); err != nil {
+		s.metricsPersistErr = fmt.Errorf("write MCP metrics file %s: %w", s.metricsFile, err)
+		return
+	}
+	s.fileMetrics = records
 }
 
 func metricsToolSchema() map[string]any {

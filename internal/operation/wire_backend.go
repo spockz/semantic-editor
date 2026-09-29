@@ -38,17 +38,57 @@ const (
 	wireTargetCase              = "target_case"
 	wireTargetGoFileDescription = "Target: Go source file to modify; path is relative to the workspace root"
 
-	sourceLookupSymbol               = "semantic_lookup.symbol"
-	sourceRenameSymbol               = "semantic_rename.symbol"
-	sourceReplaceBodySymbol          = "semantic_replace_body.symbol"
-	sourceLookupFile                 = "semantic_lookup.file"
-	sourceRenameFile                 = "semantic_rename.file"
-	sourceReplaceBodyFile            = "semantic_replace_body.file"
-	sourceReplaceConstructFile       = "semantic_replace_construct.file"
-	sourceReplaceConstructInFunction = "semantic_replace_construct.in_function"
-	sourceInsertCaseInFunction       = "semantic_insert_case.in_function"
-	sourceInsertCaseDiscriminator    = "semantic_insert_case.discriminator"
+	sourceLookupSymbol                 = "semantic_lookup.symbol"
+	sourceRenameSymbol                 = "semantic_rename.symbol"
+	sourceReplaceBodySymbol            = "semantic_replace_body.symbol"
+	sourceLookupFile                   = "semantic_lookup.file"
+	sourceRenameFile                   = "semantic_rename.file"
+	sourceReplaceBodyFile              = "semantic_replace_body.file"
+	sourceReplaceConstructFile         = "semantic_replace_construct.file"
+	sourceInsertCaseFile               = "semantic_insert_case.file"
+	sourceInsertFunctionFile           = "semantic_insert_function.file"
+	sourceInsertTypeFile               = "semantic_insert_type.file"
+	sourceInsertDeclFile               = "semantic_insert_decl.file"
+	sourceInsertDeclarationFile        = "semantic_insert_declaration.file"
+	sourceInsertStructureFile          = "semantic_insert_structure.file"
+	sourceReplaceDeclFile              = "semantic_replace_decl.file"
+	sourceOrganizeImportsFile          = "semantic_organize_imports.file"
+	sourceScaffoldFile                 = "semantic_scaffold_file.file"
+	sourceScaffoldPackage              = "semantic_scaffold_file.package"
+	sourceReplaceConstructInFunction   = "semantic_replace_construct.in_function"
+	sourceInsertCaseInFunction         = "semantic_insert_case.in_function"
+	sourceInsertCaseDiscriminator      = "semantic_insert_case.discriminator"
+	sourceInsertFunctionSymbol         = "semantic_insert_function.symbol"
+	sourceInsertTypeSymbol             = "semantic_insert_type.symbol"
+	sourceInsertDeclSymbol             = "semantic_insert_decl.symbol"
+	sourceInsertDeclarationSymbol      = "semantic_insert_declaration.symbol"
+	sourceInsertStructureSymbol        = "semantic_insert_structure.symbol"
+	sourceReplaceDeclSymbol            = "semantic_replace_decl.symbol"
+	sourceInsertStructureInFunction    = "semantic_insert_structure.in_function"
+	sourceInsertStructureDiscriminator = "semantic_insert_structure.discriminator"
 )
+
+var sourceFileContinuations = []string{
+	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
+	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
+	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
+	sourceInsertStructureFile, sourceReplaceDeclFile, sourceOrganizeImportsFile,
+	sourceScaffoldFile,
+}
+
+var sourceSymbolContinuations = []string{
+	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
+	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
+	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
+}
+
+var sourceInFunctionContinuations = []string{
+	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
+}
+
+var sourceDiscriminatorContinuations = []string{
+	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator,
+}
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
 
@@ -111,14 +151,14 @@ type VerifyRes struct {
 }
 
 var lookupParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: sourceFileContinuations},
 )
 
 var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
@@ -129,7 +169,7 @@ var renameParams = []ParameterContract{
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},

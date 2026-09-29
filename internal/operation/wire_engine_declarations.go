@@ -3,8 +3,10 @@ package operation
 
 import (
 	"context"
+	"fmt"
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
+	"semedit/internal/pipeline"
 )
 
 // InsertDeclarationReq inserts one top-level Go declaration.
@@ -25,8 +27,8 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
 }
@@ -42,7 +44,7 @@ type insertDeclarationFields struct {
 }
 
 var insertDeclarationParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One top-level Go declaration. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, types, constants, and variables", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Placement qualifier: file_start, file_end (default), public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
@@ -90,7 +92,16 @@ func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclara
 	if err := astedit.InsertDeclaration(ctx, targetPath, req.Source, opts); err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.TargetSymbol, Detail: "Successfully inserted declaration into %s.", Delta: finishDelta(), HasDelta: true}, nil
+	return finishInsertedGoDeclaration(cc, req.File, targetPath, req.Source, "Successfully inserted declaration.", finishDelta)
+}
+
+func finishInsertedGoDeclaration(cc CallContext, file, targetPath, source, detail string, finishDelta func() (pipeline.DiagnosticDelta, string)) (FileEditRes, error) {
+	symbol, line, err := goTargetAfterEdit(targetPath, source)
+	if err != nil {
+		return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, file), err)
+	}
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, file), Symbol: symbol, Line: line, Detail: detail, Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
@@ -122,7 +133,7 @@ func (r InsertFunctionReq) GetProjectContext() backend.ProjectContext { return r
 func (r *InsertFunctionReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One complete Go function or method declaration, including parameters, results, and body", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private. Protected and package-private are unsupported in Go.", Enums: []string{"infer", "public", "private"}},
@@ -148,7 +159,7 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.TargetSymbol, Detail: "Successfully inserted function into %s.", Delta: finishDelta(), HasDelta: true}, nil
+	return finishInsertedGoDeclaration(cc, req.File, targetPath, req.Source, "Successfully inserted function.", finishDelta)
 }
 
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
@@ -180,7 +191,7 @@ func (r InsertTypeReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertTypeReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertTypeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Type definition Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
@@ -206,7 +217,7 @@ func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (File
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.TargetSymbol, Detail: "Successfully inserted type into %s.", Delta: finishDelta(), HasDelta: true}, nil
+	return finishInsertedGoDeclaration(cc, req.File, targetPath, req.Source, "Successfully inserted type.", finishDelta)
 }
 
 func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
@@ -263,7 +274,7 @@ func (r InsertDeclReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertDeclReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Declaration Go source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier (infer, public, private, protected, package-private)", Enums: accessEnum},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
@@ -321,7 +332,7 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.TargetSymbol, Detail: "Successfully inserted declaration into %s.", Delta: finishDelta(), HasDelta: true}, nil
+	return finishInsertedGoDeclaration(cc, req.File, targetPath, req.Source, "Successfully inserted declaration.", finishDelta)
 }
 
 func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
@@ -402,7 +413,18 @@ func runReplaceDecl(ctx context.Context, cc CallContext, req ReplaceDeclReq) (Fi
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	return FileEditRes{File: targetPath, Display: req.File, Symbol: req.Symbol, Diff: diff, Detail: "Successfully replaced declaration " + req.Symbol + " in %s.", Delta: finishDelta(), HasDelta: true}, nil
+	symbol, line, err := goTargetAfterEdit(targetPath, req.Source)
+	if err != nil {
+		return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
+	}
+	if symbol == "" {
+		symbol, line, err = goExistingTargetAfterEdit(targetPath, req.Symbol)
+		if err != nil {
+			return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
+		}
+	}
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: symbol, Line: line, Diff: diff, Detail: "Successfully replaced declaration.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {

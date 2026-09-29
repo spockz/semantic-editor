@@ -31,11 +31,16 @@ type BatchEntry struct {
 
 // BatchResult records the execution status and output of an individual batch entry.
 type BatchResult struct {
-	Tool   string `json:"tool"`
-	Symbol string `json:"symbol,omitempty"`
-	Status string `json:"status"`
-	Diff   string `json:"diff,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Tool             string `json:"tool"`
+	File             string `json:"file,omitempty"`
+	Symbol           string `json:"symbol,omitempty"`
+	Package          string `json:"package,omitempty"`
+	InFunction       string `json:"in_function,omitempty"`
+	Discriminator    string `json:"discriminator,omitempty"`
+	DiagnosticStatus string `json:"diagnostic_status,omitempty"`
+	Status           string `json:"status"`
+	Diff             string `json:"diff,omitempty"`
+	Error            string `json:"error,omitempty"`
 }
 
 // BatchResponse aggregates the outcomes of a semantic batch execution.
@@ -109,9 +114,9 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		result, writtenFile, err := s.executeBatchEdit(ctx, batchEntry)
 		if err != nil {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Symbol: result.Symbol, Status: "error", Error: err.Error()})
+			response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, err))
 			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-			return response, nil //nolint:nilerr // Batch execution errors are carried in the response status and entry.
+			return response, nil
 		}
 		if writtenFile != "" {
 			if filepath.Clean(writtenFile) == filepath.Clean(s.workDir) {
@@ -120,7 +125,7 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 				writtenFiles[writtenFile] = struct{}{}
 			}
 		}
-		response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Symbol: result.Symbol, Status: "ok", Diff: result.Diff})
+		response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, nil))
 	}
 	if workspaceScope {
 		writtenFiles = map[string]struct{}{s.workDir: {}}
@@ -174,6 +179,16 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		return response, nil //nolint:nilerr // Final diff errors are carried in the response.
 	}
 	return response, nil
+}
+
+func batchEntryResult(tool string, result BatchResult, err error) BatchResult {
+	result.Tool = tool
+	result.Status = "ok"
+	if err != nil {
+		result.Status = "error"
+		result.Error = err.Error()
+	}
+	return result
 }
 
 var batchVerificationOptionKeys = []string{
@@ -285,7 +300,7 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 	if err != nil {
 		return BatchResult{}, "", err
 	}
-	batchResult := resultForBatch(result)
+	batchResult := resultForBatch(result, s.workDir)
 	if _, ok := result.(*backend.RenameResult); ok {
 		return batchResult, s.workDir, nil
 	}
@@ -295,14 +310,22 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 	return batchResult, "", nil
 }
 
-func resultForBatch(result any) BatchResult {
+func resultForBatch(result any, workDir string) BatchResult {
 	switch typed := result.(type) {
 	case operation.FileEditRes:
-		return BatchResult{Symbol: typed.Symbol, Diff: typed.Diff}
+		file := continuationPath(workDir, typed.File)
+		if file == "" {
+			file = continuationPath(workDir, typed.Display)
+		}
+		return BatchResult{File: file, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
 	case operation.ScaffoldFileRes:
-		return BatchResult{Symbol: typed.Package}
+		file := continuationPath(workDir, typed.File)
+		if file == "" {
+			file = continuationPath(workDir, typed.Display)
+		}
+		return BatchResult{File: file, Package: typed.Package}
 	case operation.BuildDependencyRes:
-		return BatchResult{Symbol: typed.Package}
+		return BatchResult{File: continuationPath(workDir, typed.GoMod)}
 	default:
 		return BatchResult{}
 	}

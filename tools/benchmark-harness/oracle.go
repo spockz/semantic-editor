@@ -630,9 +630,66 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 		return fmt.Errorf("parse AST of %s: %w", cfg.File, err)
 	}
 
-	// Collect declared symbols and functions
-	declaredSymbols := make(map[string]int) // symbol -> declaration order index
+	declaredSymbols := collectDeclaredSymbols(fileNode)
 
+	for _, sym := range cfg.MustContainSymbols {
+		if _, found := declaredSymbols[sym]; !found {
+			if !astContainsIdent(fileNode, sym) {
+				return fmt.Errorf("required symbol %q not found in %s", sym, cfg.File)
+			}
+		}
+	}
+
+	for _, sym := range cfg.MustNotContainSymbols {
+		if _, found := declaredSymbols[sym]; found {
+			return fmt.Errorf("disallowed symbol %q remains declared in %s", sym, cfg.File)
+		}
+		if astContainsExactIdent(fileNode, sym) {
+			return fmt.Errorf("disallowed symbol reference %q persists in %s", sym, cfg.File)
+		}
+	}
+
+	if err := validateRequiredCalls(cfg, fileNode); err != nil {
+		return err
+	}
+
+	currentImports := make(map[string]bool)
+	for _, imp := range fileNode.Imports {
+		path := strings.Trim(imp.Path.Value, `"'`)
+		currentImports[path] = true
+	}
+
+	for _, reqImp := range cfg.MustContainImports {
+		if !currentImports[reqImp] {
+			return fmt.Errorf("required import %q absent from %s", reqImp, cfg.File)
+		}
+	}
+
+	for _, disImp := range cfg.MustNotContainImports {
+		if currentImports[disImp] {
+			return fmt.Errorf("disallowed import %q present in %s", disImp, cfg.File)
+		}
+	}
+
+	if cfg.SymbolBefore.First != "" && cfg.SymbolBefore.Second != "" {
+		firstIdx, firstOk := declaredSymbols[cfg.SymbolBefore.First]
+		secondIdx, secondOk := declaredSymbols[cfg.SymbolBefore.Second]
+		if !firstOk {
+			return fmt.Errorf("ordering validation failed: first symbol %q not found in declarations", cfg.SymbolBefore.First)
+		}
+		if !secondOk {
+			return fmt.Errorf("ordering validation failed: second symbol %q not found in declarations", cfg.SymbolBefore.Second)
+		}
+		if firstIdx >= secondIdx {
+			return fmt.Errorf("ordering validation failed: %q (idx %d) must precede %q (idx %d)", cfg.SymbolBefore.First, firstIdx, cfg.SymbolBefore.Second, secondIdx)
+		}
+	}
+
+	return nil
+}
+
+func collectDeclaredSymbols(fileNode *ast.File) map[string]int {
+	declaredSymbols := make(map[string]int)
 	for idx, decl := range fileNode.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
@@ -644,7 +701,6 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 				}
 			}
 			declaredSymbols[symName] = idx
-
 		case *ast.GenDecl:
 			for _, spec := range d.Specs {
 				switch s := spec.(type) {
@@ -666,27 +722,10 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 			}
 		}
 	}
+	return declaredSymbols
+}
 
-	// Must contain symbols
-	for _, sym := range cfg.MustContainSymbols {
-		if _, found := declaredSymbols[sym]; !found {
-			// Check if symbol appears anywhere in AST (e.g. struct field or selector)
-			if !astContainsIdent(fileNode, sym) {
-				return fmt.Errorf("required symbol %q not found in %s", sym, cfg.File)
-			}
-		}
-	}
-
-	// Must not contain symbols
-	for _, sym := range cfg.MustNotContainSymbols {
-		if _, found := declaredSymbols[sym]; found {
-			return fmt.Errorf("disallowed symbol %q remains declared in %s", sym, cfg.File)
-		}
-		if astContainsExactIdent(fileNode, sym) {
-			return fmt.Errorf("disallowed symbol reference %q persists in %s", sym, cfg.File)
-		}
-	}
-
+func validateRequiredCalls(cfg ASTConfig, fileNode *ast.File) error {
 	for _, requirement := range cfg.MustCallFunctions {
 		functionName, calleeName, ok := strings.Cut(requirement, "->")
 		if !ok || functionName == "" || calleeName == "" {
@@ -714,41 +753,6 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 			return fmt.Errorf("required call %s -> %s not found in %s", functionName, calleeName, cfg.File)
 		}
 	}
-
-	// Imports validation
-	currentImports := make(map[string]bool)
-	for _, imp := range fileNode.Imports {
-		path := strings.Trim(imp.Path.Value, `"'`)
-		currentImports[path] = true
-	}
-
-	for _, reqImp := range cfg.MustContainImports {
-		if !currentImports[reqImp] {
-			return fmt.Errorf("required import %q absent from %s", reqImp, cfg.File)
-		}
-	}
-
-	for _, disImp := range cfg.MustNotContainImports {
-		if currentImports[disImp] {
-			return fmt.Errorf("disallowed import %q present in %s", disImp, cfg.File)
-		}
-	}
-
-	// Symbol ordering validation
-	if cfg.SymbolBefore.First != "" && cfg.SymbolBefore.Second != "" {
-		firstIdx, firstOk := declaredSymbols[cfg.SymbolBefore.First]
-		secondIdx, secondOk := declaredSymbols[cfg.SymbolBefore.Second]
-		if !firstOk {
-			return fmt.Errorf("ordering validation failed: first symbol %q not found in declarations", cfg.SymbolBefore.First)
-		}
-		if !secondOk {
-			return fmt.Errorf("ordering validation failed: second symbol %q not found in declarations", cfg.SymbolBefore.Second)
-		}
-		if firstIdx >= secondIdx {
-			return fmt.Errorf("ordering validation failed: %q (idx %d) must precede %q (idx %d)", cfg.SymbolBefore.First, firstIdx, cfg.SymbolBefore.Second, secondIdx)
-		}
-	}
-
 	return nil
 }
 

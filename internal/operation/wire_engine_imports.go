@@ -4,6 +4,7 @@ package operation
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"semedit/internal/adapters/golang"
 	"semedit/internal/backend"
@@ -66,7 +67,12 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 	if len(paths) > 0 {
 		written = paths[0]
 	}
-	return FileEditRes{File: written, Display: req.File, Symbol: req.File, Detail: "Successfully organized imports.", Delta: finishDelta(), HasDelta: true}, nil
+	delta, diagnosticStatus := finishDelta()
+	display := ""
+	if info, statErr := os.Stat(written); statErr == nil && info.Mode().IsRegular() {
+		display = displayWorkPath(cc.WorkDir, written)
+	}
+	return FileEditRes{File: written, Display: display, Detail: "Organized imports.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {

@@ -163,10 +163,10 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	started = time.Now()
 	session.started = started
 	err = session.runTurn(ctx, target, prompt, "task", res)
-	if target.Harness == string(HarnessCodex) && res.processStartedAt.IsZero() {
+	if res.processStartedAt.IsZero() {
 		started = time.Time{}
 	} else {
-		started = res.wallClockStart(started)
+		started = res.processStartedAt
 	}
 	session.started = started
 	if err != nil {

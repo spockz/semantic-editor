@@ -36,7 +36,7 @@ func (r *InsertStructureReq) SetProjectContext(project backend.ProjectContext) {
 }
 
 var insertStructureParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceReplaceConstructFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Structural construct kind supported by the selected language backend", Required: true, DynamicEnums: executableStructureKinds},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Structural construct source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Access modifier supported by the selected backend", Enums: accessEnum},
@@ -44,8 +44,8 @@ var insertStructureParams = []ParameterContract{
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol or anchor case identifier required for relative placement"},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for declarations: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
 	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "Replace an existing declaration with the same name (default false)"},
-	{Name: "function", CLIName: "function", JSONName: "function", Type: ParamString, Description: "Enclosing function or method name (e.g. for nested constructs like case)"},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Discriminant expression or switch condition (e.g. for case)"},
+	{Name: wireInFunction, CLIName: "in-function", JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
 	{Name: "construct_path", CLIName: "construct-path", JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
 }
@@ -96,7 +96,7 @@ func parseInsertStructure(raw map[string]any) (InsertStructureReq, error) {
 	if req.Overwrite, err = ParseBool(raw, "overwrite", "overwrite", false); err != nil {
 		return req, err
 	}
-	if req.Function, err = ParseString(raw, "function", "function", false); err != nil {
+	if req.Function, err = ParseString(raw, wireInFunction, "in-function", false); err != nil {
 		return req, err
 	}
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
@@ -129,15 +129,42 @@ func runInsertStructure(ctx context.Context, cc CallContext, req InsertStructure
 	if err != nil {
 		return FileEditRes{}, err
 	}
+	var symbol string
+	var line int
+	if req.Kind != backend.StructureCase {
+		symbol, line, err = goTargetAfterEdit(targetPath, req.Source)
+		if err != nil {
+			return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
+		}
+	}
+	delta, diagnosticStatus := finishDelta()
 	return FileEditRes{
-		File:     targetPath,
-		Display:  req.File,
-		Symbol:   req.TargetSymbol,
-		Diff:     res.Diff,
-		Detail:   fmt.Sprintf("Successfully inserted %s structure into %%s.", req.Kind),
-		Delta:    finishDelta(),
-		HasDelta: true,
+		File:             targetPath,
+		Display:          displayWorkPath(cc.WorkDir, req.File),
+		Symbol:           symbol,
+		Line:             line,
+		InFunction:       structureContinuationFunction(req),
+		Discriminator:    structureContinuationDiscriminator(req),
+		Diff:             res.Diff,
+		Detail:           fmt.Sprintf("Successfully inserted %s structure.", req.Kind),
+		Delta:            delta,
+		DiagnosticStatus: diagnosticStatus,
+		HasDelta:         true,
 	}, nil
+}
+
+func structureContinuationFunction(req InsertStructureReq) string {
+	if req.Kind == backend.StructureCase {
+		return req.Function
+	}
+	return ""
+}
+
+func structureContinuationDiscriminator(req InsertStructureReq) string {
+	if req.Kind == backend.StructureCase {
+		return req.Discriminator
+	}
+	return ""
 }
 
 func insertStructureDef() Def[InsertStructureReq, FileEditRes] {

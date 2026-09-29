@@ -85,7 +85,69 @@ func (s *agentSession) evaluateStage(ctx context.Context, result *RunResult, ora
 	return evaluateAgentResult(ctx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
 }
 
+func (s *agentSession) retainTaskMCPMetrics() error {
+	if s.result == nil || s.execution.Arm != ArmSemedit {
+		return nil
+	}
+	source := benchmarkMCPMetricsPath(s.workDir)
+	// #nosec G304 -- source is derived from this benchmark's isolated workspace.
+	data, err := os.ReadFile(source)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read benchmark MCP metrics: %w", err)
+	}
+	var records []json.RawMessage
+	if err := json.Unmarshal(data, &records); err != nil {
+		return fmt.Errorf("decode benchmark MCP metrics: %w", err)
+	}
+	var taskFinishedAt time.Time
+	for _, turn := range s.turns {
+		if turn.Classification == "task" {
+			taskFinishedAt = turn.FinishedAt
+		}
+	}
+	if taskFinishedAt.IsZero() {
+		taskFinishedAt = time.Now()
+	}
+	taskRecords := make([]json.RawMessage, 0, len(records))
+	for _, record := range records {
+		var timing struct {
+			CompletedAt time.Time `json:"completed_at"`
+		}
+		if err := json.Unmarshal(record, &timing); err != nil {
+			return fmt.Errorf("decode benchmark MCP timing record: %w", err)
+		}
+		if timing.CompletedAt.IsZero() {
+			return fmt.Errorf("benchmark MCP timing record has no completion time")
+		}
+		if !timing.CompletedAt.After(taskFinishedAt) {
+			taskRecords = append(taskRecords, record)
+		}
+	}
+	if len(taskRecords) == 0 {
+		return nil
+	}
+	output, err := json.MarshalIndent(taskRecords, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode task MCP metrics: %w", err)
+	}
+	destination := strings.TrimSuffix(s.transcriptPath, ".json") + ".mcp-metrics.json"
+	if err := pipeline.WriteAtomic(destination, output); err != nil {
+		return fmt.Errorf("retain task MCP metrics: %w", err)
+	}
+	if s.result.Provenance == nil {
+		s.result.Provenance = make(ProvenanceSet)
+	}
+	s.result.Provenance["mcp_metrics_file"] = destination
+	return nil
+}
+
 func (s *agentSession) close() error {
+	if err := s.retainTaskMCPMetrics(); err != nil {
+		return err
+	}
 	if s.result != nil {
 		state := s.toolObservationState
 		reason := strings.Join(s.toolObservationReasons, "; ")
@@ -302,6 +364,10 @@ func selectProvider(runner *Runner, target Target) (providerAdapter, error) {
 	default:
 		return nil, fmt.Errorf("unsupported harness: %s", target.Harness)
 	}
+}
+
+func benchmarkMCPMetricsPath(workDir string) string {
+	return filepath.Join(workDir, ".scratch", "mcp-metrics.json")
 }
 
 func newAgentSession(adapter providerAdapter, baseDir, runID, workDir string) (*agentSession, error) {

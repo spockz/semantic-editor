@@ -16,6 +16,7 @@ import (
 	"semedit/internal/backend"
 	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
+	"semedit/internal/operation"
 )
 
 type mcpJavaSession struct{}
@@ -284,6 +285,147 @@ func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
 	}
 }
 
+func TestMCPInsertFunctionContinuationUsesInsertedTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/insertcontinuation\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package insertcontinuation\n\ntype Service struct{}\n\nfunc Anchor() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_function\",\"arguments\":{\"file\":\"main.go\",\"placement\":\"before_symbol\",\"target_symbol\":\"Anchor\",\"source\":\"func (s *Service) Added() {}\"}}}\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+			Content    []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result.IsError {
+		t.Fatalf("insert failed: %s", out.String())
+	}
+	if got := response.Result.Structured["symbol"]; got != "Service.Added" {
+		t.Fatalf("continued symbol = %#v, want inserted target Service.Added (not placement anchor Anchor)", got)
+	}
+	if response.Result.Structured["file"] != "main.go" {
+		t.Fatalf("continued file = %#v", response.Result.Structured["file"])
+	}
+	if line, ok := response.Result.Structured["line"].(float64); !ok || line < 1 {
+		t.Fatalf("continued line = %#v, want positive declaration line", response.Result.Structured["line"])
+	}
+	if len(response.Result.Content) != 1 || !strings.Contains(response.Result.Content[0].Text, "symbol: Service.Added") || !strings.Contains(response.Result.Content[0].Text, "line (navigation only):") || !strings.Contains(response.Result.Content[0].Text, "diagnostic_status:") {
+		t.Fatalf("result omitted resolved target and declaration location: %s", out.String())
+	}
+	continuedFile := response.Result.Structured["file"].(string)
+	continuedSymbol := response.Result.Structured["symbol"].(string)
+	followup := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":%q,\"symbol\":%q}}}\n", continuedFile, continuedSymbol)
+	var followupOut bytes.Buffer
+	if err := mcp.NewServer("full", root, &followupOut).Serve(t.Context(), strings.NewReader(followup)); err != nil {
+		t.Fatal(err)
+	}
+	var lookup struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(followupOut.Bytes(), &lookup); err != nil {
+		t.Fatal(err)
+	}
+	if lookup.Result.IsError || lookup.Result.Structured["symbol"] != continuedSymbol || lookup.Result.Structured["file"] != continuedFile {
+		t.Fatalf("inserted target fields did not work as a follow-up lookup: %s", followupOut.String())
+	}
+}
+
+func TestMCPContinuationOmitsAmbiguousSymbolAndStructureSelectorIsNotTarget(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/continuationcases\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package continuationcases\n\nfunc Handle(v string) int { switch v { default: return 0 } }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_structure\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"case\",\"in_function\":\"Handle\",\"discriminator\":\"v\",\"source\":\"case \\\"x\\\": return 1\"}}}\n" +
+		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_declaration\",\"arguments\":{\"file\":\"main.go\",\"source\":\"const (Alpha = 1; Beta = 2)\"}}}\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("responses = %d: %s", len(lines), out.String())
+	}
+	var caseResult, multiResult struct {
+		Result struct {
+			IsError    bool           `json:"isError"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &caseResult); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &multiResult); err != nil {
+		t.Fatal(err)
+	}
+	if caseResult.Result.IsError || caseResult.Result.Structured["in_function"] != "Handle" {
+		t.Fatalf("case continuation omitted containing function: %s", lines[0])
+	}
+	if _, exists := caseResult.Result.Structured["symbol"]; exists {
+		t.Fatalf("case selector leaked as changed symbol: %s", lines[0])
+	}
+	if multiResult.Result.IsError {
+		t.Fatalf("multi-spec declaration insertion failed: %s", lines[1])
+	}
+	if _, exists := multiResult.Result.Structured["symbol"]; exists {
+		t.Fatalf("ambiguous multi-spec declaration advertised one symbol: %s", lines[1])
+	}
+}
+
+func TestMCPServerConstructionRejectsBrokenContinuationRegistry(t *testing.T) {
+	registry := operation.NewRegistry()
+	err := operation.Register(registry, operation.Def[struct{}, string]{
+		Key: "broken", MCPName: "semantic_broken", CLIName: "broken",
+		Params:   []operation.ParameterContract{{Name: "file", JSONName: "file", CLIName: "file", Type: operation.ParamString, SourceFields: []string{"semantic_missing.file"}}},
+		Parse:    func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (string, error){backend.LanguageGo: func(context.Context, operation.CallContext, struct{}) (string, error) { return "ok", nil }},
+		Format:   func(value string) (string, error) { return value, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_broken\",\"arguments\":{}}}\n"
+	if err := mcp.NewServer("full", t.TempDir(), &out, mcp.WithRegistry(registry)).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	responses := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(responses) != 2 {
+		t.Fatalf("responses = %d: %s", len(responses), out.String())
+	}
+	for _, raw := range responses {
+		var response struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal([]byte(raw), &response); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(response.Error.Message, "validate MCP continuation registry") || !strings.Contains(response.Error.Message, "unknown output tool") {
+			t.Fatalf("MCP request was not rejected for broken SourceFields: %s", raw)
+		}
+	}
+}
+
 func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/sessiontiming\n\ngo 1.24\n"), 0o600); err != nil {
@@ -343,6 +485,102 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
+	}
+}
+
+func TestMCPMetricsFileSurvivesServerRestart(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/metricsfile\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package metricsfile\ntype Widget struct{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metricsDir := filepath.Join(root, ".scratch")
+	if err := os.MkdirAll(metricsDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	metricsPath := filepath.Join(metricsDir, "mcp-metrics.json")
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Widget\"}}}\n", root)
+	for range 2 {
+		var output bytes.Buffer
+		if err := mcp.NewServer("full", root, &output, mcp.WithMetricsFile(metricsPath)).Serve(t.Context(), strings.NewReader(input)); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+		if len(lines) != 2 || !strings.Contains(lines[1], "\"symbol\":\"Widget\"") {
+			t.Fatalf("lookup response = %s", output.String())
+		}
+	}
+	data, err := os.ReadFile(metricsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []struct {
+		Sequence       uint64              `json:"sequence"`
+		Tool           string              `json:"tool"`
+		CompletedAt    string              `json:"completed_at"`
+		Metrics        map[string]any      `json:"metrics"`
+		SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+	}
+	if err := json.Unmarshal(data, &records); err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("persisted records = %d, want 2: %s", len(records), data)
+	}
+	for index, record := range records {
+		if record.Sequence != uint64(index+1) || record.Tool != "semantic_lookup" || record.CompletedAt == "" || record.Metrics["total_ms"] == nil || record.SessionMetrics == nil {
+			t.Fatalf("persisted record %d = %+v", index, record)
+		}
+	}
+}
+
+func TestMCPMetricsFileKeepsMoreThanRecentHistory(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/metricsfile\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package metricsfile\ntype Widget struct{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metricsPath := filepath.Join(root, "mcp-metrics.json")
+	var input strings.Builder
+	fmt.Fprintf(&input, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n", root)
+	for id := 2; id <= 102; id++ {
+		fmt.Fprintf(&input, "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Widget\"}}}\n", id)
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output, mcp.WithMetricsFile(metricsPath)).Serve(t.Context(), strings.NewReader(input.String())); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(metricsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var records []json.RawMessage
+	if err := json.Unmarshal(data, &records); err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 101 {
+		t.Fatalf("persisted records = %d, want 101", len(records))
+	}
+}
+
+func TestMCPMetricsFileWriteFailureIsExplicit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/metricsfile\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package metricsfile\ntype Widget struct{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	metricsPath := filepath.Join(root, "missing", "mcp-metrics.json")
+	input := fmt.Sprintf("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"rootPath\":%q}}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_lookup\",\"arguments\":{\"file\":\"main.go\",\"symbol\":\"Widget\"}}}\n", root)
+	var output bytes.Buffer
+	err := mcp.NewServer("full", root, &output, mcp.WithMetricsFile(metricsPath)).Serve(t.Context(), strings.NewReader(input))
+	if err == nil || !strings.Contains(err.Error(), "write MCP metrics file") {
+		t.Fatalf("metrics persistence failure = %v, want explicit write error", err)
 	}
 }
 

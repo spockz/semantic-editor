@@ -42,7 +42,15 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 		},
 		{
 			Tool:   "semantic_insert_structure",
-			Params: json.RawMessage(`{"file":"file2.go","kind":"case","function":"Dispatch","discriminator":"op","source":"case \"ping\":\n\treturn \"pong\""}`),
+			Params: json.RawMessage(`{"file":"file2.go","kind":"case","in_function":"Dispatch","discriminator":"op","source":"case \"ping\":\n\treturn \"pong\""}`),
+		},
+		{
+			Tool:   "semantic_insert_function",
+			Params: json.RawMessage(`{"file":"file1.go","source":"func Added() int { return 3 }"}`),
+		},
+		{
+			Tool:   "semantic_scaffold_file",
+			Params: json.RawMessage(`{"file":"generated.go","package":"testpkg"}`),
 		},
 	}
 
@@ -54,8 +62,8 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	if resp.Status != "ok" {
 		t.Errorf("expected status ok, got %s", resp.Status)
 	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	if len(resp.Results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(resp.Results))
 	}
 	if resp.DiagnosticDelta == nil {
 		t.Fatal("successful batch omitted diagnostic delta")
@@ -67,8 +75,20 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	if before, diagnostics := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationDiagnostics)].Count; before != 1 || diagnostics != 1 {
 		t.Fatalf("diagnostic invocation counts = before:%d diagnostics:%d, want one baseline and one outer verification", before, diagnostics)
 	}
-	if resp.Results[0].Status != "ok" || resp.Results[1].Status != "ok" {
+	if resp.Results[0].Status != "ok" || resp.Results[1].Status != "ok" || resp.Results[2].Status != "ok" || resp.Results[3].Status != "ok" {
 		t.Errorf("expected all results ok: %+v", resp.Results)
+	}
+	if resp.Results[0].File != "file1.go" || resp.Results[0].Symbol != "Foo" || resp.Results[0].DiagnosticStatus != "deferred" {
+		t.Errorf("replace_body batch continuation = %+v", resp.Results[0])
+	}
+	if resp.Results[1].File != "file2.go" || resp.Results[1].Symbol != "" || resp.Results[1].InFunction != "Dispatch" || resp.Results[1].Discriminator != "op" {
+		t.Errorf("insert_case batch continuation = %+v", resp.Results[1])
+	}
+	if resp.Results[2].File != "file1.go" || resp.Results[2].Symbol != "Added" {
+		t.Errorf("insert_function batch continuation = %+v", resp.Results[2])
+	}
+	if resp.Results[3].File != "generated.go" || resp.Results[3].Package != "testpkg" || resp.Results[3].Symbol != "" {
+		t.Errorf("scaffold_file batch continuation = %+v", resp.Results[3])
 	}
 
 	c1, err := os.ReadFile(filepath.Clean(file1))
@@ -232,7 +252,7 @@ func TestBatch_FailFast(t *testing.T) {
 		{
 			// Edit 3: should be skipped
 			Tool:   "semantic_insert_structure",
-			Params: json.RawMessage(`{"file":"file2.go","kind":"case","function":"Bar","source":"case 1:"}`),
+			Params: json.RawMessage(`{"file":"file2.go","kind":"case","in_function":"Bar","source":"case 1:"}`),
 		},
 	}
 
