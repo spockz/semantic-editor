@@ -18,6 +18,9 @@ import "strings"
 func MoveMe(value string) string { return strings.TrimSpace(value) }
 func Local() string { return MoveMe(" local ") }
 `)
+	writeMoveFixture(t, root, "legacy/move_test.go", `package legacy
+func testMoveMeReference() string { return MoveMe(" test ") }
+`)
 	writeMoveFixture(t, root, "api/api.go", `package api
 import "example.com/cross/legacy"
 func LocalCall() string { return legacy.MoveMe(" destination ") }
@@ -37,12 +40,13 @@ func Call() string { return legacy.MoveMe(" caller ") }
 	}
 	assertMoveFileContains(t, root, "api/api.go", "import (\n\t\"strings\"\n)", "func MoveMe(value string) string { return strings.TrimSpace(value) }", "func LocalCall() string { return MoveMe(\" destination \") }")
 	assertMoveFileContains(t, root, "legacy/move.go", "example.com/cross/api", "api.MoveMe(\" local \")")
+	assertMoveFileContains(t, root, "legacy/move_test.go", "example.com/cross/api", "api.MoveMe(\" test \")")
 	assertMoveFileContains(t, root, "caller/caller.go", "example.com/cross/api", "api.MoveMe(\" caller \")")
 }
 
 func TestMoveConstructAcrossPackagesRefusesUnresolvedCasesBeforeWriting(t *testing.T) {
 	tests := []struct {
-		name, symbol, source, extraFile, wantError string
+		name, symbol, source, extraFilePath, extraFile, destination, wantError string
 	}{
 		{
 			name:      "source package dependency",
@@ -51,11 +55,44 @@ func TestMoveConstructAcrossPackagesRefusesUnresolvedCasesBeforeWriting(t *testi
 			wantError: "source-package dependency",
 		},
 		{
-			name:      "inactive caller",
-			symbol:    "HiddenTarget",
-			source:    "package legacy\nfunc HiddenTarget() {}\n",
-			extraFile: "//go:build never\n\npackage hidden\nimport \"example.com/cross/legacy\"\nfunc Hidden() { legacy.HiddenTarget() }\n",
-			wantError: "possible reference to \"HiddenTarget\"",
+			name:          "inactive caller",
+			symbol:        "HiddenTarget",
+			source:        "package legacy\nfunc HiddenTarget() {}\n",
+			extraFilePath: "hidden/hidden.go",
+			extraFile:     "//go:build never\n\npackage hidden\nimport \"example.com/cross/legacy\"\nfunc Hidden() { legacy.HiddenTarget() }\n",
+			wantError:     "possible reference to \"HiddenTarget\"",
+		},
+		{
+			name:        "shadowed destination reference",
+			symbol:      "ShadowTarget",
+			source:      "package legacy\nfunc ShadowTarget() string { return \"target\" }\n",
+			destination: "package api\nimport \"example.com/cross/legacy\"\nfunc Call() string { ShadowTarget := func() string { return \"local\" }; _ = ShadowTarget; return legacy.ShadowTarget() }\n",
+			wantError:   "resolves to a different declaration",
+		},
+		{
+			name:          "shadowed import alias reference",
+			symbol:        "ShadowAliasTarget",
+			source:        "package legacy\nfunc ShadowAliasTarget() string { return \"target\" }\n",
+			destination:   "package api\nfunc LocalCall() string { return \"api\" }\n",
+			extraFilePath: "caller/caller.go",
+			extraFile:     "package caller\nimport (legacy \"example.com/cross/legacy\"; moved \"example.com/cross/api\")\nfunc Existing() string { return moved.LocalCall() }\nfunc Call() string { moved := struct{ ShadowAliasTarget func() string }{ShadowAliasTarget: func() string { return \"local\" }}; _ = moved.ShadowAliasTarget; return legacy.ShadowAliasTarget() }\n",
+			wantError:     "resolves to a different declaration",
+		},
+		{
+			name:          "reference in ignored Go directory",
+			symbol:        "UnlistedTarget",
+			source:        "package legacy\nfunc UnlistedTarget() {}\n",
+			extraFilePath: "_private/reference.go",
+			extraFile:     "package hidden\nimport \"example.com/cross/legacy\"\nfunc Hidden() { legacy.UnlistedTarget() }\n",
+			wantError:     "untyped Go file",
+		},
+		{
+			name:          "reference in testdata",
+			symbol:        "TestdataTarget",
+			source:        "package legacy\nfunc TestdataTarget() {}\n",
+			extraFilePath: "testdata/reference.go",
+			extraFile:     "package hidden\nimport \"example.com/cross/legacy\"\nfunc Hidden() { legacy.TestdataTarget() }\n",
+			wantError:     "untyped Go file",
 		},
 	}
 	for _, test := range tests {
@@ -63,9 +100,13 @@ func TestMoveConstructAcrossPackagesRefusesUnresolvedCasesBeforeWriting(t *testi
 			root := t.TempDir()
 			writeMoveFixture(t, root, "go.mod", "module example.com/cross\n\ngo 1.23\n")
 			writeMoveFixture(t, root, "legacy/move.go", test.source)
-			writeMoveFixture(t, root, "api/api.go", "package api\n")
+			destination := test.destination
+			if destination == "" {
+				destination = "package api\n"
+			}
+			writeMoveFixture(t, root, "api/api.go", destination)
 			if test.extraFile != "" {
-				writeMoveFixture(t, root, "hidden/hidden.go", test.extraFile)
+				writeMoveFixture(t, root, test.extraFilePath, test.extraFile)
 			}
 			beforeSource, err := os.ReadFile(filepath.Join(root, "legacy/move.go"))
 			if err != nil {

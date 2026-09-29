@@ -1,17 +1,34 @@
 # Cross-package move refuses methods, unexported functions, source-local dependencies, and hidden callers.
 ! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol Widget.Method --placement file_end
 stderr 'cross-package move requires an exported free function name'
-cmp legacy/decls.go _want/legacy/decls.go
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
 ! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol privateFunc --placement file_end
 stderr 'cross-package move requires an exported free function name'
-cmp legacy/decls.go _want/legacy/decls.go
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
 ! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol NeedsHelper --placement file_end
 stderr 'source-package dependency "helper"'
-cmp legacy/decls.go _want/legacy/decls.go
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
 ! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol HiddenTarget --placement file_end
 stderr 'possible reference to "HiddenTarget"'
-cmp legacy/decls.go _want/legacy/decls.go
-cmp api/dest.go _want/api/dest.go
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
+cmp api/dest.go .scratch/_want/api/dest.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol ShadowTarget --placement file_end
+stderr 'resolves to a different declaration'
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
+cmp api/dest.go .scratch/_want/api/dest.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol ShadowAliasTarget --placement file_end
+stderr 'resolves to a different declaration'
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
+cmp api/dest.go .scratch/_want/api/dest.go
+cmp callers/use.go .scratch/_want/callers/use.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol UnlistedTarget --placement file_end
+stderr 'untyped Go file.*_private/reference.go'
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
+cmp api/dest.go .scratch/_want/api/dest.go
+! exec semedit move-construct --file legacy/decls.go --destination-file api/dest.go --symbol TestdataTarget --placement file_end
+stderr 'untyped Go file.*testdata/reference.go'
+cmp legacy/decls.go .scratch/_want/legacy/decls.go
+cmp api/dest.go .scratch/_want/api/dest.go
 
 -- go.mod --
 module example.com/refuse
@@ -28,8 +45,12 @@ func helper() {}
 func NeedsHelper() { helper() }
 func privateFunc() {}
 func HiddenTarget() {}
+func ShadowTarget() string { return "target" }
+func ShadowAliasTarget() string { return "target" }
+func UnlistedTarget() {}
+func TestdataTarget() {}
 
--- _want/legacy/decls.go --
+-- .scratch/_want/legacy/decls.go --
 package legacy
 
 type Widget struct{}
@@ -39,13 +60,65 @@ func helper() {}
 func NeedsHelper() { helper() }
 func privateFunc() {}
 func HiddenTarget() {}
+func ShadowTarget() string { return "target" }
+func ShadowAliasTarget() string { return "target" }
+func UnlistedTarget() {}
+func TestdataTarget() {}
 
 -- api/dest.go --
 package api
 
--- _want/api/dest.go --
+import "example.com/refuse/legacy"
+
+func ShadowCall() string {
+	ShadowTarget := func() string { return "shadow" }
+	_ = ShadowTarget
+	return legacy.ShadowTarget()
+}
+
+func Existing() string { return "existing" }
+-- .scratch/_want/api/dest.go --
 package api
 
+import "example.com/refuse/legacy"
+
+func ShadowCall() string {
+	ShadowTarget := func() string { return "shadow" }
+	_ = ShadowTarget
+	return legacy.ShadowTarget()
+}
+
+func Existing() string { return "existing" }
+-- callers/use.go --
+package callers
+
+import (
+	legacy "example.com/refuse/legacy"
+	moved "example.com/refuse/api"
+)
+
+func ExistingCall() string { return moved.Existing() }
+
+func AliasShadowCall() string {
+	moved := struct{ ShadowAliasTarget func() string }{ShadowAliasTarget: func() string { return "shadow" }}
+	_ = moved.ShadowAliasTarget
+	return legacy.ShadowAliasTarget()
+}
+-- .scratch/_want/callers/use.go --
+package callers
+
+import (
+	legacy "example.com/refuse/legacy"
+	moved "example.com/refuse/api"
+)
+
+func ExistingCall() string { return moved.Existing() }
+
+func AliasShadowCall() string {
+	moved := struct{ ShadowAliasTarget func() string }{ShadowAliasTarget: func() string { return "shadow" }}
+	_ = moved.ShadowAliasTarget
+	return legacy.ShadowAliasTarget()
+}
 -- hidden/hidden.go --
 //go:build never
 
@@ -54,3 +127,15 @@ package hidden
 import "example.com/refuse/legacy"
 
 func Hidden() { legacy.HiddenTarget() }
+-- _private/reference.go --
+package hidden
+
+import "example.com/refuse/legacy"
+
+func Hidden() { legacy.UnlistedTarget() }
+-- testdata/reference.go --
+package hidden
+
+import "example.com/refuse/legacy"
+
+func Hidden() { legacy.TestdataTarget() }

@@ -29,7 +29,7 @@ import (
 // moveConstructAcrossPackages moves one exported free function inside a module
 // and rewrites references only when go/packages can prove their identities.
 //
-//nolint:funlen // The ordered preflight and publication stages share one immutable plan.
+//nolint:funlen,gocognit // Ordered compiler preflight and publication share one immutable plan with explicit refusal points.
 func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPath, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	if ctx.Err() != nil {
 		return "", ctx.Err()
@@ -82,6 +82,9 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 			return "", fmt.Errorf("cannot establish complete Go references: package %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
 		}
 	}
+	if err := rejectUntypedMoveReferences(original, pkgs, symbolQuery); err != nil {
+		return "", err
+	}
 	sourcePkg, destinationPkg := packageForMoveFile(pkgs, sourcePath), packageForMoveFile(pkgs, destinationPath)
 	if sourcePkg == nil || destinationPkg == nil {
 		return "", fmt.Errorf("source and destination must be active Go files in the selected module")
@@ -126,7 +129,7 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 		return "", err
 	}
 	targetPos := sourcePkg.Fset.Position(targetObj.Pos())
-	refs, err := rewriteMoveReferences(pkgs, sourcePkg.PkgPath, targetObj.Name(), sourcePath, targetPos.Offset, start, end, destinationPath, destinationPkg.PkgPath, destinationPkg.Name)
+	refs, destinationRefs, err := rewriteMoveReferences(pkgs, sourcePkg.PkgPath, targetObj.Name(), sourcePath, targetPos.Offset, start, end, destinationPath, destinationPkg.PkgPath, destinationPkg.Name)
 	if err != nil {
 		return "", err
 	}
@@ -188,12 +191,29 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 		return "", fmt.Errorf("validate destination after move: %w", err)
 	}
 	changes[destinationPath] = formattedDestination
+	expectedDestinationReferences := map[moveReferenceKey][]moveReferenceExpectation{}
+	for key, markers := range destinationRefs {
+		content := changes[key.filePath]
+		for _, marker := range markers {
+			offset := bytes.Index(content, []byte(marker.sentinel))
+			if offset < 0 {
+				return "", fmt.Errorf("locate rewritten destination reference in %s", key.filePath)
+			}
+			expectedDestinationReferences[key] = append(expectedDestinationReferences[key], moveReferenceExpectation{offset: offset, name: marker.replacement, kind: marker.kind})
+			content = bytes.Replace(content, []byte(marker.sentinel), []byte(marker.replacement), 1)
+		}
+		changes[key.filePath] = content
+	}
 	for path := range changes {
 		if _, ok := original[path]; !ok {
 			return "", fmt.Errorf("reference file is outside the preflight module snapshot: %s", path)
 		}
 	}
-	if err := typecheckMoveOverlay(ctx, moduleRoot, changes); err != nil {
+	overlayPackages, err := typecheckMoveOverlay(ctx, moduleRoot, changes)
+	if err != nil {
+		return "", err
+	}
+	if err := validateMoveDestinationReferences(overlayPackages, destinationPkg.PkgPath, destinationPath, targetObj.Name(), expectedDestinationReferences); err != nil {
 		return "", err
 	}
 	paths := make([]string, 0, len(changes))
@@ -239,6 +259,26 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	return strings.Join(diffs, "\n"), nil
 }
 
+func rejectUntypedMoveReferences(snapshot map[string][]byte, pkgs []*packages.Package, symbolName string) error {
+	loaded := map[string]bool{}
+	for _, pkg := range pkgs {
+		for _, path := range append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...) {
+			abs, err := filepath.Abs(path)
+			if err != nil {
+				return fmt.Errorf("resolve loaded Go file %s: %w", path, err)
+			}
+			loaded[filepath.Clean(abs)] = true
+		}
+	}
+	for path, content := range snapshot {
+		if loaded[filepath.Clean(path)] || !containsMoveIdentifier(content, symbolName) {
+			continue
+		}
+		return fmt.Errorf("cross-package move cannot prove reference completeness: untyped Go file %s mentions %q", path, symbolName)
+	}
+	return nil
+}
+
 func moveModuleRoot(sourcePath string) (string, error) {
 	abs, err := filepath.Abs(sourcePath)
 	if err != nil {
@@ -280,7 +320,7 @@ func inspectMoveModuleFiles(root, sourcePath, destinationPath, symbolName string
 			return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
 		}
 		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" || entry.Name() == "testdata" {
+			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" {
 				return filepath.SkipDir
 			}
 			if path != root {
@@ -470,8 +510,35 @@ func moveImportsForTypedDeclaration(decl ast.Decl, source *ast.File, pkg *packag
 	return imports, nil
 }
 
-func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, sourcePath string, targetOffset, declarationStart, declarationEnd int, destinationPath, destinationImport, destinationName string) (map[string][]byte, error) {
+type moveReferenceKey struct {
+	packageID string
+	filePath  string
+}
+
+type moveReferenceKind uint8
+
+const (
+	moveReferenceFunction moveReferenceKind = iota + 1
+	moveReferenceImport
+)
+
+type moveReferenceMarker struct {
+	sentinel    string
+	replacement string
+	kind        moveReferenceKind
+}
+
+type moveReferenceExpectation struct {
+	offset int
+	name   string
+	kind   moveReferenceKind
+}
+
+//nolint:gocognit // Typed selector and dot-import references need distinct rewrites under the same package-scope plan.
+func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, sourcePath string, targetOffset, declarationStart, declarationEnd int, destinationPath, destinationImport, destinationName string) (map[string][]byte, map[moveReferenceKey][]moveReferenceMarker, error) {
 	changes := map[string][]byte{}
+	destinationReferences := map[moveReferenceKey][]moveReferenceMarker{}
+	sentinelSequence := 0
 	for _, pkg := range pkgs {
 		if pkg.Module == nil || !pkg.Module.Main {
 			continue
@@ -479,6 +546,9 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 		for _, file := range pkg.Syntax {
 			path := filepath.Clean(pkg.Fset.Position(file.Pos()).Filename)
 			if pkg.Module.Dir == "" || !moveWithin(pkg.Module.Dir, path) {
+				continue
+			}
+			if !strings.HasSuffix(path, "_test.go") && pkg.ID != pkg.PkgPath {
 				continue
 			}
 			if (path == sourcePath || path == destinationPath) && pkg.ID != pkg.PkgPath {
@@ -490,15 +560,20 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 				fileChanged = true
 			}
 			alias := ""
+			var referenceMarkers []moveReferenceMarker
 			astutil.Apply(file, func(cursor *astutil.Cursor) bool {
 				if selector, ok := cursor.Node().(*ast.SelectorExpr); ok && isTargetMoveReference(pkg, selector.Sel, sourceImport, targetName, sourcePath, targetOffset) {
 					if pkg.PkgPath == destinationImport {
-						cursor.Replace(ast.NewIdent(selector.Sel.Name))
+						sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
+						referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: targetName, kind: moveReferenceFunction})
+						cursor.Replace(ast.NewIdent(sentinel))
 					} else {
 						if alias == "" {
 							alias = moveImportAlias(file, destinationImport, destinationName)
 						}
-						selector.X = ast.NewIdent(alias)
+						sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
+						referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: alias, kind: moveReferenceImport})
+						selector.X = ast.NewIdent(sentinel)
 					}
 					fileChanged = true
 					return false
@@ -516,7 +591,9 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 				if alias == "" {
 					alias = moveImportAlias(file, destinationImport, destinationName)
 				}
-				cursor.Replace(&ast.SelectorExpr{X: ast.NewIdent(alias), Sel: ast.NewIdent(ident.Name)})
+				sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
+				referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: alias, kind: moveReferenceImport})
+				cursor.Replace(&ast.SelectorExpr{X: ast.NewIdent(sentinel), Sel: ast.NewIdent(ident.Name)})
 				fileChanged = true
 				return false
 			}, nil)
@@ -525,24 +602,49 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 			}
 			if alias != "" {
 				if err := setMoveImport(file, destinationImport, alias, destinationName); err != nil {
-					return nil, fmt.Errorf("update imports in %s: %w", path, err)
+					return nil, nil, fmt.Errorf("update imports in %s: %w", path, err)
 				}
 			}
-			if err := removeUnusedMoveImports(file, pkg.TypesInfo, destinationImport, destinationName); err != nil {
-				return nil, fmt.Errorf("clean imports in %s: %w", path, err)
+			reserved := map[string]bool{}
+			for _, marker := range referenceMarkers {
+				if marker.kind == moveReferenceImport {
+					reserved[marker.replacement] = true
+				}
+			}
+			if err := removeUnusedMoveImports(file, pkg.TypesInfo, destinationImport, destinationName, reserved); err != nil {
+				return nil, nil, fmt.Errorf("clean imports in %s: %w", path, err)
 			}
 			var out bytes.Buffer
 			if err := format.Node(&out, pkg.Fset, file); err != nil {
-				return nil, fmt.Errorf("format references in %s: %w", path, err)
+				return nil, nil, fmt.Errorf("format references in %s: %w", path, err)
 			}
 			formatted, err := format.Source(out.Bytes())
 			if err != nil {
-				return nil, fmt.Errorf("format reference file %s: %w", path, err)
+				return nil, nil, fmt.Errorf("format reference file %s: %w", path, err)
 			}
+			destinationReferences[moveReferenceKey{packageID: pkg.ID, filePath: path}] = append(destinationReferences[moveReferenceKey{packageID: pkg.ID, filePath: path}], referenceMarkers...)
 			changes[path] = formatted
 		}
 	}
-	return changes, nil
+	return changes, destinationReferences, nil
+}
+
+func nextMoveReferenceSentinel(file *ast.File, sequence *int) string {
+	for {
+		candidate := fmt.Sprintf("semeditMoveReference%d", *sequence)
+		*sequence++
+		used := false
+		ast.Inspect(file, func(node ast.Node) bool {
+			if ident, ok := node.(*ast.Ident); ok && ident.Name == candidate {
+				used = true
+				return false
+			}
+			return true
+		})
+		if !used {
+			return candidate
+		}
+	}
 }
 
 func isTargetMoveReference(pkg *packages.Package, ident *ast.Ident, sourceImport, targetName, sourcePath string, targetOffset int) bool {
@@ -638,12 +740,17 @@ func setMoveImport(file *ast.File, importPath, alias, packageName string) error 
 	return nil
 }
 
-func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport, destinationName string) error {
-	used := map[string]bool{}
+func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport, destinationName string, reserved map[string]bool) error {
+	used := maps.Clone(reserved)
+	if used == nil {
+		used = map[string]bool{}
+	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		if sel, ok := node.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.X.(*ast.Ident); ok {
-				used[ident.Name] = true
+				if _, isPackage := info.Uses[ident].(*types.PkgName); isPackage || reserved[ident.Name] {
+					used[ident.Name] = true
+				}
 			}
 		}
 		return true
@@ -695,20 +802,101 @@ func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport
 	return nil
 }
 
-func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][]byte) error {
+func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][]byte) ([]*packages.Package, error) {
 	overlay := make(map[string][]byte, len(changes))
 	maps.Copy(overlay, changes)
 	cfg := &packages.Config{Context: ctx, Dir: root, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule, Tests: true, Overlay: overlay}
 	pkgs, err := packages.Load(cfg, "./...")
 	if err != nil {
-		return fmt.Errorf("preflight moved package types: %w", err)
+		return nil, fmt.Errorf("preflight moved package types: %w", err)
 	}
 	if len(pkgs) == 0 {
-		return fmt.Errorf("preflight moved package types: no packages found")
+		return nil, fmt.Errorf("preflight moved package types: no packages found")
 	}
 	for _, pkg := range pkgs {
 		if len(pkg.Errors) != 0 {
-			return fmt.Errorf("cross-package move failed type preflight in %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
+			return nil, fmt.Errorf("cross-package move failed type preflight in %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
+		}
+	}
+	return pkgs, nil
+}
+
+func validateMoveDestinationReferences(pkgs []*packages.Package, destinationImport, destinationPath, targetName string, expected map[moveReferenceKey][]moveReferenceExpectation) error {
+	for key, references := range expected {
+		var pkg *packages.Package
+		for _, candidate := range pkgs {
+			if candidate.ID == key.packageID {
+				pkg = candidate
+				break
+			}
+		}
+		if pkg == nil {
+			return fmt.Errorf("cross-package move cannot validate rewritten destination references in package %s", key.packageID)
+		}
+		var moved *types.Func
+		for _, reference := range references {
+			if reference.kind != moveReferenceFunction {
+				continue
+			}
+			if pkg.PkgPath != destinationImport {
+				return fmt.Errorf("cross-package move cannot validate package-local reference in %s", key.filePath)
+			}
+			var ok bool
+			moved, ok = pkg.Types.Scope().Lookup(targetName).(*types.Func)
+			if !ok || moved.Pkg() == nil || moved.Pkg().Path() != destinationImport || filepath.Clean(pkg.Fset.Position(moved.Pos()).Filename) != filepath.Clean(destinationPath) {
+				return fmt.Errorf("cross-package move cannot identify moved function %q in destination package", targetName)
+			}
+			break
+		}
+		var syntax *ast.File
+		for _, file := range pkg.Syntax {
+			if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) == key.filePath {
+				syntax = file
+				break
+			}
+		}
+		if syntax == nil {
+			return fmt.Errorf("cross-package move cannot validate rewritten destination references in %s", key.filePath)
+		}
+		wanted := make(map[int]moveReferenceExpectation, len(references))
+		for _, reference := range references {
+			wanted[reference.offset] = reference
+		}
+		misresolved := false
+		ast.Inspect(syntax, func(node ast.Node) bool {
+			ident, ok := node.(*ast.Ident)
+			if !ok {
+				return true
+			}
+			offset := pkg.Fset.Position(ident.Pos()).Offset
+			reference, expectedReference := wanted[offset]
+			if !expectedReference || ident.Name != reference.name {
+				return true
+			}
+			resolved := pkg.TypesInfo.Uses[ident]
+			valid := false
+			switch reference.kind {
+			case moveReferenceFunction:
+				valid = resolved == moved
+			case moveReferenceImport:
+				if packageName, ok := resolved.(*types.PkgName); ok {
+					valid = packageName.Imported().Path() == destinationImport
+				}
+			}
+			wanted[offset] = moveReferenceExpectation{kind: 0}
+			if !valid {
+				misresolved = true
+				return false
+			}
+			return true
+		})
+		if misresolved {
+			return fmt.Errorf("cross-package move refuses rewritten reference %q in %s because it resolves to a different declaration", targetName, key.filePath)
+		}
+		for offset, expectation := range wanted {
+			if expectation.kind != 0 {
+				return fmt.Errorf("cross-package move cannot prove rewritten reference %q in %s at byte %d resolves to the moved function or its destination package", expectation.name, key.filePath, offset)
+			}
 		}
 	}
 	return nil
