@@ -75,6 +75,15 @@ func (s *agentSession) evaluate(ctx context.Context, result *RunResult) error {
 	return evaluateAgentResult(ctx, s.execution.Task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
 }
 
+func (s *agentSession) evaluateStage(ctx context.Context, result *RunResult, oracle OracleConfig) error {
+	if result == nil {
+		return fmt.Errorf("evaluate session stage: result is nil")
+	}
+	task := *s.execution.Task
+	task.Metadata.Oracle = oracle
+	return evaluateAgentResult(ctx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+}
+
 func (s *agentSession) close() error {
 	if s.result != nil {
 		state := s.toolObservationState
@@ -141,6 +150,47 @@ func (s *agentSession) runFollowups(ctx context.Context) (string, bool) {
 		result.InteractionSteps = append(result.InteractionSteps, interactionStep(index+2, followup, turn))
 		mergeTurn(result, turn)
 	}
+	return s.resumeID, s.retainWorkDir
+}
+
+func (s *agentSession) runStagedFollowups(ctx context.Context) (string, bool) {
+	result := s.result
+	target := s.execution.Target
+	arm := s.execution.Arm
+	allPassed := result.Success
+	for index, followup := range s.execution.StagedFollowups {
+		turn := &RunResult{Target: target, Arm: arm, Prompt: followup.Instruction}
+		turnStarted := time.Now()
+		runErr := s.runTurn(ctx, target, followup.Instruction, "task", turn)
+		if runErr != nil {
+			turn.WallClock = time.Since(turnStarted)
+			turn.Error = runErr.Error()
+			result.Error = fmt.Sprintf("staged step %d: %v", index+2, runErr)
+			s.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
+			mergeTurn(result, turn)
+			result.Success = false
+			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
+			result.WallClock = time.Since(s.started)
+			return s.resumeID, s.retainWorkDir
+		}
+		if err := s.evaluateStage(ctx, turn, followup.Oracle); err != nil {
+			turn.WallClock = time.Since(turnStarted)
+			turn.Error = err.Error()
+			result.Error = err.Error()
+			s.retainWorkDir = shouldRetainWorkDir(ctx, err)
+			mergeTurn(result, turn)
+			result.Success = false
+			result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
+			result.WallClock = time.Since(s.started)
+			return s.resumeID, s.retainWorkDir
+		}
+		turn.WallClock = time.Since(turnStarted)
+		allPassed = allPassed && turn.Success
+		result.InteractionSteps = append(result.InteractionSteps, stagedInteractionStep(index+2, followup.TotalEdits, followup.Instruction, turn))
+		mergeTurn(result, turn)
+		result.Success = allPassed
+	}
+	result.WallClock = time.Since(s.started)
 	return s.resumeID, s.retainWorkDir
 }
 

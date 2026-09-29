@@ -129,6 +129,11 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 				return err
 			}
 		}
+		for stageIndex, stage := range job.Execution.StagedFollowups {
+			if _, err := fmt.Fprintf(w, "     staged-followup-%d total-edits=%d prompt=%q\n", stageIndex+1, stage.TotalEdits, stage.Instruction); err != nil {
+				return err
+			}
+		}
 	}
 	for _, exclusion := range plan.Exclusions {
 		if _, err := fmt.Fprintf(w, "Excluded fixture: task=%s path=%s requested=%s available=%s reason=%s\n", exclusion.TaskID, exclusion.Path, strings.Join(exclusion.Requested, ","), strings.Join(exclusion.Available, ","), exclusion.Reason); err != nil {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"semedit/internal/mcp"
+	"semedit/internal/pipeline"
 )
 
 func TestCodexToolCallOutcomes(t *testing.T) {
@@ -1320,5 +1321,87 @@ func TestCodexFileChangeCapturedAsToolCall(t *testing.T) {
 	}
 	if tracker.initialLoadTurns != 0 {
 		t.Fatalf("initial load turns = %d, want 0", tracker.initialLoadTurns)
+	}
+}
+
+func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
+	if err != nil {
+		t.Fatalf("read staged fixture: %v", err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatalf("parse staged fixture: %v", err)
+	}
+	if task.Metadata.InteractiveMode != "staged" || task.Metadata.StagedInitialTotalEdits != 1 || len(task.Metadata.StagedFollowups) != 4 {
+		t.Fatalf("staged metadata = %+v", task.Metadata)
+	}
+	workDir := t.TempDir()
+	if err := task.ExtractTo(workDir); err != nil {
+		t.Fatalf("extract staged fixture: %v", err)
+	}
+	plan, err := os.ReadFile(filepath.Join(workDir, "rename-plan.md"))
+	if err != nil {
+		t.Fatalf("read rename plan: %v", err)
+	}
+	var oldNames, newNames []string
+	for line := range strings.SplitSeq(string(plan), "\n") {
+		if !strings.HasPrefix(line, "| `") {
+			continue
+		}
+		parts := strings.Split(line, "`")
+		if len(parts) >= 4 {
+			oldNames = append(oldNames, parts[1])
+			newNames = append(newNames, parts[3])
+		}
+	}
+	if len(oldNames) != 16 {
+		t.Fatalf("rename plan has %d mappings, want 16", len(oldNames))
+	}
+	sourcePath := filepath.Join(workDir, "pipeline", "workflow.go")
+	source, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatalf("read workflow: %v", err)
+	}
+	current := string(source)
+	previous := 0
+	for index, count := range []int{1, 2, 4, 8, 16} {
+		for edit := previous; edit < count; edit++ {
+			current = strings.ReplaceAll(current, oldNames[edit], newNames[edit])
+		}
+		if err := pipeline.WriteAtomic(sourcePath, []byte(current)); err != nil {
+			t.Fatalf("write stage %d: %v", count, err)
+		}
+		stage := *task
+		if index > 0 {
+			stage.Metadata.Oracle = task.Metadata.StagedFollowups[index-1].Oracle
+			if task.Metadata.StagedFollowups[index-1].TotalEdits != count {
+				t.Fatalf("stage %d total edits = %d", index, task.Metadata.StagedFollowups[index-1].TotalEdits)
+			}
+		}
+		result, err := Evaluate(context.Background(), &stage, workDir, []string{"pipeline/workflow.go"})
+		if err != nil || !result.Passed {
+			t.Fatalf("stage %d oracle = %+v, err=%v", count, result, err)
+		}
+		previous = count
+	}
+	early, err := Evaluate(context.Background(), task, workDir, []string{"pipeline/workflow.go"})
+	if err != nil || early.Passed {
+		t.Fatalf("first-stage oracle accepted all 16 edits: %+v, err=%v", early, err)
+	}
+}
+
+func TestStagedFollowupsRejectNonIncreasingCounts(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	malformed := strings.Replace(string(data), "  - total_edits: 2", "  - total_edits: 1", 1)
+	if _, err := ParseTask([]byte(malformed)); err == nil || !strings.Contains(err.Error(), "total_edits must exceed") {
+		t.Fatalf("non-increasing stage count accepted: %v", err)
+	}
+	malformed = strings.Replace(string(data), "interactive_mode: staged", "interactive_mode: corrective", 1)
+	if _, err := ParseTask([]byte(malformed)); err == nil || !strings.Contains(err.Error(), "unsupported interactive_mode") {
+		t.Fatalf("unsupported stage mode accepted: %v", err)
 	}
 }

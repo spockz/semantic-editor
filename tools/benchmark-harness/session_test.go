@@ -459,3 +459,82 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 		})
 	}
 }
+
+func TestExecuteAgentStagedFollowupsKeepSessionAndStageCosts(t *testing.T) {
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	countPath := filepath.Join(root, "count")
+	workLog := filepath.Join(root, "workdirs")
+	argsLog := filepath.Join(root, "args")
+	script := filepath.Join(bin, "codex")
+	program := `#!/bin/sh
+count=0
+if [ -f "$SEMEDIT_SESSION_COUNT" ]; then count=$(cat "$SEMEDIT_SESSION_COUNT"); fi
+count=$((count + 1))
+printf '%s' "$count" > "$SEMEDIT_SESSION_COUNT"
+pwd >> "$SEMEDIT_SESSION_WORKDIRS"
+printf '%s\n' "$*" >> "$SEMEDIT_SESSION_ARGS"
+printf '{"type":"thread.started","thread_id":"fake-stage"}\n'
+printf '{"type":"turn.started"}\n'
+if [ "$count" -eq 1 ]; then
+  printf 'package main\nfunc B() {}\n' > main.go
+  printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n'
+else
+  printf 'package main\nfunc A() {}\nfunc B() {}\n' > main.go
+  printf '{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":3}}\n'
+fi
+printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
+`
+	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_SESSION_COUNT", countPath)
+	t.Setenv("SEMEDIT_SESSION_WORKDIRS", workLog)
+	t.Setenv("SEMEDIT_SESSION_ARGS", argsLog)
+	task := &Task{
+		Metadata: TaskMetadata{
+			TaskID:                  "staged-session",
+			Instruction:             "Stage one",
+			InteractiveMode:         "staged",
+			StagedInitialTotalEdits: 1,
+			Oracle:                  OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"A"}, MustNotContainSymbols: []string{"B"}}},
+			StagedFollowups:         []StagedFollowup{{TotalEdits: 2, Instruction: "Stage two", Oracle: OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"A", "B"}}}}},
+		},
+		Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Old() {}\n")),
+	}
+	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmBaseline, Variant: "small", Prompt: "Stage one", StagedFollowups: task.Metadata.StagedFollowups, Policy: SemeditArmRestrictWrite}
+	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.Oracle == nil || !result.Oracle.Passed || len(result.InteractionSteps) != 2 {
+		t.Fatalf("staged result lost first-stage failure: %+v", result)
+	}
+	first, second := result.InteractionSteps[0], result.InteractionSteps[1]
+	if first.TotalEdits != 1 || second.TotalEdits != 2 || first.Oracle == nil || first.Oracle.Passed || second.Oracle == nil || !second.Oracle.Passed {
+		t.Fatalf("stage checkpoints = %+v", result.InteractionSteps)
+	}
+	if first.PromptTokens != 5 || second.PromptTokens != 7 || result.PromptTokens != 12 || first.OutputTokens != 2 || second.OutputTokens != 3 || result.OutputTokens != 5 {
+		t.Fatalf("per-stage token accounting = %+v, aggregate = %+v", result.InteractionSteps, result)
+	}
+	count, err := os.ReadFile(countPath)
+	if err != nil || string(count) != "2" {
+		t.Fatalf("provider calls = %q, err=%v", count, err)
+	}
+	workdirs, err := os.ReadFile(workLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Fields(string(workdirs))
+	if len(lines) != 2 || lines[0] != lines[1] {
+		t.Fatalf("staged turns changed workspace: %q", workdirs)
+	}
+	args, err := os.ReadFile(argsLog)
+	if err != nil || !strings.Contains(string(args), "resume --json fake-stage") {
+		t.Fatalf("staged follow-up did not resume provider session: %q, err=%v", args, err)
+	}
+}

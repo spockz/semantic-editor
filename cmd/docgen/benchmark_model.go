@@ -62,6 +62,7 @@ type BenchRunResult struct {
 	Diff                             string                       `json:"diff,omitempty"`
 	ToolsUsed                        []string                     `json:"tools_used,omitempty"`
 	ToolCalls                        []BenchToolCall              `json:"tool_calls,omitempty"`
+	InteractiveMode                  string                       `json:"interactive_mode,omitempty"`
 	InteractionSteps                 []BenchInteractionStep       `json:"interaction_steps,omitempty"`
 	SemanticToolReflection           *BenchSemanticToolReflection `json:"semantic_tool_reflection,omitempty"`
 	MCPVerified                      bool                         `json:"mcp_verified"`
@@ -81,11 +82,18 @@ type BenchToolCall struct {
 
 // BenchInteractionStep preserves the independent outcome and tool-call order from one continued reasoning turn.
 type BenchInteractionStep struct {
-	Step      int                `json:"step"`
-	Turns     int                `json:"turns"`
-	ToolCalls []BenchToolCall    `json:"tool_calls,omitempty"`
-	Oracle    *BenchOracleResult `json:"oracle,omitempty"`
-	Error     string             `json:"error,omitempty"`
+	Step                 int                `json:"step"`
+	TotalEdits           int                `json:"total_edits,omitempty"`
+	WallClockMS          int64              `json:"wall_clock_ms"`
+	Turns                int                `json:"turns"`
+	PromptTokens         int                `json:"prompt_tokens"`
+	CachedPromptTokens   int                `json:"cached_prompt_tokens"`
+	UncachedPromptTokens int                `json:"uncached_prompt_tokens"`
+	OutputTokens         int                `json:"output_tokens"`
+	ReasoningTokens      int                `json:"reasoning_tokens"`
+	ToolCalls            []BenchToolCall    `json:"tool_calls,omitempty"`
+	Oracle               *BenchOracleResult `json:"oracle,omitempty"`
+	Error                string             `json:"error,omitempty"`
 }
 
 // BenchSemanticToolReflection records the diagnostic reason an unverified semantic run did not use a semantic edit tool.

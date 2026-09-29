@@ -131,13 +131,24 @@ type ToolCall struct {
 
 // InteractionStep preserves the independent outcome of one turn in a continued agent session.
 type InteractionStep struct {
-	Step      int           `json:"step"`
-	Prompt    string        `json:"prompt"`
-	WallClock time.Duration `json:"wall_clock_ms"`
-	Turns     int           `json:"turns"`
-	ToolCalls []ToolCall    `json:"tool_calls,omitempty"`
-	Oracle    *OracleResult `json:"oracle,omitempty"`
-	Error     string        `json:"error,omitempty"`
+	Step                             int            `json:"step"`
+	TotalEdits                       int            `json:"total_edits,omitempty"`
+	Prompt                           string         `json:"prompt"`
+	WallClock                        time.Duration  `json:"wall_clock_ms"`
+	Turns                            int            `json:"turns"`
+	PromptTokens                     int            `json:"prompt_tokens"`
+	CachedPromptTokens               int            `json:"cached_prompt_tokens"`
+	UncachedPromptTokens             int            `json:"uncached_prompt_tokens"`
+	OutputTokens                     int            `json:"output_tokens"`
+	ReasoningTokens                  int            `json:"reasoning_tokens"`
+	InitialLoadTurns                 int            `json:"initial_load_turns"`
+	MCPLoadTurns                     int            `json:"mcp_load_turns"`
+	InternalTurns                    int            `json:"internal_turns"`
+	ProcessStartToFirstEvent         *time.Duration `json:"process_start_to_first_event_ms,omitempty"`
+	MCPInitializeToFirstSemanticCall *time.Duration `json:"mcp_initialize_to_first_semantic_call_ms,omitempty"`
+	ToolCalls                        []ToolCall     `json:"tool_calls,omitempty"`
+	Oracle                           *OracleResult  `json:"oracle,omitempty"`
+	Error                            string         `json:"error,omitempty"`
 }
 
 type DiagnosticToolCoverage struct {
@@ -232,6 +243,7 @@ type RunResult struct {
 	Diff                             string                   `json:"diff,omitempty"`
 	ToolsUsed                        []string                 `json:"tools_used,omitempty"`
 	ToolCalls                        []ToolCall               `json:"tool_calls,omitempty"`
+	InteractiveMode                  string                   `json:"interactive_mode,omitempty"`
 	InteractionSteps                 []InteractionStep        `json:"interaction_steps,omitempty"`
 	DiagnosticToolCoverage           *DiagnosticToolCoverage  `json:"diagnostic_tool_coverage,omitempty"`
 	DiagnosticReflectionSkipped      string                   `json:"diagnostic_reflection_skipped,omitempty"`

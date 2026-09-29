@@ -897,3 +897,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the request returned no structured symbol result; no source was changed.
 - Workaround: locate the declaration first, then inspect it in its actual file.
 - Root cause: the caller supplied an incorrect file path for the symbol.
+
+### ST-0115: semantic_replace_body organized the wrong YAML import
+
+- Date: 2026-09-29
+- Tool: `semantic_replace_body` with automatic import organization
+- Target: `tools/benchmark-harness/oracle.go`, `parseYAMLFrontmatter`
+- Observed failure: the body edit succeeded, but import cleanup selected `gopkg.in/yaml.v2`; this repository requires `gopkg.in/yaml.v3`, so diagnostics reported an unavailable module and undefined `yaml`.
+- Workaround: replace the import with the existing `gopkg.in/yaml.v3` module and run the repository checks.
+- Root cause: automatic import resolution selected a similarly named module without honoring the existing `go.mod` dependency.

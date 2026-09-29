@@ -116,6 +116,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	}
 	res := &RunResult{
 		TaskID: task.Metadata.TaskID, Variant: variant,
+		InteractiveMode:              task.Metadata.InteractiveMode,
 		PromptVariant:                promptVariantFromExecution(execution),
 		SemeditArmRestrict:           execution.Policy,
 		SemeditArmRestrictionApplied: arm == ArmSemedit,
@@ -147,7 +148,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		res.WallClock = time.Since(started)
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = fmt.Sprintf("%s execution: %v", target.Harness, err)
-		res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
+		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
 		return res, nil
 	}
 	res.WallClock = time.Since(started)
@@ -155,11 +156,18 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		res.WallClock = time.Since(started)
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		res.Error = err.Error()
-		res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
+		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
 		return res, nil
 	}
-	res.InteractionSteps = append(res.InteractionSteps, interactionStep(1, prompt, res))
-	_, session.retainWorkDir = session.runFollowups(ctx)
+	if task.Metadata.InteractiveMode == "staged" {
+		res.WallClock = time.Since(started)
+	}
+	res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
+	if task.Metadata.InteractiveMode == "staged" {
+		_, session.retainWorkDir = session.runStagedFollowups(ctx)
+	} else {
+		_, session.retainWorkDir = session.runFollowups(ctx)
+	}
 	sessionID := session.resumeID
 	res.WallClock = time.Since(started)
 	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
@@ -337,7 +345,38 @@ func evaluateAgentResult(ctx context.Context, task *Task, workDir string, before
 }
 
 func interactionStep(step int, prompt string, res *RunResult) InteractionStep {
-	return InteractionStep{Step: step, Prompt: prompt, WallClock: res.WallClock, Turns: res.Turns, ToolCalls: res.ToolCalls, Oracle: res.Oracle, Error: res.Error}
+	return InteractionStep{
+		Step:                             step,
+		Prompt:                           prompt,
+		WallClock:                        res.WallClock,
+		Turns:                            res.Turns,
+		PromptTokens:                     res.PromptTokens,
+		CachedPromptTokens:               res.CachedPromptTokens,
+		UncachedPromptTokens:             res.UncachedPromptTokens,
+		OutputTokens:                     res.OutputTokens,
+		ReasoningTokens:                  res.ReasoningTokens,
+		InitialLoadTurns:                 res.InitialLoadTurns,
+		MCPLoadTurns:                     res.MCPLoadTurns,
+		InternalTurns:                    res.InternalTurns,
+		ProcessStartToFirstEvent:         res.ProcessStartToFirstEvent,
+		MCPInitializeToFirstSemanticCall: res.MCPInitializeToFirstSemanticCall,
+		ToolCalls:                        res.ToolCalls,
+		Oracle:                           res.Oracle,
+		Error:                            res.Error,
+	}
+}
+
+func stagedInteractionStep(step int, totalEdits int, prompt string, res *RunResult) InteractionStep {
+	result := interactionStep(step, prompt, res)
+	result.TotalEdits = totalEdits
+	return result
+}
+
+func initialInteractionStep(task *Task, prompt string, res *RunResult) InteractionStep {
+	if task.Metadata.InteractiveMode == "staged" {
+		return stagedInteractionStep(1, task.Metadata.StagedInitialTotalEdits, prompt, res)
+	}
+	return interactionStep(1, prompt, res)
 }
 
 func mergeTurn(total, turn *RunResult) {

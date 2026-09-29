@@ -78,7 +78,7 @@ func summarizeBestBenchmarkPairs(best []bestBenchmarkPair, runs []benchmarkDocum
 }
 
 func initialBenchmarkOracle(run *BenchRunResult) (*BenchOracleResult, bool) {
-	if run == nil {
+	if run == nil || run.InteractiveMode == "staged" {
 		return nil, false
 	}
 	for _, step := range run.InteractionSteps {
@@ -162,7 +162,7 @@ func summarizeCorrectiveTurns(runs []benchmarkDocumentationRun) benchmarkCorrect
 }
 
 func correctiveInteractiveTurns(run *BenchRunResult) (int, bool) {
-	if run == nil {
+	if run == nil || run.InteractiveMode == "staged" {
 		return 0, false
 	}
 	if len(run.InteractionSteps) > 0 {

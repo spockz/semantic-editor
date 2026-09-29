@@ -68,6 +68,15 @@ grouping, so generated-large and physical-large fixtures cannot overwrite one
 another. Historical records retain their previous task-name normalization; this
 does not reinterpret old task 01b observations.
 
+Fixtures may instead declare `interactive_mode: staged` with an initial edit
+count and ordered `staged_followups`. Each follow-up has its own instruction,
+cumulative edit count, and oracle. The harness resumes the same session and
+workspace for every stage and evaluates every checkpoint, even if an earlier
+checkpoint failed. Overall success requires all checkpoints to pass. Every turn
+records elapsed time and token usage separately, so first-turn startup and
+subsequent continuation costs can be compared. Staged turns are excluded from
+corrective-attempt publication metrics.
+
 Measured results contain only the original task answer and subsequent interactive
 attempts to solve the task. Freeze task metrics before diagnostic questioning.
 Any non-use or batching reflection has a separate diagnostic record and contributes

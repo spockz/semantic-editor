@@ -1076,3 +1076,19 @@ func TestSetBenchmarkPairRuns(t *testing.T) {
 		t.Fatalf("small pair = (%p, %p), want (%p, %p)", gotBaseline, gotSemedit, baseline, semedit)
 	}
 }
+
+func TestStagedBenchmarkStepsAreNotCorrectiveAttempts(t *testing.T) {
+	run := &BenchRunResult{
+		InteractiveMode: "staged",
+		InteractionSteps: []BenchInteractionStep{
+			{Step: 1, TotalEdits: 1, Oracle: &BenchOracleResult{Passed: true}},
+			{Step: 2, TotalEdits: 2, Oracle: &BenchOracleResult{Passed: true}},
+		},
+	}
+	if _, available := initialBenchmarkOracle(run); available {
+		t.Fatal("staged checkpoint counted as one-shot completion")
+	}
+	if _, available := correctiveInteractiveTurns(run); available {
+		t.Fatal("scheduled stage counted as corrective follow-up")
+	}
+}

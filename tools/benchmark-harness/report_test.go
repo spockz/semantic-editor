@@ -628,3 +628,37 @@ func TestPlannedPhysicalAndGeneratedLargeFixturesRemainDistinct(t *testing.T) {
 		t.Error("historical normalization changed")
 	}
 }
+
+func TestStagedInteractionMetricsSerializePerTurn(t *testing.T) {
+	startup := 250 * time.Millisecond
+	report := BenchmarkReport{Runs: []*RunResult{{InteractiveMode: "staged", InteractionSteps: []InteractionStep{{Step: 1, TotalEdits: 1, WallClock: 1500 * time.Millisecond, PromptTokens: 5, OutputTokens: 2, ProcessStartToFirstEvent: &startup}, {Step: 2, TotalEdits: 2, WallClock: 900 * time.Millisecond, PromptTokens: 7, OutputTokens: 3}}}}}
+	data, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Runs []struct {
+			InteractiveMode string `json:"interactive_mode"`
+			Steps           []struct {
+				TotalEdits   int    `json:"total_edits"`
+				WallClockMS  int64  `json:"wall_clock_ms"`
+				PromptTokens int    `json:"prompt_tokens"`
+				OutputTokens int    `json:"output_tokens"`
+				StartupMS    *int64 `json:"process_start_to_first_event_ms"`
+			} `json:"interaction_steps"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Runs) != 1 || decoded.Runs[0].InteractiveMode != "staged" || len(decoded.Runs[0].Steps) != 2 {
+		t.Fatalf("staged report = %+v", decoded)
+	}
+	first, second := decoded.Runs[0].Steps[0], decoded.Runs[0].Steps[1]
+	if first.TotalEdits != 1 || first.WallClockMS != 1500 || first.PromptTokens != 5 || first.OutputTokens != 2 || first.StartupMS == nil || *first.StartupMS != 250 {
+		t.Fatalf("first stage metrics = %+v", first)
+	}
+	if second.TotalEdits != 2 || second.WallClockMS != 900 || second.PromptTokens != 7 || second.OutputTokens != 3 || second.StartupMS != nil {
+		t.Fatalf("follow-up stage metrics = %+v", second)
+	}
+}

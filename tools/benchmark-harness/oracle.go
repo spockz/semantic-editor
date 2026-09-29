@@ -19,59 +19,70 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // TaskMetadata models the structured frontmatter embedded within each txtar benchmark archive.
 type TaskMetadata struct {
-	TaskID                 string            `json:"task_id"`
-	Category               string            `json:"category"`
-	Instruction            string            `json:"instruction"`
-	VerificationConstraint string            `json:"verification_constraint,omitempty"`
-	Contexts               []string          `json:"contexts,omitempty"`
-	PromptVariants         map[string]string `json:"prompt_variants,omitempty"`
-	InteractiveFollowups   []string          `json:"interactive_followups,omitempty"`
-	Oracle                 OracleConfig      `json:"oracle"`
+	TaskID                  string            `json:"task_id"`
+	Category                string            `json:"category"`
+	Instruction             string            `json:"instruction"`
+	VerificationConstraint  string            `json:"verification_constraint,omitempty"`
+	Contexts                []string          `json:"contexts,omitempty"`
+	PromptVariants          map[string]string `json:"prompt_variants,omitempty"`
+	InteractiveFollowups    []string          `json:"interactive_followups,omitempty"`
+	InteractiveMode         string            `json:"interactive_mode,omitempty"`
+	StagedInitialTotalEdits int               `json:"staged_initial_total_edits,omitempty"`
+	StagedFollowups         []StagedFollowup  `json:"staged_followups,omitempty"`
+	Oracle                  OracleConfig      `json:"oracle"`
+}
+
+type StagedFollowup struct {
+	TotalEdits  int          `json:"total_edits" yaml:"total_edits"`
+	Instruction string       `json:"instruction" yaml:"instruction"`
+	Oracle      OracleConfig `json:"oracle"      yaml:"oracle"`
 }
 
 // OracleConfig specifies the validation criteria across evaluation levels.
 type OracleConfig struct {
-	MutationPolicy          MutationPolicyConfig `json:"level_1_mutation_policy"`
-	AST                     ASTConfig            `json:"level_2_ast"`
-	Build                   BuildConfig          `json:"level_3_build"`
-	Test                    TestConfig           `json:"level_4_test"`
+	MutationPolicy          MutationPolicyConfig `json:"level_1_mutation_policy"             yaml:"level_1_mutation_policy"`
+	AST                     ASTConfig            `json:"level_2_ast"                         yaml:"level_2_ast"`
+	Build                   BuildConfig          `json:"level_3_build"                       yaml:"level_3_build"`
+	Test                    TestConfig           `json:"level_4_test"                        yaml:"level_4_test"`
 	DiagnosticExpectedTools []string             `json:"diagnostic_expected_tools,omitempty"`
 }
 
 // MutationPolicyConfig defines file modification constraints.
 type MutationPolicyConfig struct {
-	DisallowedFiles []string `json:"disallowed_files"`
+	DisallowedFiles []string `json:"disallowed_files" yaml:"disallowed_files"`
 }
 
 // SymbolAdjacency ensures relative declaration ordering.
 type SymbolAdjacency struct {
-	First  string `json:"first"`
-	Second string `json:"second"`
+	First  string `json:"first"  yaml:"first"`
+	Second string `json:"second" yaml:"second"`
 }
 
 // ASTConfig specifies AST structural and symbol invariants.
 type ASTConfig struct {
-	File                  string          `json:"file"`
-	MustContainSymbols    []string        `json:"must_contain_symbols"`
-	MustNotContainSymbols []string        `json:"must_not_contain_symbols"`
-	MustContainImports    []string        `json:"must_contain_imports"`
-	MustNotContainImports []string        `json:"must_not_contain_imports"`
-	SymbolBefore          SymbolAdjacency `json:"symbol_before"`
+	File                  string          `json:"file"                     yaml:"file"`
+	MustContainSymbols    []string        `json:"must_contain_symbols"     yaml:"must_contain_symbols"`
+	MustNotContainSymbols []string        `json:"must_not_contain_symbols" yaml:"must_not_contain_symbols"`
+	MustContainImports    []string        `json:"must_contain_imports"     yaml:"must_contain_imports"`
+	MustNotContainImports []string        `json:"must_not_contain_imports" yaml:"must_not_contain_imports"`
+	SymbolBefore          SymbolAdjacency `json:"symbol_before"            yaml:"symbol_before"`
 }
 
 // BuildConfig specifies compiler requirements.
 type BuildConfig struct {
-	CleanCompile bool `json:"clean_compile"`
+	CleanCompile bool `json:"clean_compile" yaml:"clean_compile"`
 }
 
 // TestConfig specifies test suite requirements.
 type TestConfig struct {
-	PassTests     bool   `json:"pass_tests"`
-	HiddenTestDir string `json:"hidden_test_dir"`
+	PassTests     bool   `json:"pass_tests"      yaml:"pass_tests"`
+	HiddenTestDir string `json:"hidden_test_dir" yaml:"hidden_test_dir"`
 }
 
 // OracleResult records evaluation outcomes across all validation levels.
@@ -113,6 +124,22 @@ func ParseTask(data []byte) (*Task, error) {
 		Metadata: meta,
 		Archive:  ar,
 	}, nil
+}
+
+type stagedFollowupYAML struct {
+	TotalEdits  int    `yaml:"total_edits"`
+	Instruction string `yaml:"instruction"`
+	Oracle      struct {
+		MutationPolicy MutationPolicyConfig `yaml:"level_1_mutation_policy"`
+		AST            ASTConfig            `yaml:"level_2_ast"`
+		Build          struct {
+			CleanCompile *bool `yaml:"clean_compile"`
+		} `yaml:"level_3_build"`
+		Test struct {
+			PassTests     *bool  `yaml:"pass_tests"`
+			HiddenTestDir string `yaml:"hidden_test_dir"`
+		} `yaml:"level_4_test"`
+	} `yaml:"oracle"`
 }
 
 // parseYAMLFrontmatter provides zero-dependency YAML parsing for benchmark task specs.
@@ -197,6 +224,14 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 			meta.Instruction = val
 		case "verification_constraint":
 			meta.VerificationConstraint = val
+		case "interactive_mode":
+			meta.InteractiveMode = val
+		case "staged_initial_total_edits":
+			count, err := strconv.Atoi(val)
+			if err != nil {
+				return TaskMetadata{}, fmt.Errorf("staged_initial_total_edits: %w", err)
+			}
+			meta.StagedInitialTotalEdits = count
 		case "oracle.level_2_ast.file":
 			meta.Oracle.AST.File = val
 		case "oracle.level_2_ast.symbol_before.first":
@@ -230,6 +265,60 @@ func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
 	}
 	if !passTestsSeen {
 		return TaskMetadata{}, errors.New("missing required oracle.level_4_test.pass_tests")
+	}
+	return parseStagedFollowups(comment, meta)
+}
+
+func parseStagedFollowups(comment []byte, meta TaskMetadata) (TaskMetadata, error) {
+	if meta.InteractiveMode != "" && meta.InteractiveMode != "staged" {
+		return TaskMetadata{}, fmt.Errorf("unsupported interactive_mode %q", meta.InteractiveMode)
+	}
+	if meta.InteractiveMode != "staged" {
+		if bytes.Contains(comment, []byte("staged_followups:")) {
+			return TaskMetadata{}, errors.New("staged_followups requires interactive_mode: staged")
+		}
+		return meta, nil
+	}
+	if len(meta.InteractiveFollowups) > 0 {
+		return TaskMetadata{}, errors.New("staged_followups cannot be combined with interactive_followups")
+	}
+	if meta.StagedInitialTotalEdits < 1 {
+		return TaskMetadata{}, errors.New("staged_initial_total_edits must be positive")
+	}
+	var staged struct {
+		Followups []stagedFollowupYAML `yaml:"staged_followups"`
+	}
+	if err := yaml.Unmarshal(comment, &staged); err != nil {
+		return TaskMetadata{}, fmt.Errorf("parse staged followups: %w", err)
+	}
+	if len(staged.Followups) == 0 {
+		return TaskMetadata{}, errors.New("staged mode requires staged_followups")
+	}
+	previous := meta.StagedInitialTotalEdits
+	for index, followup := range staged.Followups {
+		if followup.TotalEdits <= previous {
+			return TaskMetadata{}, fmt.Errorf("staged followup %d total_edits must exceed %d", index+1, previous)
+		}
+		if strings.TrimSpace(followup.Instruction) == "" {
+			return TaskMetadata{}, fmt.Errorf("staged followup %d has empty instruction", index+1)
+		}
+		if followup.Oracle.Build.CleanCompile == nil || followup.Oracle.Test.PassTests == nil {
+			return TaskMetadata{}, fmt.Errorf("staged followup %d requires explicit build and test settings", index+1)
+		}
+		if followup.Oracle.AST.File == "" {
+			return TaskMetadata{}, fmt.Errorf("staged followup %d requires an AST file", index+1)
+		}
+		meta.StagedFollowups = append(meta.StagedFollowups, StagedFollowup{
+			TotalEdits:  followup.TotalEdits,
+			Instruction: followup.Instruction,
+			Oracle: OracleConfig{
+				MutationPolicy: followup.Oracle.MutationPolicy,
+				AST:            followup.Oracle.AST,
+				Build:          BuildConfig{CleanCompile: *followup.Oracle.Build.CleanCompile},
+				Test:           TestConfig{PassTests: *followup.Oracle.Test.PassTests, HiddenTestDir: followup.Oracle.Test.HiddenTestDir},
+			},
+		})
+		previous = followup.TotalEdits
 	}
 	return meta, nil
 }

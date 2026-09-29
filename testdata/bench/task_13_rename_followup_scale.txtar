@@ -1,0 +1,328 @@
+task_id: task-13-rename-followup-scale
+category: edit_scaling
+instruction: "Apply only row 1 of rename-plan.md. Rename that Processor method and update its call sites. Leave rows 2 through 16 unchanged. Run go test ./... before finishing."
+contexts:
+  - small
+prompt_variants:
+  default: "Apply only row 1 of rename-plan.md. Rename that Processor method and update its call sites. Leave rows 2 through 16 unchanged. Run go test ./... before finishing."
+interactive_mode: staged
+staged_initial_total_edits: 1
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "rename-plan.md"
+      - "pipeline/workflow_test.go"
+  level_2_ast:
+    file: "pipeline/workflow.go"
+    must_contain_symbols:
+      - "Processor.ReadRequest"
+      - "Processor.CheckInput"
+      - "Processor.NormalizeValue"
+      - "Processor.MapFields"
+      - "Processor.RouteValue"
+      - "Processor.StampEvent"
+      - "Processor.CountItems"
+      - "Processor.MergeParts"
+      - "Processor.FilterNoise"
+      - "Processor.SortRecords"
+      - "Processor.EncodePayload"
+      - "Processor.DecodeReply"
+      - "Processor.OpenChannel"
+      - "Processor.CloseChannel"
+      - "Processor.FlushBuffer"
+      - "Processor.SaveResult"
+    must_not_contain_symbols:
+      - "Processor.LoadInput"
+      - "Processor.ValidateRequest"
+      - "Processor.CanonicalizeValue"
+      - "Processor.ProjectFields"
+      - "Processor.DispatchValue"
+      - "Processor.AnnotateEvent"
+      - "Processor.TallyItems"
+      - "Processor.CombineParts"
+      - "Processor.PruneNoise"
+      - "Processor.OrderRecords"
+      - "Processor.MarshalPayload"
+      - "Processor.ParseReply"
+      - "Processor.ConnectChannel"
+      - "Processor.ReleaseChannel"
+      - "Processor.DrainBuffer"
+      - "Processor.PersistResult"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: true
+staged_followups:
+  - total_edits: 2
+    instruction: "Now apply only row 2 of rename-plan.md and update its call sites. Leave rows 3 through 16 unchanged. Run go test ./... before finishing."
+    oracle:
+      level_1_mutation_policy:
+        disallowed_files:
+          - "go.mod"
+          - "rename-plan.md"
+          - "pipeline/workflow_test.go"
+      level_2_ast:
+        file: "pipeline/workflow.go"
+        must_contain_symbols:
+          - "Processor.ReadRequest"
+          - "Processor.ValidateRequest"
+          - "Processor.NormalizeValue"
+          - "Processor.MapFields"
+          - "Processor.RouteValue"
+          - "Processor.StampEvent"
+          - "Processor.CountItems"
+          - "Processor.MergeParts"
+          - "Processor.FilterNoise"
+          - "Processor.SortRecords"
+          - "Processor.EncodePayload"
+          - "Processor.DecodeReply"
+          - "Processor.OpenChannel"
+          - "Processor.CloseChannel"
+          - "Processor.FlushBuffer"
+          - "Processor.SaveResult"
+        must_not_contain_symbols:
+          - "Processor.LoadInput"
+          - "Processor.CheckInput"
+          - "Processor.CanonicalizeValue"
+          - "Processor.ProjectFields"
+          - "Processor.DispatchValue"
+          - "Processor.AnnotateEvent"
+          - "Processor.TallyItems"
+          - "Processor.CombineParts"
+          - "Processor.PruneNoise"
+          - "Processor.OrderRecords"
+          - "Processor.MarshalPayload"
+          - "Processor.ParseReply"
+          - "Processor.ConnectChannel"
+          - "Processor.ReleaseChannel"
+          - "Processor.DrainBuffer"
+          - "Processor.PersistResult"
+      level_3_build:
+        clean_compile: true
+      level_4_test:
+        pass_tests: true
+  - total_edits: 4
+    instruction: "Now apply only rows 3 and 4 of rename-plan.md and update their call sites. Leave rows 5 through 16 unchanged. Run go test ./... before finishing."
+    oracle:
+      level_1_mutation_policy:
+        disallowed_files:
+          - "go.mod"
+          - "rename-plan.md"
+          - "pipeline/workflow_test.go"
+      level_2_ast:
+        file: "pipeline/workflow.go"
+        must_contain_symbols:
+          - "Processor.ReadRequest"
+          - "Processor.ValidateRequest"
+          - "Processor.CanonicalizeValue"
+          - "Processor.ProjectFields"
+          - "Processor.RouteValue"
+          - "Processor.StampEvent"
+          - "Processor.CountItems"
+          - "Processor.MergeParts"
+          - "Processor.FilterNoise"
+          - "Processor.SortRecords"
+          - "Processor.EncodePayload"
+          - "Processor.DecodeReply"
+          - "Processor.OpenChannel"
+          - "Processor.CloseChannel"
+          - "Processor.FlushBuffer"
+          - "Processor.SaveResult"
+        must_not_contain_symbols:
+          - "Processor.LoadInput"
+          - "Processor.CheckInput"
+          - "Processor.NormalizeValue"
+          - "Processor.MapFields"
+          - "Processor.DispatchValue"
+          - "Processor.AnnotateEvent"
+          - "Processor.TallyItems"
+          - "Processor.CombineParts"
+          - "Processor.PruneNoise"
+          - "Processor.OrderRecords"
+          - "Processor.MarshalPayload"
+          - "Processor.ParseReply"
+          - "Processor.ConnectChannel"
+          - "Processor.ReleaseChannel"
+          - "Processor.DrainBuffer"
+          - "Processor.PersistResult"
+      level_3_build:
+        clean_compile: true
+      level_4_test:
+        pass_tests: true
+  - total_edits: 8
+    instruction: "Now apply only rows 5 through 8 of rename-plan.md and update their call sites. Leave rows 9 through 16 unchanged. Run go test ./... before finishing."
+    oracle:
+      level_1_mutation_policy:
+        disallowed_files:
+          - "go.mod"
+          - "rename-plan.md"
+          - "pipeline/workflow_test.go"
+      level_2_ast:
+        file: "pipeline/workflow.go"
+        must_contain_symbols:
+          - "Processor.ReadRequest"
+          - "Processor.ValidateRequest"
+          - "Processor.CanonicalizeValue"
+          - "Processor.ProjectFields"
+          - "Processor.DispatchValue"
+          - "Processor.AnnotateEvent"
+          - "Processor.TallyItems"
+          - "Processor.CombineParts"
+          - "Processor.FilterNoise"
+          - "Processor.SortRecords"
+          - "Processor.EncodePayload"
+          - "Processor.DecodeReply"
+          - "Processor.OpenChannel"
+          - "Processor.CloseChannel"
+          - "Processor.FlushBuffer"
+          - "Processor.SaveResult"
+        must_not_contain_symbols:
+          - "Processor.LoadInput"
+          - "Processor.CheckInput"
+          - "Processor.NormalizeValue"
+          - "Processor.MapFields"
+          - "Processor.RouteValue"
+          - "Processor.StampEvent"
+          - "Processor.CountItems"
+          - "Processor.MergeParts"
+          - "Processor.PruneNoise"
+          - "Processor.OrderRecords"
+          - "Processor.MarshalPayload"
+          - "Processor.ParseReply"
+          - "Processor.ConnectChannel"
+          - "Processor.ReleaseChannel"
+          - "Processor.DrainBuffer"
+          - "Processor.PersistResult"
+      level_3_build:
+        clean_compile: true
+      level_4_test:
+        pass_tests: true
+  - total_edits: 16
+    instruction: "Now apply rows 9 through 16 of rename-plan.md and update their call sites. Run go test ./... before finishing."
+    oracle:
+      level_1_mutation_policy:
+        disallowed_files:
+          - "go.mod"
+          - "rename-plan.md"
+          - "pipeline/workflow_test.go"
+      level_2_ast:
+        file: "pipeline/workflow.go"
+        must_contain_symbols:
+          - "Processor.ReadRequest"
+          - "Processor.ValidateRequest"
+          - "Processor.CanonicalizeValue"
+          - "Processor.ProjectFields"
+          - "Processor.DispatchValue"
+          - "Processor.AnnotateEvent"
+          - "Processor.TallyItems"
+          - "Processor.CombineParts"
+          - "Processor.PruneNoise"
+          - "Processor.OrderRecords"
+          - "Processor.MarshalPayload"
+          - "Processor.ParseReply"
+          - "Processor.ConnectChannel"
+          - "Processor.ReleaseChannel"
+          - "Processor.DrainBuffer"
+          - "Processor.PersistResult"
+        must_not_contain_symbols:
+          - "Processor.LoadInput"
+          - "Processor.CheckInput"
+          - "Processor.NormalizeValue"
+          - "Processor.MapFields"
+          - "Processor.RouteValue"
+          - "Processor.StampEvent"
+          - "Processor.CountItems"
+          - "Processor.MergeParts"
+          - "Processor.FilterNoise"
+          - "Processor.SortRecords"
+          - "Processor.EncodePayload"
+          - "Processor.DecodeReply"
+          - "Processor.OpenChannel"
+          - "Processor.CloseChannel"
+          - "Processor.FlushBuffer"
+          - "Processor.SaveResult"
+      level_3_build:
+        clean_compile: true
+      level_4_test:
+        pass_tests: true
+-- go.mod --
+module example.com/editscale
+
+go 1.23
+-- rename-plan.md --
+# Processing stage rename plan
+
+Apply each method rename below. Keep the stage order and behavior unchanged.
+
+| Current method | New method |
+| :--- | :--- |
+| `LoadInput` | `ReadRequest` |
+| `CheckInput` | `ValidateRequest` |
+| `NormalizeValue` | `CanonicalizeValue` |
+| `MapFields` | `ProjectFields` |
+| `RouteValue` | `DispatchValue` |
+| `StampEvent` | `AnnotateEvent` |
+| `CountItems` | `TallyItems` |
+| `MergeParts` | `CombineParts` |
+| `FilterNoise` | `PruneNoise` |
+| `SortRecords` | `OrderRecords` |
+| `EncodePayload` | `MarshalPayload` |
+| `DecodeReply` | `ParseReply` |
+| `OpenChannel` | `ConnectChannel` |
+| `CloseChannel` | `ReleaseChannel` |
+| `FlushBuffer` | `DrainBuffer` |
+| `SaveResult` | `PersistResult` |
+-- pipeline/workflow.go --
+// Package pipeline provides independent processing stages for the rename scale benchmark.
+package pipeline
+
+type Processor struct{}
+
+func (Processor) LoadInput(value int) int { return value + 1 }
+func (Processor) CheckInput(value int) int { return value + 2 }
+func (Processor) NormalizeValue(value int) int { return value + 3 }
+func (Processor) MapFields(value int) int { return value + 4 }
+func (Processor) RouteValue(value int) int { return value + 5 }
+func (Processor) StampEvent(value int) int { return value + 6 }
+func (Processor) CountItems(value int) int { return value + 7 }
+func (Processor) MergeParts(value int) int { return value + 8 }
+func (Processor) FilterNoise(value int) int { return value + 9 }
+func (Processor) SortRecords(value int) int { return value + 10 }
+func (Processor) EncodePayload(value int) int { return value + 11 }
+func (Processor) DecodeReply(value int) int { return value + 12 }
+func (Processor) OpenChannel(value int) int { return value + 13 }
+func (Processor) CloseChannel(value int) int { return value + 14 }
+func (Processor) FlushBuffer(value int) int { return value + 15 }
+func (Processor) SaveResult(value int) int { return value + 16 }
+
+func Run(processor Processor, value int) int {
+	value = processor.LoadInput(value)
+	value = processor.CheckInput(value)
+	value = processor.NormalizeValue(value)
+	value = processor.MapFields(value)
+	value = processor.RouteValue(value)
+	value = processor.StampEvent(value)
+	value = processor.CountItems(value)
+	value = processor.MergeParts(value)
+	value = processor.FilterNoise(value)
+	value = processor.SortRecords(value)
+	value = processor.EncodePayload(value)
+	value = processor.DecodeReply(value)
+	value = processor.OpenChannel(value)
+	value = processor.CloseChannel(value)
+	value = processor.FlushBuffer(value)
+	value = processor.SaveResult(value)
+	return value
+}
+-- pipeline/workflow_test.go --
+// Package pipeline tests the behavior that stage renames must preserve.
+package pipeline
+
+import "testing"
+
+func TestRun(t *testing.T) {
+	if got, want := Run(Processor{}, 7), 143; got != want {
+		t.Fatalf("Run() = %d, want %d", got, want)
+	}
+}

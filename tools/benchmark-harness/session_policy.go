@@ -7,13 +7,14 @@ import (
 )
 
 type AgentExecution struct {
-	Task      *Task
-	Target    Target
-	Arm       ArmType
-	Variant   string
-	Prompt    string
-	Followups []string
-	Policy    SemeditArmRestriction
+	Task            *Task
+	Target          Target
+	Arm             ArmType
+	Variant         string
+	Prompt          string
+	Followups       []string
+	StagedFollowups []StagedFollowup
+	Policy          SemeditArmRestriction
 }
 
 type SemeditArmRestriction string
@@ -65,7 +66,30 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 		}
 		followups = append(followups, followup)
 	}
-	return AgentExecution{Task: task, Target: target, Arm: arm, Variant: variant, Prompt: prompt, Followups: followups, Policy: policy}, nil
+	staged := make([]StagedFollowup, 0, len(task.Metadata.StagedFollowups))
+	if task.Metadata.InteractiveMode == "staged" {
+		if len(followups) > 0 || len(task.Metadata.StagedFollowups) == 0 {
+			return AgentExecution{}, fmt.Errorf("staged task requires staged followups without corrective followups")
+		}
+		for _, step := range task.Metadata.StagedFollowups {
+			stageTask := &Task{Metadata: TaskMetadata{Oracle: step.Oracle}}
+			stagePrompt := withMutationPolicyGuidance(step.Instruction, stageTask, false)
+			switch arm {
+			case ArmSemedit:
+				steering, err := semeditRestrictionSteering(policy)
+				if err != nil {
+					return AgentExecution{}, err
+				}
+				stagePrompt = strings.TrimSpace(stagePrompt + " " + steering + " When done, output DONE.")
+			case ArmBaseline:
+				stagePrompt = strings.TrimSpace(stagePrompt + " Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.")
+			default:
+				return AgentExecution{}, fmt.Errorf("unsupported staged arm %s", arm)
+			}
+			staged = append(staged, StagedFollowup{TotalEdits: step.TotalEdits, Instruction: stagePrompt, Oracle: step.Oracle})
+		}
+	}
+	return AgentExecution{Task: task, Target: target, Arm: arm, Variant: variant, Prompt: prompt, Followups: followups, StagedFollowups: staged, Policy: policy}, nil
 }
 
 func semeditRestrictionSteering(policy SemeditArmRestriction) (string, error) {

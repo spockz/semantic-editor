@@ -1,7 +1,10 @@
 // This file verifies the public arm policy values and their strict parsing contract.
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseSemeditArmRestrictionIsStrict(t *testing.T) {
 	for _, value := range []SemeditArmRestriction{SemeditArmRestrictRead, SemeditArmRestrictWrite, SemeditArmRestrictReadWrite} {
@@ -65,5 +68,43 @@ func TestSemeditRestrictionSteeringAndPrompts(t *testing.T) {
 				t.Errorf("follow-up prompt = %q, want %q", execution.Followups[0], wantFollowup)
 			}
 		})
+	}
+}
+
+func TestResolveStagedFollowupPrompts(t *testing.T) {
+	task := &Task{Metadata: TaskMetadata{
+		Instruction:     "Rename the first method.",
+		InteractiveMode: "staged",
+		StagedFollowups: []StagedFollowup{
+			{TotalEdits: 2, Instruction: "Rename the second method.", Oracle: OracleConfig{AST: ASTConfig{File: "pipeline/workflow.go"}}},
+			{TotalEdits: 4, Instruction: "Rename the next two methods.", Oracle: OracleConfig{AST: ASTConfig{File: "pipeline/workflow.go"}}},
+		},
+	}}
+	for _, arm := range []ArmType{ArmBaseline, ArmSemedit} {
+		execution, err := ResolveAgentExecution(task, Target{}, arm, "", SemeditArmRestrictWrite)
+		if err != nil {
+			t.Fatalf("%s: %v", arm, err)
+		}
+		if len(execution.Followups) != 0 || len(execution.StagedFollowups) != 2 {
+			t.Fatalf("%s: corrective=%d staged=%d", arm, len(execution.Followups), len(execution.StagedFollowups))
+		}
+		if execution.StagedFollowups[0].TotalEdits != 2 || execution.StagedFollowups[1].TotalEdits != 4 {
+			t.Fatalf("%s: stage totals = %+v", arm, execution.StagedFollowups)
+		}
+		if !strings.Contains(execution.StagedFollowups[0].Instruction, "Rename the second method.") {
+			t.Fatalf("%s: missing stage instruction: %q", arm, execution.StagedFollowups[0].Instruction)
+		}
+		switch arm {
+		case ArmBaseline:
+			if !strings.Contains(execution.StagedFollowups[0].Instruction, "Do not use semantic editing MCP tools") {
+				t.Fatalf("baseline stage lacks arm steering: %q", execution.StagedFollowups[0].Instruction)
+			}
+		case ArmSemedit:
+			if !strings.Contains(execution.StagedFollowups[0].Instruction, "Use semedit semantic tools") {
+				t.Fatalf("semedit stage lacks arm steering: %q", execution.StagedFollowups[0].Instruction)
+			}
+		default:
+			t.Fatalf("unexpected arm %s", arm)
+		}
 	}
 }
