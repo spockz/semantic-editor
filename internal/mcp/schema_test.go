@@ -875,3 +875,51 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		assertSources(tool, "discriminator", discriminatorSources)
 	}
 }
+
+func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_move_construct")
+	if !ok || !entry.Batchable {
+		t.Fatalf("semantic_move_construct registry entry = %+v, present=%v; want batchable", entry, ok)
+	}
+	tools := listTools(t, "full")
+	byName := make(map[string]map[string]any, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = tool
+	}
+	move := byName["semantic_move_construct"]
+	if move == nil {
+		t.Fatal("tools/list omitted semantic_move_construct")
+	}
+	moveInput := move["inputSchema"].(map[string]any)
+	moveProperties := moveInput["properties"].(map[string]any)
+	for _, name := range []string{"file", "destination_file", "symbol"} {
+		if property, ok := moveProperties[name].(map[string]any); !ok || property["type"] != "string" {
+			t.Errorf("move input property %s = %#v, want string", name, moveProperties[name])
+		}
+	}
+	batch := byName["semantic_batch"]
+	if batch == nil {
+		t.Fatal("tools/list omitted semantic_batch")
+	}
+	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
+	branches := edits["items"].(map[string]any)["oneOf"].([]any)
+	found := false
+	for _, raw := range branches {
+		properties := raw.(map[string]any)["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] == "semantic_move_construct" {
+			found = true
+			if !reflect.DeepEqual(properties["params"], moveInput) {
+				t.Fatal("batch move params schema does not match the public operation schema")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("semantic_batch schema omitted semantic_move_construct")
+	}
+	output := batch["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
+	results := output["results"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
+	destination := results["destination_file"].(map[string]any)
+	if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
+		t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+	}
+}

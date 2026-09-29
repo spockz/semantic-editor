@@ -4,6 +4,10 @@ package operation
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
 )
@@ -88,11 +92,73 @@ func parseMoveConstruct(raw map[string]any) (MoveConstructReq, error) {
 	return req, nil
 }
 
+func validateBatchMoveTargets(workDir, sourcePath, destinationPath string) error {
+	rootPath, err := filepath.Abs(workDir)
+	if err != nil {
+		return fmt.Errorf("resolve batch workspace root: %w", err)
+	}
+	root, err := filepath.EvalSymlinks(rootPath)
+	if err != nil {
+		return fmt.Errorf("resolve batch workspace root symlinks: %w", err)
+	}
+	for _, target := range []string{sourcePath, destinationPath} {
+		absolute, err := filepath.Abs(target)
+		if err != nil {
+			return fmt.Errorf("resolve batch move path %q: %w", target, err)
+		}
+		lexicalRelative, err := filepath.Rel(rootPath, absolute)
+		if err != nil || lexicalRelative == "." || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("batch move path %q must remain inside the workspace", target)
+		}
+		current := rootPath
+		for component := range strings.SplitSeq(lexicalRelative, string(filepath.Separator)) {
+			current = filepath.Join(current, component)
+			info, err := os.Lstat(current)
+			if err != nil {
+				return fmt.Errorf("inspect batch move path %q: %w", target, err)
+			}
+			if info.Mode()&os.ModeSymlink != 0 {
+				return fmt.Errorf("batch move path %q cannot contain symlink components", target)
+			}
+		}
+		resolved, err := filepath.EvalSymlinks(absolute)
+		if err != nil {
+			return fmt.Errorf("resolve batch move path %q: %w", target, err)
+		}
+		relative, err := filepath.Rel(root, resolved)
+		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			return fmt.Errorf("batch move path %q must resolve inside the workspace", target)
+		}
+		for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
+			switch component {
+			case ".git", ".scratch", "vendor", "node_modules":
+				return fmt.Errorf("batch move path %q is outside the captured workspace files", target)
+			}
+		}
+		info, err := os.Stat(resolved)
+		if err != nil {
+			return fmt.Errorf("inspect batch move file %q: %w", target, err)
+		}
+		if !info.Mode().IsRegular() || filepath.Ext(resolved) != ".go" {
+			return fmt.Errorf("batch move path %q must be a regular Go source file", target)
+		}
+	}
+	return nil
+}
+
 func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq) (FileEditRes, error) {
 	sourcePath := resolveWorkPath(cc.WorkDir, req.File)
 	destinationPath := resolveWorkPath(cc.WorkDir, req.DestinationFile)
+	if cc.InBatch {
+		if err := validateBatchMoveTargets(cc.WorkDir, sourcePath, destinationPath); err != nil {
+			return FileEditRes{}, err
+		}
+		if filepath.Dir(sourcePath) != filepath.Dir(destinationPath) {
+			return FileEditRes{}, fmt.Errorf("semantic_move_construct batches require source and destination files in the same directory")
+		}
+	}
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
-	diff, err := astedit.MoveConstruct(ctx, sourcePath, req.Symbol, astedit.MoveConstructOptions{Placement: req.Placement, TargetSymbol: req.TargetSymbol, DestinationFile: destinationPath, AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports)})
+	diff, err := astedit.MoveConstruct(ctx, sourcePath, req.Symbol, astedit.MoveConstructOptions{Placement: req.Placement, TargetSymbol: req.TargetSymbol, DestinationFile: destinationPath, AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports), DeferFormatting: cc.DeferImports})
 	if err != nil {
 		return FileEditRes{}, err
 	}
@@ -101,7 +167,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: false}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves require source and destination files in the same directory. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: true}
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -223,9 +289,6 @@ type ScaffoldFileRes struct {
 	Display string
 	Package string
 }
-
-// WrittenFile returns the created path for batch post-processing.
-func (r ScaffoldFileRes) WrittenFile() string { return r.File }
 
 var scaffoldFileParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: relative path for the new file", Required: true},

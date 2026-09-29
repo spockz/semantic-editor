@@ -1,0 +1,92 @@
+# Public MCP failures preserve preceding moves and explicitly refuse invalid destinations.
+stdin partial.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"destination_file":"missing.go"'
+stdout 'no such file or directory'
+! stdout '"diagnostic_delta":'
+cmp source.go .scratch/want/source.go
+cmp dest.go .scratch/want/dest.go
+! exists missing.go
+
+cp .scratch/malformed.txt malformed.go
+stdin malformed.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'parse destination file'
+stdout '"final_diff":""'
+cmp source.go .scratch/want/source.go
+cmp malformed.go .scratch/malformed.txt
+rm malformed.go
+
+cp .scratch/wrong.txt wrong.go
+stdin wrong.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'same Go package'
+stdout '"final_diff":""'
+cmp source.go .scratch/want/source.go
+cmp wrong.go .scratch/wrong.txt
+rm wrong.go
+
+stdin cross.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'same directory'
+stdout '"final_diff":""'
+cmp source.go .scratch/want/source.go
+cmp other/dest.go .scratch/want/other.go
+
+stdin non-go.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'regular Go source file'
+stdout '"final_diff":""'
+cmp source.go .scratch/want/source.go
+cmp notes.txt .scratch/want/notes.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/batchfailure
+
+go 1.23
+-- source.go --
+package batchfailure
+
+// Value stays documented after moving.
+func Value() int { return 7 }
+
+func Other() int { return 9 }
+-- partial.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"dest.go","package":"batchfailure"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"dest.go","symbol":"Value"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"missing.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+-- malformed.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"malformed.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+-- wrong.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"wrong.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+-- cross.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"other/dest.go","symbol":"Other"}}],"auto_organize_imports":true}}}
+-- non-go.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"notes.txt","symbol":"Other"}}],"auto_organize_imports":true}}}
+-- .scratch/malformed.txt --
+package batchfailure
+
+func Broken( {
+-- .scratch/wrong.txt --
+package wrong
+-- other/dest.go --
+package other
+-- notes.txt --
+package batchfailure
+-- .scratch/want/source.go --
+package batchfailure
+
+func Other() int { return 9 }
+-- .scratch/want/dest.go --
+package batchfailure
+
+// Value stays documented after moving.
+func Value() int { return 7 }
+-- .scratch/want/other.go --
+package other
+-- .scratch/want/notes.txt --
+package batchfailure

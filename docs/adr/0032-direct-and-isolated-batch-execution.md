@@ -59,11 +59,17 @@ edits.
 
 For a fully successful batch, capture diagnostics once before the first edit,
 apply every operation, coalesce deferred formatting and import organization,
-then capture diagnostics once after post-processing. Return that single final
+then capture diagnostics once after post-processing. Built-in Go formatting and
+import organization use the sorted set of existing files whose bytes actually
+changed in the workspace snapshot; diagnostics, trust checks, configured
+normalization hooks, and checks keep their established workspace scope. An empty
+changed-file set skips built-in Go formatting. Return that single final
 diagnostic delta on the batch response. Do not run a diagnostic pass for each
 child operation and do not require a separate `semantic_verify` after a
 successful batch. If an operation or post-processing step fails, preserve the
-existing fail-fast partial-application behavior and omit the final delta.
+existing fail-fast partial-application behavior and omit the final delta. The
+response still includes receipts through the failing edit and a final diff of
+actual persisted writes when that diff can be captured.
 
 ### 2. State-Journaled Staging (`semantic_stage` $\to$ edits $\to$ `semantic_commit`)
 

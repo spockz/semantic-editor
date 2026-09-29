@@ -25,6 +25,7 @@ type MoveConstructOptions struct {
 	TargetSymbol        string
 	DestinationFile     string
 	AutoOrganizeImports bool
+	DeferFormatting     bool
 }
 
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
@@ -174,19 +175,28 @@ func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveC
 	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
-			return "", fmt.Errorf("organize imports: %w", err)
-		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
+	if err := finalizeMovedFile(ctx, cleanPath, opts); err != nil {
+		return "", err
 	}
 	finalContent, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read moved file after formatting: %w", err)
 	}
 	return UnifiedDiff(symbolQuery, string(content), string(finalContent)), nil
+}
+
+func finalizeMovedFile(ctx context.Context, filePath string, opts MoveConstructOptions) error {
+	if opts.AutoOrganizeImports {
+		if err := pipeline.OrganizeImports(ctx, filepath.Dir(filePath), filePath); err != nil {
+			_ = pipeline.Format(ctx, filepath.Dir(filePath), filePath)
+			return fmt.Errorf("organize imports: %w", err)
+		}
+	} else if !opts.DeferFormatting {
+		if err := pipeline.Format(ctx, filepath.Dir(filePath), filePath); err != nil {
+			return fmt.Errorf("format file: %w", err)
+		}
+	}
+	return nil
 }
 
 func calculateMoveOffset(fset *token.FileSet, fileNode *ast.File, content []byte, opts MoveConstructOptions) (int, error) {

@@ -38,6 +38,7 @@ type BatchResult struct {
 	InFunction       string `json:"in_function,omitempty"`
 	Discriminator    string `json:"discriminator,omitempty"`
 	DiagnosticStatus string `json:"diagnostic_status,omitempty"`
+	DestinationFile  string `json:"destination_file,omitempty"`
 	Status           string `json:"status"`
 	Diff             string `json:"diff,omitempty"`
 	Error            string `json:"error,omitempty"`
@@ -108,36 +109,34 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	if err != nil {
 		return nil, err
 	}
-	writtenFiles := make(map[string]struct{})
-	workspaceScope := false
 	for _, batchEntry := range edits {
-		result, writtenFile, err := s.executeBatchEdit(ctx, batchEntry)
+		result, err := s.executeBatchEdit(ctx, batchEntry)
 		if err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, err))
 			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 			return response, nil
 		}
-		if writtenFile != "" {
-			if filepath.Clean(writtenFile) == filepath.Clean(s.workDir) {
-				workspaceScope = true
-			} else {
-				writtenFiles[writtenFile] = struct{}{}
-			}
-		}
 		response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, nil))
 	}
-	if workspaceScope {
-		writtenFiles = map[string]struct{}{s.workDir: {}}
+	normalizationPaths, err := changedBatchPaths(s.workDir, workspaceBefore)
+	if err != nil {
+		response.Status = "error"
+		message := fmt.Errorf("collect changed batch paths: %w", err)
+		response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
 	}
-	for file := range writtenFiles {
-		var err error
-		if autoOrganizeImports {
-			err = pipeline.OrganizeImports(ctx, s.workDir, file)
+	goPaths := make([]string, 0, len(normalizationPaths))
+	for _, path := range normalizationPaths {
+		if filepath.Ext(path) == ".go" {
+			goPaths = append(goPaths, path)
 		}
-		if err != nil {
+	}
+	if autoOrganizeImports && len(goPaths) > 0 {
+		if err := pipeline.OrganizeImports(ctx, s.workDir, goPaths...); err != nil {
 			response.Status = "error"
-			message := fmt.Errorf("post-process %s: %w", file, err)
+			message := fmt.Errorf("post-process batch files: %w", err)
 			response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
 			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 			return response, nil
@@ -152,7 +151,11 @@ func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}
 	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
 	maps.Copy(verifyRaw, verifyOptions)
-	verified, err := s.registry.Dispatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Project: backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust}, Registry: s.registry, Service: s.service}, verifyEntry.Key, verifyRaw)
+	verified, err := s.registry.Dispatch(operation.CallContext{
+		Ctx: ctx, WorkDir: s.workDir,
+		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		Registry: s.registry, Service: s.service, GoFormattingPaths: normalizationPaths,
+	}, verifyEntry.Key, verifyRaw)
 	if err != nil {
 		response.Status = "error"
 		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: err.Error()})
@@ -275,17 +278,32 @@ func finalBatchDiff(root string, before map[string]string) (string, error) {
 	return diff.String(), nil
 }
 
-func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, string, error) {
+func changedBatchPaths(root string, before map[string]string) ([]string, error) {
+	after, err := snapshotBatchWorkspace(root)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0)
+	for path, content := range after {
+		if original, exists := before[path]; !exists || original != content {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	return paths, nil
+}
+
+func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, error) {
 	entry, ok := s.registry.LookupMCP(batchEntry.Tool)
 	if !ok || !entry.Batchable {
-		return BatchResult{}, "", fmt.Errorf("tool is not batchable: %s", batchEntry.Tool)
+		return BatchResult{}, fmt.Errorf("tool is not batchable: %s", batchEntry.Tool)
 	}
 	raw := map[string]any{}
 	if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
-		return BatchResult{}, "", fmt.Errorf("invalid arguments: %w", err)
+		return BatchResult{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 	if err := s.validateLanguageAllowed(entry, raw); err != nil {
-		return BatchResult{}, "", err
+		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
 	}
 	result, err := s.registry.Dispatch(operation.CallContext{
 		Ctx:               ctx,
@@ -298,16 +316,27 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		DeferVerification: true,
 	}, entry.Key, raw)
 	if err != nil {
-		return BatchResult{}, "", err
+		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
 	}
 	batchResult := resultForBatch(result, s.workDir)
-	if _, ok := result.(*backend.RenameResult); ok {
-		return batchResult, s.workDir, nil
+	return batchResult, nil
+}
+
+func batchMoveReceipt(tool string, raw map[string]any, workDir string) BatchResult {
+	if tool != "semantic_move_construct" {
+		return BatchResult{}
 	}
-	if outcome, ok := result.(operation.FileOutcome); ok {
-		return batchResult, filepath.Clean(outcome.WrittenFile()), nil
+	file, _ := raw["file"].(string)
+	destination, _ := raw["destination_file"].(string)
+	if destination == "" {
+		destination = file
 	}
-	return batchResult, "", nil
+	symbol, _ := raw["symbol"].(string)
+	return BatchResult{
+		File:            continuationPath(workDir, file),
+		DestinationFile: continuationPath(workDir, destination),
+		Symbol:          symbol,
+	}
 }
 
 func resultForBatch(result any, workDir string) BatchResult {
@@ -317,7 +346,11 @@ func resultForBatch(result any, workDir string) BatchResult {
 		if file == "" {
 			file = continuationPath(workDir, typed.Display)
 		}
-		return BatchResult{File: file, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
+		destination := continuationPath(workDir, typed.DestinationFile)
+		if destination == "" {
+			destination = continuationPath(workDir, typed.DestinationDisplay)
+		}
+		return BatchResult{File: file, DestinationFile: destination, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
 	case operation.ScaffoldFileRes:
 		file := continuationPath(workDir, typed.File)
 		if file == "" {

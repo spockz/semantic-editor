@@ -115,9 +115,6 @@ type BuildDependencyRes struct {
 	GoMod   string
 }
 
-// WrittenFile returns the mutated go.mod path for batch post-processing.
-func (r BuildDependencyRes) WrittenFile() string { return r.GoMod }
-
 var addBuildDependencyParams = []ParameterContract{
 	{Name: "package", CLIName: "package", JSONName: "package", Type: ParamString, Description: "Module path to fetch (e.g. github.com/google/uuid@latest); runs go get and go mod tidy, can use the network, and may update go.mod and go.sum without editing source files", Required: true},
 }

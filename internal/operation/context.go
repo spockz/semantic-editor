@@ -17,6 +17,8 @@ type CallContext struct {
 	InBatch           bool
 	DeferImports      bool
 	DeferVerification bool
+	// GoFormattingPaths scopes batch built-in Go formatting; nil preserves standalone scope and empty skips formatting.
+	GoFormattingPaths []string
 }
 
 // NewCallContext builds the shared call context for one ingress request.

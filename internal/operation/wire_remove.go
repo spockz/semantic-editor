@@ -68,14 +68,6 @@ func (r RemoveReq) GetProjectContext() backend.ProjectContext { return r.Project
 // SetProjectContext replaces the request project during dispatch merge.
 func (r *RemoveReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
-// WrittenFile returns the changed path only when a node was removed.
-func (r RemoveRes) WrittenFile() string {
-	if r.Status == "removed" {
-		return r.File
-	}
-	return ""
-}
-
 var (
 	removeFileSources          = append(append([]string{}, sourceFileContinuations...), sourceRemoveFile)
 	removeSymbolSources        = append(append([]string{}, sourceSymbolContinuations...), sourceRemoveSymbol)

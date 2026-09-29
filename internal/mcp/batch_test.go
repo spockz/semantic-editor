@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -484,5 +485,208 @@ func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
 	}
 	if !bytes.Equal(got, original) {
 		t.Fatalf("batch changed file before rejecting invalid params:\n%s", got)
+	}
+}
+
+func TestBatchMoveConstructTracksBothFilesAndNormalizesTogether(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmove\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"source.go": `package batchmove
+
+import "strings"
+
+// Normalize trims surrounding space before the value leaves the source file.
+func Normalize(value string) string { return strings.TrimSpace(value) }
+
+// Collapse joins fields into a stable display value.
+func Collapse(value string) string { return strings.Join(strings.Fields(value), " ") }
+
+func Local() int { return 1 }
+`,
+		"first.go":     "package batchmove\n\nfunc First() int { return 1 }\n",
+		"second.go":    "package batchmove\n\nfunc Second() int { return 2 }\n",
+		"untouched.go": "//go:build go1.23\n// +build go1.23\n\n\npackage batchmove\n\nfunc Unchanged( ){}\n",
+	}
+	for name, source := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	metrics := telemetry.NewMetrics()
+	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
+		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"Normalize"}`)},
+		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Collapse"}`)},
+		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"source.go","symbol":"Local","placement":"file_start"}`)},
+	}, true)
+	if err != nil || response.Status != "ok" {
+		t.Fatalf("move batch = %+v, err = %v", response, err)
+	}
+	if len(response.Results) != 3 || response.Results[0].DestinationFile != "first.go" || response.Results[1].DestinationFile != "second.go" || response.Results[2].DestinationFile != "source.go" {
+		t.Fatalf("ordered move receipts = %+v", response.Results)
+	}
+	for _, result := range response.Results {
+		if result.Status != "ok" || result.DiagnosticStatus != "deferred" {
+			t.Errorf("move result = %+v, want successful deferred receipt", result)
+		}
+	}
+	if got := metrics.Snapshot(0).Phases[string(telemetry.PhaseFormattingImports)].Count; got != 1 {
+		t.Fatalf("deferred import organization calls = %d, want one for the write set", got)
+	}
+	for _, name := range []string{"source.go", "first.go", "second.go"} {
+		if !strings.Contains(response.FinalDiff, name) {
+			t.Errorf("final_diff omitted %s: %s", name, response.FinalDiff)
+		}
+	}
+	read := func(name string) string {
+		content, err := os.ReadFile(filepath.Join(root, name))
+		if err != nil {
+			t.Fatalf("read %s: %v", name, err)
+		}
+		return string(content)
+	}
+	source := read("source.go")
+	first := read("first.go")
+	second := read("second.go")
+	if strings.Contains(source, "import \"strings\"") || strings.Contains(source, "strings.") {
+		t.Fatalf("source retained moved import: %s", source)
+	}
+	if !strings.Contains(source, "func Local()") {
+		t.Fatalf("same-file move lost its declaration: %s", source)
+	}
+	untouched, err := os.ReadFile(filepath.Join(root, "untouched.go"))
+	if err != nil || string(untouched) != files["untouched.go"] {
+		t.Fatalf("batch normalized an unchanged build header: content=%s err=%v", untouched, err)
+	}
+	for name, content := range map[string]string{"first.go": first, "second.go": second} {
+		if !strings.Contains(content, "\"strings\"") || !strings.Contains(content, "strings.") {
+			t.Errorf("%s lost the moved declaration's required import: %s", name, content)
+		}
+	}
+	if !strings.Contains(first, "Normalize trims surrounding space") || !strings.Contains(second, "Collapse joins fields") {
+		t.Fatalf("declaration comments were not preserved: first=%s second=%s", first, second)
+	}
+}
+
+func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovefailure\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"source.go": "package batchmovefailure\n\n// MoveMe stays documented.\nfunc MoveMe() int { return 3 }\n",
+		"first.go":  "package batchmovefailure\n",
+		"second.go": "package batchmovefailure\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{
+		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"MoveMe"}`)},
+		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Missing"}`)},
+	}, false)
+	if err != nil || response.Status != "error" {
+		t.Fatalf("failed move batch = %+v, err = %v", response, err)
+	}
+	if response.DiagnosticDelta != nil {
+		t.Fatalf("failed batch reported a misleading final diagnostic delta: %+v", response.DiagnosticDelta)
+	}
+	if len(response.Results) != 2 || response.Results[0].Status != "ok" || response.Results[0].DiagnosticStatus != "deferred" || response.Results[1].Status != "error" {
+		t.Fatalf("ordered partial move receipts = %+v", response.Results)
+	}
+	if failed := response.Results[1]; failed.File != "source.go" || failed.DestinationFile != "second.go" || failed.Symbol != "Missing" {
+		t.Fatalf("failed move receipt lost target selectors: %+v", failed)
+	}
+	if !strings.Contains(response.FinalDiff, "source.go") || !strings.Contains(response.FinalDiff, "first.go") {
+		t.Fatalf("final_diff does not represent the persisted first move: %s", response.FinalDiff)
+	}
+	second, err := os.ReadFile(filepath.Join(root, "second.go"))
+	if err != nil || strings.Contains(string(second), "func Missing") || strings.Contains(string(second), "func MoveMe") {
+		t.Fatalf("failed move changed its destination: content=%s err=%v", second, err)
+	}
+	first, err := os.ReadFile(filepath.Join(root, "first.go"))
+	if err != nil || !strings.Contains(string(first), "func MoveMe") {
+		t.Fatalf("first move was not persisted: content=%s err=%v", first, err)
+	}
+}
+
+func TestBatchMoveConstructRejectsUncapturedAndCrossDirectoryTargets(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovescope\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, "other"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"source.go":     "package batchmovescope\n\nfunc MoveMe() int { return 3 }\n",
+		"dest.go":       "package batchmovescope\n",
+		"other/dest.go": "package other\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+		Tool:   "semantic_move_construct",
+		Params: json.RawMessage(`{"file":"source.go","destination_file":"other/dest.go","symbol":"MoveMe"}`),
+	}}, false)
+	if err != nil || response.Status != "error" || len(response.Results) != 1 {
+		t.Fatalf("cross-directory move response = %+v, err = %v", response, err)
+	}
+	if !strings.Contains(response.Results[0].Error, "same directory") || strings.Contains(response.FinalDiff, "func MoveMe") {
+		t.Fatalf("cross-directory refusal was not pre-write: %+v diff=%s", response.Results[0], response.FinalDiff)
+	}
+	if response.Results[0].File != "source.go" || response.Results[0].DestinationFile != "other/dest.go" {
+		t.Fatalf("cross-directory refusal omitted requested paths: %+v", response.Results[0])
+	}
+}
+
+func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
+	for _, test := range []struct{ name, file, destination string }{
+		{name: "file", file: "source-link.go", destination: "dest.go"},
+		{name: "directory", file: "source.go", destination: "linked/dest.go"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovesymlink\n\ngo 1.23\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "source.go"), []byte("package batchmovesymlink\n\nfunc MoveMe() int { return 3 }\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Mkdir(filepath.Join(root, "real"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "real", "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(root, "source.go"), filepath.Join(root, "source-link.go")); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
+				t.Fatal(err)
+			}
+			file := test.file
+			if file == "" {
+				file = "source.go"
+			}
+			response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+				Tool:   "semantic_move_construct",
+				Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, file, test.destination)),
+			}}, false)
+			if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "symlink") {
+				t.Fatalf("symlink move response = %+v, err = %v", response, err)
+			}
+			if strings.Contains(response.FinalDiff, "func MoveMe") {
+				t.Fatalf("symlink refusal changed a target: %s", response.FinalDiff)
+			}
+		})
 	}
 }

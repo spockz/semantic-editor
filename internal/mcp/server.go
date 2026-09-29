@@ -177,6 +177,7 @@ type feedbackReport struct {
 }
 
 const schemaPropertiesKey = "properties"
+const schemaDescriptionKey = "description"
 
 type jsonRPCRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -564,7 +565,7 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_lookup":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
-		fields["kind"] = map[string]any{"type": "string", "description": "Descriptive symbol category; its vocabulary differs from mutation kind inputs."}
+		fields["kind"] = map[string]any{"type": "string", schemaDescriptionKey: "Descriptive symbol category; its vocabulary differs from mutation kind inputs."}
 		fields["line"] = map[string]any{"type": "integer"}
 		fields["column"] = map[string]any{"type": "integer"}
 	case "semantic_rename", "semantic_replace_body":
@@ -601,7 +602,7 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
-		fields["line"] = map[string]any{"type": "integer", "description": "Navigation hint; not an operation parameter."}
+		fields["line"] = map[string]any{"type": "integer", schemaDescriptionKey: "Navigation hint; not an operation parameter."}
 		if toolName == semanticInsertStructureTool {
 			fields["in_function"] = map[string]any{"type": "string"}
 			fields["discriminator"] = map[string]any{"type": "string"}
@@ -852,9 +853,10 @@ func batchResultSchema() map[string]any {
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
 			"tool":              map[string]any{"type": "string"},
-			"file":              map[string]any{"type": "string", "description": "Workspace-relative file path for a follow-up operation."},
+			"file":              map[string]any{"type": "string", schemaDescriptionKey: "Requested source path for this operation; on errors it identifies the attempted target, not a successful write."},
+			"destination_file":  map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path for this operation; on errors it identifies the attempted target, not a successful write."},
 			"symbol":            map[string]any{"type": "string"},
-			"package":           map[string]any{"type": "string", "description": "Package result, not a symbol target."},
+			"package":           map[string]any{"type": "string", schemaDescriptionKey: "Package result, not a symbol target."},
 			"in_function":       map[string]any{"type": "string"},
 			"discriminator":     map[string]any{"type": "string"},
 			"diagnostic_status": map[string]any{"type": "string"},

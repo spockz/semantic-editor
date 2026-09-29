@@ -415,13 +415,23 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 	scope := requestedScope
 	service := serviceForContext(cc)
 	response := VerifyRes{Scope: projectverify.Scope{Paths: actualPaths}}
-	if !request.CheckOnly && shouldRunGofmt(project, path) {
-		needsFormatting, err := gofmtListsFiles(ctx, project.RootDir, path)
+	formatPaths := []string{path}
+	if cc.GoFormattingPaths != nil {
+		formatPaths = cc.GoFormattingPaths
+	}
+	goFormatPaths := make([]string, 0, len(formatPaths))
+	for _, formatPath := range formatPaths {
+		if shouldRunGofmt(project, formatPath) {
+			goFormatPaths = append(goFormatPaths, formatPath)
+		}
+	}
+	if !request.CheckOnly && len(goFormatPaths) > 0 {
+		needsFormatting, err := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
 		if err != nil {
 			return response, fmt.Errorf("check Go formatting before verification: %w", err)
 		}
 		if needsFormatting {
-			if err := pipeline.Format(ctx, project.RootDir, path); err != nil {
+			if err := pipeline.Format(ctx, project.RootDir, goFormatPaths...); err != nil {
 				return response, fmt.Errorf("format Go files before verification: %w", err)
 			}
 			response.Formatted = true
@@ -531,10 +541,10 @@ func hasMutatingLSPHooks(hooks []projectverify.Hook) bool {
 }
 
 // gofmtListsFiles reports whether gofmt would reformat sources under path.
-func gofmtListsFiles(ctx context.Context, rootDir, path string) (bool, error) {
-	formatted, err := pipeline.NeedsFormatting(ctx, rootDir, path)
+func gofmtListsFiles(ctx context.Context, rootDir string, paths ...string) (bool, error) {
+	formatted, err := pipeline.NeedsFormatting(ctx, rootDir, paths...)
 	if err != nil {
-		return false, fmt.Errorf("gofmt -l %s: %w", path, err)
+		return false, fmt.Errorf("gofmt -l %s: %w", strings.Join(paths, ", "), err)
 	}
 	return formatted, nil
 }

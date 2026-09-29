@@ -24,11 +24,6 @@ var (
 	caseEnum               = []string{"first", "last", "before_default", "before", "after"}
 )
 
-// FileOutcome is implemented by results that record a written file for batch post-processing.
-type FileOutcome interface {
-	WrittenFile() string
-}
-
 // AppendDiagnosticDelta appends a compiler diagnostic delta to a response base string.
 // It mirrors the MCP server helper retired in the ingress migration step.
 func AppendDiagnosticDelta(base string, delta pipeline.DiagnosticDelta) string {
@@ -127,9 +122,6 @@ type FileEditRes struct {
 	Delta              pipeline.DiagnosticDelta
 	HasDelta           bool
 }
-
-// WrittenFile returns the resolved mutated path for batch post-processing.
-func (r FileEditRes) WrittenFile() string { return r.File }
 
 func formatFileEdit(res FileEditRes) (string, error) {
 	text := res.Detail

@@ -1,0 +1,91 @@
+# Public MCP batching moves declarations across files and within a file without changing unrelated headers.
+stdin input.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"destination_file":"one.go"'
+stdout '"destination_file":"two.go"'
+stdout '"diagnostic_status":"deferred"'
+stdout '"final_diff":"'
+cmp source.go .scratch/want/source.go
+cmp one.go .scratch/want/one.go
+cmp two.go .scratch/want/two.go
+cmp untouched.go .scratch/want/untouched.go
+exec go test ./...
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"one.go","package":"batchmove","purpose_header":"// This file groups moved normalization declarations."}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"one.go","symbol":"Normalize"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"two.go","symbol":"Collapse"}},{"tool":"semantic_move_construct","params":{"file":"two.go","destination_file":"two.go","symbol":"Marker","placement":"file_end"}}],"auto_organize_imports":true}}}
+-- go.mod --
+module example.com/batchmove
+
+go 1.23
+-- source.go --
+package batchmove
+
+import "strings"
+
+// Normalize trims the input.
+func Normalize(value string) string { return strings.TrimSpace(value) }
+
+// Collapse joins input fields.
+func Collapse(value string) string { return strings.Join(strings.Fields(value), " ") }
+
+func Local() int { return 3 }
+-- two.go --
+package batchmove
+
+// Marker remains in the same file after reordering.
+func Marker() int { return 4 }
+-- untouched.go --
+//go:build go1.22
+// +build go1.22
+
+
+package batchmove
+
+func Untouched() int { return 5 }
+-- source_test.go --
+// These checks verify the relocated declarations retain their behavior.
+package batchmove
+
+import "testing"
+
+func TestRelocated(t *testing.T) {
+	if Normalize(" hi ") != "hi" || Collapse(" a  b ") != "a b" || Local() != 3 || Marker() != 4 {
+		t.Fatal("relocated declarations changed behavior")
+	}
+}
+-- .scratch/want/source.go --
+package batchmove
+
+func Local() int { return 3 }
+-- .scratch/want/one.go --
+// This file groups moved normalization declarations.
+
+package batchmove
+
+import (
+	"strings"
+)
+
+// Normalize trims the input.
+func Normalize(value string) string { return strings.TrimSpace(value) }
+-- .scratch/want/two.go --
+package batchmove
+
+import (
+	"strings"
+)
+
+// Collapse joins input fields.
+func Collapse(value string) string { return strings.Join(strings.Fields(value), " ") }
+
+// Marker remains in the same file after reordering.
+func Marker() int { return 4 }
+-- .scratch/want/untouched.go --
+//go:build go1.22
+// +build go1.22
+
+
+package batchmove
+
+func Untouched() int { return 5 }

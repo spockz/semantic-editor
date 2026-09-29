@@ -1032,3 +1032,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: semantic inspection resolved files in the parent checkout, and an attempted scaffold request failed before creating its target. Subsequent changes intended for this branch appeared in the parent checkout. The parent preserved those changes in `.scratch/extract-variable-parent-snapshot/` and restored its integration checkout; no parent changes remain.
 - Workaround: copy the preserved patch and untracked files into the assigned worktree, then continue using only absolute worktree paths and the worktree-local CLI or atomic file updates.
 - Root cause: the shared semantic MCP service is bound to the parent checkout; a shell edit command also ran without an explicit worktree directory, allowing checkout context to drift.
+
+### ST-0130: semantic_batch rejected construct movement
+
+- Date: 2026-09-29
+- Tool: `semantic_batch` with `semantic_move_construct`
+- Target: same-package declaration moves across Go files
+- Observed failure: the reported batch request returns `tool is not batchable: semantic_move_construct` during batch preflight, before edits execute. The registry definition sets `Batchable: false`; `ExecuteBatch` rejects non-batchable entries. A local CLI replay was unavailable because the first required `make check` could not resolve uncached modules with `GOPROXY=off`.
+- Workaround: mark the operation batchable only after implementing deferred multi-file outcomes, destination receipts, and batch write-set handling; then add public MCP and CLI regression coverage.
+- Root cause: batch eligibility and post-processing track only one `WrittenFile`, while moves persist source and destination files.
+
+### ST-0131: batched move verification changed an unrelated source header
+
+- Date: 2026-09-29
+- Tool: `semantic_batch` with same-package `semantic_move_construct` operations
+- Target: isolated Chi router acceptance fixture, `path_value.go`
+- Observed failure: the 19-operation batch returned success and preserved the original test files, but the independent `TestSemeditRoutingDecomposition` oracle found that global final verification removed one blank line between the build header and package clause in untouched `path_value.go`. The acceptance fixture is isolated outside this worktree.
+- Workaround: derive built-in Go formatting and import-organizing paths from actual changed files after all batch edits; keep workspace diagnostics and configured normalization hooks on their existing scope. Regression coverage compares the untouched header byte-for-byte.
+- Root cause: final `semantic_verify` formatted the entire workspace, including unchanged Go files.

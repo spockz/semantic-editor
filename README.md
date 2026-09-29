@@ -107,7 +107,7 @@ Cross-package construct moves are limited to exported free functions in the same
 
 These operations currently execute Go edits. The broader construct taxonomy in the ADRs does not enable mutation in other languages. The former discrete insertion tools, including `insert-declaration`, `insert-function`, `insert-type`, `insert-decl`, and `insert-case`, have been retired from the registry.
 
-The MCP-only `semantic_batch` runs registered edits sequentially against the supplied workspace, coalesces deferred formatting and diagnostics, and returns a final diff. Earlier successful edits remain applied if a later edit fails. CLI batch exposure remains an [open investigation](docs/research/RQ-0030-registry-backed-cli-batches.md).
+The MCP-only `semantic_batch` runs registered edits sequentially against the supplied workspace, coalesces deferred formatting and diagnostics, scopes built-in Go formatting and imports to files that actually changed, and returns a final diff. Batched Go moves are limited to one directory and package. Earlier successful edits remain applied if a later edit fails. CLI batch exposure remains an [open investigation](docs/research/RQ-0030-registry-backed-cli-batches.md).
 
 `report_feedback` is a separate MCP utility that returns a structured issue draft for user review and manual posting. It does not save or submit the report. Development-only `semantic_reload` is available when the server starts with `--live-reload`.
 
