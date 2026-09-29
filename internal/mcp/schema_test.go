@@ -113,7 +113,7 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_organize_imports", "semantic_scaffold_file", "semantic_inline_variable",
 	} {
 		if !strings.Contains(description, source) {
 			t.Errorf("file description %q omitted relevant source tool %s", description, source)
@@ -132,6 +132,35 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 		return
 	}
 	t.Fatal("tools/list omitted semantic_replace_body")
+}
+
+func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
+	var tool map[string]any
+	for _, candidate := range listTools(t, "full") {
+		if candidate["name"] == "semantic_inline_variable" {
+			tool = candidate
+			break
+		}
+	}
+	if tool == nil {
+		t.Fatal("tools/list omitted semantic_inline_variable")
+	}
+	input := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	for key, role := range map[string]string{"symbol": "Target:", "file": "Selector:", "in_function": "Selector:"} {
+		field, ok := input[key].(map[string]any)
+		if !ok {
+			t.Fatalf("semantic_inline_variable input omitted %s", key)
+		}
+		if !strings.Contains(field["description"].(string), role) {
+			t.Errorf("semantic_inline_variable.%s description omitted role %q", key, role)
+		}
+	}
+	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
+	for _, key := range []string{"file", "symbol", "in_function"} {
+		if _, ok := output[key]; !ok {
+			t.Errorf("semantic_inline_variable output omitted continuation field %s", key)
+		}
+	}
 }
 
 func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
@@ -160,7 +189,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
-				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
+				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 					for _, field := range map[string][]string{
@@ -168,6 +197,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 						"semantic_rename":            {"symbol", "file"},
 						"semantic_replace_body":      {"symbol", "file"},
 						"semantic_replace_construct": {"file", "in_function"},
+						"semantic_inline_variable":   {"file", "symbol", "in_function"},
 						"semantic_insert_case":       {"file", "in_function", "discriminator"},
 					}[name] {
 						if _, ok := properties[field]; !ok {
@@ -791,7 +821,7 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_organize_imports", "semantic_scaffold_file", "semantic_inline_variable",
 	}
 	inFunctionSources := []string{
 		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_structure",

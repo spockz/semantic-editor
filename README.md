@@ -56,7 +56,7 @@ Support is operation-specific. A shared interface does not imply that every lang
 
 | Language | Tooling | Implemented scope |
 | :--- | :--- | :--- |
-| **Go** | Go parser/AST, `gopls`, Go formatting/import tooling | Symbol lookup, workspace rename, construct insertion/replacement/movement, body and declaration replacement, scaffolding, imports, dependencies, assertion transforms, and verification |
+| **Go** | Go parser/AST, `gopls`, Go formatting/import tooling | Symbol lookup, workspace rename, construct insertion/replacement/movement, body and declaration replacement, literal local-variable inlining, scaffolding, imports, dependencies, assertion transforms, and verification |
 | **Rust** | `rust-analyzer` | Trusted selected-file lookup and rename; edits outside the selected `.rs` file are rejected. No Cargo execution or general verification |
 | **Java** | Eclipse JDT LS; separate bounded Maven actions | Trusted selected-file lookup, rename, formatting, import organization, and diagnostics; explicit Maven import; fixed Maven `test-compile` and `test` actions |
 | **Scala** | Metals | Trusted selected-file lookup only; no build import or mutation |
@@ -83,6 +83,7 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Replace or upsert a Go construct | `replace-construct` | `semantic_replace_construct` |
 | Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
+| Inline a Go local literal variable in its next call or return | `inline-variable` | `semantic_inline_variable` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |
 | Create a Go file with an inferred package | `scaffold-file` | `semantic_scaffold_file` |
 | Organize Go imports | `organize-imports` | `semantic_organize_imports` |

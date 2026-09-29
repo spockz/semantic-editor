@@ -549,9 +549,12 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_rename", "semantic_replace_body":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
-	case "semantic_replace_construct", "semantic_insert_case":
+	case "semantic_replace_construct", "semantic_insert_case", "semantic_inline_variable":
 		fields["file"] = map[string]any{"type": "string"}
 		fields["in_function"] = map[string]any{"type": "string"}
+		if toolName == "semantic_inline_variable" {
+			fields["symbol"] = map[string]any{"type": "string"}
+		}
 		if toolName == "semantic_insert_case" {
 			fields["discriminator"] = map[string]any{"type": "string"}
 		}
@@ -625,9 +628,9 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 				fields["line"] = edit.Line
 			}
 		}
-	case "semantic_replace_construct", "semantic_insert_case", semanticInsertStructureTool:
+	case "semantic_replace_construct", "semantic_insert_case", semanticInsertStructureTool, "semantic_inline_variable":
 		if edit, ok := result.(operation.FileEditRes); ok {
-			if toolName == semanticInsertStructureTool && edit.Symbol != "" {
+			if (toolName == semanticInsertStructureTool || toolName == "semantic_inline_variable") && edit.Symbol != "" {
 				fields["symbol"] = edit.Symbol
 			}
 			if file := continuationPath(root, edit.File); file != "" {

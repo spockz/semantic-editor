@@ -45,6 +45,9 @@ const (
 	sourceRenameFile                   = "semantic_rename.file"
 	sourceReplaceBodyFile              = "semantic_replace_body.file"
 	sourceReplaceConstructFile         = "semantic_replace_construct.file"
+	sourceInlineVariableFile           = "semantic_inline_variable.file"
+	sourceInlineVariableSymbol         = "semantic_inline_variable.symbol"
+	sourceInlineVariableInFunction     = "semantic_inline_variable.in_function"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
 	sourceInsertFunctionFile           = "semantic_insert_function.file"
 	sourceInsertTypeFile               = "semantic_insert_type.file"
@@ -70,7 +73,7 @@ const (
 
 var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
-	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
+	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile, sourceInlineVariableFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
 	sourceInsertStructureFile, sourceReplaceDeclFile, sourceOrganizeImportsFile,
 	sourceScaffoldFile,
@@ -79,11 +82,11 @@ var sourceFileContinuations = []string{
 var sourceSymbolContinuations = []string{
 	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
-	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
+	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol, sourceInlineVariableSymbol,
 }
 
 var sourceInFunctionContinuations = []string{
-	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
+	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction, sourceInlineVariableInFunction,
 }
 
 var sourceDiscriminatorContinuations = []string{
