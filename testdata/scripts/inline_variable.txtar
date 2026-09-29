@@ -1,0 +1,82 @@
+# Exercise literal inlining through the public CLI and refuse unsafe values and conversion-name bindings.
+exec semedit inline-variable --file calc.go --symbol value --in-function Compute
+cmp calc.go want/calc.go
+! exec semedit inline-variable --file calc.go --symbol result --in-function Compute
+stderr 'initializer must be a literal expression'
+cmp calc.go want/calc.go
+! exec semedit inline-variable --file calc.go --symbol typed --in-function Compute
+stderr 'explicitly typed declarations require preserving their declared type'
+cmp calc.go want/calc.go
+! exec semedit inline-variable --file calc.go --symbol shadowed --in-function Shadow
+stderr 'default type name int is shadowed'
+cmp calc.go want/calc.go
+! exec semedit inline-variable --file sibling/calc.go --symbol value --in-function Compute
+stderr 'default type name int is shadowed'
+cmp sibling/calc.go expected/sibling.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inline
+
+go 1.23
+
+-- calc.go --
+package calc
+
+func Compute() int {
+	value := 42
+	println(value)
+	result := compute()
+	println(result)
+	var typed int64 = 9
+	println(typed)
+	return 0
+}
+
+func Shadow() {
+	int := 7
+	_ = int
+	shadowed := 42
+	println(shadowed)
+}
+
+func compute() int { return 1 }
+
+-- want/calc.go --
+package calc
+
+func Compute() int {
+	println(int(42))
+	result := compute()
+	println(result)
+	var typed int64 = 9
+	println(typed)
+	return 0
+}
+
+func Shadow() {
+	int := 7
+	_ = int
+	shadowed := 42
+	println(shadowed)
+}
+
+func compute() int { return 1 }
+-- sibling/calc.go --
+package sibling
+
+func Compute() {
+	value := 42
+	println(value)
+}
+-- sibling/peer.go --
+package sibling
+
+type int = byte
+-- expected/sibling.go --
+package sibling
+
+func Compute() {
+	value := 42
+	println(value)
+}

@@ -37,7 +37,7 @@ const (
 	wireCLIInFunction           = "in-function"
 	wireConstructPath           = "construct_path"
 	wireTargetCase              = "target_case"
-	wireTargetGoFileDescription = "Target: Go source file to modify; path is relative to the workspace root"
+	wireTargetGoFileDescription = "Target: Go file to modify; path is relative to the workspace root"
 
 	sourceLookupSymbol                 = "semantic_lookup.symbol"
 	sourceRenameSymbol                 = "semantic_rename.symbol"
@@ -49,6 +49,9 @@ const (
 	sourceExtractFunctionFile          = "semantic_extract_function.file"
 	sourceExtractFunctionSymbol        = "semantic_extract_function.symbol"
 	sourceExtractFunctionInFunction    = "semantic_extract_function.in_function"
+	sourceInlineVariableFile           = "semantic_inline_variable.file"
+	sourceInlineVariableSymbol         = "semantic_inline_variable.symbol"
+	sourceInlineVariableInFunction     = "semantic_inline_variable.in_function"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
 	sourceInsertFunctionFile           = "semantic_insert_function.file"
 	sourceInsertTypeFile               = "semantic_insert_type.file"
@@ -74,7 +77,7 @@ const (
 
 var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
-	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
+	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile, sourceInlineVariableFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
 	sourceInsertStructureFile, sourceReplaceDeclFile, sourceExtractFunctionFile, sourceOrganizeImportsFile,
 	sourceScaffoldFile,
@@ -84,12 +87,12 @@ var sourceSymbolContinuations = []string{
 	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
 	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
-	sourceExtractFunctionSymbol,
+	sourceExtractFunctionSymbol, sourceInlineVariableSymbol,
 }
 
 var sourceInFunctionContinuations = []string{
 	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
-	sourceExtractFunctionInFunction,
+	sourceExtractFunctionInFunction, sourceInlineVariableInFunction,
 }
 
 var sourceDiscriminatorContinuations = []string{

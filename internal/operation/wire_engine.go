@@ -361,6 +361,9 @@ func registerEngineOps(registry *Registry) error {
 	if err := registerExtractOps(registry); err != nil {
 		return err
 	}
+	if err := Register(registry, inlineVariableDef()); err != nil {
+		return err
+	}
 	if err := Register(registry, scaffoldFileDef()); err != nil {
 		return err
 	}
