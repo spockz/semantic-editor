@@ -81,6 +81,7 @@ Registered semantic operations share CLI and MCP definitions. Use command help o
 | Rename a symbol and supported references | `rename` | `semantic_rename` |
 | Add a Go construct | `insert-construct` | `semantic_insert_construct` |
 | Replace or upsert a Go construct | `replace-construct` | `semantic_replace_construct` |
+| Remove one Go declaration or switch case; safe deletion fails closed until preflights are complete | `remove-construct` | `semantic_remove_construct` |
 | Move a Go declaration within a file | `move-construct` | `semantic_move_construct` |
 | Replace a Go function or method body | `replace-body` | `semantic_replace_body` |
 | Replace a Go constant, variable, or type alias declaration | `replace-decl` | `semantic_replace_decl` |

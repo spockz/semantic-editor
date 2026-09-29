@@ -335,6 +335,9 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, replaceDeclDef()); err != nil {
 		return err
 	}
+	if err := Register(registry, removeDef()); err != nil {
+		return err
+	}
 	if err := Register(registry, organizeImportsDef()); err != nil {
 		return err
 	}

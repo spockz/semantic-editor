@@ -1,0 +1,82 @@
+# Exact declaration and case removals preserve siblings; safe deletion refuses incomplete preflights.
+exec semedit remove-construct --file api/decls.go --kind variable --symbol Remove
+stdout 'Removed selected node'
+exec semedit remove-construct --file api/routes.go --kind case --in-function Route --discriminator route --target-case '"old"'
+stdout 'Removed selected node'
+exec semedit remove-construct --file api/decls.go --kind constant --symbol safeMagic --safe-delete
+stdout 'Safe deletion checks run'
+! exec semedit remove-construct --file api/decls.go --kind constant --symbol blockedConstant --safe-delete
+stderr 'safe_delete refused'
+stderr 'module_reference_scan_complete'
+cmp api/decls.go want/api/decls.go
+cmp api/routes.go want/api/routes.go
+! exec semedit remove-construct --file api/decls.go --kind variable --symbol left
+stderr 'shared value spec'
+cmp api/decls.go want/api/decls.go
+
+-- go.mod --
+module example.com/removal
+
+go 1.23
+
+-- api/decls.go --
+package api
+
+const safeMagic = 19
+const blockedConstant = 23
+
+var (
+	// Keep documents this sibling.
+	Keep = 1
+	// Remove documents the target.
+	Remove = 2
+)
+
+var left, right = 1, 2
+
+// Obsolete remains untouched by the constant-removal request.
+func obsolete() {}
+
+-- api/inactive_windows.go --
+//go:build windows
+
+package api
+
+func inactiveUse() int { return blockedConstant }
+
+-- api/routes.go --
+package api
+
+func Route(route string) {
+	switch route {
+	case "old":
+		old()
+	case "keep":
+		keep()
+	}
+}
+
+-- want/api/decls.go --
+package api
+
+const blockedConstant = 23
+
+var (
+	// Keep documents this sibling.
+	Keep = 1
+)
+
+var left, right = 1, 2
+
+// Obsolete remains untouched by the constant-removal request.
+func obsolete() {}
+-- want/api/routes.go --
+package api
+
+func Route(route string) {
+	switch route {
+
+	case "keep":
+		keep()
+	}
+}
