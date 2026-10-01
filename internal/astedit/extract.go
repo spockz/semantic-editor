@@ -19,6 +19,8 @@ import (
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // ExtractKind selects the declaration form created by ExtractFunction.
@@ -54,6 +56,9 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	}
 	if !token.IsIdentifier(helper) || token.Lookup(helper).IsKeyword() || helper == "_" {
 		return "", fmt.Errorf("symbol %q is not a valid helper identifier", helper)
+	}
+	if types.Universe.Lookup(helper) != nil {
+		return "", fmt.Errorf("cannot extract: helper name %q collides with a predeclared Go identifier", helper)
 	}
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
@@ -93,6 +98,8 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	}
 	if err := validateOutputAliases(selected, outputs, owner); err != nil {
 		return "", err
+	} else if err := validateOutputTypeNames(ctx, cleanPath, file, outputs, owner, content); err != nil {
+		return "", err
 	}
 	paramNames, paramDecls, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
 	if err != nil {
@@ -126,14 +133,28 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	if err != nil {
 		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
 	}
-	if !bytes.Equal(current, content) {
+	if err := validateExtractionCandidate(ctx, cleanPath, formatted); err != nil {
+		return "", err
+	} else if !bytes.Equal(current, content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)
 	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
+	checkPreimage := func() error {
+		latest, readErr := sourcebuf.ReadFile(ctx, cleanPath)
+		if readErr != nil {
+			return fmt.Errorf("recheck extraction source: %w", readErr)
+		}
+		if !bytes.Equal(latest, content) {
+			return fmt.Errorf("cannot extract %s: source changed while planning", owner)
+		}
+		return nil
+	}
+	if err := sourcebuf.WriteFileChecked(ctx, cleanPath, formatted, checkPreimage); err != nil {
 		return "", fmt.Errorf("write extracted source atomically: %w", err)
 	}
-	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format extracted source: %w", err)
+	if sourcebuf.FromContext(ctx) == nil {
+		if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
+			return "", fmt.Errorf("format extracted source: %w", err)
+		}
 	}
 	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
@@ -874,4 +895,81 @@ func helperNameExists(ctx context.Context, filePath, packageName, helper string,
 		}
 	}
 	return false, nil
+}
+
+func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
+	config := &packages.Config{Context: ctx, Dir: dir, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
+	loaded, err := packages.Load(config, ".")
+	if err != nil {
+		return nil, fmt.Errorf("load Go package for extraction: %w", err)
+	}
+	if len(loaded) == 0 {
+		return nil, fmt.Errorf("load Go package for extraction: no package found")
+	}
+	for _, pkg := range loaded {
+		for _, item := range pkg.Errors {
+			return nil, fmt.Errorf("load Go package for extraction: %s", item.Error())
+		}
+	}
+	return loaded, nil
+}
+
+func validateExtractionCandidate(ctx context.Context, filePath string, source []byte) error {
+	overlay := sourcebuf.Overlay(ctx)
+	if overlay == nil {
+		overlay = make(map[string][]byte)
+	}
+	cleanPath := filepath.Clean(filePath)
+	overlay[cleanPath] = bytes.Clone(source)
+	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay); err != nil {
+		return fmt.Errorf("validate complete extracted package: %w", err)
+	}
+	return nil
+}
+
+func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.File, outputs []extractionOutput, owner string, source []byte) error {
+	overlay := sourcebuf.Overlay(ctx)
+	if overlay == nil {
+		overlay = make(map[string][]byte)
+	}
+	overlay[filepath.Clean(filePath)] = bytes.Clone(source)
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay)
+	if err != nil {
+		return fmt.Errorf("resolve extracted result types: %w", err)
+	}
+	if len(loaded) != 1 || loaded[0].Types == nil {
+		return fmt.Errorf("resolve extracted result types: package scope is ambiguous")
+	}
+	for _, output := range outputs {
+		universeType := types.Universe.Lookup(output.typeName)
+		if universeType == nil {
+			continue
+		}
+		if packageType := loaded[0].Types.Scope().Lookup(output.typeName); packageType != nil {
+			return fmt.Errorf("cannot extract %s: generated result type %q is shadowed by a package declaration", owner, output.typeName)
+		}
+		for _, imported := range file.Imports {
+			var alias string
+			if imported.Name != nil {
+				alias = imported.Name.Name
+			} else {
+				importPath, unquoteErr := strconv.Unquote(imported.Path.Value)
+				if unquoteErr != nil {
+					return fmt.Errorf("read import path while checking extracted result type: %w", unquoteErr)
+				}
+				importedPackage := loaded[0].Imports[importPath]
+				if importedPackage == nil || importedPackage.Name == "" {
+					return fmt.Errorf("cannot extract %s: imported package %q has no resolved package name", owner, importPath)
+				}
+				alias = importedPackage.Name
+			}
+			if alias == "." {
+				return fmt.Errorf("cannot extract %s: dot imports prevent proving generated result type bindings", owner)
+			}
+			if alias != "_" && alias == output.typeName {
+				return fmt.Errorf("cannot extract %s: generated result type %q is shadowed by a file import", owner, output.typeName)
+			}
+		}
+	}
+	return nil
 }

@@ -1,0 +1,51 @@
+# Preserve dynamic types when extracting supported multiple live-outs.
+exec semedit extract-function --file emit.go --symbol capturePair --in-function Emit --kind function --start-line 9 --end-line 9
+stdout 'symbol: capturePair'
+cmp emit.go want/emit.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctiondynamictypes
+
+go 1.23
+-- emit.go --
+package sample
+
+import (
+	"fmt"
+	"testing"
+)
+
+func Emit() string {
+	left, right := 1, 2
+	return fmt.Sprintf("%T,%T", left, right)
+}
+
+func TestExtractedValuesKeepDynamicTypes(t *testing.T) {
+	if got := Emit(); got != "int,int" {
+		t.Fatalf("Emit() = %q, want int,int", got)
+	}
+}
+-- want/emit.go --
+package sample
+
+import (
+	"fmt"
+	"testing"
+)
+
+func Emit() string {
+	left, right := capturePair()
+	return fmt.Sprintf("%T,%T", left, right)
+}
+
+func capturePair() (int, int) {
+	left, right := 1, 2
+	return left, right
+}
+
+func TestExtractedValuesKeepDynamicTypes(t *testing.T) {
+	if got := Emit(); got != "int,int" {
+		t.Fatalf("Emit() = %q, want int,int", got)
+	}
+}

@@ -1,0 +1,36 @@
+# A typed constant receipt supplies the live file and symbol for a later rename and fresh lookup.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"schema_version":"semedit.edit-receipt/v1"'
+stdout '"status":"persisted"'
+stdout '"continuations":'
+stdout '"file":"retry.go"'
+stdout '"symbol":"retryWindow"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+stdout '"symbol":"retryDelay"'
+cmp retry.go want/retry.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantreceipt
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_constant","arguments":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3 * 60"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"retry.go","symbol":"retryWindow","to":"retryDelay"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":"retry.go","symbol":"retryDelay"}}}
+-- retry.go --
+package retry
+
+func Retry() int {
+	return 3 * 60
+}
+-- want/retry.go --
+package retry
+
+func Retry() int {
+	return retryDelay
+}
+
+const retryDelay int = 3 * 60

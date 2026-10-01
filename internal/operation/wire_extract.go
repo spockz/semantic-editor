@@ -84,13 +84,18 @@ func runExtractFunction(ctx context.Context, cc CallContext, req ExtractFunction
 	}, nil
 }
 
-func extractFunctionDef() Def[ExtractFunctionReq, FileEditRes] {
-	return Def[ExtractFunctionReq, FileEditRes]{
+func extractFunctionDef() Def[ExtractFunctionReq, ExtractionResult] {
+	return Def[ExtractFunctionReq, ExtractionResult]{
 		Key: "extract_function", Summary: "Use this tool instead of copying statements to extract a safe contiguous top-level call region from a Go function or method into a local helper. Parameters are inferred from named owner parameters and the receiver. One leading := declaration may return multiple distinct named live-out values when every result expression is a basic literal, a boolean literal, a named owner parameter, or a supported unary or parenthesized form of those expressions. Effectful, call, compound, and unsupported result-type expressions are refused before writing. Pass the returned live file and helper symbol to semantic_rename or semantic_replace_body. Address-taken values, closure-captured inputs, direct recover calls, selector calls on forwarded values, other local data flow, branching, loops, comments, composite literals, generic owners, and variadic parameters are refused." + automaticVerificationGuidance,
 		Params: extractFunctionParams, Level: LevelFile, CLIName: "extract-function", MCPName: "semantic_extract_function",
-		Parse:         parseExtractFunction,
-		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (FileEditRes, error){backend.LanguageGo: runExtractFunction},
-		Format:        formatFileEdit,
+		Parse:    parseExtractFunction,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (ExtractionResult, error){backend.LanguageGo: runExtractFunctionWithReceipt},
+		Format:   formatExtractionResult,
+		Output:   extractionReceiptOutput("semantic_rename", "semantic_replace_body"),
+		FinalizeOutput: func(cc CallContext, _ ExtractFunctionReq, result ExtractionResult) (ExtractionResult, error) {
+			return finalizeExtractionOutput(cc, result)
+		},
+		ProjectOutput: projectExtractionResult,
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "writeSummary", wireInFunction: "Server.Serve", "kind": "function", "start_line": 12, "end_line": 12},
 		BufferedBatch: true, Batchable: true,
 	}
@@ -108,6 +113,8 @@ func registerExtractOps(registry *Registry) error {
 	}
 	return nil
 }
+
+const expectedRevisionJSONName = "expected_revision"
 
 // ExtractConstantReq selects a constant expression and names its new package constant.
 type ExtractConstantReq struct {
@@ -130,7 +137,7 @@ var extractConstantParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh package-level constant identifier to create; choose a new simple name", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified function or method containing the expression", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one current compile-time constant expression", Required: true},
-	{Name: "expected_revision", CLIName: "expected-revision", JSONName: "expected_revision", Type: ParamString, Description: "Opaque SHA-256 revision of the selected Go source file; stale revisions are refused"},
+	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Description: "Opaque SHA-256 revision of the selected Go source file; stale revisions are refused"},
 }
 
 func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
@@ -152,11 +159,11 @@ func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
 		return req, err
 	}
-	if req.ExpectedRevision, err = ParseString(raw, "expected_revision", "expected-revision", false); err != nil {
+	if req.ExpectedRevision, err = ParseString(raw, expectedRevisionJSONName, "expected-revision", false); err != nil {
 		return req, err
 	}
-	if value, present := rawLookup(raw, "expected_revision", "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
-		return req, fmt.Errorf("param %q must not be empty when supplied: %w", "expected_revision", ErrInvalidParams)
+	if value, present := rawLookup(raw, expectedRevisionJSONName, "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
+		return req, fmt.Errorf("param %q must not be empty when supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
 	}
 	return req, nil
 }
@@ -178,25 +185,32 @@ func runExtractConstant(ctx context.Context, cc CallContext, req ExtractConstant
 	}, nil
 }
 
-func extractConstantDef() Def[ExtractConstantReq, FileEditRes] {
-	return Def[ExtractConstantReq, FileEditRes]{
+func extractConstantDef() Def[ExtractConstantReq, ExtractionResult] {
+	return Def[ExtractConstantReq, ExtractionResult]{
 		Key: "extract_constant", Summary: "Use this tool instead of copying an expression and replacing its uses to extract one exact Go constant expression into a package-level constant. The expression must have resolved compile-time type and value facts; untyped constants stay untyped, and supported typed basic constants retain their type. It refuses iota, local constant dependencies, comments inside the selection, collisions, duplicate matches, and unsupported types. On success, the returned file and symbol identify the new live declaration; pass them to semantic_rename or semantic_replace_decl. Select only an expression whose source text identifies one current occurrence." + automaticVerificationGuidance,
 		Params: extractConstantParams, Level: LevelFile, CLIName: "extract-constant", MCPName: "semantic_extract_constant",
 		Parse:    parseExtractConstant,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractConstantReq) (FileEditRes, error){backend.LanguageGo: runExtractConstant},
-		Format:   formatFileEdit, ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "retryWindow", wireInFunction: "Retry", wireDiscriminator: "3 * 60"},
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractConstantReq) (ExtractionResult, error){backend.LanguageGo: runExtractConstantWithReceipt},
+		Format:   formatExtractionResult,
+		Output:   extractionReceiptOutput("semantic_rename", "semantic_replace_decl"),
+		FinalizeOutput: func(cc CallContext, _ ExtractConstantReq, result ExtractionResult) (ExtractionResult, error) {
+			return finalizeExtractionOutput(cc, result)
+		},
+		ProjectOutput: projectExtractionResult,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "retryWindow", wireInFunction: "Retry", wireDiscriminator: "3 * 60"},
 		BufferedBatch: true, Batchable: true,
 	}
 }
 
 // ExtractVariableReq selects one exact expression and names its new local.
 type ExtractVariableReq struct {
-	Project       backend.ProjectContext
-	File          string
-	Symbol        string
-	InFunction    string
-	Discriminator string
-	ConstructPath string
+	Project          backend.ProjectContext
+	File             string
+	Symbol           string
+	InFunction       string
+	Discriminator    string
+	ConstructPath    string
+	ExpectedRevision string
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -210,9 +224,10 @@ func (r *ExtractVariableReq) SetProjectContext(project backend.ProjectContext) {
 var extractVariableParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple local identifier to create; choose a new name not already visible in the owner", Required: true},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: append(append([]string{}, sourceInFunctionContinuations...), "semantic_extract_variable.in_function")},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of the first argument expression in a direct call to an unshadowed same-file package function", Required: true},
-	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; each path is the zero-based direct statement index in the owner body"},
+	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; a supplied path requires its matching expected_revision"},
+	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Description: "Opaque SHA-256 revision of the selected Go source file; required when construct_path is supplied"},
 }
 
 func parseExtractVariable(raw map[string]any) (ExtractVariableReq, error) {
@@ -237,6 +252,15 @@ func parseExtractVariable(raw map[string]any) (ExtractVariableReq, error) {
 	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
+	if req.ExpectedRevision, err = ParseString(raw, expectedRevisionJSONName, "expected-revision", false); err != nil {
+		return req, err
+	}
+	if value, present := rawLookup(raw, expectedRevisionJSONName, "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
+		return req, fmt.Errorf("param %q must not be empty when supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
+	}
+	if req.ConstructPath != "" && req.ExpectedRevision == "" {
+		return req, fmt.Errorf("param %q is required when construct_path is supplied: %w", expectedRevisionJSONName, ErrInvalidParams)
+	}
 	return req, nil
 }
 
@@ -244,7 +268,7 @@ func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariable
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.ExtractVariable(ctx, targetPath, req.InFunction, req.Symbol, astedit.ExtractVariableOptions{
-		Discriminator: req.Discriminator, ConstructPath: req.ConstructPath,
+		Discriminator: req.Discriminator, ConstructPath: req.ConstructPath, ExpectedRevision: req.ExpectedRevision,
 	})
 	if err != nil {
 		return FileEditRes{}, err
@@ -258,13 +282,18 @@ func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariable
 	}, nil
 }
 
-func extractVariableDef() Def[ExtractVariableReq, FileEditRes] {
-	return Def[ExtractVariableReq, FileEditRes]{
-		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. The call target must be an unshadowed same-file package function with no unresolved import binding; callable owner parameters/locals, builtins, and functions declared only in other files are refused. Later arguments retain their evaluation order. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. On success, pass the live file and in_function to semantic_inline_variable when its binding/use contract supports the result." + automaticVerificationGuidance,
+func extractVariableDef() Def[ExtractVariableReq, ExtractionResult] {
+	return Def[ExtractVariableReq, ExtractionResult]{
+		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. The call target must be an unshadowed same-file package function with no unresolved import binding; callable owner parameters/locals, builtins, and functions declared only in other files are refused. Later arguments retain their evaluation order. If construct_path is supplied, also pass the matching selected-file expected_revision SHA-256. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. On success, pass the live file and in_function to semantic_inline_variable when its binding/use contract supports the result." + automaticVerificationGuidance,
 		Params: extractVariableParams, Level: LevelFile, CLIName: "extract-variable", MCPName: "semantic_extract_variable",
-		Parse:         parseExtractVariable,
-		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (FileEditRes, error){backend.LanguageGo: runExtractVariable},
-		Format:        formatFileEdit,
+		Parse:    parseExtractVariable,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (ExtractionResult, error){backend.LanguageGo: runExtractVariableWithReceipt},
+		Format:   formatExtractionResult,
+		Output:   extractionReceiptOutput(),
+		FinalizeOutput: func(cc CallContext, _ ExtractVariableReq, result ExtractionResult) (ExtractionResult, error) {
+			return finalizeExtractionOutput(cc, result)
+		},
+		ProjectOutput: projectExtractionResult,
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "value", wireInFunction: "PrintValue", wireDiscriminator: "count + 1"},
 		BufferedBatch: true, Batchable: true,
 	}

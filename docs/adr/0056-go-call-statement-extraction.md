@@ -63,11 +63,15 @@ following conditions:
 * The generated helper name is a valid simple identifier and does not collide
   with a package declaration or same-receiver method.
 
-The output receipt returns `symbol`, `file`, and `in_function` with those exact
-names for follow-up calls. The line range is omitted because its coordinates no
-longer identify the moved statements after a successful mutation. Receipts carry
-standard diagnostic status and delta fields. Writes follow ADR-0010's atomic
-publication rules.
+The typed output receipt reports the publication state, changed file revision,
+and analysis read set. Standalone function extraction returns the live helper in
+`continuations` with `file`, `symbol`, and the selected file SHA-256
+`expected_revision`. Batch child receipts report `applied_working` and omit live
+continuations until the coordinator resolves them after later edits and final
+publication. The line range is omitted because its coordinates no longer
+identify the moved statements after a successful mutation. CLI output retains
+the diff and diagnostic details. Writes follow ADR-0010's atomic publication
+rules.
 
 ## Invariants
 

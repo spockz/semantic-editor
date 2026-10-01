@@ -1,0 +1,31 @@
+# Refuse output types whose destination binding would differ from the selected local binding.
+! exec semedit extract-function --file emit.go --symbol capturePair --in-function Emit --kind function --start-line 6 --end-line 6
+stderr 'generated result type "int" is shadowed by a package declaration'
+cmp emit.go original/emit.go
+
+-- go.mod --
+module example.com/extractfunctionshadowedtype
+
+go 1.23
+-- emit.go --
+package sample
+
+type int int64
+
+func Emit() {
+	left, right := 1, 2
+	sink(left, right)
+}
+
+func sink(values ...any) {}
+-- original/emit.go --
+package sample
+
+type int int64
+
+func Emit() {
+	left, right := 1, 2
+	sink(left, right)
+}
+
+func sink(values ...any) {}

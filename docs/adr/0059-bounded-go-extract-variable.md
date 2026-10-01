@@ -9,11 +9,11 @@ Extracting an expression into a local can change evaluation order, scope, type i
 
 ## Decision
 
-Expose `semantic_extract_variable` and the `extract-variable` CLI command for Go. `symbol` names the new local, `in_function` selects its function or method owner, `file` selects the exact source file, and `discriminator` is the exact source text of the whole selected expression. The only supported expression is a whole argument to a direct, one-argument call expression statement in the owner's direct body. `construct_path` selects an occurrence when the same exact expression appears more than once; paths are zero-based direct statement indexes.
+Expose `semantic_extract_variable` and the `extract-variable` CLI command for Go. `symbol` names the new local, `in_function` selects its function or method owner, `file` selects the exact source file, and `discriminator` is the exact source text of the whole selected expression. The only supported expression is a whole argument to a direct, one-argument call expression statement in the owner's direct body. `construct_path` selects an occurrence when the same exact expression appears more than once; paths are zero-based direct statement indexes and require `expected_revision`, the matching full selected-file SHA-256 revision.
 
 The selected expression must be side-effect-free and contain an owner parameter or receiver so a constant's default type cannot change when assigned to a local. Calls, receives, address-taking, composite literals, comments anywhere in the owner body, returns, nested expression positions, receiver calls, multiple-argument calls, and constant-only expressions and shifts with an untyped left operand are unsupported. The new local name must not occur in the owner body or collide with a package declaration or explicit import name. The local declaration is inserted immediately before the call, and only the selected argument bytes are replaced.
 
-The transformation validates formatted Go syntax and publishes through ADR-0010 atomic writes. It reports `symbol`, `file`, `in_function`, and `discriminator` using the same names as the operation inputs. The operation is available only for Go.
+The transformation validates formatted Go syntax and publishes through ADR-0010 atomic writes. The typed output receipt reports the actual publication state, changed-file revisions, and consulted read set. The CLI retains the diff and diagnostic details. The current common receipt schema does not project the new local and owner as live continuations. The operation is available only for Go.
 
 ## Invariants
 

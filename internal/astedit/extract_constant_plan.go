@@ -29,8 +29,8 @@ func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, 
 	if fset == nil || file == nil || info == nil || scope == nil || expr == nil {
 		return ConstantExtractionPlan{}, fmt.Errorf("constant extraction requires syntax, type, and package scope facts")
 	}
-	if scope.Lookup(name) != nil {
-		return ConstantExtractionPlan{}, fmt.Errorf("constant name %q already exists in package scope", name)
+	if scope.Lookup(name) != nil || types.Universe.Lookup(name) != nil {
+		return ConstantExtractionPlan{}, fmt.Errorf("constant name %q collides with a package or universe binding", name)
 	}
 	var owner *ast.FuncDecl
 	for _, declaration := range file.Decls {

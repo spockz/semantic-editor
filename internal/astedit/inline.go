@@ -73,13 +73,35 @@ func InlineVariable(ctx context.Context, filePath, function, name string) (strin
 	if err != nil {
 		return "", err
 	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
+	current, err := sourcebuf.ReadFile(ctx, cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("recheck inline source before publication: %w", err)
+	}
+	if !bytes.Equal(current, content) {
+		return "", fmt.Errorf("cannot inline %q: source changed during planning", name)
+	}
+	if err := validateExtractionCandidate(ctx, cleanPath, formatted); err != nil {
+		return "", fmt.Errorf("validate inlined package: %w", err)
+	}
+	checkPreimage := func() error {
+		latest, readErr := sourcebuf.ReadFile(ctx, cleanPath)
+		if readErr != nil {
+			return fmt.Errorf("recheck inline source: %w", readErr)
+		}
+		if !bytes.Equal(latest, content) {
+			return fmt.Errorf("cannot inline %q: source changed while planning", name)
+		}
+		return nil
+	}
+	if err := sourcebuf.WriteFileChecked(ctx, cleanPath, formatted, checkPreimage); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format after inline: %w", err)
+	if sourcebuf.FromContext(ctx) == nil {
+		if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
+			return "", fmt.Errorf("format after inline: %w", err)
+		}
 	}
-	current, err := sourcebuf.ReadFile(ctx, cleanPath)
+	current, err = sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted file: %w", err)
 	}

@@ -1,0 +1,46 @@
+# Bind a numeric construct path to its exact preimage revision and refuse stale selection.
+! exec semedit extract-variable --file render.go --symbol selected --in-function Render --discriminator count
+stderr 'expression selection is ambiguous'
+cmp render.go original/render.go
+! exec semedit extract-variable --file render.go --symbol selected --in-function Render --discriminator count --construct-path 0
+stderr 'expected_revision.*required'
+cmp render.go original/render.go
+! exec semedit extract-variable --file render.go --symbol selected --in-function Render --discriminator count --construct-path 0 --expected-revision 0000000000000000000000000000000000000000000000000000000000000000
+stderr 'selected source revision mismatch'
+cmp render.go original/render.go
+exec semedit extract-variable --file render.go --symbol selected --in-function Render --discriminator count --construct-path 0 --expected-revision 83732649809a1fd138cb8e37865fcc6eb824cff8aa84a13cafb7c4507cea8692
+cmp render.go want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablerevision
+
+go 1.24
+-- render.go --
+package sample
+
+func Print(int) {}
+
+func Render(count int) {
+	Print(count)
+	Print(count)
+}
+-- original/render.go --
+package sample
+
+func Print(int) {}
+
+func Render(count int) {
+	Print(count)
+	Print(count)
+}
+-- want/render.go --
+package sample
+
+func Print(int) {}
+
+func Render(count int) {
+	selected := count
+	Print(selected)
+	Print(count)
+}

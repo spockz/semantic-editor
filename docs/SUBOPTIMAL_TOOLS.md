@@ -1614,6 +1614,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
 ## ST-0203: function insertion rejected multiple declarations
 
 - Date: 2026-10-01
@@ -1663,6 +1664,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git stopped because foundation and the extraction review-fix commit appended independent tool-friction entries at the same end-of-file location.
 - Workaround: keep all entries from both sides, append the rebase note, and continue the replay.
 - Root cause: both branches updated the same append-only tooling log.
+
 ## ST-0205: no registered operation edits fields in an existing options struct
 
 - Date: 2026-10-01
@@ -1688,3 +1690,227 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git stopped at the append-only tool log because foundation and the stale-revision commit added independent entries at end of file.
 - Workaround: retain both histories and reconcile colliding entry numbers before continuing.
 - Root cause: the two commits append to the same shared tool-friction document.
+
+## ST-0207: semantic helper rejected an enveloped tools/call request
+
+- Date: 2026-10-01
+- Tool: `semantic_call.py` invoking `semantic_replace_construct`
+- Target file: `internal/astedit/extract_constant_plan.go`
+- Observed failure: the helper returned JSON-RPC `Unknown tool:` because it received a full JSON-RPC envelope where its stdin contract expects only the `tools/call` params object.
+- Workaround: no source changed; retry with the documented params-only object after logging.
+- Root cause: the caller wrapped the request in an extra JSON-RPC envelope.
+
+## ST-0208: extraction batch selector used an initializer as a condition
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_replace_construct`
+- Target files: `internal/astedit/extract.go`, `internal/astedit/inline.go`
+- Observed failure: three helper insertions reported success and were present in the worktree, then the first replacement refused because its discriminator was the complete short initializer instead of the construct condition. Remaining children did not run.
+- Workaround: inspected current bytes and diff before planning another call; no retry or manual repair has occurred yet.
+- Root cause: the construct selector requires the condition text or a zero-based candidate path; the batch supplied the short initializer text.
+
+## ST-0209: construct selector passed a short initializer instead of its condition
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_replace_construct`
+- Target files: `internal/astedit/extract.go`, `internal/astedit/inline.go`
+- Observed failure: the first edit refused because `pipeline.WriteAtomicContext(...)` was supplied as the discriminator; the tool lists the if condition (`err != nil`) and construct path, and applied none of the batch children.
+- Workaround: inspected current bytes and diff after the call; they contain only the prior successful helper insertions and type-check guard. No retry or manual repair has occurred yet.
+- Root cause: the AST selector treats the short initializer and condition separately; this request supplied neither accepted selector form.
+
+## ST-0210: inline edit selector used an if initializer as a discriminator
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_replace_construct`
+- Target files: `internal/astedit/extract.go`, `internal/astedit/inline.go`
+- Observed failure: both extraction publication edits reported success and are present in the current file; the batch then refused because the inline write construct did not match the initializer supplied as a discriminator. The inline and later edits were not applied.
+- Workaround: inspected current bytes before retrying; extraction now uses `sourcebuf.WriteFileChecked` and skips the disk formatter in buffered mode.
+- Root cause: the construct selector accepts an if condition or construct path, not the assignment expression embedded in its initializer.
+
+## ST-0211: inline publication edit required an atomic local patch after construct retries
+
+- Date: 2026-10-01
+- Tool: `semantic_replace_construct` for `InlineVariable`
+- Target file: `internal/astedit/inline.go`
+- Observed failure: the construct editor refused an initializer expression as its discriminator; earlier attempts also revealed that a successful source-buffer migration needs a candidate typecheck and a checked preimage as one coherent function-body change.
+- Workaround: after logging the tool failures and inspecting actual source, apply one atomic source update that moves the write to `sourcebuf.WriteFileChecked`, checks the candidate package, and skips disk formatting in buffered mode.
+- Root cause: the bounded construct operation cannot update the surrounding read/typecheck/write lifecycle as one safe local transformation.
+
+## ST-0212: receipt wrapper batch failed final lint verification
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` inserting extraction receipt wrappers
+- Target file: `internal/operation/wire_extract_receipt.go`
+- Observed failure: all four wrapper insertions reported success and are present in the file; the final `golangci-lint` verification hook exited with status 1, so the batch returned an error.
+- Workaround: inspected the current file and worktree before any retry; no retry has occurred.
+- Root cause: the final verification found a source lint error in the combined receipt implementation; the truncated MCP response did not retain its diagnostic text for this subagent output.
+
+## ST-0213: Repository query used an invalid working directory
+
+- Tool: `functions.exec` / `exec_command`
+- Target: no source file; attempted read-only `rg` query
+- Observed failure: process creation returned `No such file or directory` because the command used an abbreviated worktree path rather than the assigned absolute worktree path.
+- Workaround: rerun from the assigned absolute extraction worktree.
+- Root cause: shell working directory path was mistyped.
+
+## ST-0214: SourceFields patch stopped on an ambiguous repeated literal
+
+- Tool: local atomic patch script
+- Target: `wire_backend.go` was updated; no write occurred to `wire_engine_mutations.go` or `wire_engine_declarations.go`.
+- Observed failure: the patch expected one shared `file` parameter literal but found four copies, and exited before writing that file.
+- Workaround: anchor each remaining patch at the specific `replaceBodyParams` or `replaceDeclParams` block and verify the diff.
+- Root cause: the same parameter declaration is reused across several operation definitions.
+
+## ST-0215: Initial required make check found two lint errors
+
+- Tool: `make check`
+- Target: `internal/operation/wire_extract_receipt.go` and `internal/astedit/extract.go`
+- Observed failure: `revive` rejected the file WHY comment as a package comment, and `wastedassign` found a reassigned local import alias. No focused tests ran.
+- Workaround: adjust the package comment to satisfy both the mandatory WHY explanation and Go package-comment form; use a single declaration for the alias.
+- Root cause: new file comment needed to begin with `Package operation`, and alias initialization redundantly assigned an empty value before resolution.
+
+## ST-0216: Required make check failed in benchmark harness
+
+- Tool: `make check`
+- Target: repository test suite; `tools/benchmark-harness`
+- Observed failure: the full suite ended with `FAIL` in the benchmark harness after about 70 seconds. The unified tool output truncated the test failure lines; the previous checkpoint recorded a recurring five-second timeout in `TestExecuteAgentSkipsDiagnosticReflectionAfterFailedFinalOracle/zero-followups`. Extraction CLI txtar cases shown in this run passed.
+- Workaround: rerun the known benchmark subtest alone for a precise result, then continue focused extraction receipts and batch checks.
+- Root cause: benchmark test execution contention/timeout is outside the assigned extraction changes; exact latest subtest result remains to be confirmed.
+
+## ST-0217: Focused Go tests selected the global build cache
+
+- Tool: `go test`
+- Target: `internal/astedit`, `internal/operation`, CLI contracts, and the benchmark harness
+- Observed failure: all three test processes failed during setup with `operation not permitted` while opening `/Users/alessandro/Library/Caches/go-build`; no test code ran.
+- Workaround: use the worktree-local `GOCACHE` and `GOTMPDIR` with the repository-provided module cache.
+- Root cause: direct test commands omitted the local build and temporary cache overrides used by `make go-env`.
+
+## ST-0218: Focused MCP batch cases found stale legacy SourceFields
+
+- Tool: focused `go test` CLI txtar contracts
+- Target: operation registry metadata in `internal/operation/wire_backend.go` and `wire_engine_inline.go`
+- Observed failure: registry construction rejected `semantic_assertion_mode.file` because `semantic_inline_variable.file` no longer exists after inline-variable began projecting a typed receipt. Two MCP batch CLI cases failed before dispatch.
+- Workaround: remove obsolete direct `FileEditRes` source names from shared continuations and declare only receipt continuation paths with matching typed output contracts; removed the stale inline owner source edge.
+- Root cause: operation output type changed before global SourceFields producer references were migrated.
+
+## ST-0219: Focused MCP batch cases found another stale extraction source edge
+
+- Tool: focused `go test` CLI txtar contracts
+- Target: `extractVariableParams` in `internal/operation/wire_extract.go`
+- Observed failure: registry validation rejected `semantic_extract_variable.in_function` as a provider field absent from the typed receipt output; two MCP batch cases failed before dispatch.
+- Workaround: remove the legacy direct-result `SourceFields` edge because the current typed receipt does not expose an owner selector continuation for extract-variable.
+- Root cause: the extraction handler output type changed while the variable selector source list still referenced its former `FileEditRes` field.
+
+## ST-0220: Follow-up read used an invalid abbreviated worktree path
+
+- Tool: `functions.exec` / `exec_command`
+- Target: read-only test and research-document query
+- Observed failure: process creation returned `No such file or directory`; no files were read or changed.
+- Workaround: rerun from the assigned absolute extraction worktree.
+- Root cause: the shell working directory again used a shortened worktree path.
+
+## ST-0221: Integration-note patch invocation was malformed
+
+- Tool: `functions.exec`
+- Target: no repository file; the shell patch did not start.
+- Observed failure: the tool wrapper rejected the JavaScript call with a syntax error before invoking `exec_command`.
+- Workaround: split the documentation patch into a simpler valid invocation.
+- Root cause: malformed outer tool-call object syntax around the command string.
+
+## ST-0222: Receipt txtar assertion used an unescaped regular-expression bracket
+
+- Tool: `make check` public CLI txtar suite
+- Target: `testdata/scripts/mcp_extract_constant_receipt.txtar`
+- Observed failure: testscript rejected the `stdout` pattern containing literal `[` with `error parsing regexp: missing closing ]`; receipt behavior had not yet been asserted.
+- Workaround: escape the literal bracket in the testscript regexp and rerun the required check.
+- Root cause: testscript interprets stdout patterns as regular expressions.
+
+## ST-0223: Process inspection was blocked by the sandbox
+
+- Tool: `ps` via `functions.exec`
+- Target: read-only process status query
+- Observed failure: shell reported `operation not permitted` before listing processes.
+- Workaround: inspect the captured make log and poll the `exec_command` session directly.
+- Root cause: sandbox restrictions block process-table access.
+
+## ST-0224: Final full check exposed shared MCP integration failures
+
+- Tool: `make check`
+- Target: extraction receipt txtar plus existing central MCP schema/description tests
+- Observed failure: the new receipt txtar pattern failed to parse because it contained an unescaped `[`. Existing MCP tests also expect inline-variable direct output fields `file`/`in_function`, expect string `outputSchema.result` for every operation, enforce a 500-byte file-source description budget, and expect legacy extract-variable/inline/function owner fields in copy guidance. One snapshot/undo cleanup test also timed out closing gopls diagnostics after the long parallel suite. Extraction AST/operation packages and the standalone extraction contracts otherwise passed in earlier focused runs.
+- Workaround: escape the txtar regexp; ask the foundation/schema owner to update shared MCP tests and output contracts for typed extraction receipts and truthful SourceFields, and rerun the snapshot test without suite contention.
+- Root cause: public output types and source edges changed to typed receipts, while shared schema assertions still encode the previous FileEditRes projection; the suite also ran long enough to trigger a gopls shutdown deadline.
+
+## ST-0225: Method identity helper inspection used an invalid cwd
+
+- Tool: `functions.exec` / `exec_command`
+- Target: read-only `symbol` and extraction helper source query
+- Observed failure: shell process creation returned `No such file or directory`; no repository files were read or changed.
+- Workaround: use the assigned absolute worktree directory.
+- Root cause: repeated use of a shortened worktree path in `workdir`.
+
+## ST-0226: semantic batch published extraction receipt edits before verification failure
+
+- Tool: `semantic_batch` through the checked `semedit-next` MCP session.
+- Target: `internal/operation/wire_extract_receipt.go`.
+- Observed failure: all five mutation children reported `status=ok`, but final `semantic_verify` failed because the new resolver referenced `symbols` without importing `semedit/internal/symbol`.
+- Workaround: preserve the successfully published child edits, inspect their current bytes, then add the missing package import using semantic editing if supported or a logged atomic import patch.
+- Root cause: import organization does not infer/add unresolved package imports from identifiers introduced by inserted declarations.
+
+## ST-0227: typed variable-validation batch failed after a published body edit
+
+- Tool: `semantic_batch` through `semantic_call.py`.
+- Target: `internal/astedit/extract_variable.go`.
+- Observed failure: the call returned `isError: true`; its first `semantic_replace_body` child reported `status: ok`, so that body edit may have published despite the later batch failure. The helper output truncated the remainder of the JSON result before the failing child or final verifier reason could be identified.
+- Workaround: preserve the child edit, inspect current source bytes and full diagnostics before any retry.
+- Root cause: the inserted helper source had five return values in branches of a four-result closure, so `semantic_insert_function` refused the declaration. The first body replacement had already published.
+- Workaround: corrected the helper payload after inspecting current file bytes, then retried the insertion and import addition as one semantic batch.
+
+## ST-0228: semantic insert rejected a multiple-function snippet
+
+- Tool: `semantic_batch` through `semantic_call.py`.
+- Target: `internal/astedit/extract_variable.go`.
+- Observed failure: `semantic_replace_body` reported `status: ok`, then `semantic_insert_function` returned `multiple declarations found in snippet: expected single function declaration, found 2 declarations`; the batch stopped before import organization.
+- Workaround: keep the successful body edit, inspect the complete helper payload and current file bytes, then split supporting declarations into individual semantic insert operations in one batch.
+- Root cause: the candidate helper payload still contains two top-level declarations despite the prior correction.
+
+## ST-0229: semantic verification failed after type identity comparison edit
+
+- Tool: `semantic_batch` through `semantic_call.py`.
+- Target: `internal/astedit/extract_variable.go`, `validateVariableCandidate`.
+- Observed failure: the body-replacement child reported `status: ok`, then final verification failed because the trusted `golangci-lint` hook exited with status 1. The MCP result did not include the linter diagnostic.
+- Workaround: preserve the published body, inspect current source and captured verifier logs to identify the exact lint issue before retrying.
+- Root cause: the `semantic_replace_body` payload supplied only the final type comparison, replacing the entire resolver body and leaving its type variables undefined; this caused the verifier command to exit 1.
+- Workaround: restore the complete helper body with the corrected canonical type comparison through a semantic body replacement.
+
+## ST-0230: no semantic operation inserts request-struct fields
+
+- Tool: checked `semedit-next` CLI help and the registry's available structural insertion operations.
+- Targets: `internal/astedit/extract_variable.go` (`ExtractVariableOptions`) and `internal/operation/wire_extract.go` (`ExtractVariableReq`).
+- Observed limitation: the registered semantic operations can replace function bodies and add top-level declarations, but none can add one field to an existing Go struct. Adding the required expected revision field cannot be represented by a function-body or top-level declaration operation.
+- Workaround: add only the two struct fields through atomic temp/fsync/rename edits, then use semantic body replacement for parser and handler logic.
+- Root cause: no struct-field insertion operation is registered.
+
+## ST-0231: capability description batch payload did not match inspected text
+
+- Tool: checked `semedit-next` inspection followed by the local semantic batch payload builder.
+- Target: `internal/backend/golang/backend.go`, `GoBackend.CapabilityMatrix`.
+- Observed failure: the payload builder stopped before invoking any source mutation because it searched for `Later arguments retain their evaluation order;`, while the capability description says `while preserving later argument order;`. No source bytes changed.
+- Workaround: use the exact inspected capability wording and regenerate the semantic batch payload.
+- Root cause: the payload edit used the operation summary wording instead of the capability wording.
+
+## ST-0232: Process inspection denied during make check
+
+- Tool: `exec_command` running `ps -Ao pid,etime,stat,command` while `make check` ran.
+- Target: no repository file.
+- Observed failure: the sandbox returned `operation not permitted: ps`.
+- Workaround: continued by polling the make session directly.
+- Root cause: process inspection is denied in this sandbox; no source or repository state was changed.
+
+## ST-0233: Git staging could not create the worktree index lock
+
+- Tool: `git add` for the explicitly owned extraction files.
+- Target: shared Git metadata at `.git/worktrees/flow-extraction/index.lock`; no file was staged.
+- Observed failure: Git returned `operation not permitted` while creating the lock.
+- Workaround: retry the already-authorized scoped staging and commit with access to the linked worktree metadata.
+- Root cause: the linked worktree index is outside the sandbox writable root.
