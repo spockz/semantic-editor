@@ -1614,3 +1614,48 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
+### ST-0169: semantic outline rejected comma-delimited kind filters
+
+- Date: 2026-10-01
+- Tool: `semantic_outline` via the semedit CLI
+- Target: read-only outline of `internal/astedit/function.go`
+- Observed failure: the command rejected `--kind function,type` as an unknown outline kind.
+- Workaround: retry with one supported kind selector or omit the filter.
+- Root cause: the CLI accepts repeated kind flags rather than a comma-delimited list.
+
+### ST-0170: signature planner batch failed final verification on unrelated inspect fields
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: `internal/astedit/signature_plan.go`
+- Observed failure: every planner declaration insertion reported success, then final `semantic_verify` failed because `internal/astedit/inspect.go` initialized `backend.InspectedSymbol` with fields absent from its current type.
+- Workaround: preserve the successful planner edits and inspect the unrelated shared type mismatch before continuing integration.
+- Root cause: the final batch verification covers the whole Go workspace and encountered an existing cross-package API mismatch unrelated to this planner batch.
+
+### ST-0171: parameter-object planner batch failed final verification
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: `internal/astedit/signature_plan.go`, parameter-object planner declarations
+- Observed failure: every planner declaration insertion reported success, then final `semantic_verify` failed on workspace diagnostics in `internal/astedit/inspect.go` for fields embedded through `backend.InspectedSymbol`.
+- Workaround: preserve the successful edits and verify the planner package with the repository Go test command.
+- Root cause: the whole-workspace verification hook reports stale or incompatible diagnostics for the existing inspection projection while validating this unrelated planner change.
+
+### ST-0172: signature planner test batch failed final verification
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: `internal/astedit/signature_plan_test.go`
+- Observed failure: all four test insertions reported success, then final `semantic_verify` failed with the same `internal/astedit/inspect.go` diagnostics.
+- Workaround: preserve the test edits and run the focused Go package tests after the repository check.
+- Root cause: final whole-workspace diagnostics are inconsistent with the current embedded `backend.InspectedSymbol` definition; the diagnostic is unrelated to the tests.
+
+### ST-0173: public planner declarations lacked required API comments
+
+- Date: 2026-10-01
+- Tool: repository `make check` lint-fix stage
+- Target: `internal/astedit/signature_plan.go`
+- Observed failure: revive rejected exported planner types and functions because they had no documentation comments.
+- Workaround: add concise API comments with an atomic source rewrite; no registered semantic operation inserts documentation comments on existing declarations.
+- Root cause: exported planner APIs were added without the repository-required documentation comments.
