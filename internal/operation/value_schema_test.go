@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"semedit/internal/backend"
 	"testing"
 )
 
@@ -415,5 +416,60 @@ func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	}
 	if len(receipt.Continuations) != 1 || receipt.Continuations[0].ExpectedRevision == nil || *receipt.Continuations[0].ExpectedRevision != observedRevision {
 		t.Fatalf("matching final candidate was not emitted with observed digest: %#v", receipt.Continuations)
+	}
+}
+
+func TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches(t *testing.T) {
+	result := &backend.InspectResult{Matches: []backend.InspectedSymbol{
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Widget.java", Revision: "captured-one"},
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Other.java", Revision: "captured-two"},
+	}}
+	projection, err := ProjectInspectResult(result)
+	if err != nil {
+		t.Fatalf("project language-neutral matches: %v", err)
+	}
+	if len(projection.Continuations) != 2 {
+		t.Fatalf("continuations = %#v, want both ambiguous matches", projection.Continuations)
+	}
+	for index, want := range []InspectContinuation{
+		{File: "src/Widget.java", Symbol: "Widget.run", ExpectedRevision: "captured-one"},
+		{File: "src/Other.java", Symbol: "Widget.run", ExpectedRevision: "captured-two"},
+	} {
+		got := projection.Continuations[index]
+		if got.File != want.File || got.Symbol != want.Symbol || got.ExpectedRevision != want.ExpectedRevision || got.InFunction != nil || got.InType != nil || got.InDeclaration != nil {
+			t.Errorf("continuation %d = %#v, want language-neutral captured identity %#v", index, got, want)
+		}
+	}
+}
+
+func TestProjectInspectResultAddsGoDeclarationOwnerAliases(t *testing.T) {
+	kinds := []string{"function", "method", "type", "interface", "constant", "variable", "field"}
+	matches := make([]backend.InspectedSymbol, 0, len(kinds))
+	for _, kind := range kinds {
+		matches = append(matches, backend.InspectedSymbol{
+			QualifiedName: "pkg." + kind, Kind: kind, File: "src/sample.go",
+			Revision: "captured-" + kind,
+		})
+	}
+	projection, err := ProjectInspectResult(&backend.InspectResult{Matches: matches})
+	if err != nil {
+		t.Fatalf("project Go declarations: %v", err)
+	}
+	if len(projection.Continuations) != len(kinds) {
+		t.Fatalf("continuations = %d, want %d", len(projection.Continuations), len(kinds))
+	}
+	for index, kind := range kinds {
+		got := projection.Continuations[index]
+		wantFunction := kind == "function" || kind == "method"
+		wantType := kind == "type" || kind == "interface"
+		wantDeclaration := kind != "field"
+		if (got.InFunction != nil) != wantFunction || (got.InType != nil) != wantType || (got.InDeclaration != nil) != wantDeclaration {
+			t.Errorf("%s aliases = function:%v type:%v declaration:%v", kind, got.InFunction != nil, got.InType != nil, got.InDeclaration != nil)
+		}
+		for _, alias := range []*string{got.InFunction, got.InType, got.InDeclaration} {
+			if alias != nil && *alias != got.Symbol {
+				t.Errorf("%s alias = %q, want exact qualified identity %q", kind, *alias, got.Symbol)
+			}
+		}
 	}
 }

@@ -248,6 +248,10 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					if status["const"] != "draft_only" {
 						t.Fatalf("feedback status schema = %#v, want draft_only", status)
 					}
+
+				case "semantic_inspect_symbol":
+					assertStandardOutputSchema(t, tool["outputSchema"], "object")
+					assertInspectOutputSchema(t, tool["outputSchema"])
 				default:
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 				}
@@ -842,6 +846,46 @@ func toAnySlice(values []string) []any {
 	return result
 }
 
+func assertInspectOutputSchema(t *testing.T, outputSchema any) {
+	t.Helper()
+	output, ok := outputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("inspection output schema = %#v", outputSchema)
+	}
+	properties, ok := output["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection output properties = %#v", output["properties"])
+	}
+	result, ok := properties["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection result schema = %#v", properties["result"])
+	}
+	resultProperties, ok := result["properties"].(map[string]any)
+	if !ok || resultProperties["inspection"] == nil {
+		t.Fatalf("inspection result schema omitted legacy text: %#v", result)
+	}
+	continuations, ok := resultProperties["continuations"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection result schema omitted continuations: %#v", resultProperties)
+	}
+	items, ok := continuations["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection continuation item schema = %#v", continuations["items"])
+	}
+	itemProperties, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection continuation properties = %#v", items["properties"])
+	}
+	for _, field := range []string{"file", "symbol", "expected_revision", "in_function", "in_type", "in_declaration"} {
+		if _, ok := itemProperties[field]; !ok {
+			t.Errorf("inspection continuation schema omitted %q", field)
+		}
+	}
+	if !reflect.DeepEqual(items["required"], []any{"file", "symbol", "expected_revision"}) {
+		t.Errorf("inspection continuation required = %#v", items["required"])
+	}
+}
+
 func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	tools := make(map[string]map[string]any)
 	for _, tool := range listTools(t, "full") {
@@ -1193,7 +1237,7 @@ func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
 		}
 	}
 
-	var edits []map[string]any
+	var edits = make([]map[string]any, 0, 5)
 	for _, name := range []string{"semantic_typed_object", "semantic_typed_scalar", "semantic_typed_array", "semantic_typed_null", "semantic_legacy_output"} {
 		edits = append(edits, map[string]any{"tool": name, "params": map[string]any{}})
 	}
@@ -1241,6 +1285,76 @@ func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
 			continue
 		}
 		t.Errorf("unexpected batch result at index %d: %#v", index, result)
+	}
+}
+
+func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
+	root := schemaWorkspace(t)
+	path := filepath.Join(root, "main.go")
+	initial := []byte("package sample\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write inspection fixture: %v", err)
+	}
+	var inspectOutput bytes.Buffer
+	inspectServer := mcp.NewServer("full", root, &inspectOutput)
+	inspectRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"Value","file":"main.go","language":"go","trust_workspace":true}}}` + "\n"
+	if err := inspectServer.Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
+		t.Fatalf("serve inspect call: %v", err)
+	}
+	var inspected map[string]any
+	if err := json.Unmarshal(inspectOutput.Bytes(), &inspected); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	result := inspected["result"].(map[string]any)
+	structured := result["structuredContent"].(map[string]any)["result"].(map[string]any)
+	inspection := structured["inspection"].(string)
+	if got := result["content"].([]any)[0].(map[string]any)["text"]; got != inspection {
+		t.Fatalf("CLI-compatible inspection text = %#v, projected inspection = %#v", got, inspection)
+	}
+	records := structured["continuations"].([]any)
+	if len(records) != 1 {
+		t.Fatalf("inspection continuations = %#v", records)
+	}
+	record := records[0].(map[string]any)
+	if record["file"] != "main.go" || record["symbol"] != "Value" || record["expected_revision"] == "" || record["in_function"] != "Value" {
+		t.Fatalf("inspection target projection = %#v", record)
+	}
+	arguments := map[string]any{
+		"file":              record["file"],
+		"symbol":            record["symbol"],
+		"expected_revision": record["expected_revision"],
+		"body":              "return 2",
+	}
+	guardedRequest, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_replace_body", "arguments": arguments}})
+	if err != nil {
+		t.Fatalf("encode guarded edit: %v", err)
+	}
+	var guardedOutput bytes.Buffer
+	guardedServer := mcp.NewServer("full", root, &guardedOutput)
+	if err := guardedServer.Serve(context.Background(), bytes.NewReader(append(guardedRequest, '\n'))); err != nil {
+		t.Fatalf("serve guarded edit: %v", err)
+	}
+	if strings.Contains(guardedOutput.String(), "isError\":true") {
+		t.Fatalf("guarded edit rejected matching captured evidence: %s", guardedOutput.String())
+	}
+	staleRequest, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "semantic_replace_body", "arguments": arguments}})
+	if err != nil {
+		t.Fatalf("encode stale guarded edit: %v", err)
+	}
+	var staleOutput bytes.Buffer
+	staleServer := mcp.NewServer("full", root, &staleOutput)
+	if err := staleServer.Serve(context.Background(), bytes.NewReader(append(staleRequest, '\n'))); err != nil {
+		t.Fatalf("serve stale guarded edit: %v", err)
+	}
+	if !strings.Contains(staleOutput.String(), "expected_revision does not match captured source") || !strings.Contains(staleOutput.String(), "isError\":true") {
+		t.Fatalf("stale guarded edit did not refuse explicitly: %s", staleOutput.String())
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read guarded edit result: %v", err)
+	}
+	if !strings.Contains(string(actual), "return 2") || strings.Contains(string(actual), "return 1") {
+		t.Fatalf("stale request changed the successful edit: %s", actual)
 	}
 }
 
