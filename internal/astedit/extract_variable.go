@@ -18,7 +18,7 @@ import (
 	"semedit/internal/symbol"
 )
 
-// ExtractVariableOptions selects one exact argument expression in the owner's direct body.
+// ExtractVariableOptions selects one exact first-argument expression in the owner's direct body.
 type ExtractVariableOptions struct {
 	Discriminator string
 	ConstructPath string
@@ -27,7 +27,6 @@ type ExtractVariableOptions struct {
 type variableCandidate struct {
 	path string
 	stmt *ast.ExprStmt
-	call *ast.CallExpr
 	expr ast.Expr
 }
 
@@ -131,7 +130,7 @@ func findVariableCandidates(fset *token.FileSet, content []byte, target *ast.Fun
 			continue
 		}
 		call, ok := exprStmt.X.(*ast.CallExpr)
-		if !ok || len(call.Args) != 1 {
+		if !ok || len(call.Args) == 0 {
 			continue
 		}
 		if _, ok := call.Fun.(*ast.Ident); !ok {
@@ -146,14 +145,14 @@ func findVariableCandidates(fset *token.FileSet, content []byte, target *ast.Fun
 		if string(content[start:end]) != discriminator {
 			continue
 		}
-		candidates = append(candidates, variableCandidate{path: strconv.Itoa(index), stmt: exprStmt, call: call, expr: expr})
+		candidates = append(candidates, variableCandidate{path: strconv.Itoa(index), stmt: exprStmt, expr: expr})
 	}
 	return candidates, nil
 }
 
 func chooseVariableCandidate(candidates []variableCandidate, path string) (variableCandidate, error) {
 	if len(candidates) == 0 {
-		return variableCandidate{}, fmt.Errorf("no supported direct call argument exactly matches discriminator")
+		return variableCandidate{}, fmt.Errorf("no supported first argument of a direct call exactly matches discriminator")
 	}
 	if path != "" {
 		for _, candidate := range candidates {

@@ -869,10 +869,20 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		}
 	}
 	assertSources("semantic_insert_decl", "file", fileSources)
-	assertSources("semantic_extract_function", "symbol", []string{"semantic_extract_function"})
 	assertSources("semantic_extract_function", "in_function", []string{"semantic_extract_function"})
-	assertSources("semantic_extract_variable", "symbol", []string{"semantic_extract_variable"})
 	assertSources("semantic_extract_variable", "in_function", []string{"semantic_extract_variable"})
+	for _, selection := range []struct{ tool, parameter string }{
+		{tool: "semantic_extract_function", parameter: "symbol"},
+		{tool: "semantic_extract_variable", parameter: "symbol"},
+		{tool: "semantic_extract_variable", parameter: "discriminator"},
+	} {
+		tool := tools[selection.tool]
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		description := properties[selection.parameter].(map[string]any)["description"].(string)
+		if strings.Contains(description, selection.tool) {
+			t.Errorf("%s.%s advertises a non-live field as a producer: %s", selection.tool, selection.parameter, description)
+		}
+	}
 	for _, tool := range inFunctionSources {
 		assertSources(tool, "in_function", inFunctionSources)
 		assertSources(tool, "discriminator", discriminatorSources)

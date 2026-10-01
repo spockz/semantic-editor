@@ -1,0 +1,26 @@
+# Extract a first call argument while preserving the order of later arguments.
+exec semedit extract-variable --file render.go --symbol total --in-function Render --discriminator 'count + 1'
+cmp render.go want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablemulti
+
+go 1.23
+-- render.go --
+package render
+
+func Print(int, int) {}
+
+func Render(count int) {
+	Print(count + 1, count)
+}
+-- want/render.go --
+package render
+
+func Print(int, int) {}
+
+func Render(count int) {
+	total := count + 1
+	Print(total, count)
+}

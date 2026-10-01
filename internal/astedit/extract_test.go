@@ -3,6 +3,10 @@ package astedit_test
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +14,67 @@ import (
 
 	"semedit/internal/astedit"
 )
+
+func TestPlanConstantExtractionPreservesContextualTypeAndExactRange(t *testing.T) {
+	source := []byte("package p\nfunc F() int { return 3 * 60 }\n")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "constant.go", source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse source: %v", err)
+	}
+	info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue), Uses: make(map[*ast.Ident]types.Object)}
+	pkg, err := new(types.Config).Check("p", fset, []*ast.File{file}, info)
+	if err != nil {
+		t.Fatalf("type-check source: %v", err)
+	}
+	var selected ast.Expr
+	ast.Inspect(file, func(node ast.Node) bool {
+		if ret, ok := node.(*ast.ReturnStmt); ok {
+			selected = ret.Results[0]
+		}
+		return true
+	})
+	plan, err := astedit.PlanConstantExtraction(source, fset, file, info, pkg.Scope(), selected, "retryWindow")
+	if err != nil {
+		t.Fatalf("PlanConstantExtraction(): %v", err)
+	}
+	if plan.Declaration != "const retryWindow int = 3 * 60" || plan.Replacement != "retryWindow" || plan.Type != "int" || plan.Value != "180" {
+		t.Fatalf("unexpected constant plan: %#v", plan)
+	}
+	if got := string(source[plan.Start:plan.End]); got != "3 * 60" {
+		t.Fatalf("plan selected %q, want exact expression", got)
+	}
+}
+
+func TestPlanConstantExtractionRefusesRuntimeAndIotaExpressions(t *testing.T) {
+	for _, source := range []string{
+		"package p\nfunc F() int { value := 3; return value }\n",
+		"package p\nconst (A = iota)\nfunc F() int { return iota + 1 }\n",
+	} {
+		t.Run(source, func(t *testing.T) {
+			fset := token.NewFileSet()
+			file, err := parser.ParseFile(fset, "constant.go", source, parser.ParseComments|parser.AllErrors)
+			if err != nil {
+				t.Fatalf("parse source: %v", err)
+			}
+			info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue), Uses: make(map[*ast.Ident]types.Object)}
+			pkg, _ := new(types.Config).Check("p", fset, []*ast.File{file}, info)
+			var selected ast.Expr
+			ast.Inspect(file, func(node ast.Node) bool {
+				if ret, ok := node.(*ast.ReturnStmt); ok {
+					selected = ret.Results[0]
+				}
+				return true
+			})
+			if pkg == nil {
+				t.Fatal("type checker returned no package scope")
+			}
+			if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil {
+				t.Fatal("PlanConstantExtraction() accepted unsupported expression")
+			}
+		})
+	}
+}
 
 func TestExtractFunctionMovesCallsAndInfersParameters(t *testing.T) {
 	file := setupTestFile(t, `package testpkg
@@ -21,6 +86,7 @@ fmt.Println(prefix)
 fmt.Printf("%d",count)
 fmt.Println("after")
 }
+
 `)
 	before, err := os.ReadFile(file)
 	if err != nil {
@@ -46,6 +112,36 @@ fmt.Println("after")
 		"func Emit(prefix string, count int) {\n\twriteSummary(prefix, count)",
 		"func writeSummary(prefix string, count int) {\n\tfmt.Println(prefix)\n\tfmt.Printf(\"%d\", count)",
 		"fmt.Println(\"after\")",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("extracted source missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestExtractFunctionReturnsMultipleLiveOuts(t *testing.T) {
+	file := setupTestFile(t, `package testpkg
+
+func Emit() {
+	left, right := 1, "summary"
+	println("inside")
+	println(left, right)
+}
+`)
+	if _, err := astedit.ExtractFunction(context.Background(), file, "Emit", "writeSummary", astedit.ExtractOptions{Kind: astedit.ExtractKindFunction, StartLine: 4, EndLine: 5}); err != nil {
+		t.Fatalf("ExtractFunction() error = %v", err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"left, right := writeSummary()",
+		"func writeSummary() (int, string)",
+		"left, right := 1, \"summary\"",
+		"return left, right",
+		"println(left, right)",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("extracted source missing %q:\n%s", want, got)
@@ -88,7 +184,7 @@ func TestExtractFunctionRejectsUnsafeSelectionsWithoutWriting(t *testing.T) {
 		name, source, wantError string
 		start, end              int
 	}{
-		{name: "assignment data flow", source: "package p\nfunc F(value int) {\n value = value + 1\n}\n", start: 3, end: 3, wantError: "only one leading single-variable := declaration"},
+		{name: "assignment data flow", source: "package p\nfunc F(value int) {\n value = value + 1\n}\n", start: 3, end: 3, wantError: "only one leading := declaration"},
 		{name: "local variable", source: "package p\nimport \"fmt\"\nfunc F() {\n local := 1\n fmt.Println(local)\n}\n", start: 5, end: 5, wantError: `identifier "local"`},
 		{name: "control flow", source: "package p\nfunc F() {\n return\n}\n", start: 3, end: 3, wantError: "not a call or supported local declaration"},
 		{name: "comment ownership", source: "package p\nimport \"fmt\"\nfunc F() {\n // keep with this call\n fmt.Println(1)\n}\n", start: 5, end: 5, wantError: "comments inside the owner"},

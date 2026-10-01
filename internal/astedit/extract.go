@@ -245,11 +245,16 @@ func selectExtractStatements(fset *token.FileSet, body *ast.BlockStmt, owner str
 				return nil, fmt.Errorf("cannot extract %s: selected statement on line %d is not a call expression", owner, fset.Position(stmt.Pos()).Line)
 			}
 		case *ast.AssignStmt:
-			if i != 0 || item.Tok != token.DEFINE || len(item.Lhs) != 1 || len(item.Rhs) != 1 {
-				return nil, fmt.Errorf("cannot extract %s: only one leading single-variable := declaration is supported", owner)
+			if i != 0 || item.Tok != token.DEFINE || len(item.Lhs) == 0 || len(item.Lhs) != len(item.Rhs) {
+				return nil, fmt.Errorf("cannot extract %s: only one leading := declaration with matching named results is supported", owner)
 			}
-			if ident, ok := item.Lhs[0].(*ast.Ident); !ok || ident.Name == "_" {
-				return nil, fmt.Errorf("cannot extract %s: extraction result must be one named local variable", owner)
+			seen := make(map[string]bool, len(item.Lhs))
+			for _, lhs := range item.Lhs {
+				ident, ok := lhs.(*ast.Ident)
+				if !ok || ident.Name == "_" || seen[ident.Name] {
+					return nil, fmt.Errorf("cannot extract %s: extraction results must be distinct named local variables", owner)
+				}
+				seen[ident.Name] = true
 			}
 		default:
 			return nil, fmt.Errorf("cannot extract %s: selected statement on line %d is not a call or supported local declaration", owner, fset.Position(stmt.Pos()).Line)
@@ -429,8 +434,12 @@ func extractionCall(target *ast.FuncDecl, helper string, params []string, output
 		args = removeString(args, receiver.Names[0].Name)
 	}
 	call := callName + "(" + strings.Join(args, ", ") + ")"
-	if len(outputs) == 1 {
-		call = outputs[0].name + " := " + call
+	if len(outputs) > 0 {
+		names := make([]string, len(outputs))
+		for index, output := range outputs {
+			names[index] = output.name
+		}
+		call = strings.Join(names, ", ") + " := " + call
 	}
 	return call
 }
@@ -456,26 +465,38 @@ func extractOutputs(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stm
 	if !ok {
 		return nil, nil
 	}
-	ident := assignment.Lhs[0].(*ast.Ident)
-	if localDeclarationCount(owner.Body, ident.Name) != 1 {
-		return nil, fmt.Errorf("local %q has multiple owner-scope bindings and cannot be moved safely", ident.Name)
+	if len(assignment.Lhs) == 0 || len(assignment.Lhs) != len(assignment.Rhs) {
+		return nil, fmt.Errorf("cannot extract declaration with mismatched result expressions")
 	}
-	if parameterHasName(owner.Type.Params, ident.Name) || owner.Recv != nil && fieldListHasName(owner.Recv, ident.Name) {
-		return nil, fmt.Errorf("local %q overlaps an owner parameter or receiver", ident.Name)
-	}
-	for _, later := range owner.Body.List {
-		if later.Pos() <= selected[len(selected)-1].End() {
-			continue
+	outputs := make([]extractionOutput, 0, len(assignment.Lhs))
+	for index, lhs := range assignment.Lhs {
+		ident, ok := lhs.(*ast.Ident)
+		if !ok || ident.Name == "_" {
+			return nil, fmt.Errorf("cannot extract: declaration results must be named local variables")
 		}
-		if statementUsesName(later, ident.Name) {
-			resultType, err := inferExtractType(fset, owner, assignment.Rhs[0])
-			if err != nil {
-				return nil, err
+		if localDeclarationCount(owner.Body, ident.Name) != 1 {
+			return nil, fmt.Errorf("local %q has multiple owner-scope bindings and cannot be moved safely", ident.Name)
+		}
+		if parameterHasName(owner.Type.Params, ident.Name) || owner.Recv != nil && fieldListHasName(owner.Recv, ident.Name) {
+			return nil, fmt.Errorf("local %q overlaps an owner parameter or receiver", ident.Name)
+		}
+		usedAfter := false
+		for _, later := range owner.Body.List {
+			if later.Pos() > selected[len(selected)-1].End() && statementUsesName(later, ident.Name) {
+				usedAfter = true
+				break
 			}
-			return []extractionOutput{{name: ident.Name, typeName: resultType}}, nil
 		}
+		if !usedAfter {
+			return nil, fmt.Errorf("local %q is not used after the selected region", ident.Name)
+		}
+		resultType, err := inferExtractType(fset, owner, assignment.Rhs[index])
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, extractionOutput{name: ident.Name, typeName: resultType})
 	}
-	return nil, fmt.Errorf("local %q is not used after the selected region", ident.Name)
+	return outputs, nil
 }
 
 func localDeclarationCount(body *ast.BlockStmt, name string) int {
@@ -765,7 +786,19 @@ func extractionDeclaration(fset *token.FileSet, owner *ast.FuncDecl, helper stri
 	bodySource := body
 	if len(outputs) == 1 {
 		result = " " + outputs[0].typeName
-		bodySource += "\nreturn " + outputs[0].name
+	} else if len(outputs) > 1 {
+		resultTypes := make([]string, len(outputs))
+		for index, output := range outputs {
+			resultTypes[index] = output.typeName
+		}
+		result = " (" + strings.Join(resultTypes, ", ") + ")"
+	}
+	if len(outputs) > 0 {
+		resultNames := make([]string, len(outputs))
+		for index, output := range outputs {
+			resultNames[index] = output.name
+		}
+		bodySource += "\nreturn " + strings.Join(resultNames, ", ")
 	}
 	decl := prefix + "(" + strings.Join(params, ", ") + ")" + result + " {\n" + bodySource + "\n}"
 	formatted, err := format.Source([]byte(decl))

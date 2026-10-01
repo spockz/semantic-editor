@@ -1,0 +1,43 @@
+# Inline all immediate direct literal uses and refuse a side-effecting initializer.
+exec semedit inline-variable --file calc.go --symbol value --in-function Compute
+cmp calc.go want/calc.go
+! exec semedit inline-variable --file calc.go --symbol result --in-function Unsafe
+stderr 'initializer must be a literal expression'
+cmp calc.go want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinevariablemulti
+
+go 1.23
+-- calc.go --
+package calc
+
+func Print(int, int) {}
+
+func Compute() {
+	value := 42
+	Print(value, value)
+}
+
+func Unsafe() {
+	result := sideEffect()
+	Print(result, result)
+}
+
+func sideEffect() int { return 1 }
+-- want/calc.go --
+package calc
+
+func Print(int, int) {}
+
+func Compute() {
+	Print(int(42), int(42))
+}
+
+func Unsafe() {
+	result := sideEffect()
+	Print(result, result)
+}
+
+func sideEffect() int { return 1 }

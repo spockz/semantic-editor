@@ -30,7 +30,7 @@ func (r *ExtractFunctionReq) SetProjectContext(project backend.ProjectContext) {
 
 var extractFunctionParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: simple identifier for the helper declaration created by extraction", Required: true, SourceFields: sourceSymbolContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple identifier for the helper declaration to create", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the statements", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Helper declaration form", Required: true, Enums: []string{"function", "method"}},
 	{Name: "start_line", CLIName: "start-line", JSONName: "start_line", Type: ParamInteger, Description: "First selected statement's starting line; must match a direct statement boundary", Required: true},
@@ -86,7 +86,7 @@ func runExtractFunction(ctx context.Context, cc CallContext, req ExtractFunction
 
 func extractFunctionDef() Def[ExtractFunctionReq, FileEditRes] {
 	return Def[ExtractFunctionReq, FileEditRes]{
-		Key: "extract_function", Summary: "Use this tool instead of manually copying statements when extracting a safe contiguous top-level call region from a Go function or method into a local helper. Parameters are inferred from named owner parameters and the receiver. One leading single-variable declaration may be returned when its type is supported; address-taken inputs or results, closure-captured inputs, direct recover calls, selector calls on forwarded values, other local data flow, branching, loops, comments, composite literals, generic owners, and variadic parameters are refused." + automaticVerificationGuidance,
+		Key: "extract_function", Summary: "Use this tool instead of copying statements to extract a safe contiguous top-level call region from a Go function or method into a local helper. Parameters are inferred from named owner parameters and the receiver. One leading := declaration can return multiple named live-out values when each result type is supported. Pass the returned live file and helper symbol to semantic_rename or semantic_replace_body. Address-taken values, closure-captured inputs, direct recover calls, selector calls on forwarded values, other local data flow, branching, loops, comments, composite literals, generic owners, and variadic parameters are refused." + automaticVerificationGuidance,
 		Params: extractFunctionParams, Level: LevelFile, CLIName: "extract-function", MCPName: "semantic_extract_function",
 		Parse:         parseExtractFunction,
 		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (FileEditRes, error){backend.LanguageGo: runExtractFunction},
@@ -97,6 +97,9 @@ func extractFunctionDef() Def[ExtractFunctionReq, FileEditRes] {
 }
 
 func registerExtractOps(registry *Registry) error {
+	if err := Register(registry, extractConstantDef()); err != nil {
+		return fmt.Errorf("register constant extraction operation: %w", err)
+	}
 	if err := Register(registry, extractFunctionDef()); err != nil {
 		return fmt.Errorf("register extraction operation: %w", err)
 	}
@@ -104,6 +107,76 @@ func registerExtractOps(registry *Registry) error {
 		return fmt.Errorf("register variable extraction operation: %w", err)
 	}
 	return nil
+}
+
+// ExtractConstantReq selects a constant expression and names its new package constant.
+type ExtractConstantReq struct {
+	Project       backend.ProjectContext
+	File          string
+	Symbol        string
+	InFunction    string
+	Discriminator string
+}
+
+// GetProjectContext returns the requested language for dispatch.
+func (r ExtractConstantReq) GetProjectContext() backend.ProjectContext { return r.Project }
+
+// SetProjectContext applies the language selected by request dispatch.
+func (r *ExtractConstantReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
+var extractConstantParams = []ParameterContract{
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh package-level constant identifier to create; choose a new simple name", Required: true},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified function or method containing the expression", Required: true, SourceFields: sourceInFunctionContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one current compile-time constant expression", Required: true},
+}
+
+func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
+	var req ExtractConstantReq
+	if err := CheckParams(raw, extractConstantParams); err != nil {
+		return req, err
+	}
+	req.Project = backend.ProjectContext{Language: backend.LanguageGo}
+	var err error
+	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
+		return req, err
+	}
+	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
+		return req, err
+	}
+	if req.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, true); err != nil {
+		return req, err
+	}
+	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
+		return req, err
+	}
+	return req, nil
+}
+
+func runExtractConstant(ctx context.Context, cc CallContext, req ExtractConstantReq) (FileEditRes, error) {
+	targetPath := resolveWorkPath(cc.WorkDir, req.File)
+	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
+	diff, err := astedit.ExtractConstant(ctx, targetPath, req.InFunction, req.Symbol, astedit.ExtractConstantOptions{Discriminator: req.Discriminator})
+	if err != nil {
+		return FileEditRes{}, err
+	}
+	delta, diagnosticStatus := finishDelta()
+	return FileEditRes{
+		File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol,
+		InFunction: req.InFunction, Diff: diff, Detail: "Extracted a compile-time constant expression.",
+		Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true,
+	}, nil
+}
+
+func extractConstantDef() Def[ExtractConstantReq, FileEditRes] {
+	return Def[ExtractConstantReq, FileEditRes]{
+		Key: "extract_constant", Summary: "Use this tool instead of copying an expression and replacing its uses to extract one exact Go constant expression into a package-level constant. The expression must have resolved compile-time type and value facts; untyped constants stay untyped, and supported typed basic constants retain their type. It refuses iota, local constant dependencies, comments inside the selection, collisions, duplicate matches, and unsupported types. On success, the returned file and symbol identify the new live declaration; pass them to semantic_rename or semantic_replace_decl. Select only an expression whose source text identifies one current occurrence." + automaticVerificationGuidance,
+		Params: extractConstantParams, Level: LevelFile, CLIName: "extract-constant", MCPName: "semantic_extract_constant",
+		Parse:    parseExtractConstant,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractConstantReq) (FileEditRes, error){backend.LanguageGo: runExtractConstant},
+		Format:   formatFileEdit, ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "retryWindow", wireInFunction: "Retry", wireDiscriminator: "3 * 60"},
+		BufferedBatch: true, Batchable: true,
+	}
 }
 
 // ExtractVariableReq selects one exact expression and names its new local.
@@ -126,9 +199,9 @@ func (r *ExtractVariableReq) SetProjectContext(project backend.ProjectContext) {
 
 var extractVariableParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: simple identifier for the local variable created by extraction", Required: true, SourceFields: append(append([]string{}, sourceSymbolContinuations...), "semantic_extract_variable.symbol")},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple local identifier to create; choose a new name not already visible in the owner", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: append(append([]string{}, sourceInFunctionContinuations...), "semantic_extract_variable.in_function")},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one whole argument to a direct single-argument call statement", Required: true},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of the first argument expression in a direct call statement", Required: true},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; each path is the zero-based direct statement index in the owner body"},
 }
 
@@ -177,7 +250,7 @@ func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariable
 
 func extractVariableDef() Def[ExtractVariableReq, FileEditRes] {
 	return Def[ExtractVariableReq, FileEditRes]{
-		Key: "extract_variable", Summary: "Use this tool instead of text editing to extract one exact, side-effect-free typed expression from a whole argument of a direct single-argument call statement into a preceding Go local. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, receiver calls, and multiple-argument calls are unsupported." + automaticVerificationGuidance,
+		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. Later arguments retain their evaluation order. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. On success, pass the live file and in_function to semantic_inline_variable when its binding/use contract supports the result." + automaticVerificationGuidance,
 		Params: extractVariableParams, Level: LevelFile, CLIName: "extract-variable", MCPName: "semantic_extract_variable",
 		Parse:         parseExtractVariable,
 		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (FileEditRes, error){backend.LanguageGo: runExtractVariable},

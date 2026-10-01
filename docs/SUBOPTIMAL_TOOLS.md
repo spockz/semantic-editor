@@ -1614,3 +1614,26 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+## 2026-10-01: `semantic_batch` final verification for constant extraction planner
+
+- Tool: `semantic_batch` with three successful declaration insertions, followed by `semantic_verify`.
+- Target: `internal/astedit/extract_constant_plan.go`.
+- Observed failure: all insertion children returned `status: ok`, but final `golangci-lint` verification failed. The checked CLI attempted network downloads while `GOPROXY=off` was required and reported unrelated compile errors in existing files, so it did not establish a valid result.
+- Workaround: preserve the successful inserted declarations, avoid retrying the same MCP batch, and use repository `make check` with the configured local module cache for verification. Follow-up refinements and tests use atomic local file updates because the checked binary cannot complete its required final verifier with the available offline dependency cache.
+- Root cause: the checked binary's verification subprocess did not use the local module cache configuration; its whole-worktree snapshot also exposed compile errors outside the assigned files.
+
+## ST-0199: extraction rebase stopped on shared operation files
+
+- Tool: `git rebase codex/flow-foundation`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`, `internal/mcp/schema_test.go`, `internal/operation/wire_engine_inline.go`, and `internal/operation/wire_extract.go`
+- Observed failure: applying the original extraction commit stopped with content conflicts in files also changed by foundation; no resolutions were applied at this point.
+- Workaround: inspect both sides and reconcile the union before continuing the rebase.
+- Root cause: both branches edit operation descriptions, schema assertions, and the shared tool log.
+
+## ST-0200: rebase continuation could not open an editor
+
+- Tool: `git rebase --continue`
+- Target: current extraction branch rebase state
+- Observed failure: resolved paths were staged, but Git refused to create the replayed commit because `EDITOR` was unset in the non-interactive shell.
+- Workaround: continue with `GIT_EDITOR=true`, preserving the original commit message.
+- Root cause: the rebase continuation attempted to invoke an interactive editor.
