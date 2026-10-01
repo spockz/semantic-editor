@@ -17,6 +17,7 @@ type ReplaceBodyReq struct {
 	Project             backend.ProjectContext
 	File                string
 	Symbol              string
+	ExpectedRevision    *string
 	Body                string
 	AutoOrganizeImports bool
 }
@@ -182,7 +183,7 @@ func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.P
 
 var replaceConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, Role: RoleSelector, SourceFields: append(sourceInFunctionContinuations, "semantic_inspect_symbol.result.continuations[].in_function")},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct.", SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
@@ -204,8 +205,9 @@ func executableConstructKinds(candidate backend.Backend) []string {
 }
 
 var replaceBodyParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceReplaceBodyFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceExtractFunctionReceiptSymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, Role: RoleTarget, SourceFields: append(sourceFileContinuations, "semantic_inspect_symbol.result.continuations[].file")},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, "semantic_inspect_symbol.result.continuations[].symbol"}},
+	{Name: wireExpectedRevision, CLIName: "expected-revision", JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol for this file and symbol", Role: RoleTarget, SourceFields: []string{"semantic_inspect_symbol.result.continuations[].expected_revision"}},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
 }
@@ -223,6 +225,16 @@ func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
 	if req.Symbol, err = ParseString(raw, "symbol", "symbol", true); err != nil {
 		return req, err
 	}
+	if value, exists := raw[wireExpectedRevision]; exists {
+		expected, ok := value.(string)
+		if !ok {
+			return req, fmt.Errorf("expected_revision must be a string")
+		}
+		if expected == "" {
+			return req, fmt.Errorf("expected_revision must not be empty")
+		}
+		req.ExpectedRevision = &expected
+	}
 	if req.Body, err = ParseString(raw, "body", "body", true); err != nil {
 		return req, err
 	}
@@ -233,6 +245,11 @@ func parseReplaceBody(raw map[string]any) (ReplaceBodyReq, error) {
 }
 
 func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (FileEditRes, error) {
+	if req.ExpectedRevision != nil {
+		if err := validateExpectedRevision(ctx, cc, req.File, req.Symbol, *req.ExpectedRevision); err != nil {
+			return FileEditRes{}, err
+		}
+	}
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.ReplaceBody(ctx, targetPath, req.Symbol, req.Body, astedit.BodyOptions{
@@ -509,7 +526,7 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 			backend.LanguageGo: runReplaceConstruct,
 		},
 		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "in_function": "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
 		BufferedBatch: true, Batchable: true,
 	}
 }

@@ -141,10 +141,16 @@ func formatOutlineRead(result *backend.OutlineResult) (string, error) {
 }
 
 func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
+	projectionSchema := InspectProjectionSchema()
 	return Def[InspectReq, *backend.InspectResult]{
-		Key: capability.OpInspect, Summary: "Use this tool instead of reading source with shell commands when you need a declaration's exact source, metadata, and snapshot revision.",
-		Params: inspectReadParams, Level: LevelSymbol, CLIName: "inspect-symbol", MCPName: "semantic_inspect_symbol",
-		ReadOnly: true, Parse: parseInspectRead,
+		Key:      capability.OpInspect,
+		Summary:  "Use this tool instead of reading source with shell commands when you need a declaration's exact source, metadata, and snapshot revision.",
+		Params:   inspectReadParams,
+		Level:    LevelSymbol,
+		CLIName:  "inspect-symbol",
+		MCPName:  "semantic_inspect_symbol",
+		ReadOnly: true,
+		Parse:    parseInspectRead,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InspectReq) (*backend.InspectResult, error){
 			backend.LanguageGo:   inspectReadRun,
 			backend.LanguageJava: inspectReadRun,
@@ -152,6 +158,16 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		},
 		Format:     formatInspectRead,
 		ExampleRaw: map[string]any{"symbol": "Server.Start", "language": "go", wireTrustWorkspace: false},
+		Output: &OperationOutputContract{
+			ResultSchema: &projectionSchema,
+			Continuations: []OutputContinuation{
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{"semantic_replace_construct"}},
+			},
+		},
+		ProjectOutput: func(result *backend.InspectResult) (any, error) { return ProjectInspectResult(result) },
 	}
 }
 

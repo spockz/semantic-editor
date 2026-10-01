@@ -137,7 +137,7 @@ func captureBatchDiff(response *BatchResponse, root string, before map[string]st
 	if err != nil {
 		message := fmt.Errorf("capture final batch diff: %w", err)
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "final_diff", Status: "error", Error: message.Error()})
+		response.Results = append(response.Results, BatchResult{Tool: finalDiffToolName, Status: "error", Error: message.Error()})
 		return message
 	}
 	response.FinalDiff = diff
@@ -419,10 +419,10 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		return response, nil
 	}
 
-	verifyEntry, ok := s.registry.LookupMCP("semantic_verify")
+	verifyEntry, ok := s.registry.LookupMCP(semanticVerifyToolName)
 	if !ok {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: "verification operation is not registered"})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: "verification operation is not registered"})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
@@ -435,21 +435,21 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}, verifyEntry.Key, verifyRaw)
 	if err != nil {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: err.Error()})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: err.Error()})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
 	}
 	verifyResult, ok := verified.(operation.VerifyRes)
 	if !ok {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	response.Verification = &verifyResult
 	if verifyResult.Failure != "" {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: verifyResult.Failure})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: verifyResult.Failure})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
