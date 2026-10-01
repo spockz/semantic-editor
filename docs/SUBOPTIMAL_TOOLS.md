@@ -1167,3 +1167,30 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the call rejected `new_body` before mutation.
 - Workaround: supply the operation's documented `body` parameter.
 - Root cause: the caller used an incorrect parameter name.
+
+### ST-0146: semantic_insert_function rejected multi-function snippet
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function`
+- Target: `internal/operation/value_schema.go`
+- Observed failure: the request contained ten function declarations; the tool rejected it because it accepts one function declaration per call. No source changed.
+- Workaround: insert each helper function with a separate semantic insertion call.
+- Root cause: the semantic insertion operation validates exactly one function declaration and does not support declaration batches.
+
+### ST-0147: semantic_insert_function rejected private helper visibility
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function`
+- Target: `internal/operation/value_schema.go`
+- Observed failure: the request explicitly selected public access for lowercase helper `validateBounds`; the tool rejected the visibility mismatch. No source changed from that call.
+- Workaround: insert lowercase helpers with private access.
+- Root cause: Go access mode must match identifier casing when explicitly supplied.
+
+### ST-0148: exported planner declarations needed documentation comments
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_type`, `semantic_insert_function`
+- Target: `internal/operation/value_schema.go` and `internal/operation/typed_descriptors.go`
+- Observed failure: repository `make check` rejected the successful insertions because exported Go declarations lacked required documentation comments. No incorrect AST was reported.
+- Workaround: add Go documentation comments with an atomic source update because no registered semantic operation adds comments to existing declarations.
+- Root cause: the semantic insertion operations accept declarations but expose no doc-comment edit operation.
