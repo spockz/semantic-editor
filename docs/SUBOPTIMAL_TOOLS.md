@@ -1614,3 +1614,57 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
+### ST-0169: semantic insert accepted invalid Go source
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_field_plan.go`
+- Observed failure: insertion reported success and returned introduced compiler diagnostics for `ast.StructType.Rbrace` and a malformed `append` call.
+- Workaround: record the tool behavior and attempt `semedit replace-body`; the local CLI could not start because the same invalid source prevented its Go package from building, so the three reported defects were corrected with an atomic source update before resuming semantic edits.
+- Root cause: the inserted Go snippet passed parsing but the semantic insertion's post-edit diagnostics exposed type-check errors; the planner assumed brace ownership on `*ast.StructType` and emitted an invalid append expression.
+
+### ST-0170: semantic insertion exposed missing planner proof gates
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_statement_plan.go`
+- Observed failure: insertion reported success but diagnostics identified undefined `ProofBlockBinding` and `ProofControlFlowSet` referenced by the new statement planner.
+- Workaround: add the missing named proof requirements to the shared pure-plan contract before continuing.
+- Root cause: the planner function was inserted before its integration proof vocabulary was added to the shared plan file; the tool surfaced the package type-check failure after writing.
+
+### ST-0171: semantic insertion exposed helper return-arity errors
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_field_plan.go`
+- Observed failure: insertion reported success but diagnostics showed two return statements supplied `(int, string)` to a helper declared as `(int, string, error)`.
+- Workaround: record the diagnostics and add explicit nil error values to the successful offset returns.
+- Root cause: the extracted helper reused byte-range functions with shorter return tuples without adapting those results to its error-bearing signature.
+
+### ST-0172: semantic insertion surfaced an incomplete helper sequence
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_element_plan.go`
+- Observed failure: the validator insertion reported success but package diagnostics showed `validateTypedMapKey` undefined because the helper was queued for the next insertion.
+- Workaround: record the package diagnostic and add the referenced pure helper atomically so the local CLI can build again.
+- Root cause: semantic insertion type-checks the package immediately; helper declarations must be added before callers that reference them.
+
+### ST-0173: semantic body replacement exposed an incomplete planner split
+
+- Date: 2026-10-01
+- Tool: `semantic_replace_body` via worktree-local `semedit replace-body`
+- Target: `internal/astedit/insert_element_plan.go`
+- Observed failure: the planner replacement reported success but diagnostics showed the extracted `appendCompositeElement` helper was not present yet and `bytes` had become temporarily unused.
+- Workaround: record the diagnostics and add the pure append helper before retrying further semantic edits.
+- Root cause: the orchestration body was switched to the planned helper before that helper was inserted; post-edit verification ran against an incomplete intermediate package state.
+
+### ST-0174: semantic_insert_type rejected escaped source newlines
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_type` via worktree-local `semedit insert-type`
+- Target: `internal/astedit/plan.go`
+- Observed failure: the tool returned `no declarations found in snippet`; no source changed.
+- Workaround: retry with an actual multiline type declaration.
+- Root cause: the shell argument contained literal backslash-n sequences where the Go parser expected source line breaks.
