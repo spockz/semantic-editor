@@ -1614,7 +1614,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
-### ST-0145: function insertion rejected multiple declarations
+## ST-0203: function insertion rejected multiple declarations
 
 - Date: 2026-10-01
 - Tool: `semantic_insert_function` inside `semantic_batch`
@@ -1623,7 +1623,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Workaround: split the coherent test addition into one semantic insertion per function in the same batch.
 - Root cause: `semantic_insert_function` accepts exactly one function declaration per request.
 
-### ST-0146: batched callee-resolution check exposed an unchanged function signature
+## ST-0204: batched callee-resolution check exposed an unchanged function signature
 
 - Date: 2026-10-01
 - Tool: `semantic_batch` with two `semantic_replace_body` calls and one `semantic_insert_function`
@@ -1663,3 +1663,28 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git stopped because foundation and the extraction review-fix commit appended independent tool-friction entries at the same end-of-file location.
 - Workaround: keep all entries from both sides, append the rebase note, and continue the replay.
 - Root cause: both branches updated the same append-only tooling log.
+## ST-0205: no registered operation edits fields in an existing options struct
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` operation inventory
+- Target: `internal/astedit/extract_constant.go`, `ExtractConstantOptions`
+- Observed failure: none; the available type/decl operations add declarations or replace package-level aliases, constants, and variables, but cannot add a field to an existing struct. The extraction request requires one optional expected-revision field.
+- Workaround: use an atomic focused source edit for the struct field and its request parser wiring; keep function-body and declaration mutations on semantic operations.
+- Root cause: the current semantic operation set has no Go struct-field update operation.
+
+## ST-0206: test insertion casing rejected explicit private access
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function` inside `semantic_batch`
+- Target: `internal/astedit/extract_test.go`
+- Observed failure: the child refused before mutation because the test name begins with `Test` and therefore has exported casing, while access was explicitly set to `private`.
+- Workaround: retry with the declaration's inferred/public access modifier.
+- Root cause: test function names are exported identifiers by Go casing rules.
+
+## ST-0202: revision-guard replay stopped on the shared tooling log
+
+- Tool: `git rebase --continue` while replaying `4daeec2`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`
+- Observed failure: Git stopped at the append-only tool log because foundation and the stale-revision commit added independent entries at end of file.
+- Workaround: retain both histories and reconcile colliding entry numbers before continuing.
+- Root cause: the two commits append to the same shared tool-friction document.

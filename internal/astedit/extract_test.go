@@ -396,3 +396,24 @@ func TestPlanConstantExtractionRefusesNamedConstantType(t *testing.T) {
 		t.Fatalf("PlanConstantExtraction() error = %v, want named-type refusal", err)
 	}
 }
+
+func TestExtractConstantRejectsStaleRevisionWithoutWriting(t *testing.T) {
+	before := "package sample\nfunc Retry() int { return 3 * 60 }\n"
+	path := filepath.Join(t.TempDir(), "retry.go")
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := astedit.ExtractConstant(context.Background(), path, "Retry", "retryWindow", astedit.ExtractConstantOptions{
+		Discriminator: "3 * 60", ExpectedRevision: "stale",
+	})
+	if err == nil || !strings.Contains(err.Error(), "revision mismatch") {
+		t.Fatalf("ExtractConstant() error = %v, want stale-revision refusal", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != before {
+		t.Fatalf("stale revision changed source:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}

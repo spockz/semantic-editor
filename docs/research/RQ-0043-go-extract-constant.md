@@ -21,7 +21,7 @@ First release: one unambiguous compile-time constant expression inside a functio
 
 `extract-constant` and `semantic_extract_constant` are registered for Go. The pure planner accepts only resolved built-in basic constant types and refuses named/non-basic types, local-constant dependencies, `iota`, runtime expressions, collisions, ambiguous exact-text selections, and selections with comments. It preserves an explicit built-in type where the original expression is typed and leaves untyped constants untyped. Public CLI and buffered MCP batch fixtures exercise success and refusal.
 
-The operation still lacks the shared `expected_revision` input and typed finalized continuation projection. Its package loader observes the selected package directory but does not capture and validate every consulted dependency/configuration input. The shared output-projector and complete read-set APIs remain required before this handover can close.
+The operation now accepts optional `expected_revision` and checks it against the selected file's SHA-256 digest from current overlay bytes before analysis. It still lacks the typed finalized continuation projection and currently rejects empty supplied revisions. Its package loader observes the selected package directory but does not capture and validate every consulted dependency/configuration input. The shared output-projector and complete read-set APIs remain required before this handover can close.
 
 ## Audited starting state
 

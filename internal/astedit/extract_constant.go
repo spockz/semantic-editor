@@ -12,14 +12,16 @@ import (
 	"go/types"
 	"path/filepath"
 
-	"golang.org/x/tools/go/packages"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // ExtractConstantOptions selects one exact compile-time expression.
 type ExtractConstantOptions struct {
-	Discriminator string
+	Discriminator    string
+	ExpectedRevision string
 }
 
 // ExtractConstant plans and applies one package-level constant extraction.
@@ -34,6 +36,9 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read constant extraction target: %w", err)
+	}
+	if opts.ExpectedRevision != "" && goReadRevision(content) != opts.ExpectedRevision {
+		return "", fmt.Errorf("selected source revision mismatch: expected %q, current %q", opts.ExpectedRevision, goReadRevision(content))
 	}
 	if err := sourcebuf.ObserveTree(ctx, filepath.Dir(cleanPath)); err != nil {
 		return "", fmt.Errorf("capture package source set for constant extraction: %w", err)

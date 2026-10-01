@@ -111,11 +111,12 @@ func registerExtractOps(registry *Registry) error {
 
 // ExtractConstantReq selects a constant expression and names its new package constant.
 type ExtractConstantReq struct {
-	Project       backend.ProjectContext
-	File          string
-	Symbol        string
-	InFunction    string
-	Discriminator string
+	Project          backend.ProjectContext
+	File             string
+	Symbol           string
+	InFunction       string
+	Discriminator    string
+	ExpectedRevision string
 }
 
 // GetProjectContext returns the requested language for dispatch.
@@ -129,6 +130,7 @@ var extractConstantParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh package-level constant identifier to create; choose a new simple name", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified function or method containing the expression", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one current compile-time constant expression", Required: true},
+	{Name: "expected_revision", CLIName: "expected-revision", JSONName: "expected_revision", Type: ParamString, Description: "Opaque SHA-256 revision of the selected Go source file; stale revisions are refused"},
 }
 
 func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
@@ -150,13 +152,21 @@ func parseExtractConstant(raw map[string]any) (ExtractConstantReq, error) {
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, true); err != nil {
 		return req, err
 	}
+	if req.ExpectedRevision, err = ParseString(raw, "expected_revision", "expected-revision", false); err != nil {
+		return req, err
+	}
+	if value, present := rawLookup(raw, "expected_revision", "expected-revision"); present && value != nil && req.ExpectedRevision == "" {
+		return req, fmt.Errorf("param %q must not be empty when supplied: %w", "expected_revision", ErrInvalidParams)
+	}
 	return req, nil
 }
 
 func runExtractConstant(ctx context.Context, cc CallContext, req ExtractConstantReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
-	diff, err := astedit.ExtractConstant(ctx, targetPath, req.InFunction, req.Symbol, astedit.ExtractConstantOptions{Discriminator: req.Discriminator})
+	diff, err := astedit.ExtractConstant(ctx, targetPath, req.InFunction, req.Symbol, astedit.ExtractConstantOptions{
+		Discriminator: req.Discriminator, ExpectedRevision: req.ExpectedRevision,
+	})
 	if err != nil {
 		return FileEditRes{}, err
 	}

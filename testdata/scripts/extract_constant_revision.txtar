@@ -1,0 +1,18 @@
+# Reject stale full-file revisions without changing the selected source.
+! exec semedit extract-constant --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60' --expected-revision stale
+stderr 'source revision mismatch'
+cmp retry.go retry.expected
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantrevision
+
+go 1.23
+-- retry.go --
+package retry
+
+func Retry() int { return 3 * 60 }
+-- retry.expected --
+package retry
+
+func Retry() int { return 3 * 60 }
