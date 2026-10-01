@@ -540,6 +540,9 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		}
 		continuations = make(map[string]any, len(entry.Output.Continuations))
 		for _, continuation := range entry.Output.Continuations {
+			if continuation.Path != "" {
+				continue
+			}
 			fieldSchema, err := continuation.Schema.JSONSchema()
 			if err != nil {
 				return nil, fmt.Errorf("operation %q continuation %q schema: %w", entry.MCPName, continuation.Field, err)
@@ -548,7 +551,20 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		}
 	}
 	maps.Copy(properties, continuations)
-	if len(continuations) > 0 {
+	if entry.Output != nil && len(entry.Output.Continuations) > 0 {
+		fieldNames := make([]string, 0, len(entry.Output.Continuations))
+		for _, continuation := range entry.Output.Continuations {
+			name := continuation.Field
+			if continuation.Path != "" {
+				name = continuation.Path
+			}
+			if name != "" {
+				fieldNames = append(fieldNames, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
+			}
+		}
+		slices.Sort(fieldNames)
+		description += " Successful structured results expose declared continuations: " + strings.Join(fieldNames, "; ") + "."
+	} else if len(continuations) > 0 {
 		fieldNames := make([]string, 0, len(continuations))
 		for name := range continuations {
 			switch name {
@@ -596,48 +612,62 @@ func removeConstructResultSchema() map[string]any {
 
 // ValidateSourceFields verifies every parameter continuation references an advertised top-level output field.
 func ValidateSourceFields(entries []operation.Entry) error {
-	outputFields := make(map[string]map[string]any, len(entries))
 	for _, entry := range entries {
-		tool, err := toolSchema(entry)
-		if err != nil {
-			return fmt.Errorf("build output schema for %q: %w", entry.MCPName, err)
+		if err := operation.ValidateParameterContracts(entry.Params); err != nil {
+			return fmt.Errorf("operation %q parameter contract: %w", entry.MCPName, err)
 		}
-		output := tool[toolFieldOutputSchema].(map[string]any)
-		properties, _ := output[schemaPropertiesKey].(map[string]any)
-		outputFields[entry.MCPName] = properties
 	}
 	for _, entry := range entries {
 		for _, param := range entry.Params {
 			for _, source := range param.SourceFields {
-				tool, field, ok := strings.Cut(source, ".")
-				if !ok || tool == "" || field == "" {
+				tool, fieldPath, ok := strings.Cut(source, ".")
+				if !ok || tool == "" || fieldPath == "" {
 					return fmt.Errorf("operation %q parameter %q has invalid SourceFields entry %q; want tool.field", entry.MCPName, param.JSONName, source)
 				}
-				properties, exists := outputFields[tool]
+				provider, exists := findEntryByMCP(entries, tool)
 				if !exists {
 					return fmt.Errorf("operation %q parameter %q SourceFields entry %q names unknown output tool", entry.MCPName, param.JSONName, source)
 				}
-				if _, exists := properties[field]; !exists {
-					return fmt.Errorf("operation %q parameter %q SourceFields entry %q names a field absent from %s outputSchema", entry.MCPName, param.JSONName, source, tool)
-				}
-				if param.Role != "" {
-					if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
-						return fmt.Errorf("operation %q parameter %q has invalid live continuation role %q", entry.MCPName, param.JSONName, param.Role)
-					}
-					provider, ok := findEntryByMCP(entries, tool)
-					if !ok || provider.Output == nil {
-						return fmt.Errorf("operation %q parameter %q SourceFields entry %q lacks typed provider metadata", entry.MCPName, param.JSONName, source)
-					}
-					matched := false
-					for _, continuation := range provider.Output.Continuations {
-						if continuation.Field == field && continuation.Role == param.Role && slices.Contains(continuation.Consumers, entry.MCPName) {
-							matched = true
+				var continuation *operation.OutputContinuation
+				if provider.Output != nil {
+					for index := range provider.Output.Continuations {
+						candidate := &provider.Output.Continuations[index]
+						if candidate.Field == fieldPath || candidate.Path == fieldPath {
+							continuation = candidate
 							break
 						}
 					}
-					if !matched {
-						return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
+				}
+				if param.Role == "" {
+					if continuation != nil {
+						continue
 					}
+					output, err := toolSchema(provider)
+					if err != nil {
+						return fmt.Errorf("build output schema for %q: %w", tool, err)
+					}
+					properties := output[toolFieldOutputSchema].(map[string]any)[schemaPropertiesKey].(map[string]any)
+					if _, exists := properties[fieldPath]; !exists {
+						return fmt.Errorf("operation %q parameter %q SourceFields entry %q names a field absent from %s outputSchema", entry.MCPName, param.JSONName, source, tool)
+					}
+					continue
+				}
+				if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
+					return fmt.Errorf("operation %q parameter %q has invalid live continuation role %q", entry.MCPName, param.JSONName, param.Role)
+				}
+				if continuation == nil || continuation.Role != param.Role || !slices.Contains(continuation.Consumers, entry.MCPName) {
+					return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
+				}
+				leaf := strings.TrimSuffix(fieldPath[strings.LastIndex(fieldPath, ".")+1:], "[]")
+				if leaf != param.JSONName {
+					return fmt.Errorf("operation %q parameter %q cannot copy continuation field %q; live field names must match", entry.MCPName, param.JSONName, leaf)
+				}
+				targetSchema, err := operation.ParameterValueSchema(param)
+				if err != nil {
+					return fmt.Errorf("operation %q parameter %q schema: %w", entry.MCPName, param.JSONName, err)
+				}
+				if !operation.SchemaAssignable(continuation.Schema, targetSchema) {
+					return fmt.Errorf("operation %q parameter %q schema is incompatible with provider %q field %q", entry.MCPName, param.JSONName, tool, fieldPath)
 				}
 			}
 		}
@@ -936,6 +966,7 @@ func batchResultSchema() map[string]any {
 			"status":            map[string]any{"type": "string", "enum": []string{"ok", "error"}},
 			"diff":              map[string]any{"type": "string"},
 			"error":             map[string]any{"type": "string"},
+			"result":            map[string]any{"type": "object", additionalPropertiesKey: true},
 		},
 		"required": []string{"tool", "status"},
 	}
@@ -1213,7 +1244,22 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
-	s.sendToolSuccessWithContinuation(id, text, timing, structuredContinuationFields(params.Name, result, s.workDir, raw))
+	fields := structuredContinuationFields(params.Name, result, s.workDir, raw)
+	if entry.ProjectOutput != nil {
+		projected, projectErr := entry.ProjectOutput(result)
+		if projectErr != nil {
+			s.sendToolErrorWithTiming(id, projectErr.Error(), timing, projectErr)
+			return
+		}
+		fields = map[string]any{"result": projected}
+		continuationFields, continuationErr := operation.ProjectedContinuationFields(projected, entry.Output)
+		if continuationErr != nil {
+			s.sendToolErrorWithTiming(id, continuationErr.Error(), timing, continuationErr)
+			return
+		}
+		maps.Copy(fields, continuationFields)
+	}
+	s.sendToolSuccessWithContinuation(id, text, timing, fields)
 }
 
 func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {

@@ -58,3 +58,32 @@ func ValidateParameterValues(raw map[string]any, params []ParameterContract) err
 	}
 	return CheckParams(raw, params)
 }
+
+// ParameterValueSchema returns the explicit value shape accepted for one parameter.
+func ParameterValueSchema(param ParameterContract) (ValueSchema, error) {
+	if param.Schema != nil {
+		return *param.Schema, nil
+	}
+	schema := ValueSchema{Nullable: !param.Required}
+	switch param.Type {
+	case ParamString:
+		schema.Kind = SchemaString
+		for _, item := range param.Enums {
+			schema.Enum = append(schema.Enum, item)
+		}
+	case ParamBoolean:
+		schema.Kind = SchemaBoolean
+	case ParamInteger:
+		schema.Kind = SchemaInteger
+	case ParamStringSlice:
+		schema.Kind = SchemaArray
+		schema.Items = &ValueSchema{Kind: SchemaString}
+	case ParamObject:
+		return ValueSchema{}, fmt.Errorf("parameter %q has no explicit object schema: %w", param.JSONName, ErrInvalidParams)
+	case ParamArray:
+		return ValueSchema{}, fmt.Errorf("parameter %q has no explicit array schema: %w", param.JSONName, ErrInvalidParams)
+	default:
+		return ValueSchema{}, fmt.Errorf("parameter %q has unsupported type %q: %w", param.JSONName, param.Type, ErrInvalidParams)
+	}
+	return schema, nil
+}

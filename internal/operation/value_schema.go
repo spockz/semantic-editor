@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -379,8 +380,7 @@ func exactNumericValue(value any) (*big.Rat, bool) {
 		}
 		return new(big.Rat).SetFloat64(number), true
 	case json.Number:
-		number, ok := new(big.Rat).SetString(value.String())
-		return number, ok
+		return boundedJSONNumber(value)
 	default:
 		return nil, false
 	}
@@ -449,4 +449,36 @@ func valueSchemaJSON(schema ValueSchema) (map[string]any, error) {
 		result["maximum"] = *schema.Maximum
 	}
 	return result, nil
+}
+
+func boundedJSONNumber(value json.Number) (*big.Rat, bool) {
+	raw := value.String()
+	if len(raw) == 0 || len(raw) > 1024 || !json.Valid([]byte(raw)) {
+		return nil, false
+	}
+	exponentAt := len(raw)
+	for index, character := range raw {
+		if character == 101 || character == 69 {
+			exponentAt = index
+			break
+		}
+	}
+	allZero := true
+	for _, character := range raw[:exponentAt] {
+		if character != 45 && character != 46 && character != 48 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return new(big.Rat), true
+	}
+	if exponentAt < len(raw) {
+		exponent, err := strconv.ParseInt(raw[exponentAt+1:], 10, 16)
+		if err != nil || exponent > 1024 || exponent < -1024 {
+			return nil, false
+		}
+	}
+	number, ok := new(big.Rat).SetString(raw)
+	return number, ok
 }

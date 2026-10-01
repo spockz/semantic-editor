@@ -80,7 +80,8 @@ type OperationOutputContract struct {
 
 // OutputContinuation describes one complete live result field and its compatible consumers.
 type OutputContinuation struct {
-	Field     string        `json:"field"`
+	Field     string        `json:"field,omitempty"`
+	Path      string        `json:"path,omitempty"`
 	Schema    ValueSchema   `json:"schema"`
 	Role      ParameterRole `json:"role"`
 	Consumers []string      `json:"consumers"`
@@ -461,13 +462,39 @@ func ValidateOutputContract(contract OperationOutputContract) error {
 	}
 	seenFields := make(map[string]struct{}, len(contract.Continuations))
 	for index, continuation := range contract.Continuations {
-		if continuation.Field == "" {
-			return fmt.Errorf("continuation %d has an empty field name", index)
+		if (continuation.Field == "") == (continuation.Path == "") {
+			return fmt.Errorf("continuation %d must declare exactly one field or result path", index)
 		}
-		if _, ok := seenFields[continuation.Field]; ok {
-			return fmt.Errorf("continuation field %q is repeated", continuation.Field)
+		identity := continuation.Field
+		if continuation.Path != "" {
+			identity = continuation.Path
+			if contract.ResultSchema == nil {
+				return fmt.Errorf("continuation %q requires a result schema", continuation.Path)
+			}
+			fieldSchema, err := SchemaAtResultPath(*contract.ResultSchema, continuation.Path)
+			if err != nil {
+				return fmt.Errorf("continuation path %q: %w", continuation.Path, err)
+			}
+			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
+				return fmt.Errorf("continuation path %q schema disagrees with its result field", continuation.Path)
+			}
 		}
-		seenFields[continuation.Field] = struct{}{}
+		if continuation.Field != "" {
+			if contract.ResultSchema == nil {
+				return fmt.Errorf("continuation %q requires a result schema", continuation.Field)
+			}
+			fieldSchema, err := SchemaAtResultPath(*contract.ResultSchema, "result."+continuation.Field)
+			if err != nil {
+				return fmt.Errorf("continuation field %q: %w", continuation.Field, err)
+			}
+			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
+				return fmt.Errorf("continuation field %q schema disagrees with its result field", continuation.Field)
+			}
+		}
+		if _, ok := seenFields[identity]; ok {
+			return fmt.Errorf("continuation %q is repeated", identity)
+		}
+		seenFields[identity] = struct{}{}
 		if err := ValidateSchema(continuation.Schema); err != nil {
 			return fmt.Errorf("continuation %q schema: %w", continuation.Field, err)
 		}

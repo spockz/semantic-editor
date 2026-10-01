@@ -45,6 +45,7 @@ type BatchResult struct {
 	Status           string `json:"status"`
 	Diff             string `json:"diff,omitempty"`
 	Error            string `json:"error,omitempty"`
+	Result           any    `json:"result,omitempty"`
 }
 
 // BatchResponse aggregates the outcomes of a semantic batch execution.
@@ -234,6 +235,13 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
 	}
 	batchResult := resultForBatch(result, s.workDir)
+	if entry.ProjectOutput != nil {
+		projected, err := entry.ProjectOutput(result)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("project batch result for %q: %w", batchEntry.Tool, err)
+		}
+		batchResult.Result = projected
+	}
 	return batchResult, nil
 }
 

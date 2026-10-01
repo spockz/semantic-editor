@@ -3,7 +3,12 @@
 package operation
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -140,11 +145,15 @@ func TestTypedDescriptorsPreserveOptionalZeroAndRequireRevisionForPaths(t *testi
 }
 
 func TestIntegerSchemaAcceptsIntegralJSONNumbers(t *testing.T) {
-	if err := ValidateValue(ValueSchema{Kind: SchemaInteger}, float64(0)); err != nil {
-		t.Errorf("integral JSON number zero was rejected: %v", err)
+	for _, value := range []json.Number{"1.0", "1e0", "0e1000000000", "-0.0e-1000000000"} {
+		if err := ValidateValue(ValueSchema{Kind: SchemaInteger}, value); err != nil {
+			t.Errorf("integral JSON number %q was rejected: %v", value, err)
+		}
 	}
-	if err := ValidateValue(ValueSchema{Kind: SchemaInteger}, float64(1.5)); err == nil {
-		t.Error("fractional JSON number was accepted as an integer")
+	for _, value := range []json.Number{"1.5", "1e1000000000", "1e-1000000000"} {
+		if err := ValidateValue(ValueSchema{Kind: SchemaInteger}, value); err == nil {
+			t.Errorf("non-integer or unbounded JSON number %q was accepted", value)
+		}
 	}
 }
 
@@ -277,4 +286,81 @@ func floatPointer(value float64) *float64 {
 //go:fix inline
 func intPointer(value int) *int {
 	return new(value)
+}
+
+func TestRegistryRejectsOutputProjectorWithoutResultSchema(t *testing.T) {
+	registry := NewRegistry()
+	definition := Def[string, string]{
+		Key:           "missing-result-schema",
+		Parse:         func(map[string]any) (string, error) { return "", nil },
+		Output:        &OperationOutputContract{},
+		ProjectOutput: func(result string) (any, error) { return result, nil },
+	}
+	if err := Register(registry, definition); err == nil {
+		t.Fatal("registered an output projector without a result schema")
+	}
+}
+
+func TestSchemaAtResultPathRejectsMalformedSegmentsAndSelectsArrayLeaves(t *testing.T) {
+	schema := EditReceiptSchema()
+	leaf, err := SchemaAtResultPath(schema, "result.continuations[].symbol")
+	if err != nil {
+		t.Fatalf("resolve nested array leaf: %v", err)
+	}
+	if leaf.Kind != SchemaString {
+		t.Fatalf("nested symbol schema kind = %q", leaf.Kind)
+	}
+	for _, path := range []string{"result.", "result..status", "result.continuations[].", "result.continuations[][]"} {
+		if _, err := SchemaAtResultPath(schema, path); err == nil {
+			t.Errorf("malformed result path %q was accepted", path)
+		}
+	}
+}
+
+func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	before := []byte("package sample\nvar Value = 1\n")
+	after := []byte("package sample\nvar Value = 2\n")
+	if err := os.WriteFile(path, after, 0600); err != nil {
+		t.Fatalf("write final source: %v", err)
+	}
+	beforeDigest := sha256.Sum256(before)
+	afterDigest := sha256.Sum256(after)
+	draft := EditReceiptDraft{
+		Operation: "replace-value",
+		Status:    EditPersisted,
+		PlannedChanges: []FileRevision{
+			{Path: "main.go", Revision: hex.EncodeToString(afterDigest[:])},
+			{Path: "missing.go", Revision: hex.EncodeToString(afterDigest[:])},
+		},
+		ReadSet: []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
+	}
+	receipt, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize partial receipt: %v", err)
+	}
+	if receipt.Status != EditPartiallyPublished || len(receipt.Changes) != 1 || receipt.Changes[0].Path != "main.go" || receipt.Changes[0].Revision != hex.EncodeToString(afterDigest[:]) {
+		t.Fatalf("partial publication evidence = %#v", receipt)
+	}
+	noOp := EditReceiptDraft{
+		Operation:      "replace-value",
+		Status:         EditPersisted,
+		PlannedChanges: []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(afterDigest[:])}},
+		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(afterDigest[:])}},
+	}
+	receipt, err = FinalizeEditReceipt(context.Background(), root, false, noOp, nil)
+	if err != nil {
+		t.Fatalf("finalize no-op receipt: %v", err)
+	}
+	if len(receipt.Changes) != 0 {
+		t.Fatalf("no-op receipt reports changes: %#v", receipt.Changes)
+	}
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{Operation: "replace-value", Status: EditRefused}, nil)
+	if err != nil {
+		t.Fatalf("finalize refused receipt: %v", err)
+	}
+	if len(refused.Changes) != 0 || len(refused.Continuations) != 0 {
+		t.Fatalf("refused receipt reports published values: %#v", refused)
+	}
 }

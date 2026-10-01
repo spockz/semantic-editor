@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"slices"
 	"strconv"
 	"strings"
@@ -76,18 +77,8 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 			continue
 		}
 		if param.Type == ParamInteger {
-			switch value.(type) {
-			case int, int64, float64, json.Number:
-			default:
+			if _, err := exactNativeInteger(value); err != nil {
 				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
-			}
-			if typed, ok := value.(float64); ok && typed != float64(int(typed)) {
-				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
-			}
-			if typed, ok := value.(json.Number); ok {
-				if _, err := typed.Int64(); err != nil {
-					return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
-				}
 			}
 		}
 		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
@@ -105,8 +96,7 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 		}
 		matched := slices.Contains(param.Enums, text)
 		if !matched {
-			return fmt.Errorf("param %q value %q must be one of [%s]: %w",
-				param.JSONName, text, strings.Join(param.Enums, ", "), ErrInvalidParams)
+			return fmt.Errorf("param %q value %q must be one of [%s]: %w", param.JSONName, text, strings.Join(param.Enums, ", "), ErrInvalidParams)
 		}
 	}
 	return nil
@@ -184,25 +174,11 @@ func ParseInteger(raw map[string]any, jsonName, cliName string, required bool) (
 		}
 		return 0, nil
 	}
-	switch typed := value.(type) {
-	case int:
-		return typed, nil
-	case int64:
-		return int(typed), nil
-	case float64:
-		if typed != float64(int(typed)) {
-			return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
-		}
-		return int(typed), nil
-	case json.Number:
-		parsed, err := strconv.Atoi(typed.String())
-		if err != nil {
-			return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
-		}
-		return parsed, nil
-	default:
+	parsed, err := exactNativeInteger(value)
+	if err != nil {
 		return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
 	}
+	return parsed, nil
 }
 
 // ParseStringSlice extracts a string slice, accepting JSON arrays, repeated values, and single strings.
@@ -258,4 +234,38 @@ func ParseEnum(raw map[string]any, jsonName, cliName string, allowed []string, r
 	}
 	return "", fmt.Errorf("param %q value %q must be one of [%s]: %w",
 		jsonName, text, strings.Join(allowed, ", "), ErrInvalidParams)
+}
+
+func exactNativeInteger(value any) (int, error) {
+	switch typed := value.(type) {
+	case int:
+		return typed, nil
+	case int64:
+		if int64(int(typed)) != typed {
+			return 0, fmt.Errorf("integer is outside native int range")
+		}
+		return int(typed), nil
+	case float64:
+		rational := new(big.Rat).SetFloat64(typed)
+		if rational == nil || !rational.IsInt() {
+			return 0, fmt.Errorf("number is not an exact integer")
+		}
+		parsed, err := strconv.ParseInt(rational.Num().String(), 10, strconv.IntSize)
+		if err != nil {
+			return 0, fmt.Errorf("integer is outside native int range: %w", err)
+		}
+		return int(parsed), nil
+	case json.Number:
+		rational, ok := boundedJSONNumber(typed)
+		if !ok || !rational.IsInt() {
+			return 0, fmt.Errorf("number is not an exact integer")
+		}
+		parsed, err := strconv.ParseInt(rational.Num().String(), 10, strconv.IntSize)
+		if err != nil {
+			return 0, fmt.Errorf("integer is outside native int range: %w", err)
+		}
+		return int(parsed), nil
+	default:
+		return 0, fmt.Errorf("value %T is not numeric", value)
+	}
 }
