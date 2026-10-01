@@ -1614,3 +1614,93 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
+### ST-0169: local CLI scaffolding rejects plain purpose text
+
+- Date: 2026-10-01
+- Tool: `semedit scaffold-file` CLI
+- Target: `internal/contractplan/plan.go` in the requested worktree
+- Observed failure: passing `--purpose-header 'WHY: ...'` returned `syntax error: invalid purpose header: scaffold.go:1:1: expected 'package', found WHY`; the command created no file.
+- Workaround: retry with the purpose header expressed as a Go line comment, then verify the file landed in this worktree.
+- Root cause: the CLI help says the header explains file purpose but does not state that the value must be valid Go comment syntax.
+
+### ST-0170: function insertion rejected escaped Go string syntax
+
+- Date: 2026-10-01
+- Tool: `semedit insert-func` CLI
+- Target: `internal/contractplan/implement_contract.go` in the requested worktree
+- Observed failure: inserting the pure contract planner returned `validate function snippet: syntax error: expected declaration, found declarations`; the command made no source change.
+- Workaround: correct the Go string literal in the `panic` stub source and retry the same semantic insertion.
+- Root cause: the shell argument was single-quoted, so unnecessary backslashes before Go double quotes reached the semantic parser and made the snippet invalid.
+
+### ST-0171: retry retained an invalid shell-escaped Go string
+
+- Date: 2026-10-01
+- Tool: `semedit insert-func` CLI
+- Target: `internal/contractplan/implement_contract.go` in the requested worktree
+- Observed failure: retrying the same planner insertion still returned `validate function snippet: syntax error: expected declaration, found declarations`; no planner source was written.
+- Workaround: use a Go raw string literal for the explicit panic marker, avoiding shell escaping.
+- Root cause: the retry preserved the backslashes because the command construction still represented `\"` inside a single-quoted shell argument.
+
+### ST-0172: planner insertion still failed through inline source argument
+
+- Date: 2026-10-01
+- Tool: `semedit insert-func` CLI
+- Target: `internal/contractplan/implement_contract.go` in the requested worktree
+- Observed failure: a third inline attempt returned `validate function snippet: syntax error: expected declaration, found declarations`; no planner source was written.
+- Workaround: pass a multiline source snippet as one argument through a local subprocess argument vector, preserving the semantic CLI edit operation without shell interpolation.
+- Root cause: the compact, shell-quoted snippet was not parsed as one function declaration by the CLI insertion validator.
+
+### ST-0173: function insertion rejected grouped test helpers
+
+- Date: 2026-10-01
+- Tool: `semedit insert-func` CLI
+- Target: `internal/contractplan/planner_test.go` in the requested worktree
+- Observed failure: passing three helper functions in one `--source` value returned `multiple declarations found in snippet: expected single function declaration, found 3 declarations`; no source changed.
+- Workaround: submit each helper as its own semantic insertion.
+- Root cause: `insert-func` enforces a single-function source snippet.
+
+### ST-0174: symbol inspection used the wrong source file
+
+- Date: 2026-10-01
+- Tool: `semedit inspect-symbol` CLI
+- Target: `PlanImplementContract` in `internal/contractplan/implement_contract.go`
+- Observed failure: the request looked for the function in `internal/contractplan/plan.go` and returned `symbol not found`; no source changed.
+- Workaround: rerun inspection with the function's actual file from the semantic outline.
+- Root cause: the caller supplied a mismatched file/symbol pair.
+
+### ST-0175: final check surfaced new-package lint blockers
+
+- Date: 2026-10-01
+- Tool: `make check` / `golangci-lint run --fix`
+- Target: `internal/contractplan`
+- Observed failure: the repository check stopped with 20 findings: exported planner API declarations lacked documentation comments, and five method/tuple index loops were flagged for Go 1.22 integer-range syntax.
+- Workaround: add concise API documentation and rewrite loops using range over the go/types method and tuple sequences.
+- Root cause: the first implementation pass had not yet applied the repository's configured revive and intrange rules.
+
+### ST-0176: semantic body edits used invalid iterator loop forms
+
+- Date: 2026-10-01
+- Tool: `semedit replace-body` CLI
+- Target: `internal/contractplan` helpers
+- Observed failure: semantic edits replaced the loops, but diagnostics reported compile errors because `go/types` `Methods()` and `Variables()` return `iter.Seq`, which accepts one range variable; the first tuple rewrite also treated `Variables()` as a slice.
+- Workaround: use a one-variable range for iterator sequences and integer range plus `At` for indexed variadic parameter handling.
+- Root cause: the caller assumed go/types method and tuple accessors still returned slices in Go 1.27.
+
+### ST-0177: documentation insertion script found a header mismatch
+
+- Date: 2026-10-01
+- Tool: local atomic source update script
+- Target: `internal/contractplan/extract_interface.go`
+- Observed failure: after adding declaration comments to `plan.go`, the script stopped because its expected `WHY` header plus package-clause literal did not match the scaffolded file; no change was made to the target file.
+- Workaround: inspect the actual header and apply the package and API comments against the observed text.
+- Root cause: the script assumed the scaffold header text had not been reformatted by semantic insertion.
+
+### ST-0178: package comment formatting failed revive validation
+
+- Date: 2026-10-01
+- Tool: `make check` / `golangci-lint run --fix`
+- Target: `internal/contractplan/extract_interface.go`
+- Observed failure: revive reported the package comment detached and then reported no package comment; the check stopped before tests.
+- Workaround: place the package documentation directly above the package clause with no blank line between the comment group and the clause.
+- Root cause: the scaffolded blank line after the `WHY` comment split the package doc from the package clause.
