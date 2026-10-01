@@ -1614,3 +1614,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
+## Semantic declaration insertion omitted exported API comments
+
+- **Tool:** `semantic_insert_declaration` / `semantic_insert_function`
+- **Target:** `internal/astedit/inline_function_plan.go`, `internal/astedit/type_migration_plan.go`
+- **Observed behavior:** The tools inserted the requested declarations and organized imports, but the initial declaration sources omitted Go doc comments. The repository linter then rejected the exported planner names.
+- **Workaround:** The semantic tool set has no operation for adding only leading declaration comments, so the required doc comments were added manually after logging this occurrence; then the project checks were rerun.
+- **Root cause:** The insertion operations validate declaration structure and imports but do not require Go documentation comments on exported declarations.
