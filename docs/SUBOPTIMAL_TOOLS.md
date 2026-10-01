@@ -1704,3 +1704,39 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: revive reported the package comment detached and then reported no package comment; the check stopped before tests.
 - Workaround: place the package documentation directly above the package clause with no blank line between the comment group and the clause.
 - Root cause: the scaffolded blank line after the `WHY` comment split the package doc from the package clause.
+
+### ST-0161: `semantic_batch` verification lacked workspace trust
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_replace_body`
+- Target: `internal/contractplan` planner files
+- Observed failure: Every mutation child reported `status=ok`; the final `semantic_verify` returned `isError` because workspace trust was not enabled for the configured `golangci-lint` hook. Successful child edits were published per the runtime contract.
+- Workaround: Keep the successful source edits and initialize subsequent local MCP sessions with `initializationOptions.trust_workspace=true`.
+- Root cause: The MCP initialization omitted the trust flag required to run the authorized repository lint hook.
+
+### ST-0162: `semantic_batch` verification lacked workspace trust
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with multiple `semantic_replace_body` children
+- Target: `internal/contractplan` planner files
+- Observed failure: Every mutation child reported `status=ok`; the final `semantic_verify` returned `isError` because workspace trust was not enabled for the configured `golangci-lint` hook. Successful child edits were published per the runtime contract.
+- Workaround: Keep the successful source edits and initialize subsequent local MCP sessions with `initializationOptions.trust_workspace=true`.
+- Root cause: The MCP initialization omitted the trust flag required to run the authorized repository lint hook.
+
+### ST-0163: `semantic_batch` verification lacked workspace trust
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with planner test edits
+- Target: `internal/contractplan/planner_test.go`
+- Observed failure: Every mutation child reported `status=ok`; the final `semantic_verify` returned `isError` because workspace trust was not enabled for the configured `golangci-lint` hook. The additional diagnostics were cache-related package-load fallout, not source failures.
+- Workaround: Keep the successful source edits, seed the worker-local Go cache, and initialize subsequent local MCP sessions with `initializationOptions.trust_workspace=true`.
+- Root cause: The MCP initialization omitted the trust flag and its isolated Go base directory had not yet received the immutable module-cache seed.
+
+### ST-0164: test body replacement removed fixture setup
+
+- Date: 2026-10-01
+- Tool: `semantic_replace_body` inside `semantic_batch`
+- Target: `internal/contractplan/planner_test.go` (`TestPlanImplementContractGeneratesOnlyMissingPanicStub`)
+- Observed failure: `make check` found undefined `err` and `plan` identifiers because the replacement body contained only assertions and omitted the existing fixture and planner invocation.
+- Workaround: Restore the complete test body, including source fixture construction and planner invocation, through a semantic body replacement.
+- Root cause: The replacement body was authored as a suffix after overlooking that `semantic_replace_body` replaces the entire body.

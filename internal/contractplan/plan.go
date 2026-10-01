@@ -92,10 +92,15 @@ func (signature MethodSignature) declaration() string {
 		results = append(results, value)
 	}
 	declaration := signature.Name + "(" + strings.Join(parameters, ", ") + ")"
-	if len(results) == 1 {
-		declaration += " " + results[0]
-	}
-	if len(results) > 1 {
+	switch len(results) {
+	case 0:
+	case 1:
+		if signature.Results[0].Name == "" {
+			declaration += " " + results[0]
+		} else {
+			declaration += " (" + results[0] + ")"
+		}
+	default:
 		declaration += " (" + strings.Join(results, ", ") + ")"
 	}
 	return declaration
@@ -185,13 +190,11 @@ func newTypeRenderer(current *types.Package, bindings []ImportBinding) (*typeRen
 	if current == nil {
 		return nil, fmt.Errorf("current package is required")
 	}
-	renderer := &typeRenderer{
-		current: current,
-		aliases: make(map[string]string),
-		names:   make(map[string]string),
-		imports: make(map[string]string),
-	}
+	renderer := &typeRenderer{current: current, aliases: make(map[string]string), names: make(map[string]string), imports: make(map[string]string)}
 	renderer.names[current.Name()] = current.Path()
+	for _, name := range current.Scope().Names() {
+		renderer.names[name] = current.Path()
+	}
 	for _, binding := range bindings {
 		if binding.Path == "" {
 			return nil, fmt.Errorf("import path is empty")
@@ -216,7 +219,7 @@ func newTypeRenderer(current *types.Package, bindings []ImportBinding) (*typeRen
 }
 
 func validateIdentifier(value string, role string) error {
-	if !token.IsIdentifier(value) || token.Lookup(value).IsKeyword() {
+	if !token.IsIdentifier(value) || token.Lookup(value).IsKeyword() || value == "_" {
 		return fmt.Errorf("%s %q is not a Go identifier", role, value)
 	}
 	return nil
@@ -225,6 +228,12 @@ func validateIdentifier(value string, role string) error {
 func concreteReceiverType(concrete *types.Named, kind ReceiverKind) (types.Type, error) {
 	if concrete == nil {
 		return nil, fmt.Errorf("concrete named type is required")
+	}
+	switch concrete.Underlying().(type) {
+	case *types.Pointer:
+		return nil, fmt.Errorf("named pointer receiver base %q is unsupported", concrete.Obj().Name())
+	case *types.Interface:
+		return nil, fmt.Errorf("interface receiver base %q is unsupported", concrete.Obj().Name())
 	}
 	if kind == ReceiverValue {
 		return concrete, nil

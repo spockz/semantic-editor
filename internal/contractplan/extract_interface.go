@@ -17,7 +17,7 @@ func PlanExtractInterface(sourcePackage, destinationPackage *types.Package, conc
 	if sourcePackage != destinationPackage {
 		return Plan{}, fmt.Errorf("interface destination must be the exact source package")
 	}
-	if concrete == nil || concrete.Obj() == nil || concrete.Obj().Pkg() != sourcePackage {
+	if concrete == nil || concrete.Obj() == nil || concrete.Obj().Pkg() != sourcePackage || sourcePackage.Scope().Lookup(concrete.Obj().Name()) != concrete.Obj() {
 		return Plan{}, fmt.Errorf("concrete type must be an exact named object from the source package")
 	}
 	if concrete.TypeParams() != nil && concrete.TypeParams().Len() != 0 {
@@ -56,6 +56,7 @@ func PlanExtractInterface(sourcePackage, destinationPackage *types.Package, conc
 	if err != nil {
 		return Plan{}, fmt.Errorf("prepare destination imports: %w", err)
 	}
+	renderer.names[newName] = destinationPackage.Path()
 	methodSet := types.NewMethodSet(receiver)
 	seen := make(map[string]struct{}, len(selected))
 	planned := make([]PlannedMethod, 0, len(selected))
@@ -101,14 +102,18 @@ func PlanExtractInterface(sourcePackage, destinationPackage *types.Package, conc
 		planned = append(planned, PlannedMethod{Signature: signature, Declaration: signature.declaration()})
 	}
 	if existingInterface != nil {
+		if !existingInterface.IsMethodSet() {
+			return Plan{}, fmt.Errorf("existing interface %q is a constraint, not a runtime method set", newName)
+		}
+		if !types.Implements(receiver, existingInterface) {
+			return Plan{}, fmt.Errorf("requested %s receiver does not implement existing interface %q", receiverKind, newName)
+		}
 		if !exactInterfaceMatch(existingInterface, selected) {
 			return Plan{}, fmt.Errorf("existing interface %q does not match the selected method set", newName)
 		}
 		return Plan{}, nil
 	}
-	sort.Slice(planned, func(left, right int) bool {
-		return planned[left].Signature.Name < planned[right].Signature.Name
-	})
+	sort.Slice(planned, func(left, right int) bool { return planned[left].Signature.Name < planned[right].Signature.Name })
 	lines := make([]string, 0, len(planned))
 	for _, method := range planned {
 		lines = append(lines, "\t"+method.Declaration)

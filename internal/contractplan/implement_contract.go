@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"go/types"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -18,13 +17,13 @@ func PlanImplementContract(concretePackage, destinationPackage *types.Package, c
 	if concretePackage != destinationPackage {
 		return Plan{}, fmt.Errorf("method destination must be the exact concrete package")
 	}
-	if concrete == nil || concrete.Obj() == nil || concrete.Obj().Pkg() != concretePackage {
+	if concrete == nil || concrete.Obj() == nil || concrete.Obj().Pkg() != concretePackage || concretePackage.Scope().Lookup(concrete.Obj().Name()) != concrete.Obj() {
 		return Plan{}, fmt.Errorf("concrete type must be an exact named object from the concrete package")
 	}
 	if concrete.TypeParams() != nil && concrete.TypeParams().Len() != 0 {
 		return Plan{}, fmt.Errorf("generic concrete type %q is unsupported", concrete.Obj().Name())
 	}
-	if contract == nil || contract.Obj() == nil || contract.Obj().Pkg() == nil {
+	if contract == nil || contract.Obj() == nil || contract.Obj().Pkg() == nil || contract.Obj().Pkg().Scope().Lookup(contract.Obj().Name()) != contract.Obj() {
 		return Plan{}, fmt.Errorf("contract must be an exact named interface object")
 	}
 	if contract.TypeParams() != nil && contract.TypeParams().Len() != 0 {
@@ -101,29 +100,20 @@ func PlanImplementContract(concretePackage, destinationPackage *types.Package, c
 		if err != nil {
 			return Plan{}, fmt.Errorf("render contract method %q: %w", required.Name(), err)
 		}
-		receiverName := "contractReceiver"
-		usedNames := make(map[string]struct{}, len(signature.Parameters)+len(signature.Results))
-		for _, parameter := range signature.Parameters {
-			if parameter.Name != "" && parameter.Name != "_" {
-				usedNames[parameter.Name] = struct{}{}
-			}
+		stubSignature := signature
+		stubSignature.Parameters = append([]ParameterSpec(nil), signature.Parameters...)
+		for index := range stubSignature.Parameters {
+			stubSignature.Parameters[index].Name = ""
 		}
-		for _, result := range signature.Results {
-			if result.Name != "" && result.Name != "_" {
-				usedNames[result.Name] = struct{}{}
-			}
-		}
-		for suffix := 2; ; suffix++ {
-			if _, exists := usedNames[receiverName]; !exists {
-				break
-			}
-			receiverName = "contractReceiver" + strconv.Itoa(suffix)
+		stubSignature.Results = append([]ResultSpec(nil), signature.Results...)
+		for index := range stubSignature.Results {
+			stubSignature.Results[index].Name = ""
 		}
 		receiverTypeName := concrete.Obj().Name()
 		if receiverKind == ReceiverPointer {
 			receiverTypeName = "*" + receiverTypeName
 		}
-		declaration := "func (" + receiverName + " " + receiverTypeName + ") " + signature.declaration() + " { panic(`TODO: implement`) }"
+		declaration := "func (" + receiverTypeName + ") " + stubSignature.declaration() + " { panic(`TODO: implement`) }"
 		planned = append(planned, PlannedMethod{Signature: signature, Declaration: declaration})
 	}
 	declarations := make([]string, 0, len(planned))
