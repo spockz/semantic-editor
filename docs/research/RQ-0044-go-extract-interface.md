@@ -39,6 +39,7 @@ Proposed MCP `semantic_extract_interface`, CLI `extract-interface`, Go-only. `fi
 | `in_type` | owner selector | string | none | Qualified concrete type; sole source owner-type selector. |
 | `symbol` | created target | string | none | New package-level interface identifier. |
 | `destination_file` | destination target | string | same as `file` | Existing `.go` file in the same package. |
+| `receiver_kind` | policy | string enum | none | Required `pointer` or `value`; validate satisfaction by that exact method set. |
 | `members` | selection | array of `MemberTarget` objects | none | Non-empty list of `{file: string, symbol: string}` entries identifying exact method declarations; use the same member target shape as the field/composite operation plans. |
 | `expected_revision` | concurrency target | string | omit for a fresh target | Revision token for the selected source `file` only; member files and destination are captured and validated separately. |
 
@@ -46,7 +47,7 @@ Return the interface as the primary continuation `{file: destination_file, symbo
 
 ## Decision gates and semantic risks
 
-1. Choose pointer or value method-set semantics. The operation must say which concrete expression (`T` or `*T`) is intended and verify interface satisfaction for that exact method set.
+1. Require `receiver_kind: pointer | value`, matching implement-contract. Verify satisfaction by `*T` or `T` respectively; method receiver spelling alone does not select the requested method set.
 2. Embedded/promoted methods and generic receiver/type parameters need a clear representation and selection proof; refuse them in release one unless gopls resolves exact declarations and interface signatures.
 3. Decide whether unexported methods are allowed only for same-package interfaces. Never construct an interface that cannot be satisfied outside its package while implying broader usability.
 4. Validate duplicate names, parameter/result signatures, variadic forms, imports, comments, and destination package equality before mutation.
@@ -100,6 +101,7 @@ Exercise an earlier unsaved receiver method, extract an interface from the same 
         "file": "store.go",
         "in_type": "Store",
         "symbol": "StoreAPI",
+        "receiver_kind": "pointer",
         "destination_file": "store.go",
         "members": [
           {
@@ -140,11 +142,11 @@ Apply [RQ-0027's description audit](RQ-0027-preventing-read-files.md#model-facin
 
 **Tool description for `semantic_extract_interface`:**
 
-> Use this tool instead of reconstructing method signatures to create a Go interface from an explicit resolved method selection. Choose the new interface `symbol`; `in_type` and `members` select the concrete source type and methods. `destination_file` defaults to the source `file` and must already exist in the same package. Pass the interface continuation's destination `file` and live `symbol` to `semantic_inspect_symbol` or `semantic_rename`. This operation generates the interface declaration, without implementing its methods or rewriting consumers.
+> Use this tool instead of reconstructing method signatures to create a Go interface from an explicit resolved method selection. Choose the new interface `symbol`; `in_type` and `members` select the concrete source type and methods. Choose the required `receiver_kind` as `pointer` or `value`; satisfaction is checked for that exact method set. `destination_file` defaults to the source `file` and must already exist in the same package. Pass the interface continuation's destination `file` and live `symbol` to `semantic_inspect_symbol` or `semantic_rename`. This operation generates the interface declaration, without implementing its methods or rewriting consumers.
 
 **Parameter description requirements:**
 
-`symbol`: Target: new simple interface identifier chosen by the caller, not the source type name. `in_type`: Selector: copy proposed `semantic_inspect_symbol.in_type` only after the shared inspection extension exists. `members`: Selector: copy proposed `semantic_inspect_symbol.members`, the exact typed member records from that inspection result, with matching `file` and `symbol`; do not rebuild method identities from display signatures. The result `file` names the generated interface's destination.
+`symbol`: Target: new simple interface identifier chosen by the caller, not the source type name. `in_type`: Selector: copy proposed `semantic_inspect_symbol.in_type` only after the shared inspection extension exists. `members`: Selector: copy proposed `semantic_inspect_symbol.members`, the exact typed member records from that inspection result, with matching `file` and `symbol`; do not rebuild method identities from display signatures. The result `file` names the generated interface's destination. `receiver_kind`: Policy: required `pointer` or `value`, consistent with `semantic_implement_contract`; descriptive lookup `kind` does not feed it.
 
 For every remaining parameter, the shared description templates require its role, exact value format, required/default behavior, and named producer when it is receipt-fed. Caller-authored new names, source, mappings, and policy choices need no fabricated `SourceFields` edge. Proposed inspection projections, nested receipts, and revisions must be implemented before their copy instructions are advertised.
 

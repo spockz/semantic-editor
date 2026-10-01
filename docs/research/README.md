@@ -56,7 +56,7 @@ Before creating an RQ, check whether an existing question already covers the inv
 | [RQ-0041](RQ-0041-go-change-signature.md) | Go Change Signature Handover | Go Refactoring | **Open** | Plan typed parameter/result migrations with complete caller updates and evaluation-order proofs. |
 | [RQ-0042](RQ-0042-go-inline-function.md) | Go Inline Function Handover | Go Refactoring | **Open** | Plan selected call inlining with once-only evaluation, live owner receipts and optional proven deletion. |
 | [RQ-0043](RQ-0043-go-extract-constant.md) | Go Extract Constant Handover | Go Refactoring | **Open** | Plan constant extraction with contextual typing, occurrence selection and buffered byte preservation. |
-| [RQ-0044](RQ-0044-go-extract-interface.md) | Go Extract Interface Handover | Go Refactoring | **Open** | Plan exact method-set interface extraction without model reconstruction of signatures. |
+| [RQ-0044](RQ-0044-go-extract-interface.md) | Go Extract Interface Handover | Go Refactoring | **Open** | Plan interface extraction with an explicit pointer/value method set and exact member selection. |
 | [RQ-0045](RQ-0045-go-introduce-parameter.md) | Go Introduce Parameter Handover | Go Refactoring | **Open** | Build introduced-parameter transformation on the shared signature and caller-expression planner. |
 | [RQ-0046](RQ-0046-go-introduce-parameter-object.md) | Go Introduce Parameter Object Handover | Go Refactoring | **Open** | Plan ordered parameter-to-field mappings and caller/body conversion to a typed parameter object. |
 | [RQ-0047](RQ-0047-go-extract-type-and-delegate.md) | Go Extract Type and Delegate | Go Refactoring | **Open** | Plan type and delegate extraction with separate call policies and layout/identity proof gates. |

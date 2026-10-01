@@ -1167,3 +1167,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the call rejected `new_body` before mutation.
 - Workaround: supply the operation's documented `body` parameter.
 - Root cause: the caller used an incorrect parameter name.
+
+### ST-0145: inspection used a guessed helper name
+
+- Date: 2026-10-01
+- Tool: `semantic_inspect_symbol`
+- Target: worker `internal/contractplan/plan.go`, `renderSignature`
+- Observed failure: inspection returned symbol not found; no mutation occurred.
+- Workaround: inspect the declaration outline first and select `typeRenderer.signature`.
+- Root cause: the caller guessed a helper name instead of obtaining its identity from the semantic outline.
