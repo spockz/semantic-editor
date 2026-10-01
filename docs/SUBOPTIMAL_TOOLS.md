@@ -2010,3 +2010,146 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: The shell's inline Python payload generator had an unclosed parenthesis and emitted no JSON; the helper then rejected empty stdin before starting an MCP request.
 - Workaround: Write the exact payload with a simpler JSON-safe script, then retry through the trusted pipe helper.
 - Root cause: The one-line Python expression was malformed while escaping a multiline Go body.
+## ST-0199: CLI lookup rejected documented selector flags
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next lookup`.
+- Target: declaration navigation in `internal/mcp/server.go`, `internal/mcp/batch.go`, `internal/operation/receipt_finalize.go`, `internal/operation/typed_descriptors.go`, and `internal/operation/wire_read_inspect.go`.
+- Observed failure: each `lookup --file <path> --symbol <name>` request returned `param "symbol" is required: invalid operation parameters`.
+- Workaround: use the CLI's read-only `outline --path` operation and inspect the specific declaration via its output.
+- Root cause: the checked binary's lookup argument decoder did not pass the documented flag into the operation request in this worktree.
+
+## ST-0200: CLI inspection command name differed from expectation
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect --help`.
+- Target: read-only inspection navigation for `semantic_inspect_symbol`.
+- Observed failure: the CLI reported `unknown command "inspect"` and suggested `inspect-symbol`.
+- Workaround: use `inspect-symbol` for the documented semantic inspection command.
+- Root cause: the CLI command uses the `inspect-symbol` spelling.
+
+## ST-0201: zsh split combined semantic inspection arguments incorrectly
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect-symbol`.
+- Target: targeted function source inspection in MCP and operation files.
+- Observed failure: the loop's `set -- $spec` under zsh did not preserve the `--file` and `--symbol` arguments, and the CLI rejected each request as missing `symbol`.
+- Workaround: issue exact per-symbol commands with quoted arguments.
+- Root cause: zsh does not perform the expected shell-style whitespace splitting without its explicit split flag.
+
+## ST-0202: Semantic insert operation uses grouped CLI command
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next insert-function --help`.
+- Target: adding small helper declarations during the foundation fix.
+- Observed failure: the CLI reported that `insert-function` is not a registered command.
+- Workaround: inspect and use the supported grouped `insert` command for declarations, or use exact atomic updates only when the available semantic operation cannot express a structural change.
+- Root cause: the CLI groups declaration insertion under `insert`.
+
+## ST-0203: Shell quoting interrupted semantic body replacement
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next replace-body`.
+- Target: `internal/mcp/server.go` batch output schema builder.
+- Observed failure: zsh reported `unmatched \"` while parsing the source passed with `--body`; the semantic operation did not run.
+- Workaround: use a shell-safe encoded argument with a source string that contains no shell quote terminators.
+- Root cause: the Go string literal contained an apostrophe inside a single-quoted shell argument.
+
+## ST-0204: Semantic inspection used an unresolved generic method name
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `internal/operation/operation.go` dispatch implementation.
+- Observed failure: `Registry.Dispatch` was not found in the selected file.
+- Workaround: navigate from the declared `Dispatch` symbol in the outline or rely on the already inspected typed dispatch path.
+- Root cause: the method is declared on a generic registry receiver with a different qualified selector than the attempted name.
+
+## ST-0205: Semantic insertion visibility did not match Go test casing
+
+- Tool: `semedit-next insert`.
+- Target: new test in `internal/operation/value_schema_test.go`.
+- Observed failure: the tool rejected `TestFinalizeEditReceiptRequiresObservedCandidateDigest` because visibility was explicitly `private` despite exported Go casing. No declaration was inserted.
+- Workaround: retry with `--visibility public`.
+- Root cause: the semantic editor enforces access casing for inserted declarations.
+
+## ST-0206: Focused MCP suite found flat-schema assertions after batch union change
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: MCP schema assertions in `internal/mcp/schema_test.go`.
+- Observed failure: three tests expected `results.items.required` and a flat `result` property; the new registry-derived `oneOf` shape made those assertions stale, and one test panicked converting the missing flat property.
+- Workaround: update the tests to inspect the matching `tool` discriminator branch.
+- Root cause: the observable schema changed from one open row object to per-registered-tool result branches.
+
+## ST-0207: Focused MCP test found missing batch path description
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: batch result schema for `semantic_move_construct`.
+- Observed failure: the move schema assertion panicked because the registry-derived `destination_file` property omitted the existing requested-target description.
+- Workaround: include the established `file` and `destination_file` descriptions in each registered batch result branch.
+- Root cause: replacing the static result object schema with per-tool branches dropped the static metadata descriptions.
+
+## ST-0208: Focused MCP suite found nullable-schema expectation and flat receipt branch assumption
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` and `TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision` in `internal/mcp/schema_test.go`.
+- Observed failure: the nullable schema uses JSON Schema `type: [string, null]`, not `anyOf`; the receipt test also still treated the per-tool result union as one flat object.
+- Workaround: assert the emitted nullable type array and select the receipt branch by its `tool` discriminator.
+- Root cause: the test expectations did not match the declared ValueSchema JSON serialization or the new branch-specific result schema.
+
+## ST-0209: Semantic editor has no statement-level update for receipt test setup
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: nested setup statement in `TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision` in `internal/mcp/schema_test.go`.
+- Observed limitation: adding the planned digest to the existing finalized draft requires inserting one statement between an existing composite literal and call; available semantic operations replace whole function bodies or top-level declarations only.
+- Workaround: apply one exact-match atomic source update and validate the public MCP test.
+- Root cause: no nested statement edit is registered.
+
+## ST-0210: Public batch test assumed the wrong structured-content nesting
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed failure: actual `semantic_batch` `tools/call` completed, but the test panicked because it looked for `results` directly under the wrong response object.
+- Workaround: inspect the batch response wrapper and decode its `structuredContent` shape before checking typed values.
+- Root cause: semantic_batch uses a distinct structured response wrapper from ordinary single-tool calls.
+
+## ST-0211: Semantic handler lookup omitted its receiver
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `Server.handleBatch` response wrapper in `internal/mcp/server.go`.
+- Observed failure: the unqualified `handleBatch` selector was not resolved in the selected file.
+- Workaround: retry with the receiver-qualified `Server.handleBatch` symbol.
+- Root cause: the function is a method and the semantic selector requires its qualified owner.
+
+## ST-0212: Semantic handler lookup targeted the wrong file
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `Server.handleBatch`.
+- Observed failure: the selected `internal/mcp/server.go` file did not declare the method.
+- Workaround: use the declaration outline to locate the method file, then inspect it there.
+- Root cause: the batch handler is declared in a separate batch source file.
+
+## ST-0213: Semantic editor cannot change one nested response assertion
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed limitation: correcting two local response-path statements requires statement-level edits inside an existing test body; the registered semantic tools only replace whole function bodies or top-level declarations.
+- Workaround: perform the narrow exact-match update atomically, then run the public MCP test.
+- Root cause: no nested statement replacement operation is available.
+
+## ST-0214: Injected batch registry omitted the final verification operation
+
+- Tool: `go test ./internal/mcp -run TestBatchToolAdvertisesAndEmitsRegisteredResultShapes`.
+- Target: actual batch `tools/call` result assertions in `internal/mcp/schema_test.go`.
+- Observed failure: after the five test operations, the batch appended a `semantic_verify` error result because the isolated test registry does not register that post-processing operation.
+- Workaround: accept and assert that explicit verification row while checking the typed result variants.
+- Root cause: the fixture injects only the providers under test, while batch finalization resolves verification through the same registry.
+
+## ST-0215: Batch test needs a nested synthetic-stage assertion
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: result loop in `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed limitation: the test must account for the batch executor's synthetic `semantic_verify` failure row, which requires a statement inside its existing loop.
+- Workaround: make a narrow exact-match atomic update and assert the registered synthetic branch and error status.
+- Root cause: the semantic editor cannot change nested statements in an existing declaration.
+
+## ST-0216: Scoped commit could not create the shared worktree index lock
+
+- Tool: `git add` for the first review-fix checkpoint.
+- Target: only the owned foundation files in `codex/flow-foundation`.
+- Observed failure: Git was denied creation of `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-foundation/index.lock`; no source files were staged and commit did not run.
+- Workaround: retry the user-authorized commit with scoped access to the shared Git metadata.
+- Root cause: this linked worktree stores its index under the common repository directory outside the assigned writable root.
