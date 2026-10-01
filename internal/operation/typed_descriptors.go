@@ -395,9 +395,9 @@ func MemberMappingSchema() ValueSchema {
 func SymbolTargetSchema() ValueSchema {
 	text := nonEmptyStringSchema()
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":              text,
-		"symbol":            text,
-		"expected_revision": text,
+		"file":               text,
+		"symbol":             text,
+		wireExpectedRevision: text,
 	}, Required: []string{"file", "symbol"}}
 }
 
@@ -405,13 +405,13 @@ func SymbolTargetSchema() ValueSchema {
 func ConstructSelectorSchema() ValueSchema {
 	text := nonEmptyStringSchema()
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":              text,
-		"in_function":       text,
-		"in_declaration":    text,
-		"kind":              text,
-		"discriminator":     text,
-		"construct_path":    text,
-		"expected_revision": text,
+		"file":               text,
+		wireInFunction:       text,
+		"in_declaration":     text,
+		"kind":               text,
+		"discriminator":      text,
+		"construct_path":     text,
+		wireExpectedRevision: text,
 	}, Required: []string{"file", "kind"}}
 }
 
@@ -419,12 +419,12 @@ func ConstructSelectorSchema() ValueSchema {
 func CallSiteSelectorSchema() ValueSchema {
 	text := nonEmptyStringSchema()
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":              text,
-		"in_function":       text,
-		"discriminator":     text,
-		"construct_path":    text,
-		"expected_revision": text,
-	}, Required: []string{"file", "in_function", "discriminator"}}
+		"file":               text,
+		wireInFunction:       text,
+		"discriminator":      text,
+		"construct_path":     text,
+		wireExpectedRevision: text,
+	}, Required: []string{"file", wireInFunction, "discriminator"}}
 }
 
 // FileRevisionSchema describes one project-relative path and its opaque revision.
