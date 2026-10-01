@@ -240,7 +240,11 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		if err != nil {
 			return BatchResult{}, fmt.Errorf("project batch result for %q: %w", batchEntry.Tool, err)
 		}
-		batchResult.Result = projected
+		encoded, err := json.Marshal(projected)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("encode batch result for %q: %w", batchEntry.Tool, err)
+		}
+		batchResult.Result = json.RawMessage(encoded)
 	}
 	return batchResult, nil
 }

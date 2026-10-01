@@ -86,7 +86,7 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		}
 	}
 	if !inBatch && expectedChanges > confirmedChanges {
-		if confirmedChanges > 0 || publicationUncertain {
+		if publicationUncertain {
 			receipt.Status = EditPartiallyPublished
 		} else if knownUnchanged {
 			receipt.Status = EditRefused
