@@ -364,3 +364,56 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 		t.Fatalf("refused receipt reports published values: %#v", refused)
 	}
 }
+
+func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	before := []byte("package sample\nvar Widget = 1\n")
+	planned := []byte("package sample\nvar Widget = 2\n")
+	observed := []byte("package sample\nvar Other = 3\n")
+	if err := os.WriteFile(path, observed, 0600); err != nil {
+		t.Fatalf("write observed source: %v", err)
+	}
+	beforeDigest := sha256.Sum256(before)
+	plannedDigest := sha256.Sum256(planned)
+	observedDigest := sha256.Sum256(observed)
+	expected := hex.EncodeToString(plannedDigest[:])
+	resolverCalls := 0
+	receipt, err := FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+		Operation:      "replace-value",
+		Status:         EditPersisted,
+		PlannedChanges: []FileRevision{{Path: "main.go", Revision: expected}},
+		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
+		Continuations:  []SymbolTarget{{File: "main.go", Symbol: "Widget", ExpectedRevision: &expected}},
+	}, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+		resolverCalls++
+		return target, true, nil
+	})
+	if err != nil {
+		t.Fatalf("finalize normalized postimage: %v", err)
+	}
+	observedRevision := hex.EncodeToString(observedDigest[:])
+	if receipt.Status != EditPartiallyPublished || len(receipt.Changes) != 1 || receipt.Changes[0].Revision != observedRevision {
+		t.Fatalf("mismatched postimage evidence = %#v", receipt)
+	}
+	if resolverCalls != 0 || len(receipt.Continuations) != 0 {
+		t.Fatalf("stale candidate reached weak resolver or was emitted: calls=%d continuations=%#v", resolverCalls, receipt.Continuations)
+	}
+
+	liveExpected := observedRevision
+	receipt, err = FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+		Operation:      "replace-value",
+		Status:         EditPersisted,
+		PlannedChanges: []FileRevision{{Path: "main.go", Revision: observedRevision}},
+		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
+		Continuations:  []SymbolTarget{{File: "main.go", Symbol: "Other", ExpectedRevision: &liveExpected}},
+	}, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+		return target, true, nil
+	})
+	if err != nil {
+		t.Fatalf("finalize matching candidate: %v", err)
+	}
+	if len(receipt.Continuations) != 1 || receipt.Continuations[0].ExpectedRevision == nil || *receipt.Continuations[0].ExpectedRevision != observedRevision {
+		t.Fatalf("matching final candidate was not emitted with observed digest: %#v", receipt.Continuations)
+	}
+}

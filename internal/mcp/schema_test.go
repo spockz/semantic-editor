@@ -313,8 +313,18 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	}
 	properties := result["properties"].(map[string]any)
 	items := properties["results"].(map[string]any)["items"].(map[string]any)
-	if got := items["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
-		t.Fatalf("batch result item required = %#v", got)
+	branches, ok := items["oneOf"].([]any)
+	if !ok || len(branches) == 0 {
+		t.Fatalf("batch result item schema = %#v, want registered tool branches", items)
+	}
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		if got := branch["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
+			t.Fatalf("batch result branch required = %#v", got)
+		}
+		if branch["additionalProperties"] != false {
+			t.Fatalf("batch result branch is not closed: %#v", branch)
+		}
 	}
 	if diff, ok := properties["final_diff"].(map[string]any); !ok || diff["type"] != "string" {
 		t.Fatalf("batch final_diff schema = %#v", properties["final_diff"])
@@ -920,11 +930,20 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		t.Fatal("semantic_batch schema omitted semantic_move_construct")
 	}
 	output := batch["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
-	results := output["results"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
-	destination := results["destination_file"].(map[string]any)
-	if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
-		t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+	results := output["results"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+	for _, rawBranch := range results {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] != "semantic_move_construct" {
+			continue
+		}
+		destination := properties["destination_file"].(map[string]any)
+		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
+			t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+		}
+		return
 	}
+	t.Fatal("batch output schema omitted semantic_move_construct result branch")
 }
 
 func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
@@ -1083,6 +1102,148 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 	}
 }
 
+func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
+	root := schemaWorkspace(t)
+	registry := operation.NewRegistry()
+	objectSchema := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{
+		"value": {Kind: operation.SchemaInteger},
+	}, Required: []string{"value"}}
+	arraySchema := operation.ValueSchema{Kind: operation.SchemaArray, Items: &operation.ValueSchema{Kind: operation.SchemaString}}
+	nullSchema := operation.ValueSchema{Kind: operation.SchemaString, Nullable: true}
+	makeEntry := func(key, name string, schema operation.ValueSchema, project func(string) any) error {
+		return operation.Register(registry, operation.Def[map[string]any, string]{
+			Key: key, MCPName: name, Batchable: true, Output: &operation.OperationOutputContract{ResultSchema: &schema},
+			Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil },
+			Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){
+				backend.LanguageAuto: func(context.Context, operation.CallContext, map[string]any) (string, error) { return "ok", nil },
+			},
+			ProjectOutput: func(value string) (any, error) { return project(value), nil },
+		})
+	}
+	if err := makeEntry("typed-object", "semantic_typed_object", objectSchema, func(string) any { return map[string]any{"value": 7} }); err != nil {
+		t.Fatalf("register object provider: %v", err)
+	}
+	if err := makeEntry("typed-scalar", "semantic_typed_scalar", operation.ValueSchema{Kind: operation.SchemaString}, func(string) any { return "scalar" }); err != nil {
+		t.Fatalf("register scalar provider: %v", err)
+	}
+	if err := makeEntry("typed-array", "semantic_typed_array", arraySchema, func(string) any { return []string{"array"} }); err != nil {
+		t.Fatalf("register array provider: %v", err)
+	}
+	if err := makeEntry("typed-null", "semantic_typed_null", nullSchema, func(string) any { return nil }); err != nil {
+		t.Fatalf("register null provider: %v", err)
+	}
+	if err := operation.Register(registry, operation.Def[map[string]any, string]{
+		Key: "legacy-output", MCPName: "semantic_legacy_output", Batchable: true,
+		Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){
+			backend.LanguageAuto: func(context.Context, operation.CallContext, map[string]any) (string, error) { return "legacy", nil },
+		},
+	}); err != nil {
+		t.Fatalf("register legacy operation: %v", err)
+	}
+
+	tools := listToolsAtWithRegistry(t, "full", root, registry)
+	var batchTool map[string]any
+	for _, tool := range tools {
+		if tool["name"] == "semantic_batch" {
+			batchTool = tool
+			break
+		}
+	}
+	if batchTool == nil {
+		t.Fatal("tools/list omitted semantic_batch")
+	}
+	resultsSchema := batchTool["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)["results"].(map[string]any)["items"].(map[string]any)
+	branches := resultsSchema["oneOf"].([]any)
+	for name, wantKind := range map[string]string{
+		"semantic_typed_object": "object", "semantic_typed_scalar": "string", "semantic_typed_array": "array", "semantic_typed_null": "nullable",
+	} {
+		var found bool
+		for _, rawBranch := range branches {
+			branch := rawBranch.(map[string]any)
+			properties := branch["properties"].(map[string]any)
+			if properties["tool"].(map[string]any)["const"] == name {
+				resultSchema, ok := properties["result"].(map[string]any)
+				if !ok {
+					t.Fatalf("batch schema omitted result for %s: %#v", name, branch)
+				}
+				if wantKind == "nullable" {
+					types, ok := resultSchema["type"].([]any)
+					if !ok || !reflect.DeepEqual(types, []any{"string", "null"}) {
+						t.Fatalf("nullable result schema for %s = %#v", name, resultSchema)
+					}
+				} else if resultSchema["type"] != wantKind {
+					t.Fatalf("batch result schema for %s = %#v, want type %s", name, resultSchema, wantKind)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("batch output schema omitted registered result branch %s", name)
+		}
+	}
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] == "semantic_legacy_output" {
+			if _, hasResult := properties["result"]; hasResult {
+				t.Fatalf("legacy batch branch advertises a result: %#v", branch)
+			}
+		}
+	}
+
+	var edits []map[string]any
+	for _, name := range []string{"semantic_typed_object", "semantic_typed_scalar", "semantic_typed_array", "semantic_typed_null", "semantic_legacy_output"} {
+		edits = append(edits, map[string]any{"tool": name, "params": map[string]any{}})
+	}
+	request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}})
+	if err != nil {
+		t.Fatalf("encode batch request: %v", err)
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+		t.Fatalf("serve batch typed results: %v", err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("decode batch results: %v", err)
+	}
+	structured := response["result"].(map[string]any)["structuredContent"].(map[string]any)
+	batchResult := structured["result"].(map[string]any)
+	results := batchResult["results"].([]any)
+	expected := map[string]any{
+		"semantic_typed_object": map[string]any{"value": float64(7)},
+		"semantic_typed_scalar": "scalar",
+		"semantic_typed_array":  []any{"array"},
+		"semantic_typed_null":   nil,
+	}
+	for index, rawResult := range results {
+		result := rawResult.(map[string]any)
+		name := result["tool"].(string)
+		if name == "semantic_verify" {
+			if result["status"] != "error" || result["error"] == nil {
+				t.Errorf("synthetic verification row = %#v, want explicit missing-registration error", result)
+			}
+			continue
+		}
+		if want, typed := expected[name]; typed {
+			got, present := result["result"]
+			if !present || !reflect.DeepEqual(got, want) {
+				t.Errorf("batch result %s = %#v present=%t, want %#v", name, got, present, want)
+			}
+			continue
+		}
+		if name == "semantic_legacy_output" {
+			if _, present := result["result"]; present {
+				t.Errorf("legacy batch result unexpectedly has result: %#v", result)
+			}
+			continue
+		}
+		t.Errorf("unexpected batch result at index %d: %#v", index, result)
+	}
+}
+
 func TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision(t *testing.T) {
 	root := schemaWorkspace(t)
 	path := filepath.Join(root, "main.go")
@@ -1144,7 +1305,12 @@ func TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision(t *testing.T) {
 				plannedBytes = []byte("package sample\nvar Other = 2\n")
 			}
 			plannedDigest := sha256.Sum256(plannedBytes)
-			draftValue := operation.EditReceiptDraft{Operation: draft.Operation, Status: draft.Status, PlannedChanges: []operation.FileRevision{{Path: "main.go", Revision: hex.EncodeToString(plannedDigest[:])}}, ReadSet: draft.ReadSet, Continuations: draft.Continuations}
+			expectedRevision := hex.EncodeToString(plannedDigest[:])
+			continuations := append([]operation.SymbolTarget(nil), draft.Continuations...)
+			for index := range continuations {
+				continuations[index].ExpectedRevision = &expectedRevision
+			}
+			draftValue := operation.EditReceiptDraft{Operation: draft.Operation, Status: draft.Status, PlannedChanges: []operation.FileRevision{{Path: "main.go", Revision: expectedRevision}}, ReadSet: draft.ReadSet, Continuations: continuations}
 			return operation.FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, draftValue, resolve)
 		},
 		ProjectOutput: func(receipt operation.EditReceipt) (any, error) { return receipt, nil },
