@@ -52,7 +52,7 @@ func (r *MoveConstructReq) SetProjectContext(project backend.ProjectContext) { r
 
 var moveConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.destination_file"}},
+	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.file"}},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, "semantic_move_construct.symbol"}},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Destination placement: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement"},

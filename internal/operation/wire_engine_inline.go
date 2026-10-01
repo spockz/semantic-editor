@@ -24,7 +24,7 @@ func (r *InlineVariableReq) SetProjectContext(project backend.ProjectContext) { 
 
 var inlineVariableParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: Go source file containing the local binding; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: local variable or constant to inline", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInlineVariableSymbol}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: local variable or constant to inline", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol}},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified Go function or method containing the local binding", Required: true, SourceFields: []string{sourceInlineVariableInFunction}},
 }
 

@@ -51,12 +51,10 @@ const (
 	sourceExtractFunctionSymbol        = "semantic_extract_function.symbol"
 	sourceExtractFunctionInFunction    = "semantic_extract_function.in_function"
 	sourceInlineVariableFile           = "semantic_inline_variable.file"
-	sourceInlineVariableSymbol         = "semantic_inline_variable.symbol"
 	sourceInlineVariableInFunction     = "semantic_inline_variable.in_function"
 	sourceExtractVariableFile          = "semantic_extract_variable.file"
 	sourceExtractVariableSymbol        = "semantic_extract_variable.symbol"
 	sourceExtractVariableInFunction    = "semantic_extract_variable.in_function"
-	sourceExtractVariableDiscriminator = "semantic_extract_variable.discriminator"
 	sourceInsertCaseFile               = "semantic_insert_case.file"
 	sourceInsertFunctionFile           = "semantic_insert_function.file"
 	sourceInsertTypeFile               = "semantic_insert_type.file"
@@ -91,7 +89,7 @@ var sourceFileContinuations = []string{
 var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
 	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
-	sourceExtractFunctionSymbol, sourceExtractVariableSymbol, sourceInlineVariableSymbol,
+	sourceExtractFunctionSymbol, sourceExtractVariableSymbol,
 	"semantic_move_construct.symbol",
 }
 
@@ -101,7 +99,7 @@ var sourceInFunctionContinuations = []string{
 }
 
 var sourceDiscriminatorContinuations = []string{
-	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator, sourceExtractVariableDiscriminator,
+	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator,
 }
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}

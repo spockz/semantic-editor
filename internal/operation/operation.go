@@ -27,6 +27,7 @@ type Entry struct {
 	ReadOnly      bool
 	Languages     []backend.LanguageID
 	ExampleRaw    map[string]any
+	Output        *OperationOutputContract
 	Parse         func(map[string]any) (any, error)
 	Invoke        func(CallContext, map[string]any) (any, error)
 	Format        func(any) (string, error)
@@ -74,6 +75,7 @@ type Def[Req any, Res any] struct {
 	Handlers       map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
 	Format         func(Res) (string, error)
 	ExampleRaw     map[string]any
+	Output         *OperationOutputContract
 }
 
 // Level identifies the scope an operation acts upon.
@@ -88,6 +90,10 @@ const (
 	LevelBuild Level = "build"
 	// LevelWorkspace marks operations spanning the workspace.
 	LevelWorkspace Level = "workspace"
+	// ParamObject accepts a closed JSON object validated by Schema.
+	ParamObject = "object"
+	// ParamArray accepts a typed JSON array validated by Schema.
+	ParamArray = "array"
 )
 
 // Parameter value types accepted by ParameterContract.
@@ -115,6 +121,8 @@ type ParameterContract struct {
 	DynamicEnums func(backend.Backend) []string
 	// SourceFields names top-level structured output fields that can feed this parameter.
 	SourceFields []string
+	Schema       *ValueSchema
+	Role         ParameterRole
 }
 
 // Registry stores operations indexed by key, MCP tool name, and CLI command name.
@@ -143,6 +151,14 @@ func NewRegistry() *Registry {
 // It is a function rather than a Registry method because Go methods cannot declare type parameters.
 // Type erasure lives only in the Parse, Invoke, and Format closures built here.
 func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
+	if err := ValidateParameterContracts(def.Params); err != nil {
+		return fmt.Errorf("register %q parameters: %w", def.Key, err)
+	}
+	if def.Output != nil {
+		if err := ValidateOutputContract(*def.Output); err != nil {
+			return fmt.Errorf("register %q output contract: %w", def.Key, err)
+		}
+	}
 	if registry == nil {
 		return fmt.Errorf("register %q: %w", def.Key, ErrInvalidDefinition)
 	}
@@ -180,7 +196,11 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 		ReadOnly:      def.ReadOnly,
 		Languages:     languages,
 		ExampleRaw:    cloneRaw(def.ExampleRaw),
+		Output:        def.Output,
 		Parse: func(raw map[string]any) (any, error) {
+			if err := ValidateParameterValues(raw, def.Params); err != nil {
+				return nil, err
+			}
 			request, err := def.Parse(raw)
 			if err != nil {
 				return nil, err
@@ -188,6 +208,9 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			return request, nil
 		},
 		Invoke: func(cc CallContext, raw map[string]any) (any, error) {
+			if err := ValidateParameterValues(raw, def.Params); err != nil {
+				return nil, err
+			}
 			request, err := def.Parse(raw)
 			if err != nil {
 				return nil, err

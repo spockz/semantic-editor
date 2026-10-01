@@ -2,9 +2,11 @@
 package operation
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -55,6 +57,18 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 	}
 	for _, param := range params {
 		value, present := rawLookup(raw, param.JSONName, param.CLIName)
+		if param.Schema != nil {
+			if !present {
+				if param.Required {
+					return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
+				}
+				continue
+			}
+			if err := ValidateValue(*param.Schema, value); err != nil {
+				return fmt.Errorf("param %q: %w: %w", param.JSONName, err, ErrInvalidParams)
+			}
+			continue
+		}
 		if !present || value == nil {
 			if param.Required {
 				return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
@@ -63,12 +77,17 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 		}
 		if param.Type == ParamInteger {
 			switch value.(type) {
-			case int, int64, float64:
+			case int, int64, float64, json.Number:
 			default:
 				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
 			}
 			if typed, ok := value.(float64); ok && typed != float64(int(typed)) {
 				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
+			}
+			if typed, ok := value.(json.Number); ok {
+				if _, err := typed.Int64(); err != nil {
+					return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
+				}
 			}
 		}
 		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
@@ -175,6 +194,12 @@ func ParseInteger(raw map[string]any, jsonName, cliName string, required bool) (
 			return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
 		}
 		return int(typed), nil
+	case json.Number:
+		parsed, err := strconv.Atoi(typed.String())
+		if err != nil {
+			return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
+		}
+		return parsed, nil
 	default:
 		return 0, fmt.Errorf("param %q must be an integer: %w", jsonName, ErrInvalidParams)
 	}

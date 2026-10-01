@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -187,13 +188,33 @@ func changedBatchPaths(root string, before map[string]string) ([]string, error) 
 	return paths, nil
 }
 
+// decodeArgumentObject preserves exact JSON integer tokens for recursive schema validation.
+func decodeArgumentObject(data []byte, target *map[string]any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("read trailing JSON value: %w", err)
+	}
+	if *target == nil {
+		*target = map[string]any{}
+	}
+	return nil
+}
+
 func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, error) {
 	entry, ok := s.registry.LookupMCP(batchEntry.Tool)
 	if !ok || !entry.Batchable {
 		return BatchResult{}, fmt.Errorf("tool is not batchable: %s", batchEntry.Tool)
 	}
 	raw := map[string]any{}
-	if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+	if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 		return BatchResult{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 	if err := s.validateLanguageAllowed(entry, raw); err != nil {
@@ -328,7 +349,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
 			return response, nil
 		}
-		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
 			return response, nil

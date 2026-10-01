@@ -6,7 +6,88 @@ package operation
 import (
 	"fmt"
 	"go/token"
+	"path/filepath"
 )
+
+// CallSiteSelector addresses one call site in its owning function.
+
+// ParameterRole classifies a parameter's effect on target selection or caller policy.
+
+// OutputContinuation describes one complete live result field and its compatible consumers.
+
+// OperationOutputContract declares a result value and typed live continuations.
+
+// FileRevision binds one project-relative path to an opaque content revision.
+
+// EditStatus records the actual working-buffer and disk publication outcome.
+
+// EditReceipt reports changed revisions, the complete analysis read set, and live targets.
+
+// EditPartiallyPublished means some publication completed before another part failed.
+const EditPartiallyPublished EditStatus = "partially_published"
+
+// EditPersistedWithDiagnostics means disk publication completed with diagnostics.
+const EditPersistedWithDiagnostics EditStatus = "persisted_with_diagnostics"
+
+// EditPersisted means the edit was persisted to disk.
+const EditPersisted EditStatus = "persisted"
+
+// EditAppliedWorking means the edit was applied to the active working buffer.
+const EditAppliedWorking EditStatus = "applied_working"
+
+// EditRefused means no edit was published.
+const EditRefused EditStatus = "refused"
+
+// RoleValue identifies a parameter carrying replacement data.
+const RoleValue ParameterRole = "value"
+
+// RoleSource identifies a parameter selecting source material.
+const RoleSource ParameterRole = "source"
+
+// RolePolicy identifies a parameter controlling planner behavior.
+const RolePolicy ParameterRole = "policy"
+
+// RoleSelector identifies a parameter selecting an existing identity.
+const RoleSelector ParameterRole = "selector"
+
+// RoleTarget identifies a parameter selecting an edit target.
+const RoleTarget ParameterRole = "target"
+
+// EditReceipt reports changed revisions, the complete analysis read set, and live targets.
+type EditReceipt struct {
+	SchemaVersion string         `json:"schema_version"`
+	Status        EditStatus     `json:"status"`
+	Operation     string         `json:"operation"`
+	Changes       []FileRevision `json:"changes,omitempty"`
+	ReadSet       []FileRevision `json:"read_set,omitempty"`
+	Continuations []SymbolTarget `json:"continuations,omitempty"`
+}
+
+// EditStatus records the actual working-buffer and disk publication outcome.
+type EditStatus string
+
+// FileRevision binds one project-relative path to an opaque content revision.
+type FileRevision struct {
+	Path     string `json:"path"`
+	Revision string `json:"revision"`
+}
+
+// OperationOutputContract declares a result value and typed live continuations.
+type OperationOutputContract struct {
+	ResultSchema  *ValueSchema         `json:"result_schema,omitempty"`
+	Continuations []OutputContinuation `json:"continuations,omitempty"`
+}
+
+// OutputContinuation describes one complete live result field and its compatible consumers.
+type OutputContinuation struct {
+	Field     string        `json:"field"`
+	Schema    ValueSchema   `json:"schema"`
+	Role      ParameterRole `json:"role"`
+	Consumers []string      `json:"consumers"`
+}
+
+// ParameterRole classifies a parameter effect on target selection or caller policy.
+type ParameterRole string
 
 // CallSiteSelector addresses one call site in its owning function.
 type CallSiteSelector struct {
@@ -244,12 +325,236 @@ func ValidateFieldSpec(field FieldSpec) error {
 	return validateFieldSpec(field)
 }
 
+// ParameterSpecSchema declares the closed object shape of one parameter.
+func ParameterSpecSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"name":     text,
+		"type":     text,
+		"variadic": {Kind: SchemaBoolean},
+	}, Required: []string{"name", "type"}}
+}
+
+// ParameterMappingSchema declares one closed source-parameter mapping.
+func ParameterMappingSchema() ValueSchema {
+	minimum := float64(0)
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
+		"parameter":    ParameterSpecSchema(),
+		"argument":     {Kind: SchemaString},
+	}, Required: []string{"parameter"}}
+}
+
+// ResultSpecSchema declares one closed function-result shape.
+func ResultSpecSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"type": text,
+		"name": text,
+	}, Required: []string{"type"}}
+}
+
+// FieldSpecSchema declares one closed struct-field shape.
+func FieldSpecSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"name": text,
+		"type": text,
+		"tag":  {Kind: SchemaString},
+	}, Required: []string{"name", "type"}}
+}
+
+// ParameterToFieldMappingSchema declares one closed parameter-to-field mapping.
+func ParameterToFieldMappingSchema() ValueSchema {
+	minimum := float64(0)
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
+		"field":        FieldSpecSchema(),
+	}, Required: []string{"source_index", "field"}}
+}
+
+// MemberTargetSchema declares one closed source or target member identity.
+func MemberTargetSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file":   text,
+		"symbol": text,
+	}, Required: []string{"file", "symbol"}}
+}
+
+// MemberMappingSchema declares a paired source and target member mapping.
+func MemberMappingSchema() ValueSchema {
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"source_member": MemberTargetSchema(),
+		"target_member": MemberTargetSchema(),
+	}, Required: []string{"source_member", "target_member"}}
+}
+
+// SymbolTargetSchema declares a live symbol identity.
+func SymbolTargetSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file":              text,
+		"symbol":            text,
+		"expected_revision": text,
+	}, Required: []string{"file", "symbol"}}
+}
+
+// ConstructSelectorSchema declares a closed construct selector.
+func ConstructSelectorSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file":              text,
+		"in_function":       text,
+		"in_declaration":    text,
+		"kind":              text,
+		"discriminator":     text,
+		"construct_path":    text,
+		"expected_revision": text,
+	}, Required: []string{"file", "kind"}}
+}
+
+// CallSiteSelectorSchema declares a closed call-site selector.
+func CallSiteSelectorSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file":              text,
+		"in_function":       text,
+		"discriminator":     text,
+		"construct_path":    text,
+		"expected_revision": text,
+	}, Required: []string{"file", "in_function", "discriminator"}}
+}
+
+// FileRevisionSchema describes one project-relative path and its opaque revision.
+func FileRevisionSchema() ValueSchema {
+	text := nonEmptyStringSchema()
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"path":     text,
+		"revision": text,
+	}, Required: []string{"path", "revision"}}
+}
+
+// EditReceiptSchema describes an outcome without implying batch-wide atomicity.
+func EditReceiptSchema() ValueSchema {
+	version := ValueSchema{Kind: SchemaString, Enum: []any{"semedit.edit-receipt/v1"}}
+	status := ValueSchema{Kind: SchemaString, Enum: []any{string(EditRefused), string(EditAppliedWorking), string(EditPersisted), string(EditPersistedWithDiagnostics), string(EditPartiallyPublished)}}
+	text := nonEmptyStringSchema()
+	revisions := ValueSchema{Kind: SchemaArray, Items: new(FileRevisionSchema())}
+	continuations := ValueSchema{Kind: SchemaArray, Items: new(SymbolTargetSchema())}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"schema_version": version,
+		"status":         status,
+		"operation":      text,
+		"changes":        revisions,
+		"read_set":       revisions,
+		"continuations":  continuations,
+	}, Required: []string{"schema_version", "status", "operation"}}
+}
+
+// ValidateOutputContract checks that declared continuations identify complete live projections.
+func ValidateOutputContract(contract OperationOutputContract) error {
+	if contract.ResultSchema != nil {
+		if err := ValidateSchema(*contract.ResultSchema); err != nil {
+			return fmt.Errorf("result schema: %w", err)
+		}
+	}
+	seenFields := make(map[string]struct{}, len(contract.Continuations))
+	for index, continuation := range contract.Continuations {
+		if continuation.Field == "" {
+			return fmt.Errorf("continuation %d has an empty field name", index)
+		}
+		if _, ok := seenFields[continuation.Field]; ok {
+			return fmt.Errorf("continuation field %q is repeated", continuation.Field)
+		}
+		seenFields[continuation.Field] = struct{}{}
+		if err := ValidateSchema(continuation.Schema); err != nil {
+			return fmt.Errorf("continuation %q schema: %w", continuation.Field, err)
+		}
+		if continuation.Role != RoleTarget && continuation.Role != RoleSelector {
+			return fmt.Errorf("continuation %q has non-live role %q", continuation.Field, continuation.Role)
+		}
+		if len(continuation.Consumers) == 0 {
+			return fmt.Errorf("continuation %q has no consumer tools", continuation.Field)
+		}
+		seenConsumers := make(map[string]struct{}, len(continuation.Consumers))
+		for _, consumer := range continuation.Consumers {
+			if consumer == "" {
+				return fmt.Errorf("continuation %q has an empty consumer name", continuation.Field)
+			}
+			if _, ok := seenConsumers[consumer]; ok {
+				return fmt.Errorf("continuation %q repeats consumer %q", continuation.Field, consumer)
+			}
+			seenConsumers[consumer] = struct{}{}
+		}
+	}
+	return nil
+}
+
+// ValidateEditReceipt rejects outcomes that cannot truthfully expose live targets.
+func ValidateEditReceipt(receipt EditReceipt) error {
+	if receipt.SchemaVersion != "semedit.edit-receipt/v1" {
+		return fmt.Errorf("unsupported edit receipt schema version %q", receipt.SchemaVersion)
+	}
+	switch receipt.Status {
+	case EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+	default:
+		return fmt.Errorf("unsupported edit receipt status %q", receipt.Status)
+	}
+	if receipt.Operation == "" {
+		return fmt.Errorf("edit receipt operation is empty")
+	}
+	if receipt.Status == EditRefused && (len(receipt.Changes) > 0 || len(receipt.Continuations) > 0) {
+		return fmt.Errorf("refused receipt cannot expose changes or live continuations")
+	}
+	if err := validateFileRevisions(receipt.Changes, "changes"); err != nil {
+		return err
+	}
+	if err := validateFileRevisions(receipt.ReadSet, "read_set"); err != nil {
+		return err
+	}
+	seen := make(map[string]struct{}, len(receipt.Continuations))
+	for index, continuation := range receipt.Continuations {
+		if err := ValidateSymbolTarget(continuation); err != nil {
+			return fmt.Errorf("continuation %d: %w", index, err)
+		}
+		identity := continuation.File + "\x00" + continuation.Symbol
+		if _, ok := seen[identity]; ok {
+			return fmt.Errorf("live continuation %q is repeated", continuation.Symbol)
+		}
+		seen[identity] = struct{}{}
+	}
+	return nil
+}
+
 func validateFieldSpec(field FieldSpec) error {
 	if field.Name == "" || !token.IsIdentifier(field.Name) {
 		return fmt.Errorf("invalid field name %q", field.Name)
 	}
 	if field.Type == "" {
 		return fmt.Errorf("field %q has an empty type", field.Name)
+	}
+	return nil
+}
+
+func nonEmptyStringSchema() ValueSchema {
+	minimum := 1
+	return ValueSchema{Kind: SchemaString, MinLength: &minimum}
+}
+
+func validateFileRevisions(revisions []FileRevision, label string) error {
+	seen := make(map[string]struct{}, len(revisions))
+	for index, revision := range revisions {
+		if revision.Path == "" || !filepath.IsLocal(filepath.FromSlash(revision.Path)) {
+			return fmt.Errorf("%s entry %d has invalid project-relative path %q", label, index, revision.Path)
+		}
+		if revision.Revision == "" {
+			return fmt.Errorf("%s entry %d has an empty revision", label, index)
+		}
+		if _, ok := seen[revision.Path]; ok {
+			return fmt.Errorf("%s repeats path %q", label, revision.Path)
+		}
+		seen[revision.Path] = struct{}{}
 	}
 	return nil
 }

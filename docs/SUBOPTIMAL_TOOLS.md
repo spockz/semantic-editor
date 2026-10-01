@@ -1194,3 +1194,183 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: repository `make check` rejected the successful insertions because exported Go declarations lacked required documentation comments. No incorrect AST was reported.
 - Workaround: add Go documentation comments with an atomic source update because no registered semantic operation adds comments to existing declarations.
 - Root cause: the semantic insertion operations accept declarations but expose no doc-comment edit operation.
+
+### ST-0149: semedit-next did not expose the outline command
+
+- Date: 2026-10-01
+- Tool: `semedit-next outline`
+- Target: navigation of `internal/operation` in the assigned worktree
+- Observed failure: the checked CLI returned `unknown command "outline"`; no workspace files changed.
+- Workaround: use the CLI's supported lookup/inspect commands for declaration navigation.
+- Root cause: this CLI build does not register an outline command.
+
+### ST-0150: semedit-next did not expose insert-structure
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-structure`
+- Target: adding the schema field to `ParameterContract`
+- Observed failure: the checked CLI returned `unknown command "insert-structure"`; no workspace files changed.
+- Workaround: check the generalized `insert` command for a supported struct-member operation before choosing another edit path.
+- Root cause: this CLI build does not register the structured-field insertion command.
+
+### ST-0151: semedit-next replace-body rejected a declaration wrapper
+
+- Date: 2026-10-01
+- Tool: `semedit-next replace-body`
+- Target: `ParameterSpecSchema` in `internal/operation/typed_descriptors.go`
+- Observed failure: the request passed a complete `func` declaration in `--body`; the CLI rejected the nested declaration before writing.
+- Workaround: pass only the function body statements.
+- Root cause: `replace-body` accepts statements without a function signature or braces.
+
+### ST-0152: existing struct field insertion has no registered CLI operation
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert`
+- Target: schema, role, and output-contract fields in `internal/operation/operation.go`
+- Observed failure: the checked CLI only inserts top-level declarations and has no struct-member insertion operation; no source changed.
+- Workaround: add the exact fields with an atomic source update after checking the CLI help.
+- Root cause: this CLI build does not register a field-level Go AST mutation.
+
+### ST-0153: atomic operation struct update did not match declaration layout
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/operation.go`
+- Observed failure: the script expected an incorrect field-block string and aborted before mutation.
+- Workaround: inspect the exact struct declarations and update their matching field blocks.
+- Root cause: the assumed gofmt alignment differed from the source layout.
+
+### ST-0154: make check exposed missing Go documentation comments
+
+- Date: 2026-10-01
+- Tool: `make check` (revive)
+- Target: `internal/operation/typed_descriptors.go` and `internal/operation/value_schema.go`
+- Observed failure: the linter rejected exported declarations inserted without documentation comments.
+- Workaround: add declaration comments atomically; no semantic operation exposes comment-only edits.
+- Root cause: inserted declarations did not include the doc comments required by repository lint.
+
+### ST-0155: atomic comment repair script had invalid Python syntax
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/typed_descriptors.go`, `internal/operation/value_schema.go`, and `internal/operation/operation.go`
+- Observed failure: Python rejected the script before execution; no files changed.
+- Workaround: simplify the script and apply each atomic file update.
+- Root cause: an extra closing parenthesis in the log append expression.
+
+### ST-0156: semedit-next scaffold command name differed from help
+
+- Date: 2026-10-01
+- Tool: `semedit-next scaffold --help`
+- Target: new `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `scaffold` and suggested `scaffold-file`; no files changed.
+- Workaround: use the registered `scaffold-file` command.
+- Root cause: the command is named `scaffold-file`, not `scaffold`.
+
+### ST-0157: semedit-next insert-function command name differed from help
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-function --help`
+- Target: `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `insert-function`; the new scaffold file was already created successfully.
+- Workaround: use the registered `insert-func` command.
+- Root cause: this CLI build uses the abbreviated command name.
+
+### ST-0158: semantic CLI has no anonymous closure edit for registry parse wrapping
+
+- Date: 2026-10-01
+- Tool: `semedit-next` operation inventory
+- Target: `internal/operation/operation.go`
+- Observed failure: no registered semantic operation can wrap the anonymous `Entry.Parse` and `Entry.Invoke` parse closures with shared contract validation.
+- Workaround: update only those closure bodies with atomic source edits after locating them through semantic lookup.
+- Root cause: the CLI exposes function-body replacement but no closure-body editing operation.
+
+### ST-0159: registry edit script had a Python indentation error
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/operation.go` and `internal/operation/schema_contract.go`
+- Observed failure: Python rejected a function body because its return statement was outdented; no files changed.
+- Workaround: reformat the script and retry the atomic updates.
+- Root cause: indentation was lost while composing a nested replacement helper.
+
+### ST-0160: semantic insert-decl rejected const spec without declaration wrapper
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-decl`
+- Target: `internal/operation/operation.go`
+- Observed failure: the source contained a constant specification rather than a complete `const` declaration; validation failed before mutation.
+- Workaround: submit each constant inside its own `const (...)` declaration.
+- Root cause: insert-decl parses declaration nodes, not individual specs.
+
+### ST-0161: semedit-next import organization command name differed from remembered tool name
+
+- Date: 2026-10-01
+- Tool: `semedit-next organize-imports`
+- Target: `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `organize-imports`; no source changed.
+- Workaround: inspect CLI help for the registered import organization command and use it.
+- Root cause: the checked build's command spelling differs from the MCP operation name.
+
+### ST-0162: semantic test insertion used private access for exported test function
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-func`
+- Target: `internal/mcp/schema_test.go`
+- Observed failure: the tool rejected private access for a `Test...` function; no test source changed.
+- Workaround: insert the test with public access matching its exported test name.
+- Root cause: Go test entrypoints use exported identifiers.
+
+### ST-0163: scaffold-file does not create the mandatory Go file purpose header
+
+- Date: 2026-10-01
+- Tool: `semedit-next scaffold-file`
+- Target: new `internal/cli/typed_params_test.go`
+- Observed failure: the successful scaffold creates only a package declaration; it cannot add the required WHY comment.
+- Workaround: add the file purpose comment atomically before inserting declarations.
+- Root cause: scaffold-file infers the package but provides no file-header parameter.
+
+### ST-0164: MCP test harness lookup used a mistyped worktree path
+
+- Date: 2026-10-01
+- Tool: `rg` via shell
+- Target: MCP server constructors
+- Observed failure: the workdir did not exist because the command path contained an incorrect UUID fragment; no files changed.
+- Workaround: rerun the search from the current worktree directory.
+- Root cause: a copied path string was transcribed incorrectly.
+
+### ST-0165: check-log wrapper used zsh's read-only `status` variable
+
+- Date: 2026-10-01
+- Tool: shell wrapper around `make check`
+- Target: `.scratch/final-make-check.log`
+- Observed failure: after `make check` completed, zsh rejected assignment to its read-only `status` variable; the wrapper returned an error before filtering the completed log.
+- Workaround: use a task-specific variable name or run `make check` directly with output redirected.
+- Root cause: `status` is a reserved read-only parameter in zsh.
+
+### ST-0166: polling a completed make check session returned an unknown process id
+
+- Date: 2026-10-01
+- Tool: `write_stdin`
+- Target: completion check session
+- Observed failure: the shell session had already exited, so the poll returned unknown process id; no workspace files changed.
+- Workaround: verify completion from the direct command log and use the command's initial exit result.
+- Root cause: a poll arrived after the execution session had been reaped.
+
+### ST-0167: Make-variable cache settings did not reach the linter process
+
+- Date: 2026-10-01
+- Tool: `make check`
+- Target: full-worktree Go lint
+- Observed failure: passing `GOMODCACHE` and `GOCACHE` as Make command-line variables left `golangci-lint` unable to load `pgregory.net/rapid` with `GOPROXY=off`; lint stopped before tests.
+- Workaround: export the cache variables in the command environment while keeping `MAKE_JOBS=2` set.
+- Root cause: the lint child process did not use the Make-only cache variable values.
+
+### ST-0168: sandbox blocked staging in shared worktree Git metadata
+
+- Date: 2026-10-01
+- Tool: `git add`
+- Target: assigned branch index under the shared repository's `.git/worktrees` metadata
+- Observed failure: sandbox denied creation of the Git index lock outside the writable worktree; no files were staged.
+- Workaround: retry the user-authorized staging and commit command with elevated access.
+- Root cause: the worktree shares Git administrative storage outside its source directory.

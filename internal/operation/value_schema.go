@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/big"
 	"unicode/utf8"
 )
 
@@ -24,6 +25,14 @@ type ValueSchema struct {
 	MaxItems   *int
 	Minimum    *float64
 	Maximum    *float64
+}
+
+// JSONSchema converts an explicit recursive schema to a closed JSON Schema object.
+func (schema ValueSchema) JSONSchema() (map[string]any, error) {
+	if err := ValidateSchema(schema); err != nil {
+		return nil, fmt.Errorf("convert value schema: %w", err)
+	}
+	return valueSchemaJSON(schema)
 }
 
 // SchemaString through SchemaArray enumerate the closed schema value kinds.
@@ -46,7 +55,9 @@ func ValidateSchema(schema ValueSchema) error {
 		if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
 			return fmt.Errorf("string schema contains fields for another kind")
 		}
-		return validateBounds(schema.MinLength, schema.MaxLength, "string length")
+		if err := validateBounds(schema.MinLength, schema.MaxLength, "string length"); err != nil {
+			return err
+		}
 	case SchemaBoolean:
 		if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
 			return fmt.Errorf("boolean schema contains fields for another kind")
@@ -130,6 +141,9 @@ func validateBounds(minimum, maximum *int, label string) error {
 	if minimum != nil && *minimum < 0 {
 		return fmt.Errorf("%s minimum must be non-negative", label)
 	}
+	if maximum != nil && *maximum < 0 {
+		return fmt.Errorf("%s maximum must be non-negative", label)
+	}
 	if minimum != nil && maximum != nil && *minimum > *maximum {
 		return fmt.Errorf("%s minimum exceeds maximum", label)
 	}
@@ -173,15 +187,25 @@ func validateValue(schema ValueSchema, value any) error {
 			return fmt.Errorf("string length %d exceeds maximum %d", length, *schema.MaxLength)
 		}
 	case SchemaInteger, SchemaNumber:
-		number, ok := numericValue(value)
+		number, ok := exactNumericValue(value)
 		if !ok {
 			return fmt.Errorf("numeric value %T is invalid", value)
 		}
-		if schema.Minimum != nil && number < *schema.Minimum {
-			return fmt.Errorf("number %v is below minimum %v", number, *schema.Minimum)
+		if schema.Minimum != nil {
+			minimum := new(big.Rat).SetFloat64(*schema.Minimum)
+			if number.Cmp(minimum) < 0 {
+				return fmt.Errorf("number %s is below minimum %v", number.RatString(), *schema.Minimum)
+			}
 		}
-		if schema.Maximum != nil && number > *schema.Maximum {
-			return fmt.Errorf("number %v exceeds maximum %v", number, *schema.Maximum)
+		if schema.Maximum != nil {
+			maximum := new(big.Rat).SetFloat64(*schema.Maximum)
+			if number.Cmp(maximum) > 0 {
+				return fmt.Errorf("number %s exceeds maximum %v", number.RatString(), *schema.Maximum)
+			}
+		}
+	case SchemaBoolean:
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("boolean value has type %T", value)
 		}
 	case SchemaObject:
 		object, ok := value.(map[string]any)
@@ -219,11 +243,6 @@ func validateValue(schema ValueSchema, value any) error {
 				return fmt.Errorf("array item %d: %w", index, err)
 			}
 		}
-
-	case SchemaBoolean:
-		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("boolean value has type %T", value)
-		}
 	}
 	return nil
 }
@@ -237,13 +256,10 @@ func valueMatchesKind(kind SchemaKind, value any) bool {
 		_, ok := value.(bool)
 		return ok
 	case SchemaInteger:
-		switch value.(type) {
-		case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
-			number, ok := numericValue(value)
-			return ok && math.Trunc(number) == number
-		}
+		_, ok := exactIntegerValue(value)
+		return ok
 	case SchemaNumber:
-		_, ok := numericValue(value)
+		_, ok := exactNumericValue(value)
 		return ok
 	case SchemaObject:
 		_, ok := value.(map[string]any)
@@ -300,14 +316,24 @@ func enumContains(values []any, value any, kind SchemaKind) bool {
 			continue
 		}
 		switch kind {
-		case SchemaString, SchemaBoolean:
+		case SchemaString:
 			if candidate == value {
 				return true
 			}
-		case SchemaInteger, SchemaNumber:
-			left, leftOK := numericValue(candidate)
-			right, rightOK := numericValue(value)
-			if leftOK && rightOK && left == right {
+		case SchemaBoolean:
+			if candidate == value {
+				return true
+			}
+		case SchemaInteger:
+			left, leftOK := exactIntegerValue(candidate)
+			right, rightOK := exactIntegerValue(value)
+			if leftOK && rightOK && left.Cmp(right) == 0 {
+				return true
+			}
+		case SchemaNumber:
+			left, leftOK := exactNumericValue(candidate)
+			right, rightOK := exactNumericValue(value)
+			if leftOK && rightOK && left.Cmp(right) == 0 {
 				return true
 			}
 
@@ -316,4 +342,111 @@ func enumContains(values []any, value any, kind SchemaKind) bool {
 		}
 	}
 	return false
+}
+
+func exactNumericValue(value any) (*big.Rat, bool) {
+	switch value := value.(type) {
+	case int:
+		return new(big.Rat).SetInt64(int64(value)), true
+	case int8:
+		return new(big.Rat).SetInt64(int64(value)), true
+	case int16:
+		return new(big.Rat).SetInt64(int64(value)), true
+	case int32:
+		return new(big.Rat).SetInt64(int64(value)), true
+	case int64:
+		return new(big.Rat).SetInt64(value), true
+	case uint:
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(uint64(value))), true
+	case uint8:
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(uint64(value))), true
+	case uint16:
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(uint64(value))), true
+	case uint32:
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(uint64(value))), true
+	case uint64:
+		return new(big.Rat).SetInt(new(big.Int).SetUint64(value)), true
+	case float32:
+		number, ok := numericValue(value)
+		if !ok {
+			return nil, false
+		}
+		return new(big.Rat).SetFloat64(number), true
+	case float64:
+		number, ok := numericValue(value)
+		if !ok {
+			return nil, false
+		}
+		return new(big.Rat).SetFloat64(number), true
+	case json.Number:
+		number, ok := new(big.Rat).SetString(value.String())
+		return number, ok
+	default:
+		return nil, false
+	}
+}
+
+func exactIntegerValue(value any) (*big.Int, bool) {
+	if floating, ok := value.(float64); ok && math.Abs(floating) > 9007199254740991 {
+		return nil, false
+	}
+	if floating, ok := value.(float32); ok && math.Abs(float64(floating)) > 9007199254740991 {
+		return nil, false
+	}
+	number, ok := exactNumericValue(value)
+	if !ok || !number.IsInt() {
+		return nil, false
+	}
+	return new(big.Int).Set(number.Num()), true
+}
+
+func valueSchemaJSON(schema ValueSchema) (map[string]any, error) {
+	properties := make(map[string]any, len(schema.Properties))
+	for name, property := range schema.Properties {
+		converted, err := valueSchemaJSON(property)
+		if err != nil {
+			return nil, fmt.Errorf("convert property %q schema: %w", name, err)
+		}
+		properties[name] = converted
+	}
+	result := map[string]any{"type": string(schema.Kind)}
+	if schema.Nullable {
+		result["type"] = []string{string(schema.Kind), "null"}
+	}
+	if len(schema.Enum) > 0 {
+		result["enum"] = append([]any(nil), schema.Enum...)
+	}
+	if schema.Kind == SchemaObject {
+		result["properties"] = properties
+		result["additionalProperties"] = false
+		if len(schema.Required) > 0 {
+			result["required"] = append([]string(nil), schema.Required...)
+		}
+	}
+	if schema.Kind == SchemaArray {
+		items, err := valueSchemaJSON(*schema.Items)
+		if err != nil {
+			return nil, fmt.Errorf("convert array item schema: %w", err)
+		}
+		result["items"] = items
+	}
+	if schema.MinLength != nil {
+		result["minLength"] = *schema.MinLength
+	}
+	if schema.MaxLength != nil {
+		result["maxLength"] = *schema.MaxLength
+	}
+	if schema.MinItems != nil {
+		result["minItems"] = *schema.MinItems
+	}
+	if schema.MaxItems != nil {
+		result["maxItems"] = *schema.MaxItems
+	}
+	if schema.Minimum != nil {
+		result["minimum"] = *schema.Minimum
+	}
+	if schema.Maximum != nil {
+		result["maximum"] = *schema.Maximum
+	}
+	return result, nil
 }

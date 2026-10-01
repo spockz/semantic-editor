@@ -156,7 +156,7 @@ func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
 		}
 	}
 	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-	for _, key := range []string{"file", "symbol", "in_function"} {
+	for _, key := range []string{"file", "in_function"} {
 		if _, ok := output[key]; !ok {
 			t.Errorf("semantic_inline_variable output omitted continuation field %s", key)
 		}
@@ -192,7 +192,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-					for _, field := range []string{"file", "symbol", "in_function", "discriminator", "target_case", "construct_path"} {
+					for _, field := range []string{"file"} {
 						if _, ok := output[field]; !ok {
 							t.Errorf("remove outputSchema omitted continuation field %q", field)
 						}
@@ -211,9 +211,9 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 						"semantic_rename":            {"symbol", "file"},
 						"semantic_replace_body":      {"symbol", "file"},
 						"semantic_extract_function":  {"symbol", "file", "in_function"},
-						"semantic_extract_variable":  {"symbol", "file", "in_function", "discriminator"},
+						"semantic_extract_variable":  {"symbol", "file", "in_function"},
 						"semantic_replace_construct": {"file", "in_function"},
-						"semantic_inline_variable":   {"file", "symbol", "in_function"},
+						"semantic_inline_variable":   {"file", "in_function"},
 						"semantic_insert_case":       {"file", "in_function", "discriminator"},
 					}[name] {
 						if _, ok := properties[field]; !ok {
@@ -869,7 +869,6 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	assertSources("semantic_extract_function", "in_function", []string{"semantic_extract_function"})
 	assertSources("semantic_extract_variable", "symbol", []string{"semantic_extract_variable"})
 	assertSources("semantic_extract_variable", "in_function", []string{"semantic_extract_variable"})
-	assertSources("semantic_extract_variable", "discriminator", []string{"semantic_extract_variable"})
 	for _, tool := range inFunctionSources {
 		assertSources(tool, "in_function", inFunctionSources)
 		assertSources(tool, "discriminator", discriminatorSources)
@@ -921,5 +920,104 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 	destination := results["destination_file"].(map[string]any)
 	if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
 		t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+	}
+}
+
+func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
+	tools := make(map[string]map[string]any)
+	for _, tool := range listTools(t, "full") {
+		tools[tool["name"].(string)] = tool
+	}
+	for _, check := range []struct {
+		tool   string
+		fields []string
+	}{
+		{tool: "semantic_inline_variable", fields: []string{"symbol"}},
+		{tool: "semantic_extract_variable", fields: []string{"discriminator"}},
+		{tool: "semantic_remove_construct", fields: []string{"symbol", "in_function", "discriminator", "target_case", "construct_path"}},
+		{tool: "semantic_move_construct", fields: []string{"destination_file"}},
+	} {
+		output := tools[check.tool]["outputSchema"].(map[string]any)
+		properties := output["properties"].(map[string]any)
+		for _, field := range check.fields {
+			if _, ok := properties[field]; ok {
+				t.Errorf("%s output advertises stale continuation %q", check.tool, field)
+			}
+		}
+	}
+}
+
+func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
+	root := schemaWorkspace(t)
+	registry := operation.NewRegistry()
+	payloadSchema := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{
+		"text": {Kind: operation.SchemaString},
+		"rows": {Kind: operation.SchemaArray, Items: &operation.ValueSchema{Kind: operation.SchemaInteger}},
+	}, Required: []string{"text", "rows"}}
+	handler := func(_ context.Context, _ operation.CallContext, _ map[string]any) (string, error) {
+		return "accepted", nil
+	}
+	provider := operation.Def[map[string]any, string]{
+		Key: "typed-schema-provider", MCPName: "semantic_typed_schema_provider",
+		Output: &operation.OperationOutputContract{
+			ResultSchema:  &operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{"message": {Kind: operation.SchemaString}}, Required: []string{"message"}},
+			Continuations: []operation.OutputContinuation{{Field: "target", Schema: operation.SymbolTargetSchema(), Role: operation.RoleTarget, Consumers: []string{"semantic_typed_schema_consumer"}}},
+		},
+		Parse:    func(raw map[string]any) (map[string]any, error) { return raw, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){backend.LanguageAuto: handler},
+	}
+	consumer := operation.Def[map[string]any, string]{
+		Key: "typed-schema-consumer", MCPName: "semantic_typed_schema_consumer", Batchable: true,
+		Params:   []operation.ParameterContract{{Name: "payload", JSONName: "payload", Type: operation.ParamObject, Required: true, Schema: &payloadSchema, Role: operation.RoleTarget, SourceFields: []string{"semantic_typed_schema_provider.target"}}},
+		Parse:    func(raw map[string]any) (map[string]any, error) { return raw, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){backend.LanguageAuto: handler},
+	}
+	if err := operation.Register(registry, provider); err != nil {
+		t.Fatalf("register provider: %v", err)
+	}
+	if err := operation.Register(registry, consumer); err != nil {
+		t.Fatalf("register consumer: %v", err)
+	}
+	tools := listToolsAtWithRegistry(t, "full", root, registry)
+	byName := make(map[string]map[string]any, len(tools))
+	for _, tool := range tools {
+		byName[tool["name"].(string)] = tool
+	}
+	providerOutput := byName[provider.MCPName]["outputSchema"].(map[string]any)
+	providerProperties := providerOutput["properties"].(map[string]any)
+	targetSchema := providerProperties["target"].(map[string]any)
+	if targetSchema["additionalProperties"] != false || targetSchema["type"] != "object" {
+		t.Fatalf("typed target schema = %#v", targetSchema)
+	}
+	consumerInput := byName[consumer.MCPName]["inputSchema"].(map[string]any)
+	payload := consumerInput["properties"].(map[string]any)["payload"].(map[string]any)
+	if payload["additionalProperties"] != false {
+		t.Fatalf("consumer payload schema = %#v", payload)
+	}
+	batchInput := byName["semantic_batch"]["inputSchema"].(map[string]any)
+	items := batchInput["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	branches := items["oneOf"].([]any)
+	var batchPayload map[string]any
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] == consumer.MCPName {
+			batchPayload = properties["params"].(map[string]any)["properties"].(map[string]any)["payload"].(map[string]any)
+		}
+	}
+	if batchPayload == nil || batchPayload["additionalProperties"] != false {
+		t.Fatalf("batch payload schema = %#v", batchPayload)
+	}
+	for _, request := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_typed_schema_consumer","arguments":{"payload":{"text":"","rows":[0],"unexpected":true}}}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_typed_schema_consumer","params":{"payload":{"text":"","rows":[0],"unexpected":true}}}]}}}`,
+	} {
+		var output bytes.Buffer
+		if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
+			t.Fatalf("serve typed request: %v", err)
+		}
+		if !strings.Contains(output.String(), "unknown property \\\"unexpected\\\"") {
+			t.Errorf("typed ingress did not reject unknown nested field: %s", output.String())
+		}
 	}
 }

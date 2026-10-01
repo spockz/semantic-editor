@@ -3,7 +3,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -36,7 +35,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 			return buffer, fmt.Errorf("unregistered batch operation %q", batchEntry.Tool)
 		}
 		raw := map[string]any{}
-		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 			return buffer, fmt.Errorf("parse buffered batch parameters: %w", err)
 		}
 		buffered, err := entry.SupportsBufferedBatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Project: backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust}, Registry: s.registry, Service: s.service}, raw)
