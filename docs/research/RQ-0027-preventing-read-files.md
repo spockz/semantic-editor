@@ -1,3 +1,4 @@
+<!-- Preserves continuation research and the shared schema/receipt gates needed for resumable semantic refactoring handovers. -->
 # RQ-0027: Post-Edit Context and Continuation Parameters
 
 * **Status**: Open
@@ -607,3 +608,108 @@ Open decisions:
    representation from completion and efficiency evidence.
 5. If the result contract is accepted, record its invariants in an ADR and add
    CLI txtar coverage for emitted receipt fields and stale-continuation errors.
+
+## Refactoring Handover Foundations
+
+Sections above preserve the historical naming/receipt investigation. ADR-0055 naming harmonization has since landed; the remaining gates below concern typed descriptors and lifecycle rather than redoing that harmonization.
+
+The audit supporting [RQ-0024's operation handovers](RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md#individual-resumable-handovers) found that ADR-0055 name harmonization is implemented, but richer typed input and live-target lifecycle need further work. Reuse this investigation rather than creating a parallel receipt architecture RQ.
+
+### Audited gaps
+
+`internal/operation/operation.go` currently supports only string, boolean, string-array and integer input contracts. Unknown input kinds fall back to strings in CLI/MCP construction. `ValidateSourceFields` in `internal/mcp/server.go` validates existence, not semantic/value compatibility. Add registration-time rejection of unknown kinds before new structured mappings become public.
+
+Existing inline-variable receipts echo the removed binding; removal echoes removed symbols/cases; extract-variable echoes the old expression selector. A moved symbol lives at its destination, while requested source `file` describes the operation's origin. These can be useful historical evidence but are unsafe generic live-target continuations. The handovers must not copy those gaps into new APIs.
+
+### Candidate shared descriptors
+
+These types are proposals, subject to schema and semantic review. Native structured JSON is required; do not encode mappings as strings, positional tuples or parallel arrays.
+
+| Descriptor | Named fields | Required semantics |
+| :--- | :--- | :--- |
+| `SymbolTarget` | `file`, `symbol`, optional `expected_revision` | Exact live declaration/binding target; secondary targets use `continuations: SymbolTarget[]`. |
+| `ConstructSelector` | `file`, `in_function` or `in_declaration`, `kind`, optional `discriminator`, `construct_path`, `expected_revision` | Exact current-node selection; paths require a matching revision and kind/owner agreement. |
+| `ParameterSpec` | `name`, `type`, optional `variadic` | Go declaration shape; not a caller default expression. |
+| `ResultSpec` | `type`, optional `name` | Result declaration shape; named results require body/defer analysis. |
+| `ParameterMapping` | optional `source_index`, required `parameter: ParameterSpec`, optional `argument` | Ordered array defines final order. `source_index` is zero-based; duplicates/range errors refuse. New arguments are checked in each caller scope and preserve evaluation order/count. |
+| `FieldSpec` | `name`, `type`, optional `tag` | Field declaration shape, separate from callable parameter names. |
+| `ParameterToFieldMapping` | `source_index`, `field: FieldSpec` | Zero-based existing parameter mapped to a generated field; parameter object takes `fields` rather than redefining `parameters`. |
+| `MemberTarget` | `file`, `symbol` | Exact resolved existing member identity; no reconstruction from member spelling. |
+| `MemberMapping` | `source_member`, `target_member` | Named resolved member mapping; field initialization/evaluation policy remains operation-specific. |
+| `CallSiteSelector` | `file`, `in_function`, `discriminator`, optional `construct_path`, `expected_revision` | Structured `call_site` selects a caller independently of primary callee `file`/`symbol`; requires a shared call-node taxonomy gate. |
+
+Use a closed recursive schema that supports properties, required sets, arrays/items, enums, constraints and explicit nullability. Generate CLI JSON decoding, direct MCP schemas, batch child validation, examples and output continuations from the same definitions. Treat missing, null, empty arrays, index zero and false as distinct; use presence-aware optional decoding. Conditional requiredness, unsupported fields and output-branch availability must be checked explicitly.
+
+When a new mapping carries a named type, import alias or caller expression, validate resolution in the actual destination/caller file. A textually identical expression does not establish identical object identity or scope. Initially restrict mappings to cases whose evaluation and binding can be proved; expose richer per-call mappings only through a separately validated typed schema.
+
+### Receipt lifecycle and selector gate
+
+1. Preserve exact names and value formats at every declared `SourceFields` edge. Check schemas/roles, branch presence and lifecycle eligibility, not field existence alone. Extend nested path/schema-reference support intentionally for `continuations`; the current top-level convention is insufficient.
+2. Emit proposed `expected_revision` in both consuming inputs and source results. It binds the selected file's current revision, not the full compiler input set. Fresh unambiguous symbol resolution can omit it; a structural path recovered earlier requires it. A mismatch fails before selecting another node.
+3. Capture working child evidence when an operation applies; re-resolve final live continuations after normalization/publication. Track target identity across later rename/move/remove children or omit unresolved targets. Keep historical operation inputs and deleted targets separate from continuation projections.
+4. For a move, a live `{file,symbol}` record uses the destination file. For inline/delete, omit removed live symbols and return surviving owner/construct targets under explicitly named projections. For expression extraction, return the new binding, not the old call-argument discriminator as if it still described that use.
+5. Distinguish refused/no working edit, applied working edit, persisted edit, post-publication diagnostic failure and partial publication. Do not invent success on missing/failed diagnostics, and do not infer zero mutation from a generic error.
+6. On partial publication, derive continuations/diffs from actual disk bytes and invalidate retained analysis state. Only a proven surviving target can be offered as the next-call input.
+
+### Foundation implementation and proof sequence
+
+* First add closed structured schema representation, parsing and CLI/MCP parity with unknown-kind rejection. Prove missing/null/empty/zero/false distinctions, nested unknown fields and compatible `SourceFields` shapes through public schemas/CLI failures.
+* Then add revision-aware inspection/ambiguity projections, canonical owner fields and target identity tracking. Prove stale selector refusal after an earlier batch insertion and live helper/member continuation chains without qualified-name reconstruction.
+* Repair existing removal/inline/extraction/movement continuation eligibility before using their result fields as new operation inputs. Preserve historical operation evidence without claiming deleted/moved-from targets are live.
+* Integrate final receipt resolution with the batch coordinator; prove rename→move→remove can invalidate an earlier receipt, and failure/partial publication yields honest final target availability.
+* Share the validated all-output planner and read/write scope rules from RQ-0024. Keep local replacement read inputs distinct from writable module outputs; sourcebuf containment alone is insufficient authorization.
+
+The foundation worker owns `internal/operation/operation.go`, parsing/CLI definitions, `internal/mcp/server.go` schema generation, continuation provenance and receipt finalization. Operation workers consume the reviewed contract instead of independently inventing schemas. The existing diagnostic serialization and navigation-only coordinate rules of ADR-0055 remain intact. Record accepted schema/receipt decisions in ADR-0055 or the relevant accepted receipt ADR with atomic index updates; keep this RQ Open until evidence resolves its outstanding choices.
+
+### Model-facing description audit
+
+The follow-up review checks ADR-0007 intent routing and ADR-0055 sections 1–3 and 7–8 against generated descriptions, parameter provenance, and live-result meaning. Matching names alone is insufficient. This investigation concerns the observable flow **select target → express edit → consume result → continue**. Description conformance does not establish how a model reasons internally or guarantee tool selection. Keep empirical model/harness evidence separate from schema conformance.
+
+#### Findings from the current handovers and registered surface
+
+* The handovers already state target/owner roles, batch requirements, and candidate receipt names. Most initially specified that descriptions must be added without supplying their actual wording. Each RQ-0041–0059 now has candidate tool text, parameter provenance/creation exceptions, and description acceptance criteria.
+* Registry operation summaries generally contain ADR-0007's semantic action and priority over manual/text editing. `parameterDescription` in `internal/mcp/server.go` generates named producer-field clauses from `SourceFields`; this implements ADR-0055 Direction A mechanically for populated entries.
+* The same file's `toolSchema` appends field names with generic “copyable” labels. That alone does not identify compatible follow-up tools, mode/branch restrictions, or selector requirements. Direction B needs explicit result→consumer guidance generated from validated continuation contracts, rather than inferring every output string is reusable.
+* `internal/operation/wire_extract.go` assigns qualified existing-symbol sources to simple new-name inputs for function/local extraction. A model following that copy instruction can submit a receiver-qualified existing symbol where a fresh simple identifier is required. Creation-name inputs need caller intent, not those producer edges; the created qualified output feeds existing-target tools instead.
+* `wire_engine_inline.go` uses `semantic_inline_variable.symbol` as a producer after the binding is deleted. Removal advertises removed symbols/cases/paths, and extraction advertises old expression text. Those fields cannot support live-copy instructions. Remove or condition these edges after lifecycle repair; keep historical evidence explicitly separate.
+* `ValidateSourceFields` checks advertised field existence, not name/value compatibility, target role, surviving branch, or revision. Descriptions can be mechanically generated and still be wrong. Strengthen the shared gate before wiring new operations.
+
+These observations were checked in this worktree and the pending main checkout. They are foundation implementation tasks; this documentation review does not modify the outstanding source migration. Do not propagate stale worktree batch restrictions into descriptions of the safely integrated baseline.
+
+#### Description contract and reusable wording
+
+Tool descriptions lead with the developer's semantic action and when to choose it over manual/text edits (ADR-0007). Then state the bounded supported scope and essential defaults/refusals. End with the exact live result fields and named compatible next tools (ADR-0055 Direction B). Internal package names, transport mechanics, and long unsupported-case inventories belong in implementation documentation unless they change the caller's decision. Prefer a few complete sentences over repeating the entire schema.
+
+The following templates apply to every operation handover. Replace the producing tool/field with a validated edge, never an invented output. Examples naming proposed fields become public only after those producers and consumers exist.
+
+| Input class | Required model-facing wording and provenance |
+| :--- | :--- |
+| Existing declaration `symbol` | “Target: qualified existing [declaration kind]. Copy verbatim from the `symbol` field of `semantic_lookup` or [validated live producer], with the `file` from that same target record.” Validate the accepted declaration kind and qualification. |
+| New target `symbol` | “Target: new [simple identifier / qualified field identity] to create. Choose a fresh name in the documented format.” Do not claim an existing object or the preceding created object supplies a fresh name. Its generated output can feed existing-target consumers without feeding this creation input. |
+| `file` | “Selector: exact workspace-relative source file for this target or owner. Copy the `file` field of [named compatible producer] with its associated live target/selector.” A move result uses the destination. A new destination choice is a different role. |
+| `in_function`, `in_type`, `in_declaration` | “Selector: qualified existing [owner kind], not the new target. Copy the identically named field from [named live owner projection].” A bare `symbol` result is not an automatic differently named owner projection; add the engine projection instead of telling the model to reconstruct it. |
+| `discriminator` | “Selector: exact current source text of [expression / statement / literal / switch]. Copy the `discriminator` field of [named live matching-node producer].” Preserve whitespace and node context; historical selected text is not a copy edge. |
+| `construct_path`, `expected_revision` | “Selector: current zero-based path from [named matching candidate projection]; copy it with that selected file's `expected_revision`.” Revision wording must say “Precondition: opaque selected-file revision; copy verbatim from [named same-file producer].” Never mix records, reuse old paths, or substitute a full read-set digest. |
+| `destination_file`, `target_symbol` | Describe the destination/anchor role and conditional requirement, including the exact default. A destination `file` field is not automatically advertised under another name; expose a compatible same-named projection or take caller intent. |
+| `source`, `comment`, `type`, mappings and new accessor/field names | Describe the exact caller-authored replacement format, including delimiters, scope, typed mapping shape, and empty/null behavior. Use a producer only if it emits that exact value in the same role and context. Current `comment` can feed `comment`; deleted text is evidence. |
+| `kind`, `scope`, `placement`, Boolean and generation policies | State whether it selects a mode, constrains scope, or chooses behavior; list accepted values, required/default behavior, and relevant false/empty distinctions. Lookup's descriptive `kind` does not feed a helper-kind or receiver-mode enum. User choices need no fabricated producer. |
+| Nested `call_site`, `members`, `fields`, `parameters`, `continuations` | Name the object/array role and its exact typed field meanings. Copy an eligible complete record from a named same-shaped projection; do not rebuild receiver/type qualification or map positional tuples. Registry support for nested paths must precede advertised `SourceFields` edges. |
+
+The handovers identify candidate inspection producers as `semantic_inspect_symbol.in_function`, `.in_type`, `.in_declaration`, `.members`, `.call_site`, `.discriminator`, `.construct_path`, `.expected_revision`, `.target_symbol`, `.contract`, and `.contract_file`. These are proposed role-specific extensions, not existing output guarantees. The foundation must settle how the inspection request selects the owner, member set, call, literal, anchor, or interface context, then emit only eligible complete projections with their associated file revisions. Refuse an unavailable or ambiguous context instead of returning a guessed copy value. If a different inspection operation owns a projection, update its source ID, description, schema, and handovers together before registration. Existing qualified `symbol` and `file` outputs remain usable by compatible existing-target consumers.
+
+Direction B should say, for example: “Pass this live callable continuation's `file` and `symbol` directly to `semantic_replace_body` or `semantic_rename`. Copy `expected_revision` only when accepted by that consumer. The generated qualified method symbol is not this extraction tool's new simple-name input.” Descriptions must expose remaining required parameters as caller choices or explicit same-named projections. A compatible pair is a next-call target, not necessarily the entire next request.
+
+Navigation `line`/`column`, diagnostic evidence, old locations, removed declarations, old expressions, and descriptive categories are labeled as such. Do not classify them as copyable by field presence alone. Existing extraction `start_line`/`end_line` are explicit current statement-boundary selectors, not lookup navigation fields renamed by the model.
+
+All edit descriptions inherit the published batch behavior: dependent calls see the current overlay; normalization and diagnostics follow the coordinator's documented boundary. Do not promise clean diagnostics or disk writes after each child, whole-batch rollback, or automatic receipt interpolation. Required user source remains a caller choice; discourage rereads only when the existing receipt supplies the needed live context.
+
+#### Acceptance and evidence gates
+
+1. Inspect the emitted `tools/list` tool descriptions, parameter descriptions, and result schemas together, plus generated CLI help. Registry summaries alone miss generated misleading copy clauses.
+2. For every advertised edge, validate the producer tool and field/path, identical name and accepted shape/value format, role/context, live branch, selected-file revision, and complete companion selectors. New-name inputs without producers are valid; blanket nonempty `SourceFields` requirements are not.
+3. Execute a public producer call followed by a compatible consumer using verbatim returned values. Cover qualified methods, local-owner context, cross-file moves, generated methods/types, and refreshed construct selectors. No receiver concatenation, field renaming, offset conversion, or copying old deleted targets should be necessary.
+4. Negative cases must reject or omit stale/removed fields, wrong-kind descriptive values, qualified-to-simple creation names, mismatched path/revision pairs, unavailable nested projections, and refused/partially published target branches. Assert emitted descriptions do not instruct those copies.
+5. Compare static batch descriptions with actual capability metadata and failure behavior. A sequential receipt→next-call proof is separate from a batch with fixed inputs; read-only lookups remain outside existing batches.
+6. Model-flow claims require visible harness trajectories: record chosen semantic tool, argument validity, unnecessary rereads/reconstruction, successful next call, and task outcome. Compare using the existing RQ-0014/RQ-0015 benchmark methodology with controlled model, task, harness and fixture. Do not treat a prose review or passing schema test as evidence of a model's internal reasoning, and do not start paid runs merely to complete this documentation audit.
+
+Accept description/provenance fixes with the shared foundation worker, then operation owners adapt the candidate text to their proven release scope. This extends the existing investigation; it creates no new accepted ADR invariant.
