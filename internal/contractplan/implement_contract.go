@@ -116,6 +116,11 @@ func PlanImplementContract(concretePackage, destinationPackage *types.Package, c
 		declaration := "func (" + receiverTypeName + ") " + stubSignature.declaration() + " { panic(`TODO: implement`) }"
 		planned = append(planned, PlannedMethod{Signature: signature, Declaration: declaration})
 	}
+	if len(planned) > 0 {
+		if err := requirePanicStubBuiltin(destinationPackage, imports); err != nil {
+			return Plan{}, fmt.Errorf("prepare panic stub body: %w", err)
+		}
+	}
 	declarations := make([]string, 0, len(planned))
 	for _, method := range planned {
 		declarations = append(declarations, method.Declaration)
@@ -127,6 +132,24 @@ func directMethod(concrete *types.Named, required *types.Func) *types.Func {
 	for method := range concrete.Methods() {
 		if method.Name() == required.Name() && (method.Exported() || method.Pkg() == required.Pkg()) {
 			return method
+		}
+	}
+	return nil
+}
+
+func requirePanicStubBuiltin(destination *types.Package, imports []ImportBinding) error {
+	if destination == nil {
+		return fmt.Errorf("destination package is required")
+	}
+	if _, ok := types.Universe.Lookup("panic").(*types.Builtin); !ok {
+		return fmt.Errorf("go universe does not define the panic builtin")
+	}
+	if shadow := destination.Scope().Lookup("panic"); shadow != nil {
+		return fmt.Errorf("panic_stub would resolve panic to package declaration %q", shadow.Name())
+	}
+	for _, imported := range imports {
+		if imported.Name == "panic" {
+			return fmt.Errorf("panic_stub would resolve panic to file import %q", imported.Path)
 		}
 	}
 	return nil

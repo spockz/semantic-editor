@@ -275,6 +275,45 @@ type InterfaceBase interface { Other() }
 	}
 }
 
+func TestPlanImplementContractRefusesShadowedBuiltinPanic(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		imports []ImportBinding
+	}{
+		{
+			name: "package declaration",
+			source: `package fixture
+type Contract interface { Run() }
+type Worker struct{}
+func panic(any) {}
+`,
+		},
+		{
+			name: "file import",
+			source: `package fixture
+import panic "context"
+var _ = panic.Background
+type Contract interface { Run() }
+type Worker struct{}
+`,
+			imports: []ImportBinding{{Path: "context", Name: "panic"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			pkg := fixturePackage(t, test.source)
+			plan, err := PlanImplementContract(pkg, pkg, fixtureNamed(t, pkg, "Worker"), fixtureNamed(t, pkg, "Contract"), ReceiverPointer, BodyPolicyPanicStub, test.imports)
+			if err == nil || plan.Declaration != "" || len(plan.Methods) != 0 {
+				t.Fatalf("shadowed builtin panic yielded plan=%#v err=%v", plan, err)
+			}
+			if !strings.Contains(err.Error(), "panic_stub would resolve panic") {
+				t.Fatalf("shadow refusal = %v", err)
+			}
+		})
+	}
+}
+
 func fixturePackage(t *testing.T, source string) *types.Package {
 	t.Helper()
 	fset := token.NewFileSet()
