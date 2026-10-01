@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"strings"
 )
 
@@ -119,16 +120,33 @@ func validateInsertedField(intent InsertFieldIntent) error {
 	if !token.IsIdentifier(intent.TypeName) || token.Lookup(intent.TypeName).IsKeyword() {
 		return fmt.Errorf("invalid struct type name %q", intent.TypeName)
 	}
-	if !token.IsIdentifier(intent.FieldName) || token.Lookup(intent.FieldName).IsKeyword() || ast.IsExported(intent.FieldName) {
+	if !token.IsIdentifier(intent.FieldName) || intent.FieldName == "_" || token.Lookup(intent.FieldName).IsKeyword() || ast.IsExported(intent.FieldName) {
 		return fmt.Errorf("field name %q must be a private Go identifier", intent.FieldName)
 	}
 	fieldFile, err := parser.ParseFile(token.NewFileSet(), "field.go", []byte("package p\ntype holder struct {\n"+intent.FieldSource+"\n}"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		return fmt.Errorf("parse inserted field: %w", err)
 	}
-	fieldType := fieldFile.Decls[0].(*ast.GenDecl).Specs[0].(*ast.TypeSpec).Type.(*ast.StructType)
+	if len(fieldFile.Decls) != 1 {
+		return fmt.Errorf("field source must not inject additional declarations")
+	}
+	fieldDecl, ok := fieldFile.Decls[0].(*ast.GenDecl)
+	if !ok || len(fieldDecl.Specs) != 1 {
+		return fmt.Errorf("field source must contain exactly one field declaration")
+	}
+	fieldSpec, ok := fieldDecl.Specs[0].(*ast.TypeSpec)
+	if !ok {
+		return fmt.Errorf("field source must contain exactly one field declaration")
+	}
+	fieldType, ok := fieldSpec.Type.(*ast.StructType)
+	if !ok {
+		return fmt.Errorf("field source must contain exactly one field declaration")
+	}
 	if len(fieldType.Fields.List) != 1 || len(fieldType.Fields.List[0].Names) != 1 || fieldType.Fields.List[0].Names[0].Name != intent.FieldName {
 		return fmt.Errorf("field source must declare exactly the named field %q", intent.FieldName)
+	}
+	if slices.ContainsFunc(fieldFile.Comments, containsDirectiveGroup) {
+		return fmt.Errorf("field source must not contain compiler or build directives")
 	}
 	return nil
 }

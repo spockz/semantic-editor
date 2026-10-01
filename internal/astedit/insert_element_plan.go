@@ -8,7 +8,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"strconv"
 	"strings"
 )
 
@@ -53,7 +52,7 @@ func PlanInsertCompositeElement(source []byte, intent InsertElementIntent) (Sour
 	if intent.Declaration == "" || intent.Discriminator == "" || intent.Source == "" {
 		return SourcePlan{}, fmt.Errorf("declaration, discriminator, and source are required")
 	}
-	if err := validateRevisionBoundSelector(intent.ConstructPath, intent.ExpectedRevision); err != nil {
+	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
 		return SourcePlan{}, err
 	}
 	if strings.ContainsAny(intent.Source, "\r\n") {
@@ -66,6 +65,9 @@ func PlanInsertCompositeElement(source []byte, intent InsertElementIntent) (Sour
 	fset, file, err := parsePlanSource(source)
 	if err != nil {
 		return SourcePlan{}, err
+	}
+	if intent.ConstructPath.Present {
+		return SourcePlan{}, fmt.Errorf("construct_path has no compatible live producer for composite literals")
 	}
 	owner, err := findCompositeOwner(file, intent.Declaration)
 	if err != nil {
@@ -108,6 +110,13 @@ func findCompositeOwner(file *ast.File, name string) (ast.Node, error) {
 				case *ast.TypeSpec:
 					matches = item.Name.Name == name
 				case *ast.ValueSpec:
+					if len(item.Names) > 1 {
+						for _, ident := range item.Names {
+							if ident.Name == name {
+								return nil, fmt.Errorf("declaration %q shares a ValueSpec; composite ownership is unsupported", name)
+							}
+						}
+					}
 					for _, ident := range item.Names {
 						matches = matches || ident.Name == name
 					}
@@ -118,7 +127,7 @@ func findCompositeOwner(file *ast.File, name string) (ast.Node, error) {
 				if owner != nil {
 					return nil, fmt.Errorf("declaration selector %q is ambiguous", name)
 				}
-				owner = value
+				owner = spec
 			}
 		}
 	}
@@ -143,23 +152,10 @@ func selectCompositeTarget(source []byte, fset *token.FileSet, file *ast.File, o
 			matches = append(matches, literal)
 		}
 	}
-	var selected *ast.CompositeLit
-	if !intent.ConstructPath.Present {
-		if len(matches) != 1 {
-			return nil, fmt.Errorf("literal selector matched %d composites; construct_path is required when ambiguous", len(matches))
-		}
-		selected = matches[0]
-	} else {
-		index, err := strconv.Atoi(intent.ConstructPath.Value)
-		if err != nil || index < 0 || index >= len(literals) {
-			return nil, fmt.Errorf("construct_path %q is not a valid zero-based literal index", intent.ConstructPath.Value)
-		}
-		selected = literals[index]
-		start, end := fset.Position(selected.Pos()).Offset, fset.Position(selected.End()).Offset
-		if string(source[start:end]) != intent.Discriminator {
-			return nil, fmt.Errorf("construct_path %q does not match discriminator", intent.ConstructPath.Value)
-		}
+	if len(matches) != 1 {
+		return nil, fmt.Errorf("literal selector matched %d composites; no compatible construct_path producer exists", len(matches))
 	}
+	selected := matches[0]
 	for _, comment := range file.Comments {
 		if comment.Pos() > selected.Pos() && comment.End() < selected.End() {
 			return nil, fmt.Errorf("literal comments make append ownership ambiguous")
@@ -269,13 +265,26 @@ func appendCompositeElement(source []byte, fset *token.FileSet, literal *ast.Com
 
 func parseKeyedElement(source string) (*ast.KeyValueExpr, string, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "element.go", []byte("package p\nvar _ = map[any]any{"+source+"}\n"), parser.AllErrors)
+	const prefix = "package p\nvar _ = map[any]any{"
+	file, err := parser.ParseFile(fset, "element.go", []byte(prefix+source+"}\n"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		return nil, "", err
 	}
-	gen := file.Decls[0].(*ast.GenDecl)
-	value := gen.Specs[0].(*ast.ValueSpec)
-	literal := value.Values[0].(*ast.CompositeLit)
+	if len(file.Decls) != 1 {
+		return nil, "", fmt.Errorf("element source must not inject declarations")
+	}
+	gen, ok := file.Decls[0].(*ast.GenDecl)
+	if !ok || len(gen.Specs) != 1 {
+		return nil, "", fmt.Errorf("element source must contain exactly one keyed element")
+	}
+	value, ok := gen.Specs[0].(*ast.ValueSpec)
+	if !ok || len(value.Values) != 1 {
+		return nil, "", fmt.Errorf("element source must contain exactly one keyed element")
+	}
+	literal, ok := value.Values[0].(*ast.CompositeLit)
+	if !ok {
+		return nil, "", fmt.Errorf("element source must be one keyed composite element")
+	}
 	if len(literal.Elts) != 1 {
 		return nil, "", fmt.Errorf("expected exactly one literal element")
 	}
@@ -283,7 +292,10 @@ func parseKeyedElement(source string) (*ast.KeyValueExpr, string, error) {
 	if !ok {
 		return nil, "", fmt.Errorf("literal element must be keyed")
 	}
-	start := fset.Position(keyed.Key.Pos()).Offset - len("package p\nvar _ = map[any]any{")
-	end := fset.Position(keyed.Key.End()).Offset - len("package p\nvar _ = map[any]any{")
+	start := fset.Position(keyed.Key.Pos()).Offset - len(prefix)
+	end := fset.Position(keyed.Key.End()).Offset - len(prefix)
+	if start < 0 || end < start || end > len(source) {
+		return nil, "", fmt.Errorf("keyed element source positions are outside the selected element")
+	}
 	return keyed, source[start:end], nil
 }

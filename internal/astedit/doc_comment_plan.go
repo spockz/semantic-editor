@@ -34,67 +34,12 @@ func PlanSetDocComment(source []byte, intent SetDocCommentIntent) (SourcePlan, e
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	var target ast.Node
-	var doc *ast.CommentGroup
-	for _, decl := range file.Decls {
-		switch value := decl.(type) {
-		case *ast.FuncDecl:
-			if value.Recv == nil && value.Name.Name == intent.Symbol {
-				if target != nil {
-					return SourcePlan{}, fmt.Errorf("declaration %q is ambiguous", intent.Symbol)
-				}
-				target, doc = value, value.Doc
-			}
-		case *ast.GenDecl:
-			for _, spec := range value.Specs {
-				var name string
-				var specDoc *ast.CommentGroup
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					name, specDoc = item.Name.Name, item.Doc
-				case *ast.ValueSpec:
-					specDoc = item.Doc
-					for _, ident := range item.Names {
-						if ident.Name == intent.Symbol {
-							name = ident.Name
-							break
-						}
-					}
-				}
-				if name != intent.Symbol {
-					continue
-				}
-				if len(value.Specs) != 1 {
-					return SourcePlan{}, fmt.Errorf("declaration %q is grouped; comment ownership is unsupported", intent.Symbol)
-				}
-				if target != nil {
-					return SourcePlan{}, fmt.Errorf("declaration %q is ambiguous", intent.Symbol)
-				}
-				target = value
-				doc = value.Doc
-				if doc == nil {
-					doc = specDoc
-				}
-			}
-		}
+	target, doc, err := findDocCommentTarget(file, intent.Symbol)
+	if err != nil {
+		return SourcePlan{}, err
 	}
-	if target == nil {
-		return SourcePlan{}, fmt.Errorf("top-level declaration %q not found", intent.Symbol)
-	}
-	for _, comment := range file.Comments {
-		if doc != nil && comment == doc {
-			continue
-		}
-		if comment.End() >= target.Pos() {
-			continue
-		}
-		gap := source[fset.Position(comment.End()).Offset:fset.Position(target.Pos()).Offset]
-		if strings.TrimSpace(string(gap)) == "" && strings.Count(string(gap), "\n") <= 1 {
-			return SourcePlan{}, fmt.Errorf("detached comment ownership before %q is ambiguous", intent.Symbol)
-		}
-	}
-	if containsDirectiveGroup(doc) {
-		return SourcePlan{}, fmt.Errorf("existing documentation comment for %q contains a directive", intent.Symbol)
+	if err := validateDocCommentOwnership(source, fset, file, target, doc, intent.Symbol); err != nil {
+		return SourcePlan{}, err
 	}
 	newline := "\n"
 	if bytes.Contains(source, []byte("\r\n")) {
@@ -113,12 +58,94 @@ func PlanSetDocComment(source []byte, intent SetDocCommentIntent) (SourcePlan, e
 	if doc != nil {
 		start = fset.Position(doc.Pos()).Offset
 		end = fset.Position(doc.End()).Offset
+		if end+1 < len(source) && source[end] == '\r' && source[end+1] == '\n' {
+			end += 2
+		} else if end < len(source) && source[end] == '\n' {
+			end++
+		}
 	}
 	updated := spliceSource(source, start, end, replacement)
 	return newSourcePlan(source, updated, PlanSelection{
 		Kind: "declaration_comment", Target: intent.Symbol,
 		Start: fset.Position(target.Pos()).Offset, End: fset.Position(target.End()).Offset,
 	}), nil
+}
+
+func findDocCommentTarget(file *ast.File, symbol string) (ast.Node, *ast.CommentGroup, error) {
+	var target ast.Node
+	var doc *ast.CommentGroup
+	for _, decl := range file.Decls {
+		switch value := decl.(type) {
+		case *ast.FuncDecl:
+			if value.Recv == nil && value.Name.Name == symbol {
+				if target != nil {
+					return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
+				}
+				target, doc = value, value.Doc
+			}
+		case *ast.GenDecl:
+			for _, spec := range value.Specs {
+				name, specDoc, err := commentSpecName(spec, symbol)
+				if err != nil {
+					return nil, nil, err
+				}
+				if name != symbol {
+					continue
+				}
+				if len(value.Specs) != 1 {
+					return nil, nil, fmt.Errorf("declaration %q is grouped; comment ownership is unsupported", symbol)
+				}
+				if target != nil {
+					return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
+				}
+				target, doc = value, value.Doc
+				if doc == nil {
+					doc = specDoc
+				}
+			}
+		}
+	}
+	if target == nil {
+		return nil, nil, fmt.Errorf("top-level declaration %q not found", symbol)
+	}
+	return target, doc, nil
+}
+
+func commentSpecName(spec ast.Spec, symbol string) (string, *ast.CommentGroup, error) {
+	switch item := spec.(type) {
+	case *ast.TypeSpec:
+		return item.Name.Name, item.Doc, nil
+	case *ast.ValueSpec:
+		if len(item.Names) > 1 {
+			for _, ident := range item.Names {
+				if ident.Name == symbol {
+					return "", nil, fmt.Errorf("declaration %q shares a ValueSpec; comment ownership is unsupported", symbol)
+				}
+			}
+		}
+		for _, ident := range item.Names {
+			if ident.Name == symbol {
+				return ident.Name, item.Doc, nil
+			}
+		}
+	}
+	return "", nil, nil
+}
+
+func validateDocCommentOwnership(source []byte, fset *token.FileSet, file *ast.File, target ast.Node, doc *ast.CommentGroup, symbol string) error {
+	for _, comment := range file.Comments {
+		if doc != nil && comment == doc || comment.End() >= target.Pos() {
+			continue
+		}
+		gap := source[fset.Position(comment.End()).Offset:fset.Position(target.Pos()).Offset]
+		if strings.TrimSpace(string(gap)) == "" && strings.Count(string(gap), "\n") <= 1 {
+			return fmt.Errorf("detached comment ownership before %q is ambiguous", symbol)
+		}
+	}
+	if containsDirectiveGroup(doc) {
+		return fmt.Errorf("existing documentation comment for %q contains a directive", symbol)
+	}
+	return nil
 }
 
 func validateDocText(comment string) error {

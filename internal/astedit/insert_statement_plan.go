@@ -8,7 +8,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"strconv"
 	"strings"
 )
 
@@ -45,7 +44,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 	if intent.Placement != StatementBefore && intent.Placement != StatementAfter {
 		return SourcePlan{}, fmt.Errorf("unsupported statement placement %q", intent.Placement)
 	}
-	if err := validateRevisionBoundSelector(intent.ConstructPath, intent.ExpectedRevision); err != nil {
+	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
 		return SourcePlan{}, err
 	}
 	if strings.ContainsAny(intent.Source, "\r\n") {
@@ -55,14 +54,24 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 	if err != nil {
 		return SourcePlan{}, err
 	}
+	if intent.ConstructPath.Present {
+		return SourcePlan{}, fmt.Errorf("construct_path has no compatible live producer for direct call or assignment statements")
+	}
 	functionName := intent.Function
+	ownerSelector := ""
 	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
-		functionName = functionName[dot+1:]
+		ownerSelector, functionName = functionName[:dot], functionName[dot+1:]
+	}
+	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
+		return SourcePlan{}, fmt.Errorf("function selector %q is invalid", intent.Function)
 	}
 	var owner *ast.FuncDecl
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Name.Name != functionName {
+			continue
+		}
+		if !matchesFunctionOwner(fn, ownerSelector) {
 			continue
 		}
 		if owner != nil {
@@ -104,27 +113,12 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 	if len(matches) == 0 {
 		return SourcePlan{}, fmt.Errorf("direct call or assignment discriminator not found in %q", intent.Function)
 	}
-	var anchor ast.Stmt
-	if !intent.ConstructPath.Present {
-		if len(matches) != 1 {
-			return SourcePlan{}, fmt.Errorf("discriminator matches %d direct statements; construct_path is required", len(matches))
-		}
-		anchor = matches[0]
-	} else {
-		index, err := strconv.Atoi(intent.ConstructPath.Value)
-		if err != nil || index < 0 || index >= len(owner.Body.List) {
-			return SourcePlan{}, fmt.Errorf("construct_path %q is not a valid zero-based direct statement index", intent.ConstructPath.Value)
-		}
-		candidate := owner.Body.List[index]
-		if !supportedDirectStatement(candidate) {
-			return SourcePlan{}, fmt.Errorf("construct_path %q does not select a direct call or simple assignment", intent.ConstructPath.Value)
-		}
-		start := fset.Position(candidate.Pos()).Offset
-		end := fset.Position(candidate.End()).Offset
-		if string(source[start:end]) != intent.Discriminator {
-			return SourcePlan{}, fmt.Errorf("construct_path %q does not match discriminator", intent.ConstructPath.Value)
-		}
-		anchor = candidate
+	if len(matches) != 1 {
+		return SourcePlan{}, fmt.Errorf("discriminator matches %d direct statements; no compatible construct_path producer exists", len(matches))
+	}
+	anchor := matches[0]
+	if err := requireDedicatedStatementLine(source, fset, owner.Body, anchor); err != nil {
+		return SourcePlan{}, err
 	}
 	var offset int
 	var indent string
@@ -142,6 +136,54 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 		Kind: "statement", Owner: intent.Function, Target: intent.Discriminator,
 		Start: fset.Position(anchor.Pos()).Offset, End: fset.Position(anchor.End()).Offset,
 	}, ProofCompleteSourceSet, ProofBlockBinding, ProofControlFlowSet), nil
+}
+
+func matchesFunctionOwner(fn *ast.FuncDecl, selector string) bool {
+	if selector == "" {
+		return fn.Recv == nil
+	}
+	if fn.Recv == nil || len(fn.Recv.List) != 1 {
+		return false
+	}
+	switch recv := fn.Recv.List[0].Type.(type) {
+	case *ast.Ident:
+		return selector == recv.Name
+	case *ast.StarExpr:
+		ident, ok := recv.X.(*ast.Ident)
+		return ok && selector == "(*"+ident.Name+")"
+	default:
+		return false
+	}
+}
+
+func requireDedicatedStatementLine(source []byte, fset *token.FileSet, block *ast.BlockStmt, anchor ast.Stmt) error {
+	start := fset.Position(anchor.Pos()).Offset
+	end := fset.Position(anchor.End()).Offset
+	lineStart := bytes.LastIndexByte(source[:start], '\n') + 1
+	lineEnd := bytes.IndexByte(source[end:], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(source)
+	} else {
+		lineEnd += end
+	}
+	if strings.TrimSpace(string(source[lineStart:start])) != "" {
+		return fmt.Errorf("selected statement shares a source line with another token")
+	}
+	suffix := strings.TrimSpace(string(source[end:lineEnd]))
+	if suffix != "" && !strings.HasPrefix(suffix, "//") {
+		return fmt.Errorf("selected statement shares a source line with another token")
+	}
+	for _, stmt := range block.List {
+		if stmt == anchor {
+			continue
+		}
+		otherStart := fset.Position(stmt.Pos()).Offset
+		otherEnd := fset.Position(stmt.End()).Offset
+		if otherStart >= lineStart && otherStart <= lineEnd || otherEnd >= lineStart && otherEnd <= lineEnd {
+			return fmt.Errorf("selected statement shares a source line with another statement")
+		}
+	}
+	return nil
 }
 
 func parseSingleDirectStatement(source string) (ast.Stmt, error) {

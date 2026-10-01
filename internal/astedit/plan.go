@@ -112,7 +112,7 @@ type (
 	}
 )
 
-func validateRevisionBoundSelector(path, revision OptionalString) error {
+func validateRevisionBoundSelector(source []byte, path, revision OptionalString) error {
 	if path.Null && !path.Present || revision.Null && !revision.Present {
 		return fmt.Errorf("null selector values must be marked present")
 	}
@@ -124,6 +124,9 @@ func validateRevisionBoundSelector(path, revision OptionalString) error {
 	}
 	if revision.Present && revision.Value == "" {
 		return fmt.Errorf("expected_revision cannot be empty")
+	}
+	if revision.Present && revision.Value != goReadRevision(source) {
+		return fmt.Errorf("expected_revision does not match the selected source revision")
 	}
 	if path.Present && !revision.Present {
 		return fmt.Errorf("construct_path requires its matching expected_revision")

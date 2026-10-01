@@ -1668,3 +1668,66 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the tool returned `no declarations found in snippet`; no source changed.
 - Workaround: retry with an actual multiline type declaration.
 - Root cause: the shell argument contained literal backslash-n sequences where the Go parser expected source line breaks.
+
+### ST-0175: patch context mismatch left structural planner unchanged
+
+- Date: 2026-10-01
+- Tool: `apply_patch`
+- Target: `internal/astedit/doc_comment_plan.go` and `internal/astedit/insert_field_plan.go`
+- Observed failure: the combined patch could not find the expected `validateInsertedField` context, so none of its changes were applied.
+- Workaround: record the failure and retry with exact, narrower contexts after inspecting the current source.
+- Root cause: the patch assumed the identifier validation was adjacent to the parser block, but it occurs in a separate validator function.
+
+### ST-0176: combined review-fix patch used stale statement context
+
+- Date: 2026-10-01
+- Tool: `apply_patch`
+- Target: `internal/astedit/doc_comment_plan.go`, `internal/astedit/insert_statement_plan.go`, and `internal/astedit/insert_element_plan.go`
+- Observed failure: the combined patch could not match the expected statement-anchor branch, so none of its hunks were applied.
+- Workaround: record the failure and split the changes into smaller patches based on freshly inspected context.
+- Root cause: the statement planner has separate selection branches and did not contain the assumed `anchor == nil` guard at that location.
+
+### ST-0177: make check rejected malformed structural planner regression test
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/structural_plan_test.go`
+- Observed failure: the Go lint/typecheck pass found syntax errors from mismatched test closure delimiters; no focused test ran.
+- Workaround: inspect the formatted file around the reported lines and repair the test structure before rerunning the required check.
+- Root cause: regression cases were inserted into an existing nested `t.Run` block with incorrect brace placement.
+
+### ST-0178: make check rejected planner test helper arity
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/structural_plan_test.go`
+- Observed failure: Go typecheck found an assignment arity mismatch when the injection regression captured two results from `parseKeyedElement`, which returns three.
+- Workaround: capture all return values in the regression before rerunning repository checks.
+- Root cause: the test call did not match the planner helper's `(node, key source, error)` contract.
+
+### ST-0179: make check complexity lint rejected comment planner and test aggregator
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/doc_comment_plan.go` and `internal/astedit/structural_plan_test.go`
+- Observed failure: gocognit reported complexity 90 for `PlanSetDocComment` and 104 for `TestStructuralSourcePlanners`.
+- Workaround: record the failure and extract declaration selection/comment checks and focused tests into named helpers/subtests.
+- Root cause: the new ownership guards and regressions pushed already dense functions beyond the repository's configured complexity ceiling.
+
+### ST-0180: repository race/shuffle suite returned failure during make check
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: repository-wide `go test -race -shuffle=on -cover -v ./...`
+- Observed failure: the race/shuffle test stage returned non-zero twice; output truncation hid the failing test/package, while formatter, Go lint, Markdown lint, Vale, and Hugo completed.
+- Workaround: capture the exact test command output in `.scratch/go/structural-check-tests.log` and inspect failure markers before attributing the cause.
+- Root cause: `t.TempDir()` created paths under `/var/folders/...`, a symlink alias of `/private/var/folders/...`; source-buffer path validation correctly rejected those aliases. Re-running `internal/sourcebuf`, `internal/projectverify`, and `internal/mcp` with canonical `TMPDIR=/private/var/folders/wd/twmctgm50s9b4x8mhmfj4_b40000gn/T` passed.
+
+### ST-0181: Git staging was blocked by the isolated filesystem root
+
+- Date: 2026-10-01
+- Tool: `git add`
+- Target: assigned worktree Git index at `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-structural/index`
+- Observed failure: sandbox denied creation of `index.lock`; source edits remain in the assigned writable worktree and no index mutation occurred.
+- Workaround: request a narrow sandbox escalation for explicit owned-path staging and the authorized milestone commit.
+- Root cause: this linked worktree's Git metadata is stored outside the configured writable root.
