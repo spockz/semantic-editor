@@ -104,3 +104,41 @@ func TestExtractVariableRejectsUnsafeAndUnrepresentableSelectionsWithoutWriting(
 		})
 	}
 }
+
+func TestExtractVariableRejectsCallableParameterWithoutWriting(t *testing.T) {
+	before := "package sample\nfunc Render(call func(int), value int) { call(value) }\n"
+	path := filepath.Join(t.TempDir(), "sample.go")
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := astedit.ExtractVariable(context.Background(), path, "Render", "extracted", astedit.ExtractVariableOptions{Discriminator: "value"})
+	if err == nil || !strings.Contains(err.Error(), "unshadowed same-file package function") {
+		t.Fatalf("ExtractVariable() error = %v, want callable-parameter refusal", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != before {
+		t.Fatalf("rejected extraction changed source:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestExtractVariableRejectsUnresolvedImportCalleeWithoutWriting(t *testing.T) {
+	before := "package sample\nimport \"fmt\"\nfunc consume(int) {}\nfunc Render(value int) { consume(value); fmt.Println(value) }\n"
+	path := filepath.Join(t.TempDir(), "sample.go")
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := astedit.ExtractVariable(context.Background(), path, "Render", "extracted", astedit.ExtractVariableOptions{Discriminator: "value"})
+	if err == nil || !strings.Contains(err.Error(), "no unresolved import binding") {
+		t.Fatalf("ExtractVariable() error = %v, want import-resolution refusal", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != before {
+		t.Fatalf("rejected extraction changed source:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}

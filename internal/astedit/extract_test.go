@@ -47,33 +47,76 @@ func TestPlanConstantExtractionPreservesContextualTypeAndExactRange(t *testing.T
 }
 
 func TestPlanConstantExtractionRefusesRuntimeAndIotaExpressions(t *testing.T) {
-	for _, source := range []string{
-		"package p\nfunc F() int { value := 3; return value }\n",
-		"package p\nconst (A = iota)\nfunc F() int { return iota + 1 }\n",
-	} {
-		t.Run(source, func(t *testing.T) {
-			fset := token.NewFileSet()
-			file, err := parser.ParseFile(fset, "constant.go", source, parser.ParseComments|parser.AllErrors)
-			if err != nil {
-				t.Fatalf("parse source: %v", err)
+	t.Run("runtime expression has complete valid type facts", func(t *testing.T) {
+		source := "package p\nfunc F(input int) int { return input + 1 }\n"
+		fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
+			if ret, ok := node.(*ast.ReturnStmt); ok {
+				return ret.Results[0]
 			}
-			info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue), Uses: make(map[*ast.Ident]types.Object)}
-			pkg, _ := new(types.Config).Check("p", fset, []*ast.File{file}, info)
-			var selected ast.Expr
-			ast.Inspect(file, func(node ast.Node) bool {
-				if ret, ok := node.(*ast.ReturnStmt); ok {
-					selected = ret.Results[0]
-				}
-				return true
-			})
-			if pkg == nil {
-				t.Fatal("type checker returned no package scope")
-			}
-			if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil {
-				t.Fatal("PlanConstantExtraction() accepted unsupported expression")
-			}
+			return nil
 		})
+		if info.Types[selected].Value != nil {
+			t.Fatalf("runtime selection unexpectedly has constant value %v", info.Types[selected].Value)
+		}
+		if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil {
+			t.Fatal("PlanConstantExtraction() accepted runtime expression")
+		}
+	})
+	t.Run("valid local iota constant is refused", func(t *testing.T) {
+		source := "package p\nfunc F() int { const (value = iota + 1); return value }\n"
+		fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
+			if spec, ok := node.(*ast.ValueSpec); ok {
+				return spec.Values[0]
+			}
+			return nil
+		})
+		if info.Types[selected].Value == nil {
+			t.Fatal("valid local iota expression has no constant value")
+		}
+		if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil || !strings.Contains(err.Error(), "context-dependent") {
+			t.Fatalf("PlanConstantExtraction() error = %v, want context-dependent refusal", err)
+		}
+	})
+	t.Run("local constant dependency is refused", func(t *testing.T) {
+		source := "package p\nfunc F() int { const multiplier = 2; return multiplier * 3 }\n"
+		fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
+			if ret, ok := node.(*ast.ReturnStmt); ok {
+				return ret.Results[0]
+			}
+			return nil
+		})
+		if info.Types[selected].Value == nil {
+			t.Fatal("local constant expression has no constant value")
+		}
+		if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil || !strings.Contains(err.Error(), "unsupported or context-dependent") {
+			t.Fatalf("PlanConstantExtraction() error = %v, want local dependency refusal", err)
+		}
+	})
+}
+
+func checkedConstantSelection(t *testing.T, source string, selectExpression func(ast.Node) ast.Expr) (*token.FileSet, *ast.File, *types.Info, *types.Package, ast.Expr) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "constant.go", source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse source: %v", err)
 	}
+	info := &types.Info{Types: make(map[ast.Expr]types.TypeAndValue), Uses: make(map[*ast.Ident]types.Object), Defs: make(map[*ast.Ident]types.Object)}
+	pkg, err := new(types.Config).Check("p", fset, []*ast.File{file}, info)
+	if err != nil {
+		t.Fatalf("type-check source: %v", err)
+	}
+	var selected ast.Expr
+	ast.Inspect(file, func(node ast.Node) bool {
+		if selected == nil {
+			selected = selectExpression(node)
+		}
+		return selected == nil
+	})
+	if selected == nil {
+		t.Fatal("selected expression was not found")
+	}
+	return fset, file, info, pkg, selected
 }
 
 func TestExtractFunctionMovesCallsAndInfersParameters(t *testing.T) {
@@ -285,4 +328,71 @@ func F(key string) {
 			t.Fatalf("ExtractFunction() error = %v, want composite literal refusal", err)
 		}
 	})
+}
+
+func TestExtractFunctionPreservesDefinedOutputType(t *testing.T) {
+	file := setupTestFile(t, `package testpkg
+
+type Distance int
+
+func Emit(distance Distance) {
+	result := distance
+	println(result)
+}
+`)
+	if _, err := astedit.ExtractFunction(context.Background(), file, "Emit", "writeDistance", astedit.ExtractOptions{Kind: astedit.ExtractKindFunction, StartLine: 6, EndLine: 6}); err != nil {
+		t.Fatalf("ExtractFunction() error = %v", err)
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"result := writeDistance(distance)", "func writeDistance(distance Distance) Distance", "return result"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("extracted source missing %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestExtractFunctionRejectsEffectfulMultipleOutputWithoutWriting(t *testing.T) {
+	file := setupTestFile(t, `package testpkg
+
+func Emit() {
+	left, right := compute(), "ready"
+	println(left, right)
+}
+
+func compute() int { return 1 }
+`)
+	before, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = astedit.ExtractFunction(context.Background(), file, "Emit", "writeResult", astedit.ExtractOptions{Kind: astedit.ExtractKindFunction, StartLine: 4, EndLine: 4})
+	if err == nil || !strings.Contains(err.Error(), "cannot infer a safe return type") {
+		t.Fatalf("ExtractFunction() error = %v, want unsupported result-type refusal", err)
+	}
+	after, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("rejected extraction changed source:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestPlanConstantExtractionRefusesNamedConstantType(t *testing.T) {
+	source := "package p\ntype Duration int\nconst interval Duration = 1\nfunc F() Duration { return interval }\n"
+	fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
+		if ret, ok := node.(*ast.ReturnStmt); ok {
+			return ret.Results[0]
+		}
+		return nil
+	})
+	if info.Types[selected].Value == nil {
+		t.Fatal("named constant expression has no resolved value")
+	}
+	if _, err := astedit.PlanConstantExtraction([]byte(source), fset, file, info, pkg.Scope(), selected, "candidate"); err == nil || !strings.Contains(err.Error(), "named and non-basic") {
+		t.Fatalf("PlanConstantExtraction() error = %v, want named-type refusal", err)
+	}
 }

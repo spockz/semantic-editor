@@ -1,0 +1,54 @@
+# Preserve defined and interface parameter types; refuse callable parameters.
+exec semedit extract-variable --file render.go --symbol distanceValue --in-function '(*Renderer).Render' --discriminator distance
+exec semedit extract-variable --file render.go --symbol readerValue --in-function '(*Renderer).RenderReader' --discriminator reader
+! exec semedit extract-variable --file render.go --symbol callbackValue --in-function '(*Renderer).Dynamic' --discriminator value
+stderr 'only an unshadowed same-file package function call with no unresolved import binding is supported'
+cmp render.go want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariabletypes
+
+go 1.23
+-- render.go --
+package render
+
+type Distance int
+type Reader interface{ Read() }
+type Renderer struct{}
+
+func consume(first any, rest ...any) {}
+
+func (r *Renderer) Render(distance Distance) {
+	consume(distance, distance)
+}
+
+func (r *Renderer) RenderReader(reader Reader) {
+	consume(reader, r)
+}
+
+func (r *Renderer) Dynamic(call func(any), value any) {
+	call(value)
+}
+-- want/render.go --
+package render
+
+type Distance int
+type Reader interface{ Read() }
+type Renderer struct{}
+
+func consume(first any, rest ...any) {}
+
+func (r *Renderer) Render(distance Distance) {
+	distanceValue := distance
+	consume(distanceValue, distance)
+}
+
+func (r *Renderer) RenderReader(reader Reader) {
+	readerValue := reader
+	consume(readerValue, r)
+}
+
+func (r *Renderer) Dynamic(call func(any), value any) {
+	call(value)
+}

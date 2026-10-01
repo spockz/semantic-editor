@@ -96,10 +96,10 @@ func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, 
 	typeName := ""
 	basic, isBasic := typeValue.(*types.Basic)
 	if !isBasic {
-		return ConstantExtractionPlan{}, fmt.Errorf("constant type %s is not a supported built-in basic type", types.TypeString(typeValue, nil))
+		return ConstantExtractionPlan{}, fmt.Errorf("named and non-basic constant types are not supported")
 	}
 	if basic.Info()&types.IsUntyped == 0 {
-		typeName = types.TypeString(typeValue, nil)
+		typeName = basic.Name()
 	}
 	expression := string(source[start:end])
 	declaration := "const " + name
@@ -107,7 +107,7 @@ func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, 
 		declaration += " " + typeName
 	}
 	declaration += " = " + expression
-	return ConstantExtractionPlan{Declaration: declaration, Replacement: name, Start: start, End: end, Type: types.TypeString(typeValue, nil), Value: info.Types[expr].Value.ExactString()}, nil
+	return ConstantExtractionPlan{Declaration: declaration, Replacement: name, Start: start, End: end, Type: basic.Name(), Value: info.Types[expr].Value.ExactString()}, nil
 }
 
 func constantExtractionSyntax(expr ast.Expr, info *types.Info) bool {

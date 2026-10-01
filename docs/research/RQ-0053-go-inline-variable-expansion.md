@@ -20,13 +20,13 @@ ADR-0058 exposes a conservative `semantic_inline_variable` for a literal local u
 ## Current evidence and limits
 
 * `internal/astedit/inline.go` contains current inline-variable analysis and mutation; `internal/operation/wire_engine_inline.go` defines the Go operation and schema.
-* ADR-0058 accepts one local literal declaration with no explicit type and uses in the immediately following statement in the same lexical block. It inserts default-type conversions for untyped literals and refuses additional references, comments, intervening statements, ambiguous binding, or uncertain import names.
+* ADR-0058 accepts one local literal declaration with no explicit type and one or more direct uses in the immediately following statement in the same lexical block. It rewrites every proven use, inserts default-type conversions for untyped literals, and refuses additional references outside that statement, comments, intervening statements, ambiguous binding, or uncertain import names. This multiple-use behavior predates the extraction worker's review; the added txtar case documents and verifies it rather than introducing a new engine behavior.
 * No inline-function/call expansion is implemented by this tool. A generic `semantic_inline` would obscure materially different proof obligations.
 * The authoritative pending main uses `sourcebuf` for current source and buffered execution. The older root branch is not a safe implementation base.
 
 ## Candidate outcomes and non-goals
 
-Investigate in order: multiple direct uses in one next statement; direct uses later in the same block with no intervening writes or control-flow boundary; side-effect-free composite expressions with type facts. Each item should be accepted only with a binding and evaluation proof. Inline function/call should be a separate RQ or ADR with call graph, dispatch, receiver, and control-flow analysis.
+Multiple direct uses in one immediately following statement are already implemented. Next investigate direct uses later in the same block with no intervening writes or control-flow boundary, then side-effect-free composite expressions with type facts. Each item should be accepted only with a binding and evaluation proof. Inline function/call should be a separate RQ or ADR with call graph, dispatch, receiver, and control-flow analysis.
 
 Do not duplicate an initializer expression that may call, receive, mutate, panic, allocate identity-sensitive objects, or depend on a variable that changes between declaration and use. Do not inline across closures, defer/go, loops, branches, labels, or statement boundaries until exact execution counts are proven. Do not treat successful compilation as behavioral proof.
 

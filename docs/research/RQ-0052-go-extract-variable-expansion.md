@@ -7,7 +7,7 @@
 
 ## Context
 
-ADR-0059 and `semantic_extract_variable` cover one exact, side-effect-free whole argument in a direct one-argument call statement. The narrow implementation rejects returns, nested expressions, multiple arguments, constant-only expressions, comments, and other forms. Expansion can reduce routine manual work, but expression movement can change evaluation order, typing, scope, and observable behavior.
+ADR-0059 and `semantic_extract_variable` cover one exact, side-effect-free first argument in a direct call statement. The implementation permits later call arguments because the extracted expression is the first argument and later evaluation order is retained. It refuses callable owner parameters/locals, builtins, functions declared only in another file, and files with import bindings that could shadow the call; the call must resolve syntactically to one unshadowed same-file package function. It still rejects returns, nested expressions, constant-only expressions, comments, and other forms. Expansion can reduce routine manual work, but expression movement can change evaluation order, typing, scope, and observable behavior.
 
 ## Research questions
 
@@ -21,13 +21,14 @@ ADR-0059 and `semantic_extract_variable` cover one exact, side-effect-free whole
 
 * `internal/astedit/extract_variable.go` implements the bounded engine; `internal/operation/wire_extract.go` defines `semantic_extract_variable`, CLI schema, and receipt.
 * ADR-0059 defines `symbol` as the new local, `in_function` as owner selector, `discriminator` as exact whole-expression source, and `construct_path` as a zero-based occurrence path.
-* The current implementation only accepts one whole argument of a direct single-argument call statement in the owner's direct body. It requires a typed owner input, rejects constants-only expressions, calls, receives, address-taking, literals, comments, returns, and nested positions.
+* The current implementation accepts only the first whole argument of a direct call statement in the owner's direct body. It requires a typed owner input and an unshadowed same-file package function callee; it rejects callable owner parameters/locals, builtins, cross-file callees, constants-only expressions, calls, receives, address-taking, literals, comments, returns, and nested positions.
+* `testdata/scripts/extract_variable_typed_context.txtar` checks defined numeric and interface owner parameter types and a zero-write refusal for a callable parameter.
 * Existing file edits are batch-buffered in the authoritative pending source-buffer state. Expansion must continue to read and edit that same overlay.
 * This is an expansion of the existing tool, not a second `extract_expression` alias and not a constant-extraction operation.
 
 ## Candidate outcomes and non-goals
 
-First investigate extracting a whole argument from a direct call with multiple arguments only when the selected argument's position and all earlier/later argument evaluation are proven unchanged. Compare this with extracting a direct RHS in a single assignment or a direct return expression. Repeated-site extraction is a separate candidate: one local is only valid when all sites execute at the same frequency and control-flow point.
+The first-argument case in calls with later arguments is implemented and covered because it moves the first argument before an unshadowed same-file package function call; it does not extract later arguments. Further work can compare direct RHS assignments and direct return expressions only after type/context and ordering proofs. Repeated-site extraction is a separate candidate: one local is only valid when all sites execute at the same frequency and control-flow point.
 
 Do not move expressions out of short-circuit operands, conditionals, loop headers/bodies, defer/go calls, or closures in the first expansion. Do not infer arbitrary interfaces, generate constants, perform extract-function work, or claim behavioral equivalence from formatting and diagnostics alone.
 

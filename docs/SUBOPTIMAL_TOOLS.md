@@ -1614,6 +1614,24 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
 - Workaround: retry the authorized commit with scoped access to the shared git metadata.
 - Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+### ST-0145: function insertion rejected multiple declarations
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function` inside `semantic_batch`
+- Target: `internal/astedit/extract_test.go`
+- Observed failure: the child rejected a source string containing two complete test functions with `expected single function declaration, found 2 declarations`; no child edits were applied.
+- Workaround: split the coherent test addition into one semantic insertion per function in the same batch.
+- Root cause: `semantic_insert_function` accepts exactly one function declaration per request.
+
+### ST-0146: batched callee-resolution check exposed an unchanged function signature
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with two `semantic_replace_body` calls and one `semantic_insert_function`
+- Target: `internal/astedit/extract_variable.go`
+- Observed failure: the three children applied, but final lint rejected the new call `findVariableCandidates(fset, content, file, target, discriminator)` because the existing declaration still accepted four arguments.
+- Workaround: inspect the current bytes and preserve successful edits; replace the old helper declaration with the revised parameter signature before rerunning repository checks.
+- Root cause: `semantic_replace_body` changes only a function body and cannot change its parameter list.
+
 ## 2026-10-01: `semantic_batch` final verification for constant extraction planner
 
 - Tool: `semantic_batch` with three successful declaration insertions, followed by `semantic_verify`.
@@ -1637,3 +1655,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: resolved paths were staged, but Git refused to create the replayed commit because `EDITOR` was unset in the non-interactive shell.
 - Workaround: continue with `GIT_EDITOR=true`, preserving the original commit message.
 - Root cause: the rebase continuation attempted to invoke an interactive editor.
+
+## ST-0201: review-fix rebase stopped on the shared tooling log
+
+- Tool: `git rebase --continue` while replaying `de815db`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`
+- Observed failure: Git stopped because foundation and the extraction review-fix commit appended independent tool-friction entries at the same end-of-file location.
+- Workaround: keep all entries from both sides, append the rebase note, and continue the replay.
+- Root cause: both branches updated the same append-only tooling log.

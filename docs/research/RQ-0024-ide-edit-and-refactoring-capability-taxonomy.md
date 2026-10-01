@@ -28,7 +28,7 @@ IDE documentation groups semantic operations into capability families rather tha
 | Rename | Go module-wide retained-session rename, including shared batch overlays; selected-file Rust/Java rename | Do not reimplement Go rename; other-language workspace scope is separate. |
 | Structural insertion/replacement/removal | Go declarations, receiver methods, bodies, constructs and exact declaration/case removal | Focused fields, statements, composite elements and documentation comments remain missing. |
 | High-intent composites | Package-inferred file scaffold; supplied method/type insertion | Generate missing interface methods without duplicating method insertion. |
-| Extract and introduce | Bounded Go function/method and variable extraction | Broader data flow and expression positions; constant/interface/type extraction and introduced parameters. |
+| Extract and introduce | Bounded Go constant, function/method and variable extraction | Revision-bound live receipts, full read-set preflight, broader data flow and expression positions; interface/type extraction and introduced parameters. |
 | Inline | Bounded Go literal local-variable inlining | Function/call inlining and computed/distant variable uses. |
 | Move and copy | Go declaration movement; bounded exported free-function movement between packages | Typed dependency groups, types/methods and whole-package/resource operations. Copy is not advertised. |
 | Signature and type transformation | No dedicated change-signature/type-migration operation | Caller, assignment and compatibility proofs. |
@@ -132,7 +132,7 @@ Every linked investigation starts Open. Each records its own bounded first deliv
 | :--- | :--- | :--- | :--- |
 | [0041](RQ-0041-go-change-signature.md) | Change signature | Missing | Parameter mapping and evaluation proofs |
 | [0042](RQ-0042-go-inline-function.md) | Inline function/method | Missing | Call selection and once-only evaluation |
-| [0043](RQ-0043-go-extract-constant.md) | Extract constant | Missing | Typed constant/context proof |
+| [0043](RQ-0043-go-extract-constant.md) | Extract constant | Bounded implementation; receipt/read-set gaps remain | Revision-bound continuations and complete analysis preflight |
 | [0044](RQ-0044-go-extract-interface.md) | Extract interface | Missing | Exact method sets and member selection |
 | [0045](RQ-0045-go-introduce-parameter.md) | Introduce parameter | Missing | 0041 signature planner |
 | [0046](RQ-0046-go-introduce-parameter-object.md) | Introduce parameter object | Missing | 0041 plus field/evaluation mapping |
@@ -140,9 +140,9 @@ Every linked investigation starts Open. Each records its own bounded first deliv
 | [0048](RQ-0048-go-encapsulate-field.md) | Encapsulate field | Missing | 0056 field/member planning |
 | [0049](RQ-0049-go-type-migration.md) | Type migration | Missing | Type identity graph; later 0041 |
 | [0050](RQ-0050-go-implement-contract.md) | Implement interface/contract | Missing | Method-set/signature comparison |
-| [0051](RQ-0051-go-extract-function-expansion.md) | Broader extract function/method | Existing bounded feature | Live-in/live-out and control-flow proof |
-| [0052](RQ-0052-go-extract-variable-expansion.md) | Broader extract variable | Existing bounded feature | Expression evaluation/context proof |
-| [0053](RQ-0053-go-inline-variable-expansion.md) | Broader inline variable | Existing bounded feature | Def/use and evaluation proof |
+| [0051](RQ-0051-go-extract-function-expansion.md) | Broader extract function/method | Existing plus syntax-bounded multi-result extension | Compiler-derived type/identity and control-flow proof |
+| [0052](RQ-0052-go-extract-variable-expansion.md) | Broader extract variable | Existing plus first argument of multi-argument calls | Typed callee binding and expression context proof |
+| [0053](RQ-0053-go-inline-variable-expansion.md) | Broader inline variable | Existing bounded feature includes multiple uses in the immediate next statement | Def/use proof for more distant uses and expressions |
 | [0054](RQ-0054-go-safe-delete-expansion.md) | Broader safe delete | Existing constant-only safety | Complete source/reference/resource coverage |
 | [0055](RQ-0055-go-move-construct-expansion.md) | Broader cross-package/type/package moves | Existing buffered free-function moves | Dependency group and resource proof |
 | [0056](RQ-0056-go-insert-field.md) | Focused struct-field insertion | Missing | Member collision/layout contract |

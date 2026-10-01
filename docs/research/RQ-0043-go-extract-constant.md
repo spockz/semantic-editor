@@ -17,9 +17,15 @@ A successful operation inserts a named `const` declaration in the selected exist
 
 First release: one unambiguous compile-time constant expression inside a function or method in one existing file; infer the exact constant type/value with Go type information; insert in package scope near the file's other declarations; replace one exact AST expression. Refuse `iota`-dependent or context-sensitive constants, expressions whose type/value cannot be represented exactly, duplicate identifier collisions, directives/comments that cannot be safely anchored, cross-file use, and any expression with runtime evaluation. No extraction of variables, multiple occurrences, enum generation, generated files, or new-file creation.
 
+## Current implementation checkpoint (2026-10-01)
+
+`extract-constant` and `semantic_extract_constant` are registered for Go. The pure planner accepts only resolved built-in basic constant types and refuses named/non-basic types, local-constant dependencies, `iota`, runtime expressions, collisions, ambiguous exact-text selections, and selections with comments. It preserves an explicit built-in type where the original expression is typed and leaves untyped constants untyped. Public CLI and buffered MCP batch fixtures exercise success and refusal.
+
+The operation still lacks the shared `expected_revision` input and typed finalized continuation projection. Its package loader observes the selected package directory but does not capture and validate every consulted dependency/configuration input. The shared output-projector and complete read-set APIs remain required before this handover can close.
+
 ## Audited starting state
 
-The authoritative source tree `/Users/alessandro/sources/semantic-editor` at `6c95d12` was audited read-only, including uncommitted shared buffers. Requested operations are absent across worktrees. Current Go tools include extraction of a function and a variable (`internal/astedit/extract.go`, `extract_variable.go`, `wire_extract.go`), inline-variable only (`inline.go`, `wire_engine_inline.go`), and AST declaration/body editing. These are selection and wire-pattern evidence, not an extract-constant implementation. The registry, sourcebuf overlays, batch executor, and single-process gopls sessions are present in the audited tree. Current LSP client does not prove command, interactive, or applyEdit support; a pending ADR-0060 in that source tree concerns diagnostic sessions only.
+The authoritative source tree `/Users/alessandro/sources/semantic-editor` at `6c95d12` was audited read-only, including uncommitted shared buffers. At that audit point the operation was absent. The current implementation checkpoint above supersedes that historical baseline. The registry, sourcebuf overlays, batch executor, and single-process gopls sessions are present in the audited tree. Current LSP client does not prove command, interactive, or applyEdit support; a pending ADR-0060 in that source tree concerns diagnostic sessions only.
 
 ## Candidate implementation paths
 

@@ -30,7 +30,7 @@ type variableCandidate struct {
 	expr ast.Expr
 }
 
-// ExtractVariable moves one side-effect-free, typed argument expression immediately before its call.
+// ExtractVariable moves the first side-effect-free, typed argument of an unshadowed same-file package call into a local.
 func ExtractVariable(ctx context.Context, filePath, owner, name string, opts ExtractVariableOptions) (string, error) {
 	if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() || name == "_" {
 		return "", fmt.Errorf("symbol %q is not a valid local identifier", name)
@@ -80,6 +80,9 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 	}
 	if variableNameVisible(file, target, name) {
 		return "", fmt.Errorf("cannot extract: local name %q collides with a name visible in %s", name, owner)
+	}
+	if !resolvedStaticFunctionCallee(file, target, candidate.stmt) {
+		return "", fmt.Errorf("cannot extract expression %q: only an unshadowed same-file package function call with no unresolved import binding is supported", opts.Discriminator)
 	}
 
 	exprStart := fset.Position(candidate.expr.Pos()).Offset
@@ -286,4 +289,31 @@ func variableNameVisible(file *ast.File, target *ast.FuncDecl, name string) bool
 	}
 
 	return false
+}
+
+func resolvedStaticFunctionCallee(file *ast.File, target *ast.FuncDecl, stmt *ast.ExprStmt) bool {
+	call, ok := stmt.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	callee, ok := call.Fun.(*ast.Ident)
+	if !ok || parameterHasName(target.Type.Params, callee.Name) || fieldListHasName(target.Recv, callee.Name) || localBindings(target.Body)[callee.Name] {
+		return false
+	}
+	for _, imported := range file.Imports {
+		if imported.Name == nil || imported.Name.Name == "." {
+			return false
+		}
+		if imported.Name.Name == callee.Name {
+			return false
+		}
+	}
+	matches := 0
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && function.Name.Name == callee.Name {
+			matches++
+		}
+	}
+	return matches == 1
 }

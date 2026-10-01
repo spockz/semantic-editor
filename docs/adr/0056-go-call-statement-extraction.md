@@ -22,12 +22,13 @@ The primary target is the new helper name in `symbol`. The existing owner is the
 range by exact start and end lines of direct statements in the owner's body.
 
 Only a contiguous region of direct call expression statements, optionally
-preceded by one single-variable `:=` declaration, is supported. The declaration
-must produce one local used after the selected region. That local becomes the
-helper's sole return value. Its type is inferred only for basic literals, a
+preceded by one `:=` declaration with distinct named results, is supported.
+Every result must be used after the selected region. Results become ordered
+helper return values. Their types are inferred only for basic literals, a
 boolean literal, a named owner parameter, or a supported unary/parenthesized
-form of those expressions. The helper receives each referenced named owner
-parameter and, when required, the receiver.
+form of those expressions. Calls and other compound or unsupported result
+expressions refuse before writing. The helper receives each referenced named
+owner parameter and, when required, the receiver.
 Function extraction passes a referenced receiver as a normal argument. Method
 extraction preserves the receiver on the new method. The selected calls retain
 their order and are replaced by one helper invocation. The helper is inserted
@@ -38,11 +39,12 @@ following conditions:
 
 * Each boundary line identifies exactly one direct statement and the inclusive
   range selects adjacent statements.
-* Selected statements are calls, optionally with one leading single-variable
-  short declaration whose one inferred result is live after the region.
-  Other assignments/declarations, multiple outputs, and unsupported result
-  types are refused. Returns, branches, loops, labels, and other statement
-  forms are unsupported.
+* Selected statements are calls, optionally with one leading short declaration
+  whose distinct named results are all live after the region. Each result type
+  must come from a basic literal, boolean literal, named owner parameter, or
+  supported unary/parenthesized form. Effectful calls and unsupported result
+  expressions are refused. Other assignments/declarations, returns, branches,
+  loops, labels, and other statement forms remain unsupported.
 * Free identifiers resolve to named owner parameters, the receiver, same-file
   package declarations, imports, or predeclared names. Owner-local declarations
   anywhere in the function cannot shadow a selected identifier.
@@ -72,7 +74,9 @@ publication rules.
 * `symbol` names the new helper; `in_function` only selects the existing owner.
 * `start_line` and `end_line` are positive, inclusive, one-based line numbers,
   not byte offsets. The selected range must match AST statement boundaries.
-* The operation preserves call order and argument evaluation order.
+* The operation preserves call order and argument evaluation order. Returning
+multiple values is limited to the explicit result-expression classes above; the
+operation does not infer arbitrary expression types.
 * Unsupported or ambiguous selections fail before mutation.
 * `semantic_extract_function` is advertised only for Go and has CLI txtar
   coverage for its observable success and refusal behavior.
@@ -83,8 +87,9 @@ publication rules.
 ## Consequences
 
 The operation reduces a common manual helper extraction to one semantic call
-for call regions and one returned local with a deliberately small type-inference
-boundary. Its supported region is intentionally limited; many ordinary
-refactorings that use other local data flow or control flow will receive an
-explicit refusal. The shared schema and registry expose the operation through
+for call regions and a deliberately small result-type inference boundary. The
+single-output case remains supported, and a leading declaration may now return
+multiple live locals when each result expression belongs to the listed
+syntax-bounded class. Other local data flow or control flow receives an explicit
+refusal. The shared schema and registry expose the operation through
 both CLI and MCP, and its receipt follows ADR-0055 continuation naming.

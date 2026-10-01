@@ -9,7 +9,7 @@
 
 Extend existing `semantic_extract_function` / `extract-function` to routine helper extraction with real local data flow, supported nested control flow, multiple results and attached comments. Do not create another extract-method API: existing `kind=function|method` selects that behavior.
 
-Extraction is ALREADY implemented on main by `cd40dea` and recorded in ADR-0056. It supports contiguous direct calls, optionally one supported leading returned local. The clean extraction worker has no unmerged broader implementation. Pending main changes integrate the same bounded operation with sourcebuf; they do not remove its semantic restrictions.
+Extraction is ALREADY implemented on main by `cd40dea` and recorded in ADR-0056. It supports contiguous direct calls, optionally one leading declaration with distinct named live-out results. The reviewed bounded extension accepts result types only from basic literals, boolean literals, named owner parameters, or supported unary/parenthesized forms. Calls and compound/unsupported result expressions refuse before writing; type identities are syntax-derived and complete compiler typechecking/read-set preflight remain open. Pending main changes integrate the same bounded operation with sourcebuf; they do not remove its other semantic restrictions.
 
 The audit baseline is committed main `6c95d12` plus its pending shared-buffer/session migration. Recheck that baseline before implementation; this RQ records a proposed contract, not an implemented capability or an accepted ADR. Follow the [shared handover contract](RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md#shared-handover-contract) and [receipt/schema investigation](RQ-0027-preventing-read-files.md#refactoring-handover-foundations).
 
