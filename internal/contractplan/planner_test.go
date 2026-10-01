@@ -314,6 +314,57 @@ type Worker struct{}
 	}
 }
 
+func (fixture contractPlannerFixtureImporter) Import(path string) (*types.Package, error) {
+	if pkg := fixture.packages[path]; pkg != nil {
+		return pkg, nil
+	}
+	return fixture.fallback.Import(path)
+}
+
+func TestImplementContractReservesUniverseNamesForGeneratedImports(t *testing.T) {
+	source := `package fixture
+import (
+	panicpkg "example.com/panicpkg"
+	intpkg "example.com/intpkg"
+)
+type Contract interface { Run(panicpkg.Value, intpkg.Value, int, any) }
+type Worker struct{}
+`
+	newPackage := func(path, name string) *types.Package {
+		pkg := types.NewPackage(path, name)
+		object := types.NewTypeName(token.NoPos, pkg, "Value", nil)
+		types.NewNamed(object, types.NewStruct(nil, nil), nil)
+		pkg.Scope().Insert(object)
+		pkg.MarkComplete()
+		return pkg
+	}
+	fixtureImporter := contractPlannerFixtureImporter{
+		packages: map[string]*types.Package{
+			"example.com/panicpkg": newPackage("example.com/panicpkg", "panic"),
+			"example.com/intpkg":   newPackage("example.com/intpkg", "int"),
+		},
+		fallback: importer.Default(),
+	}
+	pkg := fixturePackageWithImporter(t, source, fixtureImporter)
+	plan, err := PlanImplementContract(pkg, pkg, fixtureNamed(t, pkg, "Worker"), fixtureNamed(t, pkg, "Contract"), ReceiverPointer, BodyPolicyPanicStub, nil)
+	if err != nil {
+		t.Fatalf("PlanImplementContract returned error: %v", err)
+	}
+	if len(plan.Imports) != 2 || plan.Imports[0] != (ImportSpec{Path: "example.com/intpkg", Name: "int2"}) || plan.Imports[1] != (ImportSpec{Path: "example.com/panicpkg", Name: "panic2"}) {
+		t.Fatalf("generated imports = %#v, want int2 and panic2", plan.Imports)
+	}
+	if !strings.Contains(plan.Declaration, "panic2.Value, int2.Value, int, any") || !strings.Contains(plan.Declaration, "panic(`TODO: implement`)") {
+		t.Fatalf("generated declaration changed foreign or universe bindings: %s", plan.Declaration)
+	}
+	generatedImports := "import (\n\tint2 \"example.com/intpkg\"\n\tpanic2 \"example.com/panicpkg\"\n)\n"
+	typeCheckGeneratedWithImporter(t, source, generatedImports, plan.Declaration, fixtureImporter)
+}
+
+type contractPlannerFixtureImporter struct {
+	packages map[string]*types.Package
+	fallback types.Importer
+}
+
 func fixturePackage(t *testing.T, source string) *types.Package {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -354,6 +405,10 @@ func fixtureMethod(t *testing.T, named *types.Named, name string) *types.Func {
 }
 
 func typeCheckGenerated(t *testing.T, source, imports, declaration string) {
+	typeCheckGeneratedWithImporter(t, source, imports, declaration, importer.Default())
+}
+
+func typeCheckGeneratedWithImporter(t *testing.T, source, imports, declaration string, sourceImporter types.Importer) {
 	t.Helper()
 	fset := token.NewFileSet()
 	original, err := parser.ParseFile(fset, "fixture.go", source, parser.AllErrors)
@@ -369,8 +424,23 @@ func typeCheckGenerated(t *testing.T, source, imports, declaration string) {
 	if err != nil {
 		t.Fatalf("parse generated source: %v\n%s", err, generatedSource)
 	}
-	configuration := types.Config{Importer: importer.Default()}
+	configuration := types.Config{Importer: sourceImporter}
 	if _, err := configuration.Check("example.com/fixture", fset, []*ast.File{original, generated}, nil); err != nil {
 		t.Fatalf("type-check generated source: %v\n%s", err, generatedSource)
 	}
+}
+
+func fixturePackageWithImporter(t *testing.T, source string, sourceImporter types.Importer) *types.Package {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "fixture.go", source, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+	configuration := types.Config{Importer: sourceImporter}
+	pkg, err := configuration.Check("example.com/fixture", fset, []*ast.File{file}, nil)
+	if err != nil {
+		t.Fatalf("type-check fixture: %v", err)
+	}
+	return pkg
 }

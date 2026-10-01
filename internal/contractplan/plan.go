@@ -71,6 +71,14 @@ type ImportBinding struct {
 // ReceiverKind selects the concrete type method set used by a plan.
 type ReceiverKind string
 
+type typeRenderer struct {
+	current  *types.Package
+	aliases  map[string]string
+	names    map[string]string
+	imports  map[string]string
+	reserved map[string]bool
+}
+
 func (signature MethodSignature) declaration() string {
 	parameters := make([]string, 0, len(signature.Parameters))
 	for _, parameter := range signature.Parameters {
@@ -120,7 +128,7 @@ func (renderer *typeRenderer) qualifier(pkg *types.Package) string {
 	name := base
 	for suffix := 2; ; suffix++ {
 		prior, exists := renderer.names[name]
-		if !exists || prior == pkg.Path() {
+		if (!exists || prior == pkg.Path()) && !renderer.reserved[name] {
 			break
 		}
 		name = base + strconv.Itoa(suffix)
@@ -179,21 +187,17 @@ func (renderer *typeRenderer) signature(method *types.Func) (MethodSignature, er
 	return result, nil
 }
 
-type typeRenderer struct {
-	current *types.Package
-	aliases map[string]string
-	names   map[string]string
-	imports map[string]string
-}
-
 func newTypeRenderer(current *types.Package, bindings []ImportBinding) (*typeRenderer, error) {
 	if current == nil {
 		return nil, fmt.Errorf("current package is required")
 	}
-	renderer := &typeRenderer{current: current, aliases: make(map[string]string), names: make(map[string]string), imports: make(map[string]string)}
+	renderer := &typeRenderer{current: current, aliases: make(map[string]string), names: make(map[string]string), imports: make(map[string]string), reserved: make(map[string]bool)}
 	renderer.names[current.Name()] = current.Path()
 	for _, name := range current.Scope().Names() {
 		renderer.names[name] = current.Path()
+	}
+	for _, name := range types.Universe.Names() {
+		renderer.reserved[name] = true
 	}
 	for _, binding := range bindings {
 		if binding.Path == "" {

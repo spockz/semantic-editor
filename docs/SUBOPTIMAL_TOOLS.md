@@ -1884,3 +1884,48 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git could not create `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-contracts/index.lock` because the shared Git administrative directory is outside the writable worktree.
 - Workaround: Retry the user-authorized explicit-path stage and commit through the sandbox escalation path.
 - Root cause: The worktree shares Git administrative storage outside its source directory.
+
+### ST-0181: semantic outline rejected the legacy file parameter
+
+- Date: 2026-10-01
+- Tool: `semantic_outline` through the root trusted pipe helper
+- Target: `internal/operation/wire_contracts_test.go`; no source mutation occurred
+- Observed failure: The tool rejected `file` as an unknown parameter and listed `path` as the supported location parameter.
+- Workaround: Retry outline with `path` after recording this failure.
+- Root cause: The payload used a stale parameter name from another semantic operation.
+
+### ST-0182: semantic replace-body rejected the legacy path parameter
+
+- Date: 2026-10-01
+- Tool: `semantic_replace_body` through the root trusted pipe helper
+- Target: `internal/operation/wire_contracts_test.go`; no source mutation occurred
+- Observed failure: The tool rejected `path` and listed `file` as the supported source location parameter.
+- Workaround: Retry with `file` while keeping the reviewed replacement body unchanged.
+- Root cause: Semantic operations have operation-specific location keys; the payload reused the outline key.
+
+### ST-0183: semantic batch rejected a renderer struct-field edit
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with two `semantic_replace_body` children followed by a `semantic_replace_body` for `typeRenderer`
+- Target: `internal/contractplan/plan.go` and `internal/contractplan/planner_test.go`
+- Observed failure: The first two function-body children reported `status=ok`; the third child reported `symbol not found` for `typeRenderer`, a struct declaration. The batch ended with `status=error` before the remaining test children.
+- Workaround: Preserve the two successful changes, inspect actual source bytes, then use supported `semantic_remove_construct` plus `semantic_insert_type` for the whole struct declaration in a later coherent batch.
+- Root cause: `semantic_replace_body` only targets function bodies and cannot edit struct fields.
+
+### ST-0184: trusted contract renderer batch failed final lint
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_remove_construct` and `semantic_insert_type`, through the root trusted pipe helper
+- Target: `internal/contractplan/plan.go`
+- Observed failure: Both mutation children reported `status=ok`; final `semantic_verify` reported `verification hook golangci-lint failed` with exit status 1. The response included repository warnings and hints but was truncated before all diagnostics.
+- Workaround: Preserve both source mutations, inspect their current bytes, then use the focused test and Make output to identify actionable lint errors.
+- Root cause: Not established from the truncated response; do not infer a trust failure or rollback.
+
+### ST-0185: trusted planner proof batch failed final lint
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_insert_type`, `semantic_insert_function`, and `semantic_replace_body`
+- Target: `internal/contractplan/planner_test.go`
+- Observed failure: All seven mutation children reported `status=ok`; final `semantic_verify` reported `golangci-lint` exit status 1. The tool returned the successful source diff, but the diagnostic tail was truncated.
+- Workaround: Preserve all inserted proof code, run the required Make check for complete lint/compiler diagnostics, then fix the reported source issue.
+- Root cause: Not established from the truncated response; do not infer the successful children rolled back.
