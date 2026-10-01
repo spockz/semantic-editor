@@ -1929,3 +1929,84 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: All seven mutation children reported `status=ok`; final `semantic_verify` reported `golangci-lint` exit status 1. The tool returned the successful source diff, but the diagnostic tail was truncated.
 - Workaround: Preserve all inserted proof code, run the required Make check for complete lint/compiler diagnostics, then fix the reported source issue.
 - Root cause: Not established from the truncated response; do not infer the successful children rolled back.
+
+### ST-0186: parser proof batch response was truncated
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_replace_body` and `semantic_insert_function`
+- Target: `internal/operation/wire_contracts.go` and `internal/operation/wire_contracts_test.go`
+- Observed failure: The first child reported `status=ok`. The helper returned `isError=true` and its large structured diff was truncated before the second child status and final verification diagnostic could be read.
+- Workaround: Preserve the successful source change, inspect current source bytes and run focused parser tests before any retry.
+- Root cause: Not established from the truncated response; do not infer that either child was rolled back.
+
+### ST-0187: contract output type replacement passed mutations but failed final lint
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_remove_construct` and `semantic_insert_type` through the trusted root pipe helper
+- Target: `internal/operation/wire_contracts.go` (`contractOutput` declaration)
+- Observed failure: Both mutation children reported `status=ok`; final `semantic_verify` ran the configured `golangci-lint` hook and exited 1. It reported the expected `expected_revision` goconst warning and five unused contract-registration helpers/parameters because public wiring is still incomplete; it did not report a trust failure.
+- Workaround: Preserve both successful mutations and continue the coherent typed registration change, then run Make for full lint output.
+- Root cause: The batch stopped at repository lint while the in-progress public operation definitions remained unregistered.
+
+### ST-0188: typed contract output helper batch failed final verification
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with seven `semantic_insert_function` children through the trusted root pipe helper
+- Target: `internal/operation/wire_contracts.go` (signature/result schemas, projector, receipt finalizer, resolver, and formatter)
+- Observed failure: All seven insertion children reported `status=ok`; the final `semantic_verify` ran `golangci-lint` and exited 1 while the newly added contract output functions were still unregistered/unused. The response diagnostics also included the existing `expected_revision` goconst issue; no workspace-trust error occurred.
+- Workaround: Preserve all inserted helpers, complete registration and imports in the same operation file, then run the required Make check for actionable diagnostics.
+- Root cause: The helper batch was applied before its operation definitions and import organization were wired.
+
+### ST-0189: semantic removal rejected an unsupported variable kind name
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with `semantic_remove_construct` as its first child through the trusted root pipe helper
+- Target: `internal/operation/wire_contracts.go`; no mutation occurred
+- Observed failure: The tool rejected kind `var` and listed `variable` as the supported construct kind. The batch stopped before any child mutation.
+- Workaround: Retry the same coherent replacement batch using the supported `variable` kind.
+- Root cause: The payload used a Go token spelling instead of the semantic operation construct vocabulary.
+
+### ST-0190: contract registration batch failed final lint
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with contract output type replacement, registry registration, and import organization through the trusted root pipe helper
+- Target: `internal/operation/wire_contracts.go` and `internal/operation/wire_backend.go`
+- Observed failure: The output type replacement and `DefaultRegistry` body edit reported `status=ok`. Final `semantic_verify` ran the configured `golangci-lint` hook and returned exit status 1; the tool response was truncated before the full diagnostic list. No trust error was reported.
+- Workaround: Preserve the successful mutations, inspect current source, and run `make check` for complete diagnostics before continuing.
+- Root cause: Not yet established from the available truncated tool result.
+
+### ST-0191: contract registration rejected continuation schema and lint issues
+
+- Date: 2026-10-01
+- Tool: `make check` after registering the contract operations
+- Target: `internal/operation/wire_contracts.go` and registry initialization
+- Observed failure: `docgen-source` panicked because the declared `result.receipt.continuations[].file` string continuation schema was not equivalent to the shared `SymbolTargetSchema` nonempty file leaf. `golangci-lint` also reported repeated `receiver_kind` literals. No focused tests were run.
+- Workaround: Align continuation schemas with the shared descriptor leaf schema and name the repeated request field constant, then rerun Make.
+- Root cause: The operation output contract used generic strings for constrained live target fields, and the operation-local field literal crossed the repository goconst threshold.
+
+### ST-0192: contract schema and parser batch failed final verification
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` with schema, parameter declaration, and parser updates through the trusted root pipe helper
+- Target: `internal/operation/wire_contracts.go`
+- Observed failure: The visible children reported `status=ok`; the aggregate response returned `isError=true` at final verification, but its full lint diagnostics were truncated. The changed parameter and parser declarations are present in the current source.
+- Workaround: Preserve the completed mutations and use the required Make check to capture complete lint and registry diagnostics.
+- Root cause: Not established from the truncated response.
+
+### ST-0193: semantic outline rejected an unsupported depth parameter
+
+- Date: 2026-10-01
+- Tool: `semantic_outline` through the trusted root pipe helper
+- Target: `internal/operation/typed_descriptors.go`; no mutation occurred
+- Observed failure: The request returned `unknown param "depth"` and listed `path`, `language`, `kinds`, and related supported keys.
+- Workaround: Retry navigation using only the documented `path` and supported outline parameters.
+- Root cause: The payload guessed an unsupported hierarchy-depth parameter instead of following the operation schema.
+
+### ST-0194: semantic replacement payload generator failed before MCP dispatch
+
+- Date: 2026-10-01
+- Tool: trusted `semantic_replace_body` helper invocation
+- Target: `internal/operation/wire_contracts.go`; no mutation occurred
+- Observed failure: The shell's inline Python payload generator had an unclosed parenthesis and emitted no JSON; the helper then rejected empty stdin before starting an MCP request.
+- Workaround: Write the exact payload with a simpler JSON-safe script, then retry through the trusted pipe helper.
+- Root cause: The one-line Python expression was malformed while escaping a multiline Go body.

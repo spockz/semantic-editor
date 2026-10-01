@@ -19,6 +19,23 @@ import (
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
 
+var renameParams = []ParameterContract{
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(append(append([]string(nil), sourceSymbolContinuations...), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
+	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: append(append([]string{sourceLookupFile, sourceRenameFile, sourceContractExtractFile, sourceContractImplementFile}, sourceConcreteTargetFile), sourceGeneratedMethodFile)},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
+	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
+}
+
+var lookupParams = readRequestParams(
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(sourceSymbolContinuations, sourceContractExtractSymbol, sourceContractImplementSymbol)},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(sourceFileContinuations, sourceContractExtractFile, sourceContractImplementFile)},
+)
+
 const (
 	wireCLITrustWorkspace      = "trust-workspace"
 	wireJDTLSHome              = "jdtls_home"
@@ -160,23 +177,6 @@ type VerifyRes struct {
 	Scope           projectverify.Scope  `json:"scope"`
 	Failure         string               `json:"failure,omitempty"`
 	Coverage        []LanguageCoverage   `json:"coverage,omitempty"`
-}
-
-var lookupParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: sourceFileContinuations},
-)
-
-var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
-	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
-	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
-	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
 }
 
 var verifyParams = []ParameterContract{
@@ -635,7 +635,7 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 		Params:        renameParams,
 		Level:         LevelSymbol,
 		CLIName:       "rename",
-		MCPName:       "semantic_rename",
+		MCPName:       contractRenameTool,
 		BufferedBatch: true, Batchable: true,
 		Parse: parseRename,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, RenameReq) (*backend.RenameResult, error){
@@ -704,6 +704,9 @@ func DefaultRegistry() *Registry {
 		panic(err)
 	}
 	if err := registerMavenOps(registry); err != nil {
+		panic(err)
+	}
+	if err := registerContractOps(registry); err != nil {
 		panic(err)
 	}
 	return registry

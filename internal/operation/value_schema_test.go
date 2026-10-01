@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"semedit/internal/sourcebuf"
 	"testing"
 )
 
@@ -362,5 +363,40 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 	}
 	if len(refused.Changes) != 0 || len(refused.Continuations) != 0 {
 		t.Fatalf("refused receipt reports published values: %#v", refused)
+	}
+}
+
+func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	content := []byte("package sample\n")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	revision := hex.EncodeToString(digest[:])
+	candidate := SymbolTarget{File: "main.go", Symbol: "Value", ExpectedRevision: &revision}
+	draft := EditReceiptDraft{Operation: "contract", Status: EditNoOp, ReadSet: []FileRevision{{Path: "main.go", Revision: revision}}, Continuations: []SymbolTarget{candidate}}
+	standalone, err := FinalizeEditReceipt(context.Background(), root, false, draft, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) { return target, true, nil })
+	if err != nil {
+		t.Fatalf("finalize standalone no-op: %v", err)
+	}
+	if standalone.Status != EditNoOp || len(standalone.Changes) != 0 || len(standalone.Continuations) != 1 {
+		t.Fatalf("standalone no-op receipt = %#v", standalone)
+	}
+	buffer, err := sourcebuf.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	working, err := FinalizeEditReceipt(ctx, root, true, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize buffered no-op: %v", err)
+	}
+	if working.Status != EditNoOp || len(working.Changes) != 0 || len(working.Continuations) != 0 {
+		t.Fatalf("buffered no-op receipt = %#v", working)
 	}
 }

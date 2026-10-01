@@ -181,6 +181,28 @@ func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
 	}
 }
 
+func assertContractOutputSchema(t *testing.T, name string, schema any) {
+	t.Helper()
+	assertStandardOutputSchema(t, schema, "object")
+	output := schema.(map[string]any)["properties"].(map[string]any)
+	result := output["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	for _, field := range []string{"receipt", "signatures"} {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("%s result schema omitted %q", name, field)
+		}
+	}
+	fields := []string{"contract", "contract_file"}
+	if name == "semantic_implement_contract" {
+		fields = []string{"type_target", "generated_methods"}
+	}
+	for _, field := range fields {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("%s result schema omitted %q", name, field)
+		}
+	}
+}
+
 func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
@@ -207,6 +229,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 							t.Errorf("remove result schema omitted %q", field)
 						}
 					}
+				case "semantic_extract_interface", "semantic_implement_contract":
+					assertContractOutputSchema(t, name, tool["outputSchema"])
 				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)

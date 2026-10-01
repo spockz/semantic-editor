@@ -1118,6 +1118,73 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	}
 }
 
+type mcpExampleProperty struct {
+	Type  string            `json:"type"`
+	Enum  []json.RawMessage `json:"enum"`
+	Items struct {
+		Type       string `json:"type"`
+		Properties map[string]struct {
+			Type string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	} `json:"items"`
+}
+
+func mcpExampleValueMatches(value any, property mcpExampleProperty) bool {
+	switch property.Type {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		number, ok := value.(float64)
+		return ok && number == float64(int(number))
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, item := range items {
+			if !mcpExampleItemMatches(item, property.Items.Type, property.Items.Properties, property.Items.Required) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func mcpExampleItemMatches(value any, itemType string, properties map[string]struct {
+	Type string `json:"type"`
+}, required []string) bool {
+	if itemType == "string" {
+		_, ok := value.(string)
+		return ok
+	}
+	object, ok := value.(map[string]any)
+	if !ok || itemType != "object" {
+		return false
+	}
+	for _, field := range required {
+		if _, ok := object[field]; !ok {
+			return false
+		}
+	}
+	for field, fieldValue := range object {
+		fieldSchema, ok := properties[field]
+		if !ok || fieldSchema.Type != "string" {
+			return false
+		}
+		if _, ok := fieldValue.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
@@ -1131,15 +1198,9 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 			Tools []struct {
 				Name        string `json:"name"`
 				InputSchema struct {
-					Properties map[string]struct {
-						Type  string            `json:"type"`
-						Enum  []json.RawMessage `json:"enum"`
-						Items struct {
-							Type string `json:"type"`
-						} `json:"items"`
-					} `json:"properties"`
-					Required []string                     `json:"required"`
-					Examples []map[string]json.RawMessage `json:"examples"`
+					Properties map[string]mcpExampleProperty `json:"properties"`
+					Required   []string                      `json:"required"`
+					Examples   []map[string]json.RawMessage  `json:"examples"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -1172,28 +1233,7 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
 					continue
 				}
-				validType := false
-				switch property.Type {
-				case "string":
-					_, validType = value.(string)
-				case "boolean":
-					_, validType = value.(bool)
-				case "integer":
-					if number, ok := value.(float64); ok {
-						validType = number == float64(int(number))
-					}
-				case "array":
-					if items, ok := value.([]any); ok {
-						validType = true
-						for _, item := range items {
-							if _, ok := item.(string); !ok || property.Items.Type != "string" {
-								validType = false
-							}
-						}
-					}
-				default:
-					t.Errorf("%s parameter %q has unexpected schema type %q", tool.Name, key, property.Type)
-				}
+				validType := mcpExampleValueMatches(value, property)
 				if !validType {
 					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
 				}

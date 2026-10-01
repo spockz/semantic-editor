@@ -360,6 +360,18 @@ type Worker struct{}
 	typeCheckGeneratedWithImporter(t, source, generatedImports, plan.Declaration, fixtureImporter)
 }
 
+func TestExtractInterfaceRejectsUniverseTargetName(t *testing.T) {
+	pkg := fixturePackage(t, `package fixture
+type Store struct{}
+func (Store) Read() int { return 1 }
+`)
+	store := fixtureNamed(t, pkg, "Store")
+	plan, err := PlanExtractInterface(pkg, pkg, store, ReceiverValue, []*types.Func{fixtureMethod(t, store, "Read")}, "int", nil)
+	if err == nil || plan.Declaration != "" {
+		t.Fatalf("universe target yielded plan=%#v err=%v", plan, err)
+	}
+}
+
 type contractPlannerFixtureImporter struct {
 	packages map[string]*types.Package
 	fallback types.Importer

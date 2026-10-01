@@ -29,6 +29,9 @@ func PlanExtractInterface(sourcePackage, destinationPackage *types.Package, conc
 	if err := validateIdentifier(newName, "interface name"); err != nil {
 		return Plan{}, err
 	}
+	if types.Universe.Lookup(newName) != nil {
+		return Plan{}, fmt.Errorf("interface name %q would shadow a Go universe identifier", newName)
+	}
 	var existingInterface *types.Interface
 	if existing := destinationPackage.Scope().Lookup(newName); existing != nil {
 		typeName, ok := existing.(*types.TypeName)
