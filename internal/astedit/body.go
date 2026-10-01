@@ -9,11 +9,11 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
 )
@@ -26,7 +26,7 @@ type BodyOptions struct {
 // ReplaceBody replaces the statements of an existing function or method body.
 func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, opts BodyOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
 	}
@@ -126,7 +126,7 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 		}
 	}
 
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
 

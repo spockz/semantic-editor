@@ -1,0 +1,35 @@
+# A failed move observes prior buffered dependencies and publishes only the completed earlier edit.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'source-package dependency'
+stdout '"file":"legacy/source.go"'
+stdout '"destination_file":"api/dest.go"'
+! stdout '"diagnostic_delta":'
+cmp legacy/source.go .scratch/want/source.go
+cmp api/dest.go .scratch/want/dest.go
+exec go test ./...
+-- go.mod --
+module example.com/batchrefusal
+
+go 1.24
+-- legacy/source.go --
+package legacy
+
+func helper() int { return 2 }
+
+func MoveMe() int { return 1 }
+-- api/dest.go --
+package api
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"legacy/source.go","symbol":"MoveMe","body":"return helper()"}},{"tool":"semantic_move_construct","params":{"file":"legacy/source.go","destination_file":"api/dest.go","symbol":"MoveMe"}}]}}}
+-- .scratch/want/source.go --
+package legacy
+
+func helper() int { return 2 }
+
+func MoveMe() int {
+	return helper()
+}
+-- .scratch/want/dest.go --
+package api

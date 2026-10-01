@@ -9,12 +9,12 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -40,7 +40,7 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 		return "", fmt.Errorf("discriminator must contain the exact source text of the expression")
 	}
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read extraction target: %w", err)
 	}
@@ -103,20 +103,20 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: opts.Discriminator, Cause: err, Err: ErrSyntax}
 	}
-	current, err := os.ReadFile(cleanPath)
+	current, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
 	}
 	if !bytes.Equal(current, content) {
 		return "", fmt.Errorf("cannot extract from %s: source changed during extraction", owner)
 	}
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write extracted variable atomically: %w", err)
 	}
 	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 		return "", fmt.Errorf("format extracted variable: %w", err)
 	}
-	finalSource, err := os.ReadFile(cleanPath)
+	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
 	}

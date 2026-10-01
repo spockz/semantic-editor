@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -55,7 +56,7 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 		return "", fmt.Errorf("symbol %q is not a valid helper identifier", helper)
 	}
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read extraction target: %w", err)
 	}
@@ -79,7 +80,7 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	if err != nil {
 		return "", err
 	}
-	collides, err := helperNameExists(cleanPath, file.Name.Name, helper, opts.Kind, target)
+	collides, err := helperNameExists(ctx, cleanPath, file.Name.Name, helper, opts.Kind, target)
 	if err != nil {
 		return "", err
 	}
@@ -121,20 +122,20 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: declSource, Cause: err, Err: ErrSyntax}
 	}
-	current, err := os.ReadFile(cleanPath)
+	current, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
 	}
 	if !bytes.Equal(current, content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)
 	}
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write extracted source atomically: %w", err)
 	}
 	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 		return "", fmt.Errorf("format extracted source: %w", err)
 	}
-	finalSource, err := os.ReadFile(cleanPath)
+	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
 	}
@@ -782,7 +783,16 @@ func nodeSource(fset *token.FileSet, node ast.Node) (string, error) {
 	return out.String(), nil
 }
 
-func helperNameExists(filePath, packageName, helper string, kind ExtractKind, owner *ast.FuncDecl) (bool, error) {
+func removeString(values []string, value string) []string {
+	for i, item := range values {
+		if item == value {
+			return append(values[:i], values[i+1:]...)
+		}
+	}
+	return values
+}
+
+func helperNameExists(ctx context.Context, filePath, packageName, helper string, kind ExtractKind, owner *ast.FuncDecl) (bool, error) {
 	entries, err := os.ReadDir(filepath.Dir(filePath))
 	if err != nil {
 		return false, fmt.Errorf("read Go package directory for helper collision check: %w", err)
@@ -792,7 +802,7 @@ func helperNameExists(filePath, packageName, helper string, kind ExtractKind, ow
 			continue
 		}
 		candidate := filepath.Join(filepath.Dir(filePath), entry.Name())
-		content, err := os.ReadFile(candidate) // #nosec G304 -- candidate is a sibling Go file enumerated from the target package directory.
+		content, err := sourcebuf.ReadFile(ctx, candidate)
 		if err != nil {
 			return false, fmt.Errorf("read Go package file %q for helper collision check: %w", candidate, err)
 		}
@@ -831,13 +841,4 @@ func helperNameExists(filePath, packageName, helper string, kind ExtractKind, ow
 		}
 	}
 	return false, nil
-}
-
-func removeString(values []string, value string) []string {
-	for i, item := range values {
-		if item == value {
-			return append(values[:i], values[i+1:]...)
-		}
-	}
-	return values
 }

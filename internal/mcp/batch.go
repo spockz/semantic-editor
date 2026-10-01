@@ -4,6 +4,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"semedit/internal/astedit"
+	"semedit/internal/godiagnostics"
 
 	"semedit/internal/backend"
 	"semedit/internal/backend/pathutil"
@@ -56,132 +58,18 @@ type BatchResponse struct {
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
-	verifyOptions := make(map[string]any)
-	for index, batchEntry := range edits {
-		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
-		if !ok || !entry.Batchable {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d: tool is not batchable: %s", index, batchEntry.Tool)})
-			return response, nil
+	ctx, release := godiagnostics.EnsureSessionManager(ctx)
+	ctx = operation.WithMutationObserver(ctx, godiagnostics.SynchronizeWithContext)
+
+	response, resultErr := s.executeBatch(ctx, edits, autoOrganizeImports)
+	if err := godiagnostics.SynchronizeWithContext(ctx); err != nil {
+		if response == nil {
+			return nil, errors.Join(resultErr, err, release())
 		}
-		raw := map[string]any{}
-		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
-			return response, nil
-		}
-		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
-			return response, nil
-		}
-		if raw == nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
-			return response, nil
-		}
-		if _, err := entry.Parse(raw); err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
-			return response, nil
-		}
-		if err := mergeBatchVerificationOptions(verifyOptions, raw); err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
-			return response, nil
-		}
-		if err := s.validateLanguageAllowed(entry, raw); err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
-			return response, nil
-		}
-	}
-	workspaceBefore, err := snapshotBatchWorkspace(s.workDir)
-	if err != nil {
-		return nil, fmt.Errorf("snapshot workspace before batch: %w", err)
-	}
-	plan, err := projectverify.Discover(s.workDir)
-	if err != nil {
-		return nil, fmt.Errorf("discover batch verification plan: %w", err)
-	}
-	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan)
-	if err != nil {
-		return nil, err
-	}
-	for _, batchEntry := range edits {
-		result, err := s.executeBatchEdit(ctx, batchEntry)
-		if err != nil {
-			response.Status = "error"
-			response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, err))
-			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-			return response, nil
-		}
-		response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, result, nil))
-	}
-	normalizationPaths, err := changedBatchPaths(s.workDir, workspaceBefore)
-	if err != nil {
 		response.Status = "error"
-		message := fmt.Errorf("collect changed batch paths: %w", err)
-		response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil
+		response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
 	}
-	goPaths := make([]string, 0, len(normalizationPaths))
-	for _, path := range normalizationPaths {
-		if filepath.Ext(path) == ".go" {
-			goPaths = append(goPaths, path)
-		}
-	}
-	if autoOrganizeImports && len(goPaths) > 0 {
-		if err := pipeline.OrganizeImports(ctx, s.workDir, goPaths...); err != nil {
-			response.Status = "error"
-			message := fmt.Errorf("post-process batch files: %w", err)
-			response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: message.Error()})
-			_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-			return response, nil
-		}
-	}
-	verifyEntry, ok := s.registry.LookupMCP("semantic_verify")
-	if !ok {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: "verification operation is not registered"})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil
-	}
-	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
-	maps.Copy(verifyRaw, verifyOptions)
-	verified, err := s.registry.Dispatch(operation.CallContext{
-		Ctx: ctx, WorkDir: s.workDir,
-		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
-		Registry: s.registry, Service: s.service, GoFormattingPaths: normalizationPaths,
-	}, verifyEntry.Key, verifyRaw)
-	if err != nil {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: err.Error()})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
-	}
-	verifyResult, ok := verified.(operation.VerifyRes)
-	if !ok {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil
-	}
-	response.Verification = &verifyResult
-	if verifyResult.Failure != "" {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: verifyResult.Failure})
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil
-	}
-	recordBatchDiagnosticDelta(response, baseline, verifyResult)
-	if err := captureBatchDiff(response, s.workDir, workspaceBefore); err != nil {
-		response.Status = "error"
-		return response, nil //nolint:nilerr // Final diff errors are carried in the response.
-	}
-	return response, nil
+	return response, errors.Join(resultErr, release())
 }
 
 func batchEntryResult(tool string, result BatchResult, err error) BatchResult {
@@ -259,6 +147,9 @@ func finalBatchDiff(root string, before map[string]string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if err := includeExternalBatchSources(root, before, after); err != nil {
+		return "", err
+	}
 	paths := make(map[string]struct{}, len(before)+len(after))
 	for path, content := range before {
 		if next, ok := after[path]; !ok || next != content {
@@ -281,6 +172,9 @@ func finalBatchDiff(root string, before map[string]string) (string, error) {
 func changedBatchPaths(root string, before map[string]string) ([]string, error) {
 	after, err := snapshotBatchWorkspace(root)
 	if err != nil {
+		return nil, err
+	}
+	if err := includeExternalBatchSources(root, before, after); err != nil {
 		return nil, err
 	}
 	paths := make([]string, 0)
@@ -418,6 +312,126 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	s.sendToolSuccessWithTimingAndResult(id, string(text), response, timing)
 }
 
+func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	verifyOptions := make(map[string]any)
+	for index, batchEntry := range edits {
+		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
+		if !ok || !entry.Batchable {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d: tool is not batchable: %s", index, batchEntry.Tool)})
+			return response, nil
+		}
+		raw := map[string]any{}
+		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			return response, nil
+		}
+		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
+			return response, nil
+		}
+		if raw == nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			return response, nil
+		}
+		if _, err := entry.Parse(raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			return response, nil
+		}
+		if err := mergeBatchVerificationOptions(verifyOptions, raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			return response, nil
+		}
+		if err := s.validateLanguageAllowed(entry, raw); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
+			return response, nil
+		}
+	}
+	workspaceBefore, err := snapshotBatchWorkspace(s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot workspace before batch: %w", err)
+	}
+	plan, err := projectverify.Discover(s.workDir)
+	if err != nil {
+		return nil, fmt.Errorf("discover batch verification plan: %w", err)
+	}
+	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan)
+	if err != nil {
+		return nil, err
+	}
+	ctx = context.WithValue(ctx, batchJournalKey{}, &batchJournal{before: workspaceBefore, root: s.workDir, roots: make(map[string]bool)})
+	buffer, err := s.executeBufferedBatchEdits(ctx, edits, response)
+	if err != nil {
+		response.Status = "error"
+		if len(response.Results) == 0 || response.Results[len(response.Results)-1].Status != "error" {
+			response.Results = append(response.Results, BatchResult{Tool: "batch_buffers", Status: "error", Error: err.Error()})
+		}
+		s.finishBufferedBatch(ctx, buffer, response)
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
+	}
+	normalizationPaths, err := s.normalizeBufferedBatch(ctx, buffer, workspaceBefore, autoOrganizeImports)
+	if err != nil {
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: err.Error()})
+		s.finishBufferedBatch(ctx, buffer, response)
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil //nolint:nilerr // Batch results carry the failure and disk diff.
+	}
+	if !s.finishBufferedBatch(ctx, buffer, response) {
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
+	}
+
+	verifyEntry, ok := s.registry.LookupMCP("semantic_verify")
+	if !ok {
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: "verification operation is not registered"})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
+	}
+	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
+	maps.Copy(verifyRaw, verifyOptions)
+	verified, err := s.registry.Dispatch(operation.CallContext{
+		Ctx: ctx, WorkDir: s.workDir,
+		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		Registry: s.registry, Service: s.service, GoFormattingPaths: normalizationPaths,
+	}, verifyEntry.Key, verifyRaw)
+	if err != nil {
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: err.Error()})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
+	}
+	verifyResult, ok := verified.(operation.VerifyRes)
+	if !ok {
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
+	}
+	response.Verification = &verifyResult
+	if verifyResult.Failure != "" {
+		response.Status = "error"
+		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: verifyResult.Failure})
+		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+		return response, nil
+	}
+	recordBatchDiagnosticDelta(response, baseline, verifyResult)
+	if err := captureBatchDiff(response, s.workDir, workspaceBefore); err != nil {
+		response.Status = "error"
+		return response, nil //nolint:nilerr // Final diff errors are carried in the response.
+	}
+	return response, nil
+}
+
 func mergeBatchVerificationOptions(options, raw map[string]any) error {
 	for _, key := range batchVerificationOptionKeys {
 		value, present := raw[key]
@@ -431,6 +445,25 @@ func mergeBatchVerificationOptions(options, raw map[string]any) error {
 			return fmt.Errorf("conflicting verification option %q across batch", key)
 		}
 		options[key] = value
+	}
+	return nil
+}
+
+func includeExternalBatchSources(root string, before, after map[string]string) error {
+	for path := range before {
+		if path != ".." && !strings.HasPrefix(path, "../") {
+			continue
+		}
+		target := filepath.Join(root, filepath.FromSlash(path))
+		// #nosec G304 -- only canonical Go outputs recorded by the validated module rename are read.
+		data, err := os.ReadFile(target)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("read external batch output: %w", err)
+		}
+		after[path] = string(data)
 	}
 	return nil
 }

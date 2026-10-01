@@ -74,8 +74,8 @@ func inlineVariableDef() Def[InlineVariableReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineVariableReq) (FileEditRes, error){
 			backend.LanguageGo: runInlineVariable,
 		},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "limit", wireInFunction: "Server.Stop"},
-		Batchable:  true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "limit", wireInFunction: "Server.Stop"},
+		BufferedBatch: true, Batchable: true,
 	}
 }

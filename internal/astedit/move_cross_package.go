@@ -11,7 +11,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"go/types"
-	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -20,10 +19,16 @@ import (
 	"strconv"
 	"strings"
 
-	"golang.org/x/tools/go/ast/astutil"
-	"golang.org/x/tools/go/packages"
+	"errors"
 	"semedit/internal/pipeline"
 	"semedit/internal/symbol"
+
+	"golang.org/x/tools/go/ast/astutil"
+	"golang.org/x/tools/go/packages"
+
+	"semedit/internal/gocache"
+	"semedit/internal/sourcebuf"
+	"slices"
 )
 
 // moveConstructAcrossPackages moves one exported free function inside a module
@@ -59,7 +64,12 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if err := rejectMoveSymlinkPath(moduleRoot, destinationPath); err != nil {
 		return "", err
 	}
-	original, err := inspectMoveModuleFiles(moduleRoot, sourcePath, destinationPath, symbolQuery)
+	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
+		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
+			return "", err
+		}
+	}
+	original, err := inspectMoveModuleFiles(ctx, moduleRoot, sourcePath, destinationPath, symbolQuery)
 	if err != nil {
 		return "", err
 	}
@@ -68,9 +78,8 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 			return "", fmt.Errorf("source and destination must be existing Go files in the selected module: %s", path)
 		}
 	}
-	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
-	cfg := &packages.Config{Context: ctx, Dir: moduleRoot, Mode: mode, Tests: true}
-	pkgs, err := packages.Load(cfg, "./...")
+
+	pkgs, err := loadMovePackages(ctx, moduleRoot, nil)
 	if err != nil {
 		return "", fmt.Errorf("load Go module packages: %w", err)
 	}
@@ -221,6 +230,9 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	if sourcebuf.FromContext(ctx) != nil {
+		return applyBufferedMove(ctx, original, changes)
+	}
 	// Compare all snapshots immediately before publication. New declaration first,
 	// references second, and source removal last keeps every partial state explicit.
 	for path := range changes {
@@ -301,76 +313,6 @@ func moveModuleRoot(sourcePath string) (string, error) {
 func moveWithin(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
-}
-
-func inspectMoveModuleFiles(root, sourcePath, destinationPath, symbolName string) (map[string][]byte, error) {
-	rootFS, err := os.OpenRoot(root)
-	if err != nil {
-		return nil, fmt.Errorf("open Go module root: %w", err)
-	}
-	snapshot := map[string][]byte{}
-	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("inspect module file %s: %w", path, err)
-		}
-		if path == root {
-			return nil
-		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
-		}
-		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" {
-				return filepath.SkipDir
-			}
-			if path != root {
-				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
-					return filepath.SkipDir
-				}
-			}
-			return nil
-		}
-		if !strings.HasSuffix(entry.Name(), ".go") {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return fmt.Errorf("resolve module-relative Go file %s: %w", path, relErr)
-		}
-		file, openErr := rootFS.Open(rel)
-		if openErr != nil {
-			return fmt.Errorf("open Go file during move preflight %s: %w", path, openErr)
-		}
-		data, readErr := io.ReadAll(file)
-		closeErr := file.Close()
-		if readErr != nil {
-			_ = file.Close()
-			return fmt.Errorf("read Go file during move preflight %s: %w", path, readErr)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close Go file during move preflight %s: %w", path, closeErr)
-		}
-		snapshot[filepath.Clean(path)] = data
-		text := string(data)
-		generated := strings.Contains(text, "Code generated ") && strings.Contains(text, "DO NOT EDIT.")
-		constrained := moveFilenameBuildConstraint(path) != "" || strings.Contains(text, "//go:build ") || strings.Contains(text, "// +build ")
-		selected := filepath.Clean(path) == filepath.Clean(sourcePath) || filepath.Clean(path) == filepath.Clean(destinationPath)
-		if selected && (generated || constrained) {
-			return fmt.Errorf("cross-package move refuses generated or build-constrained source or destination %s", path)
-		}
-		if (generated || constrained) && containsMoveIdentifier(data, symbolName) {
-			return fmt.Errorf("cross-package move refuses possible reference to %q in generated or build-constrained file %s", symbolName, path)
-		}
-		return nil
-	})
-	closeErr := rootFS.Close()
-	if walkErr != nil {
-		return nil, walkErr
-	}
-	if closeErr != nil {
-		return nil, fmt.Errorf("close Go module root: %w", closeErr)
-	}
-	return snapshot, nil
 }
 
 func containsMoveIdentifier(source []byte, name string) bool {
@@ -803,10 +745,7 @@ func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport
 }
 
 func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][]byte) ([]*packages.Package, error) {
-	overlay := make(map[string][]byte, len(changes))
-	maps.Copy(overlay, changes)
-	cfg := &packages.Config{Context: ctx, Dir: root, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule, Tests: true, Overlay: overlay}
-	pkgs, err := packages.Load(cfg, "./...")
+	pkgs, err := loadMovePackages(ctx, root, changes)
 	if err != nil {
 		return nil, fmt.Errorf("preflight moved package types: %w", err)
 	}
@@ -916,3 +855,189 @@ func publicationOrder(paths []string, destination, source string) []string {
 
 func strconvUnquote(s string) (string, error) { return strconv.Unquote(s) }
 func strconvQuote(s string) string            { return strconv.Quote(s) }
+
+func loadMovePackages(ctx context.Context, root string, changes map[string][]byte) ([]*packages.Package, error) {
+	return loadMovePackageScope(ctx, root, changes, packages.NeedName|packages.NeedFiles|packages.NeedCompiledGoFiles|packages.NeedSyntax|packages.NeedTypes|packages.NeedTypesInfo|packages.NeedImports|packages.NeedDeps|packages.NeedModule|packages.NeedEmbedFiles, []string{"./..."})
+}
+
+func bindMoveInputs(ctx context.Context, root string, pkgs []*packages.Package, bound map[string]bool) (bool, error) {
+	buffer := sourcebuf.FromContext(ctx)
+	if buffer == nil {
+		return false, nil
+	}
+	roots := map[string]bool{root: true}
+	auxiliary := make(map[string]bool)
+	packages.Visit(pkgs, func(pkg *packages.Package) bool {
+		module := pkg.Module
+		if module == nil {
+			return true
+		}
+		if module.Replace != nil {
+			module = module.Replace
+		}
+		if module.Version != "" || module.Dir == "" {
+			return true
+		}
+		roots[module.Dir] = true
+		for _, path := range append(slices.Clone(pkg.OtherFiles), pkg.EmbedFiles...) {
+			auxiliary[path] = true
+		}
+		return true
+	}, nil)
+	added := false
+	for _, tree := range slices.Sorted(maps.Keys(roots)) {
+		if !bound[tree] {
+			if err := sourcebuf.ObserveTree(ctx, tree); err != nil {
+				return false, err
+			}
+			bound[tree] = true
+			added = true
+		}
+		for _, name := range []string{"go.mod", "go.sum"} {
+			if _, err := sourcebuf.ReadFile(ctx, filepath.Join(tree, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return false, fmt.Errorf("bind move manifest: %w", err)
+			}
+		}
+	}
+	for _, path := range slices.Sorted(maps.Keys(auxiliary)) {
+		if !bound[path] {
+			bound[path] = true
+			added = true
+		}
+		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
+			return false, fmt.Errorf("bind move input: %w", err)
+		}
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		return false, err
+	}
+	return added, nil
+}
+
+func applyBufferedMove(ctx context.Context, original, changes map[string][]byte) (string, error) {
+	buffer := sourcebuf.FromContext(ctx)
+	if buffer == nil {
+		return "", fmt.Errorf("buffered move requires a source buffer")
+	}
+	plan := make([]sourcebuf.Change, 0, len(changes))
+	diffs := make([]string, 0, len(changes))
+	for _, path := range slices.Sorted(maps.Keys(changes)) {
+		before, exists := original[path]
+		if !exists {
+			return "", fmt.Errorf("move output is outside the input snapshot: %s", path)
+		}
+		plan = append(plan, sourcebuf.Change{Path: path, Before: before, After: changes[path]})
+		if diff := UnifiedDiff(path, string(before), string(changes[path])); diff != "" {
+			diffs = append(diffs, diff)
+		}
+	}
+	if err := buffer.Apply(ctx, plan); err != nil {
+		return "", fmt.Errorf("apply buffered move: %w", err)
+	}
+	return strings.Join(diffs, "\n"), nil
+}
+
+func inspectMoveModuleFiles(ctx context.Context, root, sourcePath, destinationPath, symbolName string) (map[string][]byte, error) {
+	rootFS, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("open Go module root: %w", err)
+	}
+	snapshot := map[string][]byte{}
+	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("inspect module file %s: %w", path, err)
+		}
+		if path == root {
+			return nil
+		}
+		if entry.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
+		}
+		if entry.IsDir() {
+			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" {
+				return filepath.SkipDir
+			}
+			if path != root {
+				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		if !strings.HasSuffix(entry.Name(), ".go") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("resolve module-relative Go file %s: %w", path, relErr)
+		}
+		var data []byte
+		if sourcebuf.FromContext(ctx) != nil {
+			data, err = sourcebuf.ReadFile(ctx, path)
+		} else {
+			data, err = rootFS.ReadFile(rel)
+		}
+		if err != nil {
+			return fmt.Errorf("read Go file during move preflight %s: %w", path, err)
+		}
+		snapshot[filepath.Clean(path)] = data
+		text := string(data)
+		generated := strings.Contains(text, "Code generated ") && strings.Contains(text, "DO NOT EDIT.")
+		constrained := moveFilenameBuildConstraint(path) != "" || strings.Contains(text, "//go:build ") || strings.Contains(text, "// +build ")
+		selected := filepath.Clean(path) == filepath.Clean(sourcePath) || filepath.Clean(path) == filepath.Clean(destinationPath)
+		if selected && (generated || constrained) {
+			return fmt.Errorf("cross-package move refuses generated or build-constrained source or destination %s", path)
+		}
+		if (generated || constrained) && containsMoveIdentifier(data, symbolName) {
+			return fmt.Errorf("cross-package move refuses possible reference to %q in generated or build-constrained file %s", symbolName, path)
+		}
+		return nil
+	})
+	closeErr := rootFS.Close()
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	if closeErr != nil {
+		return nil, fmt.Errorf("close Go module root: %w", closeErr)
+	}
+	return snapshot, nil
+}
+
+func loadMovePackageScope(ctx context.Context, root string, changes map[string][]byte, mode packages.LoadMode, patterns []string) ([]*packages.Package, error) {
+	environment, err := gocache.Environment(ctx, root)
+	if err != nil {
+		return nil, fmt.Errorf("prepare move environment: %w", err)
+	}
+	buffer := sourcebuf.FromContext(ctx)
+	if buffer != nil {
+		if err := buffer.AuthorizeWrites(ctx, root); err != nil {
+			return nil, err
+		}
+	}
+	bound := make(map[string]bool)
+	if _, err := bindMoveInputs(ctx, root, nil, bound); err != nil {
+		return nil, err
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("load move packages: %w", err)
+		}
+		overlay := sourcebuf.Overlay(ctx)
+		if overlay == nil {
+			overlay = make(map[string][]byte)
+		}
+		maps.Copy(overlay, changes)
+		cfg := &packages.Config{Context: ctx, Dir: root, Env: environment, BuildFlags: []string{"-mod=readonly"}, Mode: mode, Tests: true, Overlay: overlay}
+		loaded, err := packages.Load(cfg, patterns...)
+		if err != nil {
+			return nil, fmt.Errorf("load move packages: %w", err)
+		}
+		added, err := bindMoveInputs(ctx, root, loaded, bound)
+		if err != nil {
+			return nil, err
+		}
+		if !added {
+			return loaded, nil
+		}
+	}
+}

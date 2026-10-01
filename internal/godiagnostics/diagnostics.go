@@ -114,47 +114,15 @@ func CheckDetailed(ctx context.Context, root, executable string, environment []s
 	}
 	diagnostics = append(diagnostics, packageFindings...)
 
-	cmd := exec.CommandContext(sessionCtx, executable, "serve")
-	cmd.Dir = root
-	cmd.Env = environment
-	client, err := lsp.NewProcessClient(cmd)
+	client, err := startDiagnosticsClient(sessionCtx, root, executable, environment)
 	if err != nil {
-		return nil, fmt.Errorf("start gopls diagnostics session: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if closeErr := client.Close(); closeErr != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf("close gopls diagnostics session: %w", closeErr))
 		}
 	}()
-
-	rootURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(root)}).String()
-	initResult, err := client.Request(sessionCtx, "initialize", map[string]any{
-		"processId":        nil,
-		"rootUri":          rootURI,
-		"workspaceFolders": []map[string]any{{"uri": rootURI, "name": filepath.Base(root)}},
-		"capabilities": map[string]any{
-			"textDocument": map[string]any{"diagnostic": map[string]any{"dynamicRegistration": false}},
-		},
-		"initializationOptions": map[string]any{"pullDiagnostics": true},
-	})
-	if err != nil {
-		return nil, fmt.Errorf("initialize gopls diagnostics session: %w", err)
-	}
-	var initialized struct {
-		Capabilities struct {
-			DiagnosticProvider json.RawMessage `json:"diagnosticProvider"`
-		} `json:"capabilities"`
-	}
-	if err := json.Unmarshal(initResult, &initialized); err != nil {
-		return nil, fmt.Errorf("decode gopls initialization result: %w", err)
-	}
-	provider := initialized.Capabilities.DiagnosticProvider
-	if len(provider) == 0 || string(provider) == "null" || string(provider) == "false" {
-		return nil, errors.New("gopls does not advertise a diagnostic provider")
-	}
-	if err := client.Notify(sessionCtx, "initialized", map[string]any{}); err != nil {
-		return nil, fmt.Errorf("complete gopls initialization: %w", err)
-	}
 
 	for _, path := range files {
 		found, err := pullDiagnostics(sessionCtx, client, root, path)
@@ -174,6 +142,62 @@ func CheckDetailed(ctx context.Context, root, executable string, environment []s
 	}
 	slices.SortFunc(diagnostics, func(a, b Diagnostic) int { return strings.Compare(a.String(), b.String()) })
 	return diagnostics, nil
+}
+
+const textDocumentKey = "textDocument"
+
+func startDiagnosticsClient(ctx context.Context, root, executable string, environment []string) (resultClient *lsp.Client, resultErr error) {
+	// The client closes the process on request failure or at its owning scope's end.
+	cmd := exec.CommandContext(context.Background(), executable, "serve")
+	cmd.Dir = root
+	cmd.Env = environment
+	client, err := lsp.NewProcessClient(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("start gopls diagnostics session: %w", err)
+	}
+	defer func() {
+		if resultErr != nil {
+			if closeErr := client.Close(); closeErr != nil {
+				resultErr = errors.Join(resultErr, fmt.Errorf("close failed gopls initialization: %w", closeErr))
+			}
+		}
+	}()
+
+	rootURI := (&url.URL{Scheme: "file", Path: filepath.ToSlash(root)}).String()
+	initResult, err := client.Request(ctx, "initialize", map[string]any{
+		"processId":        nil,
+		"rootUri":          rootURI,
+		"workspaceFolders": []map[string]any{{"uri": rootURI, "name": filepath.Base(root)}},
+		"capabilities": map[string]any{
+			"general":       map[string]any{"positionEncodings": []string{"utf-16"}},
+			"workspace":     map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}},
+			textDocumentKey: map[string]any{"diagnostic": map[string]any{"dynamicRegistration": false}, "rename": map[string]any{"prepareSupport": true}},
+		},
+		"initializationOptions": map[string]any{"pullDiagnostics": true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("initialize gopls diagnostics session: %w", err)
+	}
+	var initialized struct {
+		Capabilities struct {
+			DiagnosticProvider json.RawMessage `json:"diagnosticProvider"`
+			PositionEncoding   string          `json:"positionEncoding"`
+		} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(initResult, &initialized); err != nil {
+		return nil, fmt.Errorf("decode gopls initialization result: %w", err)
+	}
+	if encoding := initialized.Capabilities.PositionEncoding; encoding != "" && encoding != "utf-16" {
+		return nil, fmt.Errorf("unsupported gopls position encoding %q", encoding)
+	}
+	provider := initialized.Capabilities.DiagnosticProvider
+	if len(provider) == 0 || string(provider) == "null" || string(provider) == "false" {
+		return nil, errors.New("gopls does not advertise a diagnostic provider")
+	}
+	if err := client.Notify(ctx, "initialized", map[string]any{}); err != nil {
+		return nil, fmt.Errorf("complete gopls initialization: %w", err)
+	}
+	return client, nil
 }
 
 func loadGoFiles(ctx context.Context, root string, environment []string) ([]string, []Diagnostic, error) {
@@ -205,12 +229,24 @@ func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string)
 	}
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
 	if err := client.Notify(ctx, "textDocument/didOpen", map[string]any{
-		"textDocument": map[string]any{"uri": uri, "languageId": "go", "version": 1, "text": string(content)},
+		textDocumentKey: map[string]any{"uri": uri, "languageId": "go", "version": 1, "text": string(content)},
 	}); err != nil {
 		return nil, fmt.Errorf("open Go source %q in gopls: %w", path, err)
 	}
+	diagnostics, err := requestDiagnostics(ctx, client, root, path)
+	if err != nil {
+		return nil, err
+	}
+	if err := client.Notify(ctx, "textDocument/didClose", map[string]any{textDocumentKey: map[string]any{"uri": uri}}); err != nil {
+		return nil, fmt.Errorf("close Go source %q in gopls: %w", path, err)
+	}
+	return diagnostics, nil
+}
+
+func requestDiagnostics(ctx context.Context, client *lsp.Client, root, path string) ([]Diagnostic, error) {
+	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
 	raw, err := client.Request(ctx, "textDocument/diagnostic", map[string]any{
-		"textDocument": map[string]any{"uri": uri},
+		textDocumentKey: map[string]any{"uri": uri},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("request diagnostics for %q: %w", path, err)
@@ -225,7 +261,6 @@ func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string)
 	if result.Kind == nil || (*result.Kind != "full" && *result.Kind != "") || len(result.Items) == 0 || bytes.Equal(bytes.TrimSpace(result.Items), []byte("null")) {
 		return nil, fmt.Errorf("gopls returned incomplete diagnostics for %q (kind %v, result %s)", path, result.Kind, raw)
 	}
-	// gopls v0.23 omits the kind marker but returns a full items array for this fresh pull.
 	var items []struct {
 		Range struct {
 			Start struct {
@@ -249,9 +284,6 @@ func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string)
 	diagnostics := make([]Diagnostic, 0, len(items))
 	for _, item := range items {
 		diagnostics = append(diagnostics, Diagnostic{Message: item.Message, Severity: item.Severity, Path: filepath.ToSlash(relative), Line: item.Range.Start.Line + 1, Column: item.Range.Start.Character + 1, Source: "gopls"})
-	}
-	if err := client.Notify(ctx, "textDocument/didClose", map[string]any{"textDocument": map[string]any{"uri": uri}}); err != nil {
-		return nil, fmt.Errorf("close Go source %q in gopls: %w", path, err)
 	}
 	return diagnostics, nil
 }

@@ -27,6 +27,13 @@ func NewCallContext(workDir string, project backend.ProjectContext) CallContext 
 	return CallContext{Ctx: context.Background(), WorkDir: workDir, Project: project, Registry: DefaultRegistry()}
 }
 
+// WithMutationObserver attaches ingress-owned session synchronization to mutating operations.
+func WithMutationObserver(ctx context.Context, observer func(context.Context) error) context.Context {
+	return context.WithValue(ctx, mutationObserverContextKey{}, observer)
+}
+
+type mutationObserverContextKey struct{}
+
 // effectiveProject merges an operation request project with ambient call context state.
 // Request fields win; empty root and language fall back to the call context, and workspace
 // trust is re-scoped to the effective root while preserving the request consent flag.

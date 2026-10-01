@@ -9,11 +9,11 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
 )
@@ -59,7 +59,7 @@ func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource st
 // InsertCase injects a case clause into an existing switch statement.
 func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSource string, opts CaseOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
 	}
@@ -167,7 +167,7 @@ func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSourc
 		}
 	}
 
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
 

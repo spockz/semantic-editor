@@ -1,0 +1,105 @@
+# Structural moves retain test and matching inactive files while an unrelated batch type error is temporary.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout '"destination_file":"b_test.go"'
+stdout '"destination_file":"hidden_b.go"'
+cmp regular.go .scratch/want/regular.go
+cmp a_test.go .scratch/want/a_test.go
+cmp b_test.go .scratch/want/b_test.go
+cmp hidden_a.go .scratch/want/hidden_a.go
+cmp hidden_b.go .scratch/want/hidden_b.go
+exec go test ./...
+-- go.mod --
+module example.com/movescope
+
+go 1.24
+-- regular.go --
+package sample
+
+func State() int { return 1 }
+-- a_test.go --
+package sample
+
+import (
+	"strings"
+	"example.com/movescope/utilitypath"
+)
+
+func Helper() string { return strings.TrimSpace(utility.Value()) }
+-- b_test.go --
+package sample
+
+import "testing"
+
+func TestHelper(t *testing.T) {
+	if Helper() != "ok" {
+		t.Fatal("moved test helper changed")
+	}
+}
+-- hidden_a.go --
+//go:build never
+
+package sample
+
+import "strings"
+
+func Hidden() string { return strings.TrimSpace(" hidden ") }
+-- hidden_b.go --
+//go:build never
+
+package sample
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"regular.go","symbol":"State","body":"return Missing()"}},{"tool":"semantic_replace_body","params":{"file":"utilitypath/value.go","symbol":"Value","body":"return \" ok \""}},{"tool":"semantic_move_construct","params":{"file":"a_test.go","destination_file":"b_test.go","symbol":"Helper"}},{"tool":"semantic_move_construct","params":{"file":"hidden_a.go","destination_file":"hidden_b.go","symbol":"Hidden"}},{"tool":"semantic_replace_body","params":{"file":"regular.go","symbol":"State","body":"return 1"}}]}}}
+-- .scratch/want/regular.go --
+package sample
+
+func State() int {
+	return 1
+}
+-- .scratch/want/a_test.go --
+package sample
+-- .scratch/want/b_test.go --
+package sample
+
+import (
+	"strings"
+	"testing"
+
+	utility "example.com/movescope/utilitypath"
+)
+
+func TestHelper(t *testing.T) {
+	if Helper() != "ok" {
+		t.Fatal("moved test helper changed")
+	}
+}
+
+func Helper() string { return strings.TrimSpace(utility.Value()) }
+-- .scratch/want/hidden_a.go --
+//go:build never
+
+package sample
+-- .scratch/want/hidden_b.go --
+//go:build never
+
+package sample
+
+import (
+	"strings"
+)
+
+func Hidden() string { return strings.TrimSpace(" hidden ") }
+-- utilitypath/value.go --
+package utility
+
+func Value() string { return "before" }
+-- utilitypath/value_test.go --
+package utility
+
+import "testing"
+
+func TestValue(t *testing.T) {
+	if Value() != " ok " { t.Fatal("working body lost") }
+}

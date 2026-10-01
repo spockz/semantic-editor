@@ -2,6 +2,7 @@
 package astedit
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func TestVerifyMoveFileUnchangedRejectsConcurrentEdits(t *testing.T) {
 	if err := os.WriteFile(path, []byte("package api\n// concurrent edit\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	err := verifyMoveFileUnchanged(path, expected)
+	err := verifyMoveFileUnchanged(context.Background(), path, expected)
 	if err == nil || !strings.Contains(err.Error(), "changed while move was being prepared") {
 		t.Fatalf("verifyMoveFileUnchanged error = %v, want concurrent-edit refusal", err)
 	}

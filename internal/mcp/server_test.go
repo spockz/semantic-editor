@@ -7,17 +7,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"semedit/internal/backend"
 	javabackend "semedit/internal/backend/java"
+	"semedit/internal/godiagnostics"
 	"semedit/internal/mcp"
 	"semedit/internal/operation"
+	"semedit/internal/pipeline"
 )
+
+type managedMCPFixture struct {
+	root    string
+	counter string
+	pidFile string
+}
 
 type mcpJavaSession struct{}
 
@@ -68,6 +80,42 @@ func (*mcpVerifySession) WaitDiagnostics(context.Context, string, int) ([]backen
 func (*mcpVerifySession) Close() error { return nil }
 
 var _ javabackend.JavaSession = (*mcpVerifySession)(nil)
+
+func newManagedMCPFixture(t *testing.T) managedMCPFixture {
+	t.Helper()
+
+	gopls, err := godiagnostics.FindGopls()
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	for name, source := range map[string]string{
+		"go.mod":   "module example.com/mcpreuse\n\ngo 1.24\n",
+		"value.go": "package sample\n\nfunc Value() int { return 1 }\n",
+	} {
+		if err := pipeline.WriteAtomic(filepath.Join(root, name), []byte(source)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bin := filepath.Join(root, ".scratch", "bin")
+	if err := os.MkdirAll(bin, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(bin, "gopls")
+	if err := pipeline.WriteAtomic(wrapper, []byte("#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nprintf '%s\\n' \"$$\" >> \"$SEMEDIT_GOPLS_PIDS\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(wrapper, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	counter := filepath.Join(root, ".scratch", "starts")
+	pidFile := filepath.Join(root, ".scratch", "pids")
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_REAL_GOPLS", gopls)
+	t.Setenv("SEMEDIT_GOPLS_COUNT", counter)
+	t.Setenv("SEMEDIT_GOPLS_PIDS", pidFile)
+	return managedMCPFixture{root: root, counter: counter, pidFile: pidFile}
+}
 
 func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
@@ -1522,5 +1570,208 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	if got, err := os.ReadFile(file); err != nil || string(got) != source {
 		t.Fatalf("refused operation changed source: %q, %v", got, err)
+	}
+}
+
+func TestMCPReusesGoDiagnosticsWithinInstance(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	root, counter := fixture.root, fixture.counter
+
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"value.go","symbol":"Value","body":"return 2"}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}`,
+	}, "\n") + "\n"
+	for instance := 1; instance <= 2; instance++ {
+		var output bytes.Buffer
+		if err := mcp.NewServer("full", root, &output).Serve(t.Context(), strings.NewReader(input)); err != nil {
+			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+		if len(lines) != 5 {
+			t.Fatalf("responses = %s", output.String())
+		}
+		for _, line := range lines {
+			var response struct {
+				Error  json.RawMessage `json:"error"`
+				Result struct {
+					IsError bool `json:"isError"`
+				} `json:"result"`
+			}
+			if err := json.Unmarshal([]byte(line), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Error != nil || response.Result.IsError {
+				t.Fatalf("failed response: %s", line)
+			}
+		}
+		starts, err := os.ReadFile(counter)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Count(string(starts), "start\n"); got != instance {
+			t.Fatalf("instance %d starts = %d", instance, got)
+		}
+	}
+	content, err := os.ReadFile(filepath.Join(root, "value.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "return 2") {
+		t.Fatalf("edit not published: %s", content)
+	}
+}
+
+func TestMCPCancellationClosesIdleDiagnostics(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	inputReader, inputWriter := io.Pipe()
+	outputReader, outputWriter := io.Pipe()
+	ctx, cancel := context.WithCancel(t.Context())
+	t.Cleanup(func() {
+		cancel()
+		_ = inputWriter.Close()
+		_ = outputReader.Close()
+	})
+	done := make(chan error, 1)
+	go func() {
+		err := mcp.NewServer("full", fixture.root, outputWriter).Serve(ctx, inputReader)
+		_ = outputWriter.Close()
+		done <- err
+	}()
+	decoder := json.NewDecoder(outputReader)
+	for _, request := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"go","check_only":true}}}`,
+	} {
+		if _, err := io.WriteString(inputWriter, request+"\n"); err != nil {
+			t.Fatal(err)
+		}
+		responseDone := make(chan error, 1)
+		go func() {
+			var response struct {
+				Error  json.RawMessage `json:"error"`
+				Result struct {
+					IsError bool `json:"isError"`
+				} `json:"result"`
+			}
+			err := decoder.Decode(&response)
+			if err == nil && (response.Error != nil || response.Result.IsError) {
+				err = fmt.Errorf("failed MCP response: %+v", response)
+			}
+			responseDone <- err
+		}()
+		select {
+		case err := <-responseDone:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(30 * time.Second):
+			t.Fatal("MCP response timed out")
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Serve error = %v, want cancellation", err)
+		}
+	case <-time.After(7 * time.Second):
+		t.Fatal("idle Serve did not close diagnostics after cancellation")
+	}
+	pidBytes, err := os.ReadFile(fixture.pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(pidBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = process.Release() }()
+	if err := process.Signal(syscall.Signal(0)); !errors.Is(err, syscall.ESRCH) && !errors.Is(err, os.ErrProcessDone) {
+		t.Fatalf("gopls process %d did not exit after canceled Serve: %v", pid, err)
+	}
+}
+
+func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
+	fixture := newManagedMCPFixture(t)
+	source := "package sample\n\nfunc Print(value int) { _ = value }\n\nfunc Emit() {\n\tPrint(1)\n}\n\nfunc Render(count int) {\n\tPrint(count + 1)\n}\n\nfunc Value() int {\n\tlocal := 2\n\treturn local\n}\n"
+	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "value.go"), []byte(source)); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "moved.go"), []byte("package sample\n")); err != nil {
+		t.Fatal(err)
+	}
+	calls := []struct {
+		name      string
+		arguments map[string]any
+	}{
+		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
+		{"semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
+		{"semantic_extract_function", map[string]any{"file": "value.go", "symbol": "emitOne", "in_function": "Emit", "kind": "function", "start_line": 6, "end_line": 6}},
+		{"semantic_extract_variable", map[string]any{"file": "value.go", "symbol": "total", "in_function": "Render", "discriminator": "count + 1"}},
+		{"semantic_inline_variable", map[string]any{"file": "value.go", "symbol": "local", "in_function": "Renamed"}},
+		{"semantic_move_construct", map[string]any{"file": "value.go", "destination_file": "moved.go", "symbol": "emitOne"}},
+		{"semantic_batch", map[string]any{"auto_organize_imports": true, "edits": []map[string]any{
+			{"tool": "semantic_replace_body", "params": map[string]any{"file": "moved.go", "symbol": "emitOne", "body": "Print(3)"}},
+			{"tool": "semantic_rename", "params": map[string]any{"file": "moved.go", "symbol": "emitOne", "to": "emitThree"}},
+			{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Value"}},
+		}}},
+		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
+	}
+	var input bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}}); err != nil {
+		t.Fatal(err)
+	}
+	for index, call := range calls {
+		if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": index + 2, "method": "tools/call", "params": map[string]any{"name": call.name, "arguments": call.arguments}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", fixture.root, &output).Serve(t.Context(), &input); err != nil {
+		t.Fatal(err)
+	}
+	responses := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(responses) != len(calls)+1 {
+		t.Fatalf("responses = %s", output.String())
+	}
+	for _, line := range responses {
+		var response struct {
+			Error  json.RawMessage `json:"error"`
+			Result struct {
+				IsError bool `json:"isError"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			t.Fatal(err)
+		}
+		if response.Error != nil || response.Result.IsError {
+			t.Fatalf("failed response: %s", line)
+		}
+	}
+	starts, err := os.ReadFile(fixture.counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(starts), "start\n"); got != 1 {
+		t.Fatalf("gopls starts = %d, want 1", got)
+	}
+	for file, expected := range map[string][]string{"value.go": {"emitThree()", "total := count + 1", "return int(2)", "func Value()"}, "moved.go": {"func emitThree()", "Print(3)"}} {
+		content, err := os.ReadFile(filepath.Join(fixture.root, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, fragment := range expected {
+			if !strings.Contains(string(content), fragment) {
+				t.Fatalf("%s missing %q: %s", file, fragment, content)
+			}
+		}
 	}
 }

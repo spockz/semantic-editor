@@ -88,11 +88,11 @@ func extractFunctionDef() Def[ExtractFunctionReq, FileEditRes] {
 	return Def[ExtractFunctionReq, FileEditRes]{
 		Key: "extract_function", Summary: "Use this tool instead of manually copying statements when extracting a safe contiguous top-level call region from a Go function or method into a local helper. Parameters are inferred from named owner parameters and the receiver. One leading single-variable declaration may be returned when its type is supported; address-taken inputs or results, closure-captured inputs, direct recover calls, selector calls on forwarded values, other local data flow, branching, loops, comments, composite literals, generic owners, and variadic parameters are refused." + automaticVerificationGuidance,
 		Params: extractFunctionParams, Level: LevelFile, CLIName: "extract-function", MCPName: "semantic_extract_function",
-		Parse:      parseExtractFunction,
-		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (FileEditRes, error){backend.LanguageGo: runExtractFunction},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "writeSummary", wireInFunction: "Server.Serve", "kind": "function", "start_line": 12, "end_line": 12},
-		Batchable:  true,
+		Parse:         parseExtractFunction,
+		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractFunctionReq) (FileEditRes, error){backend.LanguageGo: runExtractFunction},
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "writeSummary", wireInFunction: "Server.Serve", "kind": "function", "start_line": 12, "end_line": 12},
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -179,10 +179,10 @@ func extractVariableDef() Def[ExtractVariableReq, FileEditRes] {
 	return Def[ExtractVariableReq, FileEditRes]{
 		Key: "extract_variable", Summary: "Use this tool instead of text editing to extract one exact, side-effect-free typed expression from a whole argument of a direct single-argument call statement into a preceding Go local. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, receiver calls, and multiple-argument calls are unsupported." + automaticVerificationGuidance,
 		Params: extractVariableParams, Level: LevelFile, CLIName: "extract-variable", MCPName: "semantic_extract_variable",
-		Parse:      parseExtractVariable,
-		Handlers:   map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (FileEditRes, error){backend.LanguageGo: runExtractVariable},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "value", wireInFunction: "PrintValue", wireDiscriminator: "count + 1"},
-		Batchable:  true,
+		Parse:         parseExtractVariable,
+		Handlers:      map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (FileEditRes, error){backend.LanguageGo: runExtractVariable},
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "value", wireInFunction: "PrintValue", wireDiscriminator: "count + 1"},
+		BufferedBatch: true, Batchable: true,
 	}
 }

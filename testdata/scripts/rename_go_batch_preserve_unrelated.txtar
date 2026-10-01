@@ -1,0 +1,164 @@
+# Batch formatting follows the final changed paths, including an explicitly empty change set.
+stdin no-op.json
+exec semedit mcp
+! stdout '"isError":true'
+stdout '"final_diff":""'
+cmp noop.go want-noop.txt
+cmp path_value.go want-unrelated.txt
+stdin imports.json
+exec semedit mcp
+! stdout '"isError":true'
+cmp config.go want-imports-config.txt
+cmp read.go want-imports-read.txt
+cmp client/read.go want-imports-client-read.txt
+cmp config_test.go want-imports-config_test.txt
+cmp path_value.go want-unrelated.txt
+stdin plain.json
+exec semedit mcp
+! stdout '"isError":true'
+cmp config.go want-plain-config.txt
+cmp read.go want-plain-read.txt
+cmp client/read.go want-plain-client-read.txt
+cmp config_test.go want-plain-config_test.txt
+cmp path_value.go want-unrelated.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/renamepreservation
+
+go 1.23
+-- config.go --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	Port int
+}
+-- read.go --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.Port }
+-- client/read.go --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.Port }
+-- config_test.go --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{Port: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}
+-- path_value.go --
+//go:build go1.22
+// +build go1.22
+
+
+// This unrelated header and body deliberately differ from gofmt output.
+
+
+package config
+
+func unrelated( )int {return 7}
+-- want-unrelated.txt --
+//go:build go1.22
+// +build go1.22
+
+
+// This unrelated header and body deliberately differ from gofmt output.
+
+
+package config
+
+func unrelated( )int {return 7}
+-- noop.go --
+// This file supplies a successful byte-identical batch edit.
+package config
+
+func Noop() int {
+	return 7
+}
+-- want-noop.txt --
+// This file supplies a successful byte-identical batch edit.
+package config
+
+func Noop() int {
+	return 7
+}
+-- no-op.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"noop.go","symbol":"Noop","body":"return 7"}}]}}}
+-- imports.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_rename","params":{"file":"config.go","symbol":"Config.Port","to":"IntermediatePort"}},{"tool":"semantic_rename","params":{"file":"config.go","symbol":"Config.IntermediatePort","to":"BatchPort"}}]}}}
+-- plain.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_rename","params":{"file":"config.go","symbol":"Config.BatchPort","to":"FinalPort"}}]}}}
+-- want-imports-config.txt --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	BatchPort int
+}
+-- want-imports-read.txt --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.BatchPort }
+-- want-imports-client-read.txt --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.BatchPort }
+-- want-imports-config_test.txt --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{BatchPort: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}
+-- want-plain-config.txt --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	FinalPort int
+}
+-- want-plain-read.txt --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.FinalPort }
+-- want-plain-client-read.txt --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.FinalPort }
+-- want-plain-config_test.txt --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{FinalPort: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}

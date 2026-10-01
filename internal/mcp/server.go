@@ -24,6 +24,7 @@ import (
 	"semedit/internal/backend/pathutil"
 	"semedit/internal/backends"
 	"semedit/internal/gocache"
+	"semedit/internal/godiagnostics"
 	"semedit/internal/maven"
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
@@ -38,6 +39,7 @@ type Server struct {
 	workDir               string
 	expectedRoot          string
 	service               *backend.Service
+	diagnostics           *godiagnostics.SessionManager
 	registry              *operation.Registry
 	registryValidationErr error
 	liveReload            bool
@@ -149,12 +151,13 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 		profile = "full"
 	}
 	s := &Server{
-		profile:   profile,
-		workDir:   workDir,
-		service:   backends.NewDefaultService(),
-		registry:  operation.DefaultRegistry(),
-		startedAt: time.Now(),
-		out:       out,
+		profile:     profile,
+		workDir:     workDir,
+		service:     backends.NewDefaultService(),
+		diagnostics: godiagnostics.NewSessionManager(),
+		registry:    operation.DefaultRegistry(),
+		startedAt:   time.Now(),
+		out:         out,
 	}
 	for _, opt := range opts {
 		opt(s)
@@ -199,7 +202,32 @@ type jsonRPCError struct {
 }
 
 // Serve reads newline-delimited JSON-RPC requests from in and writes responses to out.
+// Cancellation closes in if it implements io.Closer, including caller-supplied files
+// and pipes. Otherwise the caller must unblock any read before Serve can finish
+// and release its diagnostic processes.
 func (s *Server) Serve(ctx context.Context, in io.Reader) error {
+	readClosed := make(chan error, 1)
+	// Stdio and pipes must unblock an idle read before persistent LSP cleanup can run.
+	stop := context.AfterFunc(ctx, func() {
+		var closeErr error
+		if closer, ok := in.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
+				closeErr = fmt.Errorf("close canceled MCP input: %w", err)
+			}
+		}
+		readClosed <- closeErr
+	})
+	runErr := s.serveRequests(ctx, in)
+	if !stop() {
+		runErr = errors.Join(runErr, <-readClosed)
+	}
+	if err := ctx.Err(); err != nil {
+		runErr = errors.Join(err, runErr)
+	}
+	return errors.Join(runErr, s.diagnostics.Close())
+}
+
+func (s *Server) serveRequests(ctx context.Context, in io.Reader) error {
 	if s.enabledLanguageErr != nil {
 		return fmt.Errorf("parse --enabled-languages: %w", s.enabledLanguageErr)
 	}
@@ -368,7 +396,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 		}
 		s.sendResult(req.ID, map[string]any{"tools": tools})
 	case "tools/call":
-		s.handleToolCall(ctx, req.ID, req.Params)
+		s.handleToolCall(godiagnostics.WithSessionManager(ctx, s.diagnostics), req.ID, req.Params)
 	default:
 		if !isNotification {
 			s.sendError(req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
@@ -1027,6 +1055,8 @@ type toolCallParams struct {
 }
 
 func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawParams json.RawMessage) {
+	ctx = operation.WithMutationObserver(ctx, godiagnostics.SynchronizeWithContext)
+
 	var params toolCallParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		s.sendError(id, -32602, "Invalid params")
@@ -1166,8 +1196,14 @@ func (s *Server) handleReload(id json.RawMessage) {
 		s.sendError(id, -32601, "Unknown tool: semantic_reload")
 		return
 	}
+	if err := s.diagnostics.Close(); err != nil {
+		s.diagnostics = godiagnostics.NewSessionManager()
+		s.sendToolError(id, fmt.Sprintf("close diagnostics before reload: %v", err), err)
+		return
+	}
 	s.sendToolSuccessWithStructuredContent(id, `{"status":"reloading"}`, map[string]any{"result": map[string]any{"status": "reloading"}})
 	if err := execReload(); err != nil {
+		s.diagnostics = godiagnostics.NewSessionManager()
 		s.sendToolError(id, fmt.Sprintf("reload error: %v", err), err)
 	}
 }

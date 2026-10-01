@@ -13,6 +13,69 @@ import (
 	"semedit/internal/capability"
 )
 
+// Entry is the type-erased view of an operation stored in the registry.
+type Entry struct {
+	Key           string
+	Summary       string
+	Params        []ParameterContract
+	Level         Level
+	CLIName       string
+	MCPName       string
+	PlacementKey  bool
+	Batchable     bool
+	BufferedBatch bool
+	ReadOnly      bool
+	Languages     []backend.LanguageID
+	ExampleRaw    map[string]any
+	Parse         func(map[string]any) (any, error)
+	Invoke        func(CallContext, map[string]any) (any, error)
+	Format        func(any) (string, error)
+}
+
+// SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.
+func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, error) {
+	if !e.BufferedBatch {
+		return false, nil
+	}
+	request, err := e.Parse(raw)
+	if err != nil {
+		return false, err
+	}
+	project := effectiveProject(cc, projectOf(request))
+	language, err := resolveLanguage(cc, project)
+	if err != nil {
+		return false, err
+	}
+	if language != backend.LanguageGo {
+		return false, nil
+	}
+	if req, ok := request.(RemoveReq); ok {
+		return !req.SafeDelete, nil
+	}
+	return true, nil
+}
+
+// Def declares one semantic operation with typed parse, handlers, and formatting.
+type Def[Req any, Res any] struct {
+	Key           string
+	Summary       string
+	Params        []ParameterContract
+	Level         Level
+	CLIName       string
+	MCPName       string
+	PlacementKey  bool
+	Batchable     bool
+	BufferedBatch bool
+	ReadOnly      bool
+	// PrepareProject normalizes a concrete project after ambient context merges and before language dispatch.
+	// Operations should set this only when a selected path must be classified from that effective root.
+	PrepareProject func(backend.ProjectContext) (backend.ProjectContext, error)
+	Parse          func(map[string]any) (Req, error)
+	Handlers       map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
+	Format         func(Res) (string, error)
+	ExampleRaw     map[string]any
+}
+
 // Level identifies the scope an operation acts upon.
 type Level string
 
@@ -52,44 +115,6 @@ type ParameterContract struct {
 	DynamicEnums func(backend.Backend) []string
 	// SourceFields names top-level structured output fields that can feed this parameter.
 	SourceFields []string
-}
-
-// Def declares one semantic operation with typed parse, per-language handlers, and formatting.
-type Def[Req any, Res any] struct {
-	Key          string
-	Summary      string
-	Params       []ParameterContract
-	Level        Level
-	CLIName      string
-	MCPName      string
-	PlacementKey bool
-	Batchable    bool
-	ReadOnly     bool
-	// PrepareProject normalizes a concrete project after ambient context merges and before language dispatch.
-	// Operations should set this only when a selected path must be classified from that effective root.
-	PrepareProject func(backend.ProjectContext) (backend.ProjectContext, error)
-	Parse          func(map[string]any) (Req, error)
-	Handlers       map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
-	Format         func(Res) (string, error)
-	ExampleRaw     map[string]any
-}
-
-// Entry is the type-erased view of a Def stored in a Registry.
-type Entry struct {
-	Key          string
-	Summary      string
-	Params       []ParameterContract
-	Level        Level
-	CLIName      string
-	MCPName      string
-	PlacementKey bool
-	Batchable    bool
-	ReadOnly     bool
-	Languages    []backend.LanguageID
-	ExampleRaw   map[string]any
-	Parse        func(map[string]any) (any, error)
-	Invoke       func(CallContext, map[string]any) (any, error)
-	Format       func(any) (string, error)
 }
 
 // Registry stores operations indexed by key, MCP tool name, and CLI command name.
@@ -143,17 +168,18 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 	}
 	slices.Sort(languages)
 	entry := Entry{
-		Key:          def.Key,
-		Summary:      def.Summary,
-		Params:       append([]ParameterContract(nil), def.Params...),
-		Level:        def.Level,
-		CLIName:      def.CLIName,
-		MCPName:      def.MCPName,
-		PlacementKey: def.PlacementKey,
-		Batchable:    def.Batchable,
-		ReadOnly:     def.ReadOnly,
-		Languages:    languages,
-		ExampleRaw:   cloneRaw(def.ExampleRaw),
+		Key:           def.Key,
+		Summary:       def.Summary,
+		Params:        append([]ParameterContract(nil), def.Params...),
+		Level:         def.Level,
+		CLIName:       def.CLIName,
+		MCPName:       def.MCPName,
+		PlacementKey:  def.PlacementKey,
+		Batchable:     def.Batchable,
+		BufferedBatch: def.BufferedBatch,
+		ReadOnly:      def.ReadOnly,
+		Languages:     languages,
+		ExampleRaw:    cloneRaw(def.ExampleRaw),
 		Parse: func(raw map[string]any) (any, error) {
 			request, err := def.Parse(raw)
 			if err != nil {
@@ -182,7 +208,7 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			// invoke directly without backend language resolution.
 			if len(def.Handlers) == 1 {
 				if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-					result, err := handler(ctx, cc, request)
+					result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
 					if err != nil {
 						return nil, err
 					}
@@ -193,13 +219,13 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			if err != nil {
 				if def.Key == capability.OpVerify {
 					if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-						return handler(ctx, cc, request)
+						return invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
 					}
 				}
 				return nil, err
 			}
 			if handler, ok := def.Handlers[language]; ok && handler != nil {
-				result, err := handler(ctx, cc, request)
+				result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
 				if err != nil {
 					return nil, err
 				}
@@ -208,7 +234,7 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			// LanguageAuto keys a language-independent handler used when resolution
 			// yields no dedicated implementation (workspace-lifetime operations).
 			if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-				result, err := handler(ctx, cc, request)
+				result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
 				if err != nil {
 					return nil, err
 				}
@@ -320,4 +346,13 @@ func setProject[Req any](request *Req, project backend.ProjectContext) {
 	if setter, ok := any(request).(interface{ SetProjectContext(backend.ProjectContext) }); ok {
 		setter.SetProjectContext(project)
 	}
+}
+
+func invokeHandler[Req any, Res any](ctx context.Context, cc CallContext, request Req, handler func(context.Context, CallContext, Req) (Res, error), mutating bool) (result Res, resultErr error) {
+	if mutating {
+		if observer, ok := ctx.Value(mutationObserverContextKey{}).(func(context.Context) error); ok && observer != nil {
+			defer func() { resultErr = errors.Join(resultErr, observer(ctx)) }()
+		}
+	}
+	return handler(ctx, cc, request)
 }

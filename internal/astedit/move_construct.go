@@ -9,14 +9,20 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
+
+	"slices"
+
+	"golang.org/x/tools/go/packages"
+
+	"golang.org/x/tools/go/ast/astutil"
 )
 
 // MoveConstructOptions configures declaration relocation.
@@ -38,7 +44,7 @@ func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveC
 	if destinationPath != cleanPath {
 		return moveConstructTo(ctx, cleanPath, destinationPath, symbolQuery, opts)
 	}
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
 	}
@@ -169,16 +175,16 @@ func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveC
 		return "", fmt.Errorf("verify moved syntax: %w", err)
 	}
 
-	if err := verifyMoveFileUnchanged(cleanPath, content); err != nil {
+	if err := verifyMoveFileUnchanged(ctx, cleanPath, content); err != nil {
 		return "", err
 	}
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
 	if err := finalizeMovedFile(ctx, cleanPath, opts); err != nil {
 		return "", err
 	}
-	finalContent, err := os.ReadFile(cleanPath)
+	finalContent, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read moved file after formatting: %w", err)
 	}
@@ -278,12 +284,12 @@ func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQue
 	if filepath.Dir(sourcePath) != filepath.Dir(destinationPath) {
 		return moveConstructAcrossPackages(ctx, sourcePath, destinationPath, symbolQuery, opts)
 	}
-	source, err := os.ReadFile(sourcePath)
+	source, err := sourcebuf.ReadFile(ctx, sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("read source file: %w", err)
 	}
-	// #nosec G304 -- destinationPath comes from a workspace-relative operation request.
-	destination, err := os.ReadFile(destinationPath)
+
+	destination, err := sourcebuf.ReadFile(ctx, destinationPath)
 	if err != nil {
 		return "", fmt.Errorf("read destination file: %w", err)
 	}
@@ -300,6 +306,7 @@ func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQue
 	if srcFile.Name.Name != dstFile.Name.Name {
 		return "", fmt.Errorf("source and destination must belong to the same Go package")
 	}
+
 	decl := findMoveDeclaration(srcFile, symbolQuery)
 	if decl == nil {
 		return "", &symbol.SymbolError{Op: "move_construct", File: sourcePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
@@ -371,18 +378,24 @@ func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQue
 	if _, err := parser.ParseFile(token.NewFileSet(), destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", fmt.Errorf("validate destination after move: %w", err)
 	}
-	if err := verifyMoveFileUnchanged(sourcePath, source); err != nil {
+	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
+		formattedSource, err = cleanupMoveImports(ctx, sourcePath, formattedSource)
+		if err != nil {
+			return "", err
+		}
+		return applyBufferedMove(ctx, map[string][]byte{sourcePath: source, destinationPath: destination}, map[string][]byte{sourcePath: formattedSource, destinationPath: formattedDestination})
+	}
+	if err := verifyMoveFileUnchanged(ctx, sourcePath, source); err != nil {
 		return "", err
 	}
-	if err := verifyMoveFileUnchanged(destinationPath, destination); err != nil {
+	if err := verifyMoveFileUnchanged(ctx, destinationPath, destination); err != nil {
 		return "", err
 	}
-	// Publish destination first. If the second per-file atomic write fails, the
-	// error names the already-published destination so callers can recover.
-	if err := pipeline.WriteAtomic(destinationPath, formattedDestination); err != nil {
+
+	if err := pipeline.WriteAtomicContext(ctx, destinationPath, formattedDestination); err != nil {
 		return "", fmt.Errorf("write destination atomically: %w", err)
 	}
-	if err := pipeline.WriteAtomic(sourcePath, formattedSource); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, sourcePath, formattedSource); err != nil {
 		return "", fmt.Errorf("destination %s was written but source %s remains unchanged: %w", destinationPath, sourcePath, err)
 	}
 	if opts.AutoOrganizeImports {
@@ -392,12 +405,12 @@ func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQue
 			}
 		}
 	}
-	finalSource, err := os.ReadFile(sourcePath)
+	finalSource, err := sourcebuf.ReadFile(ctx, sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("read source after move: %w", err)
 	}
-	// #nosec G304 -- destinationPath is the workspace-relative destination selected by the operation.
-	finalDestination, err := os.ReadFile(destinationPath)
+
+	finalDestination, err := sourcebuf.ReadFile(ctx, destinationPath)
 	if err != nil {
 		return "", fmt.Errorf("read destination after move: %w", err)
 	}
@@ -579,6 +592,34 @@ func moveBuildConstraint(file *ast.File) string {
 }
 
 func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (string, error) {
+	if sourcebuf.FromContext(ctx) != nil {
+		root, err := moveModuleRoot(filepath.Join(workingDir, "source.go"))
+		if err != nil {
+			return "", err
+		}
+		loaded, err := loadMovePackageScope(ctx, root, nil, packages.NeedName|packages.NeedFiles|packages.NeedModule|packages.NeedImports|packages.NeedDeps|packages.NeedEmbedFiles, []string{importPath})
+		if err != nil {
+			return "", err
+		}
+		var selected *packages.Package
+		for _, pkg := range loaded {
+			if pkg.PkgPath != importPath || pkg.ID != pkg.PkgPath {
+				continue
+			}
+			if selected != nil {
+				return "", fmt.Errorf("ambiguous package name for import %q", importPath)
+			}
+			selected = pkg
+		}
+		if selected == nil || selected.Name == "" || !token.IsIdentifier(selected.Name) {
+			return "", fmt.Errorf("cannot resolve package name for import %q", importPath)
+		}
+		if len(selected.Errors) != 0 {
+			return "", fmt.Errorf("cannot resolve package name for import %q: %s", importPath, selected.Errors[0].Msg)
+		}
+		return selected.Name, nil
+	}
+
 	// #nosec G204 -- executable is fixed to go; importPath is one parsed import literal.
 	command := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", importPath)
 	command.Dir = workingDir
@@ -591,18 +632,6 @@ func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (
 		return "", fmt.Errorf("go list returned an invalid package name %q for import %q; refusing move", name, importPath)
 	}
 	return name, nil
-}
-
-func verifyMoveFileUnchanged(path string, expected []byte) error {
-	// #nosec G304 -- path is an operation-selected source or destination file.
-	current, err := os.ReadFile(path)
-	if err != nil {
-		return fmt.Errorf("recheck %s before move publication: %w", path, err)
-	}
-	if !bytes.Equal(current, expected) {
-		return fmt.Errorf("%s changed while move was being prepared; refusing to overwrite concurrent edits", path)
-	}
-	return nil
 }
 
 func mergeMoveImports(destination, source *ast.File) error {
@@ -655,4 +684,58 @@ func mergeMoveImports(destination, source *ast.File) error {
 	}
 	destination.Decls = append([]ast.Decl{&ast.GenDecl{Tok: token.IMPORT, Lparen: token.Pos(1), Specs: additions}}, destination.Decls...)
 	return nil
+}
+
+func verifyMoveFileUnchanged(ctx context.Context, path string, expected []byte) error {
+
+	current, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		return fmt.Errorf("recheck %s before move publication: %w", path, err)
+	}
+	if !bytes.Equal(current, expected) {
+		return fmt.Errorf("%s changed while move was being prepared; refusing to overwrite concurrent edits", path)
+	}
+	return nil
+}
+
+func cleanupMoveImports(ctx context.Context, path string, content []byte) ([]byte, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("parse move imports: %w", err)
+	}
+	for _, spec := range slices.Clone(file.Imports) {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil {
+			return nil, fmt.Errorf("decode move import: %w", err)
+		}
+		var name string
+		if spec.Name != nil {
+			name = spec.Name.Name
+			if name == "_" || name == "." {
+				continue
+			}
+		} else {
+			name, err = resolveMoveImportName(ctx, filepath.Dir(path), importPath)
+			if err != nil {
+				return nil, err
+			}
+		}
+		originalName := spec.Name
+		spec.Name = ast.NewIdent(name)
+		used := astutil.UsesImport(file, importPath)
+		spec.Name = originalName
+		if !used {
+			astutil.DeleteImport(fset, file, importPath)
+		}
+	}
+	var out bytes.Buffer
+	if err := format.Node(&out, fset, file); err != nil {
+		return nil, fmt.Errorf("format move imports: %w", err)
+	}
+	formatted, err := format.Source(out.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("format move imports: %w", err)
+	}
+	return formatted, nil
 }

@@ -32,7 +32,7 @@ rm wrong.go
 stdin cross.json
 exec semedit mcp
 stdout '"isError":true'
-stdout 'same directory'
+stdout 'source-package dependency'
 stdout '"final_diff":""'
 cmp source.go .scratch/want/source.go
 cmp other/dest.go .scratch/want/other.go
@@ -56,7 +56,7 @@ package batchfailure
 // Value stays documented after moving.
 func Value() int { return 7 }
 
-func Other() int { return 9 }
+func Other() int { return Value() }
 -- partial.json --
 {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_scaffold_file","params":{"file":"dest.go","package":"batchfailure"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"dest.go","symbol":"Value"}},{"tool":"semantic_move_construct","params":{"file":"source.go","destination_file":"missing.go","symbol":"Other"}}],"auto_organize_imports":true}}}
 -- malformed.json --
@@ -80,7 +80,7 @@ package batchfailure
 -- .scratch/want/source.go --
 package batchfailure
 
-func Other() int { return 9 }
+func Other() int { return Value() }
 -- .scratch/want/dest.go --
 package batchfailure
 

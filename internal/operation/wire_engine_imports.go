@@ -90,8 +90,8 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 		Format: func(res FileEditRes) (string, error) {
 			return AppendDiagnosticDelta("Successfully organized imports.", res.Delta), nil
 		},
-		ExampleRaw: map[string]any{"file": wireExampleFile},
-		Batchable:  true,
+		ExampleRaw:    map[string]any{"file": wireExampleFile},
+		BufferedBatch: true, Batchable: true,
 	}
 }
 

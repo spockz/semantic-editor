@@ -5,11 +5,11 @@ import (
 	"context"
 	"fmt"
 	"go/format"
-	"os"
 
 	"semedit/internal/assertmode"
 	"semedit/internal/backend"
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 )
 
 // AssertionModeReq requests a safe fail-fast or continue-on-failure assertion rewrite.
@@ -63,33 +63,6 @@ func parseAssertionMode(raw map[string]any) (AssertionModeReq, error) {
 	return req, nil
 }
 
-func runAssertionMode(_ context.Context, cc CallContext, req AssertionModeReq) (AssertionModeRes, error) {
-	project := effectiveProject(cc, req.Project)
-	if !req.DryRun && !project.WorkspaceTrust.Allows(project.RootDir) {
-		return AssertionModeRes{}, &backend.WorkspaceTrustError{Operation: "assertion_mode", Language: backend.LanguageGo, Workspace: project.RootDir}
-	}
-	path := resolveWorkPath(cc.WorkDir, req.File)
-	// #nosec G304 -- path is the operation's explicit workspace-relative file target.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return AssertionModeRes{}, fmt.Errorf("read assertion source %s: %w", req.File, err)
-	}
-	formatted, err := format.Source(data)
-	if err != nil {
-		return AssertionModeRes{}, fmt.Errorf("format assertion source %s: %w", req.File, err)
-	}
-	rewritten, result, err := assertmode.Apply(path, formatted, assertmode.Mode(req.Mode))
-	if err != nil {
-		return AssertionModeRes{}, err
-	}
-	if !req.DryRun && result.Swapped > 0 {
-		if err := pipeline.WriteAtomic(path, rewritten); err != nil {
-			return AssertionModeRes{}, fmt.Errorf("write assertion source %s: %w", req.File, err)
-		}
-	}
-	return AssertionModeRes{File: req.File, Swapped: result.Swapped, DryRun: req.DryRun}, nil
-}
-
 func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 	return Def[AssertionModeReq, AssertionModeRes]{
 		Key:      "assertion_mode",
@@ -106,7 +79,34 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 			}
 			return fmt.Sprintf("%d swapped; wrote %s", res.Swapped, res.File), nil
 		},
-		ExampleRaw: map[string]any{"file": "api/api_test.go", "mode": "relax", "dry_run": true},
-		Batchable:  true,
+		ExampleRaw:    map[string]any{"file": "api/api_test.go", "mode": "relax", "dry_run": true},
+		BufferedBatch: true, Batchable: true,
 	}
+}
+
+func runAssertionMode(ctx context.Context, cc CallContext, req AssertionModeReq) (AssertionModeRes, error) {
+	project := effectiveProject(cc, req.Project)
+	if !req.DryRun && !project.WorkspaceTrust.Allows(project.RootDir) {
+		return AssertionModeRes{}, &backend.WorkspaceTrustError{Operation: "assertion_mode", Language: backend.LanguageGo, Workspace: project.RootDir}
+	}
+	path := resolveWorkPath(cc.WorkDir, req.File)
+	// #nosec G304 -- path is the operation's explicit workspace-relative file target.
+	data, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		return AssertionModeRes{}, fmt.Errorf("read assertion source %s: %w", req.File, err)
+	}
+	formatted, err := format.Source(data)
+	if err != nil {
+		return AssertionModeRes{}, fmt.Errorf("format assertion source %s: %w", req.File, err)
+	}
+	rewritten, result, err := assertmode.Apply(path, formatted, assertmode.Mode(req.Mode))
+	if err != nil {
+		return AssertionModeRes{}, err
+	}
+	if !req.DryRun && result.Swapped > 0 {
+		if err := pipeline.WriteAtomicContext(ctx, path, rewritten); err != nil {
+			return AssertionModeRes{}, fmt.Errorf("write assertion source %s: %w", req.File, err)
+		}
+	}
+	return AssertionModeRes{File: req.File, Swapped: result.Swapped, DryRun: req.DryRun}, nil
 }

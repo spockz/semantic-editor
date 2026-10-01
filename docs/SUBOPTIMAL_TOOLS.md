@@ -1050,3 +1050,120 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the 19-operation batch returned success and preserved the original test files, but the independent `TestSemeditRoutingDecomposition` oracle found that global final verification removed one blank line between the build header and package clause in untouched `path_value.go`. The acceptance fixture is isolated outside this worktree.
 - Workaround: derive built-in Go formatting and import-organizing paths from actual changed files after all batch edits; keep workspace diagnostics and configured normalization hooks on their existing scope. Regression coverage compares the untouched header byte-for-byte.
 - Root cause: final `semantic_verify` formatted the entire workspace, including unchanged Go files.
+
+### ST-0132: semantic_insert_structure cannot update an existing struct
+
+- Date: 2026-09-30
+- Tool: `semantic_insert_structure` with `kind: type` and `overwrite: true`
+- Target: `internal/mcp/server.go`, `Server`; `internal/godiagnostics/manager.go`, `managedSession` and `Document`
+- Observed failure: the tool rejected the request with `overwrite is unsupported for type structure insertion`; it made no change.
+- Workaround: add session-manager and executable-identity fields with narrowly scoped atomic source updates, then continue using semantic tools for function bodies.
+- Root cause: the type insertion tool cannot overwrite an existing struct, and no exposed semantic operation inserts a struct field.
+
+### ST-0133: scaffold header and declaration comments need text repair
+
+- Date: 2026-09-30
+- Tool: `semantic_scaffold_file`, `semantic_insert_type`, and `semantic_insert_function`
+- Target: `internal/godiagnostics/manager.go`, `internal/atomicfile/write.go`, `internal/atomicfile/write_test.go`, `internal/adapters/golang/rename_edit.go`, and the cancellation contract on `internal/mcp/server.go`, `Serve`
+- Observed failure: the scaffold separated its package comment from the package clause with a blank line, triggering `revive`. Inserted exported declarations require Go documentation comments, but no exposed semantic operation adds a comment to an existing declaration.
+- Workaround: make narrow atomic comment edits after semantic insertion, including the exported cancellation/reader ownership contract, then run formatting and lint checks.
+- Root cause: the scaffold's package-header layout violates the repository linter, and the semantic editing API has no add-comment operation for existing declarations.
+
+### ST-0134: semantic_insert_function rejected malformed test snippet
+
+- Date: 2026-09-30
+- Tool: `semantic_insert_function`
+- Target: `internal/godiagnostics/diagnostics_test.go`, `TestManagedDiagnosticsReuseAndRefresh`
+- Observed failure: the generated test source contained a malformed shell-quote rune literal; the tool reported `illegal rune literal` and left the file unchanged.
+- Workaround: simplify the wrapper script to receive paths through environment variables and retry semantic insertion.
+- Root cause: the caller escaped a nested Go and shell string incorrectly; the tool correctly rejected invalid Go syntax.
+
+### ST-0135: inspection used an unverified test symbol
+
+- Date: 2026-09-30
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/mcp/server_test.go`, `TestMCPMetricsFilePersistsAllCalls`
+- Observed failure: symbol not found; no files changed.
+- Workaround: locate the actual declaration name before inspection.
+- Root cause: the caller guessed a test name rather than using lookup.
+
+### ST-0136: generated PID wrapper used a literal dollar sign
+
+- Date: 2026-09-30
+- Tool: `semantic_replace_body`
+- Target: `internal/mcp/server_test.go`, `newManagedMCPFixture`
+- Observed failure: the cancellation test's shell wrapper recorded `$` instead of its process ID; the resulting Go source parsed, but the process cleanup assertion could not read a PID.
+- Workaround: correct the wrapper through semantic body replacement using a replacement callback.
+- Root cause: JavaScript string replacement interpreted `$$` as a replacement escape before passing the source to the tool.
+
+### ST-0137: failed test-file calls hid their error detail
+
+- Date: 2026-09-30
+- Tool: `semantic_scaffold_file` and `semantic_insert_function`
+- Target: `internal/gocache/cache_test.go`, `TestGoSubprocessTemporaryFiles`
+- Observed failure: both calls returned `isError: true`; the caller initially hid the error detail. A retained retry reported `invalid purpose header: expected package, found Temporary`; no test file existed.
+- Workaround: retain complete tool errors, provide the purpose header as a Go comment with `//`, then insert the test.
+- Root cause: `purpose_header` expects Go comment source rather than plain text. The caller supplied plain text and discarded the initial diagnostics.
+
+### ST-0138: batch verification invokes untrusted workspace hooks
+
+- Date: 2026-09-30
+- Tool: `semantic_batch`
+- Target: `internal/godiagnostics/manager.go`
+- Observed failure: all edits applied, but final verification failed because the configured golangci-lint hook requires workspace trust, which this tool's schema cannot supply. Batch normalization also formatted unrelated fixtures. A deferred insertion using json.RawMessage lacked its import.
+- Workaround: retain applied edits, organize their imports explicitly, restore unrelated formatting atomically, and use `make check` for the configured verification gate.
+- Root cause: batch verification and request trust contracts disagree; default batch normalization formats the entire workspace and does not resolve newly introduced imports.
+
+### ST-0139: large migration batch leaves compile integration errors in final verification
+
+- Date: 2026-09-30
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: source-buffer integration across AST operations, the registry, and shared gopls
+- Observed failure: the initial migration batch, integration/test batch, and reviewed source-view repair batch applied their mutations, but final verification reported diagnostics and the configured golangci-lint hook failed.
+- Workaround: retain the applied edits, run the repository mechanical fixes and compile gate, then repair the concrete integration errors with semantic tools.
+- Root cause: the prepared migration needs its compile integration pass; the tool correctly preserved applied edits with diagnostics.
+
+### ST-0140: declaration replacement and scaffolding need comment repair
+
+- Date: 2026-09-30
+- Tool: `semantic_remove_construct`, `semantic_insert_type`, and `semantic_scaffold_file`
+- Target: `internal/sourcebuf/buffer.go`, `internal/atomicfile/staged.go`, `internal/mcp/buffers.go`, and replaced registry/session/resolver types
+- Observed failure: generated package headers have a separating blank line; removing and reinserting types drops exported declaration comments, including an adjacent resolver declaration comment. The formatter does not repair the resulting revive failures.
+- Workaround: repair declaration and package comments with a scoped atomic source rewrite; retain semantic tools for function bodies and declarations.
+- Root cause: the available tools have no declaration-comment update operation, and scaffold/comment association does not preserve the lint contract.
+
+### ST-0141: buffered consistency repair batch failed final verification
+
+- Date: 2026-09-30
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: source buffer, rename, batch journal, and protocol test helper
+- Observed failure: the repair batch applied its edits but returned an error at final verification.
+- Workaround: retain the applied edits, inspect the saved response, and run the configured mechanical and compile checks.
+- Root cause: the final verification gate checks the complete integration while declaration replacement can require comment repair.
+
+### ST-0142: move overlay migration failed its final integration gate
+
+- Date: 2026-09-30
+- Tool: `semantic_batch` through the semedit MCP CLI
+- Target: cross-file and cross-package move planner, registry, and package loader
+- Observed failure: the prepared move migration, following session/rename repair batch, and same-package scope repair batch applied their edits but final verification returned an error.
+- Workaround: retain applied edits, inspect the saved verification result, and run the configured mechanical checks before repairing integration failures.
+- Root cause: the complete verification gate also checks callers affected by private signature changes and import cleanup.
+
+### ST-0143: import organization moved a function suppression into imports
+
+- Date: 2026-09-30
+- Tool: `semantic_organize_imports`
+- Target: `internal/astedit/move_cross_package.go`
+- Observed failure: the move planner's existing function comment and `nolint:funlen,gocognit` directive moved into the import block after helper insertion and import organization.
+- Workaround: restore the comment and directive at the planner declaration with an atomic comment-only rewrite.
+- Root cause: declaration and import insertion reused stale comment positions rather than retaining their declaration association.
+
+### ST-0144: body replacement used an unsupported parameter
+
+- Date: 2026-09-30
+- Tool: `semantic_replace_body`
+- Target: `internal/astedit/move_construct.go`, `cleanupMoveImports`
+- Observed failure: the call rejected `new_body` before mutation.
+- Workaround: supply the operation's documented `body` parameter.
+- Root cause: the caller used an incorrect parameter name.

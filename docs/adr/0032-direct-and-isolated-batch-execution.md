@@ -1,7 +1,7 @@
 # ADR-0032: Direct Batch Execution and Deferred Workspace Views
 
 Status: Accepted
-Date: 2026-09-17
+Date: 2026-09-30
 
 ## Context
 
@@ -52,16 +52,58 @@ plans and state-journaled staging transactions.
 ### 1. Direct Batch Mode (`semantic_batch`)
 
 Keep `semantic_batch` as the direct mode for single-turn batched plans. The
-mutating request is its own authorization. Operations and optional formatting
-write the live workspace in order. A later compiler, test, lint, or formatter
+mutating request is its own authorization. Eligible Go operations share a
+request-scoped source buffer with the retained gopls session. AST reads, sibling
+collision checks, symbol resolution, package loading, rename edits, and result
+inspection use the same working revision. Intermediate edits send unsaved LSP
+changes without publishing source files. Built-in formatting and imports operate
+on the final buffers before publication. A later compiler, test, lint, or formatter
 diagnostic returns `applied_with_diagnostics`; it does not roll back successful
 edits.
+
+The operation registry explicitly marks buffer-safe operations; new operations
+default to direct disk execution. Go rename, replacement, insertion, extraction,
+inlining, assertion rewrites, ordinary removal, imports, and declaration movement
+can buffer existing regular Go files. Scaffolding, dependency changes, safe
+deletion and other language backends are publication
+barriers. Publish the preceding segment, execute the disk operation, and start a
+new source buffer. External normalization and checks run after publication.
+
+Bind all existing Go source bytes, file identities, permissions, source membership,
+and symlink targets in each segment's workspace and local replacement modules.
+Also bind manifest and auxiliary analysis inputs. Stage and sync every changed
+output before replacing any source. Recheck the complete preimage before and
+between sorted per-file replacements, accounting for already published outputs.
+Each file replacement is atomic with an advancing modification time. Ordinary
+filesystem operations cannot make multiple file replacements globally atomic.
+A conflict before publication changes no source files; a late failure reports
+the published count and leaves the authoritative disk diff available.
+
+On a child failure, publish the buffered edits reached so far without final
+normalization. Publication cleanup has a bounded context independent of request
+cancellation so completed earlier edits retain the existing partial-application
+contract. Drop unpublished bytes and invalidate retained analysis if publication
+fails. Final diagnostics and disk hooks never inspect an unpublished revision.
+
+A multi-file rename validates every working preimage, output scope, and disk input
+before changing any buffer bytes. Failure leaves that child's outputs untouched.
+Cross-file and cross-package moves use the same all-output application boundary.
+Cross-package compiler preflight loads the current source overlay and merges the complete
+move plan over it for the final typecheck. Same-package moves retain structural
+validation, including matching test-file and build constraints. Editable local replacement inputs are
+bound read-only and reloaded until discovery reaches a stable source revision;
+package loading uses the project environment and refuses manifest updates.
+Resolve and bind the enclosing main module before package loading, including when
+the MCP workspace starts in a subdirectory. Local replacement modules remain
+read-only inputs. A request-local publication journal preserves the first preimage
+of explicitly changed external files across barriers. Final formatting and diff
+include those files; verification and hooks retain the requested workspace root.
 
 For a fully successful batch, capture diagnostics once before the first edit,
 apply every operation, coalesce deferred formatting and import organization,
 then capture diagnostics once after post-processing. Built-in Go formatting and
 import organization use the sorted set of existing files whose bytes actually
-changed in the workspace snapshot; diagnostics, trust checks, configured
+changed in the effective disk and buffered source view; diagnostics, trust checks, configured
 normalization hooks, and checks keep their established workspace scope. An empty
 changed-file set skips built-in Go formatting. Return that single final
 diagnostic delta on the batch response. Do not run a diagnostic pass for each
@@ -106,8 +148,8 @@ we establish state-journaled staging as a peer batching mechanism:
    `semantic_stage_abort` drops the entire in-memory journal with zero disk mutations,
    providing clean cancellation without git worktree or stash pollution.
 
-Do not implement an embedded `WorkspaceView` or isolated-batch MCP operation
-now. There is no principled safety distinction between direct one-file and
+The source buffer is a revision of the supplied workspace, without an embedded
+`WorkspaceView` or isolated-batch MCP operation. There is no principled safety distinction between direct one-file and
 direct multi-file edits: both are authorized mutations in the caller's working
 copy. Direct operation is also appropriate when formatters, generators, and
 other cooperative tools need to write their normal derived files.
@@ -123,6 +165,9 @@ operating-system sandbox.
 - No second approval, authenticated receipt, or client-supplied patch exists.
 - Direct mode reports applied operations and the resulting diff; it does not
   promise rollback or crash recovery.
+- Buffered Go edits share one working revision with gopls; save and watcher
+  notifications follow actual disk publication. Intermediate source revisions
+  remain private to the batch.
 - A successful batch or committed stage has exactly one pre-edit and one
   post-processing diagnostic capture; individual operations defer their own
   verification, formatting, and import organization while staged.

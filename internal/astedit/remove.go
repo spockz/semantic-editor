@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -55,7 +56,7 @@ type removeTarget struct {
 // Remove deletes one Go declaration or switch case after validating the resulting file syntax.
 func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", nil, "", fmt.Errorf("read target file: %w", err)
 	}
@@ -480,7 +481,7 @@ func formatRemovedFile(cleanPath string, content []byte, start, end int) ([]byte
 }
 
 func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte, autoOrganizeImports bool) error {
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 	if autoOrganizeImports {

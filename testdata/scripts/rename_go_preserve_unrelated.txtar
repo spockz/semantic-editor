@@ -1,0 +1,136 @@
+# Standalone Go rename normalizes its changed files while preserving unrelated source bytes.
+exec semedit rename --file config.go --symbol Config.Port --to ListenPort
+cmp config.go want-imports-config.txt
+cmp read.go want-imports-read.txt
+cmp client/read.go want-imports-client-read.txt
+cmp config_test.go want-imports-config_test.txt
+cmp path_value.go want-unrelated.txt
+stdin rename-plain.json
+exec semedit mcp
+! stdout '"isError":true'
+cmp config.go want-plain-config.txt
+cmp read.go want-plain-read.txt
+cmp client/read.go want-plain-client-read.txt
+cmp config_test.go want-plain-config_test.txt
+cmp path_value.go want-unrelated.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/renamepreservation
+
+go 1.23
+-- config.go --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	Port int
+}
+-- read.go --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.Port }
+-- client/read.go --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.Port }
+-- config_test.go --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{Port: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}
+-- path_value.go --
+//go:build go1.22
+// +build go1.22
+
+
+// This unrelated header and body deliberately differ from gofmt output.
+
+
+package config
+
+func unrelated( )int {return 7}
+-- want-unrelated.txt --
+//go:build go1.22
+// +build go1.22
+
+
+// This unrelated header and body deliberately differ from gofmt output.
+
+
+package config
+
+func unrelated( )int {return 7}
+-- want-imports-config.txt --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	ListenPort int
+}
+-- want-imports-read.txt --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.ListenPort }
+-- want-imports-client-read.txt --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.ListenPort }
+-- want-imports-config_test.txt --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{ListenPort: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}
+-- want-plain-config.txt --
+// This file declares the field whose references span source files and tests.
+package config
+
+type Config struct {
+	BoundPort int
+}
+-- want-plain-read.txt --
+// This file exercises a same-package field reference.
+package config
+
+func Read(c Config) int { return c.BoundPort }
+-- want-plain-client-read.txt --
+// This file exercises a field reference from another package.
+package client
+
+import cfg "example.com/renamepreservation"
+
+func Read(c cfg.Config) int { return c.BoundPort }
+-- want-plain-config_test.txt --
+// This file keeps the renamed field bound in a test variant.
+package config
+
+import "testing"
+
+func TestRead(t *testing.T) {
+	if got := Read(Config{BoundPort: 3}); got != 3 {
+		t.Fatal(got)
+	}
+}
+-- rename-plain.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"config.go","symbol":"Config.ListenPort","to":"BoundPort","auto_organize_imports":false}}}

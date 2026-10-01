@@ -15,13 +15,14 @@ import (
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
 // InlineVariable inlines one local literal binding at its immediate use site.
 func InlineVariable(ctx context.Context, filePath, function, name string) (string, error) {
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
 	}
@@ -56,7 +57,7 @@ func InlineVariable(ctx context.Context, filePath, function, name string) (strin
 		if !ok {
 			return "", fmt.Errorf("cannot inline %q: initializer literal has no supported default type", name)
 		}
-		shadowed, err := conversionNameShadowed(cleanPath, fileNode, fn, typeName)
+		shadowed, err := conversionNameShadowed(ctx, cleanPath, fileNode, fn, typeName)
 		if err != nil {
 			return "", fmt.Errorf("cannot inline %q: check default type name %s bindings: %w", name, typeName, err)
 		}
@@ -72,13 +73,13 @@ func InlineVariable(ctx context.Context, filePath, function, name string) (strin
 	if err != nil {
 		return "", err
 	}
-	if err := pipeline.WriteAtomic(cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
 	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 		return "", fmt.Errorf("format after inline: %w", err)
 	}
-	current, err := os.ReadFile(cleanPath)
+	current, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted file: %w", err)
 	}
@@ -354,13 +355,6 @@ func defaultTypeName(expr ast.Expr) (string, bool) {
 	return typeName, ok
 }
 
-func conversionNameShadowed(filePath string, fileNode *ast.File, fn *ast.FuncDecl, name string) (bool, error) {
-	if hasFunctionBinding(fn, name) || functionDeclaresName(fn, name) || packageDeclaresName(fileNode.Decls, name) || importsShadowConversion(fileNode.Imports, name) {
-		return true, nil
-	}
-	return siblingPackageDeclaresName(filePath, fileNode.Name.Name, name)
-}
-
 func packageDeclaresName(decls []ast.Decl, name string) bool {
 	for _, decl := range decls {
 		switch node := decl.(type) {
@@ -395,30 +389,6 @@ func importsShadowConversion(imports []*ast.ImportSpec, name string) bool {
 		}
 	}
 	return false
-}
-
-func siblingPackageDeclaresName(filePath, packageName, name string) (bool, error) {
-	entries, err := os.ReadDir(filepath.Dir(filePath))
-	if err != nil {
-		return false, fmt.Errorf("read package directory: %w", err)
-	}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || entry.Name() == filepath.Base(filePath) {
-			continue
-		}
-		siblingPath := filepath.Join(filepath.Dir(filePath), entry.Name())
-		sibling, parseErr := parser.ParseFile(token.NewFileSet(), siblingPath, nil, parser.ParseComments|parser.AllErrors)
-		if parseErr != nil {
-			return false, fmt.Errorf("parse sibling source %s: %w", entry.Name(), parseErr)
-		}
-		if sibling == nil || sibling.Name.Name != packageName {
-			continue
-		}
-		if packageDeclaresName(sibling.Decls, name) {
-			return true, nil
-		}
-	}
-	return false, nil
 }
 
 func unparenExpr(expr ast.Expr) ast.Expr {
@@ -458,4 +428,35 @@ func standaloneStatementRange(content []byte, fset *token.FileSet, stmt ast.Stmt
 		lineEnd++
 	}
 	return lineStart, lineEnd, nil
+}
+
+func conversionNameShadowed(ctx context.Context, filePath string, fileNode *ast.File, fn *ast.FuncDecl, name string) (bool, error) {
+	if hasFunctionBinding(fn, name) || functionDeclaresName(fn, name) || packageDeclaresName(fileNode.Decls, name) || importsShadowConversion(fileNode.Imports, name) {
+		return true, nil
+	}
+	return siblingPackageDeclaresName(ctx, filePath, fileNode.Name.Name, name)
+}
+
+func siblingPackageDeclaresName(ctx context.Context, filePath, packageName, name string) (bool, error) {
+	entries, err := os.ReadDir(filepath.Dir(filePath))
+	if err != nil {
+		return false, fmt.Errorf("read package directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || entry.Name() == filepath.Base(filePath) {
+			continue
+		}
+		siblingPath := filepath.Join(filepath.Dir(filePath), entry.Name())
+		sibling, parseErr := sourcebuf.ParseFile(ctx, token.NewFileSet(), siblingPath, nil, parser.ParseComments|parser.AllErrors)
+		if parseErr != nil {
+			return false, fmt.Errorf("parse sibling source %s: %w", entry.Name(), parseErr)
+		}
+		if sibling == nil || sibling.Name.Name != packageName {
+			continue
+		}
+		if packageDeclaresName(sibling.Decls, name) {
+			return true, nil
+		}
+	}
+	return false, nil
 }

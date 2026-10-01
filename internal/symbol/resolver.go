@@ -2,6 +2,7 @@
 package symbol
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -10,12 +11,12 @@ import (
 	"go/token"
 	"io/fs"
 	"maps"
-	"os"
 	"path/filepath"
+	"semedit/internal/sourcebuf"
 	"strings"
 )
 
-// Symbol represents an identified symbol in source code with exact coordinates.
+// Symbol represents an identified symbol with exact source coordinates.
 type Symbol struct {
 	Name          string `json:"name"`
 	Receiver      string `json:"receiver,omitempty"`
@@ -71,6 +72,11 @@ func ParseIdentifier(raw string) (receiver string, name string, err error) {
 	default:
 		return "", "", fmt.Errorf("%w: %q (expected [Receiver.]Name)", ErrInvalidIdentifier, raw)
 	}
+}
+
+type sourceSnapshotReader struct {
+	ctx   context.Context
+	files map[string][]byte
 }
 
 func normalizeInput(raw string) string {
@@ -299,10 +305,6 @@ type ResolutionSnapshot struct {
 	Files  map[string][]byte
 }
 
-type sourceSnapshotReader struct {
-	files map[string][]byte
-}
-
 func newSourceSnapshotReader() *sourceSnapshotReader {
 	return &sourceSnapshotReader{files: make(map[string][]byte)}
 }
@@ -318,7 +320,7 @@ func (reader *sourceSnapshotReader) read(path string) ([]byte, error) {
 		return source, nil
 	}
 	// #nosec G304 -- caller supplies a Go source path discovered by the resolver.
-	source, err := os.ReadFile(cleanPath)
+	source, err := sourcebuf.ReadFile(reader.ctx, cleanPath)
 	if err != nil {
 		return nil, err
 	}
@@ -334,6 +336,11 @@ func (reader *sourceSnapshotReader) snapshot() map[string][]byte {
 
 // ResolveSnapshot resolves a symbol and returns the exact source files read during lookup.
 func ResolveSnapshot(rootDir string, filePath string, query string) (*ResolutionSnapshot, error) {
+	return ResolveSnapshotWithContext(context.Background(), rootDir, filePath, query)
+}
+
+// ResolveSnapshotWithContext resolves symbols against the current batch source revision.
+func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath string, query string) (*ResolutionSnapshot, error) {
 	recv, name, err := ParseIdentifier(query)
 	if err != nil {
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
@@ -345,6 +352,7 @@ func ResolveSnapshot(rootDir string, filePath string, query string) (*Resolution
 	}
 
 	reader := newSourceSnapshotReader()
+	reader.ctx = ctx
 	packageIndexes := make(map[string]*packageTypeIndex)
 	var declarations, usages []*Symbol
 	for _, file := range targetFiles {

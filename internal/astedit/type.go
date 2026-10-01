@@ -9,11 +9,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 )
 
 // TypeOptions configures type declaration insertion behavior.
@@ -46,7 +46,7 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
 
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return fmt.Errorf("read target file: %w", err)
 	}
@@ -73,7 +73,7 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 	if err != nil && fileNode == nil {
 		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
 	}
-	if err := checkStructureDeclarationCollision(cleanPath, fileNode, genDecl); err != nil {
+	if err := checkStructureDeclarationCollision(ctx, cleanPath, fileNode, genDecl); err != nil {
 		return fmt.Errorf("check declaration collision: %w", err)
 	}
 
@@ -121,7 +121,7 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 	restTrimmed := bytes.TrimLeft(rest, "\r\n")
 	newContent.Write(restTrimmed)
 
-	if err := pipeline.WriteAtomic(cleanPath, newContent.Bytes()); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 

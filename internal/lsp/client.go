@@ -512,8 +512,8 @@ func (c *Client) Notify(ctx context.Context, method string, params any) error {
 func (c *Client) finish(_ error) {
 	c.closeOnce.Do(func() {
 		close(c.done)
-		pending := make([]chan response, 0, len(c.pending))
 		c.mu.Lock()
+		pending := make([]chan response, 0, len(c.pending))
 		for id, resultCh := range c.pending {
 			delete(c.pending, id)
 			pending = append(pending, resultCh)

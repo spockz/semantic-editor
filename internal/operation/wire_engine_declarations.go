@@ -96,7 +96,7 @@ func runInsertDeclaration(ctx context.Context, cc CallContext, req InsertDeclara
 }
 
 func finishInsertedGoDeclaration(cc CallContext, file, targetPath, source, detail string, finishDelta func() (pipeline.DiagnosticDelta, string)) (FileEditRes, error) {
-	symbol, line, err := goTargetAfterEdit(targetPath, source)
+	symbol, line, err := goTargetAfterEdit(cc.Ctx, targetPath, source)
 	if err != nil {
 		return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, file), err)
 	}
@@ -116,10 +116,10 @@ func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclarationReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertDeclaration,
 		},
-		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
-		PlacementKey: true,
-		Batchable:    true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
+		PlacementKey:  true,
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -174,10 +174,10 @@ func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertFunctionReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertFunction,
 		},
-		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
-		PlacementKey: true,
-		Batchable:    true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
+		PlacementKey:  true,
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -232,10 +232,10 @@ func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertTypeReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertType,
 		},
-		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
-		PlacementKey: true,
-		Batchable:    true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
+		PlacementKey:  true,
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -347,10 +347,10 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertDecl,
 		},
-		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080", "overwrite": false},
-		PlacementKey: true,
-		Batchable:    true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080", "overwrite": false},
+		PlacementKey:  true,
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -413,12 +413,12 @@ func runReplaceDecl(ctx context.Context, cc CallContext, req ReplaceDeclReq) (Fi
 	if err != nil {
 		return FileEditRes{}, err
 	}
-	symbol, line, err := goTargetAfterEdit(targetPath, req.Source)
+	symbol, line, err := goTargetAfterEdit(ctx, targetPath, req.Source)
 	if err != nil {
 		return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
 	}
 	if symbol == "" {
-		symbol, line, err = goExistingTargetAfterEdit(targetPath, req.Symbol)
+		symbol, line, err = goExistingTargetAfterEdit(ctx, targetPath, req.Symbol)
 		if err != nil {
 			return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
 		}
@@ -439,8 +439,8 @@ func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceDeclReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceDecl,
 		},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
-		Batchable:  true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
+		BufferedBatch: true, Batchable: true,
 	}
 }

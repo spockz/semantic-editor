@@ -3,6 +3,7 @@ package gobackend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -182,38 +183,33 @@ func (GoBackend) Lookup(_ context.Context, project backend.ProjectContext, query
 	if err != nil {
 		return nil, err
 	}
-	converted := &backend.LookupResult{
-		Symbol: result.Symbol, File: result.File, Line: result.Line, Column: result.Column,
-		Offset: result.Offset, Kind: result.Kind, Receiver: result.Receiver,
-		Ambiguous: result.Ambiguous,
-	}
-	if result.Definition != nil {
-		converted.Definition = convertCandidate(project.RootDir, result.Definition)
-		converted.Location = converted.Definition.Location
-	}
-	if result.Usages != nil {
-		converted.Usages = make([]*backend.SymbolCandidate, 0, len(result.Usages))
-		for _, usage := range result.Usages {
-			converted.Usages = append(converted.Usages, convertCandidate(project.RootDir, usage))
-		}
-	}
-	if result.Candidates != nil {
-		converted.Candidates = make([]*backend.SymbolCandidate, 0, len(result.Candidates))
-		for _, candidate := range result.Candidates {
-			converted.Candidates = append(converted.Candidates, convertCandidate(project.RootDir, candidate))
-		}
-	}
-	return converted, nil
+	return convertLookup(project.RootDir, result), nil
 }
 
 // Rename resolves and executes a Go rename, retaining the established CLI/MCP pipeline.
 func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*backend.RenameResult, error) {
-	lookup, err := (GoBackend{}).Lookup(ctx, request.Project, request.Symbol)
+	snapshot, err := symbol.ResolveSnapshotWithContext(ctx, request.Project.RootDir, request.Project.File, request.Symbol)
 	if err != nil {
 		return nil, err
 	}
+	lookup := convertLookup(request.Project.RootDir, snapshot.Result)
 	if lookup.Ambiguous {
 		return nil, &backend.Error{Operation: backend.OperationRename, Err: backend.ErrAmbiguous}
+	}
+	if lookup.Definition == nil {
+		return nil, fmt.Errorf("rename lookup lacks a declaration identity")
+	}
+	sourcePath := lookup.Definition.File
+	if !filepath.IsAbs(sourcePath) {
+		sourcePath = filepath.Join(request.Project.RootDir, sourcePath)
+	}
+	sourcePath, err = filepath.Abs(sourcePath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve rename lookup preimage: %w", err)
+	}
+	_, ok := snapshot.Files[filepath.Clean(sourcePath)]
+	if !ok {
+		return nil, errors.New("rename lookup lacks the source preimage")
 	}
 	var before []godiagnostics.Diagnostic
 	if !request.DeferVerification {
@@ -222,16 +218,17 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 			return nil, err
 		}
 	}
-	if err := golang.Rename(ctx, request.Project.RootDir, lookup.File, lookup.Line, lookup.Column, request.To); err != nil {
+	changedPaths, err := golang.RenameSelectedFiles(ctx, request.Project.RootDir, *lookup.Definition, snapshot.Files, request.To)
+	if err != nil {
 		return nil, err
 	}
-	if !request.DeferFormatting {
+	if !request.DeferFormatting && len(changedPaths) > 0 {
 		if request.OrganizeImports {
-			if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, "."); err != nil {
+			if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, changedPaths...); err != nil {
 				return nil, fmt.Errorf("organize imports after rename: %w", err)
 			}
 		} else {
-			if err := pipeline.Format(ctx, request.Project.RootDir, "."); err != nil {
+			if err := pipeline.Format(ctx, request.Project.RootDir, changedPaths...); err != nil {
 				return nil, fmt.Errorf("format after rename: %w", err)
 			}
 		}
@@ -360,4 +357,29 @@ func sourceLocation(root, file string, offset int) backend.SourceLocation {
 		URI:   pathutil.FileURI(path),
 		Range: backend.Range{Start: position, End: position},
 	}
+}
+
+func convertLookup(root string, result *symbol.LookupResult) *backend.LookupResult {
+	converted := &backend.LookupResult{
+		Symbol: result.Symbol, File: result.File, Line: result.Line, Column: result.Column,
+		Offset: result.Offset, Kind: result.Kind, Receiver: result.Receiver,
+		Ambiguous: result.Ambiguous,
+	}
+	if result.Definition != nil {
+		converted.Definition = convertCandidate(root, result.Definition)
+		converted.Location = converted.Definition.Location
+	}
+	if result.Usages != nil {
+		converted.Usages = make([]*backend.SymbolCandidate, 0, len(result.Usages))
+		for _, usage := range result.Usages {
+			converted.Usages = append(converted.Usages, convertCandidate(root, usage))
+		}
+	}
+	if result.Candidates != nil {
+		converted.Candidates = make([]*backend.SymbolCandidate, 0, len(result.Candidates))
+		for _, candidate := range result.Candidates {
+			converted.Candidates = append(converted.Candidates, convertCandidate(root, candidate))
+		}
+	}
+	return converted
 }

@@ -65,6 +65,11 @@ overlay configuration from changing the fixture's build. Codex benchmark
 processes receive the same environment before they start, and the semedit MCP
 registration explicitly forwards those variables to its stdio child.
 
+Go child subprocesses also receive `TMPDIR`, `TMP`, and `TEMP` pointing to
+the managed temporary directory. gopls creates temporary module copies through
+the operating system temporary-file API rather than `GOTMPDIR`; retaining its
+process must not expose those transient files in workspace snapshots.
+
 ## Invariants
 
 - MCP configuration names an absolute executable, not a fixture-relative

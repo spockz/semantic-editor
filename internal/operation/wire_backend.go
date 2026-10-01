@@ -88,11 +88,11 @@ var sourceFileContinuations = []string{
 	sourceScaffoldFile,
 }
 
-var sourceSymbolContinuations = []string{
-	sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
+var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
 	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
 	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
 	sourceExtractFunctionSymbol, sourceExtractVariableSymbol, sourceInlineVariableSymbol,
+	"semantic_move_construct.symbol",
 }
 
 var sourceInFunctionContinuations = []string{
@@ -632,14 +632,14 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
 	return Def[RenameReq, *backend.RenameResult]{
-		Key:       capability.OpRename,
-		Summary:   "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
-		Params:    renameParams,
-		Level:     LevelSymbol,
-		CLIName:   "rename",
-		MCPName:   "semantic_rename",
-		Batchable: true,
-		Parse:     parseRename,
+		Key:           capability.OpRename,
+		Summary:       "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
+		Params:        renameParams,
+		Level:         LevelSymbol,
+		CLIName:       "rename",
+		MCPName:       "semantic_rename",
+		BufferedBatch: true, Batchable: true,
+		Parse: parseRename,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, RenameReq) (*backend.RenameResult, error){
 			backend.LanguageGo:   run,
 			backend.LanguageRust: run,

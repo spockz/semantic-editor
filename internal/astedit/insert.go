@@ -9,12 +9,12 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -63,7 +63,7 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
 
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return fmt.Errorf("read target file: %w", err)
 	}
@@ -76,7 +76,7 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
 	if err != nil && fileNode == nil {
-		// Fall back to appending at EOF for unparseable files (ADR-0002)
+
 		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
 	}
 
@@ -99,7 +99,7 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 	newContent.Write(content[:insertOffset])
 
 	snippetText := strings.TrimSpace(source)
-	// Strip package declaration from snippet if user provided it
+
 	if strings.HasPrefix(snippetText, "package ") {
 		lines := strings.SplitN(snippetText, "\n", 2)
 		if len(lines) > 1 {
@@ -122,11 +122,11 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 	newContent.WriteString("\n\n")
 
 	rest := content[insertOffset:]
-	// Avoid excess leading newlines in trailing content
+
 	restTrimmed := bytes.TrimLeft(rest, "\r\n")
 	newContent.Write(restTrimmed)
 
-	if err := pipeline.WriteAtomic(cleanPath, newContent.Bytes()); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 
@@ -424,7 +424,7 @@ func appendToEOF(ctx context.Context, filePath string, content []byte, source st
 	buf.WriteString(strings.TrimSpace(source))
 	buf.WriteString("\n")
 
-	if err := pipeline.WriteAtomic(filePath, buf.Bytes()); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, filePath, buf.Bytes()); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 

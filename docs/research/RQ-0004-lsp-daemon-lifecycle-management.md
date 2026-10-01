@@ -2,7 +2,7 @@
 
 * **Status**: Open
 * **Category**: Runtime Architecture & Process Management
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-09-30
 
 ---
 
@@ -38,3 +38,21 @@ Running heavy LSPs ephemerally on every CLI command would result in unacceptable
 * **Microsoft `multilspy`**: [GitHub multilspy](https://github.com/microsoft/multilspy): headless multi-language server lifecycle management in Python.
 * **`gopls` Daemon Mode**: [gopls documentation](https://pkg.go.dev/golang.org/x/tools/gopls): shares gopls instances across processes via a remote socket.
 * **Neovim / Kakoune LSP Daemons**: Architectures using persistent background servers for headless editor clients.
+
+## 4. MCP Go LSP Sessions
+
+A copied `task-12-rename-scale-05-multifile` fixture has eight Go files. Twelve
+warm-cache trials of fresh gopls pull sessions measured initialization at roughly
+40–90 ms and diagnostic requests at 159–361 ms. The shutdown response took
+1.03–1.08 seconds in every timed trial. These are fixture measurements, not a
+general startup guarantee or timings recovered from historical agent runs.
+
+[ADR-0060](../adr/0060-mcp-owned-go-diagnostic-sessions.md) accepts persistent Go
+LSP sessions owned by an MCP instance. They synchronize editable source
+buffers before each scan and rename, synchronize AST refactorings including
+deferred batch edits, and preserve requested diagnostic scope. Shutdown moves
+to instance end or session replacement. The benchmark harness retains MCP tool
+timing records beside the transcript through `mcp_metrics_file` provenance.
+
+This research remains open for CLI daemon sharing, idle policy, other language
+servers, and native gopls refactoring actions with validated operation contracts.

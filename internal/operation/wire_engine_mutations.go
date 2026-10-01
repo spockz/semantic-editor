@@ -153,9 +153,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 		if err := validateBatchMoveTargets(cc.WorkDir, sourcePath, destinationPath); err != nil {
 			return FileEditRes{}, err
 		}
-		if filepath.Dir(sourcePath) != filepath.Dir(destinationPath) {
-			return FileEditRes{}, fmt.Errorf("semantic_move_construct batches require source and destination files in the same directory")
-		}
+
 	}
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, err := astedit.MoveConstruct(ctx, sourcePath, req.Symbol, astedit.MoveConstructOptions{Placement: req.Placement, TargetSymbol: req.TargetSymbol, DestinationFile: destinationPath, AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports), DeferFormatting: cc.DeferImports})
@@ -167,7 +165,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves require source and destination files in the same directory. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, Batchable: true}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves validate complete edit plans over current unsaved sources. Cross-package moves typecheck those plans and update module-wide references. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -263,8 +261,8 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 			text := fmt.Sprintf("Successfully replaced body of %s in %s.\n%s", res.Symbol, res.Display, res.Diff)
 			return AppendDiagnosticDelta(text, res.Delta), nil
 		},
-		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
-		Batchable:  true,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -445,9 +443,9 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertCaseReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertCase,
 		},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
-		Batchable:  true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
+		BufferedBatch: true, Batchable: true,
 	}
 }
 
@@ -510,8 +508,8 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceConstructReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceConstruct,
 		},
-		Format:     formatFileEdit,
-		ExampleRaw: map[string]any{"file": wireExampleFile, "in_function": "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
-		Batchable:  true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "in_function": "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		BufferedBatch: true, Batchable: true,
 	}
 }

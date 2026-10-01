@@ -402,13 +402,8 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 	if err := os.Symlink(goPath, filepath.Join(bin, "go")); err != nil {
 		t.Fatal(err)
 	}
-	realGofmt, err := exec.LookPath("gofmt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(root, "gofmt-called")
 	wrapper := filepath.Join(root, "gofmt-wrapper.sh")
-	script := "#!/bin/sh\nif [ -e '" + marker + "' ]; then echo injected-gofmt-failure >&2; exit 1; fi\n: > '" + marker + "'\nexec '" + realGofmt + "' \"$@\"\n"
+	script := "#!/bin/sh\necho injected-gofmt-failure >&2\nexit 1\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +608,7 @@ func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
 	}
 }
 
-func TestBatchMoveConstructRejectsUncapturedAndCrossDirectoryTargets(t *testing.T) {
+func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovescope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -624,7 +619,7 @@ func TestBatchMoveConstructRejectsUncapturedAndCrossDirectoryTargets(t *testing.
 	for name, source := range map[string]string{
 		"source.go":     "package batchmovescope\n\nfunc MoveMe() int { return 3 }\n",
 		"dest.go":       "package batchmovescope\n",
-		"other/dest.go": "package other\n",
+		"other/dest.go": "package other\nfunc MoveMe() int {return 8}\n",
 	} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
 			t.Fatalf("write %s: %v", name, err)
@@ -637,7 +632,7 @@ func TestBatchMoveConstructRejectsUncapturedAndCrossDirectoryTargets(t *testing.
 	if err != nil || response.Status != "error" || len(response.Results) != 1 {
 		t.Fatalf("cross-directory move response = %+v, err = %v", response, err)
 	}
-	if !strings.Contains(response.Results[0].Error, "same directory") || strings.Contains(response.FinalDiff, "func MoveMe") {
+	if !strings.Contains(response.Results[0].Error, "destination already declares") || strings.Contains(response.FinalDiff, "func MoveMe") {
 		t.Fatalf("cross-directory refusal was not pre-write: %+v diff=%s", response.Results[0], response.FinalDiff)
 	}
 	if response.Results[0].File != "source.go" || response.Results[0].DestinationFile != "other/dest.go" {

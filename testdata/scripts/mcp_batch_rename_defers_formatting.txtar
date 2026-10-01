@@ -1,0 +1,19 @@
+# A failed later batch edit leaves successful rename edits verbatim until final normalization can run.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+cmp value.go .scratch/want/value.go
+-- go.mod --
+module example.com/deferredrename
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Value","to":"Renamed"}},{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Missing","to":"Unavailable"}}],"auto_organize_imports":true}}}
+-- value.go --
+package sample
+
+func Value( ) int{ return 1 }
+-- .scratch/want/value.go --
+package sample
+
+func Renamed( ) int{ return 1 }

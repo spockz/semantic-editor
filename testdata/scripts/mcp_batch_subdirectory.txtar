@@ -1,0 +1,37 @@
+# Module-wide renames retain external references across a batch publication barrier.
+cd child
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout '\.\./caller.go'
+cmp value.go .scratch/want/value.go
+cmp ../caller.go .scratch/want/caller.go
+exists generated.go
+exec go test ./...
+-- go.mod --
+module example.com/batchsubdir
+
+go 1.24
+-- caller.go --
+package sample
+import "example.com/batchsubdir/child"
+func Read()int{return child.Value()}
+-- child/value.go --
+package child
+
+func Value() int { return 1 }
+-- child/input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Value","to":"Renamed"}},{"tool":"semantic_scaffold_file","params":{"file":"generated.go","package":"child"}},{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Renamed","body":"return 3"}}]}}}
+-- child/.scratch/want/value.go --
+package child
+
+func Renamed() int {
+	return 3
+}
+-- child/.scratch/want/caller.go --
+package sample
+
+import "example.com/batchsubdir/child"
+
+func Read() int { return child.Renamed() }

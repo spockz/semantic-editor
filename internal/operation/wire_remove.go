@@ -204,7 +204,7 @@ func removeDef() Def[RemoveReq, RemoveRes] {
 			}
 			return AppendDiagnosticDelta(text, res.Delta), nil
 		},
-		ExampleRaw: map[string]any{"file": wireExampleFile, "kind": "function", "symbol": "obsoleteHelper"},
-		Batchable:  true,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "kind": "function", "symbol": "obsoleteHelper"},
+		BufferedBatch: true, Batchable: true,
 	}
 }

@@ -1,0 +1,40 @@
+# Rename Unicode identifiers after supplementary characters and update cross-file uses through the CLI.
+exec semedit rename --file value.go --symbol café --to thé
+cmp value.go .scratch/want/value.go
+cmp use.go .scratch/want/use.go
+exec semedit rename --symbol Value --to Renamed
+cmp value.go .scratch/final/value.go
+cmp use.go .scratch/final/use.go
+exec go test ./...
+-- go.mod --
+module example.com/unicoderename
+
+go 1.24
+-- value.go --
+package sample
+
+func Value() int { _ = "🙂"; café := 1; return café }
+-- use.go --
+package sample
+
+func Use() int { return Value() }
+-- .scratch/want/value.go --
+package sample
+
+func Value() int { _ = "🙂"; thé := 1; return thé }
+-- .scratch/want/use.go --
+package sample
+
+func Use() int { return Value() }
+-- platform_windows.go --
+package sample
+
+func WindowsOnly() int { return 2 }
+-- .scratch/final/value.go --
+package sample
+
+func Renamed() int { _ = "🙂"; thé := 1; return thé }
+-- .scratch/final/use.go --
+package sample
+
+func Use() int { return Renamed() }

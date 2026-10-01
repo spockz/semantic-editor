@@ -17,18 +17,20 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
+	"semedit/internal/atomicfile"
 	"semedit/internal/gocache"
 	"semedit/internal/godiagnostics"
 	"semedit/internal/telemetry"
+
+	"semedit/internal/sourcebuf"
 
 	"golang.org/x/tools/imports"
 )
 
 var (
 	// ErrAtomicWrite indicates a failure during atomic file staging, sync, or rename.
-	ErrAtomicWrite = errors.New("atomic write failed")
+	ErrAtomicWrite = atomicfile.ErrAtomicWrite
 	// ErrFormatFailed indicates gofmt execution failed.
 	ErrFormatFailed = errors.New("gofmt execution failed")
 	// ErrOrganizeImportsFailed indicates import organization failed.
@@ -40,60 +42,15 @@ var (
 
 // WriteAtomic writes data to a file atomically via sibling temp file, fsync, and rename.
 func WriteAtomic(targetPath string, data []byte) error {
-	dir := filepath.Dir(targetPath)
-	base := filepath.Base(targetPath)
-	var oldInfo os.FileInfo
-	if info, statErr := os.Stat(targetPath); statErr == nil {
-		oldInfo = info
-	} else if !errors.Is(statErr, os.ErrNotExist) {
-		return fmt.Errorf("%w: stat target: %w", ErrAtomicWrite, statErr)
-	}
-	tmpFile, err := os.CreateTemp(dir, "."+base+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("%w: create temp file: %w", ErrAtomicWrite, err)
-	}
-	tmpName := tmpFile.Name()
-	defer func() {
-		_ = os.Remove(tmpName)
-	}()
-
-	if _, err := tmpFile.Write(data); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("%w: write temp file: %w", ErrAtomicWrite, err)
-	}
-
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		return fmt.Errorf("%w: sync temp file: %w", ErrAtomicWrite, err)
-	}
-
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("%w: close temp file: %w", ErrAtomicWrite, err)
-	}
-
-	if oldInfo != nil {
-		if err := os.Chmod(tmpName, oldInfo.Mode().Perm()); err != nil {
-			return fmt.Errorf("%w: preserve target permissions: %w", ErrAtomicWrite, err)
-		}
-		// Ensure advancing mtime before renaming (ADR-0010).
-		newTime := time.Now()
-		if minimum := oldInfo.ModTime().Add(time.Millisecond); newTime.Before(minimum) {
-			newTime = minimum
-		}
-		if err := os.Chtimes(tmpName, newTime, newTime); err != nil {
-			return fmt.Errorf("%w: set target mtime: %w", ErrAtomicWrite, err)
-		}
-	}
-
-	if err := os.Rename(tmpName, targetPath); err != nil {
-		return fmt.Errorf("%w: rename to target: %w", ErrAtomicWrite, err)
-	}
-
-	return nil
+	return atomicfile.WriteAtomic(targetPath, data)
 }
 
 // Format runs gofmt on the specified paths or directories.
 func Format(ctx context.Context, workDir string, paths ...string) error {
+	if sourcebuf.FromContext(ctx) != nil {
+		return formatBuffered(ctx, workDir, paths...)
+	}
+
 	finish := telemetry.Start(ctx, telemetry.PhaseFormattingGofmt)
 	defer finish()
 
@@ -251,7 +208,7 @@ func OrganizeImportsWithOptions(ctx context.Context, workDir string, opts Import
 
 	for _, file := range goFiles {
 		cleanFile := filepath.Clean(file)
-		data, err := os.ReadFile(cleanFile)
+		data, err := sourcebuf.ReadFile(ctx, cleanFile)
 		if err != nil {
 			return fmt.Errorf("read file %s: %w", file, err)
 		}
@@ -267,7 +224,7 @@ func OrganizeImportsWithOptions(ctx context.Context, workDir string, opts Import
 		}
 
 		if !bytes.Equal(data, res) {
-			if err := WriteAtomic(cleanFile, res); err != nil {
+			if err := WriteAtomicContext(ctx, cleanFile, res); err != nil {
 				return fmt.Errorf("write organized file %s: %w", file, err)
 			}
 		}
@@ -441,7 +398,7 @@ func CheckDiagnosticDetails(ctx context.Context, workDir string) ([]godiagnostic
 	if err != nil {
 		return nil, fmt.Errorf("prepare gopls diagnostics environment: %w", err)
 	}
-	diagnostics, err := godiagnostics.CheckDetailed(ctx, effectiveDir, goplsPath, environment)
+	diagnostics, err := godiagnostics.CheckDetailedWithContext(ctx, effectiveDir, goplsPath, environment)
 	if err != nil {
 		return nil, fmt.Errorf("check Go diagnostics with gopls: %w", err)
 	}
@@ -534,6 +491,11 @@ func NeedsFormatting(ctx context.Context, workDir string, paths ...string) (bool
 		return false, err
 	}
 	return len(bytes.TrimSpace([]byte(output))) > 0, nil
+}
+
+// WriteAtomicContext routes source writes through the active batch buffer.
+func WriteAtomicContext(ctx context.Context, targetPath string, data []byte) error {
+	return sourcebuf.WriteFile(ctx, targetPath, data)
 }
 
 // runGofmt invokes gofmt in bounded argument batches and never starts with no file arguments.
@@ -705,4 +667,32 @@ func cacheRootsForGoDirectory(target string, roots []string) ([]string, error) {
 		nested = append(nested, root)
 	}
 	return nested, nil
+}
+
+func formatBuffered(ctx context.Context, workDir string, paths ...string) error {
+	files, err := GoFiles(workDir, paths...)
+	if err != nil {
+		return fmt.Errorf("%w: select buffered Go files: %w", ErrFormatFailed, err)
+	}
+	for _, file := range files {
+		target := file
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(workDir, target)
+		}
+		before, err := sourcebuf.ReadFile(ctx, target)
+		if err != nil {
+			return fmt.Errorf("%w: read buffered source: %w", ErrFormatFailed, err)
+		}
+		formatted, err := format.Source(before)
+		if err != nil {
+			return fmt.Errorf("%w: format buffered source: %w", ErrFormatFailed, err)
+		}
+		if bytes.Equal(before, formatted) {
+			continue
+		}
+		if err := WriteAtomicContext(ctx, target, formatted); err != nil {
+			return fmt.Errorf("%w: buffer formatted source: %w", ErrFormatFailed, err)
+		}
+	}
+	return nil
 }

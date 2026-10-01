@@ -1,0 +1,35 @@
+# A public MCP batch resolves inserted and renamed declarations in one working source revision, including after a scaffold publication barrier.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+cmp value.go .scratch/want/value.go
+cmp uses.go .scratch/want/uses.go
+cmp generated.go .scratch/want/generated.go
+exec go test ./...
+-- go.mod --
+module example.com/batchbuffers
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"uses.go","source":"func Read() int { return Value() }"}},{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Value","to":"Renamed"}},{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Renamed","body":"return 3"}},{"tool":"semantic_rename","params":{"file":"value.go","symbol":"Renamed","to":"Final"}},{"tool":"semantic_scaffold_file","params":{"file":"generated.go","package":"sample"}},{"tool":"semantic_insert_function","params":{"file":"generated.go","source":"func Generated() int { return Final() }"}},{"tool":"semantic_rename","params":{"symbol":"Generated","to":"Result"}}]}}}
+-- value.go --
+package sample
+
+func Value() int { return 1 }
+-- uses.go --
+package sample
+-- .scratch/want/value.go --
+package sample
+
+func Final() int {
+	return 3
+}
+-- .scratch/want/uses.go --
+package sample
+
+func Read() int { return Final() }
+-- .scratch/want/generated.go --
+package sample
+
+func Result() int { return Final() }

@@ -1,0 +1,97 @@
+# Earlier unsaved calls, cross-file and cross-package moves, rename, and later body edits share one working revision.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+stdout '"destination_file":"legacy/spare.go"'
+stdout '"destination_file":"api/dest.go"'
+stdout '"symbol":"Final"'
+stdout 'caller/use.go'
+cmp legacy/source.go .scratch/want/source.go
+cmp legacy/spare.go .scratch/want/spare.go
+cmp api/dest.go .scratch/want/dest.go
+cmp caller/use.go .scratch/want/use.go
+cmp untouched.go .scratch/want/untouched.go
+exec go test ./...
+-- go.mod --
+module example.com/batchcross
+
+go 1.24
+-- legacy/source.go --
+package legacy
+
+import "strings"
+
+// MoveMe carries its documentation and import.
+func MoveMe(value string) string { return strings.TrimSpace(value) }
+
+func Keep() int { return 1 }
+-- legacy/spare.go --
+package legacy
+-- api/dest.go --
+package api
+
+import "example.com/batchcross/legacy"
+
+func Existing() string { return legacy.MoveMe(" existing ") }
+-- caller/use.go --
+package caller
+
+import "example.com/batchcross/legacy"
+
+func Call() string { return legacy.MoveMe(" caller ") }
+-- caller/use_test.go --
+package caller
+
+import "testing"
+
+func TestCalls(t *testing.T) {
+	if Call() != "caller!" || Unsaved() != "unsaved!" {
+		t.Fatal("moved calls changed identity")
+	}
+}
+-- untouched.go --
+//go:build go1.22
+// +build go1.22
+
+
+package untouched
+
+func Preserve( )int{return 8}
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"caller/use.go","source":"func Unsaved() string { return legacy.MoveMe(\" unsaved \") }"}},{"tool":"semantic_move_construct","params":{"file":"legacy/source.go","destination_file":"legacy/spare.go","symbol":"MoveMe"}},{"tool":"semantic_move_construct","params":{"file":"legacy/spare.go","destination_file":"api/dest.go","symbol":"MoveMe"}},{"tool":"semantic_rename","params":{"file":"api/dest.go","symbol":"MoveMe","to":"Final"}},{"tool":"semantic_replace_body","params":{"file":"api/dest.go","symbol":"Final","body":"return strings.TrimSpace(value) + \"!\""}}]}}}
+-- .scratch/want/source.go --
+package legacy
+
+func Keep() int { return 1 }
+-- .scratch/want/spare.go --
+package legacy
+-- .scratch/want/dest.go --
+package api
+
+import (
+	"strings"
+)
+
+func Existing() string { return Final(" existing ") }
+
+// Final carries its documentation and import.
+func Final(value string) string {
+	return strings.TrimSpace(value) + "!"
+}
+-- .scratch/want/use.go --
+package caller
+
+import "example.com/batchcross/api"
+
+func Call() string { return api.Final(" caller ") }
+
+func Unsaved() string { return api.Final(" unsaved ") }
+-- .scratch/want/untouched.go --
+//go:build go1.22
+// +build go1.22
+
+
+package untouched
+
+func Preserve( )int{return 8}

@@ -7,11 +7,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/telemetry"
 )
 
@@ -155,132 +155,6 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	return text, nil
 }
 
-// goTargetAfterEdit reads the formatted file after mutation and returns only a
-// uniquely identifiable declaration target that is present in that file.
-func goTargetAfterEdit(filePath, source string) (string, int, error) {
-	prefix := "package p\n"
-	if strings.HasPrefix(strings.TrimSpace(source), "package ") {
-		prefix = ""
-	}
-	snippet, err := parser.ParseFile(token.NewFileSet(), "snippet.go", prefix+source, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", 0, fmt.Errorf("parse inserted declaration after write: %w", err)
-	}
-	if len(snippet.Decls) != 1 {
-		return "", 0, nil
-	}
-	var name, receiver string
-	switch decl := snippet.Decls[0].(type) {
-	case *ast.FuncDecl:
-		name = decl.Name.Name
-		if decl.Recv != nil && len(decl.Recv.List) == 1 {
-			receiver = receiverName(decl.Recv.List[0].Type)
-			if receiver == "" {
-				return "", 0, nil
-			}
-		}
-	case *ast.GenDecl:
-		if len(decl.Specs) != 1 {
-			return "", 0, nil
-		}
-		switch spec := decl.Specs[0].(type) {
-		case *ast.TypeSpec:
-			name = spec.Name.Name
-		case *ast.ValueSpec:
-			if len(spec.Names) != 1 {
-				return "", 0, nil
-			}
-			name = spec.Names[0].Name
-		}
-	}
-	if name == "" {
-		return "", 0, nil
-	}
-	content, err := os.ReadFile(filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
-	if err != nil {
-		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
-	}
-	fset := token.NewFileSet()
-	final, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
-	}
-	var foundSymbol string
-	var foundLine int
-	for _, decl := range final.Decls {
-		switch node := decl.(type) {
-		case *ast.FuncDecl:
-			if node.Name.Name == name && receiverNameForDecl(node) == receiver {
-				if foundSymbol != "" {
-					return "", 0, nil
-				}
-				foundSymbol, foundLine = qualifiedGoTarget(receiver, name), fset.Position(node.Pos()).Line
-			}
-		case *ast.GenDecl:
-			for _, spec := range node.Specs {
-				var found bool
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					found = item.Name.Name == name
-				case *ast.ValueSpec:
-					for _, candidate := range item.Names {
-						found = found || candidate.Name == name
-					}
-				}
-				if found {
-					if foundSymbol != "" {
-						return "", 0, nil
-					}
-					foundSymbol, foundLine = name, fset.Position(spec.Pos()).Line
-				}
-			}
-		}
-	}
-	if foundSymbol != "" {
-		return foundSymbol, foundLine, nil
-	}
-	return "", 0, fmt.Errorf("inserted declaration target %q is absent from edited file %q", name, filePath)
-}
-
-func goExistingTargetAfterEdit(filePath, symbol string) (string, int, error) {
-	content, err := os.ReadFile(filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
-	if err != nil {
-		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
-	}
-	var line int
-	count := 0
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok {
-			continue
-		}
-		for _, raw := range gen.Specs {
-			matched := false
-			switch spec := raw.(type) {
-			case *ast.TypeSpec:
-				matched = spec.Name.Name == symbol
-			case *ast.ValueSpec:
-				for _, name := range spec.Names {
-					matched = matched || name.Name == symbol
-				}
-			}
-			if matched {
-				count++
-				line = fset.Position(raw.Pos()).Line
-			}
-		}
-	}
-	if count != 1 {
-		return "", 0, nil
-	}
-	return symbol, line, nil
-}
-
 func receiverNameForDecl(decl *ast.FuncDecl) string {
 	if decl.Recv == nil || len(decl.Recv.List) != 1 {
 		return ""
@@ -360,4 +234,128 @@ func registerEngineOps(registry *Registry) error {
 		return err
 	}
 	return Register(registry, insertCaseDef())
+}
+
+func goTargetAfterEdit(ctx context.Context, filePath, source string) (string, int, error) {
+	prefix := "package p\n"
+	if strings.HasPrefix(strings.TrimSpace(source), "package ") {
+		prefix = ""
+	}
+	snippet, err := parser.ParseFile(token.NewFileSet(), "snippet.go", prefix+source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse inserted declaration after write: %w", err)
+	}
+	if len(snippet.Decls) != 1 {
+		return "", 0, nil
+	}
+	var name, receiver string
+	switch decl := snippet.Decls[0].(type) {
+	case *ast.FuncDecl:
+		name = decl.Name.Name
+		if decl.Recv != nil && len(decl.Recv.List) == 1 {
+			receiver = receiverName(decl.Recv.List[0].Type)
+			if receiver == "" {
+				return "", 0, nil
+			}
+		}
+	case *ast.GenDecl:
+		if len(decl.Specs) != 1 {
+			return "", 0, nil
+		}
+		switch spec := decl.Specs[0].(type) {
+		case *ast.TypeSpec:
+			name = spec.Name.Name
+		case *ast.ValueSpec:
+			if len(spec.Names) != 1 {
+				return "", 0, nil
+			}
+			name = spec.Names[0].Name
+		}
+	}
+	if name == "" {
+		return "", 0, nil
+	}
+	content, err := sourcebuf.ReadFile(ctx, filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
+	if err != nil {
+		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
+	}
+	fset := token.NewFileSet()
+	final, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
+	}
+	var foundSymbol string
+	var foundLine int
+	for _, decl := range final.Decls {
+		switch node := decl.(type) {
+		case *ast.FuncDecl:
+			if node.Name.Name == name && receiverNameForDecl(node) == receiver {
+				if foundSymbol != "" {
+					return "", 0, nil
+				}
+				foundSymbol, foundLine = qualifiedGoTarget(receiver, name), fset.Position(node.Pos()).Line
+			}
+		case *ast.GenDecl:
+			for _, spec := range node.Specs {
+				var found bool
+				switch item := spec.(type) {
+				case *ast.TypeSpec:
+					found = item.Name.Name == name
+				case *ast.ValueSpec:
+					for _, candidate := range item.Names {
+						found = found || candidate.Name == name
+					}
+				}
+				if found {
+					if foundSymbol != "" {
+						return "", 0, nil
+					}
+					foundSymbol, foundLine = name, fset.Position(spec.Pos()).Line
+				}
+			}
+		}
+	}
+	if foundSymbol != "" {
+		return foundSymbol, foundLine, nil
+	}
+	return "", 0, fmt.Errorf("inserted declaration target %q is absent from edited file %q", name, filePath)
+}
+
+func goExistingTargetAfterEdit(ctx context.Context, filePath, symbol string) (string, int, error) {
+	content, err := sourcebuf.ReadFile(ctx, filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
+	if err != nil {
+		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
+	}
+	var line int
+	count := 0
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, raw := range gen.Specs {
+			matched := false
+			switch spec := raw.(type) {
+			case *ast.TypeSpec:
+				matched = spec.Name.Name == symbol
+			case *ast.ValueSpec:
+				for _, name := range spec.Names {
+					matched = matched || name.Name == symbol
+				}
+			}
+			if matched {
+				count++
+				line = fset.Position(raw.Pos()).Line
+			}
+		}
+	}
+	if count != 1 {
+		return "", 0, nil
+	}
+	return symbol, line, nil
 }

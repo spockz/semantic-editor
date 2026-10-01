@@ -9,11 +9,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 )
 
 // FunctionOptions configures function and method insertion behavior.
@@ -46,7 +46,7 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
 
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return fmt.Errorf("read target file: %w", err)
 	}
@@ -74,7 +74,7 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	if err != nil && fileNode == nil {
 		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
 	}
-	if err := checkStructureDeclarationCollision(cleanPath, fileNode, fnDecl); err != nil {
+	if err := checkStructureDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); err != nil {
 		return fmt.Errorf("check declaration collision: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	restTrimmed := bytes.TrimLeft(rest, "\r\n")
 	newContent.Write(restTrimmed)
 
-	if err := pipeline.WriteAtomic(cleanPath, newContent.Bytes()); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 

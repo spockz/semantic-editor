@@ -132,7 +132,7 @@ func runInsertStructure(ctx context.Context, cc CallContext, req InsertStructure
 	var symbol string
 	var line int
 	if req.Kind != backend.StructureCase {
-		symbol, line, err = goTargetAfterEdit(targetPath, req.Source)
+		symbol, line, err = goTargetAfterEdit(ctx, targetPath, req.Source)
 		if err != nil {
 			return FileEditRes{}, fmt.Errorf("edit applied to %s, but could not inspect result: %w", displayWorkPath(cc.WorkDir, req.File), err)
 		}
@@ -179,9 +179,9 @@ func insertStructureDef() Def[InsertStructureReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertStructureReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertStructure,
 		},
-		Format:       formatFileEdit,
-		ExampleRaw:   map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
-		PlacementKey: true,
-		Batchable:    true,
+		Format:        formatFileEdit,
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
+		PlacementKey:  true,
+		BufferedBatch: true, Batchable: true,
 	}
 }

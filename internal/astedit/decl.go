@@ -10,11 +10,11 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/pipeline"
+	"semedit/internal/sourcebuf"
 )
 
 // DeclOptions configures general top-level declaration insertion behavior.
@@ -51,7 +51,7 @@ func insertDeclImpl(ctx context.Context, filePath string, source string, opts De
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
 
 	cleanPath := filepath.Clean(filePath)
-	content, err := os.ReadFile(cleanPath)
+	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return fmt.Errorf("read target file: %w", err)
 	}
@@ -96,7 +96,6 @@ func insertDeclImpl(ctx context.Context, filePath string, source string, opts De
 		return nil
 	}
 
-	// 1. Attempt group appending for const/var if opts.Group is "append" (or default empty)
 	if (opts.Group == "" || opts.Group == "append") && opts.Placement == "" && len(snippetDecls) == 1 {
 		if gen, ok := snippetDecls[0].(*ast.GenDecl); ok && (gen.Tok == token.CONST || gen.Tok == token.VAR) {
 			targetGroup := findMatchingGroup(fileNode, gen.Tok, effectiveAccess)
@@ -139,7 +138,6 @@ func insertDeclImpl(ctx context.Context, filePath string, source string, opts De
 		}
 	}
 
-	// 2. Standalone insertion
 	insertOffset, err := calculateDeclOffset(fset, fileNode, content, effectiveAccess, opts)
 	if err != nil {
 		if pErr, ok := errors.AsType[*PlacementError](err); ok {
@@ -322,7 +320,7 @@ func calculateDeclOffset(fset *token.FileSet, fileNode *ast.File, content []byte
 }
 
 func writeAndOrganize(ctx context.Context, cleanPath string, data []byte, autoOrganize bool) error {
-	if err := pipeline.WriteAtomic(cleanPath, data); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, cleanPath, data); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 
