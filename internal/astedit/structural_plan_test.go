@@ -194,6 +194,11 @@ func TestStructuralSourcePlanners(t *testing.T) {
 		if err == nil {
 			t.Fatal("injected declaration in element source was accepted")
 		}
+		for _, source := range []string{`"b": 2,`, `"b": 2 /* trailing note */`} {
+			if _, _, err := parseKeyedElement(source); err == nil {
+				t.Errorf("element source with separator/comment was accepted: %q", source)
+			}
+		}
 	})
 	t.Run("declaration doc comments preserve text and distinguish removal from missing", func(t *testing.T) {
 		source := []byte("package p\ntype Settings struct{}\n")

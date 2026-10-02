@@ -1,0 +1,39 @@
+# Refuse duplicate keys, unknown struct members, positional literals, malformed elements, and repeated selectors without changing the source.
+! exec semedit insert-composite-element --file config.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"health": 2'
+stderr 'already contains the typed key'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-composite-element --file config.go --in-declaration config --discriminator 'Config{Health: 1}' --source 'Missing: 2'
+stderr 'absent from the supplied type context'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-composite-element --file config.go --in-declaration point --discriminator 'Point{1}' --source 'X: 2'
+stderr 'positional struct literals are unsupported'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-composite-element --file config.go --in-declaration routes --discriminator 'map[string]int{"health": 1}' --source '"metrics" 2'
+stderr 'parse keyed composite element'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-composite-element --file config.go --in-declaration repeated --discriminator 'map[string]int{"same": 1}' --source '"next": 2'
+stderr 'literal selector matched 2 composites'
+cmp config.go .scratch/want/config.go
+
+-- go.mod --
+module example.com/insertelementrefusal
+
+go 1.24
+-- config.go --
+package routes
+
+type Config struct { Health int }
+type Point struct { X int }
+var routes = map[string]int{"health": 1}
+var config = Config{Health: 1}
+var point = Point{1}
+var repeated = []map[string]int{map[string]int{"same": 1}, map[string]int{"same": 1}}
+-- .scratch/want/config.go --
+package routes
+
+type Config struct { Health int }
+type Point struct { X int }
+var routes = map[string]int{"health": 1}
+var config = Config{Health: 1}
+var point = Point{1}
+var repeated = []map[string]int{map[string]int{"same": 1}, map[string]int{"same": 1}}

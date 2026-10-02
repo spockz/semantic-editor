@@ -407,9 +407,9 @@ func ConstructSelectorSchema() ValueSchema {
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"file":               text,
 		wireInFunction:       text,
-		"in_declaration":     text,
+		wireInDeclaration:    text,
 		"kind":               text,
-		"discriminator":      text,
+		wireDiscriminator:    text,
 		"construct_path":     text,
 		wireExpectedRevision: text,
 	}, Required: []string{"file", "kind"}}
@@ -421,10 +421,10 @@ func CallSiteSelectorSchema() ValueSchema {
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 		"file":               text,
 		wireInFunction:       text,
-		"discriminator":      text,
+		wireDiscriminator:    text,
 		"construct_path":     text,
 		wireExpectedRevision: text,
-	}, Required: []string{"file", wireInFunction, "discriminator"}}
+	}, Required: []string{"file", wireInFunction, wireDiscriminator}}
 }
 
 // FileRevisionSchema describes one project-relative path and its opaque revision.

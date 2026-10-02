@@ -33,6 +33,7 @@ const (
 	wireExampleFile             = "api/server.go"
 	wireTargetSymbol            = "target_symbol"
 	wireDiscriminator           = "discriminator"
+	wireInDeclaration           = "in_declaration"
 	wireInFunction              = "in_function"
 	wireCLIInFunction           = "in-function"
 	wireConstructPath           = "construct_path"

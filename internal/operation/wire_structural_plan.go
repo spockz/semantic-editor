@@ -40,69 +40,7 @@ type structuralPlanResult struct {
 
 func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPlanResult] {
 	run := func(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {
-		snapshot, err := prepareStructuralSnapshot(ctx, cc, stringParam(raw, "file"))
-		if err != nil {
-			return structuralPlanResult{}, err
-		}
-		before := snapshot.Sources[snapshot.File]
-		if expected, ok := raw["expected_revision"]; ok {
-			revision, valid := expected.(string)
-			if !valid || revision == "" {
-				return structuralPlanResult{}, fmt.Errorf("expected_revision must be a non-empty string")
-			}
-			if revision != structuralRevision(before) {
-				return structuralPlanResult{}, fmt.Errorf("expected_revision does not match the current selected-file revision")
-			}
-		}
-		finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
-		plan, err := spec.Plan(snapshot, raw)
-		if err != nil {
-			return structuralPlanResult{}, err
-		}
-		if plan.Changed {
-			if err := snapshot.validateOutput(plan.Source); err != nil {
-				return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", err)
-			}
-		}
-		changed, err := snapshot.applyOutput(plan.Source)
-		if err != nil {
-			return structuralPlanResult{}, err
-		}
-		delta, diagnosticStatus := finishDelta()
-		result := spec.Result(cc, raw, plan, diagnosticStatus)
-		result.File = snapshot.File
-		result.Display = displayWorkPath(cc.WorkDir, stringParam(raw, "file"))
-		result.Diff = astedit.UnifiedDiff(displayWorkPath(cc.WorkDir, stringParam(raw, "file")), string(before), string(plan.Source))
-		result.Delta = delta
-		result.DiagnosticStatus = diagnosticStatus
-		result.HasDelta = true
-		if !changed {
-			result.Detail = "No source change was needed."
-		}
-		readSet, err := structuralReadSet(cc.WorkDir, snapshot)
-		if err != nil {
-			return structuralPlanResult{}, err
-		}
-		draft := EditReceiptDraft{Operation: spec.Key, Status: EditPersisted, ReadSet: readSet}
-		if result.DiagnosticStatus == "changed" {
-			draft.Status = EditPersistedWithDiagnostics
-		}
-		if changed {
-			draft.PlannedChanges = []FileRevision{{Path: result.Display, Revision: structuralRevision(plan.Source)}}
-		}
-		if spec.Continuations != nil {
-			draft.Continuations, err = spec.Continuations(cc, snapshot, raw, plan)
-			if err != nil {
-				return structuralPlanResult{}, err
-			}
-		}
-		resolve := spec.ResolveContinuations
-		if spec.ResolveWithRoot != nil {
-			resolve = func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
-				return spec.ResolveWithRoot(resolveCtx, cc.WorkDir, candidate)
-			}
-		}
-		return structuralPlanResult{Edit: result, Draft: draft, Resolve: resolve}, nil
+		return runStructuralPlan(ctx, cc, raw, spec)
 	}
 	return Def[map[string]any, structuralPlanResult]{
 		Key: spec.Key, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
@@ -151,12 +89,81 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 	}
 }
 
+func runStructuralPlan(ctx context.Context, cc CallContext, raw map[string]any, spec structuralPlanSpec) (structuralPlanResult, error) {
+	snapshot, err := prepareStructuralSnapshot(ctx, cc, stringParam(raw, "file"))
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	before := snapshot.Sources[snapshot.File]
+	if expected, ok := raw["expected_revision"]; ok {
+		revision, valid := expected.(string)
+		if !valid || revision == "" {
+			return structuralPlanResult{}, fmt.Errorf("expected_revision must be a non-empty string")
+		}
+		if revision != structuralRevision(before) {
+			return structuralPlanResult{}, fmt.Errorf("expected_revision does not match the current selected-file revision")
+		}
+	}
+	finishDelta := surroundingDelta(snapshot.Ctx, cc.WorkDir, cc.DeferVerification)
+	plan, err := spec.Plan(snapshot, raw)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	if plan.Changed {
+		if err := snapshot.validateOutput(plan.Source); err != nil {
+			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", err)
+		}
+	}
+	changed, err := snapshot.applyOutput(plan.Source)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	delta, diagnosticStatus := finishDelta()
+	result := spec.Result(cc, raw, plan, diagnosticStatus)
+	result.File = snapshot.File
+	result.Display = displayWorkPath(cc.WorkDir, stringParam(raw, "file"))
+	result.Diff = astedit.UnifiedDiff(displayWorkPath(cc.WorkDir, stringParam(raw, "file")), string(before), string(plan.Source))
+	result.Delta = delta
+	result.DiagnosticStatus = diagnosticStatus
+	result.HasDelta = true
+	if !changed {
+		result.Detail = "No source change was needed."
+	}
+	readSet, err := structuralReadSet(cc.WorkDir, snapshot)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	draft := EditReceiptDraft{Operation: spec.Key, Status: EditPersisted, ReadSet: readSet}
+	if result.DiagnosticStatus == "changed" {
+		draft.Status = EditPersistedWithDiagnostics
+	}
+	if changed {
+		draft.PlannedChanges = []FileRevision{{Path: result.Display, Revision: structuralRevision(plan.Source)}}
+	}
+	if spec.Continuations != nil {
+		draft.Continuations, err = spec.Continuations(cc, snapshot, raw, plan)
+		if err != nil {
+			return structuralPlanResult{}, err
+		}
+	}
+	resolve := spec.ResolveContinuations
+	if spec.ResolveWithRoot != nil {
+		resolve = func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
+			return spec.ResolveWithRoot(resolveCtx, cc.WorkDir, candidate)
+		}
+	}
+	return structuralPlanResult{Edit: result, Draft: draft, Resolve: resolve}, nil
+}
+
 func structuralReadSet(workDir string, snapshot *structuralSnapshot) ([]FileRevision, error) {
 	readSet := make([]FileRevision, 0, len(snapshot.Sources))
 	for path, content := range snapshot.Sources {
 		relative, err := filepath.Rel(workDir, path)
-		if err != nil || !filepath.IsLocal(relative) {
+		if err != nil {
 			return nil, fmt.Errorf("structural read-set path %q is outside workspace %q", path, workDir)
+		}
+		if !filepath.IsLocal(relative) {
+			continue
 		}
 		readSet = append(readSet, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(content)})
 	}
@@ -299,6 +306,9 @@ func registerStructuralPlanOps(registry *Registry) error {
 		if err := Register(registry, definition); err != nil {
 			return fmt.Errorf("register structural plan %q: %w", definition.Key, err)
 		}
+	}
+	if err := Register(registry, insertCompositeElementStructuralDef()); err != nil {
+		return fmt.Errorf("register structural plan %q: %w", "insert_composite_element", err)
 	}
 	return nil
 }

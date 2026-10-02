@@ -2626,3 +2626,30 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the operation refused with `struct type "options" must use a multiline field layout`; no file changed.
 - Workaround: provide a multiline field list and assert that bounded form in the current CLI and MCP fixtures.
 - Root cause: the initial field insertion planner supports safe multiline struct ranges only. The empty-struct case is a common typed insertion flow and remains a follow-up scope.
+
+## ST-0261: Composite selector MCP proof returned no structured result
+
+- Date: 2026-10-02
+- Tool: worktree-local MCP `semantic_insert_composite_element` in `TestCompositeSelectorContinuationFeedsNextInsertion`.
+- Target: standalone map-literal insertion followed by a copied selector continuation.
+- Observed failure: the operation refused with `selected package example.com/mcpfixture is not fully typechecked` before applying the edit.
+- Workaround: isolate the proof in its own module and package instead of using the shared MCP schema fixture, which also creates an unrelated `main.go` package.
+- Root cause: the composite proof fixture had placed a `routes` package beside a `sample` package in the same module directory.
+
+## ST-0262: Composite insertion refused a source with an internal test package
+
+- Date: 2026-10-02
+- Tool: worktree-local MCP `semantic_insert_composite_element` in `TestCompositeSelectorContinuationFeedsNextInsertion`.
+- Target: `routes.go` in a module that also contains `routes_test.go`.
+- Observed failure: the operation refused with `selected Go source has ambiguous package syntax` even though the source file was part of the ordinary package and the internal test variant.
+- Workaround: select only the canonical typed package whose package ID and package path match, while retaining test-specific packages when the selected source itself belongs to them.
+- Root cause: `packages.Load(Tests: true)` returns multiple typed package variants containing the same original source, and the planner initially treated them as ambiguous instead of selecting the canonical package snapshot.
+
+## ST-0263: Structural receipt read set included Go standard-library files
+
+- Date: 2026-10-02
+- Tool: worktree-local MCP `semantic_insert_composite_element` in `TestCompositeSelectorContinuationFeedsNextInsertion` after adding a valid in-package test file.
+- Target: `routes.go` in a module with `routes_test.go` importing `testing`.
+- Observed failure: after package selection was corrected, the operation refused with a structural read-set path under the local Go installation outside the selected module workspace.
+- Workaround: keep type analysis over all dependency syntax, but include only captured source paths under the workspace root in the workspace read-set receipt.
+- Root cause: `packages.Load` captures dependency source syntax for type analysis, and `structuralReadSet` initially assumed every captured dependency path was a workspace path.

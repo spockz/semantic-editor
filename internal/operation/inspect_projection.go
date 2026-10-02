@@ -37,7 +37,7 @@ func InspectProjectionSchema() ValueSchema {
 			wireExpectedRevision: stringSchema,
 			wireInFunction:       stringSchema,
 			"in_type":            stringSchema,
-			"in_declaration":     stringSchema,
+			wireInDeclaration:    stringSchema,
 		},
 		Required: []string{"file", "symbol", wireExpectedRevision},
 	}

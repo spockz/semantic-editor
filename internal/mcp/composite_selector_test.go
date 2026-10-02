@@ -1,0 +1,120 @@
+// This file proves composite selector continuations can be copied only after they describe final live source.
+
+package mcp_test
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"semedit/internal/mcp"
+)
+
+func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
+	root := t.TempDir()
+	writeTestGoModule(t, root)
+	path := filepath.Join(root, "routes.go")
+	initial := []byte("package routes\nvar routes = map[string]int{\"health\": 1}\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write composite fixture: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "routes_test.go"), []byte("package routes\nimport \"testing\"\nfunc TestRoutes(t *testing.T) {}\n"), 0o600); err != nil {
+		t.Fatalf("write composite test package file: %v", err)
+	}
+	inspected := callCompositeTool(t, root, 1, "semantic_inspect_symbol", map[string]any{
+		"symbol": "routes", "file": "routes.go", "language": "go", "trust_workspace": true,
+	})
+	inspectResult := inspected["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	inspectRecords := inspectResult["continuations"].([]any)
+	if len(inspectRecords) != 1 {
+		t.Fatalf("inspection continuations = %#v", inspectRecords)
+	}
+	inspectRecord := inspectRecords[0].(map[string]any)
+	if inspectRecord["file"] != "routes.go" || inspectRecord["in_declaration"] != "routes" || inspectRecord["expected_revision"] == "" {
+		t.Fatalf("inspect did not provide same-record declaration evidence: %#v", inspectRecord)
+	}
+	first := callCompositeTool(t, root, 2, "semantic_insert_composite_element", map[string]any{
+		"file": inspectRecord["file"], "in_declaration": inspectRecord["in_declaration"],
+		"expected_revision": inspectRecord["expected_revision"], "discriminator": `map[string]int{"health": 1}`,
+		"source": `"metrics": 2`, "placement": "append",
+	})
+	firstResult := first["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	firstRecords, ok := firstResult["selector_continuations"].([]any)
+	if !ok || len(firstRecords) != 1 {
+		t.Fatalf("first insertion omitted live selector record: %#v", firstResult)
+	}
+	record := firstRecords[0].(map[string]any)
+	if record["file"] != "routes.go" || record["in_declaration"] != "routes" || !strings.Contains(record["discriminator"].(string), `"metrics": 2`) || record["expected_revision"] == "" {
+		t.Fatalf("first selector continuation is not refreshed: %#v", record)
+	}
+	second := callCompositeTool(t, root, 3, "semantic_insert_composite_element", map[string]any{
+		"file": record["file"], "in_declaration": record["in_declaration"], "discriminator": record["discriminator"],
+		"expected_revision": record["expected_revision"], "source": `"ready": 3`,
+	})
+	secondResult := second["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	secondRecords, ok := secondResult["selector_continuations"].([]any)
+	if !ok || len(secondRecords) != 1 {
+		t.Fatalf("follow-up insertion omitted refreshed selector: %#v", secondResult)
+	}
+	secondRecord := secondRecords[0].(map[string]any)
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read final composite source: %v", err)
+	}
+	digest := sha256.Sum256(updated)
+	if secondRecord["expected_revision"] != hex.EncodeToString(digest[:]) || !strings.Contains(secondRecord["discriminator"].(string), `"ready": 3`) {
+		t.Fatalf("follow-up selector does not match final source: %#v", secondRecord)
+	}
+	staleSource := append(bytes.Clone(updated), []byte("// external drift\n")...)
+	if err := os.WriteFile(path, staleSource, 0o600); err != nil {
+		t.Fatalf("introduce stale selector revision: %v", err)
+	}
+	beforeStale := bytes.Clone(staleSource)
+	stale := callCompositeTool(t, root, 4, "semantic_insert_composite_element", map[string]any{
+		"file": secondRecord["file"], "in_declaration": secondRecord["in_declaration"],
+		"discriminator": secondRecord["discriminator"], "expected_revision": secondRecord["expected_revision"],
+		"source": `"stale": 4`,
+	}, true)
+	if !strings.Contains(stale["result"].(map[string]any)["content"].([]any)[0].(map[string]any)["text"].(string), "expected_revision does not match") {
+		t.Fatalf("stale composite revision did not refuse: %#v", stale)
+	}
+	afterStale, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read source after stale refusal: %v", err)
+	}
+	if !bytes.Equal(afterStale, beforeStale) {
+		t.Fatalf("stale composite request changed source:\n%s", afterStale)
+	}
+}
+
+func callCompositeTool(t *testing.T, root string, id int, name string, arguments map[string]any, allowRefusal ...bool) map[string]any {
+	t.Helper()
+	request, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": id, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": arguments},
+	})
+	if err != nil {
+		t.Fatalf("encode %s request: %v", name, err)
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+		t.Fatalf("serve %s request: %v", name, err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("decode %s response: %v: %s", name, err, output.String())
+	}
+	if response["error"] != nil {
+		t.Fatalf("%s JSON-RPC error: %#v", name, response["error"])
+	}
+	if result, ok := response["result"].(map[string]any); ok && result["isError"] == true && (len(allowRefusal) == 0 || !allowRefusal[0]) {
+		t.Fatalf("%s tool error: %s", name, output.String())
+	}
+	return response
+}

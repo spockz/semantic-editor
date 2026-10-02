@@ -264,11 +264,18 @@ func appendCompositeElement(source []byte, fset *token.FileSet, literal *ast.Com
 }
 
 func parseKeyedElement(source string) (*ast.KeyValueExpr, string, error) {
+	trimmed := strings.TrimSpace(source)
+	if strings.HasSuffix(trimmed, ",") {
+		return nil, "", fmt.Errorf("element source must not include a trailing comma")
+	}
 	fset := token.NewFileSet()
 	const prefix = "package p\nvar _ = map[any]any{"
 	file, err := parser.ParseFile(fset, "element.go", []byte(prefix+source+"}\n"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		return nil, "", err
+	}
+	if len(file.Comments) != 0 {
+		return nil, "", fmt.Errorf("element source must not include comments")
 	}
 	if len(file.Decls) != 1 {
 		return nil, "", fmt.Errorf("element source must not inject declarations")
@@ -298,4 +305,13 @@ func parseKeyedElement(source string) (*ast.KeyValueExpr, string, error) {
 		return nil, "", fmt.Errorf("keyed element source positions are outside the selected element")
 	}
 	return keyed, source[start:end], nil
+}
+
+// CompositeElementKeySource returns the key expression from one keyed element.
+func CompositeElementKeySource(source string) (string, error) {
+	_, key, err := parseKeyedElement(source)
+	if err != nil {
+		return "", fmt.Errorf("parse keyed composite element: %w", err)
+	}
+	return key, nil
 }

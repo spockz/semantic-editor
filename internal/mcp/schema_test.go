@@ -199,6 +199,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				case fieldInsertionToolName:
 					assertInsertFieldOutputSchema(t, tool["outputSchema"])
+				case "semantic_insert_composite_element":
+					assertCompositeElementOutputSchema(t, tool["outputSchema"])
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -263,6 +265,30 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertCompositeElementOutputSchema(t *testing.T, raw any) {
+	t.Helper()
+	assertStructuralOutputSchema(t, raw, "semantic_insert_composite_element")
+	result := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	selectors, ok := properties["selector_continuations"].(map[string]any)
+	if !ok || selectors["type"] != "array" {
+		t.Fatalf("composite output omitted typed selector_continuations: %#v", properties)
+	}
+	item, ok := selectors["items"].(map[string]any)
+	if !ok || item["type"] != "object" || item["additionalProperties"] != false {
+		t.Fatalf("composite selector item is not a closed object: %#v", selectors["items"])
+	}
+	itemProperties := item["properties"].(map[string]any)
+	for _, field := range []string{"file", "in_declaration", "discriminator", "expected_revision"} {
+		if itemProperties[field] == nil {
+			t.Errorf("composite selector omitted required field %q", field)
+		}
+	}
+	if got := item["required"]; !reflect.DeepEqual(got, []any{"file", "in_declaration", "discriminator", "expected_revision"}) {
+		t.Errorf("composite selector required = %#v", got)
 	}
 }
 

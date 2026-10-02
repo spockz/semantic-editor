@@ -1,0 +1,21 @@
+# This MCP batch inserts into a declaration after it has been replaced in the shared working view and omits live selectors until publication.
+stdin input.json
+exec semedit mcp
+stdout 'applied_working'
+! stdout 'selector_continuations'
+cmp routes.go .scratch/want/routes.go
+
+-- go.mod --
+module example.com/insertelementbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_decl","params":{"file":"routes.go","symbol":"routes","source":"var routes = map[string]int{\"health\": 1}"}},{"tool":"semantic_insert_composite_element","params":{"file":"routes.go","in_declaration":"routes","discriminator":"map[string]int{\"health\": 1}","source":"\"metrics\": 2","placement":"append"}}]}}}
+-- routes.go --
+package routes
+
+var routes = []int{0}
+-- .scratch/want/routes.go --
+package routes
+
+var routes = map[string]int{"health": 1, "metrics": 2}
