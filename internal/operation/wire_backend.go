@@ -985,13 +985,13 @@ var renameFileConsumers = []string{
 	"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 	"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
 	"semantic_extract_function", "semantic_extract_variable",
-	"semantic_inline_variable",
+	"semantic_inline_function", "semantic_inline_variable", "semantic_migrate_type",
 }
 
 var renameSymbolConsumers = []string{
 	"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_move_construct",
 	"semantic_replace_decl", "semantic_extract_function", "semantic_extract_variable",
-	"semantic_inline_variable",
+	"semantic_inline_function", "semantic_inline_variable", "semantic_migrate_type",
 }
 
 var renameRevisionConsumers = []string{
