@@ -409,7 +409,7 @@ func ConstructSelectorSchema() ValueSchema {
 		wireInFunction:       text,
 		"in_declaration":     text,
 		"kind":               text,
-		"discriminator":      text,
+		wireDiscriminator:    text,
 		"construct_path":     text,
 		wireExpectedRevision: text,
 	}, Required: []string{"file", "kind"}}

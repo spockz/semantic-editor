@@ -3021,3 +3021,43 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the tool returned `context deadline exceeded` without a review report. No approval or findings were produced.
 - Workaround: retain root's concrete source review and public success/refusal evidence; request a narrower follow-up review if semantic questions remain. Do not treat the timeout as approval.
 - Root cause: the review exceeded the tool's request deadline; the underlying cause is unconfirmed.
+
+## Semantic declaration insertion omitted exported API comments
+
+- **Tool:** `semantic_insert_declaration` / `semantic_insert_function`
+- **Target:** `internal/astedit/inline_function_plan.go`, `internal/astedit/type_migration_plan.go`
+- **Observed behavior:** The tools inserted the requested declarations and organized imports, but the initial declaration sources omitted Go doc comments. The repository linter then rejected the exported planner names.
+- **Workaround:** The semantic tool set has no operation for adding only leading declaration comments, so the required doc comments were added manually after logging this occurrence; then the project checks were rerun.
+- **Root cause:** The insertion operations validate declaration structure and imports but do not require Go documentation comments on exported declarations.
+
+## Relocation worker: outline rejected `--file`
+
+- Tool: `semedit outline`.
+- Target: read-only outlines of `internal/astedit/inline_function_plan.go`, `internal/astedit/type_migration_plan.go`, and `internal/operation/wire_engine_inline.go`.
+- Observed failure: the command rejected `--file` as an unknown flag and made no source change.
+- Workaround: use the documented `--path` selector for the same files.
+- Root cause: `outline` and symbol-specific navigation use different selector flag names.
+
+## Relocation worker: inspect-symbol target name absent
+
+- Tool: `semedit inspect-symbol`.
+- Target: `internal/astedit/move_cross_package.go`.
+- Observed failure: `PlanCrossPackageMove` was not a declaration in that file; the read-only request found no symbol and changed no source.
+- Workaround: use the file outline to identify the actual planner declaration before inspecting it.
+- Root cause: the audit request guessed a helper name from another implementation shape.
+
+## Relocation worker: inspect-symbol target name absent in inspection wire
+
+- Tool: `semedit inspect-symbol`.
+- Target: `internal/operation/wire_read_inspect.go`.
+- Observed failure: the guessed `runInspect` declaration was not present; the read-only request found no symbol and changed no source.
+- Workaround: inspect the file outline and request the actual registered handler by its declared name.
+- Root cause: the audit request guessed a handler name without first reading the file outline.
+
+## Relocation worker: absolute patch path targeted the coordinator checkout
+
+- Tool: built-in `apply_patch` used for a schema constant edit.
+- Target: `internal/operation/typed_descriptors.go` while working in `.scratch/worktrees/flow-relocation`.
+- Observed failure: the absolute patch target omitted `.scratch/worktrees/flow-relocation` and applied one schema-key edit in the coordinator checkout instead of the assigned worker worktree.
+- Workaround: stopped editing the coordinator checkout and notified root to preserve or revert its delta; the intended change remains pending in the assigned worker worktree.
+- Root cause: the patch target was not checked against the assigned worktree root. Verify the full worktree prefix on every patch target.

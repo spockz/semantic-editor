@@ -1,0 +1,25 @@
+# A grouped field declaration has one shared type node, so the tool refuses to edit only one field name.
+! exec semedit migrate-type --file settings.go --symbol Settings.timeout --type Duration
+stderr 'refuses grouped struct fields'
+cmp settings.go .scratch/want/settings.go
+
+-- go.mod --
+module example.com/migrategrouped
+
+go 1.24
+-- settings.go --
+package sample
+
+type Duration = int64
+
+type Settings struct {
+	timeout, retry int64
+}
+-- .scratch/want/settings.go --
+package sample
+
+type Duration = int64
+
+type Settings struct {
+	timeout, retry int64
+}

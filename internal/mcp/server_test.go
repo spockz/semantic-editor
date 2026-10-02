@@ -1187,15 +1187,11 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 }
 
 type mcpExampleProperty struct {
-	Type  string            `json:"type"`
-	Enum  []json.RawMessage `json:"enum"`
-	Items struct {
-		Type       string `json:"type"`
-		Properties map[string]struct {
-			Type string `json:"type"`
-		} `json:"properties"`
-		Required []string `json:"required"`
-	} `json:"items"`
+	Type       string                        `json:"type"`
+	Enum       []json.RawMessage             `json:"enum"`
+	Items      *mcpExampleProperty           `json:"items"`
+	Properties map[string]mcpExampleProperty `json:"properties"`
+	Required   []string                      `json:"required"`
 }
 
 func mcpExampleValueMatches(value any, property mcpExampleProperty) bool {
@@ -1211,42 +1207,35 @@ func mcpExampleValueMatches(value any, property mcpExampleProperty) bool {
 		return ok && number == float64(int(number))
 	case "array":
 		items, ok := value.([]any)
-		if !ok {
+		if !ok || property.Items == nil {
 			return false
 		}
 		for _, item := range items {
-			if !mcpExampleItemMatches(item, property.Items.Type, property.Items.Properties, property.Items.Required) {
+			if !mcpExampleValueMatches(item, *property.Items) {
 				return false
 			}
 		}
 		return true
+	case "object":
+		return mcpExampleObjectMatches(value, property)
 	default:
 		return false
 	}
 }
 
-func mcpExampleItemMatches(value any, itemType string, properties map[string]struct {
-	Type string `json:"type"`
-}, required []string) bool {
-	if itemType == "string" {
-		_, ok := value.(string)
-		return ok
-	}
+func mcpExampleObjectMatches(value any, property mcpExampleProperty) bool {
 	object, ok := value.(map[string]any)
-	if !ok || itemType != "object" {
+	if !ok {
 		return false
 	}
-	for _, field := range required {
+	for _, field := range property.Required {
 		if _, ok := object[field]; !ok {
 			return false
 		}
 	}
 	for field, fieldValue := range object {
-		fieldSchema, ok := properties[field]
-		if !ok || fieldSchema.Type != "string" {
-			return false
-		}
-		if _, ok := fieldValue.(string); !ok {
+		fieldSchema, ok := property.Properties[field]
+		if !ok || !mcpExampleValueMatches(fieldValue, fieldSchema) {
 			return false
 		}
 	}

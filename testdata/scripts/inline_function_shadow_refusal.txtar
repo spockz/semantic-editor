@@ -1,0 +1,29 @@
+# A caller-local shadow of the result type makes the conversion binding uncertain, so inlining refuses without an edit.
+! exec semedit inline-function --file callee.go --symbol adjust --call-site '{"file":"caller.go","in_function":"Run","discriminator":"adjust()"}'
+stderr 'inline function type preflight'
+cmp caller.go .scratch/want/caller.go
+
+-- go.mod --
+module example.com/inlineshadow
+
+go 1.24
+-- callee.go --
+package sample
+
+func adjust() int { return 7 }
+-- caller.go --
+package sample
+
+func Run() int {
+	int := 3
+	_ = int
+	return adjust()
+}
+-- .scratch/want/caller.go --
+package sample
+
+func Run() int {
+	int := 3
+	_ = int
+	return adjust()
+}
