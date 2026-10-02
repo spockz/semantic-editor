@@ -4,6 +4,8 @@ package mcp_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -106,6 +108,62 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	}
 	if !strings.Contains(string(c2), `case "ping":`) {
 		t.Errorf("file2 not updated:\n%s", string(c2))
+	}
+}
+
+func TestBatchExpectedRevisionUsesCurrentWorkingOverlay(t *testing.T) {
+	initial := []byte("package sample\n\nfunc Value() int {\n\treturn 1\n}\n")
+	current := []byte("package sample\n\nfunc Value() int {\n\treturn 2\n}\n")
+	staleDigest := sha256.Sum256(initial)
+	currentDigest := sha256.Sum256(current)
+
+	tests := []struct {
+		name          string
+		revision      string
+		wantStatus    string
+		wantBody      string
+		wantErrorText string
+	}{
+		{name: "obsolete pre-batch revision refuses", revision: hex.EncodeToString(staleDigest[:]), wantStatus: "error", wantBody: "return 2", wantErrorText: "expected_revision does not match captured source"},
+		{name: "current overlay revision succeeds", revision: hex.EncodeToString(currentDigest[:]), wantStatus: "ok", wantBody: "return 3"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/revisionbatch\n\ngo 1.24\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(root, "main.go")
+			if err := os.WriteFile(path, initial, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			srv := mcp.NewServer("full", root, &bytes.Buffer{})
+			response, err := srv.ExecuteBatch(context.Background(), []mcp.BatchEntry{
+				{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"main.go","symbol":"Value","body":"return 2"}`)},
+				{Tool: "semantic_replace_body", Params: json.RawMessage(fmt.Sprintf(`{"file":"main.go","symbol":"Value","expected_revision":%q,"body":"return 3"}`, test.revision))},
+			}, false)
+			if err != nil {
+				t.Fatalf("execute batch: %v", err)
+			}
+			if response.Status != test.wantStatus {
+				t.Fatalf("batch status = %q, want %q; results=%+v", response.Status, test.wantStatus, response.Results)
+			}
+			if test.wantErrorText != "" {
+				if len(response.Results) < 2 || !strings.Contains(response.Results[1].Error, test.wantErrorText) {
+					t.Fatalf("guard failure = %+v, want %q", response.Results, test.wantErrorText)
+				}
+			}
+			actual, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read published batch result: %v", err)
+			}
+			if !strings.Contains(string(actual), test.wantBody) {
+				t.Fatalf("published source = %s, want %q", actual, test.wantBody)
+			}
+			if test.wantStatus == "error" && strings.Contains(string(actual), "return 3") {
+				t.Fatalf("guarded child wrote after stale revision refusal: %s", actual)
+			}
+		})
 	}
 }
 

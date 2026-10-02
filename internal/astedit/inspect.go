@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"go/ast"
 	"go/token"
@@ -15,6 +16,11 @@ import (
 
 // InspectGo returns exact declaration snapshots for symbols selected by the resolver.
 func InspectGo(root, file, query string) (*backend.InspectResult, error) {
+	return InspectGoWithContext(context.Background(), root, file, query)
+}
+
+// InspectGoWithContext resolves exact declaration snapshots from the request's source view.
+func InspectGoWithContext(ctx context.Context, root, file, query string) (*backend.InspectResult, error) {
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
 		return nil, fmt.Errorf("resolve Go workspace %q: %w", root, err)
@@ -23,7 +29,7 @@ func InspectGo(root, file, query string) (*backend.InspectResult, error) {
 	if selectedFile != "" && !filepath.IsAbs(selectedFile) {
 		selectedFile = filepath.Join(absoluteRoot, selectedFile)
 	}
-	snapshot, err := symbol.ResolveSnapshot(absoluteRoot, selectedFile, query)
+	snapshot, err := symbol.ResolveSnapshotWithContext(ctx, absoluteRoot, selectedFile, query)
 	if err != nil {
 		return nil, err
 	}
