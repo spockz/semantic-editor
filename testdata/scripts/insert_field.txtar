@@ -1,0 +1,36 @@
+# This CLI contract inserts one named field into a private Go struct and proves refused edits stay unchanged.
+exec semedit insert-field --file config.go --in-type config --symbol config.timeout --source 'timeout int' --placement type_end
+cmp config.go .scratch/want/config.go
+
+# The target and field source must agree, and collisions and stale revisions make no disk edit.
+! exec semedit insert-field --file config.go --in-type config --symbol config.other --source 'timeout string' --placement type_end
+stderr 'declare exactly the named field'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-field --file config.go --in-type config --symbol config.timeout --source 'timeout string' --placement type_end
+stderr 'already exists'
+cmp config.go .scratch/want/config.go
+! exec semedit insert-field --file config.go --in-type config --symbol config.traceID --source 'traceID string' --placement type_end --expected-revision stale
+stderr 'does not match the current selected-file revision'
+cmp config.go .scratch/want/config.go
+
+-- go.mod --
+module example.com/insertfield
+
+go 1.24
+-- config.go --
+package config
+
+type config struct {
+	name string
+}
+
+var _ = config{name: "worker"}
+-- .scratch/want/config.go --
+package config
+
+type config struct {
+	name string
+	timeout int
+}
+
+var _ = config{name: "worker"}

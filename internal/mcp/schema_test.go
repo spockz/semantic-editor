@@ -21,6 +21,8 @@ import (
 	"semedit/internal/sourcebuf"
 )
 
+const fieldInsertionToolName = "semantic_insert_field"
+
 func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
@@ -217,6 +219,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				switch name {
 				case "semantic_set_doc_comment", "semantic_insert_statement":
 					assertStructuralOutputSchema(t, tool["outputSchema"], name)
+				case fieldInsertionToolName:
+					assertInsertFieldOutputSchema(t, tool["outputSchema"])
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -319,6 +323,17 @@ func assertSemanticEditReceiptOutputSchema(t *testing.T, name string, schema any
 	for _, field := range []string{"file", "symbol", "expected_revision"} {
 		if _, ok := item["properties"].(map[string]any)[field]; !ok {
 			t.Errorf("%s continuation schema omitted %q", name, field)
+		}
+	}
+}
+
+func assertInsertFieldOutputSchema(t *testing.T, raw any) {
+	t.Helper()
+	assertStructuralOutputSchema(t, raw, fieldInsertionToolName)
+	properties := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
+	for _, field := range []string{"in_type", "symbol"} {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("%s output schema omitted %q", fieldInsertionToolName, field)
 		}
 	}
 }
@@ -446,6 +461,13 @@ func schemaWorkspace(t *testing.T) string {
 		}
 	}
 	return root
+}
+
+func writeTestGoModule(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write fixture module: %v", err)
+	}
 }
 
 func listToolsWithLiveReload(t *testing.T) []map[string]any {
@@ -1429,6 +1451,70 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	}
 	if !strings.Contains(string(actual), "return 2") || strings.Contains(string(actual), "return 1") {
 		t.Fatalf("stale request changed the successful edit: %s", actual)
+	}
+}
+
+func TestInspectProjectionFeedsInsertField(t *testing.T) {
+	root := schemaWorkspace(t)
+	path := filepath.Join(root, "config.go")
+	initial := []byte("package sample\ntype options struct {\n\tname string\n}\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write field inspection fixture: %v", err)
+	}
+	inspectRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"options","file":"config.go","language":"go","trust_workspace":true}}}` + "\n"
+	var inspectOutput bytes.Buffer
+	if err := mcp.NewServer("full", root, &inspectOutput).Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
+		t.Fatalf("serve field inspection: %v", err)
+	}
+	var inspected map[string]any
+	if err := json.Unmarshal(inspectOutput.Bytes(), &inspected); err != nil {
+		t.Fatalf("decode field inspection: %v", err)
+	}
+	structured := inspected["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	records := structured["continuations"].([]any)
+	if len(records) != 1 {
+		t.Fatalf("field inspection continuations = %#v", records)
+	}
+	record := records[0].(map[string]any)
+	if record["file"] != "config.go" || record["in_type"] != "options" || record["expected_revision"] == "" {
+		t.Fatalf("inspection did not project same-record field evidence: %#v", record)
+	}
+	arguments := map[string]any{
+		"file": record["file"], "in_type": record["in_type"], "expected_revision": record["expected_revision"],
+		"symbol": "options.timeout", "source": "timeout int", "placement": "type_end",
+	}
+	request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_insert_field", "arguments": arguments}})
+	if err != nil {
+		t.Fatalf("encode field insertion: %v", err)
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+		t.Fatalf("serve field insertion: %v", err)
+	}
+	if strings.Contains(output.String(), `"isError":true`) {
+		t.Fatalf("field insertion rejected matching inspect record: %s", output.String())
+	}
+	var inserted map[string]any
+	if err := json.Unmarshal(output.Bytes(), &inserted); err != nil {
+		t.Fatalf("decode field insertion: %v", err)
+	}
+	result := inserted["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	receipt := result["edit_receipt"].(map[string]any)
+	continuations := receipt["continuations"].([]any)
+	if len(continuations) != 1 {
+		t.Fatalf("field receipt continuations = %#v", continuations)
+	}
+	target := continuations[0].(map[string]any)
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read inserted field source: %v", err)
+	}
+	digest := sha256.Sum256(updated)
+	if target["file"] != "config.go" || target["symbol"] != "options.timeout" || target["expected_revision"] != hex.EncodeToString(digest[:]) {
+		t.Fatalf("field receipt does not identify the live target revision: %#v", target)
+	}
+	if !strings.Contains(string(updated), "timeout int") {
+		t.Fatalf("field insertion missing from source: %s", updated)
 	}
 }
 

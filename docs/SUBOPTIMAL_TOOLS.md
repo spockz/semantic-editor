@@ -3061,3 +3061,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the absolute patch target omitted `.scratch/worktrees/flow-relocation` and applied one schema-key edit in the coordinator checkout instead of the assigned worker worktree.
 - Workaround: stopped editing the coordinator checkout and notified root to preserve or revert its delta; the intended change remains pending in the assigned worker worktree.
 - Root cause: the patch target was not checked against the assigned worktree root. Verify the full worktree prefix on every patch target.
+
+## ST-0260: Field insertion refused a one-line struct layout
+
+- Date: 2026-10-02
+- Tool: worktree-local MCP `semantic_insert_field` through `semantic_batch` and a direct inspect-to-insert MCP test.
+- Target: an existing private struct produced as `type options struct{}` or with a one-line field list.
+- Observed failure: the operation refused with `struct type "options" must use a multiline field layout`; no file changed.
+- Workaround: provide a multiline field list and assert that bounded form in the current CLI and MCP fixtures.
+- Root cause: the initial field insertion planner supports safe multiline struct ranges only. The empty-struct case is a common typed insertion flow and remains a follow-up scope.

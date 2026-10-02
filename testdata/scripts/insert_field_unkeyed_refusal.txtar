@@ -1,0 +1,25 @@
+# This CLI contract refuses a field insertion when any same-package source uses positional literals.
+! exec semedit insert-field --file config.go --in-type config --symbol config.timeout --source 'timeout int' --placement type_end
+stderr 'unkeyed config literal'
+cmp config.go .scratch/want/config.go
+
+-- go.mod --
+module example.com/insertfieldrefusal
+
+go 1.24
+-- config.go --
+package config
+
+type config struct {
+	name string
+}
+-- use.go --
+package config
+
+var _ = config{"worker"}
+-- .scratch/want/config.go --
+package config
+
+type config struct {
+	name string
+}
