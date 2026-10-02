@@ -1,0 +1,24 @@
+# A guarded batch child refuses a pre-batch revision after an earlier child edits its owner.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'expected_revision does not match captured source'
+cmp main.go .scratch/want/main.go
+-- go.mod --
+module example.com/revisionbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"main.go","symbol":"Value","body":"return 2"}},{"tool":"semantic_replace_body","params":{"file":"main.go","symbol":"Value","expected_revision":"e3a2d4d2188eae4090fa38fc8e2b149945b6443947bd73476b383ee4460cb72c","body":"return 3"}}]}}}
+-- main.go --
+package sample
+
+func Value() int {
+	return 1
+}
+-- .scratch/want/main.go --
+package sample
+
+func Value() int {
+	return 2
+}

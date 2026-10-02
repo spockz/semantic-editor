@@ -55,10 +55,13 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		return EditReceipt{}, fmt.Errorf("finalize planned changes: %w", err)
 	}
 	readRevisions := make(map[string]string, len(receipt.ReadSet))
-	expectedChanges := 0
 	for _, revision := range receipt.ReadSet {
 		readRevisions[revision.Path] = revision.Revision
 	}
+	expectedChanges := 0
+	confirmedChanges := 0
+	publicationUncertain := false
+	knownUnchanged := true
 	for _, planned := range draft.PlannedChanges {
 		if readRevisions[planned.Path] == planned.Revision {
 			continue
@@ -70,17 +73,22 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		}
 		if exists && actual.Revision == planned.Revision {
 			receipt.Changes = append(receipt.Changes, actual)
+			confirmedChanges++
+			continue
+		}
+		if exists && readRevisions[planned.Path] != "" && actual.Revision == readRevisions[planned.Path] {
+			continue
+		}
+		knownUnchanged = false
+		publicationUncertain = true
+		if exists {
+			receipt.Changes = append(receipt.Changes, actual)
 		}
 	}
-	if !inBatch {
-		switch {
-		case expectedChanges > 0 && len(receipt.Changes) == 0:
-			receipt.Status = EditRefused
-		case expectedChanges > len(receipt.Changes):
+	if !inBatch && expectedChanges > confirmedChanges {
+		if confirmedChanges > 0 || publicationUncertain {
 			receipt.Status = EditPartiallyPublished
-		case expectedChanges > 0 && receipt.Status == EditPartiallyPublished:
-			receipt.Status = EditPersisted
-		case expectedChanges == 0 && receipt.Status == EditPartiallyPublished:
+		} else if knownUnchanged {
 			receipt.Status = EditRefused
 		}
 	}
@@ -88,6 +96,16 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		for index, candidate := range draft.Continuations {
 			if err := ValidateSymbolTarget(candidate); err != nil {
 				return EditReceipt{}, fmt.Errorf("receipt continuation %d: %w", index, err)
+			}
+			if candidate.ExpectedRevision == nil {
+				continue
+			}
+			candidateFile, exists, err := receiptFileRevision(ctx, root, candidate.File, false)
+			if err != nil {
+				return EditReceipt{}, fmt.Errorf("verify receipt candidate %d: %w", index, err)
+			}
+			if !exists || candidateFile.Revision != *candidate.ExpectedRevision {
+				continue
 			}
 			resolved, live, err := resolve(ctx, candidate)
 			if err != nil {

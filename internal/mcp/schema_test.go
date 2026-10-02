@@ -193,6 +193,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
+				case "semantic_set_doc_comment", "semantic_insert_statement":
+					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -248,11 +250,32 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					if status["const"] != "draft_only" {
 						t.Fatalf("feedback status schema = %#v, want draft_only", status)
 					}
+
+				case "semantic_inspect_symbol":
+					assertStandardOutputSchema(t, tool["outputSchema"], "object")
+					assertInspectOutputSchema(t, tool["outputSchema"])
 				default:
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 				}
 			}
 		})
+	}
+}
+
+func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
+	t.Helper()
+	assertStandardOutputSchema(t, raw, "object")
+	result := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	if properties["result"].(map[string]any)["type"] != "string" {
+		t.Errorf("%s result projection must be a string", name)
+	}
+	receipt, ok := properties["edit_receipt"].(map[string]any)
+	if !ok || receipt["type"] != "object" {
+		t.Fatalf("%s omitted its native edit_receipt object", name)
+	}
+	if got := receipt["required"]; !reflect.DeepEqual(got, []any{"schema_version", "status", "operation"}) {
+		t.Errorf("%s edit_receipt required = %#v", name, got)
 	}
 }
 
@@ -313,8 +336,18 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	}
 	properties := result["properties"].(map[string]any)
 	items := properties["results"].(map[string]any)["items"].(map[string]any)
-	if got := items["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
-		t.Fatalf("batch result item required = %#v", got)
+	branches, ok := items["oneOf"].([]any)
+	if !ok || len(branches) == 0 {
+		t.Fatalf("batch result item schema = %#v, want registered tool branches", items)
+	}
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		if got := branch["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
+			t.Fatalf("batch result branch required = %#v", got)
+		}
+		if branch["additionalProperties"] != false {
+			t.Fatalf("batch result branch is not closed: %#v", branch)
+		}
 	}
 	if diff, ok := properties["final_diff"].(map[string]any); !ok || diff["type"] != "string" {
 		t.Fatalf("batch final_diff schema = %#v", properties["final_diff"])
@@ -362,6 +395,7 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 func schemaWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeTestGoModule(t, root)
 	for name, source := range map[string]string{"main.go": "package sample\n", "Main.java": "class Main {}\n"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
 			t.Fatal(err)
@@ -832,6 +866,53 @@ func toAnySlice(values []string) []any {
 	return result
 }
 
+func assertInspectOutputSchema(t *testing.T, outputSchema any) {
+	t.Helper()
+	output, ok := outputSchema.(map[string]any)
+	if !ok {
+		t.Fatalf("inspection output schema = %#v", outputSchema)
+	}
+	properties, ok := output["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection output properties = %#v", output["properties"])
+	}
+	result, ok := properties["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection result schema = %#v", properties["result"])
+	}
+	resultProperties, ok := result["properties"].(map[string]any)
+	if !ok || resultProperties["inspection"] == nil {
+		t.Fatalf("inspection result schema omitted legacy text: %#v", result)
+	}
+	continuations, ok := resultProperties["continuations"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection result schema omitted continuations: %#v", resultProperties)
+	}
+	items, ok := continuations["items"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection continuation item schema = %#v", continuations["items"])
+	}
+	itemProperties, ok := items["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("inspection continuation properties = %#v", items["properties"])
+	}
+	for _, field := range []string{"file", "symbol", "expected_revision", "in_function", "in_type", "in_declaration"} {
+		if _, ok := itemProperties[field]; !ok {
+			t.Errorf("inspection continuation schema omitted %q", field)
+		}
+	}
+	if !reflect.DeepEqual(items["required"], []any{"file", "symbol", "expected_revision"}) {
+		t.Errorf("inspection continuation required = %#v", items["required"])
+	}
+}
+
+func writeTestGoModule(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write fixture module: %v", err)
+	}
+}
+
 func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	tools := make(map[string]map[string]any)
 	for _, tool := range listTools(t, "full") {
@@ -920,11 +1001,20 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		t.Fatal("semantic_batch schema omitted semantic_move_construct")
 	}
 	output := batch["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
-	results := output["results"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
-	destination := results["destination_file"].(map[string]any)
-	if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
-		t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+	results := output["results"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+	for _, rawBranch := range results {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] != "semantic_move_construct" {
+			continue
+		}
+		destination := properties["destination_file"].(map[string]any)
+		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
+			t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+		}
+		return
 	}
+	t.Fatal("batch output schema omitted semantic_move_construct result branch")
 }
 
 func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
@@ -1083,6 +1173,222 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 	}
 }
 
+func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
+	root := schemaWorkspace(t)
+	registry := operation.NewRegistry()
+	objectSchema := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{
+		"value": {Kind: operation.SchemaInteger},
+	}, Required: []string{"value"}}
+	arraySchema := operation.ValueSchema{Kind: operation.SchemaArray, Items: &operation.ValueSchema{Kind: operation.SchemaString}}
+	nullSchema := operation.ValueSchema{Kind: operation.SchemaString, Nullable: true}
+	makeEntry := func(key, name string, schema operation.ValueSchema, project func(string) any) error {
+		return operation.Register(registry, operation.Def[map[string]any, string]{
+			Key: key, MCPName: name, Batchable: true, Output: &operation.OperationOutputContract{ResultSchema: &schema},
+			Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil },
+			Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){
+				backend.LanguageAuto: func(context.Context, operation.CallContext, map[string]any) (string, error) { return "ok", nil },
+			},
+			ProjectOutput: func(value string) (any, error) { return project(value), nil },
+		})
+	}
+	if err := makeEntry("typed-object", "semantic_typed_object", objectSchema, func(string) any { return map[string]any{"value": 7} }); err != nil {
+		t.Fatalf("register object provider: %v", err)
+	}
+	if err := makeEntry("typed-scalar", "semantic_typed_scalar", operation.ValueSchema{Kind: operation.SchemaString}, func(string) any { return "scalar" }); err != nil {
+		t.Fatalf("register scalar provider: %v", err)
+	}
+	if err := makeEntry("typed-array", "semantic_typed_array", arraySchema, func(string) any { return []string{"array"} }); err != nil {
+		t.Fatalf("register array provider: %v", err)
+	}
+	if err := makeEntry("typed-null", "semantic_typed_null", nullSchema, func(string) any { return nil }); err != nil {
+		t.Fatalf("register null provider: %v", err)
+	}
+	if err := operation.Register(registry, operation.Def[map[string]any, string]{
+		Key: "legacy-output", MCPName: "semantic_legacy_output", Batchable: true,
+		Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (string, error){
+			backend.LanguageAuto: func(context.Context, operation.CallContext, map[string]any) (string, error) { return "legacy", nil },
+		},
+	}); err != nil {
+		t.Fatalf("register legacy operation: %v", err)
+	}
+
+	tools := listToolsAtWithRegistry(t, "full", root, registry)
+	var batchTool map[string]any
+	for _, tool := range tools {
+		if tool["name"] == "semantic_batch" {
+			batchTool = tool
+			break
+		}
+	}
+	if batchTool == nil {
+		t.Fatal("tools/list omitted semantic_batch")
+	}
+	resultsSchema := batchTool["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)["results"].(map[string]any)["items"].(map[string]any)
+	branches := resultsSchema["oneOf"].([]any)
+	for name, wantKind := range map[string]string{
+		"semantic_typed_object": "object", "semantic_typed_scalar": "string", "semantic_typed_array": "array", "semantic_typed_null": "nullable",
+	} {
+		var found bool
+		for _, rawBranch := range branches {
+			branch := rawBranch.(map[string]any)
+			properties := branch["properties"].(map[string]any)
+			if properties["tool"].(map[string]any)["const"] == name {
+				resultSchema, ok := properties["result"].(map[string]any)
+				if !ok {
+					t.Fatalf("batch schema omitted result for %s: %#v", name, branch)
+				}
+				if wantKind == "nullable" {
+					types, ok := resultSchema["type"].([]any)
+					if !ok || !reflect.DeepEqual(types, []any{"string", "null"}) {
+						t.Fatalf("nullable result schema for %s = %#v", name, resultSchema)
+					}
+				} else if resultSchema["type"] != wantKind {
+					t.Fatalf("batch result schema for %s = %#v, want type %s", name, resultSchema, wantKind)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("batch output schema omitted registered result branch %s", name)
+		}
+	}
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		if properties["tool"].(map[string]any)["const"] == "semantic_legacy_output" {
+			if _, hasResult := properties["result"]; hasResult {
+				t.Fatalf("legacy batch branch advertises a result: %#v", branch)
+			}
+		}
+	}
+
+	var edits = make([]map[string]any, 0, 5)
+	for _, name := range []string{"semantic_typed_object", "semantic_typed_scalar", "semantic_typed_array", "semantic_typed_null", "semantic_legacy_output"} {
+		edits = append(edits, map[string]any{"tool": name, "params": map[string]any{}})
+	}
+	request, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}})
+	if err != nil {
+		t.Fatalf("encode batch request: %v", err)
+	}
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+		t.Fatalf("serve batch typed results: %v", err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("decode batch results: %v", err)
+	}
+	structured := response["result"].(map[string]any)["structuredContent"].(map[string]any)
+	batchResult := structured["result"].(map[string]any)
+	results := batchResult["results"].([]any)
+	expected := map[string]any{
+		"semantic_typed_object": map[string]any{"value": float64(7)},
+		"semantic_typed_scalar": "scalar",
+		"semantic_typed_array":  []any{"array"},
+		"semantic_typed_null":   nil,
+	}
+	for index, rawResult := range results {
+		result := rawResult.(map[string]any)
+		name := result["tool"].(string)
+		if name == "semantic_verify" {
+			if result["status"] != "error" || result["error"] == nil {
+				t.Errorf("synthetic verification row = %#v, want explicit missing-registration error", result)
+			}
+			continue
+		}
+		if want, typed := expected[name]; typed {
+			got, present := result["result"]
+			if !present || !reflect.DeepEqual(got, want) {
+				t.Errorf("batch result %s = %#v present=%t, want %#v", name, got, present, want)
+			}
+			continue
+		}
+		if name == "semantic_legacy_output" {
+			if _, present := result["result"]; present {
+				t.Errorf("legacy batch result unexpectedly has result: %#v", result)
+			}
+			continue
+		}
+		t.Errorf("unexpected batch result at index %d: %#v", index, result)
+	}
+}
+
+func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
+	root := schemaWorkspace(t)
+	module := []byte("module example.com/inspectprojection\n\ngo 1.24\n")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), module, 0o600); err != nil {
+		t.Fatalf("write inspection fixture module: %v", err)
+	}
+	path := filepath.Join(root, "main.go")
+	initial := []byte("package sample\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write inspection fixture: %v", err)
+	}
+	var inspectOutput bytes.Buffer
+	inspectServer := mcp.NewServer("full", root, &inspectOutput)
+	inspectRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"Value","file":"main.go","language":"go","trust_workspace":true}}}` + "\n"
+	if err := inspectServer.Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
+		t.Fatalf("serve inspect call: %v", err)
+	}
+	var inspected map[string]any
+	if err := json.Unmarshal(inspectOutput.Bytes(), &inspected); err != nil {
+		t.Fatalf("decode inspect response: %v", err)
+	}
+	result := inspected["result"].(map[string]any)
+	structured := result["structuredContent"].(map[string]any)["result"].(map[string]any)
+	inspection := structured["inspection"].(string)
+	if got := result["content"].([]any)[0].(map[string]any)["text"]; got != inspection {
+		t.Fatalf("CLI-compatible inspection text = %#v, projected inspection = %#v", got, inspection)
+	}
+	records := structured["continuations"].([]any)
+	if len(records) != 1 {
+		t.Fatalf("inspection continuations = %#v", records)
+	}
+	record := records[0].(map[string]any)
+	if record["file"] != "main.go" || record["symbol"] != "Value" || record["expected_revision"] == "" || record["in_function"] != "Value" {
+		t.Fatalf("inspection target projection = %#v", record)
+	}
+	arguments := map[string]any{
+		"file":              record["file"],
+		"symbol":            record["symbol"],
+		"expected_revision": record["expected_revision"],
+		"body":              "return 2",
+	}
+	guardedRequest, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_replace_body", "arguments": arguments}})
+	if err != nil {
+		t.Fatalf("encode guarded edit: %v", err)
+	}
+	var guardedOutput bytes.Buffer
+	guardedServer := mcp.NewServer("full", root, &guardedOutput)
+	if err := guardedServer.Serve(context.Background(), bytes.NewReader(append(guardedRequest, '\n'))); err != nil {
+		t.Fatalf("serve guarded edit: %v", err)
+	}
+	if strings.Contains(guardedOutput.String(), "isError\":true") {
+		t.Fatalf("guarded edit rejected matching captured evidence: %s", guardedOutput.String())
+	}
+	staleRequest, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": map[string]any{"name": "semantic_replace_body", "arguments": arguments}})
+	if err != nil {
+		t.Fatalf("encode stale guarded edit: %v", err)
+	}
+	var staleOutput bytes.Buffer
+	staleServer := mcp.NewServer("full", root, &staleOutput)
+	if err := staleServer.Serve(context.Background(), bytes.NewReader(append(staleRequest, '\n'))); err != nil {
+		t.Fatalf("serve stale guarded edit: %v", err)
+	}
+	if !strings.Contains(staleOutput.String(), "expected_revision does not match captured source") || !strings.Contains(staleOutput.String(), "isError\":true") {
+		t.Fatalf("stale guarded edit did not refuse explicitly: %s", staleOutput.String())
+	}
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read guarded edit result: %v", err)
+	}
+	if !strings.Contains(string(actual), "return 2") || strings.Contains(string(actual), "return 1") {
+		t.Fatalf("stale request changed the successful edit: %s", actual)
+	}
+}
+
 func TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision(t *testing.T) {
 	root := schemaWorkspace(t)
 	path := filepath.Join(root, "main.go")
@@ -1144,7 +1450,12 @@ func TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision(t *testing.T) {
 				plannedBytes = []byte("package sample\nvar Other = 2\n")
 			}
 			plannedDigest := sha256.Sum256(plannedBytes)
-			draftValue := operation.EditReceiptDraft{Operation: draft.Operation, Status: draft.Status, PlannedChanges: []operation.FileRevision{{Path: "main.go", Revision: hex.EncodeToString(plannedDigest[:])}}, ReadSet: draft.ReadSet, Continuations: draft.Continuations}
+			expectedRevision := hex.EncodeToString(plannedDigest[:])
+			continuations := append([]operation.SymbolTarget(nil), draft.Continuations...)
+			for index := range continuations {
+				continuations[index].ExpectedRevision = &expectedRevision
+			}
+			draftValue := operation.EditReceiptDraft{Operation: draft.Operation, Status: draft.Status, PlannedChanges: []operation.FileRevision{{Path: "main.go", Revision: expectedRevision}}, ReadSet: draft.ReadSet, Continuations: continuations}
 			return operation.FinalizeEditReceipt(cc.Ctx, cc.WorkDir, cc.InBatch, draftValue, resolve)
 		},
 		ProjectOutput: func(receipt operation.EditReceipt) (any, error) { return receipt, nil },

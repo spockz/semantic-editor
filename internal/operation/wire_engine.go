@@ -233,7 +233,10 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, scaffoldFileDef()); err != nil {
 		return err
 	}
-	return Register(registry, insertCaseDef())
+	if err := Register(registry, insertCaseDef()); err != nil {
+		return err
+	}
+	return registerStructuralPlanOps(registry)
 }
 
 func goTargetAfterEdit(ctx context.Context, filePath, source string) (string, int, error) {

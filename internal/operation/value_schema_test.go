@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"semedit/internal/backend"
 	"testing"
 )
 
@@ -362,5 +363,160 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 	}
 	if len(refused.Changes) != 0 || len(refused.Continuations) != 0 {
 		t.Fatalf("refused receipt reports published values: %#v", refused)
+	}
+}
+
+func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testing.T) {
+	root := t.TempDir()
+	beforeA := []byte("package sample\nvar First = 1\n")
+	afterA := []byte("package sample\nvar First = 2\n")
+	beforeB := []byte("package sample\nvar Second = 1\n")
+	afterB := []byte("package sample\nvar Second = 2\n")
+	if err := os.WriteFile(filepath.Join(root, "first.go"), afterA, 0600); err != nil {
+		t.Fatalf("write published output: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "second.go"), beforeB, 0600); err != nil {
+		t.Fatalf("write unchanged preimage: %v", err)
+	}
+	digest := func(source []byte) string {
+		sum := sha256.Sum256(source)
+		return hex.EncodeToString(sum[:])
+	}
+	draft := EditReceiptDraft{
+		Operation: "multi-file-edit",
+		Status:    EditPersisted,
+		PlannedChanges: []FileRevision{
+			{Path: "first.go", Revision: digest(afterA)},
+			{Path: "second.go", Revision: digest(afterB)},
+		},
+		ReadSet: []FileRevision{
+			{Path: "first.go", Revision: digest(beforeA)},
+			{Path: "second.go", Revision: digest(beforeB)},
+		},
+	}
+	partial, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize partial publication: %v", err)
+	}
+	if partial.Status != EditPartiallyPublished || len(partial.Changes) != 1 || partial.Changes[0].Path != "first.go" {
+		t.Fatalf("mixed published and unchanged files = %#v", partial)
+	}
+	if err := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); err != nil {
+		t.Fatalf("restore unchanged preimage: %v", err)
+	}
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize fully unchanged publication: %v", err)
+	}
+	if refused.Status != EditRefused || len(refused.Changes) != 0 {
+		t.Fatalf("fully unchanged planned files = %#v, want refused with no changes", refused)
+	}
+}
+
+func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	before := []byte("package sample\nvar Widget = 1\n")
+	planned := []byte("package sample\nvar Widget = 2\n")
+	observed := []byte("package sample\nvar Other = 3\n")
+	if err := os.WriteFile(path, observed, 0600); err != nil {
+		t.Fatalf("write observed source: %v", err)
+	}
+	beforeDigest := sha256.Sum256(before)
+	plannedDigest := sha256.Sum256(planned)
+	observedDigest := sha256.Sum256(observed)
+	expected := hex.EncodeToString(plannedDigest[:])
+	resolverCalls := 0
+	receipt, err := FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+		Operation:      "replace-value",
+		Status:         EditPersisted,
+		PlannedChanges: []FileRevision{{Path: "main.go", Revision: expected}},
+		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
+		Continuations:  []SymbolTarget{{File: "main.go", Symbol: "Widget", ExpectedRevision: &expected}},
+	}, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+		resolverCalls++
+		return target, true, nil
+	})
+	if err != nil {
+		t.Fatalf("finalize normalized postimage: %v", err)
+	}
+	observedRevision := hex.EncodeToString(observedDigest[:])
+	if receipt.Status != EditPartiallyPublished || len(receipt.Changes) != 1 || receipt.Changes[0].Revision != observedRevision {
+		t.Fatalf("mismatched postimage evidence = %#v", receipt)
+	}
+	if resolverCalls != 0 || len(receipt.Continuations) != 0 {
+		t.Fatalf("stale candidate reached weak resolver or was emitted: calls=%d continuations=%#v", resolverCalls, receipt.Continuations)
+	}
+
+	liveExpected := observedRevision
+	receipt, err = FinalizeEditReceipt(context.Background(), root, false, EditReceiptDraft{
+		Operation:      "replace-value",
+		Status:         EditPersisted,
+		PlannedChanges: []FileRevision{{Path: "main.go", Revision: observedRevision}},
+		ReadSet:        []FileRevision{{Path: "main.go", Revision: hex.EncodeToString(beforeDigest[:])}},
+		Continuations:  []SymbolTarget{{File: "main.go", Symbol: "Other", ExpectedRevision: &liveExpected}},
+	}, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) {
+		return target, true, nil
+	})
+	if err != nil {
+		t.Fatalf("finalize matching candidate: %v", err)
+	}
+	if len(receipt.Continuations) != 1 || receipt.Continuations[0].ExpectedRevision == nil || *receipt.Continuations[0].ExpectedRevision != observedRevision {
+		t.Fatalf("matching final candidate was not emitted with observed digest: %#v", receipt.Continuations)
+	}
+}
+
+func TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches(t *testing.T) {
+	result := &backend.InspectResult{Matches: []backend.InspectedSymbol{
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Widget.java", Revision: "captured-one"},
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Other.java", Revision: "captured-two"},
+	}}
+	projection, err := ProjectInspectResult(result)
+	if err != nil {
+		t.Fatalf("project language-neutral matches: %v", err)
+	}
+	if len(projection.Continuations) != 2 {
+		t.Fatalf("continuations = %#v, want both ambiguous matches", projection.Continuations)
+	}
+	for index, want := range []InspectContinuation{
+		{File: "src/Widget.java", Symbol: "Widget.run", ExpectedRevision: "captured-one"},
+		{File: "src/Other.java", Symbol: "Widget.run", ExpectedRevision: "captured-two"},
+	} {
+		got := projection.Continuations[index]
+		if got.File != want.File || got.Symbol != want.Symbol || got.ExpectedRevision != want.ExpectedRevision || got.InFunction != nil || got.InType != nil || got.InDeclaration != nil {
+			t.Errorf("continuation %d = %#v, want language-neutral captured identity %#v", index, got, want)
+		}
+	}
+}
+
+func TestProjectInspectResultAddsGoDeclarationOwnerAliases(t *testing.T) {
+	kinds := []string{"function", "method", "type", "interface", "constant", "variable", "field"}
+	matches := make([]backend.InspectedSymbol, 0, len(kinds))
+	for _, kind := range kinds {
+		matches = append(matches, backend.InspectedSymbol{
+			QualifiedName: "pkg." + kind, Kind: kind, File: "src/sample.go",
+			Revision: "captured-" + kind,
+		})
+	}
+	projection, err := ProjectInspectResult(&backend.InspectResult{Matches: matches})
+	if err != nil {
+		t.Fatalf("project Go declarations: %v", err)
+	}
+	if len(projection.Continuations) != len(kinds) {
+		t.Fatalf("continuations = %d, want %d", len(projection.Continuations), len(kinds))
+	}
+	for index, kind := range kinds {
+		got := projection.Continuations[index]
+		wantFunction := kind == "function" || kind == "method"
+		wantType := kind == "type" || kind == "interface"
+		wantDeclaration := kind != "field"
+		if (got.InFunction != nil) != wantFunction || (got.InType != nil) != wantType || (got.InDeclaration != nil) != wantDeclaration {
+			t.Errorf("%s aliases = function:%v type:%v declaration:%v", kind, got.InFunction != nil, got.InType != nil, got.InDeclaration != nil)
+		}
+		for _, alias := range []*string{got.InFunction, got.InType, got.InDeclaration} {
+			if alias != nil && *alias != got.Symbol {
+				t.Errorf("%s alias = %q, want exact qualified identity %q", kind, *alias, got.Symbol)
+			}
+		}
 	}
 }

@@ -103,7 +103,7 @@ func rawParams(entry operation.Entry, values *flagValues, flagChanged func(strin
 				raw[param.JSONName] = *variable
 			}
 		default:
-			if variable, ok := values.strings[param.CLIName]; ok && *variable != "" {
+			if variable, ok := values.strings[param.CLIName]; ok && (*variable != "" || (flagChanged != nil && flagChanged(param.CLIName))) {
 				raw[param.JSONName] = *variable
 			}
 		}
