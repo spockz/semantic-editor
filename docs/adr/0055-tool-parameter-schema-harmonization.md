@@ -1,3 +1,5 @@
+<!-- Defines consistent tool argument names and copyable provenance for continuation values. -->
+
 # ADR-0055: Tool Parameter Schema Harmonization and Continuation Contracts
 
 * **Status**: Accepted
@@ -118,6 +120,33 @@ automatically when `SourceFields` is non-empty. A build-time registry check
 verifies that every named source field exists in the referenced tool's output
 schema.
 
+### 9. Existing-Declaration Selector Provenance
+
+For an existing declaration, an agent reuses a suitable result record and
+copies its selector values verbatim from discovery or the latest valid
+mutation receipt; it performs discovery only when no suitable record is
+available. A record is
+suitable for the declared consumer and target/selector role, workspace root,
+backend, and current view, with no known invalidation. Copy companion
+`file`, owner/target, and `expected_revision`
+values from that same record when present. Never reconstruct qualified names,
+owner names, paths, or revisions from prose or combine values from separate
+records. Creation names have no mandatory discovered-name producer; callers
+choose their intent in the required input format.
+
+The inspection projection demonstrates this contract with one
+`result.continuations[]` object per captured match. `file`, `symbol`, and
+`expected_revision` are required together; applicable Go owner selectors such
+as `in_function`, `in_type`, and `in_declaration` are optional on that same
+object. Copy `expected_revision` from the typed field without renaming the
+legacy `revision` in inspection text. Only declared consumer paths are
+reusable. This rule does not require another caller lookup when a suitable
+record exists; guarded operations may internally re-inspect and validate it.
+
+Whether to enforce provenance at runtime, and the explicit discovery,
+creation, external-client, and recovery modes, remain open in
+[RQ-0027](../research/RQ-0027-preventing-read-files.md#existing-declaration-selector-copying-and-enforcement-2026-10-02).
+
 ## Invariants
 
 * `symbol` is exclusively a primary operation target. No tool uses `symbol` as
@@ -130,6 +159,8 @@ schema.
   appear in serialized tool output.
 * `SourceFields` entries must resolve to existing output fields; broken
   cross-references fail the build.
+* Existing-declaration arguments are copied from one suitable result record;
+  companion values never come from other records or reconstruction.
 * CLI parameter names (`CLIName`) and JSON parameter names (`JSONName`) for
   the renamed parameters must be updated atomically with the rename.
 * All txtar test cases referencing renamed parameters must be updated in the

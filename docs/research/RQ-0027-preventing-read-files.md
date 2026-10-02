@@ -818,3 +818,215 @@ Keep full source paths and tool names. Preserve companion file/owner/revision ru
 No production instructions, descriptions, or schemas were changed by this audit. The first independent Terra review timed out and supplied no approval. A narrower second review identified the required preceding-result-record cue and supplied the compact wording shape adopted above. It did not review all 39 summaries or establish model-routing performance.
 
 This audit verifies visible tool selection guidance and argument/result continuity. It does not measure internal model reasoning or demonstrate lower token use. Producer-to-consumer execution and negative liveness cases are the acceptance evidence; any model-routing comparison belongs to the existing benchmark methodology and requires separately authorized runs.
+
+## Existing-declaration selector copying and enforcement, 2026-10-02
+
+### Accepted agent rule
+
+For an existing declaration, copy the complete suitable selector from a
+discovery result or the latest valid mutation receipt. Keep companion values
+such as `file`, owner/target, and `expected_revision` from the same
+continuation object. Reuse a suitable existing record; discover only when no
+suitable record is available. Never reconstruct a qualified symbol, owner,
+path, or revision from prose. Creation-name parameters have no mandatory
+discovered-name producer; callers choose their intent in the required input
+format. This rule does not
+require an extra caller lookup: guarded operations may internally re-inspect
+and validate the copied revision.
+
+The initial baseline for this audit is `92476ae`. The discovery example
+`verifyRun` → requested `runVerify` was a caller error after the symbol had
+already been discovered, not a lookup failure; the agent reconstructed the
+target spelling instead of copying the discovered name.
+
+### Current implementation boundary
+
+`semantic_inspect_symbol` projects
+`result.continuations[] = {file, symbol, expected_revision, ...}`, one object
+per captured match. The required file, qualified symbol, and opaque revision
+digest stay together; applicable Go owner selectors such as `in_function`,
+`in_type`, and `in_declaration` are optional fields on that same object.
+Copy the consumer input `expected_revision` exactly from the typed projection.
+The legacy inspection text contains backend matches with a `revision` field;
+that value is not a parameter name and must not be manually renamed.
+
+The contract currently declares only consumer edges that have been validated.
+The projection can contain `in_declaration`, but that alone does not make it a
+declared reusable edge. Lookup exposes normalized top-level selector fields;
+rename exposes only the final renamed target's selector fields. Mutation
+continuations depend on operation-specific finalization and may omit buffered,
+refused, removed, or no-longer-live targets. A `partially_published` operation
+does not imply overall success merely because an individual target can be
+resolved. Current internal validation and finalization are stronger than the
+historical field-existence/top-level-only audit above; that earlier finding
+describes the then-current boundary, not the implementation at this revision.
+
+### Open enforcement and recovery choices
+
+ADR-0055 fixes the agent-facing copy rule and exact value contract. It does not
+select a universal runtime strict-selector gate. Evaluate the following
+alternatives without treating any as accepted yet:
+
+A strict-gate prototype should match the complete provenance record and
+consumer contract before dispatch, not just membership of a symbol string.
+Unknown or mismatched provenance should reject before operation execution.
+Whether discovery, creation, external clients, and explicit recovery use
+declared modes or bypasses remains open; keep those paths auditable.
+
+| Candidate | Benefit | Unresolved cost or risk |
+| :--- | :--- | :--- |
+| Steering plus warning/telemetry | Supports existing clients and caller-chosen flows | Cannot prevent reconstructed or stale selectors |
+| Orchestrator-enforced provenance | Makes declared producer records enforceable | Needs client integration and an explicit exception path |
+| Opaque/session-bound handles | Avoids exposing reconstruction-prone selectors | Adds lifecycle, persistence, batch, and recovery complexity |
+| Explicit policy for discovery, creation, external clients, and recovery | Preserves legitimate independent callers | Requires policy surface and auditable provenance |
+
+Do not require every disk-backed record to come from the current MCP session
+without evidence; reuse may be suitable when workspace, view, consumer, and
+captured evidence match and there is no known invalidation. Runtime guarded
+checks remain authoritative, so callers need not repeat discovery solely to
+prove that source has not changed. Buffered overlay evidence, however, is
+view/session scoped and must not be reused as a standalone disk selector.
+Untyped legacy lookup/rename records without `expected_revision` may remain
+suitable for declared unguarded consumers, but must not be treated as
+revision-bound. A new receipt that omits a target supplies no new liveness
+proof. Omission alone does not invalidate prior evidence; if earlier evidence
+is known invalidated by a delete, source change, or view mismatch, do not
+resurrect it.
+
+An identical-byte delete/recreate is an ABA case: the current digest cannot
+prove historic identity or caller intent. A content digest or set membership
+alone cannot close that gap. Keep the enforcement choice open until a prototype
+compares warning/telemetry, orchestrator checks, and opaque handles against
+legitimate discovery, creation, external-client, and recovery flows.
+
+### Required evaluation evidence
+
+Any strict-gate prototype must show public observable behavior, not only an
+internal registry check:
+
+* Accept exact same-record continuations; reject mixed file/owner/revision
+  records and stale revisions before mutation.
+* After rename or move, accept only the destination identity and final
+  revision; after deletion, advertise no continuation for the deleted target.
+* Refuse standalone use of buffered working-overlay receipts and distinguish
+  one surviving target from whole-operation success after partial publication.
+* Cover multi-file edits with separate file/revision companion records.
+* Preserve status, failure/limitations, ambiguity, and live continuations in
+  text-only and truncated-client presentations before large bodies or diffs.
+* Make stale similar-name recovery fail closed rather than mutating a guessed
+  declaration; exercise the identical-byte delete/recreate limitation.
+* Measure extra selector, revision, and handle token cost alongside rejection
+  rates and legitimate escape-path success.
+
+Existing focused coverage includes guarded inspection-to-replace/insert flows,
+final-disk identity/revision, incompatible continuation registration,
+stale-continuation suppression, inspection owner aliases, ambiguous language
+neutral matches, and candidate-digest requirements. See
+`internal/mcp/schema_test.go` and
+`internal/operation/value_schema_test.go`; this list identifies current
+coverage and does not resolve the gate policy or client presentation behavior.
+
+### Concrete wire evidence and selector formats
+
+The following are current values and paths. Their presence does not make every
+value a declared continuation for every consumer.
+
+| Value | Current format |
+| :--- | :--- |
+| `symbol`, `in_function`, `in_type`, `in_declaration` | Qualified identifier string copied verbatim |
+| `file` | Project-relative slash path |
+| `expected_revision` | Opaque digest string; for example, `54cb2d1b9979a5ec763dac737599efe76fa14aeabc19cbcac5bde13c2cb3acb7` |
+| `construct_path` | Operation-specific string such as `0` or `0.1`, dot-separated zero-based traversal indexes |
+| `discriminator`, `target_case` | Exact operation-specific source selector string; not a normalized or reconstructed name |
+
+For example, current inspection structured output has this shape:
+
+```json
+{
+  "result": {
+    "inspection": "{...legacy inspection JSON...}",
+    "continuations": [
+      {
+        "file": "internal/mcp/server.go",
+        "symbol": "Server.handleToolCall",
+        "expected_revision": "54cb2d1b9979a5ec763dac737599efe76fa14aeabc19cbcac5bde13c2cb3acb7",
+        "in_function": "Server.handleToolCall",
+        "in_declaration": "Server.handleToolCall"
+      }
+    ]
+  }
+}
+```
+
+When the declared consumer is `semantic_replace_body`, copy that record's
+`file`, `symbol`, and `expected_revision` to those exact input fields. Do not
+combine the `file` from another candidate with the owner or revision from this
+one. The projection may include `in_declaration`, but current consumer
+registration remains the source of allowed edges.
+
+An outline-driven same-name candidate record containing
+`{file, symbol, kind, expected_revision}` would let the caller copy a
+qualified name exposed as `qualified_name` plus `file`; the same-named
+`symbol` continuation record is a proposal to avoid receiver reconstruction,
+not a current outline field. A separate construct record containing
+`{file, in_function, kind, discriminator, construct_path, expected_revision}`
+is also a design candidate, not a current `semantic_outline` continuation.
+Membership proves discovery, not that the selected declaration is intended.
+
+Current formatter behavior has presentation gaps. `formatLookup` and
+`formatInspectRead` produce JSON strings for text content. Structured
+inspection places the `inspection` string before its typed continuation
+array, with legacy inspection JSON encoded inside that string. `formatRename`
+returns a sentence,
+while its separate structured continuation exposes the post-rename symbol and
+file. For example, source formatting with `symbol=verifyRun` and `to=checkRevision`
+can render “Successfully renamed verifyRun.” while structured continuation
+generation uses `checkRevision`. A client that truncates or forwards only
+text can lose structured continuations or inspectable details;
+structuredContent availability alone
+does not establish model visibility. The obligation to preserve essentials
+is accepted; exact prefix encoding, presentation limits, and byte/token
+truncation budgets remain open.
+
+### Discovery and liveness policy still open
+
+Do not select same-spelling declarations by similarity or ordering. A
+not-found recovery candidate must be bounded by selected file and kind, and
+inspection must report whether the requested scope was complete or truncated.
+Deterministic ordering, candidate caps, and response-budget limits remain
+open. If the caller has no selected file and no suitable record, request
+scoped discovery rather than mutate a guessed similar name.
+
+Candidate validity needs an explicit matrix over workspace root,
+backend/language, source revision, and view identity. Evaluate same-session
+and cross-session disk records separately; buffered overlay candidates remain
+bound to their originating view/session. Rename and move replace the old
+identity with the destination and final revision; delete leaves no live
+continuation. Multi-file results require separate file/revision companions.
+Restart, external edits, partial publication, and explicit recovery need
+defined treatment. Omission from a new receipt is not proof of deletion and
+supplies no new liveness proof; if earlier evidence is known invalidated by a
+delete, source change, or view mismatch, do not resurrect it. Identical-byte
+delete/recreate remains indistinguishable by content digest alone.
+
+### Evaluation cases
+
+Compare warning/telemetry, orchestrator enforcement, and opaque/session-bound
+handles against these observable cases:
+
+* Correct same-record copies versus a reconstructed name, including a wrong
+  name that happens to resolve to an existing declaration.
+* Mixed file/owner/revision records, same-record wrong-intent selectors,
+  stale revisions, and old rename/move/delete targets.
+* Not-found recovery with similar names, selected file/kind constraints,
+  incomplete scopes, deterministic caps, and explicit recovery.
+* Text-only and structured clients truncated at several byte/token
+  boundaries, especially before continuations, failures, ambiguity, and
+  limitations.
+* Cross-session disk receipts, restarts, overlay receipts, multi-file
+  companions, partial publication, and the identical-byte ABA case.
+
+Measure actual token/context overhead, unnecessary discovery calls, retries,
+rejection rates, and end-to-end task outcomes. A strict-gate prototype must
+demonstrate its rejection expectations itself; current legacy calls are not
+claimed to reject every mixed-record or invented-name input at runtime.

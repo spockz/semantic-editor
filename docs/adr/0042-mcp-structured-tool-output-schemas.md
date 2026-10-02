@@ -1,3 +1,5 @@
+<!-- Explains the structured-output contract and client presentation boundary for MCP tools. -->
+
 # ADR-0042: MCP Structured Tool Output Schemas
 
 Status: Accepted
@@ -37,13 +39,44 @@ returns `{ "result": { "status": "reloading" } }` before re-execution. Error
 responses remain outside successful output-schema conformance and continue to
 retain their existing `content` and `isError` behavior.
 
+This decision records the original envelope. ADR-0052 later moved ordinary
+timing metrics out of direct results, and registered operations now use typed
+`ProjectOutput` projections where declared (including inspection). The legacy
+formatted-text result applies when an operation has no typed projection.
+
+Structured output is a server-produced representation, not a guarantee that a
+client or model will expose every field in its prompt. Follow the MCP
+structured-content compatibility guidance, which says servers SHOULD include
+serialized JSON in
+`TextContent` when returning structured data
+([MCP Tools: Structured Content](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content)).
+For large projections, the representations need not be duplicated in model
+context: any concise text or forwarded view should preserve the essential
+outcome, failure/limitations, ambiguity, and live continuation choices before
+large source bodies or diffs. A shared validated projection must supply those
+essential fields to both representations, exclude stale or deleted targets
+from live continuations, and retain any historical evidence with an explicit
+label.
+
+Current formatters do not yet provide equivalent essential prefixes in every
+case. For example, `formatRename` can phrase the old symbol while the
+structured continuation carries the post-rename identity. The essential
+content obligation is accepted; exact prefix encoding, presentation limits,
+and truncation budgets remain open. The contract does not claim model
+visibility from `structuredContent` alone.
+
 ## Invariants
 
 - Every tool returned by `tools/list`, including injected-registry tools,
   `semantic_batch`, and opt-in `semantic_reload`, has an `outputSchema`.
 - Every successful direct or batch call includes the schema-required
-  `structuredContent.result` and preserves `metrics`; direct formatted text
-  remains available in `content`.
+  `structuredContent.result`; `content` retains human-readable output.
+- Follow the MCP SHOULD recommendation to include serialized structured JSON
+  in text content for compatibility; client presentation and model visibility
+  remain client-controlled.
+- When a result includes large source or diff payloads, concise views preserve
+  status, limitations, ambiguity, and live continuations ahead of bulk text;
+  exact prefix encoding and truncation limits remain open.
 - Batch `diagnostic_delta` is advertised and returned only when execution
   reaches the final diagnostic capture.
 - Output schemas do not over-constrain arbitrary telemetry phase names,
@@ -54,8 +87,7 @@ retain their existing `content` and `isError` behavior.
 ## Consequences
 
 MCP clients can discover and validate successful result envelopes without
-parsing human-readable text, while existing clients continue to receive the
-same `content` wording and timing metrics. The protocol response now identifies
-the revision that supports structured tool output. Operation-specific result
-projections remain a future deliberate change; the current envelope preserves
-compatibility with all registry formatters.
+parsing human-readable text. The protocol response identifies the revision
+that supports structured tool output. Operations without typed projections
+retain compatibility with their existing formatters; declared projections
+provide operation-specific results through the same envelope.
