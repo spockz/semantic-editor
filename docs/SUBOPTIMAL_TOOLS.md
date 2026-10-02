@@ -1194,3 +1194,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Verification rejected promoted literal fields accepted by Go 1.27 builds after `go fix` modernized them.
 - Root cause: The discovered `gopls` v0.23.0 executable was built with Go 1.26.6 and used that version of `go/types`.
 - Workaround: Rebuilt the same cached v0.23.0 source with Go 1.27.1 into project-local `.scratch/go/bin/gopls`, then supplied that executable to all six workers. Check-only verification passed with no promoted-field errors.
+
+### ST-0152: guessed outline file and unchecked error decoding
+
+- Date: 2026-10-02
+- Tool: `semantic_outline`
+- Target: `internal/operation/wire_engine_remove.go`
+- Observed failure: The selected file preparation failed; the coordinator then attempted to decode the error text as JSON and raised a decoding error. No mutation occurred.
+- Root cause: The coordinator guessed the declaration file and failed to check the tool error flag before decoding its response.
+- Workaround: Discover the file with `rg --files` or semantic lookup, check `isError`, and decode only a successful structured response.
