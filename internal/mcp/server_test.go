@@ -1786,6 +1786,17 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 			t.Fatalf("failed response: %s", line)
 		}
 	}
+	var moved struct {
+		Result struct {
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(responses[6]), &moved); err != nil {
+		t.Fatalf("decode move response: %v", err)
+	}
+	if moved.Result.Structured["file"] != "moved.go" || moved.Result.Structured["origin_file"] != "value.go" || moved.Result.Structured["symbol"] != "emitOne" {
+		t.Fatalf("move continuation fields = %#v, want destination file, historical source, and live symbol", moved.Result.Structured)
+	}
 	starts, err := os.ReadFile(fixture.counter)
 	if err != nil {
 		t.Fatal(err)

@@ -2094,3 +2094,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the absolute patch target omitted `.scratch/worktrees/flow-relocation` and applied one schema-key edit in the coordinator checkout instead of the assigned worker worktree.
 - Workaround: stopped editing the coordinator checkout and notified root to preserve or revert its delta; the intended change remains pending in the assigned worker worktree.
 - Root cause: the patch target was not checked against the assigned worktree root. Verify the full worktree prefix on every patch target.
+
+## Relocation worker: semantic tools cannot add a struct field
+
+- Tool: semantic insert-structure.
+- Target: `BatchResult` in `internal/mcp/batch.go`.
+- Observed limitation: the available structural insertion schema supports declarations and switch cases, but not fields inside an existing struct.
+- Workaround: add the `OriginFile` evidence field with a scoped patch, then use `semantic_replace_body` for the batch result projection and verify the public MCP schema and CLI txtar behavior.
+- Root cause: this checkout has no semantic operation for inserting one field into an existing Go struct.

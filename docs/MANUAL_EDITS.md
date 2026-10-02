@@ -57,6 +57,7 @@ The objective is to categorize the underlying intent of each manual edit, identi
 | **ME-0046** | `skills/semedit/SKILL.md`, this log | Added one built-in-preference row per tool and recorded the catalog audit | Structured Markdown editing | Go AST operations do not edit Markdown tables or prose | A document-aware table editor; retain atomic text editing until available |
 | **ME-0047** | ADR-0046 replay worktree Go source | Inserted existing struct fields, one collision guard/call, a helper parameter type correction, and attached lint comments | Bounded member, statement, signature, and comment edits | Available tools create declarations or replace whole bodies; they cannot target these nodes proportionately | `semantic_insert_field`, `semantic_insert_statement`, `semantic_change_signature`, and `semantic_set_doc_comment` |
 | **ME-0048** | ADR-0046 replay txtar, ADR, and index | Added literal CLI/MCP before/after trees and updated prose | Structured fixture and document editing | Go AST tools do not edit txtar containers or Markdown tables | Preserve literal executable fixtures and use atomic document edits |
+| **ME-0049** | `internal/mcp/batch.go`, `internal/mcp/server.go`, MCP tests, and `mcp_batch_move_shared_cross_package.txtar` | Successful move continuations now identify the destination; original file is evidence-only | Struct field insertion, result projection, schema, and fixture edits | The current structural tools cannot add one field to an existing struct | `semantic_insert_field`; tracked in `docs/SUBOPTIMAL_TOOLS.md` |
 
 ---
 

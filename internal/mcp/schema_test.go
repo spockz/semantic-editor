@@ -974,6 +974,13 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 			t.Errorf("move input property %s = %#v, want string", name, moveProperties[name])
 		}
 	}
+	moveOutput := move["outputSchema"].(map[string]any)["properties"].(map[string]any)
+	if file := moveOutput["file"].(map[string]any); !strings.Contains(file["description"].(string), "Live destination") {
+		t.Fatalf("standalone move file schema = %#v, want live destination semantics", file)
+	}
+	if origin := moveOutput["origin_file"].(map[string]any); !strings.Contains(origin["description"].(string), "evidence only") {
+		t.Fatalf("standalone move origin_file schema = %#v, want historical evidence", origin)
+	}
 	batch := byName["semantic_batch"]
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
@@ -1001,9 +1008,17 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		if properties["tool"].(map[string]any)["const"] != "semantic_move_construct" {
 			continue
 		}
+		file := properties["file"].(map[string]any)
+		origin := properties["origin_file"].(map[string]any)
 		destination := properties["destination_file"].(map[string]any)
-		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
-			t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Live destination") {
+			t.Fatalf("file result schema = %#v, want a live destination target", file)
+		}
+		if origin["type"] != "string" || !strings.Contains(origin["description"].(string), "evidence only") {
+			t.Fatalf("origin_file result schema = %#v, want historical evidence", origin)
+		}
+		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "equals the live") {
+			t.Fatalf("destination_file result schema = %#v, want destination evidence", destination)
 		}
 		return
 	}

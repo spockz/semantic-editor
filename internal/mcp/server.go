@@ -572,6 +572,8 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		fieldNames := make([]string, 0, len(continuations))
 		for name := range continuations {
 			switch name {
+			case "origin_file":
+				fieldNames = append(fieldNames, "`origin_file` (historical origin evidence; not a continuation target)")
 			case "line", "column":
 				fieldNames = append(fieldNames, "`"+name+"` (navigation only)")
 			case "kind":
@@ -750,7 +752,8 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_remove_construct":
 		fields["file"] = map[string]any{"type": "string"}
 	case "semantic_move_construct":
-		fields["file"] = map[string]any{"type": "string"}
+		fields["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Live destination file after a successful move; the source file on an error is only the attempted target."}
+		fields["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before the move; evidence only, not a continuation target."}
 		fields["symbol"] = map[string]any{"type": "string"}
 	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
@@ -778,6 +781,9 @@ func moveConstructContinuationFields(result any, root string) map[string]any {
 	}
 	if file := continuationPath(root, edit.DestinationFile); file != "" {
 		fields["file"] = file
+	}
+	if file := continuationPath(root, edit.File); file != "" {
+		fields["origin_file"] = file
 	}
 	if edit.Symbol != "" {
 		fields["symbol"] = edit.Symbol
@@ -1018,6 +1024,11 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	}
 	for _, entry := range entries {
 		properties := baseProperties(entry.MCPName)
+		if entry.MCPName == "semantic_move_construct" {
+			properties["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Live destination file on success; on error this is the attempted source path and is not a continuation target."}
+			properties["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before a successful move; evidence only, not a continuation target."}
+			properties["destination_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path; equals the live `file` on successful moves."}
+		}
 		if entry.ProjectOutput != nil {
 			if entry.Output == nil || entry.Output.ResultSchema == nil {
 				return nil, fmt.Errorf("batch result for %q has a projector without a result schema", entry.MCPName)
