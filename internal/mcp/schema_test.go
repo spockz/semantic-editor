@@ -699,7 +699,7 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
 	}
-	if description, ok := batch["description"].(string); !ok || !strings.Contains(description, "Child outcomes and receipts are captured intermediate states, not final continuation targets") {
+	if description, ok := batch["description"].(string); !ok || !strings.Contains(description, "Child outcomes and receipts are captured intermediate states, not final continuation targets") || !strings.Contains(description, "inspect final targets after the batch to resolve continuation fields") {
 		t.Fatalf("batch description omitted the child-state boundary: %#v", batch["description"])
 	}
 	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
@@ -1138,7 +1138,7 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		file := properties["file"].(map[string]any)
 		origin := properties["origin_file"].(map[string]any)
 		destination := properties["destination_file"].(map[string]any)
-		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Captured destination path") || !strings.Contains(file["description"].(string), "intermediate path rather than the final workspace target") {
+		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Captured destination path on success") || !strings.Contains(file["description"].(string), "attempted source path on error") || !strings.Contains(file["description"].(string), "intermediate path rather than the final workspace target") {
 			t.Fatalf("file result schema = %#v, want captured intermediate evidence", file)
 		}
 		if origin["type"] != "string" || !strings.Contains(origin["description"].(string), "evidence only") {

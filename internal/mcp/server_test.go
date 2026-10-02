@@ -269,6 +269,49 @@ func TestMCPStructuredContinuationFields(t *testing.T) {
 	}
 }
 
+func TestMCPAmbiguousLookupDoesNotPublishSelectedScopeAsContinuation(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"go.mod":  "module example.com/ambiguouslookup\n\ngo 1.24\n",
+		"main.go": "package ambiguouslookup\n\ntype Server struct{}\nfunc (*Server) Serve() {}\n\ntype Other struct{}\nfunc (*Other) Serve() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"symbol":"Serve","file":"main.go"}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode ambiguous lookup: %v\n%s", err, out.String())
+	}
+	if response.Result.IsError || len(response.Result.Content) != 1 {
+		t.Fatalf("ambiguous lookup failed: %s", out.String())
+	}
+	text := response.Result.Content[0].Text
+	for _, evidence := range []string{`"ambiguous": true`, "Server.Serve", "Other.Serve"} {
+		if !strings.Contains(text, evidence) {
+			t.Errorf("lookup text omitted ambiguity evidence %q: %s", evidence, text)
+		}
+	}
+	for _, alias := range []string{"file", "symbol", "kind", "line", "column"} {
+		if _, exists := response.Result.Structured[alias]; exists {
+			t.Errorf("ambiguous lookup advertised unproven continuation alias %q: %#v", alias, response.Result.Structured)
+		}
+	}
+}
+
 func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "api"), 0o700); err != nil {
