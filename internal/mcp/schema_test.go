@@ -193,6 +193,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
+				case "semantic_set_doc_comment", "semantic_insert_statement":
+					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -257,6 +259,23 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
+	t.Helper()
+	assertStandardOutputSchema(t, raw, "object")
+	result := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	if properties["result"].(map[string]any)["type"] != "string" {
+		t.Errorf("%s result projection must be a string", name)
+	}
+	receipt, ok := properties["edit_receipt"].(map[string]any)
+	if !ok || receipt["type"] != "object" {
+		t.Fatalf("%s omitted its native edit_receipt object", name)
+	}
+	if got := receipt["required"]; !reflect.DeepEqual(got, []any{"schema_version", "status", "operation"}) {
+		t.Errorf("%s edit_receipt required = %#v", name, got)
 	}
 }
 
@@ -376,6 +395,7 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 func schemaWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeTestGoModule(t, root)
 	for name, source := range map[string]string{"main.go": "package sample\n", "Main.java": "class Main {}\n"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
 			t.Fatal(err)
@@ -883,6 +903,13 @@ func assertInspectOutputSchema(t *testing.T, outputSchema any) {
 	}
 	if !reflect.DeepEqual(items["required"], []any{"file", "symbol", "expected_revision"}) {
 		t.Errorf("inspection continuation required = %#v", items["required"])
+	}
+}
+
+func writeTestGoModule(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write fixture module: %v", err)
 	}
 }
 

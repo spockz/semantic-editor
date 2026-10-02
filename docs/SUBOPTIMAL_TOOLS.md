@@ -2098,3 +2098,514 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: symbol resolution returned `symbol not found`; no mutation occurred.
 - Workaround: use `semantic_lookup` to obtain the canonical declaration selector before inspection.
 - Root cause: the coordinator constructed a package-qualified selector instead of copying a resolved symbol identity.
+
+### ST-0169: semantic insert accepted invalid Go source
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_field_plan.go`
+- Observed failure: insertion reported success and returned introduced compiler diagnostics for `ast.StructType.Rbrace` and a malformed `append` call.
+- Workaround: record the tool behavior and attempt `semedit replace-body`; the local CLI could not start because the same invalid source prevented its Go package from building, so the three reported defects were corrected with an atomic source update before resuming semantic edits.
+- Root cause: the inserted Go snippet passed parsing but the semantic insertion's post-edit diagnostics exposed type-check errors; the planner assumed brace ownership on `*ast.StructType` and emitted an invalid append expression.
+
+### ST-0170: semantic insertion exposed missing planner proof gates
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_statement_plan.go`
+- Observed failure: insertion reported success but diagnostics identified undefined `ProofBlockBinding` and `ProofControlFlowSet` referenced by the new statement planner.
+- Workaround: add the missing named proof requirements to the shared pure-plan contract before continuing.
+- Root cause: the planner function was inserted before its integration proof vocabulary was added to the shared plan file; the tool surfaced the package type-check failure after writing.
+
+### ST-0171: semantic insertion exposed helper return-arity errors
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_field_plan.go`
+- Observed failure: insertion reported success but diagnostics showed two return statements supplied `(int, string)` to a helper declared as `(int, string, error)`.
+- Workaround: record the diagnostics and add explicit nil error values to the successful offset returns.
+- Root cause: the extracted helper reused byte-range functions with shorter return tuples without adapting those results to its error-bearing signature.
+
+### ST-0172: semantic insertion surfaced an incomplete helper sequence
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_declaration` via worktree-local `semedit insert`
+- Target: `internal/astedit/insert_element_plan.go`
+- Observed failure: the validator insertion reported success but package diagnostics showed `validateTypedMapKey` undefined because the helper was queued for the next insertion.
+- Workaround: record the package diagnostic and add the referenced pure helper atomically so the local CLI can build again.
+- Root cause: semantic insertion type-checks the package immediately; helper declarations must be added before callers that reference them.
+
+### ST-0173: semantic body replacement exposed an incomplete planner split
+
+- Date: 2026-10-01
+- Tool: `semantic_replace_body` via worktree-local `semedit replace-body`
+- Target: `internal/astedit/insert_element_plan.go`
+- Observed failure: the planner replacement reported success but diagnostics showed the extracted `appendCompositeElement` helper was not present yet and `bytes` had become temporarily unused.
+- Workaround: record the diagnostics and add the pure append helper before retrying further semantic edits.
+- Root cause: the orchestration body was switched to the planned helper before that helper was inserted; post-edit verification ran against an incomplete intermediate package state.
+
+### ST-0174: semantic_insert_type rejected escaped source newlines
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_type` via worktree-local `semedit insert-type`
+- Target: `internal/astedit/plan.go`
+- Observed failure: the tool returned `no declarations found in snippet`; no source changed.
+- Workaround: retry with an actual multiline type declaration.
+- Root cause: the shell argument contained literal backslash-n sequences where the Go parser expected source line breaks.
+
+### ST-0175: patch context mismatch left structural planner unchanged
+
+- Date: 2026-10-01
+- Tool: `apply_patch`
+- Target: `internal/astedit/doc_comment_plan.go` and `internal/astedit/insert_field_plan.go`
+- Observed failure: the combined patch could not find the expected `validateInsertedField` context, so none of its changes were applied.
+- Workaround: record the failure and retry with exact, narrower contexts after inspecting the current source.
+- Root cause: the patch assumed the identifier validation was adjacent to the parser block, but it occurs in a separate validator function.
+
+### ST-0176: combined review-fix patch used stale statement context
+
+- Date: 2026-10-01
+- Tool: `apply_patch`
+- Target: `internal/astedit/doc_comment_plan.go`, `internal/astedit/insert_statement_plan.go`, and `internal/astedit/insert_element_plan.go`
+- Observed failure: the combined patch could not match the expected statement-anchor branch, so none of its hunks were applied.
+- Workaround: record the failure and split the changes into smaller patches based on freshly inspected context.
+- Root cause: the statement planner has separate selection branches and did not contain the assumed `anchor == nil` guard at that location.
+
+### ST-0177: make check rejected malformed structural planner regression test
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/structural_plan_test.go`
+- Observed failure: the Go lint/typecheck pass found syntax errors from mismatched test closure delimiters; no focused test ran.
+- Workaround: inspect the formatted file around the reported lines and repair the test structure before rerunning the required check.
+- Root cause: regression cases were inserted into an existing nested `t.Run` block with incorrect brace placement.
+
+### ST-0178: make check rejected planner test helper arity
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/structural_plan_test.go`
+- Observed failure: Go typecheck found an assignment arity mismatch when the injection regression captured two results from `parseKeyedElement`, which returns three.
+- Workaround: capture all return values in the regression before rerunning repository checks.
+- Root cause: the test call did not match the planner helper's `(node, key source, error)` contract.
+
+### ST-0179: make check complexity lint rejected comment planner and test aggregator
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/astedit/doc_comment_plan.go` and `internal/astedit/structural_plan_test.go`
+- Observed failure: gocognit reported complexity 90 for `PlanSetDocComment` and 104 for `TestStructuralSourcePlanners`.
+- Workaround: record the failure and extract declaration selection/comment checks and focused tests into named helpers/subtests.
+- Root cause: the new ownership guards and regressions pushed already dense functions beyond the repository's configured complexity ceiling.
+
+### ST-0180: repository race/shuffle suite returned failure during make check
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: repository-wide `go test -race -shuffle=on -cover -v ./...`
+- Observed failure: the race/shuffle test stage returned non-zero twice; output truncation hid the failing test/package, while formatter, Go lint, Markdown lint, Vale, and Hugo completed.
+- Workaround: capture the exact test command output in `.scratch/go/structural-check-tests.log` and inspect failure markers before attributing the cause.
+- Root cause: `t.TempDir()` created paths under `/var/folders/...`, a symlink alias of `/private/var/folders/...`; source-buffer path validation correctly rejected those aliases. Re-running `internal/sourcebuf`, `internal/projectverify`, and `internal/mcp` with canonical `TMPDIR=/private/var/folders/wd/twmctgm50s9b4x8mhmfj4_b40000gn/T` passed.
+
+### ST-0181: Git staging was blocked by the isolated filesystem root
+
+- Date: 2026-10-01
+- Tool: `git add`
+- Target: assigned worktree Git index at `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-structural/index`
+- Observed failure: sandbox denied creation of `index.lock`; source edits remain in the assigned writable worktree and no index mutation occurred.
+- Workaround: request a narrow sandbox escalation for explicit owned-path staging and the authorized milestone commit.
+- Root cause: this linked worktree's Git metadata is stored outside the configured writable root.
+
+### ST-0182: CRLF range patch addressed coordinator checkout
+
+- Date: 2026-10-01
+- Tool: `apply_patch`
+- Target: `internal/astedit/doc_comment_plan.go`
+- Observed failure: patch application could not find the requested absolute path because it omitted this worker's `.scratch/worktrees/flow-structural` path segment; no edit occurred.
+- Workaround: record the error and reapply against the assigned worktree path.
+- Root cause: copied coordinator repository path was mistaken for the worker worktree path.
+
+### ST-0183: runtime pattern lookup used absent paths
+
+- Date: 2026-10-01
+- Tool: `rg`/`sed`/`git show` source inspection
+- Target: `internal/operation/wire_contracts.go` and `internal/operation/default.go`
+- Observed failure: the queried paths do not exist in the current integration branch; no files were changed.
+- Workaround: enumerate registered source files and inspect the contract worker's actual worktree/branch paths before using that design.
+- Root cause: filenames were assumed from the handover summary rather than confirmed in the checked tree.
+
+### ST-0184: research document lookup used assumed filenames
+
+- Date: 2026-10-01
+- Tool: `sed`
+- Target: `docs/research/RQ-0056-insert-field.md`, `RQ-0057-insert-statement.md`, `RQ-0058-insert-composite-element.md`, `RQ-0059-set-doc-comment.md`, and `RQ-0048-encapsulate-field.md`
+- Observed failure: those guessed paths do not exist; repository RQ filenames include the `go-` prefix. No files were changed.
+- Workaround: enumerate `docs/research` and locate the exact indexed filenames before reading.
+- Root cause: filenames were inferred from operation names rather than the research index.
+
+### ST-0185: repository make check failed in benchmark-harness package tests
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `tools/benchmark-harness` package tests
+- Observed failure: formatting, linting, documentation generation, and other parallel test packages completed, but the race/shuffle test stage reported `FAIL semedit/tools/benchmark-harness`; output truncation hid the failing test detail.
+- Workaround: preserve this result, then rerun that package with output captured under `.scratch/` to identify the failing test before continuing.
+- Root cause: not yet determined; test output from the initial run was truncated by the command transport.
+
+### ST-0186: focused test retry used the default protected Go build cache
+
+- Date: 2026-10-01
+- Tool: `go test -race -shuffle=on -cover ./tools/benchmark-harness`
+- Target: `tools/benchmark-harness`
+- Observed failure: package setup could not open a build-cache artifact under `~/Library/Caches/go-build` because the sandbox denied access. No test ran.
+- Workaround: configure `GOCACHE` under this worktree's ignored `.scratch/go/` directory for subsequent Go commands.
+- Root cause: the focused retry set `GOMODCACHE` but omitted `GOCACHE`, so Go selected the user's default cache outside writable roots.
+
+### ST-0187: worktree-local semantic CLI binary was absent
+
+- Date: 2026-10-01
+- Tool: `./bin/semedit-next --help`
+- Target: assigned `flow-structural` worktree
+- Observed failure: the expected `bin/semedit-next` path does not exist, so the CLI did not run and no files changed.
+- Workaround: locate the instructed `ROOT/bin/semedit-next` within this worktree before dogfooding; do not use a binary rooted at main.
+- Root cause: this worktree has not built or linked the semantic CLI under `bin/`.
+
+### ST-0188: semantic scaffold purpose header omitted Go comment syntax
+
+- Date: 2026-10-01
+- Tool: `semedit scaffold-file`
+- Target: `internal/operation/wire_structural_plan.go`
+- Observed failure: the CLI rejected the purpose header as invalid Go syntax and did not create the file.
+- Workaround: retry with a Go comment line as the purpose header.
+- Root cause: the command validates the header as source comment text, while the first request supplied plain prose.
+
+### ST-0189: semantic CLI command used coordinator working directory
+
+- Date: 2026-10-01
+- Tool: `semedit insert`
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: command resolution used the coordinator checkout, where the worker-created target file does not exist; the CLI failed while reading and made no write.
+- Workaround: rerun from the assigned `flow-structural` worktree and verify the resolved workspace in the command result.
+- Root cause: the command's working directory argument named the coordinator checkout instead of the assigned worktree.
+
+### ST-0190: semantic declaration insertion left required imports unresolved
+
+- Date: 2026-10-01
+- Tool: `semedit insert`
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: the declaration was inserted, but the file lacks imports for its referenced standard and internal package types; the CLI returned no status text.
+- Workaround: use the registered import organizer with explicit paths, then inspect the resulting file before further edits.
+- Root cause: declaration insertion did not infer imports for type names in this declaration.
+
+### ST-0191: semantic declaration insertion published unresolved import references
+
+- Date: 2026-10-01
+- Tool: `semedit insert`
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: the CLI inserted the loader and returned success while reporting 14 new undefined-name diagnostics because its import cleanup was explicitly disabled for this insertion.
+- Workaround: record the incorrect status and add the exact standard-library imports with the registered import operation before continuing.
+- Root cause: the request set `auto_organize_imports=false`, so inserted AST references were not accompanied by required imports; the CLI result still allowed the syntactic mutation.
+
+### ST-0192: structural registry insertion preceded its parameter helpers
+
+- Date: 2026-10-01
+- Tool: `semedit insert`
+- Target: `internal/operation/wire_structural_plan.go`
+- Observed failure: after inserting the registry helper, semantic verification reported unresolved references to the intentionally not-yet-inserted `stringParam` and `structuralRevision` helpers, along with imports that were then added by the registered import organizer.
+- Workaround: record the staged declaration state and add the shared helpers through semantic insertion before registering operation definitions.
+- Root cause: the new registry helper was inserted before its declaration dependencies, and automatic import organization was disabled for that insertion.
+
+### ST-0193: repository check stopped during Go autofixes on goconst findings
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: Go lint autofix stage
+- Observed failure: lint fix returned four `goconst` findings: two in foundation-owned `internal/operation/typed_descriptors.go`, one in existing `wire_engine_mutations.go`, and one in this worker's structural example. The check stopped before tests.
+- Workaround: replace the worker-owned repeated literal with the existing shared parameter constant, then report the two foundation-owned and one unrelated finding for root coordination before retrying checks.
+- Root cause: the integrated lint configuration flags repeated string literals across files, including code owned by another track.
+
+### ST-0195: tool orchestration script had a JavaScript syntax error
+
+- Date: 2026-10-01
+- Tool: `functions.exec`
+- Target: repository inspection command
+- Observed failure: the orchestration script failed to parse because a call expression lacked its closing delimiter; no nested command ran and no files changed.
+- Workaround: correct the script delimiters and rerun the bounded inspection.
+- Root cause: a mismatched closing parenthesis in the tool orchestration source.
+
+### ST-0196: structural CLI behavior tests exposed simulated-output snapshot comparison
+
+- Date: 2026-10-01
+- Tool: focused `go test` for `set_doc_comment` and `insert_statement` txtar contracts
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: both handlers rejected their planned outputs because the typecheck loader compared the simulated selected-file overlay with the buffer's preimage bytes. No source mutation was published.
+- Workaround: distinguish the intentional `extra` output overlay from captured read-set preimages: still read the original through `sourcebuf` to bind it, but compare loader bytes only for paths not overridden by the simulated output.
+- Root cause: the loader conflated the candidate typecheck snapshot with the source-buffer preimage snapshot.
+
+### ST-0197: focused public-operation fixtures exposed test-tree and selector mistakes
+
+- Date: 2026-10-01
+- Tool: focused `go test` for the two new txtar contracts
+- Target: `testdata/scripts/set_doc_comment.txtar` and `insert_statement.txtar`
+- Observed failure: the doc-comment output preflight discovered duplicate declarations because the fixture's `want/` Go snapshots formed extra packages; the malformed-statement case used unqualified `Run` instead of the live receiver-qualified selector. No unexpected source mutation occurred.
+- Workaround: move expected source snapshots under ignored `.scratch/want/` paths and use `(*Server).Run` in the malformed-source case.
+- Root cause: package-wide overlay typechecking correctly included fixture snapshot directories, and the test selector did not match the method's receiver identity.
+
+### ST-0198: focused txtar cases exposed blank CLI value omission and stale diagnostic wording
+
+- Date: 2026-10-01
+- Tool: focused `go test` for the new public-operation txtar contracts
+- Target: CLI raw-parameter construction and `testdata/scripts/insert_statement.txtar`
+- Observed failure: `--comment ''` was omitted before schema validation, so explicit-empty removal was reported as missing; the malformed-statement fixture expected an older diagnostic phrase.
+- Workaround: preserve explicitly changed empty string flags in CLI raw parameters and assert the planner's current precise diagnostic.
+- Root cause: CLI ingress drops blank string values without checking the Cobra flag's `Changed` state; test wording did not match the new refusal message.
+
+### ST-0199: repository check failed during parallel race/shuffle tests
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: repository-wide `go test -race -shuffle=on -cover -v ./...` stage
+- Observed failure: the benchmark-harness package passed, while another package returned non-zero; the large concurrent output was truncated before the failing test and package could be identified. Formatting, lint, docs generation, and build completed.
+- Workaround: capture a targeted repeat of the new CLI txtar tests and exact package output in `.scratch/` before deciding whether the failure belongs to this track or is unrelated contention.
+- Root cause: not yet identified from the initial output.
+
+### ST-0200: focused public contracts found two txtar expectation errors
+
+- Date: 2026-10-01
+- Tool: focused `go test` for `set_doc_comment` and `insert_statement` txtar contracts
+- Target: the two new structural operation fixtures
+- Observed failure: empty-comment removal now passes; the statement path refusal includes the precise phrase `construct_path requires its matching expected_revision`, while the fixture expected a shorter nonmatching phrase. The directive case selected `Keep` in `doc.go` even though it lives in `directives.go`.
+- Workaround: match the precise path-precondition diagnostic and select `directives.go` for the directive case.
+- Root cause: fixture assertions had not been checked against the current exact error text and source-file ownership.
+
+### ST-0201: structural typed-proof insertion required explicit go/types import
+
+- Date: 2026-10-01
+- Tool: `semedit insert`
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: the field-proof declaration referenced `go/types` while automatic import organization was disabled; semantic diagnostics reported five unresolved `types` names.
+- Workaround: record the report and add `go/types` with the registered import organizer.
+- Root cause: type-analysis imports were intentionally deferred until the complete helper declaration was inserted.
+
+### ST-0202: repository check rejected the first field proof helper
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/operation/wire_structural_snapshot.go`
+- Observed failure: Go lint reported cognitive complexity 101 for `validatePrivateStructuralType` and an `intrange` suggestion for iterating struct fields; the check stopped before tests.
+- Workaround: split owner resolution and literal/source scanning into named helpers, and use the configured integer-range form.
+- Root cause: the initial typed-object, method-set, alias, and literal proof were combined in one helper.
+
+### ST-0203: repository contract test requires explicit tools/list assertions for new structural MCP operations
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `testdata/scripts/mcp_server.txtar`
+- Observed failure: `TestREQ002REQ006PublicRegistryAndCLIContractCoverage` reports that `semantic_insert_field`, `semantic_insert_statement`, and `semantic_set_doc_comment` have no `tools/list` txtar assertions.
+- Workaround: add explicit public MCP listing assertions for the newly registered tools, then rerun the required check.
+- Root cause: registry contract tests require every registered public MCP tool to be represented in an observable CLI fixture.
+
+### ST-0204: research index inspection used an invalid worktree path
+
+- Date: 2026-10-01
+- Tool: `functions.exec` with `exec_command`
+- Target: research index inspection
+- Observed failure: the repository read command could not start because its `workdir` argument named a nonexistent path.
+- Workaround: retry the read from the assigned `flow-structural` worktree.
+- Root cause: the command invocation contained a stale/incorrect worktree path.
+
+### ST-0205: operation contract inspection used an invalid worktree path
+
+- Date: 2026-10-01
+- Tool: `functions.exec` with `exec_command`
+- Target: operation result contract inspection
+- Observed failure: the source read could not start because its `workdir` argument named a nonexistent path.
+- Workaround: rerun the read from the assigned `flow-structural` worktree.
+- Root cause: the command invocation contained a stale/incorrect worktree path.
+
+### ST-0206: focused insert-field txtar stopped on an unterminated assertion
+
+- Date: 2026-10-01
+- Tool: focused `go test` for structural CLI txtar contracts
+- Target: `testdata/scripts/insert_field.txtar`
+- Observed failure: the insert-field duplicate-refusal block returned the expected diagnostic and preserved the file, then the txtar parser rejected a later command with `unterminated quoted argument`.
+- Workaround: inspect the exact fixture lines and repair its command quoting before rerunning the focused contract.
+- Root cause: the fixture used a shell quote that was not closed in the txtar command language.
+
+### ST-0207: semantic scaffold-file rejected a free-form purpose header
+
+- Date: 2026-10-01
+- Tool: `semedit scaffold-file`
+- Target: `internal/operation/wire_structural_composite.go`
+- Observed failure: the operation rejected the requested prose as a purpose header because it requires Go-comment syntax and treated `This` as invalid Go source. No file was created.
+- Workaround: record the tool error and retry with the required `//` comment prefix.
+- Root cause: scaffold-file validates the purpose header as source text but the request omitted its Go comment delimiter.
+
+### ST-0208: semantic batch used the wrong registry function target
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the local trusted MCP helper
+- Target: `internal/operation/wire_engine.go`
+- Observed failure: the four composite helper functions were inserted in the new file, but the final `semantic_replace_body` child could not find `registerStructuralPlanOps` in `wire_engine.go`; the function is in `wire_structural_plan.go`.
+- Workaround: inspect the actual inserted bytes and current diff, then target the owning file in a follow-up registry update.
+- Root cause: registry helper location was assumed from the call site rather than checked at its declaration.
+
+### ST-0209: semantic batch applied composite wiring but final configured lint verification failed
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the local trusted MCP helper
+- Target: `internal/operation/wire_structural_composite.go` and `internal/operation/wire_structural_plan.go`
+- Observed failure: both mutation children returned success, but the final configured `golangci-lint` verification returned non-zero after the registry update and import organization.
+- Workaround: record the tool failure and inspect the actual files plus diagnostics before making any follow-up edits.
+- Root cause: pending until the exact lint diagnostics are inspected.
+
+### ST-0210: composite key identity used a non-existent go/constant formatter
+
+- Date: 2026-10-01
+- Tool: `make check GOMODCACHE=... GOPROXY=off MAKE_JOBS=2`
+- Target: `internal/operation/wire_structural_composite.go`
+- Observed failure: doc generation could not compile the source because `constant.String` resolves to the `constant.String` kind constant, not a formatting function.
+- Workaround: record the failure, then change constant value identity formatting to the `go/constant.Value.String` method through a semantic declaration edit.
+- Root cause: the go/constant API formatter was misremembered.
+
+### ST-0211: composite helper batch still failed its final configured lint hook
+
+- Date: 2026-10-01
+- Tool: `semantic_batch` through the local trusted MCP helper
+- Target: `internal/operation/wire_structural_composite.go`
+- Observed failure: the function-body replacement and import-organizer children succeeded, but the final `golangci-lint` verification returned non-zero again.
+- Workaround: inspect the current source, then capture the repository linter output to identify the exact remaining finding before retrying semantic edits.
+- Root cause: pending direct lint diagnostics.
+
+### ST-0212: expected import absence made a combined inspection command nonzero
+
+- Date: 2026-10-01
+- Tool: `rg` within `functions.exec`
+- Target: `internal/operation/wire_structural_composite.go`
+- Observed failure: the command used `rg -n constant\.` to verify that a removed import had no remaining uses; the expected no-match result exited with status 1 and short-circuited the shell chain.
+- Workaround: the preceding source excerpt confirmed the import list; use an explicit `if rg ...; then` check when absence is expected.
+- Root cause: `rg` reports no matches with a non-zero exit status.
+
+### ST-0213: full check found worker goconst and iteration issues plus pre-existing cross-track lint findings
+
+- Date: 2026-10-01
+- Tool: make check with required local Go cache variables
+- Target: internal/operation/wire_structural_composite.go, foundation typed_descriptors.go, and existing wire_engine_mutations.go
+- Observed failure: golangci-lint reports the worker repeated discriminator literal and integer loop, plus goconst findings in two foundation-owned occurrences and one unrelated existing mutation example.
+- Workaround: fix only this worker shared discriminator literal and integer-range loop, retain the other three findings for root coordination, then rerun checks after coordination.
+- Root cause: new worker code duplicated a canonical parameter name and used a legacy loop; independent cross-track source already has repeated literals.
+
+### ST-0214: shell quoting interrupted an attempted failure-log append
+
+- Date: 2026-10-01
+- Tool: functions.exec with exec_command
+- Target: docs/SUBOPTIMAL_TOOLS.md
+- Observed failure: unescaped Markdown backticks in the single-quoted shell argument triggered command substitution and truncated the embedded Python source. No log entry was written by that attempt.
+- Workaround: record the failure without shell-significant backticks, then continue with the bounded semantic edit.
+- Root cause: shell quoting treated Markdown delimiters as executable substitutions.
+
+### ST-0215: construct implementation inspection guessed a nonexistent file path
+
+- Date: 2026-10-01
+- Tool: rg through functions.exec
+- Target: internal/astedit/replace_construct.go
+- Observed failure: the search command named a nonexistent source file and returned a non-zero status.
+- Workaround: discover the matching tracked file with rg --files before inspecting construct selectors.
+- Root cause: guessed implementation filename was not verified.
+
+### ST-0216: construct selector inspection used an invalid worktree path
+
+- Date: 2026-10-01
+- Tool: functions.exec with exec_command
+- Target: internal/astedit/construct.go
+- Observed failure: the read command could not start because the workdir named a nonexistent checkout.
+- Workaround: retry against the assigned flow-structural worktree.
+- Root cause: a stale path was copied into the command.
+
+### ST-0217: semantic replace-construct found the loop had already been modernized
+
+- Date: 2026-10-01
+- Tool: semantic_batch through the local trusted MCP helper
+- Target: internal/operation/wire_structural_composite.go
+- Observed failure: the selected loop text was not found; the preceding make check go fix had already converted it to a range loop. The later batch child did not run.
+- Workaround: record the actual state and retry only the remaining discriminator-literal cleanup using a focused semantic function-body operation.
+- Root cause: a mechanical fixer changed the source between selection discovery and the later operation.
+
+### ST-0218: composite discriminator cleanup passed its child but final lint still refused
+
+- Date: 2026-10-01
+- Tool: semantic_batch through the local trusted MCP helper
+- Target: internal/operation/wire_structural_composite.go
+- Observed failure: semantic_replace_body changed the repeated discriminator literals to the shared parameter constant, then final configured lint verification returned non-zero because remaining diagnostics are outside this worker scope.
+- Workaround: record the result and retain the applied source change; coordinate the known unrelated lint findings before requesting another successful MCP verification.
+- Root cause: full-worktree golangci-lint includes unresolved cross-track goconst findings.
+
+### ST-0219: fixture generator quoting failed before writing the composite txtar
+
+- Date: 2026-10-01
+- Tool: functions.exec with exec_command
+- Target: testdata/scripts/insert_composite_element.txtar
+- Observed failure: an embedded JSON string lost its source quotes when passed through nested shell and Python quoting, producing a Python syntax error before the final fixture file was mutated.
+- Workaround: write the fixture content to a temporary file with a single-quoted here-document, then atomically rename it into testdata/scripts.
+- Root cause: nested shell quoting was used where a literal here-document is simpler and preserves argument boundaries.
+
+### ST-0220: make-check log search treated the pattern as an option
+
+- Date: 2026-10-01
+- Tool: rg through functions.exec
+- Target: .scratch/make-check-pre-composite-tests.log
+- Observed failure: rg treated the pattern beginning with three dashes as an option and returned a usage error instead of searching.
+- Workaround: record the error, then pass the expression with rg -e.
+- Root cause: option-like pattern text was not introduced with -e.
+
+### ST-0221: structural parameter copy edges referenced producers without output metadata
+
+- Date: 2026-10-01
+- Tool: make check with required local Go cache variables
+- Target: internal/operation/wire_structural_plan.go and wire_structural_composite.go
+- Observed failure: MCP and registry tests reject the new parameter SourceFields edges because providers such as semantic_lookup.file have no typed output metadata yet. The foundation projection/finalization hook integration is pending.
+- Workaround: record the failure and remove unsupported copy edges from this checkpoint; restore only edges backed by the checked output projection API after root rebase.
+- Root cause: operation inputs advertised continuations before the providers exposed a typed live result contract.
+
+### ST-0222: semantic lookup tool resolved against the coordinator checkout
+
+- Date: 2026-10-02
+- Tool: `semantic_lookup`
+- Target: `internal/astedit/doc_comment_plan.go`
+- Observed failure: the MCP server resolved the workspace to the coordinator checkout, where this worker's new planner file does not exist. No source was changed.
+- Workaround: use the assigned worktree's local semantic CLI for dogfooding, and verify the resolved workspace path before edits.
+- Root cause: the shared MCP server is bound to the coordinator checkout rather than this worker worktree.
+
+### ST-0223: insert-statement fixture expected a rejected CLI option
+
+- Date: 2026-10-02
+- Tool: `make check` txtar contract test
+- Target: `testdata/scripts/insert_statement.txtar`
+- Observed failure: the last refusal case supplied unsupported `--construct-path`; the CLI correctly rejected it as an unknown flag, so the fixture's expected-revision diagnostic did not match. No file changed.
+- Workaround: replace that case with a stale `--expected-revision` precondition and assert the planner's current-revision refusal.
+- Root cause: the fixture retained an earlier unsupported-path scenario after the operation contract removed that parameter.
+
+### ST-0224: semantic verify reported diagnostics outside its selected file
+
+- Date: 2026-10-02
+- Tool: `semantic_verify` through the local CLI
+- Target: `internal/operation/wire_structural_plan.go`
+- Observed failure: a check-only verification scoped to this file returned 16 type diagnostics in unrelated backend and AST-edit files, while its configured linter passed and the full race/shuffle Go test suite passed. No files changed.
+- Workaround: use the successful repository check and focused Go tests as the verification evidence for this checkpoint.
+- Root cause: not yet determined; the verifier reported module diagnostics outside the selected file despite a successful full test build.
+
+## ST-0257: Structural insertion used the default external Go cache
+
+- Tool: worktree-local MCP `semantic_batch`, child `semantic_insert_statement`.
+- Target: `internal/mcp/server_test.go`, owner `TestMCPSnapshotAndUndo`.
+- Observed failure: structural package loading tried the default `~/Library/Caches/go-build` and was denied by the sandbox. The earlier helper insertion and schema-fixture body change applied; the statement child made no change.
+- Workaround: retain the applied earlier edits and retry only the statement with the configured writable Go cache. Send the loader environment finding to the structural owner before merging the public tool.
+- Root cause: `loadStructuralPackages` omitted the managed Go environment used by other compiler-snapshot operations.
+
+## ST-0258: Statement insertion rejects an owner containing unrelated control flow
+
+- Tool: worktree-local MCP `semantic_insert_statement`.
+- Target: `internal/mcp/server_test.go`, owner `TestMCPSnapshotAndUndo`, direct `calcFile := ...` anchor.
+- Observed failure: the operation refused the entire owner because it contains later conditional statements; no source change occurred in this retry.
+- Workaround: use semantic body replacement for the fixture's additional module initialization, retaining its existing assertions. Clarify the advertised straight-line-owner restriction and review whether unrelated control flow needs exclusion.
+- Root cause: the initial statement planner rejects control-flow nodes anywhere in the owning function, beyond the selected direct statement.

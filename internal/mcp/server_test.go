@@ -1038,6 +1038,7 @@ func TestMCPToolLocationError(t *testing.T) {
 func TestMCPSnapshotAndUndo(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeTestGoModule(t, dir)
 
 	calcFile := filepath.Join(dir, "calc.go")
 	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 1 }\n"), 0o600); err != nil {
