@@ -75,7 +75,7 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 		Add:    req.Add,
 		Remove: req.Remove,
 	}, paths...)
-	diagnosticStatus := "unavailable"
+	diagnosticStatus := diagnosticStatusUnavailable
 	if report.Buffered {
 		diagnosticStatus = "deferred"
 	}
@@ -139,7 +139,7 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 			"file":                          nonEmptyStringSchema(),
 			organizeImportsApplicationState: {Kind: SchemaString, Enum: []any{"persisted", "applied_working", "no_op"}},
 			organizeImportsChangedFiles:     {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
-			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", "unavailable"}},
+			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", diagnosticStatusUnavailable}},
 			organizeImportsDiagnosticDelta:  diagnosticDeltaSchema(),
 		}, Required: []string{"status", organizeImportsApplicationState, organizeImportsChangedFiles, organizeImportsDiagnosticStatus, organizeImportsDiagnosticDelta}}, Continuations: []OutputContinuation{
 			{Field: "file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: organizeImportsFileConsumers, Optional: true},
@@ -147,7 +147,7 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
 			organizeImportsApplicationState: {Kind: SchemaString, Enum: []any{"partially_published", "applied_working", "unknown"}},
 			organizeImportsChangedFiles:     {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
-			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"deferred", "unavailable"}},
+			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"deferred", diagnosticStatusUnavailable}},
 		}, Required: []string{organizeImportsApplicationState, organizeImportsChangedFiles, organizeImportsDiagnosticStatus}}},
 		ProjectOutput: func(res FileEditRes) (any, error) {
 			if res.ApplicationState == "" {

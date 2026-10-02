@@ -15,6 +15,8 @@ import (
 	"semedit/internal/telemetry"
 )
 
+const diagnosticStatusUnavailable = "unavailable"
+
 var (
 	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
 	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
@@ -96,7 +98,7 @@ func surroundingDelta(ctx context.Context, workDir string, deferVerification boo
 	return func() (pipeline.DiagnosticDelta, string) {
 		after, afterErr := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
 		if beforeErr != nil || afterErr != nil {
-			return pipeline.DiagnosticDelta{}, "unavailable"
+			return pipeline.DiagnosticDelta{}, diagnosticStatusUnavailable
 		}
 		delta := pipeline.ComputeDelta(before, after)
 		if len(delta.Introduced)+len(delta.Resolved)+len(delta.Suggestions) == 0 {
