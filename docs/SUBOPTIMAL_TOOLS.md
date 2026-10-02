@@ -2609,3 +2609,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the operation refused the entire owner because it contains later conditional statements; no source change occurred in this retry.
 - Workaround: use semantic body replacement for the fixture's additional module initialization, retaining its existing assertions. Clarify the advertised straight-line-owner restriction and review whether unrelated control flow needs exclusion.
 - Root cause: the initial statement planner rejects control-flow nodes anywhere in the owning function, beyond the selected direct statement.
+
+## ST-0259: Independent contract preflight review timed out
+
+- Tool: `codex_ask`, read-only Terra review.
+- Target: the contract worker's test-aware candidate preflight and public test fixtures.
+- Observed failure: the tool returned `context deadline exceeded` without a review report. No approval or findings were produced.
+- Workaround: retain root's concrete source review and public success/refusal evidence; request a narrower follow-up review if semantic questions remain. Do not treat the timeout as approval.
+- Root cause: the review exceeded the tool's request deadline; the underlying cause is unconfirmed.

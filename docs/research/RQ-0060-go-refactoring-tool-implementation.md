@@ -15,20 +15,20 @@ This is the single implementation investigation for the tools and expansions pre
 
 The session and buffer prerequisites are committed on main as `32e21842591749963cf7d9d1b6ae55c3ed88693d`. Use that source baseline and subsequently reviewed commits. The older `6c95d12` audits in the tool sections are historical evidence, not instructions to branch from that revision or overwrite the retained-session implementation. Preserve newer benchmark changes in the main checkout; their owning chat remains responsible for committing them.
 
-The shared schema/output worker checkpoint `9a26fc9` is available in isolated worker branches and remains under review. Recursive schemas and output hooks therefore exist for worker integration, but are not yet delivered on main. References in the original candidate paths to missing primitive-only schemas describe the initial audit, not a reason to stop current workers. Do not merge the private runtime snapshot `42446608c684408e4742db239b8df3d2eca758fb`.
+The reviewed shared schema/output foundation is delivered on main at `c74dede`, including recursive input/output schemas, inspection continuations, current-overlay revision guards, and corrected partial-publication receipts. Its combined `make check` passed. References in the original candidate paths to missing primitive-only schemas describe the initial audit, not a reason to stop current workers. Do not merge the private runtime snapshot `42446608c684408e4742db239b8df3d2eca758fb`.
 
-At consolidation, no new public tools from these handovers have merged into main. Working-tree edits and pure planner checkpoints are implementation evidence, not completed public features. Recheck branch HEAD, pending edits, registered capabilities, and actual CLI/MCP behavior before updating this status.
+At the 2026-10-02 integration checkpoint, the foundation is on main. The public statement and documentation-comment tools are reviewed in coordinator commit `67c3011`; their combined `make check` passed with bounded package concurrency after isolating MCP fixtures. Working-tree edits and pure planner checkpoints are implementation evidence, not completed public features. Recheck branch HEAD, pending edits, registered capabilities, and actual CLI/MCP behavior before updating this status. The benchmark owner's pending work was restored after the foundation merge; the 18 nonoverlapping files were verified byte-identical.
 
 ## Parallel ownership and delivery
 
 | Track | Tool sections | Current checkpoint / outstanding work |
 | :--- | :--- | :--- |
-| Shared foundation | Recursive schemas, native receipts, inspection copy producers | `9a26fc9`; batch result shape/null, publication evidence, digest filtering, and actual inspection projection under review. |
-| Contracts | Extract interface; implement contract | Pure planners at `e4d5794`; public handlers and CLI/batch cases pending verification and root review. |
-| Extraction | Extract constant; broader function/variable extraction and variable inlining | Planner checkpoints through `6e5bdd0`; typed guards, native receipts, and public fixtures pending verification and root review. |
-| Structural | Insert field, statement, composite element; set doc comment; encapsulate field | Pending public edits preserved and rebased onto `9a26fc9`; doc-comment and statement tools are the next small review checkpoint. Encapsulation remains outstanding. |
+| Shared foundation | Recursive schemas, native receipts, inspection copy producers | Reviewed through `2a2bcaa`, merged on main at `c74dede`; full integration check passed. |
+| Contracts | Extract interface; implement contract | Public checkpoint `5e5427e` plus review fixes in progress: live aliases, same-file revision evidence, no-op receipt support, active test-variant preflight and public producer/consumer tests. |
+| Extraction | Extract constant; broader function/variable extraction and variable inlining | Public checkpoint `751c747`; resumed to integrate current foundation and finish guards, receipts, description and CLI/batch review findings. |
+| Structural | Insert field, statement, composite element; set doc comment; encapsulate field | Public statement/comment checkpoint `4691655`, managed-cache correction `d2f5451`, and isolated MCP fixtures are reviewed and verified in coordinator `67c3011`. Field/element and encapsulation remain in progress. |
 | Signatures | Change signature; introduce parameter; parameter object | `f063214` pure planners; public CLI/MCP/batch implementation remains outstanding. |
-| Relocation | Inline function; type migration; extract type/delegate; safe delete and move expansions | `0ad8855` bounded pure planners; public integration and the remaining expansions are outstanding. |
+| Relocation | Inline function; type migration; extract type/delegate; safe delete and move expansions | `0ad8855` bounded pure planners; resumed on reviewed foundation for public inline-function and alias migration delivery. Remaining expansions are outstanding. |
 
 Luna high workers use separate `.scratch/worktrees/flow-*` checkouts. The coordinator reviews each concrete public checkpoint, sends actionable findings to the same worker, reviews its fixes, and merges approved work sequentially. A track may deliver one bounded tool while other sections remain open. Do not wait for an entire feature family before providing a reviewable public commit. Each section must finish its advertised scope, including batches; an internal helper is not public delivery.
 
