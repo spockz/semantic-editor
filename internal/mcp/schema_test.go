@@ -418,8 +418,16 @@ func assertTypedOutcomeOrLegacyStringSchema(t *testing.T, name string, raw any) 
 		t.Fatalf("%s registered result schema omitted type: %#v", name, want)
 	}
 	assertStandardOutputSchema(t, raw, wantType)
-	if !reflect.DeepEqual(result, want) {
-		t.Fatalf("%s advertised result schema = %#v, want registered schema %#v", name, result, want)
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("%s encode registered result schema: %v", name, err)
+	}
+	var normalizedWant map[string]any
+	if err := json.Unmarshal(wantJSON, &normalizedWant); err != nil {
+		t.Fatalf("%s normalize registered result schema: %v", name, err)
+	}
+	if !reflect.DeepEqual(result, normalizedWant) {
+		t.Fatalf("%s advertised result schema = %#v, want registered schema %#v", name, result, normalizedWant)
 	}
 }
 
