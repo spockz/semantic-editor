@@ -36,6 +36,7 @@ type BatchEntry struct {
 type BatchResult struct {
 	Tool             string `json:"tool"`
 	File             string `json:"file,omitempty"`
+	OriginFile       string `json:"origin_file,omitempty"`
 	Symbol           string `json:"symbol,omitempty"`
 	Package          string `json:"package,omitempty"`
 	InFunction       string `json:"in_function,omitempty"`
@@ -277,7 +278,10 @@ func resultForBatch(result any, workDir string) BatchResult {
 		if destination == "" {
 			destination = continuationPath(workDir, typed.DestinationDisplay)
 		}
-		return BatchResult{File: file, DestinationFile: destination, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
+		if destination != "" {
+			return BatchResult{File: destination, OriginFile: file, DestinationFile: destination, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
+		}
+		return BatchResult{File: file, Symbol: typed.Symbol, InFunction: typed.InFunction, Discriminator: typed.Discriminator, DiagnosticStatus: typed.DiagnosticStatus, Diff: typed.Diff}
 	case operation.ScaffoldFileRes:
 		file := continuationPath(workDir, typed.File)
 		if file == "" {

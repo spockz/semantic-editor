@@ -3070,3 +3070,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the operation refused with `struct type "options" must use a multiline field layout`; no file changed.
 - Workaround: provide a multiline field list and assert that bounded form in the current CLI and MCP fixtures.
 - Root cause: the initial field insertion planner supports safe multiline struct ranges only. The empty-struct case is a common typed insertion flow and remains a follow-up scope.
+
+## Relocation worker: semantic tools cannot add a struct field
+
+- Tool: semantic insert-structure.
+- Target: `BatchResult` in `internal/mcp/batch.go`.
+- Observed limitation: the available structural insertion schema supports declarations and switch cases, but not fields inside an existing struct.
+- Workaround: add the `OriginFile` evidence field with a scoped patch, then use `semantic_replace_body` for the batch result projection and verify the public MCP schema and CLI txtar behavior.
+- Root cause: this checkout has no semantic operation for inserting one field into an existing Go struct.
