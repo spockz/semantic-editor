@@ -972,12 +972,6 @@ func assertInspectOutputSchema(t *testing.T, outputSchema any) {
 	}
 }
 
-func writeTestGoModule(t *testing.T, dir string) {
-	t.Helper()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n"), 0o600); err != nil {
-		t.Fatalf("write fixture module: %v", err)
-	}
-}
 func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	tools := make(map[string]map[string]any)
 	for _, tool := range listTools(t, "full") {
