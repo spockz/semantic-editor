@@ -1407,7 +1407,7 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 func TestInspectProjectionFeedsInsertField(t *testing.T) {
 	root := schemaWorkspace(t)
 	path := filepath.Join(root, "config.go")
-	initial := []byte("package sample\ntype options struct {\n\tname string\n}\n")
+	initial := []byte("package sample\ntype options struct{}\n")
 	if err := os.WriteFile(path, initial, 0o600); err != nil {
 		t.Fatalf("write field inspection fixture: %v", err)
 	}
