@@ -34,7 +34,7 @@ func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 	}
 	registry := operation.DefaultRegistry()
 	probes := 0
-	if err := operation.Register(registry, operation.Def[map[string]any, operation.FileEditRes]{Key: "probe_buffers", MCPName: "semantic_probe_buffers", Batchable: true, BufferedBatch: true, Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil }, Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (operation.FileEditRes, error){backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, raw map[string]any) (operation.FileEditRes, error) {
+	if err := operation.Register(registry, operation.Def[map[string]any, operation.FileEditRes]{Key: "probe_buffers", MCPName: "semantic_probe_buffers", Batchable: true, BufferedBatch: true, Params: []operation.ParameterContract{{Name: "file", JSONName: "file", CLIName: "file", Type: operation.ParamString, Required: true}, {Name: "expected", JSONName: "expected", CLIName: "expected", Type: operation.ParamString, Required: true}}, Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil }, Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (operation.FileEditRes, error){backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, raw map[string]any) (operation.FileEditRes, error) {
 		for file, original := range originals {
 			path := filepath.Join(fixture.root, file)
 			disk, err := os.ReadFile(path)

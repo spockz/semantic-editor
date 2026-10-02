@@ -25,7 +25,17 @@ func (r *Registry) Dispatch(cc CallContext, key string, raw map[string]any) (any
 	if !ok {
 		return nil, fmt.Errorf("dispatch %q: %w", key, ErrUnknownOperation)
 	}
-	return entry.Invoke(cc, raw)
+	result, err := entry.Invoke(cc, raw)
+	if err != nil {
+		return nil, err
+	}
+	if entry.FinalizeOutput != nil {
+		result, err = entry.FinalizeOutput(cc, raw, result)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 // resolveLanguage selects the backend for project, mirroring ingress language detection,

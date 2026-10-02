@@ -1203,3 +1203,882 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: The selected file preparation failed; the coordinator then attempted to decode the error text as JSON and raised a decoding error. No mutation occurred.
 - Root cause: The coordinator guessed the declaration file and failed to check the tool error flag before decoding its response.
 - Workaround: Discover the file with `rg --files` or semantic lookup, check `isError`, and decode only a successful structured response.
+
+### ST-0146: semantic_insert_function rejected multi-function snippet
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function`
+- Target: `internal/operation/value_schema.go`
+- Observed failure: the request contained ten function declarations; the tool rejected it because it accepts one function declaration per call. No source changed.
+- Workaround: insert each helper function with a separate semantic insertion call.
+- Root cause: the semantic insertion operation validates exactly one function declaration and does not support declaration batches.
+
+### ST-0147: semantic_insert_function rejected private helper visibility
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_function`
+- Target: `internal/operation/value_schema.go`
+- Observed failure: the request explicitly selected public access for lowercase helper `validateBounds`; the tool rejected the visibility mismatch. No source changed from that call.
+- Workaround: insert lowercase helpers with private access.
+- Root cause: Go access mode must match identifier casing when explicitly supplied.
+
+### ST-0148: exported planner declarations needed documentation comments
+
+- Date: 2026-10-01
+- Tool: `semantic_insert_type`, `semantic_insert_function`
+- Target: `internal/operation/value_schema.go` and `internal/operation/typed_descriptors.go`
+- Observed failure: repository `make check` rejected the successful insertions because exported Go declarations lacked required documentation comments. No incorrect AST was reported.
+- Workaround: add Go documentation comments with an atomic source update because no registered semantic operation adds comments to existing declarations.
+- Root cause: the semantic insertion operations accept declarations but expose no doc-comment edit operation.
+
+### ST-0149: semedit-next did not expose the outline command
+
+- Date: 2026-10-01
+- Tool: `semedit-next outline`
+- Target: navigation of `internal/operation` in the assigned worktree
+- Observed failure: the checked CLI returned `unknown command "outline"`; no workspace files changed.
+- Workaround: use the CLI's supported lookup/inspect commands for declaration navigation.
+- Root cause: this CLI build does not register an outline command.
+
+### ST-0150: semedit-next did not expose insert-structure
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-structure`
+- Target: adding the schema field to `ParameterContract`
+- Observed failure: the checked CLI returned `unknown command "insert-structure"`; no workspace files changed.
+- Workaround: check the generalized `insert` command for a supported struct-member operation before choosing another edit path.
+- Root cause: this CLI build does not register the structured-field insertion command.
+
+### ST-0151: semedit-next replace-body rejected a declaration wrapper
+
+- Date: 2026-10-01
+- Tool: `semedit-next replace-body`
+- Target: `ParameterSpecSchema` in `internal/operation/typed_descriptors.go`
+- Observed failure: the request passed a complete `func` declaration in `--body`; the CLI rejected the nested declaration before writing.
+- Workaround: pass only the function body statements.
+- Root cause: `replace-body` accepts statements without a function signature or braces.
+
+### ST-0152: existing struct field insertion has no registered CLI operation
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert`
+- Target: schema, role, and output-contract fields in `internal/operation/operation.go`
+- Observed failure: the checked CLI only inserts top-level declarations and has no struct-member insertion operation; no source changed.
+- Workaround: add the exact fields with an atomic source update after checking the CLI help.
+- Root cause: this CLI build does not register a field-level Go AST mutation.
+
+### ST-0153: atomic operation struct update did not match declaration layout
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/operation.go`
+- Observed failure: the script expected an incorrect field-block string and aborted before mutation.
+- Workaround: inspect the exact struct declarations and update their matching field blocks.
+- Root cause: the assumed gofmt alignment differed from the source layout.
+
+### ST-0154: make check exposed missing Go documentation comments
+
+- Date: 2026-10-01
+- Tool: `make check` (revive)
+- Target: `internal/operation/typed_descriptors.go` and `internal/operation/value_schema.go`
+- Observed failure: the linter rejected exported declarations inserted without documentation comments.
+- Workaround: add declaration comments atomically; no semantic operation exposes comment-only edits.
+- Root cause: inserted declarations did not include the doc comments required by repository lint.
+
+### ST-0155: atomic comment repair script had invalid Python syntax
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/typed_descriptors.go`, `internal/operation/value_schema.go`, and `internal/operation/operation.go`
+- Observed failure: Python rejected the script before execution; no files changed.
+- Workaround: simplify the script and apply each atomic file update.
+- Root cause: an extra closing parenthesis in the log append expression.
+
+### ST-0156: semedit-next scaffold command name differed from help
+
+- Date: 2026-10-01
+- Tool: `semedit-next scaffold --help`
+- Target: new `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `scaffold` and suggested `scaffold-file`; no files changed.
+- Workaround: use the registered `scaffold-file` command.
+- Root cause: the command is named `scaffold-file`, not `scaffold`.
+
+### ST-0157: semedit-next insert-function command name differed from help
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-function --help`
+- Target: `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `insert-function`; the new scaffold file was already created successfully.
+- Workaround: use the registered `insert-func` command.
+- Root cause: this CLI build uses the abbreviated command name.
+
+### ST-0158: semantic CLI has no anonymous closure edit for registry parse wrapping
+
+- Date: 2026-10-01
+- Tool: `semedit-next` operation inventory
+- Target: `internal/operation/operation.go`
+- Observed failure: no registered semantic operation can wrap the anonymous `Entry.Parse` and `Entry.Invoke` parse closures with shared contract validation.
+- Workaround: update only those closure bodies with atomic source edits after locating them through semantic lookup.
+- Root cause: the CLI exposes function-body replacement but no closure-body editing operation.
+
+### ST-0159: registry edit script had a Python indentation error
+
+- Date: 2026-10-01
+- Tool: atomic Python source update
+- Target: `internal/operation/operation.go` and `internal/operation/schema_contract.go`
+- Observed failure: Python rejected a function body because its return statement was outdented; no files changed.
+- Workaround: reformat the script and retry the atomic updates.
+- Root cause: indentation was lost while composing a nested replacement helper.
+
+### ST-0160: semantic insert-decl rejected const spec without declaration wrapper
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-decl`
+- Target: `internal/operation/operation.go`
+- Observed failure: the source contained a constant specification rather than a complete `const` declaration; validation failed before mutation.
+- Workaround: submit each constant inside its own `const (...)` declaration.
+- Root cause: insert-decl parses declaration nodes, not individual specs.
+
+### ST-0161: semedit-next import organization command name differed from remembered tool name
+
+- Date: 2026-10-01
+- Tool: `semedit-next organize-imports`
+- Target: `internal/operation/schema_contract.go`
+- Observed failure: the CLI reported unknown command `organize-imports`; no source changed.
+- Workaround: inspect CLI help for the registered import organization command and use it.
+- Root cause: the checked build's command spelling differs from the MCP operation name.
+
+### ST-0162: semantic test insertion used private access for exported test function
+
+- Date: 2026-10-01
+- Tool: `semedit-next insert-func`
+- Target: `internal/mcp/schema_test.go`
+- Observed failure: the tool rejected private access for a `Test...` function; no test source changed.
+- Workaround: insert the test with public access matching its exported test name.
+- Root cause: Go test entrypoints use exported identifiers.
+
+### ST-0163: scaffold-file does not create the mandatory Go file purpose header
+
+- Date: 2026-10-01
+- Tool: `semedit-next scaffold-file`
+- Target: new `internal/cli/typed_params_test.go`
+- Observed failure: the successful scaffold creates only a package declaration; it cannot add the required WHY comment.
+- Workaround: add the file purpose comment atomically before inserting declarations.
+- Root cause: scaffold-file infers the package but provides no file-header parameter.
+
+### ST-0164: MCP test harness lookup used a mistyped worktree path
+
+- Date: 2026-10-01
+- Tool: `rg` via shell
+- Target: MCP server constructors
+- Observed failure: the workdir did not exist because the command path contained an incorrect UUID fragment; no files changed.
+- Workaround: rerun the search from the current worktree directory.
+- Root cause: a copied path string was transcribed incorrectly.
+
+### ST-0165: check-log wrapper used zsh's read-only `status` variable
+
+- Date: 2026-10-01
+- Tool: shell wrapper around `make check`
+- Target: `.scratch/final-make-check.log`
+- Observed failure: after `make check` completed, zsh rejected assignment to its read-only `status` variable; the wrapper returned an error before filtering the completed log.
+- Workaround: use a task-specific variable name or run `make check` directly with output redirected.
+- Root cause: `status` is a reserved read-only parameter in zsh.
+
+### ST-0166: polling a completed make check session returned an unknown process id
+
+- Date: 2026-10-01
+- Tool: `write_stdin`
+- Target: completion check session
+- Observed failure: the shell session had already exited, so the poll returned unknown process id; no workspace files changed.
+- Workaround: verify completion from the direct command log and use the command's initial exit result.
+- Root cause: a poll arrived after the execution session had been reaped.
+
+### ST-0167: Make-variable cache settings did not reach the linter process
+
+- Date: 2026-10-01
+- Tool: `make check`
+- Target: full-worktree Go lint
+- Observed failure: passing `GOMODCACHE` and `GOCACHE` as Make command-line variables left `golangci-lint` unable to load `pgregory.net/rapid` with `GOPROXY=off`; lint stopped before tests.
+- Workaround: export the cache variables in the command environment while keeping `MAKE_JOBS=2` set.
+- Root cause: the lint child process did not use the Make-only cache variable values.
+
+### ST-0168: sandbox blocked staging in shared worktree Git metadata
+
+- Date: 2026-10-01
+- Tool: `git add`
+- Target: assigned branch index under the shared repository's `.git/worktrees` metadata
+- Observed failure: sandbox denied creation of the Git index lock outside the writable worktree; no files were staged.
+- Workaround: retry the user-authorized staging and commit command with elevated access.
+- Root cause: the worktree shares Git administrative storage outside its source directory.
+
+## ST-0169: Root semedit CLI uses short command names
+
+- Tool: `/Users/alessandro/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
+- Target: no source file was modified; semantic command help lookup only.
+- Observed failure: invoking `semantic-replace-body --help` returned `unknown command`.
+- Workaround: inspect the root binary command list and use its registered short CLI command names with the assigned worktree as cwd.
+- Root cause: MCP semantic operation names are not the native CLI subcommand names.
+
+## ST-0170: Root semedit CLI declaration command lookup
+
+- Tool: `/Users/alessandro/.codex/worktrees/0358327c-724a-44a6-bd87-1445d8d52fd7/semantic-editor/bin/semedit-next`
+- Target: no source file was modified; command help lookup only.
+- Observed failure: invoking `insert-function --help` returned `unknown command`.
+- Workaround: query the root binary's registered command names before using declaration insertion; no source workaround applied.
+- Root cause: the MCP tool name does not match a native CLI subcommand, and the command list did not expose an `insert-function` alias.
+
+## ST-0171: Semantic editor cannot add fields to existing Go structs
+
+- Tool: `semedit-next` semantic declaration operations.
+- Target: `internal/operation/operation.go` and `internal/mcp/server.go` if struct-field additions are required.
+- Observed limitation: the registered semantic operations support whole declarations, functions, and constructors, but expose no operation for adding a field inside an existing struct declaration.
+- Workaround: use a minimal AST-anchored atomic source update for the required struct fields, then format and verify with repository tooling.
+- Root cause: the current semantic editor capability set has no struct-member insertion operation.
+
+## ST-0172: Scaffold purpose header requires Go comment syntax
+
+- Tool: `semedit-next scaffold-file`.
+- Target: `internal/operation/output_projection.go`; scaffold was rejected before file creation.
+- Observed failure: the plain-text purpose header was parsed as Go source and failed with `expected 'package', found This`.
+- Workaround: pass the purpose header as a Go comment (`// ...`) and retry.
+- Root cause: the scaffold tool validates the supplied purpose header as source text rather than wrapping it as a comment.
+
+## ST-0173: Semantic insertion enforces exported Go test name access
+
+- Tool: `semedit-next insert`.
+- Target: `internal/mcp/schema_test.go`; insertion was rejected before mutation.
+- Observed failure: specifying private visibility for `TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision` produced a visibility mismatch because Go test names are exported.
+- Workaround: retry the test declaration with public visibility.
+- Root cause: the generic insertion operation applies Go exported-name casing checks to test functions.
+
+## ST-0174: Tool session poll returned a JavaScript syntax error
+
+- Tool: `functions.exec` polling the pending `semedit-next insert` process.
+- Target: `internal/mcp/schema_test.go`; source insertion outcome was not returned by the poll.
+- Observed failure: the poll wrapper returned `Script failed SyntaxError: Invalid or unexpected token` instead of process output.
+- Workaround: inspect repository state and rerun the insertion if the declaration is absent.
+- Root cause: the tool-session polling response failed while decoding or relaying the process result; the specific boundary is not exposed.
+
+## ST-0175: Semantic insertion accepted malformed schema test literals
+
+- Tool: `semedit-next insert`.
+- Target: `internal/mcp/schema_test.go`.
+- Observed failure: the inserted test declaration produced semantic diagnostics for omitted nested composite literal types and called a nonexistent `SchemaKind.String` method.
+- Workaround: explicitly qualify nested `operation.ValueSchema` literals and convert schema kinds with `string(...)`.
+- Root cause: the input snippet relied on shorthand composite syntax not accepted in this context and treated a string alias as if it exposed a `String` method.
+
+## ST-0176: zsh polling wrapper used a reserved variable name
+
+- Tool: `functions.exec` session poll wrapper.
+- Target: `.scratch/foundation-focused.log` inspection; repository source was not affected.
+- Observed failure: the wrapper exited with `zsh: read-only variable: status` before returning the polled command output.
+- Workaround: use a non-reserved variable name and inspect the existing log directly.
+- Root cause: `status` is a read-only special parameter in zsh.
+
+## ST-0177: Semantic CLI command alias was incorrect
+
+- Tool: `semedit-next inspect --help`.
+- Target: declaration inspection for `internal/operation/value_schema.go`; no source was changed.
+- Observed failure: the CLI rejected `inspect` and suggested the actual command `inspect-symbol`.
+- Workaround: use the registered `inspect-symbol` command.
+- Root cause: CLI command names use the native operation names rather than the MCP semantic tool prefix.
+
+## ST-0178: Tooling log command targeted the coordinator checkout
+
+- Tool: atomic Python append for `docs/SUBOPTIMAL_TOOLS.md`.
+- Target: coordinator checkout path; the filesystem rejected the write and no file was created there.
+- Observed failure: `PermissionError` because the command ran with the coordinator checkout as its working directory, outside this worker’s writable root.
+- Workaround: rerun the atomic append from this assigned worktree.
+- Root cause: the command used a relative path with the wrong working directory.
+
+## ST-0179: Semantic CLI insertion has no trust-workspace flag
+
+- Tool: `semedit-next insert`.
+- Target: `internal/operation/value_schema.go`; the attempted insertion was rejected before mutation.
+- Observed failure: the CLI returned `unknown flag: --trust-workspace`.
+- Workaround: retry using the supported insertion flags; workspace trust is supplied through MCP initialization options where applicable.
+- Root cause: CLI trust configuration differs from the MCP initialization option.
+
+## ST-0180: Semantic body tool cannot replace one statement in a test function
+
+- Tool: `semedit-next replace-body`.
+- Target: `internal/mcp/schema_test.go` test statement comparing receipt and disk revisions.
+- Observed limitation: the available semantic operation replaces an entire function body and has no statement-level expression replacement; replacing this one assertion would require duplicating the full test body.
+- Workaround: perform a narrowly matched atomic source update, then validate with Go formatting, lint, and the test suite.
+- Root cause: no registered semantic edit operation targets a single statement.
+
+## ST-0181: Semantic declaration tools cannot add fields to an existing struct
+
+- Tool: `semedit-next insert` and `replace-decl`.
+- Target: `internal/operation/receipt_finalize.go` (`EditReceiptDraft`).
+- Observed limitation: declaration insertion cannot target struct fields, and `replace-decl` only supports constants, variables, and aliases.
+- Workaround: atomically replace the single field line, then format and validate the declaration with repository tooling.
+- Root cause: the semantic editor has no struct-field edit operation.
+
+## ST-0182: Semantic tools cannot replace a struct-field use in a composite literal
+
+- Tool: `semedit-next replace-body`.
+- Target: `internal/mcp/schema_test.go` receipt finalizer test setup.
+- Observed limitation: the edit changes a struct literal field and adds expected postimage setup inside a handler; no registered operation targets a nested literal field or statement range.
+- Workaround: atomically replace the one literal statement with its planned digest setup, then rely on formatting and observable MCP tests.
+- Root cause: the semantic editor only replaces complete function bodies for this class of Go edit.
+
+## ST-0183: Semantic tools cannot extend one validation branch in Register
+
+- Tool: `semedit-next replace-body`.
+- Target: `internal/operation/operation.go` registration validation.
+- Observed limitation: correcting the schema/projector guard requires adding one conditional in the existing function; the semantic body tool only replaces the complete 140-line body.
+- Workaround: apply the exact conditional as an atomic source update, then run formatter, lint, registration tests, and full check.
+- Root cause: no registered operation edits a selected statement or branch.
+
+## ST-0184: Semantic insertion did not create the requested test declaration
+
+- Tool: `semedit-next insert`.
+- Target: `internal/operation/value_schema_test.go`.
+- Observed failure: the command returned no declaration result, and a follow-up `inspect-symbol` confirmed the requested registration test was absent.
+- Workaround: retry with a plain Go address operator in the source snippet and verify the inserted symbol before proceeding.
+- Root cause: the insertion payload encoded the address operator as a Unicode escape that was not accepted as Go source.
+
+## ST-0185: Semantic insertion rejected literal newline escapes
+
+- Tool: `semedit-next insert`.
+- Target: `internal/operation/value_schema_test.go`.
+- Observed failure: the retry returned `syntax error: illegal character U+005C` because the Go snippet contained literal backslash-n sequences.
+- Workaround: provide actual line breaks in the source snippet and inspect the resulting declaration.
+- Root cause: shell and JavaScript escaping preserved the escape text instead of producing source newlines.
+
+## ST-0186: Semantic tools cannot insert a public-call block inside a test
+
+- Tool: `semedit-next insert` / `replace-body`.
+- Target: `internal/mcp/schema_test.go` nested continuation flow test.
+- Observed limitation: the required test adds a call and value handoff inside an existing test; available semantic operations only insert top-level declarations or replace an entire function body.
+- Workaround: use a single exact-match atomic insertion at the assertion boundary, then verify via formatting, lint, and the public MCP test.
+- Root cause: statement-range insertion is not supported.
+
+## ST-0187: Semantic body replacement returned without applying source
+
+- Tool: `semedit-next replace-body`.
+- Target: `internal/operation/receipt_finalize.go` function `FinalizeEditReceipt`.
+- Observed failure: the command produced no confirmation and left the function referencing the removed `ChangePaths` field, which the full check detected.
+- Workaround: retry with actual line breaks in the replacement body and inspect the resulting declaration.
+- Root cause: the replacement payload contained literal backslash-n characters from shell/JavaScript escaping.
+
+## ST-0188: Escaped semantic function edits were rejected without inspection
+
+- Tool: `semedit-next replace-body` and `insert`.
+- Target: `internal/operation/value_schema.go`, `internal/operation/parse.go`, and `internal/operation/output_projection.go`.
+- Observed failure: several function-edit commands encoded `\n` literally; the CLI rejected those snippets and the existing declarations remained unchanged. A later symbol check found the bounded numeric helper absent.
+- Workaround: use actual line breaks in Go snippets, check each command exit code, and inspect every edited declaration.
+- Root cause: JSON/JavaScript escaping preserved backslash-n text when real source newlines were required.
+
+## ST-0189: Shell quoting broke the integration note update
+
+- Tool: `functions.exec` wrapper running an atomic Python note update.
+- Target: `.scratch/foundation-integration.md`; no file was changed by the failed command.
+- Observed failure: zsh reported `unmatched "` because an apostrophe in the note text terminated the shell's single-quoted Python argument.
+- Workaround: rerun the same atomic update through a quoted heredoc.
+- Root cause: shell quoting was not safe for the embedded prose.
+
+## ST-0190: Semantic edit tools cannot add a local binding inside a closure
+
+- Tool: `semedit-next insert` / `replace-body`.
+- Target: `internal/mcp/schema_test.go` receipt finalizer test closure.
+- Observed limitation: fixing the test requires adding a local request binding inside a nested closure; the available semantic tools only insert top-level declarations or replace the complete enclosing function body.
+- Workaround: apply one exact atomic insertion, then verify with `make check` and the observable MCP test.
+- Root cause: nested statement insertion is not supported.
+
+## ST-0191: Semantic tools cannot replace one nested result assertion
+
+- Tool: `semedit-next replace-body`.
+- Target: `internal/mcp/schema_test.go` removal continuation assertion.
+- Observed limitation: the test must accept both an omitted `omitempty` slice and an explicit empty slice; the semantic tool replaces the whole enclosing test body to change a single assertion.
+- Workaround: make an exact atomic statement replacement and verify with the full test suite.
+- Root cause: statement-level edits are unsupported.
+
+## ST-0192: Semantic tools cannot insert publication reconciliation in a function
+
+- Tool: `semedit-next insert` / `replace-body`.
+- Target: `internal/operation/receipt_finalize.go` outcome reconciliation.
+- Observed limitation: the function needs a counter and status adjustment around an existing loop; insertion supports declarations only and replacement covers the whole helper.
+- Workaround: apply narrow exact atomic changes, then run full formatting, lint, and receipt tests.
+- Root cause: statement-range editing is unavailable.
+
+## ST-0193: Exact-match test edit did not match current formatting
+
+- Tool: atomic Python source update.
+- Target: `internal/operation/value_schema_test.go` planned change receipt test.
+- Observed failure: the script assertion found no exact multiline match and stopped before creating or replacing a file.
+- Workaround: inspect the current declaration and edit the exact existing initializer.
+- Root cause: the source formatting differed from the assumed indentation and line layout.
+
+## ST-0194: Correction to ST-0193 target description
+
+- Tool: atomic Python source update.
+- Target: `internal/operation/value_schema_test.go` planned change receipt test, not the MCP test file.
+- Observed issue: ST-0193 named the wrong target path; the failed edit itself still made no changes.
+- Workaround: inspect `TestFinalizeEditReceiptIncludesOnlyObservedPostimages` and update its status initializer.
+- Root cause: the log entry recorded the caller path instead of the actual intended file.
+
+## ST-0195: Process inspection is blocked by the sandbox
+
+- Tool: `ps -Ao pid,etime,command` while observing final `make check` completion.
+- Target: local process status only; no source or process state was changed.
+- Observed failure: zsh reported `operation not permitted: ps`.
+- Workaround: use the existing command session and its log to determine completion.
+- Root cause: process inspection is restricted in this sandbox.
+
+## ST-0196: Redundant poll after `make check` completion failed
+
+- Tool: `functions.exec` polling the final `make check` session.
+- Target: final check completion status; repository state was unaffected.
+- Observed failure: the polling call returned `Unknown process id` after the preceding poll had already returned exit code 0.
+- Workaround: use the recorded successful exit code and check log.
+- Root cause: the session had already terminated and been closed.
+
+## ST-0197: Semantic tools cannot extend an existing MCP test handler inline
+
+- Tool: `semedit-next insert` / `replace-body`.
+- Target: `internal/mcp/schema_test.go` receipt mutation test.
+- Observed limitation: the same-name replacement scenario needs new request parsing, mutation behavior, and response assertions inside one existing test function; available semantic operations only add top-level declarations or replace the entire function body.
+- Workaround: make bounded exact-match atomic source updates and validate them through the real public MCP test and full check.
+- Root cause: no nested statement or struct-literal insertion operation exists.
+
+## ST-0198: Git worktree metadata is outside the writable root
+
+- Tool: `git add` for the owned foundation files.
+- Target: shared worktree index at `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-foundation/index.lock`.
+- Observed failure: the sandbox denied creation of the index lock; no files were staged and the commit did not run.
+- Workaround: retry the authorized commit with scoped access to the shared git metadata.
+- Root cause: this linked worktree stores index metadata in the common repository directory outside the assigned writable root.
+
+## ST-0199: CLI lookup rejected documented selector flags
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next lookup`.
+- Target: declaration navigation in `internal/mcp/server.go`, `internal/mcp/batch.go`, `internal/operation/receipt_finalize.go`, `internal/operation/typed_descriptors.go`, and `internal/operation/wire_read_inspect.go`.
+- Observed failure: each `lookup --file <path> --symbol <name>` request returned `param "symbol" is required: invalid operation parameters`.
+- Workaround: use the CLI's read-only `outline --path` operation and inspect the specific declaration via its output.
+- Root cause: the checked binary's lookup argument decoder did not pass the documented flag into the operation request in this worktree.
+
+## ST-0200: CLI inspection command name differed from expectation
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect --help`.
+- Target: read-only inspection navigation for `semantic_inspect_symbol`.
+- Observed failure: the CLI reported `unknown command "inspect"` and suggested `inspect-symbol`.
+- Workaround: use `inspect-symbol` for the documented semantic inspection command.
+- Root cause: the CLI command uses the `inspect-symbol` spelling.
+
+## ST-0201: zsh split combined semantic inspection arguments incorrectly
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next inspect-symbol`.
+- Target: targeted function source inspection in MCP and operation files.
+- Observed failure: the loop's `set -- $spec` under zsh did not preserve the `--file` and `--symbol` arguments, and the CLI rejected each request as missing `symbol`.
+- Workaround: issue exact per-symbol commands with quoted arguments.
+- Root cause: zsh does not perform the expected shell-style whitespace splitting without its explicit split flag.
+
+## ST-0202: Semantic insert operation uses grouped CLI command
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next insert-function --help`.
+- Target: adding small helper declarations during the foundation fix.
+- Observed failure: the CLI reported that `insert-function` is not a registered command.
+- Workaround: inspect and use the supported grouped `insert` command for declarations, or use exact atomic updates only when the available semantic operation cannot express a structural change.
+- Root cause: the CLI groups declaration insertion under `insert`.
+
+## ST-0203: Shell quoting interrupted semantic body replacement
+
+- Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next replace-body`.
+- Target: `internal/mcp/server.go` batch output schema builder.
+- Observed failure: zsh reported `unmatched \"` while parsing the source passed with `--body`; the semantic operation did not run.
+- Workaround: use a shell-safe encoded argument with a source string that contains no shell quote terminators.
+- Root cause: the Go string literal contained an apostrophe inside a single-quoted shell argument.
+
+## ST-0204: Semantic inspection used an unresolved generic method name
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `internal/operation/operation.go` dispatch implementation.
+- Observed failure: `Registry.Dispatch` was not found in the selected file.
+- Workaround: navigate from the declared `Dispatch` symbol in the outline or rely on the already inspected typed dispatch path.
+- Root cause: the method is declared on a generic registry receiver with a different qualified selector than the attempted name.
+
+## ST-0205: Semantic insertion visibility did not match Go test casing
+
+- Tool: `semedit-next insert`.
+- Target: new test in `internal/operation/value_schema_test.go`.
+- Observed failure: the tool rejected `TestFinalizeEditReceiptRequiresObservedCandidateDigest` because visibility was explicitly `private` despite exported Go casing. No declaration was inserted.
+- Workaround: retry with `--visibility public`.
+- Root cause: the semantic editor enforces access casing for inserted declarations.
+
+## ST-0206: Focused MCP suite found flat-schema assertions after batch union change
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: MCP schema assertions in `internal/mcp/schema_test.go`.
+- Observed failure: three tests expected `results.items.required` and a flat `result` property; the new registry-derived `oneOf` shape made those assertions stale, and one test panicked converting the missing flat property.
+- Workaround: update the tests to inspect the matching `tool` discriminator branch.
+- Root cause: the observable schema changed from one open row object to per-registered-tool result branches.
+
+## ST-0207: Focused MCP test found missing batch path description
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: batch result schema for `semantic_move_construct`.
+- Observed failure: the move schema assertion panicked because the registry-derived `destination_file` property omitted the existing requested-target description.
+- Workaround: include the established `file` and `destination_file` descriptions in each registered batch result branch.
+- Root cause: replacing the static result object schema with per-tool branches dropped the static metadata descriptions.
+
+## ST-0208: Focused MCP suite found nullable-schema expectation and flat receipt branch assumption
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` and `TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision` in `internal/mcp/schema_test.go`.
+- Observed failure: the nullable schema uses JSON Schema `type: [string, null]`, not `anyOf`; the receipt test also still treated the per-tool result union as one flat object.
+- Workaround: assert the emitted nullable type array and select the receipt branch by its `tool` discriminator.
+- Root cause: the test expectations did not match the declared ValueSchema JSON serialization or the new branch-specific result schema.
+
+## ST-0209: Semantic editor has no statement-level update for receipt test setup
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: nested setup statement in `TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision` in `internal/mcp/schema_test.go`.
+- Observed limitation: adding the planned digest to the existing finalized draft requires inserting one statement between an existing composite literal and call; available semantic operations replace whole function bodies or top-level declarations only.
+- Workaround: apply one exact-match atomic source update and validate the public MCP test.
+- Root cause: no nested statement edit is registered.
+
+## ST-0210: Public batch test assumed the wrong structured-content nesting
+
+- Tool: `go test ./internal/operation ./internal/mcp`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed failure: actual `semantic_batch` `tools/call` completed, but the test panicked because it looked for `results` directly under the wrong response object.
+- Workaround: inspect the batch response wrapper and decode its `structuredContent` shape before checking typed values.
+- Root cause: semantic_batch uses a distinct structured response wrapper from ordinary single-tool calls.
+
+## ST-0211: Semantic handler lookup omitted its receiver
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `Server.handleBatch` response wrapper in `internal/mcp/server.go`.
+- Observed failure: the unqualified `handleBatch` selector was not resolved in the selected file.
+- Workaround: retry with the receiver-qualified `Server.handleBatch` symbol.
+- Root cause: the function is a method and the semantic selector requires its qualified owner.
+
+## ST-0212: Semantic handler lookup targeted the wrong file
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `Server.handleBatch`.
+- Observed failure: the selected `internal/mcp/server.go` file did not declare the method.
+- Workaround: use the declaration outline to locate the method file, then inspect it there.
+- Root cause: the batch handler is declared in a separate batch source file.
+
+## ST-0213: Semantic editor cannot change one nested response assertion
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed limitation: correcting two local response-path statements requires statement-level edits inside an existing test body; the registered semantic tools only replace whole function bodies or top-level declarations.
+- Workaround: perform the narrow exact-match update atomically, then run the public MCP test.
+- Root cause: no nested statement replacement operation is available.
+
+## ST-0214: Injected batch registry omitted the final verification operation
+
+- Tool: `go test ./internal/mcp -run TestBatchToolAdvertisesAndEmitsRegisteredResultShapes`.
+- Target: actual batch `tools/call` result assertions in `internal/mcp/schema_test.go`.
+- Observed failure: after the five test operations, the batch appended a `semantic_verify` error result because the isolated test registry does not register that post-processing operation.
+- Workaround: accept and assert that explicit verification row while checking the typed result variants.
+- Root cause: the fixture injects only the providers under test, while batch finalization resolves verification through the same registry.
+
+## ST-0215: Batch test needs a nested synthetic-stage assertion
+
+- Tool: `semedit-next replace-body` / `insert`.
+- Target: result loop in `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes` in `internal/mcp/schema_test.go`.
+- Observed limitation: the test must account for the batch executor's synthetic `semantic_verify` failure row, which requires a statement inside its existing loop.
+- Workaround: make a narrow exact-match atomic update and assert the registered synthetic branch and error status.
+- Root cause: the semantic editor cannot change nested statements in an existing declaration.
+
+## ST-0216: Scoped commit could not create the shared worktree index lock
+
+- Tool: `git add` for the first review-fix checkpoint.
+- Target: only the owned foundation files in `codex/flow-foundation`.
+- Observed failure: Git was denied creation of `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-foundation/index.lock`; no source files were staged and commit did not run.
+- Workaround: retry the user-authorized commit with scoped access to the shared Git metadata.
+- Root cause: this linked worktree stores its index under the common repository directory outside the assigned writable root.
+
+## ST-0217: Scaffold purpose header lacked Go comment syntax
+
+- Tool: `semedit-next scaffold-file`.
+- Target: new `internal/operation/inspect_projection.go`.
+- Observed failure: the scaffold parser rejected a plain-text purpose header as invalid Go syntax; no file was created.
+- Workaround: retry with a valid `//` Go comment prefix.
+- Root cause: scaffold purpose headers are parsed as source comments.
+
+## ST-0218: Semantic editor has no field or parameter insertion for guarded inspect links
+
+- Tool: `semedit-next insert` / `replace-body`.
+- Target: `ReplaceBodyReq`, `replaceBodyParams`, and the owner selector parameter in `internal/operation/wire_engine_mutations.go`.
+- Observed limitation: the operation surface has no semantic edit for adding one struct field or changing one parameter element inside an existing declaration; whole-body replacement applies only to functions.
+- Workaround: make exact-match atomic structural edits with fsync/rename, then verify through registered operations and public MCP calls.
+- Root cause: no struct-field or composite-literal/element insertion operation is registered.
+
+## ST-0219: Atomic structural update refused an ambiguous parameter-line match
+
+- Tool: exact-match atomic Python edit.
+- Target: `ReplaceBodyReq`, `replaceBodyParams`, and `replaceConstructParams` in `internal/operation/wire_engine_mutations.go`.
+- Observed failure: an assertion found an unexpected match count for a repeated parameter declaration and aborted before writing the file.
+- Workaround: use unique declaration-scoped source anchors, verify every replacement count, then atomically rename.
+- Root cause: identical Go parameter lines recur in multiple operation declarations in the same file.
+
+## ST-0220: Scoped owner-selector update did not match source text
+
+- Tool: exact-match atomic Python edit.
+- Target: `replaceConstructParams` in `internal/operation/wire_engine_mutations.go`.
+- Observed failure: the declaration-scoped update found no exact match for the assumed owner-selector literal and aborted before writing any source.
+- Workaround: re-inspect the actual declaration and use its current text as the anchor.
+- Root cause: the source literal wording differs from the stale copied declaration text.
+
+## ST-0221: Declaration-scoped source replacement found another stale literal
+
+- Tool: exact-match atomic Python edit.
+- Target: `ReplaceBodyReq` and parameter declarations in `internal/operation/wire_engine_mutations.go`.
+- Observed failure: a declaration-scoped assertion still found an unexpected matching text block and aborted before writing.
+- Workaround: copy the complete current declaration from semantic inspection and replace only the declaration as a whole.
+- Root cause: nested source text was copied from a different declaration revision and did not match byte-for-byte.
+
+## ST-0222: Semantic insertion diagnostics found incorrect MCP test transport calls
+
+- Tool: `semedit-next insert`.
+- Target: `TestInspectProjectionFeedsGuardedReplaceBody` in `internal/mcp/schema_test.go`.
+- Observed failure: the inserted test passed a writer as a third argument to `Server.Serve`; diagnostics show that `Serve` accepts a reader and the output writer belongs in `NewServer`.
+- Workaround: bind each test response buffer when constructing its server, then call `Serve` with only the request reader.
+- Root cause: the inserted test used an outdated transport call shape.
+
+## ST-0223: Body replacement exposed a now-unused test import
+
+- Tool: `semedit-next replace-body`.
+- Target: `TestInspectProjectionFeedsGuardedReplaceBody` in `internal/mcp/schema_test.go`.
+- Observed diagnostic: the corrected test no longer uses the previous `io.Discard` constructor argument, leaving `io` unused.
+- Workaround: run the registered semantic import organizer on the test file.
+- Root cause: replacing the test transport setup made one earlier import unnecessary.
+
+## ST-0224: Inspect consumer test exposed legacy-role and response-shape assumptions
+
+- Tool: `go test ./internal/operation ./internal/mcp -run TestInspectProjectionFeedsGuardedReplaceBody`.
+- Target: typed SourceFields metadata and inspection response assertions.
+- Observed failure: assigning `RoleTarget` to legacy file parameters made their untyped `semantic_lookup.file` source links fail; the public inspection response also did not provide the structured-content wrapper shape assumed by the test.
+- Workaround: inspect the current compatibility validator and actual response envelope; keep legacy primitive edges compatible while declaring the new typed edge.
+- Root cause: existing primitive continuations and projected MCP output use different compatibility and response paths than the new typed links.
+
+## ST-0225: Initial required make check rejected unformatted inspect projection changes
+
+- Tool: `make check` with the requested local module cache and `GOPROXY=off`.
+- Target: current foundation projection and MCP integration changes.
+- Observed failure: the repository Go linter reported complexity, constant, exported-comment, unused-helper, and preallocation findings before reaching focused tests.
+- Workaround: apply the registered semantic refactors and formatting, then rerun `make check` before focused tests.
+- Root cause: newly added integration code had not yet gone through the repository's required lint-fix cycle.
+
+## ST-0226: Worktree-relative semantic CLI path was unavailable
+
+- Tool: shell invocation of `./bin/semedit-next --help`.
+- Target: semantic tooling in the foundation worktree.
+- Observed failure: the assigned worktree has no `bin/semedit-next` path.
+- Workaround: use the root-provided absolute CLI path `/Users/alessandro/sources/semantic-editor/bin/semedit-next` with the worktree as the command working directory.
+- Root cause: the CLI binary is shared from the main checkout rather than copied into this worktree.
+
+## ST-0227: Semantic replace-body command rejected an inferred function flag
+
+- Tool: `semedit-next replace-body`.
+- Target: `ValidateSourceFields` in `internal/mcp/server.go`.
+- Observed failure: the command rejected `--function`; its CLI requires the exact owner-selection flag name from its help output.
+- Workaround: inspect command help and retry with the supported flag name before using any fallback.
+- Root cause: command-line syntax was inferred from a different semantic tool.
+
+## ST-0228: No registered semantic operation removes obsolete top-level declarations
+
+- Tool: repository semantic CLI command inventory.
+- Target: now-unused `batchOutputSchema` and `batchResultSchema` helpers in `internal/mcp/server.go`.
+- Observed limitation: available insert/replace operations can add or replace declarations but cannot remove top-level declarations. Keeping the obsolete open-schema helpers fails the repository's unused-code lint.
+- Workaround: remove only those exact Go AST declarations with a parser-based, atomic temp-file/fsync/rename edit after recording this limitation.
+- Root cause: semantic CLI has no declaration deletion operation.
+
+## ST-0229: Focused public inspection tests found a remaining selector compatibility edge
+
+- Tool: focused Go tests for inspect projection and SourceFields validation.
+- Target: `semantic_replace_construct.in_function` and its public inspector consumer test.
+- Observed failure: the parameter's existing self-output primitive edge is treated as a typed selector edge and registry validation rejects it; the test then panics while reading the failed server response as success.
+- Workaround: remove the role annotation from this legacy selector and keep the new inspection selector path typed under the correct consumer, then make the public test report server errors explicitly.
+- Root cause: role metadata applies to every SourceFields path on one parameter, including pre-existing primitive continuation paths.
+
+## ST-0230: Declaration replacement used a nonexistent discriminator CLI constant
+
+- Tool: `semedit-next replace-decl`.
+- Target: `replaceConstructParams` in `internal/operation/wire_engine_mutations.go`.
+- Observed failure: post-edit diagnostics reported undefined `wireCLIDiscriminator`.
+- Workaround: restore the declaration's existing literal CLI name `discriminator` and rerun semantic diagnostics.
+- Root cause: the existing declaration used a literal instead of the inferred constant name.
+
+## ST-0231: Semantic inspection used a nonexistent test symbol
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `TestValidateValueSchema` in `internal/operation/value_schema_test.go`.
+- Observed failure: the exact test symbol was absent, so inspection refused the request.
+- Workaround: use the existing test names from the narrow file outline before selecting a test insertion point.
+- Root cause: the requested symbol name was inferred rather than confirmed from the file.
+
+## ST-0232: Insert-function argument retained literal newline escapes
+
+- Tool: `semedit-next insert-func`.
+- Target: language-neutral projection coverage in `internal/operation/value_schema_test.go`.
+- Observed failure: the shell preserved `\n` as literal backslash characters, which the Go parser rejected.
+- Workaround: write the complete declaration into a scratch file and pass its contents as the semantic tool source argument.
+- Root cause: multiline code was placed directly in a single-quoted shell argument.
+
+## ST-0233: Test declaration access modifier conflicted with exported casing
+
+- Tool: `semedit-next insert-func`.
+- Target: `TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches` in `internal/operation/value_schema_test.go`.
+- Observed failure: the insertion tool rejected explicit private access for the uppercase Go test function name.
+- Workaround: declare the test with public access to match its required Go test naming.
+- Root cause: test functions use exported casing even though tests are not package API.
+
+## ST-0234: Registered semantic operations cannot add documentation comments to an existing type
+
+- Tool: semantic CLI operation inventory.
+- Target: exported `InspectContinuation` and `InspectProjection` types in `internal/operation/inspect_projection.go`.
+- Observed limitation: no registered operation changes a type declaration's leading documentation comment; the linter requires both public API comments.
+- Workaround: add the two leading comments with a parser-positioned atomic write, then verify the declaration with semantic inspection.
+- Root cause: semantic type replacement is not available for struct declarations or their doc comments.
+
+## ST-0235: Follow-up make check still reported static integration findings
+
+- Tool: `make check` with local caches and `GOPROXY=off`.
+- Target: inspector schema strings, source-field validation, MCP schema literals, and the public inspection test.
+- Observed failure: Go lint still reported one complexity finding, repeated schema-name literals, and one test slice preallocation finding.
+- Workaround: extract legacy-source compatibility from the validator, reuse named field/tool constants, and preallocate the test edits slice before rerunning the full check.
+- Root cause: the first refactor did not sufficiently lower validator complexity and left lint-only cleanup in the integrated path.
+
+## ST-0236: Semantic inspection targeted a wire constant in the wrong file
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: `wireInFunction` in `internal/operation/operation.go`.
+- Observed failure: the symbol is not declared in that file.
+- Workaround: locate the package constant by a narrow name search, then inspect the actual declaration file.
+- Root cause: the parameter constant was assumed to live in the shared operation definition file.
+
+## ST-0237: Semantic source inspection command used an invalid working-directory argument
+
+- Tool: `semedit-next inspect-symbol`.
+- Target: shared schema constants in `internal/mcp/server.go`.
+- Observed failure: the shell executor could not start because the provided worktree directory did not exist as supplied.
+- Workaround: retry from the assigned flow-foundation worktree path exactly.
+- Root cause: the command invocation had a malformed working-directory argument.
+
+## ST-0238: Semantic operations cannot replace exact schema string values with named constants
+
+- Tool: registered semantic CLI operations.
+- Target: repeated schema property/tool-name literals in `internal/operation` and `internal/mcp`.
+- Observed limitation: body/declaration operations can replace whole constructs but cannot rewrite selected string-valued expressions to identifiers without replacing entire unrelated implementations.
+- Workaround: apply a narrowly scoped Go AST literal rewrite for exact values only, using atomic temp-file/fsync/rename writes.
+- Root cause: semantic CLI lacks expression-level replacement for string literals.
+
+## ST-0239: Second semantic outline request used a malformed worktree path
+
+- Tool: `semedit-next outline`.
+- Target: the new MCP inspector test's preallocation lint finding.
+- Observed failure: command startup failed because the supplied working-directory path was missing its leading slash.
+- Workaround: rerun in the assigned absolute worktree path.
+- Root cause: the path was mistyped while constructing the command.
+
+## ST-0240: Semantic operations cannot preallocate a local slice declaration
+
+- Tool: registered semantic CLI operation inventory.
+- Target: `edits` local in `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes`.
+- Observed limitation: the required capacity change is a local declaration initializer; no available semantic operation replaces one local declaration without rewriting the containing test.
+- Workaround: update the exact local declaration by AST position, preserving all other test source.
+- Root cause: semantic CLI has no local-declaration initializer operation.
+
+## ST-0241: AST schema-literal rewrite also replaced new constant declarations
+
+- Tool: parser-based AST literal rewrite for repeated schema names.
+- Target: new constants in `internal/mcp/server.go`.
+- Observed failure: matching literals inside the constant declarations themselves were changed into self-references, producing Go initialization cycles.
+- Workaround: restore those three declaration values, then constrain any further AST rewrite to skip constant declaration initializers.
+- Root cause: the first rewrite matched by exact literal value without excluding the declaration that establishes each constant.
+
+## ST-0242: AST local-declaration edit retained the `var` keyword
+
+- Tool: parser-positioned local slice preallocation edit.
+- Target: `edits` in `TestBatchToolAdvertisesAndEmitsRegisteredResultShapes`.
+- Observed failure: the generated source contained `var edits :=`, causing Go syntax and type-check errors during `make check`.
+- Workaround: use a valid local declaration initializer (`var edits = make(...)`) through an atomic exact-source correction, then rerun checks.
+- Root cause: `ast.ValueSpec.Pos` starts at the variable name while the `var` keyword belongs to the enclosing declaration node.
+
+## ST-0243: Full make check test phase failed without retained failure detail
+
+- Tool: full `make check` (`go test -race -shuffle=on -cover -v ./...`).
+- Target: repository-wide verification after inspect projection integration.
+- Observed failure: formatting, Go lint, doc generation, and Markdown lint passed; the test target exited nonzero, but the very large verbose output was truncated before the failing package/test was visible. Vale reported warnings/suggestions only, and govulncheck was optional/uninstalled.
+- Workaround: rerun the repository test target with output redirected to a worktree-local scratch log, then inspect only failing package/test lines before deciding whether any code change is needed.
+- Root cause: verbose test output exceeded tool response retention.
+
+## ST-0244: Failure-log command used zsh's read-only status variable
+
+- Tool: shell wrapper around `make test` output capture.
+- Target: `.scratch/make-test-failures.log`.
+- Observed failure: after the test command returned, zsh rejected assignment to its reserved read-only `status` variable, so the intended filtered summary did not run.
+- Workaround: inspect the completed local log directly and use a task-specific variable name in any wrapper.
+- Root cause: a zsh special variable name was reused for the exit code.
+
+## ST-0245: Full suite found an outdated inspection output-schema expectation
+
+- Tool: `go test -race -shuffle=on -cover -v ./...` in the required check target.
+- Target: `TestMCPToolsAdvertiseStructuredOutputSchemas` in `internal/mcp/schema_test.go`.
+- Observed failure: the inspector now correctly advertises its new typed object result, while the generic test branch still expected a legacy string result.
+- Workaround: add an explicit inspector object-schema case that checks the closed projection and its required captured identity fields.
+- Root cause: schema behavior changed intentionally, but the existing broad assertion table did not gain a case for the inspector.
+
+## ST-0246: Insert-case argument retained literal newline escapes
+
+- Tool: `semedit-next insert-case`.
+- Target: explicit `semantic_inspect_symbol` schema test branch.
+- Observed failure: the shell passed literal backslash-n sequences and Go parsing rejected the case clause.
+- Workaround: provide the clause from a worktree-local scratch file.
+- Root cause: multiline syntax was supplied as a single-quoted shell argument.
+
+## ST-0247: Inspector schema test assumed projection fields were top-level
+
+- Tool: focused MCP schema tests after adding the inspector object-schema branch.
+- Target: `TestMCPToolsAdvertiseStructuredOutputSchemas` in `internal/mcp/schema_test.go`.
+- Observed failure: the standard output schema wraps the typed operation value under `result`; the test looked for `inspection` directly under top-level output properties and panicked on the missing continuation schema.
+- Workaround: assert the `inspection` and `continuations` properties under `outputSchema.properties.result`, and guard each type assertion with a test failure.
+- Root cause: standard output envelope fields were conflated with the operation's projected value fields.
+
+## ST-0248: Replace-construct could not select a switch case by switch expression
+
+- Tool: `semedit-next replace-construct`.
+- Target: the `semantic_inspect_symbol` case in `TestMCPToolsAdvertiseStructuredOutputSchemas`.
+- Observed failure: the Go backend searched for a case whose literal value was `name`; it did not treat `name` as the switch selector and reported no matching construct.
+- Workaround: replace only the matching `CaseClause` in the Go AST using an atomic parser-positioned edit.
+- Root cause: replace-construct case selection currently interprets the discriminator as the case value for this syntax.
+
+## ST-0249: Final make check found the expanded schema test exceeded complexity limits
+
+- Tool: final `make check` Go lint-fix stage.
+- Target: `TestMCPToolsAdvertiseStructuredOutputSchemas` in `internal/mcp/schema_test.go`.
+- Observed failure: adding explicit nested inspector result-schema assertions raised test cognitive complexity above the repository threshold.
+- Workaround: move those assertions into a focused helper and keep the test switch branch as a single helper call.
+- Root cause: schema branch assertions were added inline to an already broad catalog test.
+
+## ST-0250: Replace-construct does not locate switch clauses in the test catalog function
+
+- Tool: `semedit-next replace-construct`.
+- Target: inspector result-schema case in `TestMCPToolsAdvertiseStructuredOutputSchemas`.
+- Observed failure: both the switch expression and explicit case label selectors returned no matching case for this test's catalog switch.
+- Workaround: replace only the matching case-clause AST node with a helper call, preserving the surrounding switch and test.
+- Root cause: current Go construct selection does not expose a usable selector for this case clause.
+
+## ST-0251: Git staging could not write linked-worktree index metadata
+
+- Tool: `git add` and `git commit` for the requested inspect-projection checkpoint.
+- Target: this flow-foundation worktree index.
+- Observed failure: Git could not create the linked worktree's `index.lock` under the main repository `.git/worktrees/flow-foundation` metadata path because that location is outside the writable worktree root.
+- Workaround: retry the exact staging and commit operation with the already-authorized elevated filesystem access for linked-worktree metadata.
+- Root cause: linked worktree source files are writable, but Git stores the shared worktree index outside the worktree directory.
+
+## ST-0252: Absolute patch path targeted the coordinator checkout
+
+- Tool: built-in `apply_patch` used for a Go backend edit.
+- Target: `internal/backend/golang/backend.go` while working in `.scratch/worktrees/flow-foundation`.
+- Observed failure: an absolute path omitted `.scratch/worktrees/flow-foundation` and targeted the coordinator checkout instead of this worker worktree; the coordinator checkout received the same one-line context-forwarding edit.
+- Workaround: all intended changes were applied and verified in the assigned worker worktree; root will preserve the coordinator mirror in a targeted stash before integration, and I did not modify or restore coordinator files.
+- Root cause: the patch request used the primary checkout path rather than the assigned worktree path. Verify every patch target against the assigned worktree root before editing.

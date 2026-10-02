@@ -128,7 +128,7 @@ var extractVariableParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: simple identifier for the local variable created by extraction", Required: true, SourceFields: append(append([]string{}, sourceSymbolContinuations...), "semantic_extract_variable.symbol")},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: append(append([]string{}, sourceInFunctionContinuations...), "semantic_extract_variable.in_function")},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one whole argument to a direct single-argument call statement", Required: true, SourceFields: []string{"semantic_extract_variable.discriminator"}},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one whole argument to a direct single-argument call statement", Required: true},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; each path is the zero-based direct statement index in the owner body"},
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -44,6 +45,7 @@ type BatchResult struct {
 	Status           string `json:"status"`
 	Diff             string `json:"diff,omitempty"`
 	Error            string `json:"error,omitempty"`
+	Result           any    `json:"result,omitempty"`
 }
 
 // BatchResponse aggregates the outcomes of a semantic batch execution.
@@ -135,7 +137,7 @@ func captureBatchDiff(response *BatchResponse, root string, before map[string]st
 	if err != nil {
 		message := fmt.Errorf("capture final batch diff: %w", err)
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "final_diff", Status: "error", Error: message.Error()})
+		response.Results = append(response.Results, BatchResult{Tool: finalDiffToolName, Status: "error", Error: message.Error()})
 		return message
 	}
 	response.FinalDiff = diff
@@ -187,13 +189,33 @@ func changedBatchPaths(root string, before map[string]string) ([]string, error) 
 	return paths, nil
 }
 
+// decodeArgumentObject preserves exact JSON integer tokens for recursive schema validation.
+func decodeArgumentObject(data []byte, target *map[string]any) error {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	if err := decoder.Decode(target); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("read trailing JSON value: %w", err)
+	}
+	if *target == nil {
+		*target = map[string]any{}
+	}
+	return nil
+}
+
 func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (BatchResult, error) {
 	entry, ok := s.registry.LookupMCP(batchEntry.Tool)
 	if !ok || !entry.Batchable {
 		return BatchResult{}, fmt.Errorf("tool is not batchable: %s", batchEntry.Tool)
 	}
 	raw := map[string]any{}
-	if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+	if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 		return BatchResult{}, fmt.Errorf("invalid arguments: %w", err)
 	}
 	if err := s.validateLanguageAllowed(entry, raw); err != nil {
@@ -213,6 +235,17 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
 	}
 	batchResult := resultForBatch(result, s.workDir)
+	if entry.ProjectOutput != nil {
+		projected, err := entry.ProjectOutput(result)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("project batch result for %q: %w", batchEntry.Tool, err)
+		}
+		encoded, err := json.Marshal(projected)
+		if err != nil {
+			return BatchResult{}, fmt.Errorf("encode batch result for %q: %w", batchEntry.Tool, err)
+		}
+		batchResult.Result = json.RawMessage(encoded)
+	}
 	return batchResult, nil
 }
 
@@ -328,7 +361,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
 			return response, nil
 		}
-		if err := json.Unmarshal(batchEntry.Params, &raw); err != nil {
+		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Errorf("edit %d params: invalid JSON object: %w", index, err).Error()})
 			return response, nil
@@ -390,10 +423,10 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		return response, nil
 	}
 
-	verifyEntry, ok := s.registry.LookupMCP("semantic_verify")
+	verifyEntry, ok := s.registry.LookupMCP(semanticVerifyToolName)
 	if !ok {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: "verification operation is not registered"})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: "verification operation is not registered"})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
@@ -406,21 +439,21 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}, verifyEntry.Key, verifyRaw)
 	if err != nil {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: err.Error()})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: err.Error()})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil //nolint:nilerr // Batch results carry the failure and final diff.
 	}
 	verifyResult, ok := verified.(operation.VerifyRes)
 	if !ok {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: fmt.Sprintf("unexpected verification result type %T", verified)})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
 	response.Verification = &verifyResult
 	if verifyResult.Failure != "" {
 		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "semantic_verify", Status: "error", Error: verifyResult.Failure})
+		response.Results = append(response.Results, BatchResult{Tool: semanticVerifyToolName, Status: "error", Error: verifyResult.Failure})
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}

@@ -15,21 +15,24 @@ import (
 
 // Entry is the type-erased view of an operation stored in the registry.
 type Entry struct {
-	Key           string
-	Summary       string
-	Params        []ParameterContract
-	Level         Level
-	CLIName       string
-	MCPName       string
-	PlacementKey  bool
-	Batchable     bool
-	BufferedBatch bool
-	ReadOnly      bool
-	Languages     []backend.LanguageID
-	ExampleRaw    map[string]any
-	Parse         func(map[string]any) (any, error)
-	Invoke        func(CallContext, map[string]any) (any, error)
-	Format        func(any) (string, error)
+	Key            string
+	Summary        string
+	Params         []ParameterContract
+	Level          Level
+	CLIName        string
+	MCPName        string
+	PlacementKey   bool
+	Batchable      bool
+	BufferedBatch  bool
+	ReadOnly       bool
+	Languages      []backend.LanguageID
+	ExampleRaw     map[string]any
+	Output         *OperationOutputContract
+	FinalizeOutput func(CallContext, map[string]any, any) (any, error)
+	ProjectOutput  func(any) (any, error)
+	Parse          func(map[string]any) (any, error)
+	Invoke         func(CallContext, map[string]any) (any, error)
+	Format         func(any) (string, error)
 }
 
 // SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.
@@ -74,6 +77,11 @@ type Def[Req any, Res any] struct {
 	Handlers       map[backend.LanguageID]func(context.Context, CallContext, Req) (Res, error)
 	Format         func(Res) (string, error)
 	ExampleRaw     map[string]any
+	Output         *OperationOutputContract
+	// FinalizeOutput runs after the handler and mutation observer, before any ingress emits the result.
+	FinalizeOutput func(CallContext, Req, Res) (Res, error)
+	// ProjectOutput explicitly converts a native result into the declared JSON-facing result shape.
+	ProjectOutput func(Res) (any, error)
 }
 
 // Level identifies the scope an operation acts upon.
@@ -88,6 +96,10 @@ const (
 	LevelBuild Level = "build"
 	// LevelWorkspace marks operations spanning the workspace.
 	LevelWorkspace Level = "workspace"
+	// ParamObject accepts a closed JSON object validated by Schema.
+	ParamObject = "object"
+	// ParamArray accepts a typed JSON array validated by Schema.
+	ParamArray = "array"
 )
 
 // Parameter value types accepted by ParameterContract.
@@ -115,6 +127,8 @@ type ParameterContract struct {
 	DynamicEnums func(backend.Backend) []string
 	// SourceFields names top-level structured output fields that can feed this parameter.
 	SourceFields []string
+	Schema       *ValueSchema
+	Role         ParameterRole
 }
 
 // Registry stores operations indexed by key, MCP tool name, and CLI command name.
@@ -143,6 +157,22 @@ func NewRegistry() *Registry {
 // It is a function rather than a Registry method because Go methods cannot declare type parameters.
 // Type erasure lives only in the Parse, Invoke, and Format closures built here.
 func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
+	if err := ValidateParameterContracts(def.Params); err != nil {
+		return fmt.Errorf("register %q parameters: %w", def.Key, err)
+	}
+	if def.Output != nil {
+		if err := ValidateOutputContract(*def.Output); err != nil {
+			return fmt.Errorf("register %q output contract: %w", def.Key, err)
+		}
+		if (def.Output.ResultSchema != nil || len(def.Output.Continuations) > 0) && def.ProjectOutput == nil {
+			return fmt.Errorf("register %q typed output requires a projector: %w", def.Key, ErrInvalidDefinition)
+		}
+		if def.ProjectOutput != nil && def.Output.ResultSchema == nil {
+			return fmt.Errorf("register %q output projector requires a result schema: %w", def.Key, ErrInvalidDefinition)
+		}
+	} else if def.ProjectOutput != nil {
+		return fmt.Errorf("register %q output projector requires an output contract: %w", def.Key, ErrInvalidDefinition)
+	}
 	if registry == nil {
 		return fmt.Errorf("register %q: %w", def.Key, ErrInvalidDefinition)
 	}
@@ -180,7 +210,11 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 		ReadOnly:      def.ReadOnly,
 		Languages:     languages,
 		ExampleRaw:    cloneRaw(def.ExampleRaw),
+		Output:        def.Output,
 		Parse: func(raw map[string]any) (any, error) {
+			if err := ValidateParameterValues(raw, def.Params); err != nil {
+				return nil, err
+			}
 			request, err := def.Parse(raw)
 			if err != nil {
 				return nil, err
@@ -188,6 +222,9 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			return request, nil
 		},
 		Invoke: func(cc CallContext, raw map[string]any) (any, error) {
+			if err := ValidateParameterValues(raw, def.Params); err != nil {
+				return nil, err
+			}
 			request, err := def.Parse(raw)
 			if err != nil {
 				return nil, err
@@ -253,6 +290,8 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 			return def.Format(result)
 		},
 	}
+	entry.FinalizeOutput = finalizeOutputHook(def)
+	entry.ProjectOutput = projectOutputHook(def)
 	registry.byKey[entry.Key] = entry
 	if entry.MCPName != "" {
 		registry.byMCP[entry.MCPName] = entry
@@ -355,4 +394,42 @@ func invokeHandler[Req any, Res any](ctx context.Context, cc CallContext, reques
 		}
 	}
 	return handler(ctx, cc, request)
+}
+
+func finalizeOutputHook[Req any, Res any](def Def[Req, Res]) func(CallContext, map[string]any, any) (any, error) {
+	if def.FinalizeOutput == nil {
+		return nil
+	}
+	return func(cc CallContext, raw map[string]any, value any) (any, error) {
+		request, err := def.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("finalize %q request: %w", def.Key, err)
+		}
+		result, ok := value.(Res)
+		if !ok {
+			return nil, fmt.Errorf("finalize %q: unexpected result type %T: %w", def.Key, value, ErrInvalidDefinition)
+		}
+		finalized, err := def.FinalizeOutput(cc, request, result)
+		if err != nil {
+			return nil, fmt.Errorf("finalize %q output: %w", def.Key, err)
+		}
+		return finalized, nil
+	}
+}
+
+func projectOutputHook[Req any, Res any](def Def[Req, Res]) func(any) (any, error) {
+	if def.ProjectOutput == nil {
+		return nil
+	}
+	return func(value any) (any, error) {
+		result, ok := value.(Res)
+		if !ok {
+			return nil, fmt.Errorf("project %q: unexpected result type %T: %w", def.Key, value, ErrInvalidDefinition)
+		}
+		projected, err := def.ProjectOutput(result)
+		if err != nil {
+			return nil, fmt.Errorf("project %q result: %w", def.Key, err)
+		}
+		return normalizeAndValidateOutput(projected, def.Output)
+	}
 }

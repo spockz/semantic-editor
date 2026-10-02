@@ -26,6 +26,7 @@ type flagValues struct {
 	bools   map[string]*bool
 	slices  map[string]*[]string
 	ints    map[string]*int
+	json    map[string]*string
 }
 
 func stringDefault(value any) string {
@@ -44,11 +45,14 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 	values.bools = map[string]*bool{}
 	values.slices = map[string]*[]string{}
 	values.ints = map[string]*int{}
+	values.json = map[string]*string{}
 	for _, param := range params {
 		if param.CLIName == "" {
 			continue
 		}
 		switch param.Type {
+		case operation.ParamObject, operation.ParamArray:
+			values.json[param.CLIName] = cmd.Flags().String(param.CLIName, "", param.Description+" (JSON value)")
 		case operation.ParamBoolean:
 			values.bools[param.CLIName] = cmd.Flags().Bool(param.CLIName, boolDefault(param.Default), param.Description)
 		case operation.ParamStringSlice:
@@ -62,13 +66,30 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 }
 
 // rawParams translates flag values to the JSONName-keyed raw map consumed by Parse.
-func rawParams(entry operation.Entry, values *flagValues) map[string]any {
+func rawParams(entry operation.Entry, values *flagValues, flagChanged func(string) bool) (map[string]any, error) {
 	raw := make(map[string]any, len(entry.Params))
 	for _, param := range entry.Params {
 		if param.CLIName == "" {
 			continue
 		}
 		switch param.Type {
+		case operation.ParamObject, operation.ParamArray:
+			if variable, ok := values.json[param.CLIName]; ok && (*variable != "" || (flagChanged != nil && flagChanged(param.CLIName))) {
+				decoder := json.NewDecoder(strings.NewReader(*variable))
+				decoder.UseNumber()
+				var decoded any
+				if err := decoder.Decode(&decoded); err != nil {
+					return nil, fmt.Errorf("decode --%s JSON value: %w", param.CLIName, err)
+				}
+				var trailing any
+				if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+					if err == nil {
+						return nil, fmt.Errorf("decode --%s JSON value: multiple values", param.CLIName)
+					}
+					return nil, fmt.Errorf("decode --%s JSON value trailing data: %w", param.CLIName, err)
+				}
+				raw[param.JSONName] = decoded
+			}
 		case operation.ParamBoolean:
 			if variable, ok := values.bools[param.CLIName]; ok {
 				raw[param.JSONName] = *variable
@@ -87,7 +108,7 @@ func rawParams(entry operation.Entry, values *flagValues) map[string]any {
 			}
 		}
 	}
-	return raw
+	return raw, nil
 }
 
 func writeMavenFailure(stderr io.Writer, err error) (bool, error) {
@@ -268,7 +289,11 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cc := operation.NewCallContext(workDir, backend.ProjectContext{})
 			cc.Ctx = cmd.Context()
-			result, err := registry.Dispatch(cc, entry.Key, rawParams(entry, values))
+			raw, err := rawParams(entry, values, func(name string) bool { return cmd.Flags().Changed(name) })
+			if err != nil {
+				return err
+			}
+			result, err := registry.Dispatch(cc, entry.Key, raw)
 			if err != nil {
 				written, writeErr := writeMavenFailure(cmd.ErrOrStderr(), err)
 				if writeErr != nil {
