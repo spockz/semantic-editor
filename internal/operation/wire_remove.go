@@ -215,7 +215,7 @@ func removeDef() Def[RemoveReq, RemoveRes] {
 			removeChecksRun:        {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
 			"refusal":              {Kind: SchemaString},
 			"diff":                 {Kind: SchemaString},
-			removeDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", "unavailable"}},
+			removeDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", diagnosticStatusUnavailable}},
 			removeDiagnosticDelta:  diagnosticDeltaSchema(),
 		}, Required: []string{"status", removeSafeDelete, removeChecksRun, "diff", removeDiagnosticStatus, removeDiagnosticDelta}}},
 		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
