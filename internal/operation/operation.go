@@ -15,24 +15,26 @@ import (
 
 // Entry is the type-erased view of an operation stored in the registry.
 type Entry struct {
-	Key            string
-	Summary        string
-	Params         []ParameterContract
-	Level          Level
-	CLIName        string
-	MCPName        string
-	PlacementKey   bool
-	Batchable      bool
-	BufferedBatch  bool
-	ReadOnly       bool
-	Languages      []backend.LanguageID
-	ExampleRaw     map[string]any
-	Output         *OperationOutputContract
-	FinalizeOutput func(CallContext, map[string]any, any) (any, error)
-	ProjectOutput  func(any) (any, error)
-	Parse          func(map[string]any) (any, error)
-	Invoke         func(CallContext, map[string]any) (any, error)
-	Format         func(any) (string, error)
+	Key                string
+	Summary            string
+	Params             []ParameterContract
+	Level              Level
+	CLIName            string
+	MCPName            string
+	PlacementKey       bool
+	Batchable          bool
+	BufferedBatch      bool
+	ReadOnly           bool
+	Languages          []backend.LanguageID
+	ExampleRaw         map[string]any
+	Output             *OperationOutputContract
+	ErrorOutput        *OperationErrorOutputContract
+	FinalizeOutput     func(CallContext, map[string]any, any) (any, error)
+	ProjectOutput      func(any) (any, error)
+	ProjectErrorOutput func(error) (value any, known bool, err error)
+	Parse              func(map[string]any) (any, error)
+	Invoke             func(CallContext, map[string]any) (any, error)
+	Format             func(any) (string, error)
 }
 
 // SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.
@@ -78,10 +80,13 @@ type Def[Req any, Res any] struct {
 	Format         func(Res) (string, error)
 	ExampleRaw     map[string]any
 	Output         *OperationOutputContract
+	ErrorOutput    *OperationErrorOutputContract
 	// FinalizeOutput runs after the handler and mutation observer, before any ingress emits the result.
 	FinalizeOutput func(CallContext, Req, Res) (Res, error)
 	// ProjectOutput explicitly converts a native result into the declared JSON-facing result shape.
 	ProjectOutput func(Res) (any, error)
+	// ProjectErrorOutput projects known operation state carried by an error without changing dispatch error semantics.
+	ProjectErrorOutput func(error) (value any, known bool, err error)
 }
 
 // Level identifies the scope an operation acts upon.
@@ -160,18 +165,8 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 	if err := ValidateParameterContracts(def.Params); err != nil {
 		return fmt.Errorf("register %q parameters: %w", def.Key, err)
 	}
-	if def.Output != nil {
-		if err := ValidateOutputContract(*def.Output); err != nil {
-			return fmt.Errorf("register %q output contract: %w", def.Key, err)
-		}
-		if (def.Output.ResultSchema != nil || len(def.Output.Continuations) > 0) && def.ProjectOutput == nil {
-			return fmt.Errorf("register %q typed output requires a projector: %w", def.Key, ErrInvalidDefinition)
-		}
-		if def.ProjectOutput != nil && def.Output.ResultSchema == nil {
-			return fmt.Errorf("register %q output projector requires a result schema: %w", def.Key, ErrInvalidDefinition)
-		}
-	} else if def.ProjectOutput != nil {
-		return fmt.Errorf("register %q output projector requires an output contract: %w", def.Key, ErrInvalidDefinition)
+	if err := validateDefOutput(def); err != nil {
+		return err
 	}
 	if registry == nil {
 		return fmt.Errorf("register %q: %w", def.Key, ErrInvalidDefinition)
@@ -211,6 +206,7 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 		Languages:     languages,
 		ExampleRaw:    cloneRaw(def.ExampleRaw),
 		Output:        def.Output,
+		ErrorOutput:   def.ErrorOutput,
 		Parse: func(raw map[string]any) (any, error) {
 			if err := ValidateParameterValues(raw, def.Params); err != nil {
 				return nil, err
@@ -292,12 +288,44 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 	}
 	entry.FinalizeOutput = finalizeOutputHook(def)
 	entry.ProjectOutput = projectOutputHook(def)
+	entry.ProjectErrorOutput = projectErrorOutputHook(def)
 	registry.byKey[entry.Key] = entry
 	if entry.MCPName != "" {
 		registry.byMCP[entry.MCPName] = entry
 	}
 	if entry.CLIName != "" {
 		registry.byCLI[entry.CLIName] = entry
+	}
+	return nil
+}
+
+func validateDefOutput[Req any, Res any](def Def[Req, Res]) error {
+	if def.Output == nil {
+		if def.ProjectOutput != nil {
+			return fmt.Errorf("register %q output projector requires an output contract: %w", def.Key, ErrInvalidDefinition)
+		}
+	} else {
+		if err := ValidateOutputContract(*def.Output); err != nil {
+			return fmt.Errorf("register %q output contract: %w", def.Key, err)
+		}
+		if (def.Output.ResultSchema != nil || len(def.Output.Continuations) > 0) && def.ProjectOutput == nil {
+			return fmt.Errorf("register %q typed output requires a projector: %w", def.Key, ErrInvalidDefinition)
+		}
+		if def.ProjectOutput != nil && def.Output.ResultSchema == nil {
+			return fmt.Errorf("register %q output projector requires a result schema: %w", def.Key, ErrInvalidDefinition)
+		}
+	}
+	if def.ProjectErrorOutput == nil {
+		if def.ErrorOutput != nil {
+			return fmt.Errorf("register %q error output schema requires an error projector: %w", def.Key, ErrInvalidDefinition)
+		}
+		return nil
+	}
+	if def.ErrorOutput == nil || def.ErrorOutput.ResultSchema == nil {
+		return fmt.Errorf("register %q error projector requires an error output schema: %w", def.Key, ErrInvalidDefinition)
+	}
+	if err := validateErrorOutputSchema(def.ErrorOutput.ResultSchema); err != nil {
+		return fmt.Errorf("register %q error output contract: %w", def.Key, err)
 	}
 	return nil
 }
@@ -431,5 +459,28 @@ func projectOutputHook[Req any, Res any](def Def[Req, Res]) func(any) (any, erro
 			return nil, fmt.Errorf("project %q result: %w", def.Key, err)
 		}
 		return normalizeAndValidateOutput(projected, def.Output)
+	}
+}
+
+func projectErrorOutputHook[Req any, Res any](def Def[Req, Res]) func(error) (any, bool, error) {
+	if def.ProjectErrorOutput == nil {
+		return nil
+	}
+	return func(err error) (any, bool, error) {
+		projected, known, projectErr := def.ProjectErrorOutput(err)
+		if projectErr != nil {
+			return nil, false, fmt.Errorf("project %q error result: %w", def.Key, projectErr)
+		}
+		if !known {
+			return nil, false, nil
+		}
+		validated, validationErr := normalizeAndValidateOutput(projected, &OperationOutputContract{ResultSchema: def.ErrorOutput.ResultSchema})
+		if validationErr != nil {
+			return nil, false, fmt.Errorf("validate %q error result: %w", def.Key, validationErr)
+		}
+		if liveFieldErr := rejectLiveErrorFields(validated, "result"); liveFieldErr != nil {
+			return nil, false, fmt.Errorf("validate %q error result: %w", def.Key, liveFieldErr)
+		}
+		return validated, true, nil
 	}
 }

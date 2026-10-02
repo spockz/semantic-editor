@@ -44,10 +44,10 @@ func InspectProjectionSchema() ValueSchema {
 	return ValueSchema{
 		Kind: SchemaObject,
 		Properties: map[string]ValueSchema{
-			"inspection":    stringSchema,
-			"continuations": {Kind: SchemaArray, Items: &continuationSchema},
+			"inspection":           stringSchema,
+			errorContinuationField: {Kind: SchemaArray, Items: &continuationSchema},
 		},
-		Required: []string{"inspection", "continuations"},
+		Required: []string{"inspection", errorContinuationField},
 	}
 }
 

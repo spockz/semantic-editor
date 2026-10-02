@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/token"
 	"path/filepath"
+	"slices"
 )
 
 // CallSiteSelector addresses one call site in its owning function.
@@ -20,8 +21,6 @@ import (
 // FileRevision binds one project-relative path to an opaque content revision.
 
 // EditStatus records the actual working-buffer and disk publication outcome.
-
-// EditReceipt reports changed revisions, the complete analysis read set, and live targets.
 
 // EditPartiallyPublished means some publication completed before another part failed.
 const EditPartiallyPublished EditStatus = "partially_published"
@@ -78,6 +77,11 @@ type OperationOutputContract struct {
 	Continuations []OutputContinuation `json:"continuations,omitempty"`
 }
 
+// OperationErrorOutputContract declares a private typed projection for known operation errors.
+type OperationErrorOutputContract struct {
+	ResultSchema *ValueSchema
+}
+
 // OutputContinuation describes one complete live result field and its compatible consumers.
 type OutputContinuation struct {
 	Field     string        `json:"field,omitempty"`
@@ -85,6 +89,7 @@ type OutputContinuation struct {
 	Schema    ValueSchema   `json:"schema"`
 	Role      ParameterRole `json:"role"`
 	Consumers []string      `json:"consumers"`
+	Optional  bool          `json:"optional,omitempty"`
 }
 
 // ParameterRole classifies a parameter effect on target selection or caller policy.
@@ -449,7 +454,7 @@ func EditReceiptSchema() ValueSchema {
 		"operation":      text,
 		"changes":        revisions,
 		"read_set":       revisions,
-		"continuations":  continuations,
+		errorContinuationField: continuations,
 	}, Required: []string{"schema_version", "status", "operation"}}
 }
 
@@ -489,6 +494,9 @@ func ValidateOutputContract(contract OperationOutputContract) error {
 			}
 			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
 				return fmt.Errorf("continuation field %q schema disagrees with its result field", continuation.Field)
+			}
+			if continuation.Optional && slices.Contains(contract.ResultSchema.Required, continuation.Field) {
+				return fmt.Errorf("optional continuation field %q is required by its result schema", continuation.Field)
 			}
 		}
 		if _, ok := seenFields[identity]; ok {
