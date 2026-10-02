@@ -42,6 +42,8 @@ type BatchResult struct {
 	InFunction       string `json:"in_function,omitempty"`
 	Discriminator    string `json:"discriminator,omitempty"`
 	DiagnosticStatus string `json:"diagnostic_status,omitempty"`
+	ApplicationState string `json:"application_state,omitempty"`
+	ProjectionError  string `json:"projection_error,omitempty"`
 	DestinationFile  string `json:"destination_file,omitempty"`
 	Status           string `json:"status"`
 	Diff             string `json:"diff,omitempty"`
@@ -233,7 +235,29 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		DeferVerification: true,
 	}, entry.Key, raw)
 	if err != nil {
-		return batchMoveReceipt(batchEntry.Tool, raw, s.workDir), err
+		batchResult := batchMoveReceipt(batchEntry.Tool, raw, s.workDir)
+		batchResult.ApplicationState = "unknown"
+		if entry.ProjectErrorOutput != nil {
+			projected, known, projectErr := entry.ProjectErrorOutput(err)
+			if projectErr != nil {
+				batchResult.ProjectionError = projectErr.Error()
+			} else if known {
+				encoded, encodeErr := json.Marshal(projected)
+				if encodeErr != nil {
+					batchResult.ProjectionError = fmt.Sprintf("encode known error projection: %v", encodeErr)
+				} else {
+					batchResult.Result = json.RawMessage(encoded)
+					if projection, ok := projected.(map[string]any); ok {
+						if state, ok := projection[applicationStateField].(string); ok {
+							batchResult.ApplicationState = state
+						} else if projection["status"] == "refused" && projection["safe_delete"] == true {
+							batchResult.ApplicationState = "not_applied"
+						}
+					}
+				}
+			}
+		}
+		return batchResult, err
 	}
 	batchResult := resultForBatch(result, s.workDir)
 	if entry.ProjectOutput != nil {
@@ -330,23 +354,51 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		s.sendToolErrorWithTiming(id, fmt.Sprintf("batch execution error: %v", err), timing, err)
 		return
 	}
+	for index := range response.Results {
+		if response.Results[index].Status == "error" && response.Results[index].ApplicationState == "" {
+			response.Results[index].ApplicationState = "unknown"
+		}
+	}
 	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
-	text, err := json.MarshalIndent(response, "", "  ")
+	bodyBytes, err := json.MarshalIndent(response, "", "  ")
 	finishResponse()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, fmt.Sprintf("serialization error: %v", err), timing, err)
 		return
 	}
+	structured := timing.structuredContentWithResult(response)
+	critical, err := criticalText(structured, string(bodyBytes))
+	if err != nil {
+		structured["presentation_error"] = err.Error()
+		critical = criticalTextFallback(structured, string(bodyBytes), err)
+	} else if response.Status == "error" || len(response.Results) > 0 {
+		note := "Batch child results are intermediate and do not provide final continuation targets."
+		if response.Verification != nil {
+			if response.Verification.Failure != "" {
+				note += " Verification failed: " + response.Verification.Failure
+			} else {
+				note += fmt.Sprintf(" Verification returned %d diagnostics.", len(response.Verification.Diagnostics))
+			}
+		}
+		prefix, remainder, found := strings.Cut(critical, "\n\n")
+		if found {
+			critical = note + "\n\n" + prefix + "\n\n" + remainder
+		}
+	}
+	s.recordToolMetrics(timing)
 	if response.Status == "error" {
-		s.recordToolMetrics(timing)
 		s.sendResult(id, map[string]any{
-			"content":            []map[string]any{{"type": "text", "text": string(text)}},
+			"content":            []map[string]any{{"type": "text", "text": critical}},
 			"isError":            true,
-			structuredContentKey: timing.structuredContentWithResult(response),
+			structuredContentKey: structured,
 		})
 		return
 	}
-	s.sendToolSuccessWithTimingAndResult(id, string(text), response, timing)
+	s.sendResult(id, map[string]any{
+		"content":            []map[string]any{{"type": "text", "text": critical}},
+		"isError":            false,
+		structuredContentKey: structured,
+	})
 }
 
 func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {

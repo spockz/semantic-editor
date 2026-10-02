@@ -239,7 +239,9 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					assertContractOutputSchema(t, name, tool["outputSchema"])
 				case "semantic_inline_function", "semantic_migrate_type":
 					assertSemanticEditReceiptOutputSchema(t, name, tool["outputSchema"])
-				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
+				case "semantic_rename", "semantic_organize_imports":
+					assertTypedOutcomeOrLegacyStringSchema(t, name, tool["outputSchema"])
+				case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 					for _, field := range map[string][]string{
@@ -374,14 +376,50 @@ func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
 		t.Fatalf("outputSchema required = %#v, want result only", got)
 	}
 	properties := schema["properties"].(map[string]any)
+	if got := properties["application_state"].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("application_state schema = %#v, want string", properties["application_state"])
+	}
 	if got := properties["result"].(map[string]any)["type"]; got != resultType {
 		t.Fatalf("outputSchema result type = %#v, want %s", got, resultType)
+	}
+	if got := properties["diagnostic_status"].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("diagnostic_status schema = %#v, want string", properties["diagnostic_status"])
+	}
+	if got := properties["diagnostic_delta"].(map[string]any)["type"]; got != "object" {
+		t.Fatalf("diagnostic_delta schema = %#v, want object", properties["diagnostic_delta"])
 	}
 	if _, ok := properties["metrics"]; ok {
 		t.Fatalf("standard outputSchema must not include per-call metrics: %#v", properties["metrics"])
 	}
 	if _, ok := properties["session_metrics"]; ok {
 		t.Fatalf("standard outputSchema must not include session metrics: %#v", properties["session_metrics"])
+	}
+}
+
+func assertTypedOutcomeOrLegacyStringSchema(t *testing.T, name string, raw any) {
+	t.Helper()
+	schema, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("%s outputSchema = %#v, want object", name, raw)
+	}
+	properties := schema["properties"].(map[string]any)
+	result := properties["result"].(map[string]any)
+	entry, ok := operation.DefaultRegistry().LookupMCP(name)
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
+		assertStandardOutputSchema(t, raw, "string")
+		return
+	}
+	want, err := entry.Output.ResultSchema.JSONSchema()
+	if err != nil {
+		t.Fatalf("%s registered result schema: %v", name, err)
+	}
+	wantType, ok := want["type"].(string)
+	if !ok {
+		t.Fatalf("%s registered result schema omitted type: %#v", name, want)
+	}
+	assertStandardOutputSchema(t, raw, wantType)
+	if !reflect.DeepEqual(result, want) {
+		t.Fatalf("%s advertised result schema = %#v, want registered schema %#v", name, result, want)
 	}
 }
 
@@ -1083,7 +1121,7 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		if origin["type"] != "string" || !strings.Contains(origin["description"].(string), "evidence only") {
 			t.Fatalf("origin_file result schema = %#v, want historical evidence", origin)
 		}
-		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "equals the live") {
+		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "intermediate result rather than the final workspace target") {
 			t.Fatalf("destination_file result schema = %#v, want destination evidence", destination)
 		}
 		return
@@ -1413,8 +1451,8 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	result := inspected["result"].(map[string]any)
 	structured := result["structuredContent"].(map[string]any)["result"].(map[string]any)
 	inspection := structured["inspection"].(string)
-	if got := result["content"].([]any)[0].(map[string]any)["text"]; got != inspection {
-		t.Fatalf("CLI-compatible inspection text = %#v, projected inspection = %#v", got, inspection)
+	if got := result["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(got, "Critical result (JSON): ") || !strings.HasSuffix(got, inspection) {
+		t.Fatalf("inspection text must prefix critical result and retain formatter body: %#v", got)
 	}
 	records := structured["continuations"].([]any)
 	if len(records) != 1 {

@@ -1,5 +1,37 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## Critical text worker: semantic batch verification refused workspace hook
+
+- Tool: `semantic_batch` with two `semantic_insert_function` edits.
+- Target: `internal/mcp/presentation.go`; verification also formatted four unrelated hidden tests under `testdata/bench-oracles/task-12-request-identity-migration`.
+- Observed failure: both insertions persisted, then automatic verification refused the configured `golangci-lint` hook because workspace trust was absent. It also reordered imports in four unrelated fixture files and reported semantic/type diagnostics after insertion; whether those diagnostics predated the attempt is unverified.
+- Workaround: record the event, restore only the four unrelated import blocks from the captured preimage, then use the repository's trusted `make check` gate and explicitly organize imports in the target file.
+- Root cause: batch final verification requires trust for the configured hook, while its normalization ran before that refusal and was not scoped to changed files.
+
+## Critical text worker: semantic function insertion rejected two declarations
+
+- Tool: `semantic_insert_function`.
+- Target: `internal/mcp/presentation.go`.
+- Observed failure: the snippet contained two functions; the tool accepts exactly one declaration, and no source mutation occurred.
+- Workaround: insert the two helper functions sequentially with `semantic_batch`.
+- Root cause: the insertion operation validates one declaration per call.
+
+## Critical text worker: batch executor symbol lookup missed
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/mcp/batch.go`, selector `Server.executeBatchEntry`.
+- Observed failure: symbol not found; no source mutation occurred.
+- Workaround: use `semantic_outline` for `internal/mcp/batch.go` and inspect its actual declarations.
+- Root cause: the guessed method name did not match the implementation's symbol name.
+
+## Critical text worker: semantic mutation targeted coordinator checkout
+
+- Tool: `semantic_scaffold_file` followed by `semantic_batch` in the shared semedit MCP connector.
+- Target: coordinator checkout `internal/mcp/presentation.go` and four hidden test import blocks, instead of the assigned `.scratch/worktrees/critical-text-presentation` worktree.
+- Observed failure: the semedit connector resolved its workspace to the coordinator checkout even though the shell was in the assigned worker worktree; the mutations and verification therefore ran against the wrong tree. The coordinator recovered the helper as a scratch artifact and restored the captured import changes.
+- Workaround: stop semantic MCP mutations and invoke the semantic CLI through `exec_command` with the exact worktree as `workdir` and a worktree-local Go build cache.
+- Root cause: the MCP semantic tools do not expose a workspace-root selector in this sub-agent context.
+
 ## Retrospective: inspection guessed the verification handler name
 
 - Tool: `semantic_inspect_symbol`.
