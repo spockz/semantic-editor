@@ -61,7 +61,7 @@ following conditions:
   the owner body contains no comments. This avoids changing closure scope,
   misclassifying map-literal key identifiers, or guessing comment ownership.
 * The generated helper name is a valid simple identifier and does not collide
-  with a package declaration or same-receiver method.
+  with a package declaration, same-receiver method, or predeclared Go identifier.
 
 The typed output receipt reports the publication state, changed file revision,
 and analysis read set. Standalone function extraction returns the live helper in

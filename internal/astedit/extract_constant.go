@@ -10,10 +10,15 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
+
+	"semedit/internal/gocache"
+
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -137,7 +142,28 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 }
 
 func loadConstantPackage(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
-	config := &packages.Config{Context: ctx, Dir: dir, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
+	environment, err := gocache.Environment(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare constant extraction Go environment: %w", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read constant extraction package directory: %w", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		info, statErr := os.Lstat(path)
+		if statErr != nil {
+			return nil, fmt.Errorf("inspect constant extraction package source %q: %w", path, statErr)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return nil, fmt.Errorf("constant extraction refuses symlinked Go package source %q", path)
+		}
+	}
+	config := &packages.Config{Context: ctx, Dir: dir, Env: environment, BuildFlags: []string{"-mod=readonly"}, Tests: true, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
 	loaded, err := packages.Load(config, ".")
 	if err != nil {
 		return nil, fmt.Errorf("load Go package for constant extraction: %w", err)
@@ -145,10 +171,26 @@ func loadConstantPackage(ctx context.Context, dir string, overlay map[string][]b
 	if len(loaded) == 0 {
 		return nil, fmt.Errorf("load Go package for constant extraction: no package found")
 	}
+	primary := make([]*packages.Package, 0, 1)
 	for _, pkg := range loaded {
 		for _, item := range pkg.Errors {
 			return nil, fmt.Errorf("load Go package for constant extraction: %s", item.Error())
 		}
+		if !hasConstantTestFiles(pkg.CompiledGoFiles) {
+			primary = append(primary, pkg)
+		}
 	}
-	return loaded, nil
+	if len(primary) == 0 {
+		return nil, fmt.Errorf("load Go package for constant extraction: no primary package found")
+	}
+	return primary, nil
+}
+
+func hasConstantTestFiles(files []string) bool {
+	for _, path := range files {
+		if strings.HasSuffix(filepath.Base(path), "_test.go") {
+			return true
+		}
+	}
+	return false
 }

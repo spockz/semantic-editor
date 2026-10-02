@@ -417,3 +417,33 @@ func TestExtractConstantRejectsStaleRevisionWithoutWriting(t *testing.T) {
 		t.Fatalf("stale revision changed source:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
+
+func TestExtractConstantRefusesSymlinkedPackageSource(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/symlinkconstant\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	selected := []byte("package sample\nfunc Retry() int { return 3 * 60 }\n")
+	selectedPath := filepath.Join(root, "retry.go")
+	if err := os.WriteFile(selectedPath, selected, 0o600); err != nil {
+		t.Fatalf("write selected source: %v", err)
+	}
+	external := filepath.Join(t.TempDir(), "external_test.go")
+	if err := os.WriteFile(external, []byte("package sample\nconst retryWindow = 1\n"), 0o600); err != nil {
+		t.Fatalf("write external target: %v", err)
+	}
+	if err := os.Symlink(external, filepath.Join(root, "retry_test.go")); err != nil {
+		t.Fatalf("create test symlink: %v", err)
+	}
+	_, err := astedit.ExtractConstant(context.Background(), selectedPath, "Retry", "limit", astedit.ExtractConstantOptions{Discriminator: "3 * 60"})
+	if err == nil || !strings.Contains(err.Error(), "symlinked Go package source") {
+		t.Fatalf("ExtractConstant() error = %v, want symlink refusal", err)
+	}
+	after, err := os.ReadFile(selectedPath)
+	if err != nil {
+		t.Fatalf("read selected source: %v", err)
+	}
+	if string(after) != string(selected) {
+		t.Fatalf("symlink refusal changed selected source: %s", after)
+	}
+}

@@ -20,6 +20,8 @@ import (
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 
+	"semedit/internal/gocache"
+
 	"golang.org/x/tools/go/packages"
 )
 
@@ -898,7 +900,11 @@ func helperNameExists(ctx context.Context, filePath, packageName, helper string,
 }
 
 func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
-	config := &packages.Config{Context: ctx, Dir: dir, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
+	environment, err := gocache.Environment(ctx, dir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare extraction Go environment: %w", err)
+	}
+	config := &packages.Config{Context: ctx, Dir: dir, Env: environment, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
 	loaded, err := packages.Load(config, ".")
 	if err != nil {
 		return nil, fmt.Errorf("load Go package for extraction: %w", err)

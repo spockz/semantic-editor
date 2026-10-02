@@ -2042,3 +2042,83 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git could not create `.git/worktrees/flow-extraction/index.lock` because linked-worktree metadata is outside the sandbox writable root.
 - Workaround: retry the same explicit staging and commit commands with narrowly scoped access to this worktree's Git metadata.
 - Root cause: the linked worktree keeps its index outside the repository checkout's writable directory.
+
+## ST-0250: same-file batch replacement used a pre-insertion revision
+
+- Tool: `semantic_batch` with `semantic_insert_function` followed by `semantic_replace_body`.
+- Target: `internal/mcp/schema_test.go` / `schemaWorkspace`.
+- Observed failure: the insertion child returned `status=ok`; the following body replacement rejected its earlier `expected_revision` because the first child had changed that file.
+- Workaround: inspect the current file bytes, then retry the body edit using its current captured revision or omit the stale guard within the same ordered batch.
+- Root cause: the body selector was guarded by a revision captured before a preceding same-file insertion.
+
+## ST-0251: import help used the wrong checked binary path
+
+- Tool: attempted `semedit imports --help` with a nonexistent `bin/semedit` executable.
+- Target: read-only command discovery for import organization.
+- Observed failure: the shell could not start the process; no source bytes changed.
+- Workaround: retry with the checked `bin/semedit-next` executable.
+- Root cause: the executable name was shortened incorrectly.
+
+## ST-0252: extraction-loader batch failed final verification
+
+- Tool: `semantic_batch` with two extraction loader replacements and two import-organizing children.
+- Target: `internal/astedit/extract_constant.go` and `internal/astedit/extract.go`.
+- Observed failure: the batch returned `isError=true` after reporting loader mutation children as successful; final workspace verification rejected the batch. The result output was truncated before the diagnostic summary, so the exact verifier diagnostic still needs to be read from current workspace state.
+- Workaround: inspect all affected source bytes and the final diagnostics before retrying any child.
+- Root cause: the helper changes introduced managed environment and test-variant handling before import and test validation completed.
+
+## ST-0253: test function insertion used private access for an exported test name
+
+- Tool: `semantic_insert_function` through the trusted worker MCP helper.
+- Target: `internal/astedit/extract_test.go`.
+- Observed failure: access validation refused the `Test...` function because its identifier has public casing; no source bytes changed.
+- Workaround: retry with `access=public`, matching the test function's Go identifier.
+- Root cause: Go test entry points are exported identifiers despite being test-only declarations.
+
+## ST-0254: test insertion used private placement for an exported test name
+
+- Tool: `semantic_insert_function` through the trusted worker MCP helper.
+- Target: `internal/astedit/extract_test.go`.
+- Observed failure: placement validation rejected `private_end` for the exported `Test...` identifier; no source bytes changed.
+- Workaround: retry with `public_end` and public access.
+- Root cause: insertion placement must match the declaration's exported casing.
+
+## ST-0255: make check exposed an unavailable go/packages field
+
+- Tool: repository `make check` during extraction loader validation.
+- Target: `internal/astedit/extract_constant.go`.
+- Observed failure: compilation rejected `packages.Package.ForTest` because the project-pinned `golang.org/x/tools/go/packages` does not export that field; later checks did not run.
+- Workaround: load active test variants with `Tests:true`, fail on any package analysis error, and return only the primary package variants by excluding packages whose compiled source set contains `_test.go`; the selected ordinary Go file identifies the primary analysis package.
+- Root cause: a loader detail visible in go/packages internals was assumed to be part of its public API.
+
+## ST-0256: focused Go tests used the default unwritable build cache
+
+- Tool: direct `go test ./internal/astedit ./internal/operation -count=1`.
+- Target: focused extraction implementation tests.
+- Observed failure: the Go tool attempted to open build-cache files under `/Users/alessandro/Library/Caches/go-build` and the sandbox denied access; tests did not run.
+- Workaround: rerun with an explicit worktree-local `GOCACHE` and the configured module cache.
+- Root cause: the focused-test command set `GOMODCACHE` but did not set `GOCACHE` to the task's writable cache.
+
+## ST-0257: documentation update used an outdated ADR sentence
+
+- Tool: atomic documentation update script.
+- Target: `docs/adr/0059-bounded-go-extract-variable.md`.
+- Observed failure: the script stopped because the expected sentence did not exactly match the current ADR; no target documentation file was changed.
+- Workaround: inspect the current ADR wording and retry with its exact text.
+- Root cause: the documentation replacement pattern was taken from the earlier research handover rather than the accepted ADR's current wording.
+
+## ST-0258: ADR update used an outdated helper-collision bullet
+
+- Tool: atomic documentation update script.
+- Target: `docs/adr/0056-go-call-statement-extraction.md`.
+- Observed failure: the script stopped because the expected helper-collision bullet did not match current line wrapping; earlier ADR-0059 and index updates had already completed.
+- Workaround: inspect the exact helper-collision bullet and apply only that remaining update.
+- Root cause: the replacement pattern assumed different Markdown wrapping in the accepted ADR.
+
+## ST-0259: staging owned files could not update linked-worktree index
+
+- Tool: explicit-path `git add` for extraction-owned implementation and documentation files.
+- Target: this worktree's linked Git index.
+- Observed failure: Git could not create `.git/worktrees/flow-extraction/index.lock` because linked-worktree metadata is outside the sandbox writable root; no files were staged.
+- Workaround: retry the same explicit staging command with narrowly scoped access to this worktree's Git metadata.
+- Root cause: the linked worktree stores its index in the shared repository metadata directory.

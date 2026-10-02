@@ -376,6 +376,7 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 func schemaWorkspace(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
+	writeTestGoModule(t, root)
 	for name, source := range map[string]string{"main.go": "package sample\n", "Main.java": "class Main {}\n"} {
 		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
 			t.Fatal(err)
@@ -883,6 +884,13 @@ func assertInspectOutputSchema(t *testing.T, outputSchema any) {
 	}
 	if !reflect.DeepEqual(items["required"], []any{"file", "symbol", "expected_revision"}) {
 		t.Errorf("inspection continuation required = %#v", items["required"])
+	}
+}
+
+func writeTestGoModule(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/mcpfixture\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatalf("write fixture module: %v", err)
 	}
 }
 
