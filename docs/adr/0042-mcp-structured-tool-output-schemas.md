@@ -62,13 +62,19 @@ essential fields to both representations, exclude stale or deleted targets
 from live continuations, and retain any historical evidence with an explicit
 label.
 
-The essential text prefix starts with `Critical result (JSON):` followed by
+The shared essential text prefix starts with `Critical result (JSON):` followed by
 compact JSON and a blank line before the existing formatted body. It preserves
 the exact essential values and record order from the validated structured
 projection. Outcomes and continuations precede bulk source, diffs, and logs;
 the prefix excludes those bulk payloads rather than repeating them. Numeric
 values must survive serialization without conversion through floating point.
 Presentation budgets remain open, and client truncation can still hide fields.
+
+Batch text first labels child results as intermediate evidence. Its critical
+projection omits child continuation records because later edits and publication
+can invalidate them. Literal artifacts, such as a feedback draft, retain their
+requested text when its leading summary already exposes the complete outcome
+and limitations; they do not need a duplicate JSON wrapper.
 
 Known error outcomes use an opt-in operation-owned error projector paired with
 a private result schema. Registration and runtime validation reject live
@@ -78,6 +84,10 @@ successful result schema. An unmatched error reports unknown application
 state. A failed error projector retains the original operation error and
 reports the projection failure; it does not replace the operation failure.
 This leaves registry dispatch error semantics unchanged.
+
+Batch child result schemas accept the separately validated successful and known
+error projections. Their union uses `anyOf` because those shapes can overlap;
+the child's status and original error still distinguish the outcome.
 
 ## Invariants
 

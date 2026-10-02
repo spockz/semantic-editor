@@ -3202,6 +3202,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Root cause: MCP tools have session-bound workspace scope, while a worker's
   shell working directory does not redirect that shared connection. The
   worker failed to follow its handover's worktree-local CLI requirement.
+
 ## Track B semantic lookup: ProjectOutput field lookup failed
 
 - Date: 2026-10-02

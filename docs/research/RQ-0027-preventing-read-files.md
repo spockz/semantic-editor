@@ -1253,8 +1253,46 @@ outcome evidence, with isolated workers and coordinator review.
   known changes precede bulk diffs; child selectors are intermediate evidence,
   with no new promise that they remain live after final publication.
 
-Implementation verification is pending. The required proof remains real
-CLI/MCP execution for inspection, receipt-bearing edits, post-rename identity,
-actual import writes and partial failures, removal schema conformance, timing
-records, and batch failure/publication ordering. Provenance enforcement and
-presentation budget experiments remain open independently of these repairs.
+The confirmed omissions are implemented. `internal/mcp/presentation.go` projects
+validated essentials into the shared text prefix, preserving integer precision
+and continuation record order. Direct typed operations replace legacy guessed
+aliases. Ambiguous lookups suppress query-derived aliases and retain their
+candidate list in the leading text. Operation-owned outcomes report actual import writes and known partial
+errors; removal success now uses its advertised object schema. Rename resolves
+the post-edit qualified identity and captures its revision before exposing its
+file, symbol, and guard together. Unsupported, ambiguous, or intermediate rename
+targets instead report `continuation_unavailable`.
+
+Public CLI coverage includes inspection-to-guarded-edit, metrics, batch receipts,
+partial batches, rename identity with a same-leaf peer method, removal success
+and refusal, and actual partial import publication. Java and Rust rename cases
+assert explicit continuation unavailability where final inspection is not
+supported. Projection tests compare exact values and ordered records, preserve
+integers above the exact floating-point range, and retain original errors and
+locations when error projections fail.
+
+A fresh built MCP process also passed 13 calls across three isolated Go
+workspaces. The coordinator parsed the text prefix and compared its essential
+values with the actual structured response. This proved:
+
+* inspection companions survive text presentation;
+* `Server.Start` becomes `Server.Serve` while `Other.Serve` remains unchanged;
+  the returned revision equals a fresh inspection and permits a guarded edit;
+* no-op imports report no changed files, while a later parse failure reports
+  only the earlier file actually written and marks diagnostics unavailable;
+* removal exposes real checks and refusal state without a deleted symbol alias;
+* metrics text contains the actual records;
+* a batch retains its first edit after a stale guard stops the second, and
+  captured child receipts are labeled intermediate without final continuations.
+
+The proof run validated output-schema presence for all 36 tools advertised in
+those Go workspaces. The original 39-tool audit includes language-specific
+tools filtered out of this fixture; this run does not claim to execute every
+language backend. Raw coordinator evidence is in the ignored
+`.scratch/text-response-fixes/wire-proof.json`; the checked-in tests retain the
+reproducible cases. The integration gate is `make check`.
+
+Provenance enforcement and presentation budget experiments remain open
+independently of these repairs. The server cannot ensure that a client forwards
+or retains the text prefix, and batch child selectors are not final live
+continuations.
