@@ -1032,7 +1032,7 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	for _, entry := range entries {
 		properties := baseProperties(entry.MCPName)
 		if entry.MCPName == "semantic_move_construct" {
-			properties["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Live destination file on success; on error this is the attempted source path and is not a continuation target."}
+			properties["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path from this move result; in a batch it may describe an intermediate path rather than the final workspace target."}
 			properties["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before a successful move; evidence only, not a continuation target."}
 			properties["destination_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path for this move; in a batch it may describe an intermediate result rather than the final workspace target."}
 		}
@@ -1210,7 +1210,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) (map[st
 }
 
 func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend) (map[string]any, error) {
-	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Successful batches return final_diff and diagnostic_delta."
+	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Child outcomes and receipts are captured intermediate states, not final continuation targets; read the workspace after the batch to resolve final targets. Successful batches return final_diff and diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		paramsSchema, err := operationInputSchemaForBackends(entry, backends)

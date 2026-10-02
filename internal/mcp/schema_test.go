@@ -224,15 +224,22 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-					for _, field := range []string{"file"} {
-						if _, ok := output[field]; !ok {
-							t.Errorf("remove outputSchema omitted continuation field %q", field)
-						}
-					}
 					result := output["result"].(map[string]any)
+					entry, ok := operation.DefaultRegistry().LookupMCP(name)
+					if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
+						t.Fatalf("remove operation omitted its registered result schema")
+					}
+					assertResultSchemaMatchesRegistration(t, name, result, entry)
 					for _, field := range []string{"status", "safe_delete", "checks_run"} {
 						if _, ok := result["properties"].(map[string]any)[field]; !ok {
 							t.Errorf("remove result schema omitted %q", field)
+						}
+					}
+					if len(entry.Output.Continuations) == 0 {
+						for _, field := range []string{"file", "symbol", "expected_revision"} {
+							if _, ok := output[field]; ok {
+								t.Errorf("remove outputSchema advertised unresolved continuation alias %q", field)
+							}
 						}
 					}
 				case "semantic_extract_interface", "semantic_implement_contract":
@@ -409,15 +416,20 @@ func assertTypedOutcomeOrLegacyStringSchema(t *testing.T, name string, raw any) 
 		assertStandardOutputSchema(t, raw, "string")
 		return
 	}
+	assertResultSchemaMatchesRegistration(t, name, result, entry)
+	wantType, ok := result["type"].(string)
+	if !ok {
+		t.Fatalf("%s registered result schema omitted type: %#v", name, result)
+	}
+	assertStandardOutputSchema(t, raw, wantType)
+}
+
+func assertResultSchemaMatchesRegistration(t *testing.T, name string, result map[string]any, entry operation.Entry) {
+	t.Helper()
 	want, err := entry.Output.ResultSchema.JSONSchema()
 	if err != nil {
 		t.Fatalf("%s registered result schema: %v", name, err)
 	}
-	wantType, ok := want["type"].(string)
-	if !ok {
-		t.Fatalf("%s registered result schema omitted type: %#v", name, want)
-	}
-	assertStandardOutputSchema(t, raw, wantType)
 	wantJSON, err := json.Marshal(want)
 	if err != nil {
 		t.Fatalf("%s encode registered result schema: %v", name, err)
@@ -686,6 +698,9 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	batch := byName["semantic_batch"]
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
+	}
+	if description, ok := batch["description"].(string); !ok || !strings.Contains(description, "Child outcomes and receipts are captured intermediate states, not final continuation targets") {
+		t.Fatalf("batch description omitted the child-state boundary: %#v", batch["description"])
 	}
 	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
 	branches := edits["items"].(map[string]any)["oneOf"].([]any)
@@ -1123,8 +1138,8 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		file := properties["file"].(map[string]any)
 		origin := properties["origin_file"].(map[string]any)
 		destination := properties["destination_file"].(map[string]any)
-		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Live destination") {
-			t.Fatalf("file result schema = %#v, want a live destination target", file)
+		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Captured destination path") || !strings.Contains(file["description"].(string), "intermediate path rather than the final workspace target") {
+			t.Fatalf("file result schema = %#v, want captured intermediate evidence", file)
 		}
 		if origin["type"] != "string" || !strings.Contains(origin["description"].(string), "evidence only") {
 			t.Fatalf("origin_file result schema = %#v, want historical evidence", origin)
