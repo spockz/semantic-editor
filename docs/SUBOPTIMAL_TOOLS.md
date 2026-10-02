@@ -2038,3 +2038,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git could not create the linked worktree's `index.lock` under the main repository `.git/worktrees/flow-foundation` metadata path because that location is outside the writable worktree root.
 - Workaround: retry the exact staging and commit operation with the already-authorized elevated filesystem access for linked-worktree metadata.
 - Root cause: linked worktree source files are writable, but Git stores the shared worktree index outside the worktree directory.
+
+## ST-0252: Absolute patch path targeted the coordinator checkout
+
+- Tool: built-in `apply_patch` used for a Go backend edit.
+- Target: `internal/backend/golang/backend.go` while working in `.scratch/worktrees/flow-foundation`.
+- Observed failure: an absolute path omitted `.scratch/worktrees/flow-foundation` and targeted the coordinator checkout instead of this worker worktree; the coordinator checkout received the same one-line context-forwarding edit.
+- Workaround: all intended changes were applied and verified in the assigned worker worktree; root will preserve the coordinator mirror in a targeted stash before integration, and I did not modify or restore coordinator files.
+- Root cause: the patch request used the primary checkout path rather than the assigned worktree path. Verify every patch target against the assigned worktree root before editing.
