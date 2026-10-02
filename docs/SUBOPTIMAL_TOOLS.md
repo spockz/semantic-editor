@@ -2090,3 +2090,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the CLI parser rejected escaped newline literals in the replacement body; it made no source change.
 - Workaround: use a surgical patch to add the self-contained module manifest to this test fixture only.
 - Root cause: the body flag's layered shell and CLI quoting did not preserve the Go rune and string literals.
+
+## ST-0254: Inspection rejected package-qualified helper selector
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/sourcebuf/buffer.go`, selector `sourcebuf.ReadFile`.
+- Observed failure: symbol resolution returned `symbol not found`; no mutation occurred.
+- Workaround: use `semantic_lookup` to obtain the canonical declaration selector before inspection.
+- Root cause: the coordinator constructed a package-qualified selector instead of copying a resolved symbol identity.
