@@ -205,8 +205,8 @@ func executableConstructKinds(candidate backend.Backend) []string {
 }
 
 var replaceBodyParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, Role: RoleTarget, SourceFields: append(sourceFileContinuations, "semantic_inspect_symbol.result.continuations[].file")},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, "semantic_inspect_symbol.result.continuations[].symbol"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, Role: RoleTarget, SourceFields: append(append(sourceFileContinuations, "semantic_inspect_symbol.result.continuations[].file"), sourceGeneratedMethodFile)},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, Role: RoleTarget, SourceFields: append([]string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, "semantic_inspect_symbol.result.continuations[].symbol"}, sourceGeneratedMethodSymbol)},
 	{Name: wireExpectedRevision, CLIName: "expected-revision", JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol for this file and symbol", Role: RoleTarget, SourceFields: []string{"semantic_inspect_symbol.result.continuations[].expected_revision"}},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
@@ -269,7 +269,7 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",
-		MCPName: "semantic_replace_body",
+		MCPName: replaceBodyTool,
 		Parse:   parseReplaceBody,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceBodyReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceBody,

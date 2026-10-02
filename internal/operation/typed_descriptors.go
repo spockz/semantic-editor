@@ -439,7 +439,7 @@ func FileRevisionSchema() ValueSchema {
 // EditReceiptSchema describes an outcome without implying batch-wide atomicity.
 func EditReceiptSchema() ValueSchema {
 	version := ValueSchema{Kind: SchemaString, Enum: []any{"semedit.edit-receipt/v1"}}
-	status := ValueSchema{Kind: SchemaString, Enum: []any{string(EditRefused), string(EditAppliedWorking), string(EditPersisted), string(EditPersistedWithDiagnostics), string(EditPartiallyPublished)}}
+	status := ValueSchema{Kind: SchemaString, Enum: []any{string(EditNoOp), string(EditRefused), string(EditAppliedWorking), string(EditPersisted), string(EditPersistedWithDiagnostics), string(EditPartiallyPublished)}}
 	text := nonEmptyStringSchema()
 	revisions := ValueSchema{Kind: SchemaArray, Items: new(FileRevisionSchema())}
 	continuations := ValueSchema{Kind: SchemaArray, Items: new(SymbolTargetSchema())}
@@ -524,7 +524,7 @@ func ValidateEditReceipt(receipt EditReceipt) error {
 		return fmt.Errorf("unsupported edit receipt schema version %q", receipt.SchemaVersion)
 	}
 	switch receipt.Status {
-	case EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+	case EditNoOp, EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
 	default:
 		return fmt.Errorf("unsupported edit receipt status %q", receipt.Status)
 	}
@@ -533,6 +533,9 @@ func ValidateEditReceipt(receipt EditReceipt) error {
 	}
 	if receipt.Status == EditRefused && (len(receipt.Changes) > 0 || len(receipt.Continuations) > 0) {
 		return fmt.Errorf("refused receipt cannot expose changes or live continuations")
+	}
+	if receipt.Status == EditNoOp && len(receipt.Changes) > 0 {
+		return fmt.Errorf("no-op receipt cannot expose changes")
 	}
 	if err := validateFileRevisions(receipt.Changes, "changes"); err != nil {
 		return err
@@ -585,3 +588,6 @@ func validateFileRevisions(revisions []FileRevision, label string) error {
 	}
 	return nil
 }
+
+// EditNoOp means the requested semantic state already held and no edit was published.
+const EditNoOp EditStatus = "no_op"

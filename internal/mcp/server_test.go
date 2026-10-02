@@ -268,6 +268,73 @@ func TestMCPStructuredContinuationFields(t *testing.T) {
 	}
 }
 
+func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"go.mod":           "module example.com/contractflow\n\ngo 1.27.1\n",
+		"api/store.go":     "package api\n\ntype Store struct{}\n\nfunc (*Store) Read() (int, error) { return 0, nil }\n\ntype Consumer struct{}\n",
+		"api/contracts.go": "package api\n",
+		"api/methods.go":   "package api\n",
+	} {
+		if err := pipeline.WriteAtomic(filepath.Join(root, name), []byte(source)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call := func(tool string, arguments map[string]any) map[string]any {
+		t.Helper()
+		encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": arguments}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := mcp.NewServer("full", root, &out).Serve(t.Context(), bytes.NewReader(append(encoded, '\n'))); err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Result struct {
+				IsError    bool           `json:"isError"`
+				Structured map[string]any `json:"structuredContent"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+			t.Fatalf("decode %s response %q: %v", tool, out.String(), err)
+		}
+		if response.Result.IsError {
+			t.Fatalf("%s failed: %s", tool, out.String())
+		}
+		return response.Result.Structured
+	}
+	extracted := call("semantic_extract_interface", map[string]any{
+		"file": "api/store.go", "in_type": "Store", "symbol": "StoreAPI", "destination_file": "api/contracts.go",
+		"receiver_kind": "pointer", "members": []map[string]string{{"file": "api/store.go", "symbol": "(*Store).Read"}},
+	})
+	contract, ok := extracted["contract"].(string)
+	if !ok || contract != "StoreAPI" {
+		t.Fatalf("extract contract selector = %#v, want StoreAPI", extracted["contract"])
+	}
+	contractFile, ok := extracted["contract_file"].(string)
+	if !ok || contractFile != "api/contracts.go" {
+		t.Fatalf("extract contract_file selector = %#v, want api/contracts.go", extracted["contract_file"])
+	}
+	consumer := call("semantic_implement_contract", map[string]any{
+		"file": "api/store.go", "symbol": "Consumer", "contract": contract, "contract_file": contractFile,
+		"destination_file": "api/methods.go", "receiver_kind": "pointer", "body_policy": "panic_stub",
+	})
+	result, ok := consumer["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("implement omitted structured result: %#v", consumer)
+	}
+	if result["type_target"] == nil {
+		t.Fatalf("implement omitted live type_target: %#v", result)
+	}
+	if result["generated_methods"] == nil {
+		t.Fatalf("implement omitted generated method continuation: %#v", result)
+	}
+}
+
 func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/renamecontinuation\n\ngo 1.24\n"), 0o600); err != nil {
@@ -1119,6 +1186,73 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	}
 }
 
+type mcpExampleProperty struct {
+	Type  string            `json:"type"`
+	Enum  []json.RawMessage `json:"enum"`
+	Items struct {
+		Type       string `json:"type"`
+		Properties map[string]struct {
+			Type string `json:"type"`
+		} `json:"properties"`
+		Required []string `json:"required"`
+	} `json:"items"`
+}
+
+func mcpExampleValueMatches(value any, property mcpExampleProperty) bool {
+	switch property.Type {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		number, ok := value.(float64)
+		return ok && number == float64(int(number))
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return false
+		}
+		for _, item := range items {
+			if !mcpExampleItemMatches(item, property.Items.Type, property.Items.Properties, property.Items.Required) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func mcpExampleItemMatches(value any, itemType string, properties map[string]struct {
+	Type string `json:"type"`
+}, required []string) bool {
+	if itemType == "string" {
+		_, ok := value.(string)
+		return ok
+	}
+	object, ok := value.(map[string]any)
+	if !ok || itemType != "object" {
+		return false
+	}
+	for _, field := range required {
+		if _, ok := object[field]; !ok {
+			return false
+		}
+	}
+	for field, fieldValue := range object {
+		fieldSchema, ok := properties[field]
+		if !ok || fieldSchema.Type != "string" {
+			return false
+		}
+		if _, ok := fieldValue.(string); !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
@@ -1132,15 +1266,9 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 			Tools []struct {
 				Name        string `json:"name"`
 				InputSchema struct {
-					Properties map[string]struct {
-						Type  string            `json:"type"`
-						Enum  []json.RawMessage `json:"enum"`
-						Items struct {
-							Type string `json:"type"`
-						} `json:"items"`
-					} `json:"properties"`
-					Required []string                     `json:"required"`
-					Examples []map[string]json.RawMessage `json:"examples"`
+					Properties map[string]mcpExampleProperty `json:"properties"`
+					Required   []string                      `json:"required"`
+					Examples   []map[string]json.RawMessage  `json:"examples"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -1173,28 +1301,7 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
 					continue
 				}
-				validType := false
-				switch property.Type {
-				case "string":
-					_, validType = value.(string)
-				case "boolean":
-					_, validType = value.(bool)
-				case "integer":
-					if number, ok := value.(float64); ok {
-						validType = number == float64(int(number))
-					}
-				case "array":
-					if items, ok := value.([]any); ok {
-						validType = true
-						for _, item := range items {
-							if _, ok := item.(string); !ok || property.Items.Type != "string" {
-								validType = false
-							}
-						}
-					}
-				default:
-					t.Errorf("%s parameter %q has unexpected schema type %q", tool.Name, key, property.Type)
-				}
+				validType := mcpExampleValueMatches(value, property)
 				if !validType {
 					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
 				}

@@ -1,0 +1,44 @@
+# CLI generates missing panic stubs into an existing same-package file and preserves existing source.
+exec semedit implement-contract --file worker/worker.go --symbol Worker --contract Runner --contract-file contracts/runner.go --destination-file worker/methods.go --receiver-kind pointer --body-policy panic_stub
+stdout '"status":\s*"persisted"'
+stdout '"Run"'
+stdout '"type_target":\s*\{'
+stdout '"generated_methods":\s*\['
+stdout '"expected_revision":\s*"[0-9a-f]+"'
+cmp worker/worker.go .scratch/want/worker.go
+cmp worker/methods.go .scratch/want/methods.go
+exec go test ./worker ./contracts
+-- go.mod --
+module example.com/implement
+
+go 1.27.1
+-- contracts/runner.go --
+package contracts
+
+type Runner interface {
+	Run(string) error
+}
+-- worker/worker.go --
+package worker
+
+type Worker struct{}
+
+func (*Worker) Close() error { return nil }
+
+-- worker/methods.go --
+package worker
+-- .scratch/want/worker.go --
+package worker
+
+type Worker struct{}
+
+func (*Worker) Close() error { return nil }
+
+-- .scratch/want/methods.go --
+package worker
+
+func (*Worker) Run(string) error { panic(`TODO: implement`) }
+-- unrelated/broken.go --
+package unrelated
+
+var _ MissingType
