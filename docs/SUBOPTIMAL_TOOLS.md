@@ -3091,9 +3091,9 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 - Tool: `semantic_batch` with `semantic_insert_decl` and five `semantic_replace_decl` children.
 - Target: shared expected-revision CLI schema constant in `internal/operation`.
-- Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. During the call, four non-target standalone hidden Go tests under `testdata/bench-oracles/task-12-request-identity-migration` had their existing imports alphabetized within one group: `correlation/identities_hidden_test.go`, `notifications/notifier_hidden_test.go`, `reporting/report_hidden_test.go`, and `scheduler/jobs_hidden_test.go`. No test bodies, assertions, import paths, or files embedded in txtars changed in this incident.
+- Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. A clean git status was recorded at 07:55:50 UTC; the preceding `combined-tools-check-2` exited 2 before this call. The batch ran from 07:56:55 to 07:57:17 UTC. During the call, four non-target standalone hidden Go tests under `testdata/bench-oracles/task-12-request-identity-migration` had their existing imports alphabetized within one group: `correlation/identities_hidden_test.go`, `notifications/notifier_hidden_test.go`, `reporting/report_hidden_test.go`, and `scheduler/jobs_hidden_test.go`. No test bodies, assertions, import paths, or files embedded in txtars changed in this incident.
 - Workaround: retain the intended declaration edits, restore unrelated fixture bytes, and run the repository's trusted `make check` gate with the configured module cache.
-- Root cause: the recorded diff confirms formatting outside the six requested declaration edits, but does not identify the responsible formatting stage or running binary revision. Current batch source scopes import organization and final Go formatting to changed paths, so the earlier attribution to batch-wide import organization is unconfirmed. Verification also requires explicit workspace trust and reported diagnostics inconsistent with the compiler gate.
+- Root cause: the recorded diff confirms formatting outside the six requested declaration edits, but does not identify the responsible process or running binary revision. The next `make check` began only after the four files were restored, so neither that run nor the preceding check explains the reorder. Normal `make check` fixture formatting is expected project guardrail behavior; this incident records unresolved provenance and does not seek to exempt that formatting. Current batch source scopes import organization and final Go formatting to changed paths, so attribution to batch-wide import organization is unconfirmed. Verification also requires explicit workspace trust and reported diagnostics inconsistent with the compiler gate.
 
 ## Instructions audit: Independent compression review timed out
 
@@ -3102,3 +3102,48 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: `context deadline exceeded` returned without a review report.
 - Workaround: retain the captured discovery comparison and local contract analysis; request a smaller question if an unresolved compression decision requires independent review.
 - Root cause: the request exceeded the tool deadline; no review approval can be inferred.
+
+## CLI stdin worker: semantic body replacement doubled newline escapes
+
+- Date: 2026-10-02
+- Tool: worktree-local `replace-body` semantic CLI operation.
+- Target: `internal/cli/cli.go`, function `buildCommand`.
+- Observed failure: the operation succeeded structurally but emitted `\\n` in three Go format strings where the existing body used `\n`, changing error output to print literal backslash-n characters.
+- Workaround: immediately corrected those three escape sequences with a targeted patch.
+- Root cause: the shell/JavaScript quoting for the semantic CLI request over-escaped Go string literals.
+
+## CLI stdin worker: scaffold purpose header rejected prose
+
+- Date: 2026-10-02
+- Tool: worktree-local `scaffold-file` semantic CLI operation.
+- Target: `internal/cli/stdin_test.go`.
+- Observed failure: passing `Package cli tests ...` as `--purpose-header` failed Go parsing with `expected 'package', found Package`; no file was created.
+- Workaround: retry with a syntactically valid Go comment header.
+- Root cause: the tool validates the purpose header as source text and does not add comment syntax despite the flag description calling it a comment header.
+
+## CLI stdin worker: insert-function snippet quoting failed
+
+- Date: 2026-10-02
+- Tool: worktree-local `insert-func` semantic CLI operation.
+- Target: `internal/cli/stdin_test.go`, a new test declaration.
+- Observed failure: validation rejected the submitted declaration with a Go syntax error around a quoted string; no file change occurred.
+- Workaround: simplify the test payload literal and submit valid Go source.
+- Root cause: nested shell and JavaScript escaping made the Go string literal invalid before the semantic operation ran.
+
+## CLI stdin worker: insert-field typecheck could not import Cobra
+
+- Date: 2026-10-02
+- Tool: worktree-local `insert-field` semantic CLI operation.
+- Target: `internal/cli/stdin_test.go`, field on `stdinProbeState`.
+- Observed failure: package typechecking stopped with `could not import github.com/spf13/cobra (invalid package name: "")`; no field change occurred.
+- Workaround: use a targeted patch for this test-only field and record the package-import tool limitation.
+- Root cause: the operation's package typecheck could not resolve the already-declared CLI dependency in this invocation.
+
+## CLI stdin worker: insert-function reported a false Cobra dependency diagnostic
+
+- Date: 2026-10-02
+- Tool: worktree-local `insert-func` semantic CLI operation using `--source -`.
+- Target: `internal/cli/cli_test.go`, registry payload inventory test.
+- Observed failure: the function was inserted, but the tool reported `no required module provides package "github.com/spf13/cobra"` although Cobra is present in the module; its diagnostic claimed `diagnostic_status: changed` with a stale dependency-resolution error.
+- Workaround: retain the inserted function and verify it with `make check` and the focused test suite.
+- Root cause: the semantic operation's diagnostic environment failed to resolve the current module dependencies; the operation returned a syntactically valid insertion.
