@@ -54,21 +54,38 @@ func PlanInsertField(source []byte, intent InsertFieldIntent) (SourcePlan, error
 	structure := selected.Type.(*ast.StructType)
 	openOffset := fset.Position(structure.Fields.Opening).Offset
 	closeOffset := fset.Position(structure.Fields.Closing).Offset
-	if !bytes.Contains(source[openOffset:closeOffset], []byte("\n")) {
+	fieldBody := source[openOffset+1 : closeOffset]
+	emptyBody := len(structure.Fields.List) == 0 && len(bytes.TrimSpace(fieldBody)) == 0
+	if !bytes.Contains(fieldBody, []byte("\n")) && !emptyBody {
 		return SourcePlan{}, fmt.Errorf("struct type %q must use a multiline field layout", intent.TypeName)
 	}
 	if err := validateInsertFieldContext(file, structure, intent.TypeName, intent.FieldName); err != nil {
-		return SourcePlan{}, err
-	}
-	offset, indent, err := fieldInsertionOffset(source, fset, structure, intent)
-	if err != nil {
 		return SourcePlan{}, err
 	}
 	newline := "\n"
 	if bytes.Contains(source, []byte("\r\n")) {
 		newline = "\r\n"
 	}
-	updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.FieldSource)+newline))
+	var updated []byte
+	if emptyBody {
+		placement := intent.Placement
+		if placement == "" {
+			placement = FieldAtEnd
+		}
+		if placement != FieldAtStart && placement != FieldAtEnd {
+			return SourcePlan{}, fmt.Errorf("relative field placement requires an existing field anchor")
+		}
+		_, ownerIndent := fieldLineStart(source, openOffset)
+		fieldIndent := ownerIndent + "\t"
+		replacement := []byte(newline + fieldIndent + strings.TrimSpace(intent.FieldSource) + newline + ownerIndent)
+		updated = spliceSource(source, openOffset+1, closeOffset, replacement)
+	} else {
+		offset, indent, err := fieldInsertionOffset(source, fset, structure, intent)
+		if err != nil {
+			return SourcePlan{}, err
+		}
+		updated = spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.FieldSource)+newline))
+	}
 	return newSourcePlan(source, updated, PlanSelection{
 		Kind:   "field",
 		Owner:  intent.TypeName,
