@@ -113,6 +113,7 @@ type FileEditRes struct {
 	DestinationDisplay string
 	Display            string
 	Symbol             string
+	InType             string
 	Line               int
 	InFunction         string
 	Discriminator      string
@@ -133,6 +134,9 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	}
 	if res.Symbol != "" {
 		text += fmt.Sprintf(" symbol: %s.", res.Symbol)
+	}
+	if res.InType != "" {
+		text += fmt.Sprintf(" in_type: %s.", res.InType)
 	}
 	if res.Line > 0 {
 		text += fmt.Sprintf(" line (navigation only): %d.", res.Line)

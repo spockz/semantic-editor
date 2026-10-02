@@ -161,10 +161,11 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Output: &OperationOutputContract{
 			ResultSchema: &projectionSchema,
 			Continuations: []OutputContinuation{
-				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body", insertFieldToolName}},
 				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body", insertFieldToolName}},
 				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{"semantic_replace_construct"}},
+				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName}},
 			},
 		},
 		ProjectOutput: func(result *backend.InspectResult) (any, error) { return ProjectInspectResult(result) },

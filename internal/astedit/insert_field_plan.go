@@ -120,8 +120,8 @@ func validateInsertedField(intent InsertFieldIntent) error {
 	if !token.IsIdentifier(intent.TypeName) || token.Lookup(intent.TypeName).IsKeyword() {
 		return fmt.Errorf("invalid struct type name %q", intent.TypeName)
 	}
-	if !token.IsIdentifier(intent.FieldName) || intent.FieldName == "_" || token.Lookup(intent.FieldName).IsKeyword() || ast.IsExported(intent.FieldName) {
-		return fmt.Errorf("field name %q must be a private Go identifier", intent.FieldName)
+	if !token.IsIdentifier(intent.FieldName) || intent.FieldName == "_" || token.Lookup(intent.FieldName).IsKeyword() {
+		return fmt.Errorf("field name %q must be a named Go identifier", intent.FieldName)
 	}
 	fieldFile, err := parser.ParseFile(token.NewFileSet(), "field.go", []byte("package p\ntype holder struct {\n"+intent.FieldSource+"\n}"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
