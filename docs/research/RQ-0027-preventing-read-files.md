@@ -1227,3 +1227,34 @@ the implementation has evidence. Exercise text prefixes truncated before and
 after bodies/diffs, and verify that intermediate batch children are not
 presented as final live continuations. Client-side truncation remains an
 external limit.
+
+### Repair contracts, 2026-10-02
+
+The audit above describes the source at `3f141c1`, before these repairs. Keep
+it as the baseline rather than reading its findings as permanent limitations.
+The implementation separates transport presentation from operation-owned
+outcome evidence, with isolated workers and coordinator review.
+
+* ADR-0042 specifies the `Critical result (JSON):` prefix. Essential values
+  retain their existing names, nesting, record order, and numeric precision.
+  Bulk source, diffs, and logs follow once in the existing formatted body.
+* Known operation errors have an explicit three-result projector: value,
+  whether the error is recognized, and projection error. Its paired private
+  schema is validated separately from successful results. Reserved live
+  continuation fields are rejected in both schema and runtime values.
+  Unrecognized errors leave application state unknown; projector failures
+  preserve the original operation failure.
+* An optional top-level continuation remains a declared potential source for
+  compatible consumers. Absence means no copyable value was established;
+  presence still requires schema validation. Imports can retain its selected
+  regular-file scope without presenting a workspace directory as a file
+  target. Rename companions require one proven final record or joint omission.
+* Batch summaries keep the original `results[]` paths. Child outcomes and
+  known changes precede bulk diffs; child selectors are intermediate evidence,
+  with no new promise that they remain live after final publication.
+
+Implementation verification is pending. The required proof remains real
+CLI/MCP execution for inspection, receipt-bearing edits, post-rename identity,
+actual import writes and partial failures, removal schema conformance, timing
+records, and batch failure/publication ordering. Provenance enforcement and
+presentation budget experiments remain open independently of these repairs.

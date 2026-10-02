@@ -178,12 +178,20 @@ labeled separately. State whether ambiguous candidate lists are complete or
 truncated, and how to narrow or retrieve more only when that route is
 supported; do not silently cut a selector or companion value.
 
-This is an accepted output contract, not a claim that current formatters all
-implement it. The whole-tool implementation review and repair gates are in
-[RQ-0027](../research/RQ-0027-preventing-read-files.md). Exact prefix encoding
-and budgets remain open. Clients control forwarding and truncation; the
-server guarantees essential content and ordering, not its eventual visibility
-to a model. ADR-0042 defines the structured-JSON compatibility boundary.
+The shared essential prefix uses the compact JSON encoding in ADR-0042.
+Declared top-level continuations may be optional: absence means that no
+copyable argument was established. Omission is permitted only when the
+registered continuation contract marks the field optional; a present value
+still receives the same schema validation. Never fill an absent continuation
+with an empty or inferred selector. Consumers copy a record only when its
+required same-record companions are present.
+
+The whole-tool implementation review and repair evidence are in
+[RQ-0027](../research/RQ-0027-preventing-read-files.md). Presentation budgets
+remain open. Clients control forwarding and truncation; the server guarantees
+essential content and ordering, not its eventual visibility to a model.
+ADR-0042 defines the structured-JSON compatibility boundary and private known
+error projections.
 
 ## Invariants
 

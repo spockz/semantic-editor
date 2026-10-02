@@ -62,12 +62,22 @@ essential fields to both representations, exclude stale or deleted targets
 from live continuations, and retain any historical evidence with an explicit
 label.
 
-Current formatters do not yet provide equivalent essential prefixes in every
-case. For example, `formatRename` can phrase the old symbol while the
-structured continuation carries the post-rename identity. The essential
-content obligation is accepted; exact prefix encoding, presentation limits,
-and truncation budgets remain open. The contract does not claim model
-visibility from `structuredContent` alone.
+The essential text prefix starts with `Critical result (JSON):` followed by
+compact JSON and a blank line before the existing formatted body. It preserves
+the exact essential values and record order from the validated structured
+projection. Outcomes and continuations precede bulk source, diffs, and logs;
+the prefix excludes those bulk payloads rather than repeating them. Numeric
+values must survive serialization without conversion through floating point.
+Presentation budgets remain open, and client truncation can still hide fields.
+
+Known error outcomes use an opt-in operation-owned error projector paired with
+a private result schema. Registration and runtime validation reject live
+`continuations` and `expected_revision` fields in that error projection. A
+typed error can report known applied or partial changes without satisfying the
+successful result schema. An unmatched error reports unknown application
+state. A failed error projector retains the original operation error and
+reports the projection failure; it does not replace the operation failure.
+This leaves registry dispatch error semantics unchanged.
 
 ## Invariants
 
@@ -81,7 +91,11 @@ visibility from `structuredContent` alone.
   visibility remain client-controlled.
 - When a result includes large source or diff payloads, concise views preserve
   status, limitations, ambiguity, and live continuations ahead of bulk text;
-  exact prefix encoding and truncation limits remain open.
+  the compact prefix uses the shared essential projection. Truncation limits
+  remain open.
+- Error projections are validated against their paired private schema;
+  successful result guarantees remain unchanged. Error state does not produce
+  live continuation guards.
 - Batch `diagnostic_delta` is advertised and returned only when execution
   reaches the final diagnostic capture.
 - Output schemas do not over-constrain arbitrary telemetry phase names,

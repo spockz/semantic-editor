@@ -3147,3 +3147,26 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the function was inserted, but the tool reported `no required module provides package "github.com/spf13/cobra"` although Cobra is present in the module; its diagnostic claimed `diagnostic_status: changed` with a stale dependency-resolution error.
 - Workaround: retain the inserted function and verify it with `make check` and the focused test suite.
 - Root cause: the semantic operation's diagnostic environment failed to resolve the current module dependencies; the operation returned a syntactically valid insertion.
+
+## 2026-10-02: Outline request used a guessed parameter name
+
+- Tool: `semantic_outline`, target `internal/mcp/server.go`.
+- Failure: request supplied `file`; the tool rejected it because outline uses
+  `path`. No source mutation occurred.
+- Workaround: read the tool declaration and retry with `path`.
+- Root cause: caller reused another tool's parameter name without consulting
+  this tool's schema. This is an agent invocation error, not an AST failure.
+
+## 2026-10-02: Worker mutation reached the shared MCP workspace
+
+- Tools: `semantic_scaffold_file` and `semantic_batch`.
+- Intended target: `.scratch/worktrees/critical-text-presentation`.
+- Observed target: coordinator `internal/mcp/presentation.go`; normalization
+  also reordered imports in four task-12 hidden benchmark test files.
+- Failure: the worker used a shared MCP connection bound to the coordinator
+  workspace. The operation subsequently failed verification's trust gate.
+- Workaround: preserve the helper and raw import diffs in coordinator scratch,
+  restore only the unintended changes, and use worktree-local CLI mutations.
+- Root cause: MCP tools have session-bound workspace scope, while a worker's
+  shell working directory does not redirect that shared connection. The
+  worker failed to follow its handover's worktree-local CLI requirement.
