@@ -1,0 +1,37 @@
+# A method rename returns only the exact post-rename method identity when a same-leaf peer exists.
+stdin rename-postidentity.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"origin":'
+stdout '"file":"api/server.go"'
+stdout '"symbol":"Server.Serve"'
+stdout '"expected_revision":"[^"]+"'
+cmp api/server.go want/api/server.go
+
+-- go.mod --
+module example.com/renameidentity
+
+go 1.23
+-- api/server.go --
+package api
+
+type Server struct{}
+
+func (Server) Start() {}
+
+type Other struct{}
+
+func (Other) Serve() {}
+-- want/api/server.go --
+package api
+
+type Server struct{}
+
+func (Server) Serve() {}
+
+type Other struct{}
+
+func (Other) Serve() {}
+-- rename-postidentity.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"api/server.go","symbol":"Server.Start","to":"Serve","auto_organize_imports":false}}}

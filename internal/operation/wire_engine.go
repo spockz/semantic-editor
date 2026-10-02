@@ -112,6 +112,8 @@ type FileEditRes struct {
 	DestinationFile    string
 	DestinationDisplay string
 	Display            string
+	ChangedFiles       []string
+	ApplicationState   string
 	Symbol             string
 	InType             string
 	Line               int
@@ -147,8 +149,11 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	if res.Discriminator != "" {
 		text += fmt.Sprintf(" discriminator: %s.", res.Discriminator)
 	}
-	if res.Diff != "" {
-		text += "\n" + res.Diff
+	if res.ApplicationState != "" {
+		text += " application_state: " + res.ApplicationState + "."
+	}
+	if len(res.ChangedFiles) > 0 {
+		text += " changed_files: " + strings.Join(res.ChangedFiles, ", ") + "."
 	}
 	if res.HasDelta {
 		text += " diagnostic_status: " + res.DiagnosticStatus + "."
@@ -156,7 +161,33 @@ func formatFileEdit(res FileEditRes) (string, error) {
 			text = AppendDiagnosticDelta(text, res.Delta)
 		}
 	}
+	if res.Diff != "" {
+		text += "\n" + res.Diff
+	}
 	return text, nil
+}
+
+func diagnosticDeltaSchema() ValueSchema {
+	textList := ValueSchema{Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"net_delta":   {Kind: SchemaInteger},
+		"introduced":  textList,
+		"resolved":    textList,
+		"suggestions": textList,
+	}, Required: []string{"net_delta", "introduced", "resolved"}}
+}
+
+func diagnosticDeltaOutput(delta pipeline.DiagnosticDelta) pipeline.DiagnosticDelta {
+	if delta.Introduced == nil {
+		delta.Introduced = []string{}
+	}
+	if delta.Resolved == nil {
+		delta.Resolved = []string{}
+	}
+	if delta.Suggestions == nil {
+		delta.Suggestions = []string{}
+	}
+	return delta
 }
 
 func receiverNameForDecl(decl *ast.FuncDecl) string {

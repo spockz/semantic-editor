@@ -4,6 +4,7 @@ package operation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"semedit/internal/capability"
 	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
+	"semedit/internal/sourcebuf"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
@@ -61,6 +63,7 @@ const (
 
 	sourceLookupSymbol                 = "semantic_lookup.symbol"
 	sourceRenameSymbol                 = "semantic_rename.symbol"
+	sourceRenameExpectedRevision       = "semantic_rename.expected_revision"
 	sourceReplaceBodySymbol            = "semantic_replace_body.symbol"
 	sourceLookupFile                   = "semantic_lookup.file"
 	sourceRenameFile                   = "semantic_rename.file"
@@ -98,6 +101,11 @@ const (
 )
 
 const wireExpectedRevision = "expected_revision"
+
+const (
+	wireApplicationState = "application_state"
+	wireDiagnostics      = "diagnostics"
+)
 
 var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
@@ -368,7 +376,7 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	return service.Rename(ctx, backend.RenameRequest{
+	result, err := service.Rename(ctx, backend.RenameRequest{
 		Project:           project,
 		Symbol:            request.Symbol,
 		To:                request.To,
@@ -376,6 +384,148 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 		DeferFormatting:   cc.DeferVerification,
 		DeferVerification: cc.DeferVerification,
 	})
+	if err != nil {
+		var diagnosticsError *backend.RenameDiagnosticsError
+		if errors.As(err, &diagnosticsError) && diagnosticsError.Result != nil {
+			diagnosticsError.Result.Source = cloneRenameLookup(diagnosticsError.Result.Lookup)
+			diagnosticsError.Result.Lookup = nil
+			diagnosticsError.Result.ProjectRoot = project.RootDir
+			diagnosticsError.Result.ApplicationState = string(EditPersisted)
+			if sourcebuf.FromContext(ctx) != nil {
+				diagnosticsError.Result.ApplicationState = string(EditAppliedWorking)
+			}
+		}
+		return result, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("rename backend returned no result")
+	}
+	result.ProjectRoot = project.RootDir
+	result.ApplicationState = string(EditPersisted)
+	if sourcebuf.FromContext(ctx) != nil {
+		result.ApplicationState = string(EditAppliedWorking)
+		result.Source = cloneRenameLookup(result.Lookup)
+		result.Lookup = nil
+		result.ContinuationUnavailable = "rename is part of an in-progress workspace batch"
+		return result, nil
+	}
+	return resolvePostRenameIdentity(ctx, service, project, request, result), nil
+}
+
+func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, project backend.ProjectContext, request RenameReq, result *backend.RenameResult) *backend.RenameResult {
+	if result.Lookup == nil {
+		result.ContinuationUnavailable = "backend returned no pre-rename identity"
+		return result
+	}
+	result.Source = cloneRenameLookup(result.Lookup)
+	result.Lookup = nil
+	query, expectedSymbol := postRenameLookupName(result.Source, request.To)
+	if query == "" {
+		result.ContinuationUnavailable = "rename source did not contain a qualified identity"
+		return result
+	}
+	resolved, err := service.Lookup(ctx, project, query)
+	if err != nil {
+		result.ContinuationUnavailable = "post-rename lookup failed: " + err.Error()
+		return result
+	}
+	if resolved == nil || resolved.Ambiguous || resolved.Definition == nil {
+		result.ContinuationUnavailable = "post-rename lookup did not resolve one declaration"
+		return result
+	}
+	resolvedSymbol := resolved.Definition.QualifiedName
+	if resolvedSymbol == "" || resolvedSymbol != expectedSymbol {
+		result.ContinuationUnavailable = "post-rename lookup did not resolve the expected qualified identity"
+		return result
+	}
+	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, result.Source.Definition.File, resolved.Definition.File) {
+		result.ContinuationUnavailable = "post-rename lookup resolved a different source file"
+		return result
+	}
+	resolved.Symbol = resolvedSymbol
+	result.Lookup = resolved
+	inspectProject := project
+	inspectProject.File = resolved.Definition.File
+	inspection, err := service.Inspect(ctx, backend.InspectRequest{Project: inspectProject, Symbol: resolvedSymbol})
+	if err != nil || inspection == nil {
+		if err != nil {
+			result.ContinuationUnavailable = "post-rename inspection failed: " + err.Error()
+		} else {
+			result.ContinuationUnavailable = "post-rename inspection returned no result"
+		}
+		return result
+	}
+	matched := ""
+	matchCount := 0
+	for _, match := range inspection.Matches {
+		if match.QualifiedName != resolvedSymbol || !sameWorkspacePath(project.RootDir, match.File, resolved.Definition.File) {
+			continue
+		}
+		matchCount++
+		if matchCount > 1 {
+			result.ContinuationUnavailable = "post-rename inspection matched multiple declarations"
+			return result
+		}
+		matched = match.Revision
+	}
+	result.Revision = matched
+	if matchCount != 1 || matched == "" {
+		result.ContinuationUnavailable = "post-rename inspection did not prove a matching file revision"
+	}
+	return result
+}
+
+func postRenameLookupName(source *backend.LookupResult, requestedName string) (string, string) {
+	if source == nil {
+		return "", ""
+	}
+	oldIdentity := source.Symbol
+	if source.Definition != nil && source.Definition.QualifiedName != "" {
+		oldIdentity = source.Definition.QualifiedName
+	}
+	newLeaf := backend.NormalizeRenameInput(requestedName)
+	if oldIdentity == "" || newLeaf == "" {
+		return "", ""
+	}
+	dot := strings.LastIndex(oldIdentity, ".")
+	colon := strings.LastIndex(oldIdentity, "::")
+	separator, width := dot, 1
+	if colon > separator {
+		separator, width = colon, 2
+	}
+	if separator < 0 {
+		return newLeaf, newLeaf
+	}
+	qualified := oldIdentity[:separator+width] + newLeaf
+	return qualified, qualified
+}
+
+func cloneRenameLookup(source *backend.LookupResult) *backend.LookupResult {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	if source.Definition != nil {
+		definition := *source.Definition
+		clone.Definition = &definition
+	}
+	return &clone
+}
+
+func sameWorkspacePath(root, left, right string) bool {
+	canonical := func(path string) (string, error) {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Clean(absolute), nil
+	}
+	leftPath, leftErr := canonical(left)
+	rightPath, rightErr := canonical(right)
+	return leftErr == nil && rightErr == nil && leftPath == rightPath
 }
 
 func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRes, error) {
@@ -560,10 +710,18 @@ func formatLookup(result *backend.LookupResult) (string, error) {
 }
 
 func formatRename(result *backend.RenameResult) (string, error) {
-	if result == nil || result.Lookup == nil {
-		return "Successfully renamed symbol.", nil
+	text := "Successfully renamed symbol."
+	if result != nil && result.Lookup != nil {
+		symbol := result.Lookup.Symbol
+		if result.Lookup.Definition != nil && result.Lookup.Definition.QualifiedName != "" {
+			symbol = result.Lookup.Definition.QualifiedName
+		}
+		text = fmt.Sprintf("Successfully renamed %s.", symbol)
 	}
-	return fmt.Sprintf("Successfully renamed %s.", result.Lookup.Symbol), nil
+	if result != nil && result.ContinuationUnavailable != "" {
+		text += " Final continuation unavailable: " + result.ContinuationUnavailable + "."
+	}
+	return text, nil
 }
 
 func formatVerify(result VerifyRes) (string, error) {
@@ -633,6 +791,7 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 
 func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
+	output := renameOutputContract()
 	return Def[RenameReq, *backend.RenameResult]{
 		Key:           capability.OpRename,
 		Summary:       "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
@@ -647,7 +806,11 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 			backend.LanguageRust: run,
 			backend.LanguageJava: run,
 		},
-		Format: formatRename,
+		Format:             formatRename,
+		Output:             output,
+		ErrorOutput:        &OperationErrorOutputContract{ResultSchema: renameErrorOutputSchema()},
+		ProjectOutput:      projectRenameOutput,
+		ProjectErrorOutput: projectRenameErrorOutput,
 		ExampleRaw: map[string]any{
 			"symbol":                "Server.Start",
 			"to":                    "Serve",
@@ -655,6 +818,184 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 			wireAutoOrganizeImports: true,
 		},
 	}
+}
+
+func renameOutputContract() *OperationOutputContract {
+	text := nonEmptyStringSchema()
+	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file": text, "symbol": text,
+	}, Required: []string{"file", "symbol"}}
+	properties := map[string]ValueSchema{
+		"status":                   {Kind: SchemaString, Enum: []any{"renamed"}},
+		wireApplicationState:       {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
+		"origin":                   identitySchema,
+		"file":                     text,
+		"symbol":                   text,
+		wireExpectedRevision:       text,
+		wireDiagnostics:            diagnosticDeltaSchema(),
+		"active":                   {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+		"continuation_unavailable": {Kind: SchemaString},
+	}
+	return &OperationOutputContract{
+		ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"status", wireApplicationState, wireDiagnostics, "active"}},
+		Continuations: []OutputContinuation{
+			{Field: "file", Schema: text, Role: RoleTarget, Consumers: renameFileConsumers, Optional: true},
+			{Field: "symbol", Schema: text, Role: RoleTarget, Consumers: renameSymbolConsumers, Optional: true},
+			{Field: wireExpectedRevision, Schema: text, Role: RoleTarget, Consumers: renameRevisionConsumers, Optional: true},
+		},
+	}
+}
+
+func renameErrorOutputSchema() *ValueSchema {
+	text := nonEmptyStringSchema()
+	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text, "symbol": text}, Required: []string{"file", "symbol"}}
+	return &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"status":             {Kind: SchemaString, Enum: []any{"applied_with_diagnostics"}},
+		wireApplicationState: {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
+		"origin":             identitySchema,
+		wireDiagnostics:      diagnosticDeltaSchema(),
+		"active":             {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+	}, Required: []string{"status", wireApplicationState, "origin", wireDiagnostics, "active"}}
+}
+
+func projectRenameOutput(result *backend.RenameResult) (any, error) {
+	if result == nil {
+		return nil, fmt.Errorf("rename result is nil")
+	}
+	if result.ApplicationState == "" {
+		return nil, fmt.Errorf("rename application state is unknown")
+	}
+	active := result.Active
+	if active == nil {
+		active = []string{}
+	}
+	projection := map[string]any{
+		"status": "renamed", wireApplicationState: result.ApplicationState,
+		wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+	}
+	if origin := projectRenameIdentity(result.ProjectRoot, result.Source); origin != nil {
+		projection["origin"] = origin
+	}
+	if result.ContinuationUnavailable != "" {
+		projection["continuation_unavailable"] = result.ContinuationUnavailable
+	}
+	if result.Lookup != nil && result.Revision != "" && result.ApplicationState == string(EditPersisted) {
+		if identity := projectRenameIdentity(result.ProjectRoot, result.Lookup); identity != nil {
+			projection["file"] = identity["file"]
+			projection["symbol"] = identity["symbol"]
+			projection[wireExpectedRevision] = result.Revision
+		}
+	}
+	return projection, nil
+}
+
+func projectRenameErrorOutput(err error) (any, bool, error) {
+	var diagnosticsError *backend.RenameDiagnosticsError
+	if !errors.As(err, &diagnosticsError) || diagnosticsError.Result == nil || diagnosticsError.Result.Source == nil {
+		return nil, false, nil
+	}
+	result := diagnosticsError.Result
+	active := result.Active
+	if active == nil {
+		active = []string{}
+	}
+	if result.ApplicationState != string(EditPersisted) && result.ApplicationState != string(EditAppliedWorking) {
+		return nil, false, nil
+	}
+	origin := projectRenameIdentity(result.ProjectRoot, result.Source)
+	if origin == nil {
+		return nil, false, nil
+	}
+	return map[string]any{
+		"status": "applied_with_diagnostics", wireApplicationState: result.ApplicationState,
+		"origin": origin, wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+	}, true, nil
+}
+
+func projectRenameIdentity(root string, lookup *backend.LookupResult) map[string]any {
+	if lookup == nil {
+		return nil
+	}
+	file, symbol := lookup.File, lookup.Symbol
+	if lookup.Definition != nil {
+		file = lookup.Definition.File
+		if lookup.Definition.QualifiedName != "" {
+			symbol = lookup.Definition.QualifiedName
+		}
+	}
+	file = renameProjectRelativeFile(root, file)
+	if file == "" || symbol == "" {
+		return nil
+	}
+	return map[string]any{"file": file, "symbol": symbol}
+}
+
+func renameProjectRelativeFile(root, file string) string {
+	if file == "" {
+		return ""
+	}
+	if root == "" {
+		if filepath.IsAbs(file) {
+			return ""
+		}
+		clean := filepath.Clean(file)
+		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return ""
+		}
+		return filepath.ToSlash(clean)
+	}
+	rootPath, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	filePath := file
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(rootPath, filePath)
+	}
+	filePath, err = filepath.Abs(filePath)
+	if err != nil {
+		return ""
+	}
+	relative, err := filepath.Rel(rootPath, filePath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return filepath.ToSlash(relative)
+}
+
+func projectRenameDiagnostics(delta backend.DiagnosticDelta) map[string]any {
+	introduced := delta.Introduced
+	if introduced == nil {
+		introduced = []string{}
+	}
+	resolved := delta.Resolved
+	if resolved == nil {
+		resolved = []string{}
+	}
+	suggestions := delta.Suggestions
+	if suggestions == nil {
+		suggestions = []string{}
+	}
+	return map[string]any{"net_delta": delta.NetDelta, "introduced": introduced, "resolved": resolved, "suggestions": suggestions}
+}
+
+var renameFileConsumers = []string{
+	"semantic_lookup", "semantic_rename", "semantic_verify", "semantic_replace_body",
+	"semantic_move_construct", "semantic_remove_construct", "semantic_insert_case",
+	"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+	"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+	"semantic_extract_function", "semantic_extract_variable",
+	"semantic_inline_variable",
+}
+
+var renameSymbolConsumers = []string{
+	"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_move_construct",
+	"semantic_replace_decl", "semantic_extract_function", "semantic_extract_variable",
+	"semantic_inline_variable",
+}
+
+var renameRevisionConsumers = []string{
+	"semantic_replace_body", semanticInlineFunctionToolName, semanticMigrateTypeToolName,
 }
 
 func verifyDef() Def[VerifyReq, VerifyRes] {

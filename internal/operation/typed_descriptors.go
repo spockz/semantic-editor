@@ -449,11 +449,11 @@ func EditReceiptSchema() ValueSchema {
 	revisions := ValueSchema{Kind: SchemaArray, Items: new(FileRevisionSchema())}
 	continuations := ValueSchema{Kind: SchemaArray, Items: new(SymbolTargetSchema())}
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"schema_version": version,
-		"status":         status,
-		"operation":      text,
-		"changes":        revisions,
-		"read_set":       revisions,
+		"schema_version":       version,
+		"status":               status,
+		"operation":            text,
+		"changes":              revisions,
+		"read_set":             revisions,
 		errorContinuationField: continuations,
 	}, Required: []string{"schema_version", "status", "operation"}}
 }

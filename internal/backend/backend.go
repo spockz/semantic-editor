@@ -377,9 +377,14 @@ func NormalizeRenameInput(raw string) string {
 
 // RenameResult reports the resolved target and diagnostic delta after a rename.
 type RenameResult struct {
-	Lookup      *LookupResult
-	Diagnostics DiagnosticDelta
-	Active      []string
+	Lookup                  *LookupResult
+	Diagnostics             DiagnosticDelta
+	Active                  []string
+	Source                  *LookupResult `json:"source,omitempty"`
+	Revision                string        `json:"revision,omitempty"`
+	ApplicationState        string        `json:"application_state,omitempty"`
+	ContinuationUnavailable string        `json:"continuation_unavailable,omitempty"`
+	ProjectRoot             string        `json:"-"`
 }
 
 // RenameDiagnosticsError reports diagnostics introduced by an applied rename.
