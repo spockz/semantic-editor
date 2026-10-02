@@ -1118,6 +1118,18 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	}
 }
 
+type exampleSchemaProperty struct {
+	Type  string            `json:"type"`
+	Enum  []json.RawMessage `json:"enum"`
+	Items struct {
+		Type string `json:"type"`
+	} `json:"items"`
+	Properties map[string]struct {
+		Type string `json:"type"`
+	} `json:"properties"`
+	Required []string `json:"required"`
+}
+
 func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
@@ -1131,15 +1143,9 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 			Tools []struct {
 				Name        string `json:"name"`
 				InputSchema struct {
-					Properties map[string]struct {
-						Type  string            `json:"type"`
-						Enum  []json.RawMessage `json:"enum"`
-						Items struct {
-							Type string `json:"type"`
-						} `json:"items"`
-					} `json:"properties"`
-					Required []string                     `json:"required"`
-					Examples []map[string]json.RawMessage `json:"examples"`
+					Properties map[string]exampleSchemaProperty `json:"properties"`
+					Required   []string                         `json:"required"`
+					Examples   []map[string]json.RawMessage     `json:"examples"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -1167,50 +1173,74 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
 					continue
 				}
-				var value any
-				if err := json.Unmarshal(raw, &value); err != nil {
-					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
-					continue
-				}
-				validType := false
-				switch property.Type {
-				case "string":
-					_, validType = value.(string)
-				case "boolean":
-					_, validType = value.(bool)
-				case "integer":
-					if number, ok := value.(float64); ok {
-						validType = number == float64(int(number))
-					}
-				case "array":
-					if items, ok := value.([]any); ok {
-						validType = true
-						for _, item := range items {
-							if _, ok := item.(string); !ok || property.Items.Type != "string" {
-								validType = false
-							}
-						}
-					}
-				default:
-					t.Errorf("%s parameter %q has unexpected schema type %q", tool.Name, key, property.Type)
-				}
-				if !validType {
-					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
-				}
-				if len(property.Enum) > 0 {
-					matched := false
-					for _, allowed := range property.Enum {
-						matched = matched || string(allowed) == string(raw)
-					}
-					if !matched {
-						t.Errorf("%s example parameter %q is outside its enum", tool.Name, key)
-					}
-				}
+				assertOperationExampleMatchesProperty(t, tool.Name, key, property, raw)
 			}
 		}
 	}
 	if exampleCount == 0 {
 		t.Fatal("tools/list did not advertise any operation examples")
+	}
+}
+
+func assertOperationExampleMatchesProperty(t *testing.T, toolName, parameterName string, property exampleSchemaProperty, raw json.RawMessage) {
+	t.Helper()
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		t.Errorf("%s example parameter %q is invalid JSON: %v", toolName, parameterName, err)
+		return
+	}
+	valid := false
+	switch property.Type {
+	case "string":
+		_, valid = value.(string)
+	case "boolean":
+		_, valid = value.(bool)
+	case "integer":
+		if number, ok := value.(float64); ok {
+			valid = number == float64(int(number))
+		}
+	case "array":
+		if items, ok := value.([]any); ok {
+			valid = true
+			for _, item := range items {
+				if _, ok := item.(string); !ok || property.Items.Type != "string" {
+					valid = false
+				}
+			}
+		}
+	case "object":
+		if object, ok := value.(map[string]any); ok {
+			valid = true
+			for _, required := range property.Required {
+				if _, exists := object[required]; !exists {
+					valid = false
+				}
+			}
+			for nested, nestedValue := range object {
+				nestedProperty, exists := property.Properties[nested]
+				if !exists || nestedProperty.Type != "string" {
+					valid = false
+					continue
+				}
+				if _, ok := nestedValue.(string); !ok {
+					valid = false
+				}
+			}
+		}
+	default:
+		t.Errorf("%s parameter %q has unexpected schema type %q", toolName, parameterName, property.Type)
+	}
+	if !valid {
+		t.Errorf("%s example parameter %q does not satisfy type %q", toolName, parameterName, property.Type)
+	}
+	if len(property.Enum) > 0 {
+		matched := false
+		for _, allowed := range property.Enum {
+			matched = matched || string(allowed) == string(raw)
+		}
+		if !matched {
+			t.Errorf("%s example parameter %q is outside its enum", toolName, parameterName)
+		}
 	}
 }
 

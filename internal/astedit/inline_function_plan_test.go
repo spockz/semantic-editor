@@ -2,7 +2,15 @@
 
 package astedit
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"semedit/internal/sourcebuf"
+)
 
 func TestPlanInlineFunctionPreservesDeclaredResultType(t *testing.T) {
 	caller := "package sample\nfunc Run() any { return adjust() }\n"
@@ -33,5 +41,48 @@ func TestPlanInlineFunctionRefusesUnprovenBindingsAndEvaluation(t *testing.T) {
 				t.Fatal("PlanInlineFunction() error = nil, want refusal")
 			}
 		})
+	}
+}
+
+func TestApplySemanticEditRechecksCapturedInputsAtPublication(t *testing.T) {
+	root := t.TempDir()
+	targetPath := filepath.Join(root, "main.go")
+	manifestPath := filepath.Join(root, "go.mod")
+	before := []byte("package sample\nfunc Value() int { return 1 }\n")
+	after := []byte("package sample\nfunc Value() int { return 2 }\n")
+	manifest := []byte("module example.com/sample\n\ngo 1.24\n")
+	for path, content := range map[string][]byte{targetPath: before, manifestPath: manifest} {
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	plan := SemanticEditPlan{
+		Change:  sourcebuf.Change{Path: targetPath, Before: bytes.Clone(before), After: after},
+		ReadSet: map[string][]byte{targetPath: bytes.Clone(before), manifestPath: bytes.Clone(manifest)},
+	}
+	if err := os.WriteFile(manifestPath, []byte("module example.com/changed\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ApplySemanticEdit(context.Background(), plan); err == nil {
+		t.Fatal("ApplySemanticEdit() error = nil, want captured manifest drift refusal")
+	}
+	actual, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, before) {
+		t.Fatalf("target changed after manifest drift: %q", actual)
+	}
+}
+
+func TestCompleteRefactorReadSetRefusesManifestDrift(t *testing.T) {
+	root := t.TempDir()
+	manifestPath := filepath.Join(root, "go.mod")
+	if err := os.WriteFile(manifestPath, []byte("module example.com/current\n\ngo 1.24\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	original := map[string][]byte{manifestPath: []byte("module example.com/captured\n\ngo 1.24\n")}
+	if _, err := completeRefactorReadSet(context.Background(), root, original, nil); err == nil {
+		t.Fatal("completeRefactorReadSet() error = nil, want manifest drift refusal")
 	}
 }

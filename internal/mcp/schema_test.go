@@ -207,6 +207,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 							t.Errorf("remove result schema omitted %q", field)
 						}
 					}
+				case "semantic_inline_function", "semantic_migrate_type":
+					assertSemanticEditReceiptOutputSchema(t, name, tool["outputSchema"])
 				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -257,6 +259,24 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertSemanticEditReceiptOutputSchema(t *testing.T, name string, schema any) {
+	t.Helper()
+	assertStandardOutputSchema(t, schema, "object")
+	result := schema.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	for _, field := range []string{"schema_version", "status", "operation", "changes", "read_set", "continuations"} {
+		if _, ok := result["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("%s receipt schema omitted %q", name, field)
+		}
+	}
+	continuations := result["properties"].(map[string]any)["continuations"].(map[string]any)
+	item := continuations["items"].(map[string]any)
+	for _, field := range []string{"file", "symbol", "expected_revision"} {
+		if _, ok := item["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("%s continuation schema omitted %q", name, field)
+		}
 	}
 }
 
