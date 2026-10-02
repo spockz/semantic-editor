@@ -1176,3 +1176,21 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: inspection returned symbol not found; no mutation occurred.
 - Workaround: inspect the declaration outline first and select `typeRenderer.signature`.
 - Root cause: the caller guessed a helper name instead of obtaining its identity from the semantic outline.
+
+### ST-0150: inspection selected the wrong declaration file
+
+- Date: 2026-10-01
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/wire_engine_mutations.go`, `FileEditRes`
+- Observed failure: inspection returned symbol not found; no mutation occurred.
+- Workaround: obtain the declaration file through `semantic_lookup` before inspection.
+- Root cause: the caller guessed a declaration's file instead of resolving its semantic location.
+
+### ST-0151: verifier executable built with an older Go type checker
+
+- Date: 2026-10-01
+- Tool: semantic verification in development CLI MCP batches
+- Target: `internal/astedit/inspect.go` and other embedded struct literals
+- Observed failure: Verification rejected promoted literal fields accepted by Go 1.27 builds after `go fix` modernized them.
+- Root cause: The discovered `gopls` v0.23.0 executable was built with Go 1.26.6 and used that version of `go/types`.
+- Workaround: Rebuilt the same cached v0.23.0 source with Go 1.27.1 into project-local `.scratch/go/bin/gopls`, then supplied that executable to all six workers. Check-only verification passed with no promoted-field errors.
