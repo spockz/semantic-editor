@@ -1659,3 +1659,27 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: revive rejected exported planner types and functions because they had no documentation comments.
 - Workaround: add concise API comments with an atomic source rewrite; no registered semantic operation inserts documentation comments on existing declarations.
 - Root cause: exported planner APIs were added without the repository-required documentation comments.
+
+### ST-0150: CLI declaration command name mismatch
+
+- **Tool:** `semedit-next insert-declaration --help`
+- **Target:** CLI command discovery
+- **Observed failure:** The CLI returned `unknown command "insert-declaration"`.
+- **Workaround:** Use the documented `insert` CLI command or MCP `semantic_insert_declaration` after inspecting help.
+- **Root cause:** The CLI alias differs from the MCP operation name.
+
+### ST-0151: Process inspection denied
+
+- **Tool:** `ps -o pid,ppid,etime,stat,command -ax`
+- **Target:** Check progress of the active `make check` process
+- **Observed failure:** The shell returned `operation not permitted: ps`.
+- **Workaround:** Continue by polling the owning command session.
+- **Root cause:** The workspace sandbox denies process listing.
+
+### ST-0152: Git index lock denied
+
+- **Tool:** `git commit -m "Log signature track tool failures"`
+- **Target:** Current worktree index
+- **Observed failure:** Git could not create the shared worktree index lock under `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-signatures/`.
+- **Workaround:** None applied; the commit remains uncreated.
+- **Root cause:** The sandbox denied the shared Git metadata write.
