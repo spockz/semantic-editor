@@ -77,6 +77,14 @@ When developing or refactoring code inside this repository, agents must dogfood 
 * **Verification & Diagnostics**: Use `semantic_verify` to confirm workspace cleanliness after modifications.
 * **Composite Refactorings**: Use `semantic_batch` to execute multiple semantic transformations in sequence.
 
+### Editing Tools and Python Usage
+
+* **Semantic Changes**: Use the applicable `semedit` tool first for supported source changes and navigation. When a structural operation is unsupported, consider AST tools such as `ast-grep` before text replacement.
+* **Surgical Text Edits**: Use built-in write-file and edit-file tools, including `apply_patch`, for documentation, configuration, fixtures, merge conflict resolution, and source edits that semantic tools cannot perform. Keep edits targeted and preserve the atomic write requirements above.
+* **Avoid Python for Routine Work**: Do not use Python to read or slice source files, make surgical text replacements, generate patches, or rewrite files when semantic tools, built-in file tools, `rg`, or `fd` can handle the task. Do not replace Python with another general-purpose scripting language to bypass this rule.
+* **Justified Scripting**: Reserve Python for tasks that materially need computation, data processing, or protocol/process coordination and are not adequately served by repository commands or available tools. Briefly state why it is needed. A Python transport helper may invoke semantic tools; it must not perform source text rewrites as a substitute for them.
+* **Fallback Discipline**: A failed semantic operation does not justify broad scripted rewrites. Log the failure as required below, then use the smallest appropriate fallback.
+
 ### Mandatory Logging of Suboptimal Tool Behavior
 
 If any MCP tool call fails, produces incorrect AST output, panics, or requires an immediate manual text edit to touch up or fix the result, agents **must immediately log the occurrence in [`docs/SUBOPTIMAL_TOOLS.md`](docs/SUBOPTIMAL_TOOLS.md)** detailing the tool, target file, observed failure, workaround applied, and root cause before proceeding.
