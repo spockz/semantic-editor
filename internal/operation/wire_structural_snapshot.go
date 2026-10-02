@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"semedit/internal/sourcebuf"
 
 	"bytes"
 	"go/ast"
@@ -16,6 +15,9 @@ import (
 	"go/token"
 	"strings"
 	"sync"
+
+	"semedit/internal/gocache"
+	"semedit/internal/sourcebuf"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -102,8 +104,12 @@ func loadStructuralPackages(ctx context.Context, root string, extra map[string][
 		}
 		captured[path] = bytes.Clone(content)
 	}
+	environment, err := gocache.Environment(ctx, root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("prepare structural Go package environment: %w", err)
+	}
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
-	loaded, err := packages.Load(&packages.Config{Context: ctx, Dir: root, Mode: mode, Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, ParseFile: parse}, "./...")
+	loaded, err := packages.Load(&packages.Config{Context: ctx, Dir: root, Env: environment, Mode: mode, Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, ParseFile: parse}, "./...")
 	if err != nil {
 		return nil, nil, fmt.Errorf("load structural package snapshot: %w", err)
 	}
