@@ -351,18 +351,76 @@ func TestRemoveCaseUsesFunctionAndSwitchSelectors(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteRefusesWithoutCompletePreflights(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "decls.go")
-	initial := "package sample\n// Keep the attached documentation.\nfunc obsolete() {}\nfunc keep() {}\n"
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safefunction\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "decls.go")
+	initial := "package sample\n// Keep the attached documentation.\nfunc obsolete() {}\nfunc keep() { _ = obsolete }\n"
 	writeGo(t, path, initial)
 	_, checks, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "obsolete", SafeDelete: true}, false)
 	if err != nil || refusal == "" {
 		t.Fatalf("expected safe_delete refusal, refusal=%q err=%v", refusal, err)
 	}
-	if len(checks) != 3 || checks[0] != "go_syntax_parse" || checks[1] != "target_resolution" || checks[2] != "safe_delete_scope_check" {
+	if !slices.Contains(checks, "module_reference_scan_complete") || !strings.Contains(refusal, "identifier named") {
 		t.Fatalf("checks run = %v", checks)
 	}
 	if got := readGo(t, path); got != initial {
 		t.Fatalf("safe_delete changed source:\n%s", got)
+	}
+}
+
+func TestRemoveSafeDeleteUnreferencedFreeFunction(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safefunction\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "decls.go")
+	initial := "package sample\nfunc obsolete() {}\nfunc keep() {}\n"
+	writeGo(t, path, initial)
+	if _, checks, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "function", Symbol: "obsolete", SafeDelete: true}, false); err != nil || refusal != "" {
+		t.Fatalf("Remove: refusal=%q err=%v", refusal, err)
+	} else if !slices.Contains(checks, "function_identity_scope_check") {
+		t.Fatalf("compiler identity preflight omitted: %v", checks)
+	}
+	if got := readGo(t, path); strings.Contains(got, "obsolete") || !strings.Contains(got, "keep()") {
+		t.Fatalf("wrong declaration removed:\n%s", got)
+	}
+}
+
+func TestRemoveSafeDeleteBasicPackageVariable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safevariable\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "vars.go")
+	initial := "package sample\nvar unusedCount int = 7\nvar unusedFlag bool\n"
+	writeGo(t, path, initial)
+	if _, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "unusedCount", SafeDelete: true}, false); err != nil || refusal != "" {
+		t.Fatalf("Remove constant-initialized var: refusal=%q err=%v", refusal, err)
+	}
+	if _, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "unusedFlag", SafeDelete: true}, false); err != nil || refusal != "" {
+		t.Fatalf("Remove zero-value var: refusal=%q err=%v", refusal, err)
+	}
+	if got := readGo(t, path); strings.Contains(got, "unusedCount") || strings.Contains(got, "unusedFlag") {
+		t.Fatalf("safe-deleted variables remain:\n%s", got)
+	}
+}
+
+func TestRemoveSafeDeleteRefusesEffectfulPackageVariable(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safevariable\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(root, "vars.go")
+	initial := "package sample\nvar unused = effect()\nfunc effect() int { return 1 }\n"
+	writeGo(t, path, initial)
+	_, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "unused", SafeDelete: true}, false)
+	if err != nil || !strings.Contains(refusal, "initializer") {
+		t.Fatalf("expected effectful initializer refusal, got refusal=%q err=%v", refusal, err)
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("refused variable removal changed source:\n%s", got)
 	}
 }
 

@@ -1,0 +1,30 @@
+# A safe-delete child must analyze references inserted into the current batch overlay and preserve prior child edits on refusal.
+stdin input.json
+exec semedit mcp --live-reload
+stdout '"status":"error"'
+stdout 'safe_delete found another Go identifier named'
+cmp decls.go .scratch/want/decls.go
+cmp added.go .scratch/want/added.go
+-- go.mod --
+module example.com/safedeleteoverlay
+
+go 1.24
+-- decls.go --
+package sample
+
+func obsolete() {}
+func keep() {}
+-- added.go --
+package sample
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Use() { obsolete() }"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"function","symbol":"obsolete","safe_delete":true}}]}}}
+-- .scratch/want/decls.go --
+package sample
+
+func obsolete() {}
+func keep() {}
+-- .scratch/want/added.go --
+package sample
+
+func Use() { obsolete() }

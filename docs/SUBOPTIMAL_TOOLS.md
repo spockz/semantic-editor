@@ -2102,3 +2102,19 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed limitation: the available structural insertion schema supports declarations and switch cases, but not fields inside an existing struct.
 - Workaround: add the `OriginFile` evidence field with a scoped patch, then use `semantic_replace_body` for the batch result projection and verify the public MCP schema and CLI txtar behavior.
 - Root cause: this checkout has no semantic operation for inserting one field into an existing Go struct.
+
+## 2026-10-02: CLI command discovery used an unsupported spelling
+
+- Tool: `go run . insert-function --help`
+- Target: `internal/astedit/safe_delete.go`
+- Observed failure: the CLI reported `unknown command "insert-function"`; no source was changed.
+- Workaround: use the repository's registered semantic command name after checking CLI help, then use a narrow built-in patch only for syntax the semantic tools cannot express.
+- Root cause: the registered operation command uses a different public spelling than the guessed command.
+
+## 2026-10-02: CLI help ran without the assigned worktree cache environment
+
+- Tool: `go run . insert --help`
+- Target: relocation worktree CLI
+- Observed failure: Go attempted to open a build-cache path under the coordinator user's Library cache and the sandbox denied it; no source was changed.
+- Workaround: rerun from the exact relocation worktree with its per-worktree `GOCACHE`, `GOPLSCACHE`, and `GOTMPDIR` settings.
+- Root cause: the command omitted the required repository cache environment and was run from the coordinator checkout.

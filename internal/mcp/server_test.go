@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1567,7 +1568,7 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safedelete\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	source := "package safedelete\nfunc obsolete() {}\n"
+	source := "package safedelete\nfunc obsolete() {}\nfunc use() { _ = obsolete }\n"
 	file := filepath.Join(root, "main.go")
 	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
 		t.Fatal(err)
@@ -1595,7 +1596,7 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	if !response.Result.IsError || response.Result.Structured.Result.Status != "refused" || response.Result.Structured.Result.Refusal == "" {
 		t.Fatalf("safe delete response did not expose an explicit refusal: %+v", response.Result)
 	}
-	if len(response.Result.Structured.Result.Checks) != 3 || response.Result.Structured.Result.Checks[0] != "go_syntax_parse" || response.Result.Structured.Result.Checks[1] != "target_resolution" || response.Result.Structured.Result.Checks[2] != "safe_delete_scope_check" {
+	if !slices.Contains(response.Result.Structured.Result.Checks, "module_reference_scan_complete") {
 		t.Fatalf("checks_run = %v", response.Result.Structured.Result.Checks)
 	}
 	if got, err := os.ReadFile(file); err != nil || string(got) != source {

@@ -1,0 +1,23 @@
+# Only standalone unexported basic package variables with zero or constant initialization may be safely deleted.
+exec semedit remove-construct --file vars.go --kind variable --symbol safeCount --safe-delete
+stdout 'Safe deletion checks run'
+! exec semedit remove-construct --file vars.go --kind variable --symbol effectfulCount --safe-delete
+stderr 'initializer is not proven to be effect-free'
+cmp vars.go .scratch/want/vars.go
+-- go.mod --
+module example.com/safedeletevariables
+
+go 1.24
+-- vars.go --
+package sample
+
+var safeCount = 7
+var effectfulCount = makeCount()
+
+func makeCount() int { return 1 }
+-- .scratch/want/vars.go --
+package sample
+
+var effectfulCount = makeCount()
+
+func makeCount() int { return 1 }

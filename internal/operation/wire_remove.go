@@ -80,7 +80,7 @@ var (
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: case value to remove (for example nil or \"foo\"); use default for a default clause"},
 		{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)"},
-		{Name: "safe_delete", CLIName: "safe-delete", JSONName: "safe_delete", Type: ParamBoolean, Description: "Request reference and resource preflight. Safe deletion currently supports only unexported standalone constants after a complete Go source scan; other requests fail closed and return checks run.", Default: false},
+		{Name: "safe_delete", CLIName: "safe-delete", JSONName: "safe_delete", Type: ParamBoolean, Description: "Request fail-closed reference and resource preflight. Supports unexported standalone constants, unexported free functions other than main/init, and standalone unexported basic package variables with no initializer or a constant-valued initializer. Grouped declarations, exported or referenced names, non-basic/effectful variables, methods, types, dynamic-reference imports, source directives, incomplete source sets, and unsupported declarations are refused with checks run.", Default: false},
 		{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically remove imports made unused by this edit (default true)", Default: true},
 	}
 )
@@ -167,7 +167,7 @@ func runRemove(ctx context.Context, cc CallContext, req RemoveReq) (RemoveRes, e
 	delta, diagnosticStatus := finishDelta()
 	status := "removed"
 	return RemoveRes{
-		File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol,
+		File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File),
 		InFunction: req.InFunction, Discriminator: req.Discriminator, TargetCase: req.TargetCase,
 		ConstructPath: req.ConstructPath, SafeDelete: req.SafeDelete, Status: status,
 		ChecksRun: checks, Refusal: refusal, Diff: diff, DiagnosticStatus: diagnosticStatus,
@@ -178,7 +178,7 @@ func runRemove(ctx context.Context, cc CallContext, req RemoveReq) (RemoveRes, e
 func removeDef() Def[RemoveReq, RemoveRes] {
 	return Def[RemoveReq, RemoveRes]{
 		Key:      "remove_construct",
-		Summary:  "Use this tool instead of replace_file_content to remove exactly one Go top-level declaration or switch case. Top-level kinds are function, method, type, constant, and variable, selected by symbol; case uses in_function plus optional discriminator, target_case, and construct_path selectors. Syntax is validated and diagnostics are reported. Structural removal does not prove behavioral equivalence. safe_delete=true can remove only unexported standalone constants after scanning all Go-loader source directories across build-tag variants; other requests fail closed and return checks run.",
+		Summary:  "Use this tool instead of replace_file_content to remove exactly one Go top-level declaration or switch case. Top-level kinds are function, method, type, constant, and variable, selected by symbol; case uses in_function plus optional discriminator, target_case, and construct_path selectors. Syntax is validated and diagnostics are reported. Structural removal does not prove behavioral equivalence. safe_delete=true supports unexported standalone constants, free functions other than main/init, and basic package variables with no initializer or a constant-valued initializer after fail-closed compiler and full-source preflights; other cases are refused with checks run.",
 		Params:   removeParams,
 		Level:    LevelFile,
 		CLIName:  "remove-construct",
