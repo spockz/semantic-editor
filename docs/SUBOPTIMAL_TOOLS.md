@@ -1,5 +1,13 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## Retrospective: inspection guessed the verification handler name
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/operation/wire_backend.go`, selector `runVerify`.
+- Observed failure: symbol not found; no source mutation occurred.
+- Workaround: use the actual `verifyRun` declaration identified by the preceding structural search.
+- Root cause: the coordinator submitted an inferred handler name despite already having the real name in tool output. This was a caller mistake, not missing discovery information.
+
 This document records unexpected, buggy, or suboptimal behavior in `semedit` MCP tools during internal dogfooding and real-world agent tasks. Abbreviations used on this page include large language model (LLM), application programming interface (API), command-line interface (CLI), abstract syntax tree (AST), identifier (ID), JavaScript Object Notation (JSON), architecture decision record (ADR), and return on investment (ROI).
 
 The goal is to track:
@@ -3083,9 +3091,9 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 
 - Tool: `semantic_batch` with `semantic_insert_decl` and five `semantic_replace_decl` children.
 - Target: shared expected-revision CLI schema constant in `internal/operation`.
-- Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. Import organization also reordered four unrelated benchmark oracle fixtures.
+- Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. During the call, four non-target standalone hidden Go tests under `testdata/bench-oracles/task-12-request-identity-migration` had their existing imports alphabetized within one group: `correlation/identities_hidden_test.go`, `notifications/notifier_hidden_test.go`, `reporting/report_hidden_test.go`, and `scheduler/jobs_hidden_test.go`. No test bodies, assertions, import paths, or files embedded in txtars changed in this incident.
 - Workaround: retain the intended declaration edits, restore unrelated fixture bytes, and run the repository's trusted `make check` gate with the configured module cache.
-- Root cause: batch-wide import organization reaches unrelated files; verification requires explicit workspace trust and its language session reports diagnostics inconsistent with the compiler gate.
+- Root cause: the recorded diff confirms formatting outside the six requested declaration edits, but does not identify the responsible formatting stage or running binary revision. Current batch source scopes import organization and final Go formatting to changed paths, so the earlier attribution to batch-wide import organization is unconfirmed. Verification also requires explicit workspace trust and reported diagnostics inconsistent with the compiler gate.
 
 ## Instructions audit: Independent compression review timed out
 
