@@ -269,7 +269,7 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",
-		MCPName: "semantic_replace_body",
+		MCPName: replaceBodyTool,
 		Parse:   parseReplaceBody,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceBodyReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceBody,

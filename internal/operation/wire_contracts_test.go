@@ -360,3 +360,54 @@ func TestContractParserRetainsAnalyzedBytesAcrossDiskDrift(t *testing.T) {
 		t.Fatalf("drift fixture source = %q, want %q", current, after)
 	}
 }
+
+func TestImplementContractPreflightsSamePackageTestVariants(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		testSource string
+		wantErr    bool
+	}{
+		{name: "compiles with tests", testSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n", wantErr: false},
+		{name: "refuses test method collision", testSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			for name, source := range map[string]string{
+				"go.mod":         "module example.com/testvariant\n\ngo 1.27.1\n",
+				"types.go":       "package demo\n\ntype Worker struct{}\n\ntype Runner interface { Run() error }\n",
+				"methods.go":     "package demo\n",
+				"worker_test.go": test.testSource,
+			} {
+				path := filepath.Join(root, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, err := os.ReadFile(filepath.Join(root, "methods.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = runImplementContract(context.Background(), CallContext{WorkDir: root}, implementContractRequest{
+				File: "types.go", Symbol: "Worker", Contract: "Runner", DestinationFile: "methods.go",
+				ReceiverKind: contractplan.ReceiverPointer, BodyPolicy: contractplan.BodyPolicyPanicStub,
+			})
+			if test.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "test variant") {
+					t.Fatalf("expected test variant refusal, got %v", err)
+				}
+				after, readErr := os.ReadFile(filepath.Join(root, "methods.go"))
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if !bytes.Equal(after, before) {
+					t.Fatalf("destination changed after test variant refusal: %q", after)
+				}
+			} else if err != nil {
+				t.Fatalf("valid test variant rejected: %v", err)
+			}
+		})
+	}
+}

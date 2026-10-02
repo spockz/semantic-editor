@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"semedit/internal/backend"
+	"semedit/internal/sourcebuf"
 	"testing"
 )
 

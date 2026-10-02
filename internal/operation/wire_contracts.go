@@ -34,6 +34,7 @@ const (
 	contractImplementTool         = "semantic_implement_contract"
 	contractInspectTool           = "semantic_inspect_symbol"
 	contractRenameTool            = "semantic_rename"
+	replaceBodyTool               = "semantic_replace_body"
 	sourceContractExtractFile     = "semantic_extract_interface.result.receipt.continuations[].file"
 	sourceContractExtractSymbol   = "semantic_extract_interface.result.receipt.continuations[].symbol"
 	sourceContractImplementFile   = "semantic_implement_contract.result.receipt.continuations[].file"
@@ -481,14 +482,67 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 	}
 	overlay[destination] = bytes.Clone(candidate)
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
-	loaded, err := packages.Load(&packages.Config{Context: ctx, Dir: snapshot.ModuleRoot, Env: snapshot.Env, BuildFlags: []string{"-mod=readonly"}, Mode: mode, Overlay: overlay}, "./...")
+	parsedTests := make(map[string][]byte)
+	var parsedTestsMu sync.Mutex
+	capturedPreflight := make(map[string][]byte)
+	var capturedPreflightMu sync.Mutex
+	loaded, err := packages.Load(&packages.Config{
+		Context: ctx, Dir: snapshot.ModuleRoot, Env: snapshot.Env, BuildFlags: []string{"-mod=readonly"}, Mode: mode, Overlay: overlay, Tests: true,
+		ParseFile: func(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
+			absolute, err := filepath.Abs(filename)
+			if err != nil {
+				return nil, fmt.Errorf("resolve preflight Go source %q: %w", filename, err)
+			}
+			canonical, err := filepath.EvalSymlinks(absolute)
+			if err != nil {
+				return nil, fmt.Errorf("canonicalize preflight Go source %q: %w", filename, err)
+			}
+			if canonical == destination {
+				capturedPreflightMu.Lock()
+				defer capturedPreflightMu.Unlock()
+				return parseContractSource(snapshot.Context, snapshot.Root, fset, filename, candidate, capturedPreflight, nil)
+			}
+			relative, err := filepath.Rel(snapshot.Root, canonical)
+			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+				current, err := sourcebuf.ReadFile(snapshot.Context, canonical)
+				if err != nil {
+					return nil, fmt.Errorf("read preflight Go source %q: %w", canonical, err)
+				}
+				if source != nil && !bytes.Equal(current, source) {
+					return nil, fmt.Errorf("preflight Go source %q changed while packages.Load analyzed it", canonical)
+				}
+				if strings.HasSuffix(canonical, "_test.go") {
+					parsedTestsMu.Lock()
+					parsedTests[canonical] = bytes.Clone(current)
+					parsedTestsMu.Unlock()
+				}
+				capturedPreflightMu.Lock()
+				defer capturedPreflightMu.Unlock()
+				return parseContractSource(snapshot.Context, snapshot.Root, fset, filename, current, capturedPreflight, nil)
+			}
+			return parser.ParseFile(fset, filename, source, parser.ParseComments|parser.AllErrors)
+		},
+	}, "./...")
 	if err != nil {
 		return nil, fmt.Errorf("type-check generated contract output: %w", err)
 	}
 	finalPackages := make(map[string]*packages.Package)
+	primaryPackagePaths := make(map[string]string, len(snapshot.ByPath))
+	for path, pkg := range snapshot.ByPath {
+		if pkg != nil {
+			primaryPackagePaths[pkg.ID] = path
+		}
+	}
+	if err := validateContractTestVariants(loaded, filepath.Dir(destination)); err != nil {
+		return nil, err
+	}
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
-		if pkg != nil && pkg.PkgPath != "" && finalPackages[pkg.PkgPath] == nil {
-			finalPackages[pkg.PkgPath] = pkg
+		if pkg == nil {
+			return true
+		}
+		path, primary := primaryPackagePaths[pkg.ID]
+		if primary && pkg.PkgPath == path {
+			finalPackages[path] = pkg
 		}
 		return true
 	}, nil)
@@ -507,8 +561,63 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 	if len(finalPackage.Errors) > 0 {
 		return nil, fmt.Errorf("generated output package %q has type errors: %s", originalPackage.PkgPath, finalPackage.Errors[0].Msg)
 	}
+	for path, data := range parsedTests {
+		relative, err := filepath.Rel(snapshot.Root, path)
+		if err != nil {
+			return nil, fmt.Errorf("relativize preflight test source %q: %w", path, err)
+		}
+		snapshot.ReadSet = append(snapshot.ReadSet, contractRevision{Path: filepath.ToSlash(relative), Revision: contractDigest(data)})
+	}
+	slices.SortFunc(snapshot.ReadSet, func(left, right contractRevision) int { return strings.Compare(left.Path, right.Path) })
 	snapshot.ByPath = finalPackages
 	return finalPackage, nil
+}
+
+func validateContractTestVariants(loaded []*packages.Package, destinationDirectory string) error {
+	var validationErr error
+	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		if pkg == nil {
+			return true
+		}
+		for _, ignored := range pkg.IgnoredFiles {
+			if strings.HasSuffix(ignored, "_test.go") && sameContractDirectory(ignored, destinationDirectory) {
+				validationErr = fmt.Errorf("contract preflight cannot prove inactive test source %q under the current build tags", ignored)
+				return false
+			}
+		}
+		hasTestSource := false
+		for _, filename := range pkg.CompiledGoFiles {
+			if strings.HasSuffix(filename, "_test.go") && sameContractDirectory(filename, destinationDirectory) {
+				hasTestSource = true
+				break
+			}
+		}
+		if !hasTestSource {
+			return true
+		}
+		if pkg.Types == nil {
+			validationErr = fmt.Errorf("contract test variant %q has incomplete type information", pkg.ID)
+			return false
+		}
+		if len(pkg.Errors) > 0 {
+			validationErr = fmt.Errorf("contract test variant %q has type errors: %s", pkg.ID, pkg.Errors[0].Msg)
+			return false
+		}
+		return true
+	}, nil)
+	return validationErr
+}
+
+func sameContractDirectory(path, directory string) bool {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return false
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err == nil {
+		absolute = canonical
+	}
+	return filepath.Dir(absolute) == directory
 }
 
 func contractTypeInFile(pkg *packages.Package, path, name string) (*types.Named, error) {
@@ -1030,6 +1139,19 @@ func runImplementContract(ctx context.Context, cc CallContext, request implement
 		return contractOutput{}, err
 	}
 	selectedRevision := contractDigest(snapshot.Contents[selected])
+	if selected == destination && len(result.Changes) > 0 {
+		selectedDisplay := displayWorkPath(snapshot.Root, selected)
+		selectedRevision = ""
+		for _, change := range result.Changes {
+			if change.Path == selectedDisplay {
+				selectedRevision = change.Revision
+				break
+			}
+		}
+		if selectedRevision == "" {
+			return contractOutput{}, fmt.Errorf("changed concrete type file %q lacks final revision evidence", selectedDisplay)
+		}
+	}
 	result.ReceiptCandidates = []SymbolTarget{{File: displayWorkPath(snapshot.Root, selected), Symbol: request.Symbol, ExpectedRevision: &selectedRevision}}
 	if len(plan.Methods) > 0 {
 		var destinationRevision string
@@ -1125,8 +1247,8 @@ func implementContractOutputContract() *OperationOutputContract {
 	contract.Continuations = append(contract.Continuations,
 		OutputContinuation{Path: "result.type_target.file", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool}},
 		OutputContinuation{Path: "result.type_target.symbol", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool}},
-		OutputContinuation{Path: "result.generated_methods[].file", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool, "semantic_replace_body"}},
-		OutputContinuation{Path: "result.generated_methods[].symbol", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool, "semantic_replace_body"}},
+		OutputContinuation{Path: "result.generated_methods[].file", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool, replaceBodyTool}},
+		OutputContinuation{Path: "result.generated_methods[].symbol", Schema: text, Role: RoleTarget, Consumers: []string{contractInspectTool, contractRenameTool, replaceBodyTool}},
 	)
 	return contract
 }
@@ -1258,15 +1380,24 @@ func formatContractOutput(result contractOutput) (string, error) {
 
 func extractInterfaceDef() Def[extractInterfaceRequest, contractOutput] {
 	return Def[extractInterfaceRequest, contractOutput]{
-		Key: "extract_interface", Summary: "Use this tool instead of reconstructing method signatures to create a Go interface from exact selected direct methods. Choose a new interface symbol; in_type and typed members identify its concrete source and methods. destination_file defaults to file and must already exist in the same package. Copy result.contract and result.contract_file to semantic_implement_contract.contract and contract_file. Use live receipt continuations for later inspect or rename calls. Generated declarations are type-checked against the current source overlay before one apply; this operation does not implement methods or rewrite consumers.",
+		Key: "extract_interface", Summary: "Use this tool instead of reconstructing method signatures to create a Go interface from exact selected direct methods. Choose a new interface symbol; in_type and typed members identify its concrete source and methods. destination_file defaults to file and must already exist in the same package. Copy result.contract and result.contract_file to semantic_implement_contract.contract and contract_file when those aliases accompany the finalized live interface continuation. Buffered working results omit the finalized aliases; batch children use static parameters. Use live receipt continuations for later inspect or rename calls. Generated declarations are type-checked against the current source overlay before one apply; this operation does not implement methods or rewrite consumers.",
 		Params: extractInterfaceParams, Level: LevelSymbol, CLIName: "extract-interface", MCPName: "semantic_extract_interface",
 		Parse: parseExtractInterfaceRequest, Handlers: map[backend.LanguageID]func(context.Context, CallContext, extractInterfaceRequest) (contractOutput, error){backend.LanguageGo: runExtractInterface},
 		Format: formatContractOutput, Output: extractInterfaceOutputContract(),
 		FinalizeOutput: func(cc CallContext, _ extractInterfaceRequest, result contractOutput) (contractOutput, error) {
 			result.Operation = "semantic_extract_interface"
-			result.Contract = result.Symbol
-			result.ContractFile = result.File
-			return finalizeContractOutput(cc, nil, result)
+			finalized, err := finalizeContractOutput(cc, nil, result)
+			if err != nil {
+				return contractOutput{}, err
+			}
+			for _, continuation := range finalized.Receipt.Continuations {
+				if continuation.Symbol == finalized.Symbol {
+					finalized.Contract = continuation.Symbol
+					finalized.ContractFile = continuation.File
+					break
+				}
+			}
+			return finalized, nil
 		},
 		ProjectOutput: projectContractOutput, Batchable: true, BufferedBatch: true,
 		ExampleRaw: map[string]any{"file": wireExampleFile, "in_type": "Store", "symbol": "StoreAPI", "receiver_kind": "pointer", "members": []any{map[string]any{"file": wireExampleFile, "symbol": "(*Store).Read"}}},

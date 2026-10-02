@@ -2010,6 +2010,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: The shell's inline Python payload generator had an unclosed parenthesis and emitted no JSON; the helper then rejected empty stdin before starting an MCP request.
 - Workaround: Write the exact payload with a simpler JSON-safe script, then retry through the trusted pipe helper.
 - Root cause: The one-line Python expression was malformed while escaping a multiline Go body.
+
 ## ST-0199: CLI lookup rejected documented selector flags
 
 - Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next lookup`.

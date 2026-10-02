@@ -31,11 +31,11 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		return EditReceipt{}, fmt.Errorf("finalize receipt: operation is empty")
 	}
 	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: draft.Operation, ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
-	if inBatch && draft.Status != EditRefused {
+	if inBatch && draft.Status != EditRefused && draft.Status != EditNoOp {
 		receipt.Status = EditAppliedWorking
 	}
 	switch receipt.Status {
-	case EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+	case EditRefused, EditNoOp, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
 	default:
 		return EditReceipt{}, fmt.Errorf("finalize receipt: unsupported outcome %q", receipt.Status)
 	}
