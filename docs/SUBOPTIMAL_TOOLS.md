@@ -3216,7 +3216,6 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Workaround: include the captured MCP output in the failed probe-count diagnostic.
 - Root cause: the new test initially checked only the probe count and discarded the more useful server error context.
 
-
 ## ST-0309: Commit could not create the shared worktree index lock
 
 - Date: 2026-10-02
@@ -3225,7 +3224,6 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git could not create `.git/worktrees/flow-signatures/index.lock` because the sandbox denied access to the shared Git metadata directory.
 - Workaround: retry the explicitly requested worktree commit with scoped elevated permission.
 - Root cause: the worktree checkout is writable, but its linked Git index lives outside the worker writable root.
-
 
 ## ST-0310: Staging hit the same shared-index permission barrier
 
