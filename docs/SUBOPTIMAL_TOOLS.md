@@ -2082,3 +2082,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: an absolute path omitted `.scratch/worktrees/flow-foundation` and targeted the coordinator checkout instead of this worker worktree; the coordinator checkout received the same one-line context-forwarding edit.
 - Workaround: all intended changes were applied and verified in the assigned worker worktree; root will preserve the coordinator mirror in a targeted stash before integration, and I did not modify or restore coordinator files.
 - Root cause: the patch request used the primary checkout path rather than the assigned worktree path. Verify every patch target against the assigned worktree root before editing.
+
+## ST-0253: Replace-body rejected escaped test newline literals
+
+- Tool: `semedit replace-body`.
+- Target: `TestInspectProjectionFeedsGuardedReplaceBody` in `internal/mcp/schema_test.go`.
+- Observed failure: the CLI parser rejected escaped newline literals in the replacement body; it made no source change.
+- Workaround: use a surgical patch to add the self-contained module manifest to this test fixture only.
+- Root cause: the body flag's layered shell and CLI quoting did not preserve the Go rune and string literals.
