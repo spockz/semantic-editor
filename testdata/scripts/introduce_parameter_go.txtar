@@ -1,0 +1,54 @@
+# The CLI replaces one typed constant in a private function body, updates every direct caller, and refuses mutable reads and unknown nested fields without changing files.
+cp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode --expected-revision stale
+stderr 'expected_revision'
+cmp service.go .scratch/service-before.txt
+exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
+stdout 'Replaced the selected constant expression'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cmp other.go .scratch/want/other.txt
+exec go test ./...
+cp service.go .scratch/service.txt
+! exec semedit introduce-parameter --file service.go --symbol unsafe --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"2"}]' --discriminator mutableMode
+stderr 'compile-time typed constant'
+cmp service.go .scratch/service.txt
+! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3","unknown":true}]' --discriminator defaultMode
+stderr 'unknown property'
+cmp service.go .scratch/service.txt
+-- go.mod --
+module example.com/introduceparameter
+
+go 1.24
+-- service.go --
+package sample
+
+const defaultMode = 3
+var mutableMode = 2
+
+func transform(id int) int { return id + defaultMode }
+func unsafe(id int) int { return id + mutableMode }
+-- calls.go --
+package sample
+
+func first() int { return transform(1) }
+-- other.go --
+package sample
+
+func second() int { return transform(2) }
+-- .scratch/want/service.txt --
+package sample
+
+const defaultMode = 3
+var mutableMode = 2
+
+func transform(id int, mode int) int { return id + mode }
+func unsafe(id int) int { return id + mutableMode }
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int { return transform(1, 3) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() int { return transform(2, 3) }

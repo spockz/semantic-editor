@@ -1,0 +1,49 @@
+# One buffered batch sees a newly inserted direct caller before converting all parameters, then edits the surviving function through its new object shape.
+stdin input.json
+exec semedit mcp
+stdout '"name":"semantic_introduce_parameter_object"'
+stdout '"isError":false'
+cmp write.go .scratch/want/write.txt
+cmp calls.go .scratch/want/calls.txt
+cmp other.go .scratch/want/other.txt
+exec go test ./...
+-- go.mod --
+module example.com/parameterobjectbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func first() string { return write(\"a\", \"b\", 7) }"}},{"tool":"semantic_introduce_parameter_object","params":{"file":"write.go","symbol":"write","destination_file":"write.go","parameter":{"name":"options","type":"writeOptions"},"fields":[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]}},{"tool":"semantic_replace_body","params":{"file":"write.go","symbol":"write","body":"return save(options.path, options.data, options.mode)"}}]}}}
+-- write.go --
+package sample
+
+func save(path, data string, mode uint32) string { return path + data }
+func write(path, data string, mode uint32) string { return save(path, data, mode) }
+-- calls.go --
+package sample
+-- other.go --
+package sample
+
+func second() string { return write("c", "d", 9) }
+-- .scratch/want/write.txt --
+package sample
+
+func save(path, data string, mode uint32) string { return path + data }
+func write(options writeOptions) string {
+	return save(options.path, options.data, options.mode)
+}
+
+type writeOptions struct {
+	path string
+	data string
+	mode uint32
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() string { return write(writeOptions{path: "a", data: "b", mode: 7}) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() string { return write(writeOptions{path: "c", data: "d", mode: 9}) }

@@ -117,6 +117,116 @@ func newManagedMCPFixture(t *testing.T) managedMCPFixture {
 	return managedMCPFixture{root: root, counter: counter, pidFile: pidFile}
 }
 
+func validateExampleAgainstSchema(value any, schema map[string]any) error {
+	typeName, ok := schema["type"].(string)
+	if !ok {
+		return fmt.Errorf("schema omits a string type")
+	}
+	switch typeName {
+	case "string":
+		text, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("value is not a string")
+		}
+		if minimum, ok := schema["minLength"].(float64); ok && float64(len(text)) < minimum {
+			return fmt.Errorf("string is shorter than minLength")
+		}
+	case "boolean":
+		if _, ok := value.(bool); !ok {
+			return fmt.Errorf("value is not a boolean")
+		}
+	case "integer":
+		number, ok := value.(float64)
+		if !ok || number != float64(int(number)) {
+			return fmt.Errorf("value is not an integer")
+		}
+		if minimum, ok := schema["minimum"].(float64); ok && number < minimum {
+			return fmt.Errorf("integer is below minimum")
+		}
+	case "number":
+		if _, ok := value.(float64); !ok {
+			return fmt.Errorf("value is not a number")
+		}
+	case "null":
+		if value != nil {
+			return fmt.Errorf("value is not null")
+		}
+	case "array":
+		items, ok := value.([]any)
+		if !ok {
+			return fmt.Errorf("value is not an array")
+		}
+		if minimum, ok := schema["minItems"].(float64); ok && float64(len(items)) < minimum {
+			return fmt.Errorf("array has fewer than minItems")
+		}
+		itemSchema, ok := schema["items"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("array schema omits item schema")
+		}
+		for index, item := range items {
+			if err := validateExampleAgainstSchema(item, itemSchema); err != nil {
+				return fmt.Errorf("item %d: %w", index, err)
+			}
+		}
+	case "object":
+		object, ok := value.(map[string]any)
+		if !ok {
+			return fmt.Errorf("value is not an object")
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("object schema omits properties")
+		}
+		if required, ok := schema["required"].([]any); ok {
+			for _, rawName := range required {
+				name, ok := rawName.(string)
+				if !ok {
+					return fmt.Errorf("required property name is not a string")
+				}
+				if _, exists := object[name]; !exists {
+					return fmt.Errorf("object omits required property %q", name)
+				}
+			}
+		}
+		for name, field := range object {
+			rawProperty, exists := properties[name]
+			if !exists {
+				if additional, constrained := schema["additionalProperties"].(bool); constrained && !additional {
+					return fmt.Errorf("object has unsupported property %q", name)
+				}
+				continue
+			}
+			property, ok := rawProperty.(map[string]any)
+			if !ok {
+				return fmt.Errorf("property %q has invalid schema", name)
+			}
+			if err := validateExampleAgainstSchema(field, property); err != nil {
+				return fmt.Errorf("property %q: %w", name, err)
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported schema type %q", typeName)
+	}
+	if rawEnum, ok := schema["enum"].([]any); ok && len(rawEnum) > 0 {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("marshal enum value: %w", err)
+		}
+		matched := false
+		for _, allowed := range rawEnum {
+			candidate, err := json.Marshal(allowed)
+			if err != nil {
+				return fmt.Errorf("marshal enum member: %w", err)
+			}
+			matched = matched || bytes.Equal(encoded, candidate)
+		}
+		if !matched {
+			return fmt.Errorf("value is outside enum")
+		}
+	}
+	return nil
+}
+
 func TestMCPServerLifecycle(t *testing.T) {
 	t.Parallel()
 
@@ -1132,15 +1242,9 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 			Tools []struct {
 				Name        string `json:"name"`
 				InputSchema struct {
-					Properties map[string]struct {
-						Type  string            `json:"type"`
-						Enum  []json.RawMessage `json:"enum"`
-						Items struct {
-							Type string `json:"type"`
-						} `json:"items"`
-					} `json:"properties"`
-					Required []string                     `json:"required"`
-					Examples []map[string]json.RawMessage `json:"examples"`
+					Properties map[string]json.RawMessage   `json:"properties"`
+					Required   []string                     `json:"required"`
+					Examples   []map[string]json.RawMessage `json:"examples"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -1152,7 +1256,6 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 	if err := json.Unmarshal([]byte(responses[len(responses)-1]), &response); err != nil {
 		t.Fatal(err)
 	}
-
 	exampleCount := 0
 	for _, tool := range response.Result.Tools {
 		for _, example := range tool.InputSchema.Examples {
@@ -1163,7 +1266,7 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 				}
 			}
 			for key, raw := range example {
-				property, ok := tool.InputSchema.Properties[key]
+				propertySchema, ok := tool.InputSchema.Properties[key]
 				if !ok {
 					t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
 					continue
@@ -1173,39 +1276,13 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
 					continue
 				}
-				validType := false
-				switch property.Type {
-				case "string":
-					_, validType = value.(string)
-				case "boolean":
-					_, validType = value.(bool)
-				case "integer":
-					if number, ok := value.(float64); ok {
-						validType = number == float64(int(number))
-					}
-				case "array":
-					if items, ok := value.([]any); ok {
-						validType = true
-						for _, item := range items {
-							if _, ok := item.(string); !ok || property.Items.Type != "string" {
-								validType = false
-							}
-						}
-					}
-				default:
-					t.Errorf("%s parameter %q has unexpected schema type %q", tool.Name, key, property.Type)
+				var schema map[string]any
+				if err := json.Unmarshal(propertySchema, &schema); err != nil {
+					t.Errorf("%s schema for parameter %q is invalid JSON: %v", tool.Name, key, err)
+					continue
 				}
-				if !validType {
-					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
-				}
-				if len(property.Enum) > 0 {
-					matched := false
-					for _, allowed := range property.Enum {
-						matched = matched || string(allowed) == string(raw)
-					}
-					if !matched {
-						t.Errorf("%s example parameter %q is outside its enum", tool.Name, key)
-					}
+				if err := validateExampleAgainstSchema(value, schema); err != nil {
+					t.Errorf("%s example parameter %q does not satisfy its declared schema: %v", tool.Name, key, err)
 				}
 			}
 		}

@@ -1,0 +1,48 @@
+# One buffered batch discovers an earlier unsaved caller edit, introduces a parameter, and lets a later insertion use the final signature.
+stdin input.json
+exec semedit mcp
+stdout '"name":"semantic_introduce_parameter"'
+stdout '"isError":false'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cmp other.go .scratch/want/other.txt
+exec go test ./...
+-- go.mod --
+module example.com/introduceparameterbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_introduce_parameter","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}],"discriminator":"defaultMode"}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func later() int { return transform(9, 3) }"}}]}}}
+-- service.go --
+package sample
+
+const defaultMode = 3
+func transform(id int) int { return id + defaultMode }
+-- calls.go --
+package sample
+
+func first() int { return 0 }
+-- other.go --
+package sample
+
+func second() int { return transform(2) }
+-- .scratch/want/service.txt --
+package sample
+
+const defaultMode = 3
+
+func transform(id int, mode int) int { return id + mode }
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int {
+	return transform(7, 3)
+}
+
+func later() int { return transform(9, 3) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() int { return transform(2, 3) }

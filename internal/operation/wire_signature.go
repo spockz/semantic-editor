@@ -36,14 +36,14 @@ type signatureCallTarget struct {
 
 func signatureOutputContract() OperationOutputContract {
 	target := SymbolTargetSchema().Properties
+	consumers := []string{signatureChangeConsumer, "semantic_introduce_parameter", "semantic_introduce_parameter_object", signatureReplaceBodyConsumer}
 	result := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"result": {Kind: SchemaString}, "file": {Kind: SchemaString}, "symbol": {Kind: SchemaString},
-		"diff": {Kind: SchemaString}, signatureEditReceiptField: EditReceiptSchema(),
+		"result": {Kind: SchemaString}, "file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "diff": {Kind: SchemaString}, signatureEditReceiptField: EditReceiptSchema(),
 	}, Required: []string{"result", signatureEditReceiptField}}
 	return OperationOutputContract{ResultSchema: &result, Continuations: []OutputContinuation{
-		{Path: "result.edit_receipt.continuations[].file", Schema: target["file"], Role: RoleTarget, Consumers: []string{signatureChangeConsumer, signatureReplaceBodyConsumer}},
-		{Path: "result.edit_receipt.continuations[].symbol", Schema: target["symbol"], Role: RoleTarget, Consumers: []string{signatureChangeConsumer, signatureReplaceBodyConsumer}},
-		{Path: "result.edit_receipt.continuations[].expected_revision", Schema: target["expected_revision"], Role: RoleTarget, Consumers: []string{signatureChangeConsumer, signatureReplaceBodyConsumer}},
+		{Path: "result.edit_receipt.continuations[].file", Schema: target["file"], Role: RoleTarget, Consumers: consumers},
+		{Path: "result.edit_receipt.continuations[].symbol", Schema: target["symbol"], Role: RoleTarget, Consumers: consumers},
+		{Path: "result.edit_receipt.continuations[].expected_revision", Schema: target["expected_revision"], Role: RoleTarget, Consumers: consumers},
 	}}
 }
 
@@ -52,21 +52,17 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	minimumItems := 1
 	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping, MinItems: &minimumItems}
 	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget,
-			"semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file"),
-		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated.", true, true, RoleTarget,
-			"semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol"),
-		{Name: "parameters", JSONName: "parameters", CLIName: "parameters", Type: ParamArray, Required: true, Role: RoleValue,
-			Description: "Replacement: complete ordered parameter mapping; preserve every existing parameter by source_index and append one new mapping with a closed argument expression.", Schema: &mappings},
-		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from a live continuation for this file and symbol; stale revisions are refused.", false, true, RoleTarget,
-			"semantic_inspect_symbol.result.continuations[].expected_revision", "semantic_change_signature.result.edit_receipt.continuations[].expected_revision"),
+		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file"),
+		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated.", true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol"),
+		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping; preserve every existing parameter by source_index and append one new mapping with a closed argument expression.", Schema: &mappings},
+		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from a live continuation for this file and symbol; stale revisions are refused.", false, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].expected_revision", "semantic_change_signature.result.edit_receipt.continuations[].expected_revision"),
 	}
 	return Def[map[string]any, structuralPlanResult]{
-		Key: "change_signature", Summary: "Use this tool instead of manually editing one private, non-generic, non-variadic Go free-function signature and its callers. Preserve existing parameter order, names, types, and results, then append one parameter whose literal, nil, or Boolean argument is safe at every direct call. The complete active module call set includes same-package test variants. Function values, methods, exported functions, build-constrained references, and unresolved packages are refused. Standalone results contain a live continuation; buffered results report applied_working without claiming disk publication.",
+		Key: "change_signature", Summary: "Use this tool instead of manually editing one private, non-generic, non-variadic Go free-function signature and its callers. Preserve existing parameter order, names, types, and results, then append one parameter whose literal, nil, or Boolean argument is safe at every direct call. The complete active module call set includes same-package test variants. Function values, methods, exported functions, build-constrained references, and unresolved packages are refused. Standalone results contain a live continuation; buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
 		Params: params, Level: LevelWorkspace, CLIName: "change-signature", MCPName: "semantic_change_signature", Batchable: true, BufferedBatch: true,
-		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", "parameters": []any{
-			map[string]any{"source_index": 0, "parameter": map[string]any{"name": "id", "type": "int"}},
-			map[string]any{"parameter": map[string]any{"name": "label", "type": "string"}, "argument": "\"ready\""},
+		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{
+			map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}},
+			map[string]any{"parameter": map[string]any{"name": "label", "type": "string"}, "argument": "\\\"ready\\\""},
 		}},
 		Output: func() *OperationOutputContract { output := signatureOutputContract(); return &output }(),
 		Parse: func(raw map[string]any) (map[string]any, error) {
@@ -75,10 +71,8 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 			}
 			return maps.Clone(raw), nil
 		},
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){
-			backend.LanguageGo: runChangeSignature,
-		},
-		Format: func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, map[string]any) (structuralPlanResult, error){backend.LanguageGo: runChangeSignature},
+		Format:   func(result structuralPlanResult) (string, error) { return formatFileEdit(result.Edit) },
 		FinalizeOutput: func(cc CallContext, _ map[string]any, result structuralPlanResult) (structuralPlanResult, error) {
 			ctx := cc.Ctx
 			if ctx == nil {
@@ -123,7 +117,7 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 			return structuralPlanResult{}, fmt.Errorf("expected_revision does not match the selected full-file revision")
 		}
 	}
-	mappings, err := decodeSignatureMappings(raw["parameters"])
+	mappings, err := decodeSignatureMappings(raw[signatureParameters])
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
@@ -333,21 +327,33 @@ func applySignaturePlan(snapshot *structuralSnapshot, plan astedit.SignaturePlan
 }
 
 func resolveSignatureContinuation(ctx context.Context, root string, candidate SymbolTarget) (SymbolTarget, bool, error) {
-	path := resolveWorkPath(root, candidate.File)
-	source, err := sourcebuf.ReadFile(ctx, path)
-	if err != nil {
-		return SymbolTarget{}, false, fmt.Errorf("read continuation candidate %q: %w", path, err)
-	}
-	file, err := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return SymbolTarget{}, false, fmt.Errorf("parse continuation candidate %q: %w", path, err)
-	}
-	for _, declaration := range file.Decls {
-		if function, ok := declaration.(*ast.FuncDecl); ok && function.Recv == nil && function.Name.Name == candidate.Symbol && !token.IsExported(function.Name.Name) {
-			return candidate, true, nil
+	{
+		path := resolveWorkPath(root, candidate.File)
+		source, err := sourcebuf.ReadFile(ctx, path)
+		if err != nil {
+			return SymbolTarget{}, false, fmt.Errorf("read continuation candidate %q: %w", path, err)
 		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments|parser.AllErrors)
+		if err != nil {
+			return SymbolTarget{}, false, fmt.Errorf("parse continuation candidate %q: %w", path, err)
+		}
+		for _, declaration := range file.Decls {
+			switch value := declaration.(type) {
+			case *ast.FuncDecl:
+				if value.Recv == nil && value.Name.Name == candidate.Symbol && !token.IsExported(value.Name.Name) {
+					return candidate, true, nil
+				}
+			case *ast.GenDecl:
+				for _, spec := range value.Specs {
+					typeSpec, ok := spec.(*ast.TypeSpec)
+					if ok && typeSpec.Name.Name == candidate.Symbol && !token.IsExported(typeSpec.Name.Name) {
+						return candidate, true, nil
+					}
+				}
+			}
+		}
+		return SymbolTarget{}, false, nil
 	}
-	return SymbolTarget{}, false, nil
 }
 
 func collectSignatureCallSetWithName(snapshot *structuralSnapshot, symbol, newParameterName string) (astedit.SignatureCallSetProof, error) {

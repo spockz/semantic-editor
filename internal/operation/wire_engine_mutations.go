@@ -526,7 +526,7 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 			backend.LanguageGo: runReplaceConstruct,
 		},
 		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", "discriminator": "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", wireDiscriminator: "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
 		BufferedBatch: true, Batchable: true,
 	}
 }

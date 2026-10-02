@@ -339,11 +339,7 @@ func ParameterSpecSchema() ValueSchema {
 // ParameterMappingSchema declares one closed source-parameter mapping.
 func ParameterMappingSchema() ValueSchema {
 	minimum := float64(0)
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
-		"parameter":    ParameterSpecSchema(),
-		"argument":     {Kind: SchemaString},
-	}, Required: []string{"parameter"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{wireSourceIndex: {Kind: SchemaInteger, Minimum: &minimum}, "parameter": ParameterSpecSchema(), "argument": {Kind: SchemaString}}, Required: []string{"parameter"}}
 }
 
 // ResultSpecSchema declares one closed function-result shape.
@@ -368,10 +364,7 @@ func FieldSpecSchema() ValueSchema {
 // ParameterToFieldMappingSchema declares one closed parameter-to-field mapping.
 func ParameterToFieldMappingSchema() ValueSchema {
 	minimum := float64(0)
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
-		"field":        FieldSpecSchema(),
-	}, Required: []string{"source_index", "field"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{wireSourceIndex: {Kind: SchemaInteger, Minimum: &minimum}, "field": FieldSpecSchema()}, Required: []string{wireSourceIndex, "field"}}
 }
 
 // MemberTargetSchema declares one closed source or target member identity.
@@ -404,27 +397,13 @@ func SymbolTargetSchema() ValueSchema {
 // ConstructSelectorSchema declares a closed construct selector.
 func ConstructSelectorSchema() ValueSchema {
 	text := nonEmptyStringSchema()
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":               text,
-		wireInFunction:       text,
-		"in_declaration":     text,
-		"kind":               text,
-		"discriminator":      text,
-		"construct_path":     text,
-		wireExpectedRevision: text,
-	}, Required: []string{"file", "kind"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text, wireInFunction: text, "in_declaration": text, "kind": text, wireDiscriminator: text, "construct_path": text, wireExpectedRevision: text}, Required: []string{"file", "kind"}}
 }
 
 // CallSiteSelectorSchema declares a closed call-site selector.
 func CallSiteSelectorSchema() ValueSchema {
 	text := nonEmptyStringSchema()
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":               text,
-		wireInFunction:       text,
-		"discriminator":      text,
-		"construct_path":     text,
-		wireExpectedRevision: text,
-	}, Required: []string{"file", wireInFunction, "discriminator"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text, wireInFunction: text, wireDiscriminator: text, "construct_path": text, wireExpectedRevision: text}, Required: []string{"file", wireInFunction, wireDiscriminator}}
 }
 
 // FileRevisionSchema describes one project-relative path and its opaque revision.
