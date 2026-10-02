@@ -1,0 +1,23 @@
+# A guarded batch child accepts the full-file revision of its current buffered owner.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+cmp main.go .scratch/want/main.go
+-- go.mod --
+module example.com/revisionbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_replace_body","params":{"file":"main.go","symbol":"Value","body":"return 2"}},{"tool":"semantic_replace_body","params":{"file":"main.go","symbol":"Value","expected_revision":"a37ec0781137ee6a7efb3187f8507941ee52ab6947549e5c9b76a9a9ccc3b660","body":"return 3"}}]}}}
+-- main.go --
+package sample
+
+func Value() int {
+	return 1
+}
+-- .scratch/want/main.go --
+package sample
+
+func Value() int {
+	return 3
+}

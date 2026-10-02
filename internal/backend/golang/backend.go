@@ -330,8 +330,8 @@ func diagnosticIdentity(diagnostic godiagnostics.Diagnostic) string {
 }
 
 // Inspect resolves a Go declaration and returns its exact source snapshot.
-func (GoBackend) Inspect(_ context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
-	return astedit.InspectGo(request.Project.RootDir, request.Project.File, request.Symbol)
+func (GoBackend) Inspect(ctx context.Context, request backend.InspectRequest) (*backend.InspectResult, error) {
+	return astedit.InspectGoWithContext(ctx, request.Project.RootDir, request.Project.File, request.Symbol)
 }
 
 // Outline returns a file-centric declaration projection for a Go source selection.
