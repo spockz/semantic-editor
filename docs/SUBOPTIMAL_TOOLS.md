@@ -2122,3 +2122,27 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git could not create `.git/worktrees/flow-extraction/index.lock` because linked-worktree metadata is outside the sandbox writable root; no files were staged.
 - Workaround: retry the same explicit staging command with narrowly scoped access to this worktree's Git metadata.
 - Root cause: the linked worktree stores its index in the shared repository metadata directory.
+
+## ST-0260: source-buffer symbol search used an invalid regex
+
+- Tool: `rg` while locating `sourcebuf.ReadFile`.
+- Target: `internal/sourcebuf/buffer.go`.
+- Observed failure: ripgrep rejected an unclosed group in the search expression; no file was changed.
+- Workaround: retry with a literal fixed-string search.
+- Root cause: the regular-expression grouping syntax was malformed.
+
+## ST-0261: extraction preflight batch failed final semantic verification
+
+- Tool: trusted `semantic_batch` with constant-loader/body replacements, helper insertion, and import organization.
+- Target: `internal/astedit/extract_constant.go`.
+- Observed failure: mutation children reported success, but the batch returned `isError=true` during final verification; output was truncated before the verifier diagnostic. The children may have published source changes.
+- Workaround: inspect the current source bytes, preserve the successful children, complete the missing set initialization and input-binding tail, then retry the body replacement in a coherent semantic batch.
+- Root cause: the replacement body supplied to the semantic operation omitted local read-set map initialization and the final manifest/file capture loops, leaving undefined names and a missing return. The final verifier caught the incomplete body.
+
+## ST-0262: Git staging could not write linked-worktree metadata
+
+- Tool: `git add` for the explicitly owned extraction files.
+- Target: `.git/worktrees/flow-extraction/index.lock`.
+- Observed failure: Git could not create the linked-worktree index lock because repository metadata is outside the sandbox writable root; no files were staged.
+- Workaround: request narrowly scoped access to the linked-worktree metadata for the same explicit staging operation.
+- Root cause: the linked worktree stores its Git index in the shared repository metadata directory.
