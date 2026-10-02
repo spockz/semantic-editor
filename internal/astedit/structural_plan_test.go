@@ -325,3 +325,34 @@ func TestStructuralOptionalSelectorAndCommentInputs(t *testing.T) {
 		t.Fatal("explicit null comment was treated as removal")
 	}
 }
+
+func TestDocCommentBlockCRLFRawRange(t *testing.T) {
+	source := []byte("package p\r\n/* Old\r\nMore\r\n*/\r\nfunc f() {}\r\n")
+	set, err := PlanSetDocComment(source, SetDocCommentIntent{
+		Symbol: "f", Comment: OptionalString{Present: true, Value: "New documentation."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "updated.go", set.Source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("updated CRLF block comment source did not parse: %v\n%s", err, set.Source)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	if fn.Doc == nil || fn.Doc.Text() != "New documentation.\n" || strings.Contains(string(set.Source), "*/") {
+		t.Fatalf("replacement comment was not attached or old raw terminator remains:\n%s", set.Source)
+	}
+	if err := typeCheckPlannedSource(t, set.Source); err != nil {
+		t.Fatalf("updated CRLF comment source did not type-check: %v", err)
+	}
+	empty := OptionalString{Present: true, Value: ""}
+	removed, err := PlanSetDocComment(set.Source, SetDocCommentIntent{Symbol: "f", Comment: empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []byte("package p\r\nfunc f() {}\r\n")
+	if string(removed.Source) != string(want) {
+		t.Fatalf("comment removal changed bytes outside its owned range:\n got %q\nwant %q", removed.Source, want)
+	}
+}

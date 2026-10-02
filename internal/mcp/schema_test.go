@@ -193,6 +193,8 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
+				case "semantic_set_doc_comment", "semantic_insert_statement":
+					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				case "semantic_remove_construct":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
@@ -253,6 +255,23 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
+	t.Helper()
+	assertStandardOutputSchema(t, raw, "object")
+	result := raw.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	if properties["result"].(map[string]any)["type"] != "string" {
+		t.Errorf("%s result projection must be a string", name)
+	}
+	receipt, ok := properties["edit_receipt"].(map[string]any)
+	if !ok || receipt["type"] != "object" {
+		t.Fatalf("%s omitted its native edit_receipt object", name)
+	}
+	if got := receipt["required"]; !reflect.DeepEqual(got, []any{"schema_version", "status", "operation"}) {
+		t.Errorf("%s edit_receipt required = %#v", name, got)
 	}
 }
 

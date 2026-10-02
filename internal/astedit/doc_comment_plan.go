@@ -57,7 +57,13 @@ func PlanSetDocComment(source []byte, intent SetDocCommentIntent) (SourcePlan, e
 	end := start
 	if doc != nil {
 		start = fset.Position(doc.Pos()).Offset
-		end = fset.Position(doc.End()).Offset
+		end, err = rawCommentGroupEnd(source, fset, doc)
+		if err != nil {
+			return SourcePlan{}, err
+		}
+		for end < len(source) && (source[end] == ' ' || source[end] == '\t') {
+			end++
+		}
 		if end+1 < len(source) && source[end] == '\r' && source[end+1] == '\n' {
 			end += 2
 		} else if end < len(source) && source[end] == '\n' {
@@ -69,6 +75,30 @@ func PlanSetDocComment(source []byte, intent SetDocCommentIntent) (SourcePlan, e
 		Kind: "declaration_comment", Target: intent.Symbol,
 		Start: fset.Position(target.Pos()).Offset, End: fset.Position(target.End()).Offset,
 	}), nil
+}
+
+func rawCommentGroupEnd(source []byte, fset *token.FileSet, group *ast.CommentGroup) (int, error) {
+	if group == nil || len(group.List) == 0 {
+		return 0, fmt.Errorf("comment range is empty")
+	}
+	last := group.List[len(group.List)-1]
+	start := fset.Position(last.Slash).Offset
+	if start < 0 || start >= len(source) {
+		return 0, fmt.Errorf("comment start %d is outside source of %d bytes", start, len(source))
+	}
+	comment := source[start:]
+	if bytes.HasPrefix(comment, []byte("//")) {
+		if newline := bytes.IndexByte(comment, '\n'); newline >= 0 {
+			return start + newline, nil
+		}
+		return len(source), nil
+	}
+	if bytes.HasPrefix(comment, []byte("/*")) {
+		if close := bytes.Index(comment[2:], []byte("*/")); close >= 0 {
+			return start + 2 + close + 2, nil
+		}
+	}
+	return 0, fmt.Errorf("comment at byte %d has no supported raw terminator", start)
 }
 
 func findDocCommentTarget(file *ast.File, symbol string) (ast.Node, *ast.CommentGroup, error) {
