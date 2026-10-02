@@ -1,0 +1,75 @@
+# One buffered batch sees the first unsaved caller edit during signature planning, advertises the tool, and publishes only the final typed callers.
+stdin input.json
+exec semedit mcp
+stdout '"name":"semantic_change_signature"'
+stdout '"isError":false'
+cmp service.go .scratch/want/service.txt
+cmp calls.go .scratch/want/calls.txt
+cmp other.go .scratch/want/other.txt
+cmp service_test.go .scratch/want/service_test.txt
+cmp odd.go .scratch/want/odd.txt
+exec go test ./...
+-- go.mod --
+module example.com/signaturebatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_change_signature","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func verifySignature() int { return transform(9, nil) }"}}]}}}
+-- service.go --
+package sample
+
+func transform(id int) int { return id + 1 }
+-- calls.go --
+package sample
+
+func first() int { return 0 }
+-- other.go --
+package sample
+
+func second() int { return transform(2) }
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(3); got != 4 {
+		t.Fatalf("transform(3) = %d, want 4", got)
+	}
+}
+-- odd.go --
+package sample
+
+func unrelated( )int{return 9}
+-- .scratch/want/service.txt --
+package sample
+
+func transform(id int, ctx *int) int { return id + 1 }
+-- .scratch/want/calls.txt --
+package sample
+
+func first() int {
+	return transform(7, nil)
+}
+
+func verifySignature() int { return transform(9, nil) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() int { return transform(2, nil) }
+-- .scratch/want/service_test.txt --
+package sample
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(3, nil); got != 4 {
+		t.Fatalf("transform(3) = %d, want 4", got)
+	}
+}
+-- .scratch/want/odd.txt --
+package sample
+
+func unrelated( )int{return 9}

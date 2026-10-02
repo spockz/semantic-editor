@@ -1719,6 +1719,103 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - **Observed failure:** Git could not create the shared worktree index lock under `/Users/alessandro/sources/semantic-editor/.git/worktrees/flow-signatures/`.
 - **Workaround:** None applied; the commit remains uncreated.
 - **Root cause:** The sandbox denied the shared Git metadata write.
+
+### ST-0153: Signature batch final verification failed
+
+- **Tool:** Trusted MCP `semantic_batch`
+- **Target:** `internal/operation/wire_signature.go` and `internal/operation/wire_engine.go`
+- **Observed failure:** Every mutation child returned `status=ok`; the final whole-workspace verification returned an error after applying the batch.
+- **Workaround:** Preserve the applied edits and inspect the actual source and diagnostics before retrying.
+- **Root cause:** The generated analyzer referenced `packages.Package.ForTest`, which is unexported in the repository's pinned `golang.org/x/tools` version. The final semantic verification did not surface the compile diagnostic in the truncated tool output; focused package compilation identified it.
+
+### ST-0154: Symbol inspection rejected an unsupported option
+
+- **Tool:** Trusted MCP `semantic_inspect_symbol`
+- **Target:** `internal/operation/wire_signature.go:collectSignatureCallSet`
+- **Observed failure:** The tool rejected `include_unexported` as an unknown parameter.
+- **Workaround:** Retry the same inspection with only `file`, `symbol`, and `language`.
+- **Root cause:** The current inspect-symbol contract does not expose the outline option `include_unexported`.
+
+### ST-0155: Signature inspection source matcher was too narrow
+
+- **Tool:** Signature source extraction for `semantic_replace_body`
+- **Target:** `internal/operation/wire_signature.go:collectSignatureCallSet`
+- **Observed failure:** The preparation script did not match the formatted `if pkg.ForTest` block and stopped before sending a mutation request.
+- **Workaround:** Match the gofmt-expanded block from semantic inspection and submit the complete function body through `semantic_replace_body`.
+- **Root cause:** The source matcher assumed the original compact layout; the semantic inspector returned formatted Go.
+
+### ST-0156: Continuation source preparation did not match declaration text
+
+- **Tool:** Signature source preparation for `semantic_replace_decl`
+- **Target:** `internal/operation/wire_engine_mutations.go:replaceBodyParams`
+- **Observed failure:** The payload builder could not confirm the expected new continuation source edge and stopped before sending a mutation request.
+- **Workaround:** Re-inspect the declaration and construct the replacement from its returned source shape.
+- **Root cause:** The preparation script matched an assumed formatting of the declaration rather than validating the actual inspected source.
+
+### ST-0157: Test-variant source preparation expected compact Go
+
+- **Tool:** Signature source preparation for `semantic_replace_body`
+- **Target:** `internal/operation/wire_signature.go:collectSignatureCallSet`
+- **Observed failure:** The payload builder did not match the formatted package-variant conditional and stopped before sending a mutation request.
+- **Workaround:** Replace the conditional with a whitespace-tolerant structural match while retaining the inspected function body for the semantic edit.
+- **Root cause:** The source matcher expected one-line Go formatting.
+
+### ST-0158: Binding-check source anchor did not match inspected formatting
+
+- **Tool:** Signature source preparation for `semantic_replace_body`
+- **Target:** `internal/operation/wire_signature.go:collectSignatureCallSet`
+- **Observed failure:** The payload builder could not find the exact target-object error block and stopped before sending a mutation request.
+- **Workaround:** Anchor the addition on the smallest stable inspected statement and use a whitespace-tolerant replacement.
+- **Root cause:** The insertion matcher assumed a compact statement layout.
+
+### ST-0159: Continuation projection source preparation did not match formatting
+
+- **Tool:** Signature source preparation for `semantic_replace_body`
+- **Target:** `internal/operation/wire_signature.go:changeSignatureDef`
+- **Observed failure:** The payload builder could not match the target-alias projection block and stopped before sending a mutation request.
+- **Workaround:** Re-inspect and replace the formatted projection block from the actual declaration.
+- **Root cause:** The source matcher expected a compact conditional layout.
+
+### ST-0160: Signature review-fix batch final verification failed
+
+- **Tool:** Trusted MCP `semantic_batch`
+- **Target:** Signature proof, output projection, partial publication handling, and replace-body source fields
+- **Observed failure:** Mutation children returned `status=ok`; final whole-workspace verification failed after applying their edits.
+- **Workaround:** Preserve the changes, run focused package compilation, and repair the diagnostics through semantic operations.
+- **Root cause:** The body replacement preserved the old two-argument function signature, while the new body and caller expected `newParameterName`; the compiler reported the resulting arity and undefined-name errors.
+
+### ST-0161: Signature analyzer wrapper batch failed final verification
+
+- **Tool:** Trusted MCP `semantic_batch`
+- **Target:** `internal/operation/wire_signature.go:collectSignatureCallSet`
+- **Observed failure:** Mutation children returned `status=ok`; final whole-workspace verification failed after the wrapper and renamed helper were inserted.
+- **Workaround:** Preserve the edits and inspect focused compiler diagnostics before another semantic change.
+- **Root cause:** Pending diagnosis from the focused compiler output.
+
+### ST-0162: Signature verification reported linter findings
+
+- **Tool:** Trusted CLI `semedit verify --check-only`
+- **Target:** `internal/operation/wire_signature.go`
+- **Observed failure:** Verification failed for cognitive complexity, repeated `edit_receipt` string literals, and an unused signature wrapper; focused package compilation passed.
+- **Workaround:** Split package/call analysis into smaller helpers, remove the unused wrapper, and coordinate the shared output-field constant before retrying verification.
+- **Root cause:** The new analyzer was too monolithic and duplicated a shared output key.
+
+### ST-0163: Split analyzer batch still failed final verification
+
+- **Tool:** Trusted MCP `semantic_batch`
+- **Target:** `internal/operation/wire_signature.go` signature analysis helpers
+- **Observed failure:** Mutation children returned `status=ok`; final whole-workspace verification failed after splitting the analyzer.
+- **Workaround:** Preserve helper edits and run focused compilation plus scoped semantic verification to identify remaining issues.
+- **Root cause:** Pending scoped diagnostics.
+
+### ST-0164: Scoped signature verification found remaining lint issues
+
+- **Tool:** Trusted CLI `semedit verify --check-only`
+- **Target:** `internal/operation/wire_signature.go` and the shared `edit_receipt` output key
+- **Observed failure:** The operation package linter reported the unused legacy wrapper and repeated `edit_receipt` literals; compilation passed.
+- **Workaround:** Remove the unused operation through its semantic removal tool and use one package constant across receipt projectors.
+- **Root cause:** The wrapper was superseded by the parameter-aware helper, and the operation output field name was duplicated across two implementations.
+
 ## ST-0199: CLI lookup rejected documented selector flags
 
 - Tool: `/Users/alessandro/sources/semantic-editor/bin/semedit-next lookup`.
@@ -2677,3 +2774,201 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the operation refused the entire owner because it contains later conditional statements; no source change occurred in this retry.
 - Workaround: use semantic body replacement for the fixture's additional module initialization, retaining its existing assertions. Clarify the advertised straight-line-owner restriction and review whether unrelated control flow needs exclusion.
 - Root cause: the initial statement planner rejects control-flow nodes anywhere in the owning function, beyond the selected direct statement.
+
+## ST-0260: MCP helper was invoked without a JSON request
+
+- Date: 2026-10-02
+- Tool: `semantic_call.py` helper
+- Target: worktree MCP session (no source target)
+- Observed failure: a `--help` probe sent no JSON on stdin; the helper expects one `tools/call` parameter object and exited with `JSONDecodeError`. No source changes occurred.
+- Workaround: provide the intended native JSON request on stdin, then inspect the helper result and `isError`.
+- Root cause: the helper has no argument-based help mode; its contract is JSON stdin only.
+
+## ST-0261: Checked CLI binary was not present in the worker checkout
+
+- Date: 2026-10-02
+- Tool: local shell invocation of `./bin/semedit-next --help`
+- Target: current worker worktree
+- Observed failure: the binary path was absent in this checkout; no source changes occurred.
+- Workaround: use the coordinator-provided absolute checked binary path from this repository task.
+- Root cause: the checked baseline binary is outside the worker checkout.
+
+## ST-0262: Semantic outline request payload used a Python name instead of a Boolean
+
+- Date: 2026-10-02
+- Tool: worktree MCP request payload generator and helper
+- Target: `internal/operation` outline request
+- Observed failure: the Python payload generator raised `NameError` for lowercase `true`, so the helper received empty stdin and raised `JSONDecodeError`; no source changes occurred.
+- Workaround: serialize a Python dict using native `True` values.
+- Root cause: the JSON literal was copied into Python source without converting Boolean syntax.
+
+## ST-0263: Shell unmatched glob prevented txtar test discovery
+
+- Date: 2026-10-02
+- Tool: shell `rg` command
+- Target: test harness search
+- Observed failure: zsh rejected the unmatched `internal/*/*txtar*` glob before `rg` ran; no files changed.
+- Workaround: use `rg --files` and content searches without shell globs.
+- Root cause: zsh's default `nomatch` option treats unmatched globs as errors.
+
+## ST-0264: Make check exposed handler lint failures
+
+- Date: 2026-10-02
+- Tool: repository `make check`
+- Target: `internal/operation/wire_signature.go`, `internal/operation/wire_structural_plan.go`
+- Observed failure: the configured Go linter stopped at two repeated `edit_receipt` string literals and one unused `collectSignatureCallSet` function. No source edits were made by the failing stage.
+- Workaround: replace shared key literals with one declared constant and remove the unused wrapper using semantic operations, then rerun `make check`.
+- Root cause: the new output contract/projector added repeated receipt-key strings and retained a superseded wrapper.
+
+## ST-0265: Semantic batch rejected an over-escaped constant snippet
+
+- Date: 2026-10-02
+- Tool: worktree MCP `semantic_batch`, child `semantic_insert_decl`
+- Target: `internal/operation/wire_signature.go`
+- Observed failure: declaration parsing rejected a literal backslash in the generated constant snippet; later children did not run and `final_diff` was empty.
+- Workaround: resend the Go declaration as the direct string `const signatureEditReceiptField = "edit_receipt"`.
+- Root cause: payload construction escaped the Go string quotes twice before JSON serialization.
+
+## ST-0266: Make check exposed repeated consumer-name literals
+
+- Date: 2026-10-02
+- Tool: repository `make check`
+- Target: `internal/operation/wire_signature.go`, with the shared literal occurrences in `wire_engine_mutations.go` and `wire_read_inspect.go`
+- Observed failure: the configured Go linter stopped because adding `semantic_replace_body` as a continuation consumer raised the package-wide occurrence count to seven.
+- Workaround: use a shared operation-name constant already used by the registry, or introduce a narrowly scoped constant and replace the source occurrences semantically.
+- Root cause: the new consumer edges duplicated a model-facing operation name that was already repeated throughout the operation package.
+
+## ST-0267: Make check test stage returned failure without retained failure context
+
+- Date: 2026-10-02
+- Tool: repository `make check`
+- Target: repository race/shuffle test suite
+- Observed failure: the `go test -race -shuffle=on -cover -v ./...` stage returned failure, but the command output was truncated among verbose parallel tests and did not retain the failing package/assertion.
+- Workaround: rerun the configured test command with output captured under `.scratch/` and identify the failing test before retrying the full check.
+- Root cause: not yet determined.
+
+## ST-0268: MCP contract test rejected a stale inspection continuation path
+
+- Date: 2026-10-02
+- Tool: focused `TestREQ001SemanticIntentCLIContracts`
+- Target: `semantic_change_signature` registration and MCP startup
+- Observed failure: registry validation rejected the file input source `semantic_inspect_symbol.result.continuations[].file`; the current typed inspection projection does not expose that path, so every MCP startup failed before tool dispatch.
+- Workaround: use only the declared typed producer path exposed by the current inspection result, then rerun MCP contract tests.
+- Root cause: the new input contract copied a legacy inspection path that no longer matches the typed output schema.
+
+## ST-0269: Pipeline invoked an empty MCP request after an inner semantic batch
+
+- Date: 2026-10-02
+- Tool: worktree `semantic_call.py` wrapper pipeline
+- Target: inspection consumer and signature output contract
+- Observed failure: the inner Python orchestrator successfully constructed and submitted the batch, but did not print a JSON request for the outer helper process; the outer helper received empty stdin and failed with `JSONDecodeError`.
+- Workaround: inspect actual source bytes through semantic inspection, then use a single helper invocation with the payload printed to stdout for any retry.
+- Root cause: the orchestration script mistakenly piped its stdout to a second helper even though it invoked the helper internally.
+
+## ST-0270: Corrected MCP registration still leaves a failing full check
+
+- Date: 2026-10-02
+- Tool: repository `make check`
+- Target: repository race/shuffle test suite
+- Observed failure: the race/shuffle test stage still returned failure after the inspection consumer change; verbose output again truncated before the failing assertion.
+- Workaround: rerun `TestREQ001SemanticIntentCLIContracts` with focused output to capture the remaining registry or fixture failure.
+- Root cause: not yet determined.
+
+## ST-0271: MCP typed-path failure was caused by the input's stronger string constraint
+
+- Date: 2026-10-02
+- Tool: follow-up diagnosis of the `TestREQ001SemanticIntentCLIContracts` failure
+- Target: `semantic_change_signature` source-field schemas
+- Observed failure: the inspection continuation paths existed and their consumer edges were present; the validator rejected them because `structuralStringParam` added `MinLength: 1`, while the producer schemas declare plain strings.
+- Workaround: use the same plain-string schema for receipt-fed targets and retain non-empty checks in the handler.
+- Root cause: source-fed input schemas asserted a stricter constraint than the producer continuation schema. This supersedes the path-absence diagnosis in ST-0268.
+
+## ST-0272: Success-report parser assumed the wrong MCP result shape
+
+- Date: 2026-10-02
+- Tool: semantic replacement request wrapper
+- Target: `internal/operation/wire_signature.go`, `changeSignatureDef`
+- Observed failure: after the semantic operation returned without `isError`, the wrapper treated `structuredContent.result` as an object although this operation returned a string, raising `AttributeError` while printing the status.
+- Workaround: inspect the returned operation output by its actual shape and verify the source declaration through `semantic_inspect_symbol`.
+- Root cause: the generic helper output varies by operation; the wrapper assumed every result contains a status object.
+
+## ST-0273: Make check still returned a test failure after schema compatibility fix
+
+- Date: 2026-10-02
+- Tool: repository `make check`
+- Target: repository race/shuffle test suite
+- Observed failure: the test stage again returned failure; output showed the previous MCP registry startup error was gone, but verbose parallel output truncated the remaining failure location.
+- Workaround: run the focused CLI contract suite now that the source-fed string schemas match their providers.
+- Root cause: not yet determined.
+
+## ST-0274: Full race suite found missing public fixtures and a temp-root issue
+
+- Date: 2026-10-02
+- Tool: repository `go test -race -shuffle=on -cover ./...`
+- Target: public registry/CLI tests, operation count assertion, and temp-root-based tests
+- Observed failure: `TestREQ002REQ006PublicRegistryAndCLIContractCoverage` lacked `change-signature` CLI and tools/list fixtures; `TestRegisteredDefsHonorContracts` still expected 30 operations after registration raised the count to 31. Several temp-root tests rejected `/var/folders/...` paths as outside the project because the system temp path resolved through a symlink.
+- Workaround: add public txtar coverage, update the expected registry count, and rerun the configured suite with `TMPDIR` set to the worktree's `.scratch/go/tmp`.
+- Root cause: the new public operation had no executable fixture yet, its count assertion was stale, and this shell inherited a symlinked macOS temp root.
+
+## ST-0275: Checked baseline CLI does not contain the new operation
+
+- Date: 2026-10-02
+- Tool: checked baseline CLI help query `change-signature --help`
+- Target: `change-signature` command
+- Observed failure: the coordinator-provided binary predates this worktree's registry entry and returned `unknown command`; no source files changed.
+- Workaround: build/run the CLI from the current worktree using repository Go environment settings before probing new command help.
+- Root cause: the checked binary is a baseline artifact, not rebuilt from this worker branch.
+
+## ST-0276: Signature fixtures exposed their wanted Go files to variant scanning
+
+- Date: 2026-10-02
+- Tool: focused signature CLI and MCP batch txtar cases
+- Target: `testdata/scripts/change_signature_go.txtar`, `testdata/scripts/mcp_batch_change_signature.txtar`
+- Observed failure: the active/inactive source scan treated `.scratch/want/callers.go` as a conflicting source variant because wanted snapshots used the `.go` extension.
+- Workaround: keep expected source snapshots as `.txt` files and compare them with `cmp`.
+- Root cause: fixture-only expected bytes shared a source extension and lived beneath the module fixture workspace.
+
+## ST-0277: Signature handler treated standard-library packages as workspace read inputs
+
+- Date: 2026-10-02
+- Tool: focused signature CLI and MCP batch txtar cases
+- Target: signature read-set construction after caller analysis
+- Observed failure: the handler rejected source files under the Go toolchain's standard-library tree as outside the workspace. In standalone mode, the read-set error occurred after the output had already been applied, so the command returned an error after mutation.
+- Workaround: constrain the receipt read set to captured workspace inputs and compute it before applying edits.
+- Root cause: the package analysis includes dependency syntax outside the workspace, while the operation attempted to add every analyzed source path to the workspace read set after publication.
+
+## ST-0278: Signature fixtures expected unnormalized buffered body bytes
+
+- Date: 2026-10-02
+- Tool: focused signature CLI and MCP batch txtar cases
+- Target: `testdata/scripts/change_signature_go.txtar`, `testdata/scripts/mcp_batch_change_signature.txtar`
+- Observed failure: the standalone signature scenario passed through type checking and same-package test callers, but the batch's wanted `calls.go` expected the pre-normalized one-line body after `semantic_replace_body` had formatted it. A backup named `.scratch/transform.go` also appeared as an inactive variant and masked the intended function-value refusal.
+- Workaround: assert the formatted body and keep backup snapshots as `.txt` files.
+- Root cause: the fixture did not account for the earlier buffered body's normalized overlay and used a Go extension for a non-source backup.
+
+## ST-0279: Planner assertion assumed gofmt would collapse a trailing-comma list
+
+- Date: 2026-10-02
+- Tool: focused `go test ./internal/astedit -run '^TestPlanChangeSignature'`
+- Target: `TestPlanChangeSignatureNoOpTrailingCommaAndVariadicRefusal`
+- Observed failure: the planned signature was syntactically valid and preserved the newline before the closing parenthesis, while the assertion required the entire parameter list on one line.
+- Workaround: assert the appended parameter and argument while allowing the original multiline closing layout.
+- Root cause: the test checked formatting rather than the observable append semantics.
+
+## ST-0280: Assertion update wrapper did not match the inspected source spelling
+
+- Date: 2026-10-02
+- Tool: signature test source transformation wrapper
+- Target: `TestPlanChangeSignatureNoOpTrailingCommaAndVariadicRefusal`
+- Observed failure: the wrapper's expected source substring was absent after a successful semantic inspection; it exited before submitting a mutation.
+- Workaround: inspect the current function declaration and apply a semantic body replacement against its actual condition text.
+- Root cause: the wrapper transformation anchor omitted exact Go string-literal delimiters.
+
+## ST-0281: Git commit could not create the worktree index lock
+
+- Date: 2026-10-02
+- Tool: `git commit`
+- Target: current worktree commit operation
+- Observed failure: Git reported `Unable to create .../.git/worktrees/flow-signatures/index.lock: Operation not permitted`; no lock file was present afterward and the commit did not run.
+- Workaround: confirmed no stale lock existed and retried once; both attempts failed before creating the lock. Requesting scoped filesystem escalation for the authorized commit.
+- Root cause: the sandbox denied creation of the per-worktree index lock in the shared Git metadata directory.

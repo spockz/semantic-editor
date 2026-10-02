@@ -144,3 +144,51 @@ func TestSignaturePlannersRequireExplicitCompleteReadSets(t *testing.T) {
 		t.Fatal("incomplete parameter-object proof was accepted")
 	}
 }
+
+func TestPlanChangeSignatureNoOpTrailingCommaAndVariadicRefusal(t *testing.T) {
+	zero := 0
+	target := "package p\nfunc work(id int,\n) bool { return id > 0 }\n"
+	caller := "package p\nfunc run() bool { return work(1,\n) }\n"
+	call := strings.Index(caller, "work(1,")
+	proof := SignatureCallSetProof{
+		Complete: true,
+		Files:    []SignatureSourceFile{{File: "work.go", Source: []byte(target)}, {File: "caller.go", Source: []byte(caller)}},
+		Calls:    []SignatureCallSite{{File: "caller.go", Start: call, End: call + len("work(1,\n)")}},
+	}
+	unchanged := SignatureChangeRequest{File: "work.go", Symbol: "work", Parameters: []SignatureParameterMapping{{SourceIndex: &zero, Name: "id", Type: "int"}}}
+	noOp, err := PlanChangeSignature(unchanged, proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(noOp.Files) != 0 {
+		t.Fatalf("no-op planned %d file writes, want zero", len(noOp.Files))
+	}
+	request := SignatureChangeRequest{File: "work.go", Symbol: "work", Parameters: []SignatureParameterMapping{
+		{SourceIndex: &zero, Name: "id", Type: "int"},
+		{Name: "enabled", Type: "bool", Argument: "true"},
+	}}
+	plan, err := PlanChangeSignature(request, proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	planned := make(map[string]string, len(plan.Files))
+	for _, file := range plan.Files {
+		planned[file.File] = string(file.After)
+	}
+	if !strings.Contains(planned["work.go"], "func work(id int, enabled bool") {
+		t.Fatalf("signature output = %s", planned["work.go"])
+	}
+	if !strings.Contains(planned["caller.go"], "work(1, true") {
+		t.Fatalf("caller output = %s", planned["caller.go"])
+	}
+	variadicTarget := "package p\nfunc work(ids ...int) {}\n"
+	variadic := true
+	variadicRequest := SignatureChangeRequest{File: "variadic.go", Symbol: "work", Parameters: []SignatureParameterMapping{
+		{SourceIndex: &zero, Name: "ids", Type: "int", Variadic: variadic},
+		{Name: "enabled", Type: "bool", Argument: "true"},
+	}}
+	_, err = PlanChangeSignature(variadicRequest, SignatureCallSetProof{Complete: true, Files: []SignatureSourceFile{{File: "variadic.go", Source: []byte(variadicTarget)}}})
+	if err == nil || !strings.Contains(err.Error(), "variadic") {
+		t.Fatalf("variadic append error = %v, want refusal", err)
+	}
+}

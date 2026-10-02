@@ -83,7 +83,7 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
 	if len(entries) != 30 {
-		t.Errorf("registered operations = %d, want 30", len(entries))
+		t.Errorf("registered operations = %d, want 31", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {

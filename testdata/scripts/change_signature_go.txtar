@@ -1,0 +1,98 @@
+# The CLI appends one typed parameter across source and test callers, preserves unrelated bytes, and refuses unsafe bindings without writes.
+exec semedit change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"ctx","type":"*int"},"argument":"nil"}]'
+stdout 'Updated the function signature and every proven direct caller.'
+cmp service.go .scratch/want/service.txt
+cmp callers.go .scratch/want/callers.txt
+cmp other.go .scratch/want/other.txt
+cmp service_test.go .scratch/want/service_test.txt
+cmp odd.go .scratch/want/odd.txt
+exec go test ./...
+exec semedit change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"source_index":1,"parameter":{"name":"ctx","type":"*int"}}]'
+stdout 'already present'
+cmp service.go .scratch/want/service.txt
+cp service.go .scratch/transform.txt
+! exec semedit change-signature --file service.go --symbol indirect --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]'
+stderr 'function values and indirect callers are unsupported'
+cmp service.go .scratch/transform.txt
+cp callers.go .scratch/callers.txt
+! exec semedit change-signature --file service.go --symbol usesGlobal --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"globalValue","type":"int"},"argument":"0"}]'
+stderr 'conflicts with an existing body binding'
+cmp callers.go .scratch/callers.txt
+-- go.mod --
+module example.com/signaturecli
+
+go 1.24
+-- service.go --
+package sample
+
+func transform(id int) int { return id + 1 }
+
+func indirect(id int) int { return id }
+
+var indirectValue = indirect
+
+var globalValue = 2
+
+func usesGlobal(id int) int { return globalValue + id }
+-- callers.go --
+package sample
+
+func first() int { return transform(1) }
+-- other.go --
+package sample
+
+func second() int { return transform(2) }
+-- service_test.go --
+package sample
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(3); got != 4 {
+		t.Fatalf("transform(3) = %d, want 4", got)
+	}
+	if got := usesGlobal(1); got != 3 {
+		t.Fatalf("usesGlobal(1) = %d, want 3", got)
+	}
+}
+-- odd.go --
+package sample
+
+func unrelated( )int{return 9}
+-- .scratch/want/service.txt --
+package sample
+
+func transform(id int, ctx *int) int { return id + 1 }
+
+func indirect(id int) int { return id }
+
+var indirectValue = indirect
+
+var globalValue = 2
+
+func usesGlobal(id int) int { return globalValue + id }
+-- .scratch/want/callers.txt --
+package sample
+
+func first() int { return transform(1, nil) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() int { return transform(2, nil) }
+-- .scratch/want/service_test.txt --
+package sample
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(3, nil); got != 4 {
+		t.Fatalf("transform(3) = %d, want 4", got)
+	}
+	if got := usesGlobal(1); got != 3 {
+		t.Fatalf("usesGlobal(1) = %d, want 3", got)
+	}
+}
+-- .scratch/want/odd.txt --
+package sample
+
+func unrelated( )int{return 9}

@@ -121,8 +121,22 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 	if err != nil {
 		return SignaturePlan{}, err
 	}
+	if len(request.Parameters) == len(oldParameters) {
+		for index, old := range oldParameters {
+			mapping := request.Parameters[index]
+			if mapping.SourceIndex == nil || *mapping.SourceIndex != index || mapping.Name != old.Name || mapping.Type != old.Type || mapping.Variadic != old.Variadic || mapping.Argument != "" {
+				return SignaturePlan{}, fmt.Errorf("change signature: same-signature mappings must preserve every original parameter without arguments")
+			}
+		}
+		return SignaturePlan{}, nil
+	}
 	if len(request.Parameters) != len(oldParameters)+1 {
-		return SignaturePlan{}, fmt.Errorf("change signature: release one requires every existing parameter and exactly one appended parameter")
+		return SignaturePlan{}, fmt.Errorf("change signature: release one requires every existing parameter and exactly one appended parameter, or the unchanged signature")
+	}
+	for _, parameter := range oldParameters {
+		if parameter.Variadic {
+			return SignaturePlan{}, fmt.Errorf("change signature: appending after a variadic parameter is unsupported")
+		}
 	}
 	for index, old := range oldParameters {
 		mapping := request.Parameters[index]
@@ -150,11 +164,12 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 		return SignaturePlan{}, fmt.Errorf("change signature: target token positions are unavailable")
 	}
 	paramClose := targetTokenFile.Offset(fn.Type.Params.Closing)
-	parameterInsertion := added.Name + " " + added.Type
-	if fn.Type.Params.NumFields() > 0 {
-		parameterInsertion = ", " + parameterInsertion
+	paramOpen := targetTokenFile.Offset(fn.Type.Params.Opening)
+	parameterInsertion, parameterText, err := signatureAppendInsertion(target, paramOpen+1, paramClose, added.Name+" "+added.Type, fn.Type.Params.NumFields() > 0)
+	if err != nil {
+		return SignaturePlan{}, fmt.Errorf("change signature: append parameter: %w", err)
 	}
-	edits := map[string][]signatureSourceEdit{request.File: {{Start: paramClose, End: paramClose, Replacement: parameterInsertion}}}
+	edits := map[string][]signatureSourceEdit{request.File: {{Start: parameterInsertion, End: parameterInsertion, Replacement: parameterText}}}
 	for _, callSite := range proof.Calls {
 		source, exists := files[callSite.File]
 		if !exists {
@@ -182,11 +197,12 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 		if source[end] != ')' {
 			return SignaturePlan{}, fmt.Errorf("change signature: caller range in %q must end at the call's closing parenthesis", callSite.File)
 		}
-		insertion := added.Argument
-		if len(callExpr.Args) > 0 {
-			insertion = ", " + insertion
+		callOpen := fset.Position(callExpr.Lparen).Offset
+		insertion, insertionText, err := signatureAppendInsertion(source, callOpen+1, end, added.Argument, len(callExpr.Args) > 0)
+		if err != nil {
+			return SignaturePlan{}, fmt.Errorf("change signature: append caller argument in %q: %w", callSite.File, err)
 		}
-		edits[callSite.File] = append(edits[callSite.File], signatureSourceEdit{Start: end, End: end, Replacement: insertion})
+		edits[callSite.File] = append(edits[callSite.File], signatureSourceEdit{Start: insertion, End: insertion, Replacement: insertionText})
 	}
 	return signatureBuildPlan(proof.Files, edits)
 }
@@ -465,6 +481,28 @@ func signatureAppendDeclaration(source []byte, declaration string) string {
 		prefix = "\n"
 	}
 	return prefix + "\n" + declaration
+}
+
+func signatureAppendInsertion(source []byte, interiorStart, close int, item string, hasExisting bool) (int, string, error) {
+	if !hasExisting {
+		return close, item, nil
+	}
+	if interiorStart < 0 || close < interiorStart || close > len(source) {
+		return 0, "", fmt.Errorf("signature list bounds are invalid")
+	}
+	trimmed := bytes.TrimRight(source[interiorStart:close], " \t\r\n")
+	if len(trimmed) == 0 {
+		return 0, "", fmt.Errorf("signature list has no existing element")
+	}
+	if trimmed[len(trimmed)-1] != ',' {
+		return close, ", " + item, nil
+	}
+	comma := interiorStart + len(trimmed) - 1
+	gap := source[comma+1 : close]
+	if bytes.Contains(gap, []byte("//")) || bytes.Contains(gap, []byte("/*")) {
+		return 0, "", fmt.Errorf("trailing-comma list comments are unsupported")
+	}
+	return comma + 1, " " + item, nil
 }
 
 // ParameterObjectField maps one original parameter to a generated struct field.

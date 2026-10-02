@@ -161,9 +161,9 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Output: &OperationOutputContract{
 			ResultSchema: &projectionSchema,
 			Continuations: []OutputContinuation{
-				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body", signatureChangeConsumer}},
+				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body", signatureChangeConsumer}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body", signatureChangeConsumer}},
 				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{"semantic_replace_construct"}},
 			},
 		},

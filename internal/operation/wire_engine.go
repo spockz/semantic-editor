@@ -236,6 +236,9 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, insertCaseDef()); err != nil {
 		return err
 	}
+	if err := Register(registry, changeSignatureDef()); err != nil {
+		return fmt.Errorf("register change-signature: %w", err)
+	}
 	return registerStructuralPlanOps(registry)
 }
 
