@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -577,21 +578,28 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	var metricsResponse struct {
 		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			StructuredContent struct {
-				Result struct {
-					Records []struct {
-						Tool           string              `json:"tool"`
-						Metrics        map[string]any      `json:"metrics"`
-						SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
-					} `json:"records"`
-				} `json:"result"`
+				Result json.RawMessage `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(lines[2]), &metricsResponse); err != nil {
 		t.Fatal(err)
 	}
-	records := metricsResponse.Result.StructuredContent.Result.Records
+	var metricsData struct {
+		Records []struct {
+			Tool           string              `json:"tool"`
+			Metrics        map[string]any      `json:"metrics"`
+			SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(metricsResponse.Result.StructuredContent.Result, &metricsData); err != nil {
+		t.Fatalf("decode structured metrics records: %v", err)
+	}
+	records := metricsData.Records
 	if len(records) != 1 || records[0].Tool != "semantic_verify" {
 		t.Fatalf("metrics records = %#v, want latest semantic_verify call", records)
 	}
@@ -600,6 +608,27 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
+	}
+	const prefixLabel = "Critical result (JSON): "
+	text := metricsResponse.Result.Content[0].Text
+	prefix, _, found := strings.Cut(text, "\n\n")
+	if !found || !strings.HasPrefix(prefix, prefixLabel) {
+		t.Fatalf("metrics text omitted the critical JSON prefix: %q", text)
+	}
+	var presented map[string]any
+	decoder := json.NewDecoder(strings.NewReader(strings.TrimPrefix(prefix, prefixLabel)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&presented); err != nil {
+		t.Fatalf("decode metrics text prefix: %v", err)
+	}
+	var structured any
+	decoder = json.NewDecoder(bytes.NewReader(metricsResponse.Result.StructuredContent.Result))
+	decoder.UseNumber()
+	if err := decoder.Decode(&structured); err != nil {
+		t.Fatalf("decode structured metrics result: %v", err)
+	}
+	if !reflect.DeepEqual(presented["result"], structured) {
+		t.Fatalf("metrics text records differ from structured result: text=%#v structured=%#v", presented["result"], structured)
 	}
 }
 
@@ -1646,9 +1675,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	var response struct {
 		Result struct {
-			IsError    bool `json:"isError"`
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			Structured struct {
-				Result struct {
+				ApplicationState string `json:"application_state"`
+				Result           struct {
 					Status  string   `json:"status"`
 					Checks  []string `json:"checks_run"`
 					Refusal string   `json:"refusal"`
@@ -1661,6 +1694,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	if !response.Result.IsError || response.Result.Structured.Result.Status != "refused" || response.Result.Structured.Result.Refusal == "" {
 		t.Fatalf("safe delete response did not expose an explicit refusal: %+v", response.Result)
+	}
+	if response.Result.Structured.ApplicationState != "not_applied" {
+		t.Fatalf("safe delete application_state = %q, want not_applied", response.Result.Structured.ApplicationState)
+	}
+	text := response.Result.Content[0].Text
+	if !strings.HasPrefix(text, "Critical result (JSON): ") || !strings.Contains(text, response.Result.Structured.Result.Refusal) {
+		t.Fatalf("safe delete text omitted refusal details: %q", text)
 	}
 	if len(response.Result.Structured.Result.Checks) != 3 || response.Result.Structured.Result.Checks[0] != "go_syntax_parse" || response.Result.Structured.Result.Checks[1] != "target_resolution" || response.Result.Structured.Result.Checks[2] != "safe_delete_scope_check" {
 		t.Fatalf("checks_run = %v", response.Result.Structured.Result.Checks)

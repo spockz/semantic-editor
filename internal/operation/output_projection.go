@@ -12,6 +12,61 @@ import (
 	"strings"
 )
 
+const (
+	errorContinuationField = "continuations"
+	errorRevisionField     = "expected_revision"
+)
+
+func validateErrorOutputSchema(schema *ValueSchema) error {
+	if schema == nil {
+		return fmt.Errorf("error output schema is nil")
+	}
+	if err := ValidateOutputContract(OperationOutputContract{ResultSchema: schema}); err != nil {
+		return err
+	}
+	return rejectLiveErrorFieldsInSchema(*schema, "result")
+}
+
+func rejectLiveErrorFieldsInSchema(schema ValueSchema, path string) error {
+	switch schema.Kind {
+	case SchemaObject:
+		for name, property := range schema.Properties {
+			if name == errorContinuationField || name == errorRevisionField {
+				return fmt.Errorf("error output schema contains reserved live field %q at %s", name, path)
+			}
+			if err := rejectLiveErrorFieldsInSchema(property, path+"."+name); err != nil {
+				return err
+			}
+		}
+	case SchemaArray:
+		return rejectLiveErrorFieldsInSchema(*schema.Items, path+"[]")
+	default:
+		return nil
+	}
+	return nil
+}
+
+func rejectLiveErrorFields(value any, path string) error {
+	switch current := value.(type) {
+	case map[string]any:
+		for name, nested := range current {
+			if name == errorContinuationField || name == errorRevisionField {
+				return fmt.Errorf("error output contains reserved live field %q at %s", name, path)
+			}
+			if err := rejectLiveErrorFields(nested, path+"."+name); err != nil {
+				return err
+			}
+		}
+	case []any:
+		for index, nested := range current {
+			if err := rejectLiveErrorFields(nested, fmt.Sprintf("%s[%d]", path, index)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func normalizeAndValidateOutput(value any, contract *OperationOutputContract) (any, error) {
 	if contract == nil || contract.ResultSchema == nil {
 		return nil, fmt.Errorf("typed output has no result schema: %w", ErrInvalidDefinition)
@@ -160,6 +215,9 @@ func ProjectedContinuationFields(projected any, contract *OperationOutputContrac
 		}
 		value, exists := object[continuation.Field]
 		if !exists {
+			if continuation.Optional {
+				continue
+			}
 			return nil, fmt.Errorf("projected result omits declared continuation %q", continuation.Field)
 		}
 		if err := ValidateValue(continuation.Schema, value); err != nil {
