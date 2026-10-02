@@ -222,26 +222,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				case fieldInsertionToolName:
 					assertInsertFieldOutputSchema(t, tool["outputSchema"])
 				case "semantic_remove_construct":
-					assertStandardOutputSchema(t, tool["outputSchema"], "object")
-					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-					result := output["result"].(map[string]any)
-					entry, ok := operation.DefaultRegistry().LookupMCP(name)
-					if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
-						t.Fatalf("remove operation omitted its registered result schema")
-					}
-					assertResultSchemaMatchesRegistration(t, name, result, entry)
-					for _, field := range []string{"status", "safe_delete", "checks_run"} {
-						if _, ok := result["properties"].(map[string]any)[field]; !ok {
-							t.Errorf("remove result schema omitted %q", field)
-						}
-					}
-					if len(entry.Output.Continuations) == 0 {
-						for _, field := range []string{"file", "symbol", "expected_revision"} {
-							if _, ok := output[field]; ok {
-								t.Errorf("remove outputSchema advertised unresolved continuation alias %q", field)
-							}
-						}
-					}
+					assertRemoveConstructOutputSchema(t, tool["outputSchema"])
 				case "semantic_extract_interface", "semantic_implement_contract":
 					assertContractOutputSchema(t, name, tool["outputSchema"])
 				case "semantic_inline_function", "semantic_migrate_type":
@@ -298,6 +279,30 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func assertRemoveConstructOutputSchema(t *testing.T, raw any) {
+	t.Helper()
+	assertStandardOutputSchema(t, raw, "object")
+	output := raw.(map[string]any)["properties"].(map[string]any)
+	result := output["result"].(map[string]any)
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_remove_construct")
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
+		t.Fatalf("remove operation omitted its registered result schema")
+	}
+	assertResultSchemaMatchesRegistration(t, "semantic_remove_construct", result, entry)
+	for _, field := range []string{"status", "safe_delete", "checks_run"} {
+		if _, ok := result["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("remove result schema omitted %q", field)
+		}
+	}
+	if len(entry.Output.Continuations) == 0 {
+		for _, field := range []string{"file", "symbol", "expected_revision"} {
+			if _, ok := output[field]; ok {
+				t.Errorf("remove outputSchema advertised unresolved continuation alias %q", field)
+			}
+		}
 	}
 }
 
