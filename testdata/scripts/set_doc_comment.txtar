@@ -1,0 +1,47 @@
+# Set and remove an explicitly owned Go declaration documentation comment.
+exec semedit set-doc-comment --file doc.go --scope declaration --symbol Serve --comment 'Serve answers.'
+cmp doc.go .scratch/want/serve.go
+
+# An identical comment is an observable no-op.
+exec semedit set-doc-comment --file doc.go --scope declaration --symbol Serve --comment 'Serve answers.'
+cmp doc.go .scratch/want/serve.go
+
+# A present empty comment removes the attached doc comment.
+exec semedit set-doc-comment --file doc.go --scope declaration --symbol Serve --comment ''
+cmp doc.go .scratch/want/removed.go
+
+# Missing comment is malformed; a directive-owned group is refused without edits.
+! exec semedit set-doc-comment --file doc.go --scope declaration --symbol Serve
+stderr 'comment'
+! exec semedit set-doc-comment --file directives.go --scope declaration --symbol Keep --comment 'Replacement.'
+stderr 'directive'
+cmp doc.go .scratch/want/removed.go
+cmp directives.go .scratch/want/directives.go
+
+-- go.mod --
+module example.com/doccomment
+
+go 1.24
+-- doc.go --
+package docs
+
+func Serve() {}
+-- directives.go --
+package docs
+
+//go:generate go test ./...
+func Keep() {}
+-- .scratch/want/serve.go --
+package docs
+
+// Serve answers.
+func Serve() {}
+-- .scratch/want/removed.go --
+package docs
+
+func Serve() {}
+-- .scratch/want/directives.go --
+package docs
+
+//go:generate go test ./...
+func Keep() {}

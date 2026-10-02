@@ -486,6 +486,13 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 	var parsedTestsMu sync.Mutex
 	capturedPreflight := make(map[string][]byte)
 	var capturedPreflightMu sync.Mutex
+	destinationDirectory, err := canonicalContractDirectory(filepath.Dir(destination))
+	if err != nil {
+		return nil, fmt.Errorf("resolve contract destination directory: %w", err)
+	}
+	if err := validateContractTestSymlinks(snapshot.Root, destinationDirectory); err != nil {
+		return nil, fmt.Errorf("validate contract test sources: %w", err)
+	}
 	loaded, err := packages.Load(&packages.Config{
 		Context: ctx, Dir: snapshot.ModuleRoot, Env: snapshot.Env, BuildFlags: []string{"-mod=readonly"}, Mode: mode, Overlay: overlay, Tests: true,
 		ParseFile: func(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
@@ -501,6 +508,17 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 				capturedPreflightMu.Lock()
 				defer capturedPreflightMu.Unlock()
 				return parseContractSource(snapshot.Context, snapshot.Root, fset, filename, candidate, capturedPreflight, nil)
+			}
+			if strings.HasSuffix(filename, "_test.go") {
+				logicalDirectory, err := canonicalContractDirectory(filepath.Dir(filename))
+				if err != nil {
+					return nil, fmt.Errorf("resolve logical test source directory %q: %w", filename, err)
+				}
+				if logicalDirectory == destinationDirectory {
+					if err := contractTestSymlinkError(snapshot.Root, filename); err != nil {
+						return nil, err
+					}
+				}
 			}
 			relative, err := filepath.Rel(snapshot.Root, canonical)
 			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
@@ -526,6 +544,9 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 	if err != nil {
 		return nil, fmt.Errorf("type-check generated contract output: %w", err)
 	}
+	if err := validateContractTestSymlinks(snapshot.Root, destinationDirectory); err != nil {
+		return nil, fmt.Errorf("revalidate contract test sources: %w", err)
+	}
 	finalPackages := make(map[string]*packages.Package)
 	primaryPackagePaths := make(map[string]string, len(snapshot.ByPath))
 	for path, pkg := range snapshot.ByPath {
@@ -533,7 +554,7 @@ func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot,
 			primaryPackagePaths[pkg.ID] = path
 		}
 	}
-	if err := validateContractTestVariants(loaded, filepath.Dir(destination)); err != nil {
+	if err := validateContractTestVariants(loaded, destinationDirectory); err != nil {
 		return nil, err
 	}
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
@@ -580,14 +601,30 @@ func validateContractTestVariants(loaded []*packages.Package, destinationDirecto
 			return true
 		}
 		for _, ignored := range pkg.IgnoredFiles {
-			if strings.HasSuffix(ignored, "_test.go") && sameContractDirectory(ignored, destinationDirectory) {
+			if !strings.HasSuffix(ignored, "_test.go") {
+				continue
+			}
+			sameDirectory, err := sameContractDirectory(ignored, destinationDirectory)
+			if err != nil {
+				validationErr = fmt.Errorf("resolve ignored test source %q: %w", ignored, err)
+				return false
+			}
+			if sameDirectory {
 				validationErr = fmt.Errorf("contract preflight cannot prove inactive test source %q under the current build tags", ignored)
 				return false
 			}
 		}
 		hasTestSource := false
 		for _, filename := range pkg.CompiledGoFiles {
-			if strings.HasSuffix(filename, "_test.go") && sameContractDirectory(filename, destinationDirectory) {
+			if !strings.HasSuffix(filename, "_test.go") {
+				continue
+			}
+			sameDirectory, err := sameContractDirectory(filename, destinationDirectory)
+			if err != nil {
+				validationErr = fmt.Errorf("resolve compiled test source %q: %w", filename, err)
+				return false
+			}
+			if sameDirectory {
 				hasTestSource = true
 				break
 			}
@@ -608,16 +645,70 @@ func validateContractTestVariants(loaded []*packages.Package, destinationDirecto
 	return validationErr
 }
 
-func sameContractDirectory(path, directory string) bool {
-	absolute, err := filepath.Abs(path)
+func sameContractDirectory(path, directory string) (bool, error) {
+	pathDirectory, err := canonicalContractDirectory(filepath.Dir(path))
 	if err != nil {
-		return false
+		return false, err
+	}
+	canonicalDirectory, err := canonicalContractDirectory(directory)
+	if err == nil {
+		return pathDirectory == canonicalDirectory, nil
+	}
+	return false, err
+}
+
+func canonicalContractDirectory(directory string) (string, error) {
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return "", fmt.Errorf("resolve directory %q: %w", directory, err)
 	}
 	canonical, err := filepath.EvalSymlinks(absolute)
-	if err == nil {
-		absolute = canonical
+	if err != nil {
+		return "", fmt.Errorf("canonicalize directory %q: %w", absolute, err)
 	}
-	return filepath.Dir(absolute) == directory
+	return canonical, nil
+}
+
+func validateContractTestSymlinks(root, directory string) error {
+	entries, err := os.ReadDir(directory)
+	if err != nil {
+		return fmt.Errorf("read destination package directory %q: %w", directory, err)
+	}
+	for _, entry := range entries {
+		if !strings.HasSuffix(entry.Name(), "_test.go") {
+			continue
+		}
+		path := filepath.Join(directory, entry.Name())
+		if err := contractTestSymlinkError(root, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func contractTestSymlinkError(root, path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("inspect test source %q: %w", path, err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return nil
+	}
+	canonical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("resolve test source symlink %q: %w", path, err)
+	}
+	relative, err := filepath.Rel(root, canonical)
+	if err != nil {
+		return fmt.Errorf("check test source symlink %q against snapshot root: %w", path, err)
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("test source symlink %q targets %q outside the snapshot root; refusing untracked source", path, canonical)
+	}
+	return fmt.Errorf("destination-local test symlink %q targets %q; contract preflight does not support test symlinks", path, canonical)
 }
 
 func contractTypeInFile(pkg *packages.Package, path, name string) (*types.Named, error) {

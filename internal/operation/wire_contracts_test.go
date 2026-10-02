@@ -363,20 +363,25 @@ func TestContractParserRetainsAnalyzedBytesAcrossDiskDrift(t *testing.T) {
 
 func TestImplementContractPreflightsSamePackageTestVariants(t *testing.T) {
 	for _, test := range []struct {
-		name       string
-		testSource string
-		wantErr    bool
+		name           string
+		testSource     string
+		symlinkSource  string
+		symlinkInRoot  bool
+		wantErr        bool
+		wantErrMessage string
 	}{
 		{name: "compiles with tests", testSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n", wantErr: false},
-		{name: "refuses test method collision", testSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true},
+		{name: "refuses test method collision", testSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true, wantErrMessage: "test variant"},
+		{name: "refuses in-root symlinked test method collision", symlinkSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", symlinkInRoot: true, wantErr: true, wantErrMessage: "does not support test symlinks"},
+		{name: "refuses out-of-root symlinked test method collision", symlinkSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true, wantErrMessage: "outside the snapshot root"},
+		{name: "refuses out-of-root symlinked test source without collision", symlinkSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n", wantErr: true, wantErrMessage: "outside the snapshot root"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			root := t.TempDir()
 			for name, source := range map[string]string{
-				"go.mod":         "module example.com/testvariant\n\ngo 1.27.1\n",
-				"types.go":       "package demo\n\ntype Worker struct{}\n\ntype Runner interface { Run() error }\n",
-				"methods.go":     "package demo\n",
-				"worker_test.go": test.testSource,
+				"go.mod":     "module example.com/testvariant\n\ngo 1.27.1\n",
+				"types.go":   "package demo\n\ntype Worker struct{}\n\ntype Runner interface { Run() error }\n",
+				"methods.go": "package demo\n",
 			} {
 				path := filepath.Join(root, name)
 				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -386,17 +391,38 @@ func TestImplementContractPreflightsSamePackageTestVariants(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			if test.symlinkSource != "" {
+				targetRoot := t.TempDir()
+				if test.symlinkInRoot {
+					targetRoot = filepath.Join(root, "fixtures")
+					if err := os.MkdirAll(targetRoot, 0o700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				externalTest := filepath.Join(targetRoot, "external_test.go")
+				if err := os.WriteFile(externalTest, []byte(test.symlinkSource), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(externalTest, filepath.Join(root, "worker_test.go")); err != nil {
+					t.Fatalf("create test source symlink: %v", err)
+				}
+			} else if test.testSource != "" {
+				if err := os.WriteFile(filepath.Join(root, "worker_test.go"), []byte(test.testSource), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			before, err := os.ReadFile(filepath.Join(root, "methods.go"))
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = runImplementContract(context.Background(), CallContext{WorkDir: root}, implementContractRequest{
+			result, err := runImplementContract(context.Background(), CallContext{WorkDir: root}, implementContractRequest{
 				File: "types.go", Symbol: "Worker", Contract: "Runner", DestinationFile: "methods.go",
 				ReceiverKind: contractplan.ReceiverPointer, BodyPolicy: contractplan.BodyPolicyPanicStub,
 			})
-			if test.wantErr {
-				if err == nil || !strings.Contains(err.Error(), "test variant") {
-					t.Fatalf("expected test variant refusal, got %v", err)
+			switch {
+			case test.wantErr:
+				if err == nil || !strings.Contains(err.Error(), test.wantErrMessage) {
+					t.Fatalf("expected refusal containing %q, got %v", test.wantErrMessage, err)
 				}
 				after, readErr := os.ReadFile(filepath.Join(root, "methods.go"))
 				if readErr != nil {
@@ -405,8 +431,20 @@ func TestImplementContractPreflightsSamePackageTestVariants(t *testing.T) {
 				if !bytes.Equal(after, before) {
 					t.Fatalf("destination changed after test variant refusal: %q", after)
 				}
-			} else if err != nil {
+			case err != nil:
 				t.Fatalf("valid test variant rejected: %v", err)
+			default:
+				wantRevision := contractDigest([]byte(test.testSource))
+				foundTestRevision := false
+				for _, revision := range result.ReadSet {
+					if revision.Path == "worker_test.go" && revision.Revision == wantRevision {
+						foundTestRevision = true
+						break
+					}
+				}
+				if !foundTestRevision {
+					t.Fatalf("successful contract preflight read set lacks worker_test.go revision %q: %#v", wantRevision, result.ReadSet)
+				}
 			}
 		})
 	}

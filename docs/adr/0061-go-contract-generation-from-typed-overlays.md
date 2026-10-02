@@ -21,7 +21,7 @@ The first release writes only to an existing same-package destination file. It f
 * Interface extraction selects direct methods only and verifies satisfaction for the chosen receiver kind. Promoted, ambiguous, inaccessible, generic, constraint, and incomplete cases fail closed.
 * Contract implementation distinguishes missing methods from incompatible or unavailable existing methods. It preserves existing method bodies and refuses a shadowed `panic` binding when generating stubs.
 * Read-only analysis inputs do not gain write authority. Candidate output must parse and type-check before the one apply.
-* Candidate preflight type-checks active test variants for the changed package while retaining primary compiler packages by package ID. Test variant errors refuse publication; test files inactive under current build tags fail closed when detected.
+* Candidate preflight type-checks active test variants for the changed package while retaining primary compiler packages by package ID. Test variant errors refuse publication; test files inactive under current build tags fail closed when detected. Destination-local test-file symlinks also fail closed because the source identity and read-set revision cannot both be guaranteed.
 * Live receipt continuations require the final file and symbol identity plus matching revision evidence. Buffered results do not expose stale live continuations.
 * Outcome states reflect actual publication or working-buffer application. Per-file publication does not imply batch-wide rollback.
 

@@ -367,6 +367,53 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 	}
 }
 
+func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testing.T) {
+	root := t.TempDir()
+	beforeA := []byte("package sample\nvar First = 1\n")
+	afterA := []byte("package sample\nvar First = 2\n")
+	beforeB := []byte("package sample\nvar Second = 1\n")
+	afterB := []byte("package sample\nvar Second = 2\n")
+	if err := os.WriteFile(filepath.Join(root, "first.go"), afterA, 0600); err != nil {
+		t.Fatalf("write published output: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "second.go"), beforeB, 0600); err != nil {
+		t.Fatalf("write unchanged preimage: %v", err)
+	}
+	digest := func(source []byte) string {
+		sum := sha256.Sum256(source)
+		return hex.EncodeToString(sum[:])
+	}
+	draft := EditReceiptDraft{
+		Operation: "multi-file-edit",
+		Status:    EditPersisted,
+		PlannedChanges: []FileRevision{
+			{Path: "first.go", Revision: digest(afterA)},
+			{Path: "second.go", Revision: digest(afterB)},
+		},
+		ReadSet: []FileRevision{
+			{Path: "first.go", Revision: digest(beforeA)},
+			{Path: "second.go", Revision: digest(beforeB)},
+		},
+	}
+	partial, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize partial publication: %v", err)
+	}
+	if partial.Status != EditPartiallyPublished || len(partial.Changes) != 1 || partial.Changes[0].Path != "first.go" {
+		t.Fatalf("mixed published and unchanged files = %#v", partial)
+	}
+	if err := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); err != nil {
+		t.Fatalf("restore unchanged preimage: %v", err)
+	}
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize fully unchanged publication: %v", err)
+	}
+	if refused.Status != EditRefused || len(refused.Changes) != 0 {
+		t.Fatalf("fully unchanged planned files = %#v, want refused with no changes", refused)
+	}
+}
+
 func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "main.go")

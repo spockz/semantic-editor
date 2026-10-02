@@ -1,0 +1,41 @@
+# Both structural planners compose in one buffered batch and report working-view receipts.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout 'applied_working'
+cmp server.go .scratch/want/server.go
+
+-- go.mod --
+module example.com/structuralbatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_set_doc_comment","params":{"file":"server.go","scope":"declaration","symbol":"Serve","comment":"Serve handles requests."}},{"tool":"semantic_insert_statement","params":{"file":"server.go","in_function":"(*Server).Run","discriminator":"flush()","source":"record()","placement":"before_construct"}}]}}}
+-- server.go --
+package server
+
+type Server struct{}
+
+func Serve() {}
+
+func (s *Server) Run() {
+	flush()
+}
+
+func flush() {}
+func record() {}
+-- .scratch/want/server.go --
+package server
+
+type Server struct{}
+
+// Serve handles requests.
+func Serve() {}
+
+func (s *Server) Run() {
+	record()
+	flush()
+}
+
+func flush()  {}
+func record() {}
