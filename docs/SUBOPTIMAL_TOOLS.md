@@ -3086,3 +3086,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. Import organization also reordered four unrelated benchmark oracle fixtures.
 - Workaround: retain the intended declaration edits, restore unrelated fixture bytes, and run the repository's trusted `make check` gate with the configured module cache.
 - Root cause: batch-wide import organization reaches unrelated files; verification requires explicit workspace trust and its language session reports diagnostics inconsistent with the compiler gate.
+
+## Instructions audit: Independent compression review timed out
+
+- Tool: `codex_ask`, read-only Terra review.
+- Target: MCP server instructions, generated copy descriptions, and ADR-0007/0055 compatibility.
+- Observed failure: `context deadline exceeded` returned without a review report.
+- Workaround: retain the captured discovery comparison and local contract analysis; request a smaller question if an unresolved compression decision requires independent review.
+- Root cause: the request exceeded the tool deadline; no review approval can be inferred.

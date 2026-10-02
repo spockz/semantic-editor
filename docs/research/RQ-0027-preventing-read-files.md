@@ -762,4 +762,59 @@ Statement/comment tools are delivered on main at `930893f`; interface extraction
 
 The delivered routes above distinguish interface derivation, missing-method generation, field insertion, and bounded inline/type-spelling edits from caller-written insertion and whole-body replacement. Review found and corrected contract aliases that bypassed live receipt checks, same-file generated-method revision evidence, structural manifest capture after analysis, and no-op read-set drift. Public CLI/MCP and batch proofs accompany the passing combined integration check. The remaining general routing and creation-name guidance findings still require repair.
 
+## Server instructions, completeness, and description size audit
+
+### Captured behavior
+
+Audit baseline: main `b99f558`, with the same production source as the `6718968` discovery build. Five fresh initialize/discovery captures cover server instruction modes `none`, `descriptive`, and `prescriptive`, plus Go-only full and mutations-only profiles. The captures are in `.scratch/parallel-tools/instruction-catalog-audit.json`. The three instruction modes return identical tool catalogs. Default CLI instructions are empty; descriptive instructions are a nine-word availability statement; prescriptive instructions are a 65-word discovery, semantic-edit priority, and fallback policy. The instruction mode controls server-level guidance only: even `none` and `descriptive` retain prescriptive per-tool descriptions.
+
+### Overlap and completeness
+
+| Guidance | Current owner and assessment |
+| :--- | :--- |
+| Discover callable tools, including deferred tools; prefer semantic mutation; permit bounded fallback | Prescriptive server instructions. This is global policy, not tool selection or parameter syntax. The complete-inventory requirement can itself cause extra discovery work; narrowing it is a policy experiment, not a harmless wording edit. |
+| Prefer a specific operation over text editing | Every captured tool has priority guidance. This deliberately overlaps server policy: ADR-0007 requires it, and server instructions are optional. Keep a short priority phrase in each mutation description. |
+| Choose between overlapping operations and understand bounds | Tool summaries. The generic insertion wrappers still lack a distinct capability rationale. Zero-argument literal-only inlining, alias-only migration, and generated panic stubs must remain explicit. Outline should state that callable bodies are elided. |
+| Exact value format and producer path | Parameter descriptions, with generated `SourceFields` clauses. Many long producer lists repeat in the batch schema. Correct invalid creation-name producer edges before compressing them. |
+| Live output selectors and compatible consumers | Generated output continuation suffixes, often duplicated by hand-written summary text. Remove the manual duplicate, or group fields with identical consumers while retaining exact paths and same-record semantics. Do not move these guarantees exclusively into optional server instructions. |
+| Current overlays, static batch inputs, and failure state | Batch description states ordered requests and retained earlier edits, but omits explicit static-parameter/no-interpolation and current-overlay guidance. Add those rules compactly. A failed operation can already have applied changes; inspect outcome and workspace state before retrying with a fallback editor. |
+| Trust, network, and writes | Operation/backend-specific summaries and parameters. These cannot become unconditional server guarantees: Maven trust/offline policy differs from Go, and `verify` may normalize files unless `check_only=true`. |
+
+The combined surface is useful but not complete. Existing creation-name provenance and language-scoping findings remain correctness gaps; generic insertion distinctions and batch execution guidance need clarification. Server instructions do not need to enumerate every tool or restate each parameter.
+
+### Measured footprint and candidate reductions
+
+Counts below are exact whitespace-separated words and UTF-8 bytes, including repeated schema descriptions. They are **not tokenizer counts**, client prompt sizes, latency measurements, or billing estimates. Actual harnesses may omit output schemas, load tools lazily, wrap definitions differently, or cache prefixes.
+
+| Component | Current | Reviewed candidate |
+| :--- | ---: | ---: |
+| Prescriptive server instruction | 65 words / 438 bytes | 38 words / 262 bytes |
+| Base tool summaries, excluding generated output suffixes | 2,442 words | 1,965 words |
+| Generated input copy clauses, including batch duplicates | 2,992 words | 2,686 words |
+| Entire Go/Java full catalog, compact JSON | 189,211 bytes | 184,524 bytes |
+
+All description text totals 11,956 words: 2,955 in tool descriptions, 7,591 in input schemas, and 1,410 in output schemas. `semantic_batch` contributes 4,333 words and 81,800 serialized bytes, **43.2% of the full catalog**. One 498-byte workspace-file description appears 22 times. The 65-word server policy is a small share of the footprint; shortening descriptions and repeated schemas has greater potential.
+
+The 39 summary candidates and measurement provenance are saved in [the candidate artifact](RQ-0027-description-candidates.json). Candidates preserve generated output suffixes and schemas; they also add missing scope guidance, so some individual summaries grow. Combined summary and copy-clause changes reduce serialized bytes by **2.5%**, not an asserted token percentage. Output-field grouping could save more, but is not included in this measurement. A shorter initial copy-clause candidate was rejected by independent review because it omitted the preceding-result-record cue; the measured candidate retains that cue.
+
+Compact server-policy candidate:
+
+> Discover the complete tool inventory, including deferred/lazy tools, before editing. Confirm applicable semantic tools are callable and use them for mutations. Use file edits only when none is callable or an operation fails, is unsupported, or remains ambiguous.
+
+Compact copy-clause candidate:
+
+> Copy result.continuations[].symbol from a preceding semantic_inspect_symbol or semantic_inline_function result record.
+
+Keep full source paths and tool names. Preserve companion file/owner/revision rules and live branches; never shorten a producer list by claiming compatibility that the implementation has not proven. Do not collapse these rules into a generic “copy previous results” instruction.
+
+### Repair order and proof
+
+1. Fix invalid producer edges and missing routing/scope guidance first. Fresh creation names remain caller choices.
+2. Compact generated copy clauses and remove duplicated manual output lists. Group output fields only for identical consumer sets; preserve complete paths and same-record selection.
+3. Apply the reviewed summaries without dropping mutation, refusal, trust, or partial-publication distinctions. Validate public producer-to-consumer calls and negative stale/wrong-kind cases.
+4. Evaluate language/backend parameter scoping and repeated batch schemas. Go-only full discovery is 186,412 bytes; mutations-only is 169,517 bytes and removes four navigation tools. That profile is a tradeoff, not a free default reduction. Schema factoring requires client compatibility proof and must retain operation-specific validation; removing descriptions can force extra child-tool discovery.
+5. Version any change to controlled benchmark server instructions and record the text/hash with the experiment. Do not silently redefine existing `none`/`descriptive`/`prescriptive` evidence or claim routing quality from shorter text alone.
+
+No production instructions, descriptions, or schemas were changed by this audit. The first independent Terra review timed out and supplied no approval. A narrower second review identified the required preceding-result-record cue and supplied the compact wording shape adopted above. It did not review all 39 summaries or establish model-routing performance.
+
 This audit verifies visible tool selection guidance and argument/result continuity. It does not measure internal model reasoning or demonstrate lower token use. Producer-to-consumer execution and negative liveness cases are the acceptance evidence; any model-routing comparison belongs to the existing benchmark methodology and requires separately authorized runs.
