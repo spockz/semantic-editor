@@ -19,6 +19,8 @@ import (
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
 
+const wireCLIExpectedRevision = "expected-revision"
+
 var renameParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(append(append([]string(nil), sourceSymbolContinuations...), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},

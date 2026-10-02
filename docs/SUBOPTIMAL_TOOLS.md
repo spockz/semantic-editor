@@ -3078,3 +3078,11 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed limitation: the available structural insertion schema supports declarations and switch cases, but not fields inside an existing struct.
 - Workaround: add the `OriginFile` evidence field with a scoped patch, then use `semantic_replace_body` for the batch result projection and verify the public MCP schema and CLI txtar behavior.
 - Root cause: this checkout has no semantic operation for inserting one field into an existing Go struct.
+
+## Integration: batch verification refused workspace hook and reformatted oracle fixtures
+
+- Tool: `semantic_batch` with `semantic_insert_decl` and five `semantic_replace_decl` children.
+- Target: shared expected-revision CLI schema constant in `internal/operation`.
+- Observed failure: all children persisted, but final verification refused the untrusted `golangci-lint` hook and reported promoted-field diagnostics. Import organization also reordered four unrelated benchmark oracle fixtures.
+- Workaround: retain the intended declaration edits, restore unrelated fixture bytes, and run the repository's trusted `make check` gate with the configured module cache.
+- Root cause: batch-wide import organization reaches unrelated files; verification requires explicit workspace trust and its language session reports diagnostics inconsistent with the compiler gate.
