@@ -78,6 +78,8 @@ const (
 	sourceInsertStructureDiscriminator = "semantic_insert_structure.discriminator"
 )
 
+const wireExpectedRevision = "expected_revision"
+
 var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
 	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile, sourceInlineVariableFile,

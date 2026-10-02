@@ -82,6 +82,10 @@ const (
 	additionalPropertiesKey     = "additionalProperties"
 )
 
+const semanticVerifyToolName = "semantic_verify"
+
+const finalDiffToolName = "final_diff"
+
 // Option configures a Server instance.
 type Option func(*Server)
 
@@ -620,57 +624,72 @@ func ValidateSourceFields(entries []operation.Entry) error {
 	for _, entry := range entries {
 		for _, param := range entry.Params {
 			for _, source := range param.SourceFields {
-				tool, fieldPath, ok := strings.Cut(source, ".")
-				if !ok || tool == "" || fieldPath == "" {
-					return fmt.Errorf("operation %q parameter %q has invalid SourceFields entry %q; want tool.field", entry.MCPName, param.JSONName, source)
-				}
-				provider, exists := findEntryByMCP(entries, tool)
-				if !exists {
-					return fmt.Errorf("operation %q parameter %q SourceFields entry %q names unknown output tool", entry.MCPName, param.JSONName, source)
-				}
-				var continuation *operation.OutputContinuation
-				if provider.Output != nil {
-					for index := range provider.Output.Continuations {
-						candidate := &provider.Output.Continuations[index]
-						if candidate.Field == fieldPath || candidate.Path == fieldPath {
-							continuation = candidate
-							break
-						}
-					}
-				}
-				if param.Role == "" {
-					if continuation != nil {
-						continue
-					}
-					output, err := toolSchema(provider)
-					if err != nil {
-						return fmt.Errorf("build output schema for %q: %w", tool, err)
-					}
-					properties := output[toolFieldOutputSchema].(map[string]any)[schemaPropertiesKey].(map[string]any)
-					if _, exists := properties[fieldPath]; !exists {
-						return fmt.Errorf("operation %q parameter %q SourceFields entry %q names a field absent from %s outputSchema", entry.MCPName, param.JSONName, source, tool)
-					}
-					continue
-				}
-				if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
-					return fmt.Errorf("operation %q parameter %q has invalid live continuation role %q", entry.MCPName, param.JSONName, param.Role)
-				}
-				if continuation == nil || continuation.Role != param.Role || !slices.Contains(continuation.Consumers, entry.MCPName) {
-					return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
-				}
-				leaf := strings.TrimSuffix(fieldPath[strings.LastIndex(fieldPath, ".")+1:], "[]")
-				if leaf != param.JSONName {
-					return fmt.Errorf("operation %q parameter %q cannot copy continuation field %q; live field names must match", entry.MCPName, param.JSONName, leaf)
-				}
-				targetSchema, err := operation.ParameterValueSchema(param)
-				if err != nil {
-					return fmt.Errorf("operation %q parameter %q schema: %w", entry.MCPName, param.JSONName, err)
-				}
-				if !operation.SchemaAssignable(continuation.Schema, targetSchema) {
-					return fmt.Errorf("operation %q parameter %q schema is incompatible with provider %q field %q", entry.MCPName, param.JSONName, tool, fieldPath)
+				if err := validateSourceField(entries, entry, param, source); err != nil {
+					return err
 				}
 			}
 		}
+	}
+	return nil
+}
+
+func validateSourceField(entries []operation.Entry, entry operation.Entry, param operation.ParameterContract, source string) error {
+	tool, fieldPath, ok := strings.Cut(source, ".")
+	if !ok || tool == "" || fieldPath == "" {
+		return fmt.Errorf("operation %q parameter %q has invalid SourceFields entry %q; want tool.field", entry.MCPName, param.JSONName, source)
+	}
+	provider, exists := findEntryByMCP(entries, tool)
+	if !exists {
+		return fmt.Errorf("operation %q parameter %q SourceFields entry %q names unknown output tool", entry.MCPName, param.JSONName, source)
+	}
+	var continuation *operation.OutputContinuation
+	if provider.Output != nil {
+		for index := range provider.Output.Continuations {
+			candidate := &provider.Output.Continuations[index]
+			if candidate.Field == fieldPath || candidate.Path == fieldPath {
+				continuation = candidate
+				break
+			}
+		}
+	}
+	if param.Role == "" {
+		if continuation != nil {
+			return nil
+		}
+		legacy, err := hasLegacySourceField(provider, fieldPath)
+		if err != nil {
+			return fmt.Errorf("operation %q parameter %q legacy source %q: %w", entry.MCPName, param.JSONName, source, err)
+		}
+		if !legacy {
+			return fmt.Errorf("operation %q parameter %q SourceFields entry %q names a field absent from %s outputSchema", entry.MCPName, param.JSONName, source, tool)
+		}
+		return nil
+	}
+	if param.Role != operation.RoleTarget && param.Role != operation.RoleSelector {
+		return fmt.Errorf("operation %q parameter %q has invalid live continuation role %q", entry.MCPName, param.JSONName, param.Role)
+	}
+	if continuation == nil {
+		legacy, err := hasLegacySourceField(provider, fieldPath)
+		if err != nil {
+			return fmt.Errorf("operation %q parameter %q legacy source %q: %w", entry.MCPName, param.JSONName, source, err)
+		}
+		if legacy {
+			return nil
+		}
+	}
+	if continuation == nil || continuation.Role != param.Role || !slices.Contains(continuation.Consumers, entry.MCPName) {
+		return fmt.Errorf("operation %q parameter %q SourceFields entry %q has no compatible typed continuation", entry.MCPName, param.JSONName, source)
+	}
+	leaf := strings.TrimSuffix(fieldPath[strings.LastIndex(fieldPath, ".")+1:], "[]")
+	if leaf != param.JSONName {
+		return fmt.Errorf("operation %q parameter %q cannot copy continuation field %q; live field names must match", entry.MCPName, param.JSONName, leaf)
+	}
+	targetSchema, err := operation.ParameterValueSchema(param)
+	if err != nil {
+		return fmt.Errorf("operation %q parameter %q schema: %w", entry.MCPName, param.JSONName, err)
+	}
+	if !operation.SchemaAssignable(continuation.Schema, targetSchema) {
+		return fmt.Errorf("operation %q parameter %q schema is incompatible with provider %q field %q", entry.MCPName, param.JSONName, tool, fieldPath)
 	}
 	return nil
 }
@@ -682,6 +701,26 @@ func findEntryByMCP(entries []operation.Entry, name string) (operation.Entry, bo
 		}
 	}
 	return operation.Entry{}, false
+}
+
+func hasLegacySourceField(provider operation.Entry, fieldPath string) (bool, error) {
+	if strings.Contains(fieldPath, ".") {
+		return false, nil
+	}
+	output, err := toolSchema(provider)
+	if err != nil {
+		return false, fmt.Errorf("build output schema for %q: %w", provider.MCPName, err)
+	}
+	outputSchema, ok := output[toolFieldOutputSchema].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("tool %q output schema is not an object", provider.MCPName)
+	}
+	properties, ok := outputSchema[schemaPropertiesKey].(map[string]any)
+	if !ok {
+		return false, fmt.Errorf("tool %q output schema has no object properties", provider.MCPName)
+	}
+	_, exists := properties[fieldPath]
+	return exists, nil
 }
 
 func continuationOutputFieldSchemas(toolName string) map[string]any {
@@ -935,27 +974,28 @@ func sessionMetricsOutputSchema() map[string]any {
 	}
 }
 
-func batchOutputSchema() map[string]any {
+func batchOutputSchemaForEntries(entries []operation.Entry) (map[string]any, error) {
+	items, err := batchResultSchemaForEntries(entries)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"status": map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"results": map[string]any{
-				"type":  "array",
-				"items": batchResultSchema(),
-			},
+			"status":           map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"results":          map[string]any{"type": "array", "items": items},
 			"diagnostic_delta": diagnosticDeltaSchema(),
-			"final_diff":       map[string]any{"type": "string"},
+			finalDiffToolName:  map[string]any{"type": "string"},
 		},
-		"required": []string{"status", "results", "final_diff"},
-	}
+		"required": []string{"status", "results", finalDiffToolName},
+	}, nil
 }
 
-func batchResultSchema() map[string]any {
-	return map[string]any{
-		"type": "object",
-		schemaPropertiesKey: map[string]any{
-			"tool":              map[string]any{"type": "string"},
+func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, error) {
+	branches := make([]any, 0, len(entries)+4)
+	baseProperties := func(name string) map[string]any {
+		return map[string]any{
+			"tool":              map[string]any{"const": name},
 			"file":              map[string]any{"type": "string", schemaDescriptionKey: "Requested source path for this operation; on errors it identifies the attempted target, not a successful write."},
 			"destination_file":  map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path for this operation; on errors it identifies the attempted target, not a successful write."},
 			"symbol":            map[string]any{"type": "string"},
@@ -966,10 +1006,35 @@ func batchResultSchema() map[string]any {
 			"status":            map[string]any{"type": "string", "enum": []string{"ok", "error"}},
 			"diff":              map[string]any{"type": "string"},
 			"error":             map[string]any{"type": "string"},
-			"result":            map[string]any{"type": "object", additionalPropertiesKey: true},
-		},
-		"required": []string{"tool", "status"},
+		}
 	}
+	appendBranch := func(properties map[string]any) {
+		branches = append(branches, map[string]any{
+			"type":                  "object",
+			schemaPropertiesKey:     properties,
+			"required":              []string{"tool", "status"},
+			additionalPropertiesKey: false,
+		})
+	}
+	for _, entry := range entries {
+		properties := baseProperties(entry.MCPName)
+		if entry.ProjectOutput != nil {
+			if entry.Output == nil || entry.Output.ResultSchema == nil {
+				return nil, fmt.Errorf("batch result for %q has a projector without a result schema", entry.MCPName)
+			}
+			resultSchema, err := entry.Output.ResultSchema.JSONSchema()
+			if err != nil {
+				return nil, fmt.Errorf("batch result schema for %q: %w", entry.MCPName, err)
+			}
+			properties["result"] = resultSchema
+		}
+		appendBranch(properties)
+	}
+	for _, name := range []string{semanticVerifyToolName, "post_process", "session_sync", finalDiffToolName} {
+		properties := baseProperties(name)
+		appendBranch(properties)
+	}
+	return map[string]any{"oneOf": branches}, nil
 }
 
 func diagnosticDeltaSchema() map[string]any {
@@ -1103,7 +1168,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) (map[st
 			required = append(required, param.JSONName)
 		}
 	}
-	schema := map[string]any{"type": "object", schemaPropertiesKey: properties, "additionalProperties": false}
+	schema := map[string]any{"type": "object", schemaPropertiesKey: properties, additionalPropertiesKey: false}
 	if len(required) > 0 {
 		schema["required"] = required
 	}
@@ -1111,7 +1176,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) (map[st
 }
 
 func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend) (map[string]any, error) {
-	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation's arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Successful batches return final_diff and diagnostic_delta."
+	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Successful batches return final_diff and diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		paramsSchema, err := operationInputSchemaForBackends(entry, backends)
@@ -1124,9 +1189,13 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 				"tool":   map[string]any{"const": entry.MCPName},
 				"params": paramsSchema,
 			},
-			"required":             []string{"tool", "params"},
-			"additionalProperties": false,
+			"required":              []string{"tool", "params"},
+			additionalPropertiesKey: false,
 		})
+	}
+	outputSchema, err := batchOutputSchemaForEntries(entries)
+	if err != nil {
+		return nil, fmt.Errorf("build batch output schema: %w", err)
 	}
 	return map[string]any{
 		"name":               "semantic_batch",
@@ -1137,10 +1206,10 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 			},
-			"required":             []string{"edits"},
-			"additionalProperties": false,
+			"required":              []string{"edits"},
+			additionalPropertiesKey: false,
 		},
-		toolFieldOutputSchema: standardOutputSchema(batchOutputSchema()),
+		toolFieldOutputSchema: standardOutputSchema(outputSchema),
 	}, nil
 }
 
@@ -1605,8 +1674,7 @@ func (s *Server) handleFeedbackReport(ctx context.Context, id json.RawMessage, a
 
 func feedbackToolSchema() map[string]any {
 	const (
-		descriptionKey          = "description"
-		additionalPropertiesKey = "additionalProperties"
+		descriptionKey = "description"
 	)
 	stringProperty := func(description string) map[string]any {
 		return map[string]any{"type": "string", "minLength": 1, descriptionKey: description}
@@ -1762,7 +1830,7 @@ func metricsToolSchema() map[string]any {
 			schemaPropertiesKey: map[string]any{
 				"limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100, "default": 10},
 			},
-			"additionalProperties": false,
+			additionalPropertiesKey: false,
 		},
 		toolFieldOutputSchema: standardOutputSchema(map[string]any{
 			"type": "object",
