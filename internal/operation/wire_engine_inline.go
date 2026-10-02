@@ -65,17 +65,12 @@ func runInlineVariable(ctx context.Context, cc CallContext, req InlineVariableRe
 func inlineVariableDef() Def[InlineVariableReq, ExtractionResult] {
 	return Def[InlineVariableReq, ExtractionResult]{
 		Key:     "inline_variable",
-		Summary: "Use this tool instead of replacing local uses by text to inline one Go local initialized by a literal into all direct argument or return-value uses in the immediately following statement. Literal substitution preserves the binding's value and does not duplicate runtime evaluation. The successful edit removes the binding; pass the live file and in_function to semantic_replace_construct for a fresh construct selection. The removed name is historical evidence and is not a follow-up target. Expressions, reassignment, shadowing, intervening statements, and unsupported use shapes are refused. Call inlining is not supported.",
-		Params:  inlineVariableParams,
-		Level:   LevelFile,
-		CLIName: "inline-variable",
-		MCPName: "semantic_inline_variable",
-		Parse:   parseInlineVariable,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineVariableReq) (ExtractionResult, error){
-			backend.LanguageGo: runInlineVariableWithReceipt,
-		},
-		Format: formatExtractionResult,
-		Output: extractionReceiptOutput(),
+		Summary: "Use this tool instead of replacing local uses by text to inline one Go local initialized by a literal into all direct argument or return-value uses in the immediately following statement. Literal substitution preserves the binding's value and does not duplicate runtime evaluation. The successful edit removes the binding and returns its surviving owner function as a live target; use semantic_lookup to select fresh constructs or bindings. The removed name is historical evidence and is not a follow-up target. Expressions, reassignment, shadowing, intervening statements, and unsupported use shapes are refused. Call inlining is not supported.",
+		Params:  inlineVariableParams, Level: LevelFile, CLIName: "inline-variable", MCPName: "semantic_inline_variable",
+		Parse:    parseInlineVariable,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineVariableReq) (ExtractionResult, error){backend.LanguageGo: runInlineVariableWithReceipt},
+		Format:   formatExtractionResult,
+		Output:   extractionReceiptOutput("semantic_rename"),
 		FinalizeOutput: func(cc CallContext, _ InlineVariableReq, result ExtractionResult) (ExtractionResult, error) {
 			return finalizeExtractionOutput(cc, result)
 		},

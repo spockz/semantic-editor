@@ -284,12 +284,12 @@ func runExtractVariable(ctx context.Context, cc CallContext, req ExtractVariable
 
 func extractVariableDef() Def[ExtractVariableReq, ExtractionResult] {
 	return Def[ExtractVariableReq, ExtractionResult]{
-		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. The call target must be an unshadowed same-file package function with no unresolved import binding; callable owner parameters/locals, builtins, and functions declared only in other files are refused. Later arguments retain their evaluation order. If construct_path is supplied, also pass the matching selected-file expected_revision SHA-256. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. On success, pass the live file and in_function to semantic_inline_variable when its binding/use contract supports the result." + automaticVerificationGuidance,
+		Key: "extract_variable", Summary: "Use this tool instead of copying expressions and replacing uses to extract one exact, side-effect-free typed expression from the first argument of a direct Go call into a preceding local. The call target must be an unshadowed same-file package function with no unresolved import binding; callable owner parameters/locals, builtins, and functions declared only in other files are refused. Later arguments retain their evaluation order. If construct_path is supplied, also pass the matching selected-file expected_revision SHA-256. The owner must contain no comments. Expressions with calls, receives, address-taking, composite literals, only constants, or shifts with an untyped left operand are refused; expressions in returns, nested expressions, and receiver calls are unsupported. The receipt identifies the surviving owner function as a live target; use semantic_lookup to select a local binding for later refactoring." + automaticVerificationGuidance,
 		Params: extractVariableParams, Level: LevelFile, CLIName: "extract-variable", MCPName: "semantic_extract_variable",
 		Parse:    parseExtractVariable,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ExtractVariableReq) (ExtractionResult, error){backend.LanguageGo: runExtractVariableWithReceipt},
 		Format:   formatExtractionResult,
-		Output:   extractionReceiptOutput(),
+		Output:   extractionReceiptOutput("semantic_rename"),
 		FinalizeOutput: func(cc CallContext, _ ExtractVariableReq, result ExtractionResult) (ExtractionResult, error) {
 			return finalizeExtractionOutput(cc, result)
 		},

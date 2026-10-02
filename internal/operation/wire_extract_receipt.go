@@ -80,7 +80,15 @@ func completeExtractionReceipt(ctx context.Context, root, file string, draft Edi
 	if err != nil || !filepath.IsLocal(relative) {
 		return EditReceiptDraft{}, fmt.Errorf("extraction postimage %q is outside the workspace", path)
 	}
-	draft.PlannedChanges = []FileRevision{extractionRevision(filepath.ToSlash(relative), content)}
+	revision := extractionRevision(filepath.ToSlash(relative), content)
+	draft.PlannedChanges = []FileRevision{revision}
+	for index := range draft.Continuations {
+		if draft.Continuations[index].File != revision.Path {
+			continue
+		}
+		expected := revision.Revision
+		draft.Continuations[index].ExpectedRevision = &expected
+	}
 	return draft, nil
 }
 
@@ -164,7 +172,7 @@ func extractionReceiptOutput(continuationTools ...string) *OperationOutputContra
 	}
 	text := nonEmptyStringSchema()
 	contract.Continuations = []OutputContinuation{
-		{Path: "result.continuations[].file", Schema: text, Role: RoleSelector, Consumers: continuationTools},
+		{Path: "result.continuations[].file", Schema: text, Role: RoleTarget, Consumers: continuationTools},
 		{Path: "result.continuations[].symbol", Schema: text, Role: RoleTarget, Consumers: continuationTools},
 	}
 	return contract
@@ -235,6 +243,7 @@ func runExtractVariableWithReceipt(ctx context.Context, cc CallContext, req Extr
 	if err != nil {
 		return ExtractionResult{}, err
 	}
+	draft.Continuations = []SymbolTarget{{File: req.File, Symbol: req.InFunction}}
 	draft, err = completeExtractionReceipt(ctx, cc.WorkDir, req.File, draft)
 	if err != nil {
 		return ExtractionResult{}, err
@@ -251,6 +260,7 @@ func runInlineVariableWithReceipt(ctx context.Context, cc CallContext, req Inlin
 	if err != nil {
 		return ExtractionResult{}, err
 	}
+	draft.Continuations = []SymbolTarget{{File: req.File, Symbol: req.InFunction}}
 	draft, err = completeExtractionReceipt(ctx, cc.WorkDir, req.File, draft)
 	if err != nil {
 		return ExtractionResult{}, err

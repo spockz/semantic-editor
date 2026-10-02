@@ -1914,3 +1914,131 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Git returned `operation not permitted` while creating the lock.
 - Workaround: retry the already-authorized scoped staging and commit with access to the linked worktree metadata.
 - Root cause: the linked worktree index is outside the sandbox writable root.
+
+## ST-0234: foundation cherry-pick conflicted with extraction ownership
+
+- Tool: `git cherry-pick 0f7fe81 5a9d51a d04590b 2a2bcaa`.
+- Targets: `docs/SUBOPTIMAL_TOOLS.md`, `internal/operation/receipt_finalize.go`, and `internal/operation/value_schema_test.go`.
+- Observed failure: the first foundation commit stopped with content conflicts; no commit was created.
+- Workaround: inspect both versions and apply foundation receipt/status behavior while preserving the extraction checkpoint.
+- Root cause: both tracks updated shared receipt/status tests and the append-only tool log.
+
+## ST-0235: foundation continuation cherry-pick conflicted with extraction wiring
+
+- Tool: `git cherry-pick 5a9d51a` while integrating foundation after checkpoint `751c747`.
+- Targets: `docs/SUBOPTIMAL_TOOLS.md`, `internal/mcp/schema_test.go`, `internal/mcp/server.go`, and `internal/operation/wire_engine_mutations.go`.
+- Observed failure: the commit stopped with content conflicts; no second foundation commit was created.
+- Workaround: inspect both versions and preserve foundation's inspection projection alongside extraction-owned source fields and logs.
+- Root cause: the inspector foundation and extraction track both updated public MCP schemas, operation provenance, and the append-only tool log.
+
+## ST-0236: foundation receipt-evidence cherry-pick conflicted
+
+- Tool: `git cherry-pick d04590b` while integrating foundation after checkpoint `751c747`.
+- Targets: `docs/SUBOPTIMAL_TOOLS.md`, `internal/mcp/schema_test.go`, `internal/operation/receipt_finalize.go`, and `internal/operation/value_schema_test.go`.
+- Observed failure: the commit stopped with content conflicts; no third foundation commit was created.
+- Workaround: inspect both stage versions and preserve exact foundation publication evidence tests with extraction's existing public workflows.
+- Root cause: both tracks changed receipt finalization semantics/tests and the append-only tool log.
+
+## ST-0237: foundation fixture-isolation cherry-pick conflicted
+
+- Tool: `git cherry-pick 2a2bcaa` while integrating foundation after checkpoint `751c747`.
+- Targets: `docs/SUBOPTIMAL_TOOLS.md` and `internal/mcp/schema_test.go`.
+- Observed failure: the commit stopped with content conflicts; no final foundation commit existed until resolution.
+- Workaround: preserve the foundation test's temporary module isolation and the extraction-owned tool history, then continue the requested integration.
+- Root cause: the final foundation commit and extraction branch both amended the shared MCP schema test and appended to the tool log.
+
+## ST-0238: foundation integration duplicated batch output schema helpers
+
+- Tool: `make check` after integrating foundation commits through `2a2bcaa`.
+- Target: `internal/mcp/server.go`, `batchOutputSchemaForEntries` and `batchResultSchemaForEntries`.
+- Observed failure: Go type checking found both helper functions redeclared, so `make check` stopped in the lint-fix stage before focused tests.
+- Workaround: compare the integrated file with the requested foundation tree, then use the smallest semantic correction to remove only the duplicate declarations.
+- Root cause: foundation's shared server update duplicated helpers already present in the extraction checkpoint's 9a26fc9 base.
+
+## ST-0239: semantic remove could not disambiguate duplicate helper declarations
+
+- Tool: checked `semedit-next remove-construct` for `batchOutputSchemaForEntries`.
+- Target: `internal/mcp/server.go`.
+- Observed failure: the operation refused with `symbol ... is ambiguous`; it provided no candidate selector, and no source bytes changed.
+- Workaround: restore the exact requested foundation version of this integration-owned file, then rerun `make check` before focused tests.
+- Root cause: the integration conflict duplicated same-named top-level helpers, while `remove-construct` has no top-level declaration disambiguator.
+
+## ST-0240: Git restore could not acquire the linked worktree index lock
+
+- Tool: `git restore --source=2a2bcaa --worktree -- internal/mcp/server.go`.
+- Target: `internal/mcp/server.go`; no source bytes changed.
+- Observed failure: Git returned `operation not permitted` while creating the shared worktree index lock.
+- Workaround: retry the exact restore with scoped access to linked-worktree metadata.
+- Root cause: this linked worktree keeps index metadata outside the sandbox writable root.
+
+## ST-0241: semantic inspection process could not start
+
+- Tool: checked `semedit-next inspect-symbol` for `replaceBodyParams`.
+- Target: `internal/operation/wire_engine_mutations.go`.
+- Observed failure: `exec_command` could not create the process and returned `No such file or directory`; no source bytes changed.
+- Workaround: retry from the confirmed assigned worktree path.
+- Root cause: the execution host rejected process creation for this invocation despite the provided worktree path.
+
+## ST-0242: semantic inspection used a nonexistent validator name
+
+- Tool: checked `semedit-next inspect-symbol` for `validateMCPContinuationRegistry`.
+- Target: `internal/mcp/server.go`.
+- Observed failure: the tool reported `symbol not found`; no source bytes changed.
+- Workaround: inspect the actual validator declaration by its registered source location.
+- Root cause: the error text's conceptual name does not match the internal function declaration name.
+
+## ST-0243: outline invocation targeted the coordinator checkout
+
+- Tool: `semedit-next outline` invocation with an incorrect executable path and root-checkout working directory.
+- Target: read-only navigation for `internal/operation/inspect_projection.go`; no process started and no file changed.
+- Observed failure: the shell reported the nonexistent `/bin/semedit` path.
+- Workaround: rerun with `/bin/semedit-next` and the assigned flow-extraction working directory.
+- Root cause: both the executable name and working directory were copied from different repository paths.
+
+## ST-0244: failure-pattern search treated the pattern as an option
+
+- Tool: `rg -n` against `.scratch/make-check-foundation.log`.
+- Target: read-only search for the description-test result; no repository source changed.
+- Observed failure: ripgrep rejected the pattern beginning with `---` as an option.
+- Workaround: pass `--` before that pattern.
+- Root cause: a leading dash in the test output was not separated from command options.
+
+## ST-0245: semantic replacement received an unsupported trust parameter
+
+- Tool: `semantic_replace_body` through the trusted worker MCP helper.
+- Target: `internal/operation/wire_extract_receipt.go` / `completeExtractionReceipt`.
+- Observed failure: parameter validation rejected `trust_workspace` before applying edits; source bytes remained unchanged.
+- Workaround: omit the tool-level trust parameter; the helper already initializes the MCP session with `trust_workspace=true`.
+- Root cause: workspace trust is an initialization option, not a mutation tool argument.
+
+## ST-0246: semantic batch published children before final lint rejection
+
+- Tool: `semantic_batch` containing three `semantic_replace_body` calls.
+- Target: `internal/operation/wire_extract_receipt.go` receipt-output and owner-receipt handlers.
+- Observed failure: all three mutation children returned `status=ok`; final `semantic_verify` failed the configured golangci-lint hook. The resulting function bodies were published to the working tree.
+- Workaround: inspect the actual post-batch source bytes and lint diagnostics before preparing a corrected batch.
+- Root cause: the first draft changed the output helper body to iterate names that were not parameters, so final workspace lint rejected the undefined identifiers. The actual function signature remained unchanged.
+
+## ST-0247: CLI help used MCP tool name as a command
+
+- Tool: checked `semedit-next semantic-replace-decl --help`.
+- Target: read-only command discovery for semantic declaration replacement.
+- Observed failure: CLI reported `unknown command`; no source bytes changed.
+- Workaround: use the registered MCP tool name through the trusted MCP helper after checking its schema.
+- Root cause: MCP operation names do not map one-to-one to CLI command names.
+
+## ST-0248: function insertion help used the long command alias
+
+- Tool: checked `semedit-next insert-function --help`.
+- Target: read-only command discovery for adding an operation helper.
+- Observed failure: CLI reported `unknown command`; no source bytes changed.
+- Workaround: use the documented `insert-func` alias or the registered MCP operation.
+- Root cause: the CLI shortens the function insertion command name.
+
+## ST-0249: Git staging could not create the linked-worktree index lock
+
+- Tool: `git add` for the explicit extraction-owned file list.
+- Target: stage the flow-extraction worktree checkpoint.
+- Observed failure: Git could not create `.git/worktrees/flow-extraction/index.lock` because linked-worktree metadata is outside the sandbox writable root.
+- Workaround: retry the same explicit staging and commit commands with narrowly scoped access to this worktree's Git metadata.
+- Root cause: the linked worktree keeps its index outside the repository checkout's writable directory.

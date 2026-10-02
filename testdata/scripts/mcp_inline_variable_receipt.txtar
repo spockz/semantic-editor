@@ -1,0 +1,39 @@
+# Inlining returns the surviving owner function, never the removed local binding.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"inline_variable"'
+stdout '"status":"persisted"'
+stdout '"continuations":'
+stdout '"file":"calc.go"'
+stdout '"symbol":"Compute"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+stdout '"symbol":"Evaluate"'
+cmp calc.go .scratch/want/calc.go
+exec go test ./...
+
+-- go.mod --
+module example.com/inlinevariablereceipt
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inline_variable","arguments":{"file":"calc.go","symbol":"value","in_function":"Compute"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"calc.go","symbol":"Compute","to":"Evaluate"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":"calc.go","symbol":"Evaluate"}}}
+-- calc.go --
+package calc
+
+func Print(int, int) {}
+
+func Compute() {
+	value := 42
+	Print(value, value)
+}
+-- .scratch/want/calc.go --
+package calc
+
+func Print(int, int) {}
+
+func Evaluate() {
+	Print(int(42), int(42))
+}

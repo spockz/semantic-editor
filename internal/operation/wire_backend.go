@@ -23,7 +23,7 @@ var sourceReplaceDeclFileContinuations = []string{sourceLookupFile, sourceRename
 
 var sourceReplaceBodyFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceInsertFunctionFile, sourceExtractFunctionReceiptFile}
 
-var sourceRenameFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile}
+var sourceRenameFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, "semantic_extract_variable.result.continuations[].file", "semantic_inline_variable.result.continuations[].file"}
 
 const (
 	wireCLITrustWorkspace      = "trust-workspace"
@@ -85,11 +85,7 @@ var sourceFileContinuations = []string{
 	sourceInsertStructureFile, sourceReplaceDeclFile, sourceOrganizeImportsFile, sourceScaffoldFile,
 }
 
-var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol,
-	sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol,
-	sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol,
-	"semantic_move_construct.symbol", sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol,
-}
+var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol, "semantic_move_construct.symbol", sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, "semantic_extract_variable.result.continuations[].symbol", "semantic_inline_variable.result.continuations[].symbol"}
 
 var sourceInFunctionContinuations = []string{
 	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,

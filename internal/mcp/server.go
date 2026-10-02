@@ -1037,69 +1037,6 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	return map[string]any{"oneOf": branches}, nil
 }
 
-func batchOutputSchemaForEntries(entries []operation.Entry) (map[string]any, error) {
-	items, err := batchResultSchemaForEntries(entries)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"type": "object",
-		schemaPropertiesKey: map[string]any{
-			"status":           map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"results":          map[string]any{"type": "array", "items": items},
-			"diagnostic_delta": diagnosticDeltaSchema(),
-			"final_diff":       map[string]any{"type": "string"},
-		},
-		"required": []string{"status", "results", "final_diff"},
-	}, nil
-}
-
-func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, error) {
-	branches := make([]any, 0, len(entries)+4)
-	baseProperties := func(name string) map[string]any {
-		return map[string]any{
-			"tool":              map[string]any{"const": name},
-			"file":              map[string]any{"type": "string", schemaDescriptionKey: "Requested source path for this operation; on errors it identifies the attempted target, not a successful write."},
-			"destination_file":  map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path for this operation; on errors it identifies the attempted target, not a successful write."},
-			"symbol":            map[string]any{"type": "string"},
-			"package":           map[string]any{"type": "string", schemaDescriptionKey: "Package result, not a symbol target."},
-			"in_function":       map[string]any{"type": "string"},
-			"discriminator":     map[string]any{"type": "string"},
-			"diagnostic_status": map[string]any{"type": "string"},
-			"status":            map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"diff":              map[string]any{"type": "string"},
-			"error":             map[string]any{"type": "string"},
-		}
-	}
-	appendBranch := func(properties map[string]any) {
-		branches = append(branches, map[string]any{
-			"type":                 "object",
-			schemaPropertiesKey:    properties,
-			"required":             []string{"tool", "status"},
-			"additionalProperties": false,
-		})
-	}
-	for _, entry := range entries {
-		properties := baseProperties(entry.MCPName)
-		if entry.ProjectOutput != nil {
-			if entry.Output == nil || entry.Output.ResultSchema == nil {
-				return nil, fmt.Errorf("batch result for %q has a projector without a result schema", entry.MCPName)
-			}
-			resultSchema, err := entry.Output.ResultSchema.JSONSchema()
-			if err != nil {
-				return nil, fmt.Errorf("batch result schema for %q: %w", entry.MCPName, err)
-			}
-			properties["result"] = resultSchema
-		}
-		appendBranch(properties)
-	}
-	for _, name := range []string{"semantic_verify", "post_process", "session_sync", "final_diff"} {
-		properties := baseProperties(name)
-		appendBranch(properties)
-	}
-	return map[string]any{"oneOf": branches}, nil
-}
-
 func diagnosticDeltaSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
