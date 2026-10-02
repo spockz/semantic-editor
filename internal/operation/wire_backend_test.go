@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -426,5 +427,106 @@ func TestRemoveConstructSelectorContract(t *testing.T) {
 	}
 	if _, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "symbol": "Route", "in_function": "Route"}); err == nil || !strings.Contains(err.Error(), "symbol is a declaration target") {
 		t.Fatalf("case selection with symbol should fail: %v", err)
+	}
+}
+
+func TestRenameProjectionUsesOneVerifiedPostRenameIdentity(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	if !ok {
+		t.Fatal("rename operation missing")
+	}
+	result := &backend.RenameResult{
+		ApplicationState: "persisted",
+		Source:           &backend.LookupResult{Symbol: "Config.ListenPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.ListenPort"}},
+		Lookup:           &backend.LookupResult{Symbol: "Config.BoundPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.BoundPort"}},
+		Revision:         "post-rename-digest",
+	}
+	projected, err := entry.ProjectOutput(result)
+	if err != nil {
+		t.Fatalf("project verified rename: %v", err)
+	}
+	identity := projected.(map[string]any)
+	if identity["file"] != "config.go" || identity["symbol"] != "Config.BoundPort" || identity["expected_revision"] != "post-rename-digest" {
+		t.Fatalf("verified aliases do not describe one post-rename identity: %#v", identity)
+	}
+	if origin := identity["origin"].(map[string]any); origin["symbol"] != "Config.ListenPort" {
+		t.Fatalf("historical origin identity = %#v", origin)
+	}
+	result.Revision = ""
+	projected, err = entry.ProjectOutput(result)
+	if err != nil {
+		t.Fatalf("project rename without final digest: %v", err)
+	}
+	identity = projected.(map[string]any)
+	for _, field := range []string{"file", "symbol", "expected_revision"} {
+		if _, exists := identity[field]; exists {
+			t.Errorf("unverified final identity advertised %q: %#v", field, identity)
+		}
+	}
+}
+
+func TestRenameDiagnosticErrorProjectionHasNoLiveIdentity(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_rename")
+	if !ok {
+		t.Fatal("rename operation missing")
+	}
+	result := &backend.RenameResult{
+		ApplicationState: "persisted",
+		Source:           &backend.LookupResult{Symbol: "Config.ListenPort", Definition: &backend.SymbolCandidate{File: "config.go", QualifiedName: "Config.ListenPort"}},
+	}
+	projected, known, err := entry.ProjectErrorOutput(&backend.RenameDiagnosticsError{Result: result, IntroducedErrors: []string{"new error"}})
+	if err != nil || !known {
+		t.Fatalf("project applied rename diagnostic failure: known=%v err=%v", known, err)
+	}
+	output := projected.(map[string]any)
+	if output["status"] != "applied_with_diagnostics" || output["application_state"] != "persisted" {
+		t.Fatalf("rename error state = %#v", output)
+	}
+	for _, forbidden := range []string{"file", "symbol", "expected_revision", "continuations"} {
+		if _, exists := output[forbidden]; exists {
+			t.Errorf("rename error advertised live field %q: %#v", forbidden, output)
+		}
+	}
+}
+
+func TestRenameContinuationConsumersMatchLiveInputFields(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	producer, ok := registry.LookupMCP("semantic_rename")
+	if !ok || producer.Output == nil {
+		t.Fatal("rename output contract missing")
+	}
+	entries := registry.All()
+	for _, continuation := range producer.Output.Continuations {
+		if continuation.Field != "file" && continuation.Field != "symbol" && continuation.Field != "expected_revision" {
+			continue
+		}
+		source := producer.MCPName + "." + continuation.Field
+		for _, consumer := range entries {
+			for _, parameter := range consumer.Params {
+				if parameter.Role != continuation.Role || !slices.Contains(parameter.SourceFields, source) {
+					continue
+				}
+				if !slices.Contains(continuation.Consumers, consumer.MCPName) {
+					t.Errorf("%s.%s accepts %s without a declared continuation consumer edge", consumer.MCPName, parameter.JSONName, source)
+				}
+			}
+		}
+		for _, consumerName := range continuation.Consumers {
+			consumer, exists := registry.LookupMCP(consumerName)
+			if !exists {
+				t.Errorf("%s continuation names unknown consumer %q", continuation.Field, consumerName)
+				continue
+			}
+			compatible := false
+			for _, parameter := range consumer.Params {
+				if slices.Contains(parameter.SourceFields, source) && (parameter.Role == "" || parameter.Role == continuation.Role) {
+					compatible = true
+					break
+				}
+			}
+			if !compatible {
+				t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
+			}
+		}
 	}
 }

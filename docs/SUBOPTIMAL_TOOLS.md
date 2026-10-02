@@ -3202,3 +3202,85 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Root cause: MCP tools have session-bound workspace scope, while a worker's
   shell working directory does not redirect that shared connection. The
   worker failed to follow its handover's worktree-local CLI requirement.
+## Track B semantic lookup: ProjectOutput field lookup failed
+
+- Date: 2026-10-02
+- Tool: `semantic_lookup`
+- Target: `internal/operation/operation.go`, selector `ProjectOutput`
+- Observed failure: lookup returned `symbol not found` because `ProjectOutput` is a field, not a top-level declaration.
+- Workaround: locate the owning `Def` declaration through a valid type lookup/inspection; no source edit was needed.
+- Root cause: the semantic lookup selector resolves declarations and methods, not fields as standalone symbols.
+
+## Track B semantic inspect: nonexistent pipeline result type
+
+- Date: 2026-10-02
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/pipeline/pipeline.go`, selector `OrganizeImportsResult`
+- Observed failure: inspection returned `symbol not found`; `OrganizeImportsResult` was a caller-invented selector and not a declared symbol.
+- Workaround: inspect the actual pipeline API before implementing the report type.
+- Root cause: guessed a declaration name instead of discovering the API first.
+
+The need to report successfully written paths motivated adding a report-returning API beside the compatibility wrapper. That API gap was not the cause of the failed inspection.
+
+## Track B semantic inspections: selector names not declarations
+
+- Date: 2026-10-02
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/typed_descriptors.go`, selectors `RemoveSchema` and `OutputField`
+- Observed failure: both inspections returned `symbol not found`; the guessed selectors do not name declarations in that file.
+- Workaround: inspect the actual output-contract types and nearby operation definitions using valid semantic selectors and repository search.
+- Root cause: guessed schema-helper names without first identifying their declared names.
+
+## Track B semantic inspect: output schema type in a different file
+
+- Date: 2026-10-02
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/typed_descriptors.go`, selector `ValueSchema`
+- Observed failure: inspection returned `symbol not found` because `ValueSchema` is not declared in the selected file.
+- Workaround: resolve the declaration with workspace lookup before inspecting its owner file.
+- Root cause: used a package type selector with an incorrect file constraint.
+
+## Track B local semantic CLI: command used API name instead of CLI name
+
+- Date: 2026-10-02
+- Tool: worktree-local semantic CLI command
+- Target: `internal/pipeline/pipeline.go`, insertion of `OrganizeImportsWithOptionsReport`
+- Observed failure: `insert-function` was rejected as an unknown command; the CLI registers the command as `insert-func`. No source change occurred.
+- Workaround: retry with the registered `insert-func` command after checking its flags.
+- Root cause: used the MCP function name instead of the CLI command alias.
+
+## Track B semantic inspect: guessed verify handler name
+
+- Date: 2026-10-02
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/operation/wire_backend.go`, selector `runVerifyBackend`
+- Observed failure: inspection returned `symbol not found`; the handler has a different name.
+- Workaround: locate the registered handler name before inspecting it.
+- Root cause: guessed a function name from the operation role.
+
+## Track B local semantic replace-body: stale organize-imports import
+
+- Date: 2026-10-02
+- Tool: worktree-local `replace-body` semantic CLI operation.
+- Target: `internal/operation/wire_engine_imports.go`, `runOrganizeImports`.
+- Observed failure: the body replacement left the now-unused `os` import, and diagnostics reported it as an error.
+- Workaround: run semantic import organization for the selected file to remove the stale import.
+- Root cause: the previous handler body used `os.Stat`; the new changed-file report no longer does.
+
+## Track B local semantic CLI: incorrect checkout working directory
+
+- Date: 2026-10-02
+- Tool: worktree-local `replace-body` semantic CLI operation.
+- Target: coordinator checkout `internal/operation/wire_remove.go`, `removeDef`.
+- Observed failure: the command used the coordinator checkout as its working directory, inserted an unregistered error projection, and diagnostics reported missing type/field declarations. The inserted block was immediately removed; the coordinator file diff is empty.
+- Workaround: verify the absolute assigned worktree path in every semantic CLI invocation before executing it.
+- Root cause: a copied command used the coordinator path instead of the Track B worktree path.
+
+## Track B local semantic replace-body: nonexistent unknown status constant
+
+- Date: 2026-10-02
+- Tool: worktree-local replace-body semantic CLI operation.
+- Target: internal/operation/wire_engine_imports.go, runOrganizeImports.
+- Observed failure: the replacement referenced EditUnknown, which is not declared; diagnostics reported three undefined-name errors.
+- Workaround: use the explicit EditStatus("unknown") value while retaining declared status constants for known states.
+- Root cause: EditStatus defines known persisted/no-op/working states but no unknown constant.

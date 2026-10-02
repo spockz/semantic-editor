@@ -1,6 +1,7 @@
 # Exact declaration and case removals preserve siblings; safe deletion refuses incomplete preflights.
 exec semedit remove-construct --file api/decls.go --kind variable --symbol Remove
 stdout 'Removed selected node'
+stdout 'diagnostic_status:'
 exec semedit remove-construct --file api/routes.go --kind case --in-function Route --discriminator route --target-case '"old"'
 stdout 'Removed selected node'
 exec semedit remove-construct --file api/decls.go --kind constant --symbol safeMagic --safe-delete
@@ -13,6 +14,11 @@ cmp api/routes.go want/api/routes.go
 ! exec semedit remove-construct --file api/decls.go --kind variable --symbol left
 stderr 'shared value spec'
 cmp api/decls.go want/api/decls.go
+stdin remove-refusal.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"checks_run":\["go_syntax_parse"'
+stdout '"refusal":'
 
 -- go.mod --
 module example.com/removal
@@ -80,3 +86,6 @@ func Route(route string) {
 		keep()
 	}
 }
+-- remove-refusal.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_remove_construct","arguments":{"file":"api/decls.go","kind":"constant","symbol":"blockedConstant","safe_delete":true}}}
