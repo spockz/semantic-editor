@@ -1,0 +1,28 @@
+# Member file identities are workspace-relative even when package loading uses a nested module root.
+exec semedit extract-type --file sub/cache.go --symbol cacheState --in-type cache --members '[{"file":"sub/cache.go","symbol":"cache.entries"}]' --field state
+cmp sub/cache.go .scratch/want/sub/cache.go
+
+-- go.mod --
+module example.com/workspace
+
+go 1.24
+-- sub/go.mod --
+module example.com/cache
+
+go 1.24
+-- sub/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+-- .scratch/want/sub/cache.go --
+package cache
+
+type cache struct {
+	state cacheState
+}
+
+type cacheState struct {
+	entries map[string]int
+}

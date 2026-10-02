@@ -1,0 +1,27 @@
+# An ignored same-directory Go source variant invalidates the whole-file proof.
+! semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'package build variants'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypevariant
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+-- cache_windows.go --
+//go:build windows
+
+package cache
+
+func windowsOnly(c *cache) int { return len(c.entries) }
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}

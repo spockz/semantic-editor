@@ -3078,3 +3078,12 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed limitation: the available structural insertion schema supports declarations and switch cases, but not fields inside an existing struct.
 - Workaround: add the `OriginFile` evidence field with a scoped patch, then use `semantic_replace_body` for the batch result projection and verify the public MCP schema and CLI txtar behavior.
 - Root cause: this checkout has no semantic operation for inserting one field into an existing Go struct.
+
+## ST-0261: Scaffold rejected a valid purpose header
+
+- Date: 2026-10-02
+- Tool: worktree-local MCP `semantic_scaffold_file`.
+- Target: `internal/operation/wire_extract_type.go`.
+- Observed failure: the tool treated the purpose header as Go source and reported `expected 'package', found This`; it created no file.
+- Workaround: use a scoped patch to initialize the new source file with the required WHY header.
+- Root cause: the scaffold implementation passed the header text to its source parser without emitting it as a Go comment.

@@ -1,0 +1,31 @@
+# The standalone MCP result exposes only the live generated type identity with its final file revision.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"status":"persisted"'
+stdout '"symbol":"cacheState"'
+stdout '"expected_revision":"[0-9a-f]+"'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypereceipt
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_type","arguments":{"file":"cache.go","symbol":"cacheState","in_type":"cache","members":[{"file":"cache.go","symbol":"cache.entries"}],"field":"state"}}}
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	state cacheState
+}
+
+type cacheState struct {
+	entries map[string]int
+}
