@@ -1030,3 +1030,200 @@ Measure actual token/context overhead, unnecessary discovery calls, retries,
 rejection rates, and end-to-end task outcomes. A strict-gate prototype must
 demonstrate its rejection expectations itself; current legacy calls are not
 claimed to reject every mixed-record or invented-name input at runtime.
+
+## MCP text/structured output audit, 2026-10-02
+
+### Scope and evidence
+
+This read-only audit compares every MCP tool in the operation registry and
+the four server-only tools. The source baseline is commit
+`92476ae60220277f5378902aaa9b23f42e035321`; this document's baseline is
+`897e44f0b6d5164fc58b0f66abdbb0c8d8d798a6`. The registry inventory is derived
+from `DefaultRegistry` and its registration functions, including the Java
+Maven operations. Language-specific handlers are represented by their single
+registered MCP tool rather than duplicated rows; registry language IDs cover
+Go, Rust, Java, Scala, Haskell, Kotlin, Bash, and Make, while some workspace
+tools dispatch through `auto`. The Maven compile/test tools are Java-only.
+This is a source inventory and formatter/schema review, not runtime execution
+of every language branch or error path; no tests were run for this audit.
+
+A served-instance sample is separate evidence: an existing MCP call to
+`semantic_inspect_symbol` for `internal/operation/wire_backend.go` and
+`verifyRun` succeeded, but returned `structuredContent.result` as a string
+containing legacy `scope`/`matches` JSON and no typed `continuations[]`. The
+sample's match carried `revision`. The audited source at `92476ae` defines a
+typed `ProjectOutput` for inspection. The binary provenance and cause of this
+source/runtime discrepancy are unknown; the sample does not establish which
+source revision the serving process used.
+
+A fresh build from the audited source was also exercised through MCP stdio
+with Go and Java enabled and live reload on. Its workspace-specific catalog
+advertised 37 tools, omitting the two Maven tools from the full source
+inventory. A successful inspection of that same `verifyRun` declaration
+returned a typed structured result with a complete `file`, `symbol`, and
+`expected_revision` record; its text still contained only legacy
+`scope`/`matches` JSON. A successful `semantic_metrics` call returned one
+structured timing record while text contained only the count. These two
+read-only samples confirm the corresponding source findings; they do not
+exercise mutation, error, or other language branches. Full raw evidence is
+retained in `.scratch/text-response-review/fresh-server.jsonl` for this run;
+that scratch path is not a durable research artifact.
+
+For continuation-aware text, the critical record is the same-result-record
+set of `file`, `symbol`, and `expected_revision`, with applicable companion
+selectors such as `in_function`, `in_type`, `discriminator`, or
+`construct_path`. Inspection's revision belongs to its selected view; there
+is no current wire `view` field. Preserve view identity when the transport
+exposes it. Claim
+final-disk liveness only where publication and the relevant final view are
+confirmed. Do not infer liveness from a historical target, a planned edit, or
+omission. Batch child results describe intermediate edits and do not establish
+final continuation liveness. Preserve outcome, tool failure/refusal,
+limitations, ambiguity, and known applied state, distinguishing tool-call
+errors from protocol-level JSON-RPC errors. An error alone does not prove zero
+writes. Compare exact values, nesting, and record order, not substring
+presence. These are review criteria, not claims that every tool has or needs
+every field. Where a contract concept is unresolved, keep its encoding open
+instead of inventing new field names.
+
+The table labels **gap** for confirmed critical information present only in
+structured output; **order** for critical detail placed after a potentially
+large body or diff; **clear** for no material text/structured loss found in
+this source audit; and **schema** for a successful-result/output-schema
+mismatch. “Clear” is scoped to this text comparison and does not establish
+universal correctness or full ADR-0055 §10 conformance; critical-first order
+is not universal in current source. ADR-0055 requires semedit's textual output
+to preserve critical information. MCP SHOULD expose the full serialized
+structured JSON in text content; a compact essential projection is a deliberate
+bounded-compatibility trade-off and does not satisfy full-serialization
+SHOULD guidance. Measure that trade-off and retain the essential information in
+text-only output. Even correctly ordered server text cannot prevent a client
+from truncating its response.
+
+### Complete tool audit
+
+| MCP tool | Text content | Structured-only essentials / finding |
+| :--- | :--- | :--- |
+| `semantic_lookup` | Indented lookup JSON. | **Clear:** selected symbol/file/kind/coordinates are also exposed as structured companions; no material value loss found. |
+| `semantic_find_references` | Indented reference-result JSON. | **Clear:** no projector or text-only omission found. |
+| `semantic_rename` | Success sentence names `result.Lookup.Symbol`. | **Gap:** prose names the old symbol; structured companions carry the renamed symbol and file. |
+| `semantic_verify` | Summary, then serialized verification report. | **Clear:** diagnostics, coverage, and failure are included in the report; failures also set `isError`. |
+| `semantic_inspect_symbol` | Indented native inspection JSON. | **Gap/order:** typed structured result adds `continuations[]` with copy-ready `file`, `symbol`, `expected_revision`, and declared `in_function`/`in_type` consumer paths; text lacks that same-record envelope. Presence alone does not authorize a copy edge: `in_declaration` is present but has no declared consumer. The projected `inspection` field precedes continuations, so source text can also precede these essentials. |
+| `semantic_outline` | Indented outline JSON. | **Clear:** same native result is text; no material omission found. |
+| `semantic_assertion_mode` | Swap count; says dry run or names written file. | **Clear:** no structured projection or critical detail loss found; no diff is shown. |
+| `semantic_insert_structure` | Summary, coordinates, diff, then diagnostic status/delta. | **Order:** mutation summary is early, but diagnostics/status follow diff. No additional structured-only companion fields found; exact value parity of display and continuation paths remains unverified. |
+| `semantic_insert_declaration` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_function` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_type` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_decl` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_replace_decl` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_remove_construct` | Removal/refusal prose; diff and safety checks as applicable; diagnostics after diff. | **Schema:** normal success sends text as `result`, but advertised schema requires an object with `status`, `safe_delete`, and `checks_run`. Refusal path supplies an object. Prose states removal/refusal, but does not provide the success status fields. Safety checks can follow a large diff. |
+| `semantic_organize_imports` | “Successfully organized imports” and diagnostic delta; no path or diff. | **Gap:** selected-file `file` continuation is structured-only. Workspace-wide calls can change multiple files, but text reports neither changed paths nor diffs; this source does not collect a changed-file list here. |
+| `semantic_add_build_dependency` | Names dependency and says `go.mod` was tidied. | **Clear:** structured result is the same text; no material value loss found. No diff is shown. |
+| `semantic_replace_body` | Success sentence and diff; diagnostic delta follows. | **Order:** diagnostics follow potentially large diff; target and applied-state summary are early. |
+| `semantic_replace_construct` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_move_construct` | Shared file-edit formatter with source/destination, symbol, and diff. | **Order:** diagnostics/status follow diff; no additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_extract_function` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_extract_variable` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_inline_variable` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_migrate_type` | Success sentence and diff; diagnostic delta follows. | **Gap:** structured result is an edit receipt with status and continuation/revision records; text omits the receipt. Diagnostics also follow diff. |
+| `semantic_inline_function` | Success sentence and diff; diagnostic delta follows. | **Gap:** structured result is an edit receipt with status and continuation/revision records; text omits the receipt. Diagnostics also follow diff. |
+| `semantic_scaffold_file` | Names created file and resolved package. | **Clear:** structured file/package companions duplicate the values in text. |
+| `semantic_insert_case` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_set_doc_comment` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds `edit_receipt`, status, and any live continuation/revision; text formats only the edit. Diagnostics follow diff. |
+| `semantic_insert_statement` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds the edit receipt/status; text formats only the edit. Diagnostics follow diff. |
+| `semantic_insert_field` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds receipt/status and declared target continuations; text formats only the edit. Diagnostics follow diff. |
+| `semantic_snapshot` | Indented snapshot-result JSON. | **Clear:** same result is exposed as structured text. |
+| `semantic_undo` | Indented undo-result JSON. | **Clear:** same result is exposed as structured text. |
+| `semantic_maven_compile` | JSON `MavenRes`. | **Clear:** success result is the same serialized value. Maven error results add structured details; whether all those details are present in error prose is unproven in this formatter audit. |
+| `semantic_maven_test` | JSON `MavenRes`. | Same assessment as `semantic_maven_compile`. |
+| `semantic_extract_interface` | Indented JSON of the contract projection. | **Clear/order:** formatter and structured projector use the same projection, including receipt and signatures; receipt continuations follow potentially large change/read-set arrays. |
+| `semantic_implement_contract` | Indented JSON of the contract projection. | **Clear/order:** formatter and structured projector use the same projection, including receipt and generated-method targets; receipt continuations follow potentially large change/read-set arrays. |
+| `semantic_batch` | Indented complete `BatchResponse` JSON. | **Clear:** text and structured result are the same response. Per-edit diffs can put final diagnostic details later in a large response. |
+| `semantic_reload` | `{"status":"reloading"}`. | **Clear:** structured result carries the same status. |
+| `semantic_metrics` | Record count and “newest first.” | **Gap:** all timing records, phase measurements, timestamps, and optional session metrics are structured-only; text cannot show the measurements the tool retrieves. |
+| `report_feedback` | Full Markdown report draft. | **Clear:** human-review content is present in text; structured status/date are not repeated as machine fields, but draft-only status and date are stated in the draft. |
+
+### Evidence map and follow-up
+
+The inventory comes from `internal/operation/wire_backend.go:686–716`,
+`internal/operation/wire_engine.go:191–249`,
+`internal/operation/wire_read_inspect.go:143–192`,
+`internal/operation/wire_workspace.go:169–175`,
+`internal/operation/wire_maven.go:91–109`,
+`internal/operation/wire_contracts.go:1472–1519`,
+`internal/operation/wire_extract.go:99–105`, and
+`internal/operation/wire_structural_plan.go:297–301`. The common text/structured
+dispatch is in `internal/mcp/server.go:1320–1342`; file-edit field ordering is
+in `internal/operation/wire_engine.go:127–159`.
+
+Formatter definitions behind the remaining rows are in
+`internal/operation/wire_backend.go:554–595`,
+`internal/operation/wire_read_references.go:67–72`,
+`internal/operation/wire_read_inspect.go:127–140`,
+`internal/operation/wire_assertmode.go:66–83`,
+`internal/operation/wire_engine_structures.go:170–183`,
+`internal/operation/wire_engine_declarations.go:107–120,165–178,223–236,338–351,430–443`,
+`internal/operation/wire_remove.go:178–211`,
+`internal/operation/wire_engine_imports.go:78–95,142–159`,
+`internal/operation/wire_engine_mutations.go:168–169,265–285,351–380,451–464,516–529`,
+`internal/operation/wire_extract.go:87–98,178–189`,
+`internal/operation/wire_engine_inline.go:65–83`,
+`internal/operation/wire_migrate_type.go:84–105`,
+`internal/operation/wire_inline_function.go:172–193`,
+`internal/operation/wire_workspace.go:73–91,142–167`, and
+`internal/operation/wire_maven.go:91–102`. The server-only handlers are in
+`internal/mcp/batch.go:298–349` and `internal/mcp/server.go:1619–1683,1867–1894`;
+reload is hand-wired in `internal/mcp/server.go:1384–1395`.
+
+Confirmed omission evidence: rename formatter and structured continuation
+generation are in `internal/operation/wire_backend.go:562–566` and
+`internal/mcp/server.go:821–830`; inspection projection is in
+`internal/operation/inspect_projection.go:29–91` and
+`internal/operation/wire_read_inspect.go:161–171`; receipt projections are in
+`internal/operation/wire_structural_plan.go:127–149,273–295`,
+`internal/operation/wire_migrate_type.go:92–103`, and
+`internal/operation/wire_inline_function.go:180–191`. Import formatting and
+workspace scope are in `internal/operation/wire_engine_imports.go:55–95`.
+The remove result schema and refusal response are in
+`internal/mcp/server.go:528–533,602–616,1446–1462`; metrics summary and result
+are in `internal/mcp/server.go:1867–1889`. Receipt field order is declared in
+`internal/operation/typed_descriptors.go:57–65`.
+
+Next evidence should check successful and refused outcomes, ambiguity,
+partial publication, and receipt liveness through observable text-only and
+structured clients. Compare exact deep equality of intended values, nesting,
+and ordered continuation records; do not accept substring presence as proof.
+No new wire-field names are mandated by this audit.
+
+### Prioritized repair and proof order
+
+1. **Shared response presentation:** project the essential outcome, failure or
+   refusal, limitation/ambiguity, and known applied state consistently from
+   the response used for structured output. Put those essentials and applicable
+   captured continuations ahead of source bodies and diffs. Move diagnostic
+   status/delta ahead of large diffs. Preserve the distinction between
+   protocol-level errors and tool-call errors, and report uncertainty about
+   applied state where the error path cannot establish it.
+2. **Typed continuation gaps:** fix inspection's structured-only
+   `expected_revision` continuation, receipt-bearing edit outputs, and the
+   post-rename symbol. In contract outputs the format matches the structured
+   projection, but `EditReceipt` serializes `changes` and `read_set` before
+   `continuations`; continuation position after those arrays is an ordering
+   risk, not a projection mismatch.
+3. **Other confirmed omissions:** make timing records available in text for
+   `semantic_metrics`, and expose actual affected paths for workspace-wide
+   import organization when the runner can establish them.
+4. **Schema correctness:** make normal `semantic_remove_construct` success
+   conform to its advertised successful result schema, keeping refusal and
+   partial/applied-state semantics explicit.
+
+Proof should cover the complete 39-tool inventory and each supported language
+operation pair, including Java Maven, with direct and batch success, refusal,
+failure, and partial-publication cases where applicable. Assert exact deep
+equality between the essential text projection and structured fields,
+same-record companion values and order, and final/captured liveness only where
+the implementation has evidence. Exercise text prefixes truncated before and
+after bodies/diffs, and verify that intermediate batch children are not
+presented as final live continuations. Client-side truncation remains an
+external limit.

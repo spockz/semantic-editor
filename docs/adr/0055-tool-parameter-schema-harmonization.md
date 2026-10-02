@@ -147,6 +147,44 @@ Whether to enforce provenance at runtime, and the explicit discovery,
 creation, external-client, and recovery modes, remain open in
 [RQ-0027](../research/RQ-0027-preventing-read-files.md#existing-declaration-selector-copying-and-enforcement-2026-10-02).
 
+### 10. Critical Information in Text Responses
+
+Every tool-result response, including an `isError` result, must also put the
+information needed to decide and continue safely in its textual `content`.
+Essential information must not be available only in `structuredContent`. Put
+it before large source bodies, diffs, or logs. JSON-RPC protocol errors are a
+separate response form and do not acquire a tool-result schema.
+
+* The outcome and any failure, refusal, limitation, or unresolved ambiguity.
+* Known applied changes and verification status, including partial application
+  on an error. If application state is unknown, say so; `isError` alone does
+  not establish that no changes were applied.
+* Available live continuation records, preserving exact parameter names,
+  values, nesting, and same-record companions such as `file`, `symbol`, owner
+  selectors, and `expected_revision`. Label navigation-only fields as such,
+  separately from copyable arguments. Do not rename a legacy `revision` field
+  to manufacture a guard.
+* For result-oriented utilities, the requested result defined by the tool
+  contract, such as measurements from `semantic_metrics`, rather than only a
+  count or acknowledgement. Ordinary calls retain ADR-0052's timing policy.
+
+Text and structured essentials must come from the same validated result
+projection. Never reconstruct a new symbol from the requested name, invent a
+revision, or advertise a deleted, stale, or unproven target as a live
+continuation. Confirm a mutation's final revision only from its final relevant
+view; live targets must resolve in that same view and revision. Batch
+intermediate results are not final continuations. Historical evidence must be
+labeled separately. State whether ambiguous candidate lists are complete or
+truncated, and how to narrow or retrieve more only when that route is
+supported; do not silently cut a selector or companion value.
+
+This is an accepted output contract, not a claim that current formatters all
+implement it. The whole-tool implementation review and repair gates are in
+[RQ-0027](../research/RQ-0027-preventing-read-files.md). Exact prefix encoding
+and budgets remain open. Clients control forwarding and truncation; the
+server guarantees essential content and ordering, not its eventual visibility
+to a model. ADR-0042 defines the structured-JSON compatibility boundary.
+
 ## Invariants
 
 * `symbol` is exclusively a primary operation target. No tool uses `symbol` as
@@ -161,6 +199,10 @@ creation, external-client, and recovery modes, remain open in
   cross-references fail the build.
 * Existing-declaration arguments are copied from one suitable result record;
   companion values never come from other records or reconstruction.
+* Text exposes outcome, failures/refusals/limitations, ambiguity and candidate
+  completeness, known application and verification state, and available live
+  continuations before bulk payloads. Its shared essential projection matches
+  structured output exactly in values, nesting, and record ordering.
 * CLI parameter names (`CLIName`) and JSON parameter names (`JSONName`) for
   the renamed parameters must be updated atomically with the rename.
 * All txtar test cases referencing renamed parameters must be updated in the
@@ -172,7 +214,10 @@ creation, external-client, and recovery modes, remain open in
   results; no reassembly or inference. Tool descriptions are self-documenting
   as a consistent I/O graph. Diagnostic result payloads shrink by two full
   diagnostic list serializations per mutation. `SourceFields` keeps
-  cross-reference text consistent as tools evolve.
+  cross-reference text consistent as tools evolve. Text-only clients retain
+  the information needed for a safe next call.
 * **Negative**: `SourceFields` build check requires that output schemas be
   machine-readable, which ADR-0042 already establishes. Parameter renames
-  require txtar fixtures to be updated in the same change.
+  require txtar fixtures to be updated in the same change. Essential fields
+  appear in both representations; shared projection and bounded presentation
+  must prevent divergence and unnecessary bulk duplication.

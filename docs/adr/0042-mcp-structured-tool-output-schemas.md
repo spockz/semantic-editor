@@ -51,7 +51,11 @@ serialized JSON in
 `TextContent` when returning structured data
 ([MCP Tools: Structured Content](https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content)).
 For large projections, the representations need not be duplicated in model
-context: any concise text or forwarded view should preserve the essential
+context; clients may choose which representation to forward. A compact text
+projection of essential fields is not the full serialized structured JSON
+recommended by MCP. When used instead of that full serialization, it is a
+deliberate bounded compatibility tradeoff. The server's concise text must
+preserve the essential
 outcome, failure/limitations, ambiguity, and live continuation choices before
 large source bodies or diffs. A shared validated projection must supply those
 essential fields to both representations, exclude stale or deleted targets
@@ -71,9 +75,10 @@ visibility from `structuredContent` alone.
   `semantic_batch`, and opt-in `semantic_reload`, has an `outputSchema`.
 - Every successful direct or batch call includes the schema-required
   `structuredContent.result`; `content` retains human-readable output.
-- Follow the MCP SHOULD recommendation to include serialized structured JSON
-  in text content for compatibility; client presentation and model visibility
-  remain client-controlled.
+- Full serialized structured JSON in text follows MCP's SHOULD recommendation.
+  A compact essential projection is a bounded compatibility tradeoff, not
+  equivalent protocol guidance compliance. Client presentation and model
+  visibility remain client-controlled.
 - When a result includes large source or diff payloads, concise views preserve
   status, limitations, ambiguity, and live continuations ahead of bulk text;
   exact prefix encoding and truncation limits remain open.
