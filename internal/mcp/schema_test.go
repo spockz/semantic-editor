@@ -1290,6 +1290,10 @@ func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
 
 func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	root := schemaWorkspace(t)
+	module := []byte("module example.com/inspectprojection\n\ngo 1.24\n")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), module, 0o600); err != nil {
+		t.Fatalf("write inspection fixture module: %v", err)
+	}
 	path := filepath.Join(root, "main.go")
 	initial := []byte("package sample\nfunc Value() int { return 1 }\n")
 	if err := os.WriteFile(path, initial, 0o600); err != nil {
