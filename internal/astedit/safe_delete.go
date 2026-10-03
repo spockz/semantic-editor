@@ -23,45 +23,64 @@ type safeDeleteTarget struct {
 func classifySafeDeleteTarget(file *ast.File, selected ast.Node) (safeDeleteTarget, string) {
 	switch node := selected.(type) {
 	case *ast.FuncDecl:
-		if node.Recv != nil || node.Name == nil || ast.IsExported(node.Name.Name) || node.Name.Name == "main" || node.Name.Name == "init" {
-			return safeDeleteTarget{}, "safe_delete supports only unexported free functions other than main and init"
-		}
-		return safeDeleteTarget{name: node.Name.Name, kind: "function", pos: node.Name.Pos(), end: node.End()}, ""
+		return classifySafeDeleteFunction(node)
 	case *ast.ValueSpec:
-		if len(node.Names) != 1 {
-			return safeDeleteTarget{}, "safe_delete refuses grouped or multi-name variable declarations"
-		}
-		for _, declaration := range file.Decls {
-			gen, ok := declaration.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, spec := range gen.Specs {
-				if spec != node {
-					continue
-				}
-				switch gen.Tok {
-				case token.CONST:
-					if ast.IsExported(node.Names[0].Name) {
-						return safeDeleteTarget{}, "safe_delete refuses exported declarations"
-					}
-					return safeDeleteTarget{name: node.Names[0].Name, kind: "constant", pos: node.Names[0].Pos(), end: node.End()}, ""
-				case token.VAR:
-					if ast.IsExported(node.Names[0].Name) {
-						return safeDeleteTarget{}, "safe_delete refuses exported declarations"
-					}
-					return safeDeleteTarget{name: node.Names[0].Name, kind: "value", pos: node.Names[0].Pos(), end: node.End()}, ""
-				default:
-					return safeDeleteTarget{}, "safe_delete supports only constant and variable declarations"
-				}
-			}
-		}
-		return safeDeleteTarget{}, "safe_delete requires a standalone declaration"
+		return classifySafeDeleteValue(file, node)
 	case ast.Spec:
 		return safeDeleteTarget{}, "safe_delete supports only standalone declarations"
 	default:
 		return safeDeleteTarget{}, "safe_delete supports only unexported standalone constants, variables, and free functions"
 	}
+}
+
+func classifySafeDeleteFunction(function *ast.FuncDecl) (safeDeleteTarget, string) {
+	if function.Recv != nil || function.Name == nil || ast.IsExported(function.Name.Name) || function.Name.Name == "main" || function.Name.Name == "init" {
+		return safeDeleteTarget{}, "safe_delete supports only unexported free functions other than main and init"
+	}
+	return safeDeleteTarget{name: function.Name.Name, kind: "function", pos: function.Name.Pos(), end: function.End()}, ""
+}
+
+func classifySafeDeleteValue(file *ast.File, value *ast.ValueSpec) (safeDeleteTarget, string) {
+	if len(value.Names) != 1 {
+		return safeDeleteTarget{}, "safe_delete refuses grouped or multi-name variable declarations"
+	}
+	for _, declaration := range file.Decls {
+		gen, ok := declaration.(*ast.GenDecl)
+		if ok {
+			classification := classifySafeDeleteValueGroup(gen, value)
+			if classification.found {
+				return classification.target, classification.refusal
+			}
+		}
+	}
+	return safeDeleteTarget{}, "safe_delete requires a standalone declaration"
+}
+
+type safeDeleteValueClassification struct {
+	target  safeDeleteTarget
+	refusal string
+	found   bool
+}
+
+func classifySafeDeleteValueGroup(group *ast.GenDecl, value *ast.ValueSpec) safeDeleteValueClassification {
+	for _, spec := range group.Specs {
+		if spec != value {
+			continue
+		}
+		if group.Tok != token.CONST && group.Tok != token.VAR {
+			return safeDeleteValueClassification{refusal: "safe_delete supports only constant and variable declarations", found: true}
+		}
+		name := value.Names[0]
+		if ast.IsExported(name.Name) {
+			return safeDeleteValueClassification{refusal: "safe_delete refuses exported declarations", found: true}
+		}
+		kind := "constant"
+		if group.Tok == token.VAR {
+			kind = "value"
+		}
+		return safeDeleteValueClassification{target: safeDeleteTarget{name: name.Name, kind: kind, pos: name.Pos(), end: value.End()}, found: true}
+	}
+	return safeDeleteValueClassification{}
 }
 
 func verifySafeDeleteTarget(ctx context.Context, root, targetPath string, target safeDeleteTarget) (string, error) {
@@ -162,79 +181,120 @@ func safeDeleteDefinitionInPackage(pkg *packages.Package, targetPath string, tar
 func safeDeleteDefinitionInDecl(pkg *packages.Package, declaration ast.Decl, target safeDeleteTarget) (types.Object, bool) {
 	switch node := declaration.(type) {
 	case *ast.FuncDecl:
-		if target.kind == "function" && node.Name.Name == target.name {
-			return pkg.TypesInfo.Defs[node.Name], false
-		}
+		return safeDeleteFunctionDefinition(pkg.TypesInfo, node, target)
 	case *ast.GenDecl:
-		for _, spec := range node.Specs {
-			value, ok := spec.(*ast.ValueSpec)
-			if !ok || (target.kind != "value" && target.kind != "constant") {
-				continue
-			}
-			for _, name := range value.Names {
-				if name.Name != target.name {
-					continue
-				}
-				object := pkg.TypesInfo.Defs[name]
-				if target.kind == "constant" {
-					if _, ok := object.(*types.Const); ok {
-						return object, false
-					}
-					return nil, false
-				}
-				variable, ok := object.(*types.Var)
-				if !ok {
-					return nil, false
-				}
-				return object, !safeDeleteVariableInitializer(pkg, node, value, variable)
-			}
+		return safeDeleteGroupDefinition(pkg, node, target)
+	}
+	return nil, false
+}
+
+func safeDeleteFunctionDefinition(info *types.Info, function *ast.FuncDecl, target safeDeleteTarget) (types.Object, bool) {
+	if target.kind == "function" && function.Name.Name == target.name {
+		return info.Defs[function.Name], false
+	}
+	return nil, false
+}
+
+func safeDeleteGroupDefinition(pkg *packages.Package, group *ast.GenDecl, target safeDeleteTarget) (types.Object, bool) {
+	if target.kind != "value" && target.kind != "constant" {
+		return nil, false
+	}
+	for _, spec := range group.Specs {
+		value, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		result := safeDeleteValueDefinition(pkg, group, value, target)
+		if result.found {
+			return result.object, result.effectful
 		}
 	}
 	return nil, false
+}
+
+type safeDeleteValueDefinitionResult struct {
+	object    types.Object
+	effectful bool
+	found     bool
+}
+
+func safeDeleteValueDefinition(pkg *packages.Package, group *ast.GenDecl, value *ast.ValueSpec, target safeDeleteTarget) safeDeleteValueDefinitionResult {
+	for _, name := range value.Names {
+		if name.Name != target.name {
+			continue
+		}
+		object := pkg.TypesInfo.Defs[name]
+		if target.kind == "constant" {
+			if _, ok := object.(*types.Const); ok {
+				return safeDeleteValueDefinitionResult{object: object, found: true}
+			}
+			return safeDeleteValueDefinitionResult{found: true}
+		}
+		variable, ok := object.(*types.Var)
+		if !ok {
+			return safeDeleteValueDefinitionResult{found: true}
+		}
+		return safeDeleteValueDefinitionResult{object: object, effectful: !safeDeleteVariableInitializer(pkg, group, value, variable), found: true}
+	}
+	return safeDeleteValueDefinitionResult{}
 }
 
 func safeDeleteHasReference(pkgs []*packages.Package, root, targetPath string, target safeDeleteTarget, targetObject types.Object, targetPkg string) bool {
 	if targetObject == nil || targetObject.Pkg() == nil || targetObject.Pkg().Path() != targetPkg {
 		return true
 	}
-	foundUse := false
+	referenced := false
 	packages.Visit(pkgs, func(pkg *packages.Package) bool {
-		if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
-			return true
-		}
-		if pkg.TypesInfo == nil || pkg.Fset == nil {
-			foundUse = true
-			return false
-		}
-		var selected ast.Decl
-		var selectedObject types.Object
-		for _, file := range pkg.Syntax {
-			if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) != filepath.Clean(targetPath) {
-				continue
-			}
-			for _, declaration := range file.Decls {
-				object, matched := safeDeleteDefinitionInDecl(pkg, declaration, target)
-				if matched && object != nil {
-					selected = declaration
-					selectedObject = object
-				}
-			}
-		}
-		if selectedObject == nil {
-			return true
-		}
-		for ident, object := range pkg.TypesInfo.Uses {
-			if object != selectedObject {
-				continue
-			}
-			if ident.Pos() < selected.Pos() || ident.End() > selected.End() {
-				foundUse = true
-				return false
-			}
-		}
-		return !foundUse
+		scan := safeDeletePackageReference(pkg, root, targetPath, target)
+		referenced = referenced || scan.referenced
+		return !scan.stop
 	}, nil)
-	return foundUse
+	return referenced
+}
+
+type safeDeleteReferenceScanResult struct {
+	referenced bool
+	stop       bool
+}
+
+func safeDeletePackageReference(pkg *packages.Package, root, targetPath string, target safeDeleteTarget) safeDeleteReferenceScanResult {
+	if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
+		return safeDeleteReferenceScanResult{}
+	}
+	if pkg.TypesInfo == nil || pkg.Fset == nil {
+		return safeDeleteReferenceScanResult{referenced: true, stop: true}
+	}
+	selection := safeDeletePackageReferenceTarget(pkg, targetPath, target)
+	if selection.object == nil {
+		return safeDeleteReferenceScanResult{}
+	}
+	for identifier, object := range pkg.TypesInfo.Uses {
+		if object == selection.object && (identifier.Pos() < selection.declaration.Pos() || identifier.End() > selection.declaration.End()) {
+			return safeDeleteReferenceScanResult{referenced: true, stop: true}
+		}
+	}
+	return safeDeleteReferenceScanResult{}
+}
+
+type safeDeleteReferenceTarget struct {
+	declaration ast.Decl
+	object      types.Object
+}
+
+func safeDeletePackageReferenceTarget(pkg *packages.Package, targetPath string, target safeDeleteTarget) safeDeleteReferenceTarget {
+	var selected safeDeleteReferenceTarget
+	for _, file := range pkg.Syntax {
+		if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) != filepath.Clean(targetPath) {
+			continue
+		}
+		for _, declaration := range file.Decls {
+			object, matched := safeDeleteDefinitionInDecl(pkg, declaration, target)
+			if matched && object != nil {
+				selected = safeDeleteReferenceTarget{declaration: declaration, object: object}
+			}
+		}
+	}
+	return selected
 }
 
 func safeDeleteWithin(root, directory string) bool {
