@@ -19,10 +19,32 @@ import (
 
 func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 	fixture := newManagedMCPFixture(t)
-	originals := map[string]string{"value.go": "package sample\n\nfunc Value() int { return 1 }\n", "uses.go": "package sample\n"}
-	identities := map[string]os.FileInfo{}
+	originals := bufferedGoSources()
+	identities := writeBufferedGoSources(t, fixture.root, originals)
+	registry := operation.DefaultRegistry()
+	probes := 0
+	registerUnsavedBufferProbe(t, registry, fixture.root, originals, identities, &probes)
+	output := executeUnsavedBufferBatch(t, fixture.root, registry)
+	assertSuccessfulMCPResponses(t, output)
+	if probes != 3 {
+		t.Fatalf("buffer probes=%d", probes)
+	}
+	assertUnsavedBufferSources(t, fixture.root)
+	assertSingleSessionStart(t, fixture.counter)
+}
+
+func bufferedGoSources() map[string]string {
+	return map[string]string{
+		"value.go": "package sample\n\nfunc Value() int { return 1 }\n",
+		"uses.go":  "package sample\n",
+	}
+}
+
+func writeBufferedGoSources(t *testing.T, root string, originals map[string]string) map[string]os.FileInfo {
+	t.Helper()
+	identities := make(map[string]os.FileInfo, len(originals))
 	for file, source := range originals {
-		path := filepath.Join(fixture.root, file)
+		path := filepath.Join(root, file)
 		if err := pipeline.WriteAtomic(path, []byte(source)); err != nil {
 			t.Fatal(err)
 		}
@@ -32,38 +54,90 @@ func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 		}
 		identities[file] = info
 	}
-	registry := operation.DefaultRegistry()
-	probes := 0
-	if err := operation.Register(registry, operation.Def[map[string]any, operation.FileEditRes]{Key: "probe_buffers", MCPName: "semantic_probe_buffers", Batchable: true, BufferedBatch: true, Params: []operation.ParameterContract{{Name: "file", JSONName: "file", CLIName: "file", Type: operation.ParamString, Required: true}, {Name: "expected", JSONName: "expected", CLIName: "expected", Type: operation.ParamString, Required: true}}, Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil }, Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (operation.FileEditRes, error){backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, raw map[string]any) (operation.FileEditRes, error) {
-		for file, original := range originals {
-			path := filepath.Join(fixture.root, file)
-			disk, err := os.ReadFile(path)
-			if err != nil {
-				return operation.FileEditRes{}, err
-			}
-			info, err := os.Stat(path)
-			if err != nil {
-				return operation.FileEditRes{}, err
-			}
-			if string(disk) != original || !os.SameFile(identities[file], info) || !info.ModTime().Equal(identities[file].ModTime()) {
-				return operation.FileEditRes{}, fmt.Errorf("intermediate edit published %s", file)
-			}
-		}
-		file, _ := raw["file"].(string)
-		expected, _ := raw["expected"].(string)
-		visible, err := sourcebuf.ReadFile(ctx, filepath.Join(fixture.root, file))
-		if err != nil {
-			return operation.FileEditRes{}, err
-		}
-		if !strings.Contains(string(visible), expected) {
-			return operation.FileEditRes{}, fmt.Errorf("buffer %s lacks %q: %s", file, expected, visible)
-		}
-		probes++
-		return operation.FileEditRes{}, nil
-	}}, Format: func(operation.FileEditRes) (string, error) { return "observed", nil }}); err != nil {
+	return identities
+}
+
+func registerUnsavedBufferProbe(t *testing.T, registry *operation.Registry, root string, originals map[string]string, identities map[string]os.FileInfo, probes *int) {
+	t.Helper()
+	definition := operation.Def[map[string]any, operation.FileEditRes]{
+		Key: "probe_buffers", MCPName: "semantic_probe_buffers", Batchable: true, BufferedBatch: true,
+		Params: []operation.ParameterContract{
+			{Name: "file", JSONName: "file", CLIName: "file", Type: operation.ParamString, Required: true},
+			{Name: "expected", JSONName: "expected", CLIName: "expected", Type: operation.ParamString, Required: true},
+		},
+		Parse: func(raw map[string]any) (map[string]any, error) { return raw, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, map[string]any) (operation.FileEditRes, error){
+			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, raw map[string]any) (operation.FileEditRes, error) {
+				return observeUnsavedBuffer(ctx, t, root, originals, identities, raw, probes)
+			},
+		},
+		Format: func(operation.FileEditRes) (string, error) { return "observed", nil },
+	}
+	if err := operation.Register(registry, definition); err != nil {
 		t.Fatal(err)
 	}
-	edits := []map[string]any{
+}
+
+func observeUnsavedBuffer(ctx context.Context, t *testing.T, root string, originals map[string]string, identities map[string]os.FileInfo, raw map[string]any, probes *int) (operation.FileEditRes, error) {
+	t.Helper()
+	if err := assertDiskPreimage(root, originals, identities); err != nil {
+		return operation.FileEditRes{}, err
+	}
+	file, _ := raw["file"].(string)
+	expected, _ := raw["expected"].(string)
+	visible, err := sourcebuf.ReadFile(ctx, filepath.Join(root, file))
+	if err != nil {
+		return operation.FileEditRes{}, err
+	}
+	if !strings.Contains(string(visible), expected) {
+		return operation.FileEditRes{}, fmt.Errorf("buffer %s lacks %q: %s", file, expected, visible)
+	}
+	*probes++
+	return operation.FileEditRes{}, nil
+}
+
+func assertDiskPreimage(root string, originals map[string]string, identities map[string]os.FileInfo) error {
+	for file, original := range originals {
+		path := filepath.Join(root, file)
+		disk, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if string(disk) != original || !os.SameFile(identities[file], info) || !info.ModTime().Equal(identities[file].ModTime()) {
+			return fmt.Errorf("intermediate edit published %s", file)
+		}
+	}
+	return nil
+}
+
+func executeUnsavedBufferBatch(t *testing.T, root string, registry *operation.Registry) string {
+	t.Helper()
+	var input, output bytes.Buffer
+	encoder := json.NewEncoder(&input)
+	for _, request := range unsavedBufferRequests() {
+		if err := encoder.Encode(request); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+		t.Fatal(err)
+	}
+	return output.String()
+}
+
+func unsavedBufferRequests() []map[string]any {
+	return []map[string]any{
+		{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}},
+		{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": unsavedBufferEdits()}}},
+	}
+}
+
+func unsavedBufferEdits() []map[string]any {
+	return []map[string]any{
 		{"tool": "semantic_insert_function", "params": map[string]any{"file": "uses.go", "source": "func Read() int { return Value() }"}},
 		{"tool": "semantic_probe_buffers", "params": map[string]any{"file": "uses.go", "expected": "return Value()"}},
 		{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
@@ -72,17 +146,11 @@ func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 		{"tool": "semantic_rename", "params": map[string]any{"file": "value.go", "symbol": "Renamed", "to": "Final"}},
 		{"tool": "semantic_probe_buffers", "params": map[string]any{"file": "uses.go", "expected": "return Final()"}},
 	}
-	var input, output bytes.Buffer
-	encoder := json.NewEncoder(&input)
-	for _, request := range []map[string]any{{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}}, {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": map[string]any{"name": "semantic_batch", "arguments": map[string]any{"edits": edits}}}} {
-		if err := encoder.Encode(request); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := mcp.NewServer("full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
-		t.Fatal(err)
-	}
-	for line := range strings.SplitSeq(strings.TrimSpace(output.String()), "\n") {
+}
+
+func assertSuccessfulMCPResponses(t *testing.T, output string) {
+	t.Helper()
+	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
 		var response struct {
 			Error  json.RawMessage `json:"error"`
 			Result struct {
@@ -96,11 +164,15 @@ func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 			t.Fatalf("response=%s", line)
 		}
 	}
-	if probes != 3 {
-		t.Fatalf("buffer probes=%d", probes)
-	}
-	for file, fragments := range map[string][]string{"uses.go": {"func Read()", "return Final()"}, "value.go": {"func Final()", "return 3"}} {
-		disk, err := os.ReadFile(filepath.Join(fixture.root, file))
+}
+
+func assertUnsavedBufferSources(t *testing.T, root string) {
+	t.Helper()
+	for file, fragments := range map[string][]string{
+		"uses.go":  {"func Read()", "return Final()"},
+		"value.go": {"func Final()", "return 3"},
+	} {
+		disk, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -110,7 +182,11 @@ func TestMCPBatchSharesUnsavedGoBuffers(t *testing.T) {
 			}
 		}
 	}
-	starts, err := os.ReadFile(fixture.counter)
+}
+
+func assertSingleSessionStart(t *testing.T, counter string) {
+	t.Helper()
+	starts, err := os.ReadFile(counter)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,22 +325,7 @@ func TestBatchMovesAndRenameShareUnsavedModule(t *testing.T) {
 	}
 	registry := operation.DefaultRegistry()
 	probes := 0
-	if err := operation.Register(registry, operation.Def[struct{}, operation.FileEditRes]{Key: "probe_move_buffers", MCPName: "semantic_probe_move_buffers", Batchable: true, BufferedBatch: true, Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil }, Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
-		if sourcebuf.FromContext(ctx) == nil {
-			return operation.FileEditRes{}, fmt.Errorf("move published at a barrier")
-		}
-		for file, want := range originals {
-			data, err := os.ReadFile(filepath.Join(fixture.root, file))
-			if err != nil {
-				return operation.FileEditRes{}, err
-			}
-			if string(data) != want {
-				return operation.FileEditRes{}, fmt.Errorf("move published %s before batch completion", file)
-			}
-		}
-		probes++
-		return operation.FileEditRes{}, nil
-	}}, Format: func(operation.FileEditRes) (string, error) { return "observed", nil }}); err != nil {
+	if err := registerMoveBufferProbe(registry, fixture.root, originals, &probes); err != nil {
 		t.Fatal(err)
 	}
 	edits := []map[string]any{
@@ -328,6 +389,33 @@ func TestBatchMovesAndRenameShareUnsavedModule(t *testing.T) {
 	}
 }
 
+func registerMoveBufferProbe(registry *operation.Registry, root string, originals map[string]string, probes *int) error {
+	definition := operation.Def[struct{}, operation.FileEditRes]{
+		Key: "probe_move_buffers", MCPName: "semantic_probe_move_buffers", Batchable: true, BufferedBatch: true,
+		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){
+			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
+				if sourcebuf.FromContext(ctx) == nil {
+					return operation.FileEditRes{}, fmt.Errorf("move published at a barrier")
+				}
+				for file, original := range originals {
+					data, err := os.ReadFile(filepath.Join(root, file))
+					if err != nil {
+						return operation.FileEditRes{}, err
+					}
+					if string(data) != original {
+						return operation.FileEditRes{}, fmt.Errorf("move published %s before batch completion", file)
+					}
+				}
+				*probes++
+				return operation.FileEditRes{}, nil
+			},
+		},
+		Format: func(operation.FileEditRes) (string, error) { return "observed", nil },
+	}
+	return operation.Register(registry, definition)
+}
+
 func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 	fixture := newManagedMCPFixture(t)
 	originals := map[string]string{
@@ -348,41 +436,7 @@ func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 	}
 	registry := operation.DefaultRegistry()
 	probes := 0
-	probe := operation.Def[struct{}, operation.FileEditRes]{
-		Key: "probe_signature_buffer", MCPName: "semantic_probe_signature_buffer", Batchable: true, BufferedBatch: true,
-		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
-		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){
-			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
-				for file, original := range originals {
-					path := filepath.Join(fixture.root, file)
-					data, err := os.ReadFile(path)
-					if err != nil {
-						return operation.FileEditRes{}, err
-					}
-					info, err := os.Stat(path)
-					if err != nil {
-						return operation.FileEditRes{}, err
-					}
-					if string(data) != original || !os.SameFile(identities[file], info) || !info.ModTime().Equal(identities[file].ModTime()) {
-						return operation.FileEditRes{}, fmt.Errorf("signature batch published %s before flush", file)
-					}
-				}
-				visible, err := sourcebuf.ReadFile(ctx, filepath.Join(fixture.root, "uses.go"))
-				if err != nil {
-					return operation.FileEditRes{}, err
-				}
-				if !strings.Contains(string(visible), "value(7)") {
-					return operation.FileEditRes{}, fmt.Errorf("signature batch overlay lacks updated call: %s", visible)
-				}
-				probes++
-				return operation.FileEditRes{}, nil
-			},
-		},
-		Format: func(operation.FileEditRes) (string, error) { return "observed", nil },
-	}
-	if err := operation.Register(registry, probe); err != nil {
-		t.Fatal(err)
-	}
+	registerSignatureBufferProbe(t, registry, fixture.root, originals, identities, &probes)
 	edits := []map[string]any{
 		{"tool": "semantic_change_signature", "params": map[string]any{
 			"file": "value.go", "symbol": "value", "parameters": []any{
@@ -417,4 +471,36 @@ func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 			t.Fatalf("batch did not publish final signature edit in %s", file)
 		}
 	}
+}
+
+func registerSignatureBufferProbe(t *testing.T, registry *operation.Registry, root string, originals map[string]string, identities map[string]os.FileInfo, probes *int) {
+	t.Helper()
+	probe := operation.Def[struct{}, operation.FileEditRes]{
+		Key: "probe_signature_buffer", MCPName: "semantic_probe_signature_buffer", Batchable: true, BufferedBatch: true,
+		Parse: func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.FileEditRes, error){
+			backend.LanguageGo: func(ctx context.Context, _ operation.CallContext, _ struct{}) (operation.FileEditRes, error) {
+				return observeSignatureBuffer(ctx, root, originals, identities, probes)
+			},
+		},
+		Format: func(operation.FileEditRes) (string, error) { return "observed", nil },
+	}
+	if err := operation.Register(registry, probe); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func observeSignatureBuffer(ctx context.Context, root string, originals map[string]string, identities map[string]os.FileInfo, probes *int) (operation.FileEditRes, error) {
+	if err := assertDiskPreimage(root, originals, identities); err != nil {
+		return operation.FileEditRes{}, fmt.Errorf("signature batch published before flush: %w", err)
+	}
+	visible, err := sourcebuf.ReadFile(ctx, filepath.Join(root, "uses.go"))
+	if err != nil {
+		return operation.FileEditRes{}, err
+	}
+	if !strings.Contains(string(visible), "value(7)") {
+		return operation.FileEditRes{}, fmt.Errorf("signature batch overlay lacks updated call: %s", visible)
+	}
+	*probes++
+	return operation.FileEditRes{}, nil
 }
