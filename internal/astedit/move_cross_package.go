@@ -683,9 +683,29 @@ func setMoveImport(file *ast.File, importPath, alias, packageName string) error 
 }
 
 func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport, destinationName string, reserved map[string]bool) error {
+	used, err := moveImportUsage(file, info, reserved)
+	if err != nil {
+		return err
+	}
+	for _, declaration := range file.Decls {
+		gen, ok := declaration.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT {
+			continue
+		}
+		kept, err := retainedMoveImports(gen.Specs, info, destinationImport, destinationName, used)
+		if err != nil {
+			return err
+		}
+		gen.Specs = kept
+	}
+	rebuildMoveImportIndex(file)
+	return nil
+}
+
+func moveImportUsage(file *ast.File, info *types.Info, reserved map[string]bool) (map[string]bool, error) {
 	used := maps.Clone(reserved)
 	if used == nil {
-		used = map[string]bool{}
+		used = make(map[string]bool)
 	}
 	ast.Inspect(file, func(node ast.Node) bool {
 		if sel, ok := node.(*ast.SelectorExpr); ok {
@@ -699,40 +719,48 @@ func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport
 	})
 	for _, spec := range file.Imports {
 		if spec.Name != nil && spec.Name.Name == "." {
-			return fmt.Errorf("dot import is ambiguous")
-		}
-		if spec.Name != nil && spec.Name.Name == "_" {
-			continue
+			return nil, fmt.Errorf("dot import is ambiguous")
 		}
 	}
-	for _, decl := range file.Decls {
-		gen, ok := decl.(*ast.GenDecl)
-		if !ok || gen.Tok != token.IMPORT {
-			continue
+	return used, nil
+}
+
+func retainedMoveImports(specs []ast.Spec, info *types.Info, destinationImport, destinationName string, used map[string]bool) ([]ast.Spec, error) {
+	kept := make([]ast.Spec, 0, len(specs))
+	for _, item := range specs {
+		spec, ok := item.(*ast.ImportSpec)
+		if !ok {
+			return nil, fmt.Errorf("unexpected non-import specification in import declaration")
 		}
-		kept := gen.Specs[:0]
-		for _, item := range gen.Specs {
-			spec := item.(*ast.ImportSpec)
-			path, err := strconvUnquote(spec.Path.Value)
-			if err != nil {
-				return err
-			}
-			var name string
-			if spec.Name != nil {
-				name = spec.Name.Name
-			} else if path == destinationImport {
-				name = destinationName
-			} else if imported, ok := info.Implicits[spec].(*types.PkgName); ok {
-				name = imported.Imported().Name()
-			} else {
-				return fmt.Errorf("cannot resolve package name for import %q", path)
-			}
-			if name == "_" || used[name] {
-				kept = append(kept, spec)
-			}
+		path, err := strconvUnquote(spec.Path.Value)
+		if err != nil {
+			return nil, err
 		}
-		gen.Specs = kept
+		name, err := moveImportName(spec, path, info, destinationImport, destinationName)
+		if err != nil {
+			return nil, err
+		}
+		if name == "_" || used[name] {
+			kept = append(kept, spec)
+		}
 	}
+	return kept, nil
+}
+
+func moveImportName(spec *ast.ImportSpec, path string, info *types.Info, destinationImport, destinationName string) (string, error) {
+	if spec.Name != nil {
+		return spec.Name.Name, nil
+	}
+	if path == destinationImport {
+		return destinationName, nil
+	}
+	if imported, ok := info.Implicits[spec].(*types.PkgName); ok {
+		return imported.Imported().Name(), nil
+	}
+	return "", fmt.Errorf("cannot resolve package name for import %q", path)
+}
+
+func rebuildMoveImportIndex(file *ast.File) {
 	file.Imports = file.Imports[:0]
 	for _, decl := range file.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
@@ -741,7 +769,6 @@ func removeUnusedMoveImports(file *ast.File, info *types.Info, destinationImport
 			}
 		}
 	}
-	return nil
 }
 
 func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][]byte) ([]*packages.Package, error) {
