@@ -83,8 +83,14 @@ func observeUnsavedBuffer(ctx context.Context, t *testing.T, root string, origin
 	if err := assertDiskPreimage(root, originals, identities); err != nil {
 		return operation.FileEditRes{}, err
 	}
-	file, _ := raw["file"].(string)
-	expected, _ := raw["expected"].(string)
+	file, ok := raw["file"].(string)
+	if !ok || file == "" {
+		return operation.FileEditRes{}, fmt.Errorf("buffer probe requires a non-empty file")
+	}
+	expected, ok := raw["expected"].(string)
+	if !ok || expected == "" {
+		return operation.FileEditRes{}, fmt.Errorf("buffer probe requires a non-empty expected fragment")
+	}
 	visible, err := sourcebuf.ReadFile(ctx, filepath.Join(root, file))
 	if err != nil {
 		return operation.FileEditRes{}, err
