@@ -74,19 +74,11 @@ func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trus
 	if err != nil {
 		return nil, err
 	}
-	edits, err = prepareBatchEntries(s.workDir, canonicalRoot, edits)
+	preparedEdits, err := prepareBatchEntries(s.workDir, canonicalRoot, edits)
 	if err != nil {
-		return &BatchResponse{
-			Status:        "error",
-			WorkspaceRoot: canonicalRoot,
-			Results: []BatchResult{{
-				Tool:             "workspace_scope",
-				Status:           "error",
-				Error:            err.Error(),
-				ApplicationState: "not_applied",
-			}},
-		}, nil
+		return nil, err
 	}
+	edits = preparedEdits
 	root = canonicalRoot
 	requestServer := s.requestView(root, trustWorkspace)
 	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(root))
@@ -387,11 +379,14 @@ func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) (
 	for index := range prepared {
 		entry := &prepared[index]
 		if len(entry.Params) == 0 || strings.TrimSpace(string(entry.Params)) == "null" {
-			return nil, fmt.Errorf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, entry.Tool)
+			continue
 		}
 		var child map[string]any
 		if err := decodeArgumentObject(entry.Params, &child); err != nil {
-			return nil, fmt.Errorf("edit %d invalid arguments: %w", index, err)
+			continue
+		}
+		if child == nil {
+			continue
 		}
 		if childRootValue, present := child["workspace_root"]; present {
 			childRoot, ok := childRootValue.(string)
@@ -528,7 +523,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		raw := map[string]any{}
 		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, batchEntry.Tool)})
 			return response, nil
 		}
 		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {

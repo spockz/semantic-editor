@@ -133,23 +133,23 @@ func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
 	var response *mcp.BatchResponse
 	var err error
 
-	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+	_, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
 		Tool:   "semantic_replace_body",
 		Params: json.RawMessage(`{"file":"../main.go","symbol":"Value","body":"return 2"}`),
 	}}, false)
-	if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "outside workspace root") {
-		t.Fatalf("outside-file batch response = %+v, err %v", response, err)
+	if err == nil || !strings.Contains(err.Error(), "outside workspace root") {
+		t.Fatalf("outside-file batch error = %v", err)
 	}
 	if got, readErr := os.ReadFile(mainFile); readErr != nil || !bytes.Equal(got, mainSource) {
 		t.Fatalf("rejected batch changed configured-root file: got %q, err %v", got, readErr)
 	}
 
-	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+	_, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
 		Tool:   "semantic_replace_body",
 		Params: json.RawMessage(`{"workspace_root":".","file":"value.go","symbol":"Value","body":"return 2"}`),
 	}}, false)
-	if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "differing from batch root") {
-		t.Fatalf("differing child-root batch response = %+v, err %v", response, err)
+	if err == nil || !strings.Contains(err.Error(), "differing from batch root") {
+		t.Fatalf("differing child-root batch error = %v", err)
 	}
 	if got, readErr := os.ReadFile(worktreeFile); readErr != nil || string(got) != "package worktree\n\nfunc Value() int { return 1 }\n" {
 		t.Fatalf("refused direct batch changed selected-worktree file: got %q, err %v", got, readErr)
