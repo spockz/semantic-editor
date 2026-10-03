@@ -415,6 +415,15 @@ func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
 			name: "new named type argument", source: "package p\ntype Value struct{}\nfunc run() { _ = new(Value) }\n", selector: "Value", path: "0.e0.0",
 		},
 		{
+			name: "new builtin type argument", source: "package p\nfunc run() { _ = new(int) }\n", selector: "int", path: "0.e0.0",
+		},
+		{
+			name: "parenthesized make named type argument", source: "package p\ntype Values []int\nfunc run() { _ = (make)(Values, 0) }\n", selector: "Values", path: "0.e0.0",
+		},
+		{
+			name: "parenthesized new type argument", source: "package p\nfunc run() { _ = (new)(int) }\n", selector: "int", path: "0.e0.0",
+		},
+		{
 			name: "unresolved imported make type argument", source: "package p\nimport \"example.com/types\"\nfunc run() { _ = make(types.Slice, 0) }\n", selector: "types.Slice", path: "0.e0.0",
 		},
 	} {
@@ -442,7 +451,7 @@ func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
 
 func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "main.go")
-	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = make(17, 0) }\n")
+	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = (make)(17, 0) }\n")
 	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.0"}); err != nil {
 		t.Fatalf("replace shadowed make argument: %v", err)
 	}
@@ -468,6 +477,65 @@ func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
 	literal, ok := argument.(*ast.BasicLit)
 	if !ok || literal.Value != "18" {
 		t.Fatalf("shadowed make argument was not treated as a runtime value: %s", updated)
+	}
+}
+
+func TestReplaceConstructNewRuntimeValueArguments(t *testing.T) {
+	for _, test := range []struct {
+		name, callee, declaration string
+	}{
+		{name: "builtin new", callee: "new"},
+		{name: "parenthesized builtin new", callee: "(new)"},
+		{name: "parenthesized shadowed new", callee: "(new)", declaration: "func new(value int) *int { return &value }\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			replaceNewValueArgument(t, test.callee, test.declaration)
+		})
+	}
+}
+
+func replaceNewValueArgument(t *testing.T, callee, declaration string) {
+	t.Helper()
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module example.com/newvalue\n\ngo 1.27.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "main.go")
+	writeConstructFixture(t, path, "package p\n"+declaration+"func run() { _ = "+callee+"(17) }\n")
+	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.0"}); err != nil {
+		t.Fatalf("replace new value operand: %v", err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", updated, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var run *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		candidate, ok := declaration.(*ast.FuncDecl)
+		if ok && candidate.Name.Name == "run" {
+			run = candidate
+			break
+		}
+	}
+	if run == nil {
+		t.Fatal("run function is missing")
+	}
+	call := run.Body.List[0].(*ast.AssignStmt).Rhs[0].(*ast.CallExpr)
+	argument := call.Args[0]
+	for {
+		parenthesized, ok := argument.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		argument = parenthesized.X
+	}
+	literal, ok := argument.(*ast.BasicLit)
+	if !ok || literal.Value != "18" {
+		t.Fatalf("new value argument = %T(%v), want literal 18: %s", argument, argument, updated)
 	}
 }
 
