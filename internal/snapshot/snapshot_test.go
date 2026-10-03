@@ -128,11 +128,16 @@ func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
 		t.Fatal(err)
 	}
 	goplsPath := filepath.Join(binDir, "gopls")
-	if err := os.WriteFile(goplsPath, []byte("#!/bin/sh\nexit 23\n"), 0o700); err != nil {
+	markerPath := filepath.Join(t.TempDir(), "gopls-invoked")
+	if err := os.WriteFile(goplsPath, []byte("#!/bin/sh\nprintf invoked > \"$SEMEDIT_GOPLS_MARKER\"\nexit 23\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", binDir)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_GOPLS_MARKER", markerPath)
 	file := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module snapshot.test/fixture\n\ngo 1.27\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	preimage := []byte("package main\n\nfunc Value() int { return 1 }\n")
 	if err := os.WriteFile(file, preimage, 0o600); err != nil {
 		t.Fatal(err)
@@ -153,6 +158,10 @@ func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
 	}
 	if !strings.Contains(result.DiagnosticError, "gopls") {
 		t.Fatalf("diagnostic error = %q, want gopls failure", result.DiagnosticError)
+	}
+	marker, markerErr := os.ReadFile(markerPath)
+	if markerErr != nil || string(marker) != "invoked" {
+		t.Fatalf("gopls failure marker = %q, error = %v", marker, markerErr)
 	}
 	if len(result.RestoredFiles) != 1 || result.RestoredFiles[0] != "main.go" {
 		t.Fatalf("restored files = %v", result.RestoredFiles)
