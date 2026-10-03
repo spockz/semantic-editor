@@ -43,23 +43,9 @@ func RunPhase(ctx context.Context, plan Plan, phase Phase, scope Scope, lsp LSPR
 	if phase != PhaseNormalize && phase != PhaseCheck {
 		return Report{}, fmt.Errorf("unsupported verification phase %q", phase)
 	}
-	if strings.TrimSpace(plan.Root) == "" {
-		return Report{}, fmt.Errorf("verification plan has no project root")
-	}
-	root, err := filepath.Abs(plan.Root)
+	root, err := canonicalVerificationRoot(plan.Root)
 	if err != nil {
-		return Report{}, fmt.Errorf("resolve verification root: %w", err)
-	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return Report{}, fmt.Errorf("resolve verification root symlinks: %w", err)
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return Report{}, fmt.Errorf("stat verification root: %w", err)
-	}
-	if !info.IsDir() {
-		return Report{}, fmt.Errorf("verification root %q is not a directory", root)
+		return Report{}, err
 	}
 	plan.Root = root
 	scope, err = normalizeScope(root, scope)
@@ -77,109 +63,15 @@ func RunPhase(ctx context.Context, plan Plan, phase Phase, scope Scope, lsp LSPR
 			report.Partial = completedCount > 0
 			return report, fmt.Errorf("verification phase cancelled: %w", ctxErr)
 		}
-		result := HookResult{ID: hook.ID, Signal: hook.Signal, ConfigPath: hook.ConfigPath, ScopePaths: append([]string(nil), hook.ScopePaths...)}
-		selected, applies, err := SelectHookScope(plan, hook, scope)
-		if err != nil {
-			result.Status = HookFailed
-			result.Error = err.Error()
-			report.Results = append(report.Results, result)
-			report.Partial = completedCount > 0
-			return report, fmt.Errorf("select scope for verification hook %q: %w", hook.ID, err)
-		}
-		if hook.Disabled || !applies {
-			result.Status = HookSkipped
-			result.ScopePaths = selected.Paths
-			report.Results = append(report.Results, result)
-			continue
-		}
-		started := time.Now()
-		result.StartedAt = started
-		timeout := hook.Timeout
-		if timeout <= 0 {
-			timeout = defaultHookTimeout
-		}
-		hookCtx, cancel := context.WithTimeout(ctx, timeout)
-		var runErr error
-		//nolint:gocritic // Each mode has distinct invocation and receipt handling.
-		if hook.LSP != nil {
-			if lsp == nil {
-				runErr = fmt.Errorf("no LSP runner is available for configured action")
-			} else {
-				var lspResult HookResult
-				lspResult, runErr = lsp(hookCtx, hook, selected)
-				if lspResult.ID == "" {
-					lspResult.ID = hook.ID
-				}
-				if lspResult.Kind == "" {
-					lspResult.Kind = "lsp"
-				}
-				if lspResult.Signal == "" {
-					lspResult.Signal = hook.Signal
-				}
-				if lspResult.ConfigPath == "" {
-					lspResult.ConfigPath = hook.ConfigPath
-				}
-				lspResult.ScopePaths = append([]string(nil), selected.Paths...)
-				lspResult.StartedAt = started
-				lspResult.FinishedAt = time.Now()
-				result = lspResult
-				if runErr == nil && result.Status != HookSucceeded {
-					if result.Error != "" {
-						runErr = errors.New(result.Error)
-					} else {
-						runErr = fmt.Errorf("LSP runner returned status %q", result.Status)
-					}
-				}
-			}
-		} else if phase == PhaseNormalize {
-			runErr = runNormalization(hookCtx, root, hook, selected, scope, &result)
-		} else {
-			runErr = runCheck(hookCtx, root, hook, selected, &result)
-		}
-		if runErr == nil && hookCtx.Err() != nil {
-			runErr = hookCtx.Err()
-		}
-		cancel()
-		result.FinishedAt = time.Now()
-		if result.StartedAt.IsZero() {
-			result.StartedAt = started
-		}
-		if result.Kind == "" {
-			//nolint:gocritic // Result kind follows the configured execution form.
-			if hook.Shell != nil {
-				result.Kind = "shell"
-			} else if hook.LSP != nil {
-				result.Kind = "lsp"
-			} else {
-				result.Kind = "exec"
-			}
-		}
-		if result.ID == "" {
-			result.ID = hook.ID
-		}
-		if result.Signal == "" {
-			result.Signal = hook.Signal
-		}
-		if result.ConfigPath == "" {
-			result.ConfigPath = hook.ConfigPath
-		}
-		if !slices.Equal(result.ScopePaths, selected.Paths) {
-			result.ScopePaths = append([]string(nil), selected.Paths...)
-		}
-		if errors.Is(runErr, errNoApplicablePackages) {
-			result.Status = HookSkipped
-			result.ScopePaths = append([]string(nil), selected.Paths...)
-			report.Results = append(report.Results, result)
-			continue
-		} else if runErr != nil {
-			result.Status = HookFailed
-			result.Error = runErr.Error()
-			report.Results = append(report.Results, result)
-			report.Partial = completedCount > 0 || len(result.Changed) > 0
-			return report, fmt.Errorf("verification hook %q failed: %w", hook.ID, runErr)
-		}
-		result.Status = HookSucceeded
+		result, runErr := executeVerificationHook(ctx, plan, phase, scope, root, hook, lsp)
 		report.Results = append(report.Results, result)
+		if errors.Is(runErr, errNoApplicablePackages) {
+			continue
+		}
+		if runErr != nil {
+			report.Partial = completedCount > 0 || len(result.Changed) > 0
+			return report, runErr
+		}
 		completedCount++
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -188,6 +80,138 @@ func RunPhase(ctx context.Context, plan Plan, phase Phase, scope Scope, lsp LSPR
 	}
 	report.Completed = true
 	return report, nil
+}
+
+func canonicalVerificationRoot(root string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("verification plan has no project root")
+	}
+	canonical, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve verification root: %w", err)
+	}
+	canonical, err = filepath.EvalSymlinks(canonical)
+	if err != nil {
+		return "", fmt.Errorf("resolve verification root symlinks: %w", err)
+	}
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return "", fmt.Errorf("stat verification root: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("verification root %q is not a directory", canonical)
+	}
+	return canonical, nil
+}
+
+func executeVerificationHook(ctx context.Context, plan Plan, phase Phase, requested Scope, root string, hook Hook, lsp LSPRunner) (HookResult, error) {
+	result := HookResult{ID: hook.ID, Signal: hook.Signal, ConfigPath: hook.ConfigPath, ScopePaths: slices.Clone(hook.ScopePaths)}
+	selected, applies, err := SelectHookScope(plan, hook, requested)
+	if err != nil {
+		result.Status, result.Error = HookFailed, err.Error()
+		return result, fmt.Errorf("select scope for verification hook %q: %w", hook.ID, err)
+	}
+	if hook.Disabled || !applies {
+		result.Status, result.ScopePaths = HookSkipped, selected.Paths
+		return result, nil
+	}
+	runErr := executeSelectedHook(ctx, root, phase, requested, selected, hook, lsp, &result)
+	finalizeHookResult(&result, hook, selected)
+	if errors.Is(runErr, errNoApplicablePackages) {
+		result.Status, result.ScopePaths = HookSkipped, slices.Clone(selected.Paths)
+		return result, runErr
+	}
+	if runErr != nil {
+		result.Status, result.Error = HookFailed, runErr.Error()
+		return result, fmt.Errorf("verification hook %q failed: %w", hook.ID, runErr)
+	}
+	result.Status = HookSucceeded
+	return result, nil
+}
+
+func executeSelectedHook(ctx context.Context, root string, phase Phase, requested, selected Scope, hook Hook, lsp LSPRunner, result *HookResult) error {
+	started := time.Now()
+	result.StartedAt = started
+	timeout := hook.Timeout
+	if timeout <= 0 {
+		timeout = defaultHookTimeout
+	}
+	hookCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	runErr := runConfiguredHook(hookCtx, root, phase, requested, selected, hook, lsp, started, result)
+	if runErr == nil && hookCtx.Err() != nil {
+		runErr = hookCtx.Err()
+	}
+	return runErr
+}
+
+func runConfiguredHook(ctx context.Context, root string, phase Phase, requested, selected Scope, hook Hook, lsp LSPRunner, started time.Time, result *HookResult) error {
+	if hook.LSP != nil {
+		return runLSPHook(ctx, hook, selected, lsp, started, result)
+	}
+	if phase == PhaseNormalize {
+		return runNormalization(ctx, root, hook, selected, requested, result)
+	}
+	return runCheck(ctx, root, hook, selected, result)
+}
+
+func runLSPHook(ctx context.Context, hook Hook, selected Scope, lsp LSPRunner, started time.Time, result *HookResult) error {
+	if lsp == nil {
+		return fmt.Errorf("no LSP runner is available for configured action")
+	}
+	lspResult, runErr := lsp(ctx, hook, selected)
+	if lspResult.ID == "" {
+		lspResult.ID = hook.ID
+	}
+	if lspResult.Kind == "" {
+		lspResult.Kind = "lsp"
+	}
+	if lspResult.Signal == "" {
+		lspResult.Signal = hook.Signal
+	}
+	if lspResult.ConfigPath == "" {
+		lspResult.ConfigPath = hook.ConfigPath
+	}
+	lspResult.ScopePaths = slices.Clone(selected.Paths)
+	lspResult.StartedAt, lspResult.FinishedAt = started, time.Now()
+	*result = lspResult
+	if runErr == nil && result.Status != HookSucceeded {
+		if result.Error != "" {
+			runErr = errors.New(result.Error)
+		} else {
+			runErr = fmt.Errorf("LSP runner returned status %q", result.Status)
+		}
+	}
+	return runErr
+}
+
+func finalizeHookResult(result *HookResult, hook Hook, selected Scope) {
+	result.FinishedAt = time.Now()
+	if result.StartedAt.IsZero() {
+		result.StartedAt = result.FinishedAt
+	}
+	if result.Kind == "" {
+		//nolint:gocritic // Result kind follows the configured execution form.
+		if hook.Shell != nil {
+			result.Kind = "shell"
+		} else if hook.LSP != nil {
+			result.Kind = "lsp"
+		} else {
+			result.Kind = "exec"
+		}
+	}
+	if result.ID == "" {
+		result.ID = hook.ID
+	}
+	if result.Signal == "" {
+		result.Signal = hook.Signal
+	}
+	if result.ConfigPath == "" {
+		result.ConfigPath = hook.ConfigPath
+	}
+	if !slices.Equal(result.ScopePaths, selected.Paths) {
+		result.ScopePaths = slices.Clone(selected.Paths)
+	}
 }
 
 var errNoApplicablePackages = errors.New("no buildable Go packages are selected")
@@ -301,8 +325,8 @@ func hookWorkingDirectory(root string, hook Hook) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid hook working directory: %w", err)
 	}
-	if err := ensureNoSymlinkPath(root, clean); err != nil {
-		return "", fmt.Errorf("invalid hook working directory: %w", err)
+	if symlinkErr := ensureNoSymlinkPath(root, clean); symlinkErr != nil {
+		return "", fmt.Errorf("invalid hook working directory: %w", symlinkErr)
 	}
 	dir := filepath.Join(root, clean)
 	info, err := os.Stat(dir)
@@ -334,58 +358,90 @@ func hookInvocation(hook Hook, scope Scope) (string, []string, error) {
 }
 
 func runNormalization(ctx context.Context, root string, hook Hook, selected, requested Scope, result *HookResult) error {
-	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("normalization was cancelled before staging: %w", err)
+	workspace, err := prepareNormalization(ctx, root, hook, selected, result)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(workspace.stage) }()
+	changed, err := normalizationChanges(ctx, workspace.before, workspace.after)
+	if err != nil {
+		return err
+	}
+	if err := validateNormalizationChanges(ctx, root, changed, hook, requested); err != nil {
+		return err
+	}
+	return publishNormalizationChanges(ctx, root, workspace, changed, result)
+}
+
+type normalizationWorkspace struct {
+	stage, stageRoot string
+	before, after    map[string]fileSnapshot
+}
+
+func prepareNormalization(ctx context.Context, root string, hook Hook, selected Scope, result *HookResult) (normalizationWorkspace, error) {
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return normalizationWorkspace{}, fmt.Errorf("normalization was cancelled before staging: %w", ctxErr)
 	}
 	if err := ensureNoSymlinkPath(root, ".scratch"); err != nil {
-		return err
+		return normalizationWorkspace{}, err
 	}
 	scratch := filepath.Join(root, ".scratch")
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
-		return fmt.Errorf("create verification scratch directory: %w", err)
+		return normalizationWorkspace{}, fmt.Errorf("create verification scratch directory: %w", err)
 	}
-	stage, err := os.MkdirTemp(scratch, "projectverify-")
-	if err != nil {
-		return fmt.Errorf("create normalization staging area: %w", err)
+	stage, stageErr := os.MkdirTemp(scratch, "projectverify-")
+	if stageErr != nil {
+		return normalizationWorkspace{}, fmt.Errorf("create normalization staging area: %w", stageErr)
 	}
-	defer func() { _ = os.RemoveAll(stage) }()
 	stageRoot := filepath.Join(stage, "workspace")
 	if err := os.Mkdir(stageRoot, 0o700); err != nil {
-		return fmt.Errorf("create staged workspace: %w", err)
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, fmt.Errorf("create staged workspace: %w", err)
 	}
 	if err := copyWorkspaceContext(ctx, root, stageRoot); err != nil {
-		return fmt.Errorf("stage project for normalization: %w", err)
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, fmt.Errorf("stage project for normalization: %w", err)
 	}
-	before, err := snapshotWorkspaceContext(ctx, stageRoot)
-	if err != nil {
-		return fmt.Errorf("snapshot staged workspace: %w", err)
+	before, beforeErr := snapshotWorkspaceContext(ctx, stageRoot)
+	if beforeErr != nil {
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, fmt.Errorf("snapshot staged workspace: %w", beforeErr)
 	}
-	cwd, err := hookWorkingDirectory(stageRoot, hook)
-	if err != nil {
-		return err
+	cwd, cwdErr := hookWorkingDirectory(stageRoot, hook)
+	if cwdErr != nil {
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, cwdErr
 	}
-	executable, args, err := invocationForRoot(ctx, stageRoot, hook, selected)
-	if err != nil {
-		return err
+	executable, args, invocationErr := invocationForRoot(ctx, stageRoot, hook, selected)
+	if invocationErr != nil {
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, invocationErr
 	}
 	if err := runHookCommand(ctx, root, hook, cwd, executable, args, result); err != nil {
-		return err
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("normalization was cancelled after command completion: %w", err)
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, fmt.Errorf("normalization was cancelled after command completion: %w", err)
 	}
-	after, err := snapshotWorkspaceContext(ctx, stageRoot)
-	if err != nil {
-		return fmt.Errorf("inspect staged normalization result: %w", err)
+	after, afterErr := snapshotWorkspaceContext(ctx, stageRoot)
+	if afterErr != nil {
+		_ = os.RemoveAll(stage)
+		return normalizationWorkspace{}, fmt.Errorf("inspect staged normalization result: %w", afterErr)
 	}
+	return normalizationWorkspace{stage: stage, stageRoot: stageRoot, before: before, after: after}, nil
+}
+
+func normalizationChanges(ctx context.Context, before, after map[string]fileSnapshot) ([]string, error) {
 	var changed []string
 	for path, old := range before {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("normalization was cancelled while inspecting changes: %w", err)
+			return nil, fmt.Errorf("normalization was cancelled while inspecting changes: %w", err)
 		}
 		current, exists := after[path]
 		if !exists {
-			return fmt.Errorf("normalization hook deleted %q; deletions are not supported", path)
+			return nil, fmt.Errorf("normalization hook deleted %q; deletions are not supported", path)
 		}
 		if old.digest != current.digest || old.mode.Perm() != current.mode.Perm() {
 			changed = append(changed, path)
@@ -397,6 +453,10 @@ func runNormalization(ctx context.Context, root string, hook Hook, selected, req
 		}
 	}
 	slices.Sort(changed)
+	return changed, nil
+}
+
+func validateNormalizationChanges(ctx context.Context, root string, changed []string, hook Hook, requested Scope) error {
 	for _, path := range changed {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("normalization was cancelled while validating changes: %w", err)
@@ -405,12 +465,16 @@ func runNormalization(ctx context.Context, root string, hook Hook, selected, req
 			return err
 		}
 	}
+	return nil
+}
+
+func publishNormalizationChanges(ctx context.Context, root string, workspace normalizationWorkspace, changed []string, result *HookResult) error {
 	for _, path := range changed {
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("normalization was cancelled before publishing changes: %w", err)
 		}
 		relative := filepath.FromSlash(path)
-		stagedPath := filepath.Join(stageRoot, relative)
+		stagedPath := filepath.Join(workspace.stageRoot, relative)
 		target := filepath.Join(root, relative)
 		data, err := os.ReadFile(stagedPath) // #nosec G304 -- path is within the private staging tree
 		if err != nil {
@@ -426,7 +490,7 @@ func runNormalization(ctx context.Context, root string, hook Hook, selected, req
 			return fmt.Errorf("publish staged change %q: %w", path, err)
 		}
 		result.Changed = append(result.Changed, filepath.ToSlash(path))
-		if err := os.Chmod(target, after[path].mode.Perm()); err != nil {
+		if err := os.Chmod(target, workspace.after[path].mode.Perm()); err != nil {
 			return fmt.Errorf("preserve mode for published change %q: %w", path, err)
 		}
 	}
@@ -489,8 +553,8 @@ func protectedManifest(path string) bool {
 }
 
 func ensureRegularTarget(root, relative string) error {
-	clean, err := safeRelativePath(relative)
-	if err != nil || clean == "." {
+	clean, pathErr := safeRelativePath(relative)
+	if pathErr != nil || clean == "." {
 		return fmt.Errorf("unsafe publication target %q", relative)
 	}
 	parent := filepath.Dir(clean)
@@ -558,47 +622,47 @@ func copyWorkspaceContext(ctx context.Context, source, destination string) error
 		if entry.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
-		target := filepath.Join(destination, rel)
-		if entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			return os.MkdirAll(target, info.Mode().Perm())
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("cannot stage non-regular project entry %q", filepath.ToSlash(rel))
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
-			return err
-		}
-		input, err := os.Open(path) // #nosec G304,G122 -- path is produced by WalkDir beneath the private staging root
-		if err != nil {
-			return err
-		}
-		output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm()) // #nosec G304 -- target is a path beneath the private staging root
-		if err != nil {
-			_ = input.Close()
-			return err
-		}
-		_, copyErr := io.Copy(output, input)
-		closeInputErr := input.Close()
-		closeOutputErr := output.Close()
-		if copyErr != nil {
-			return copyErr
-		}
-		if closeInputErr != nil {
-			return closeInputErr
-		}
-		if closeOutputErr != nil {
-			return closeOutputErr
-		}
-		return os.Chmod(target, info.Mode().Perm())
+		return copyWorkspaceEntry(path, rel, entry, destination)
 	})
+}
+
+func copyWorkspaceEntry(path, rel string, entry fs.DirEntry, destination string) error {
+	target := filepath.Join(destination, rel)
+	info, err := entry.Info()
+	if err != nil {
+		return err
+	}
+	if entry.IsDir() {
+		return os.MkdirAll(target, info.Mode().Perm())
+	}
+	if !entry.Type().IsRegular() {
+		return fmt.Errorf("cannot stage non-regular project entry %q", filepath.ToSlash(rel))
+	}
+	if mkdirErr := os.MkdirAll(filepath.Dir(target), 0o750); mkdirErr != nil {
+		return mkdirErr
+	}
+	input, err := os.Open(path) // #nosec G304,G122 -- path is produced by WalkDir beneath the private staging root
+	if err != nil {
+		return err
+	}
+	output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, info.Mode().Perm()) // #nosec G304 -- target is a path beneath the private staging root
+	if err != nil {
+		_ = input.Close()
+		return err
+	}
+	_, copyErr := io.Copy(output, input)
+	closeInputErr := input.Close()
+	closeOutputErr := output.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeInputErr != nil {
+		return closeInputErr
+	}
+	if closeOutputErr != nil {
+		return closeOutputErr
+	}
+	return os.Chmod(target, info.Mode().Perm())
 }
 
 func snapshotWorkspaceContext(ctx context.Context, root string) (map[string]fileSnapshot, error) {
@@ -720,12 +784,16 @@ func golangciPackages(ctx context.Context, root string, hook Hook, scope Scope) 
 	if len(output) > outputLimit {
 		return nil, fmt.Errorf("resolve buildable Go package scope: go list output exceeds %d bytes", outputLimit)
 	}
-	selected := make(map[string]bool, len(scope.Paths))
-	for _, path := range scope.Paths {
+	return filterGolangciPackages(root, cwd, hook.ScopePaths, scope.Paths, output)
+}
+
+func filterGolangciPackages(root, cwd string, configuredPaths, selectedPaths []string, output []byte) ([]string, error) {
+	selected := make(map[string]bool, len(selectedPaths))
+	for _, path := range selectedPaths {
 		selected[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
 	}
-	configuredScope := make(map[string]bool, len(hook.ScopePaths))
-	for _, path := range hook.ScopePaths {
+	configuredScope := make(map[string]bool, len(configuredPaths))
+	for _, path := range configuredPaths {
 		configuredScope[filepath.ToSlash(filepath.Clean(filepath.FromSlash(path)))] = true
 	}
 	var packages []string
@@ -743,15 +811,7 @@ func golangciPackages(ctx context.Context, root string, hook Hook, scope Scope) 
 			continue
 		}
 		relDir = filepath.ToSlash(relDir)
-		containsSelected := false
-		for path := range selected {
-			absoluteFile := filepath.Join(root, filepath.FromSlash(path))
-			if filepath.Dir(absoluteFile) == dir && (len(configuredScope) == 0 || configuredScope[path]) {
-				containsSelected = true
-				break
-			}
-		}
-		if !containsSelected {
+		if !containsSelectedGoFile(root, dir, selected, configuredScope) {
 			continue
 		}
 		pattern := "./"
@@ -765,6 +825,16 @@ func golangciPackages(ctx context.Context, root string, hook Hook, scope Scope) 
 	}
 	slices.Sort(packages)
 	return packages, nil
+}
+
+func containsSelectedGoFile(root, packageDir string, selected, configured map[string]bool) bool {
+	for path := range selected {
+		absoluteFile := filepath.Join(root, filepath.FromSlash(path))
+		if filepath.Dir(absoluteFile) == packageDir && (len(configured) == 0 || configured[path]) {
+			return true
+		}
+	}
+	return false
 }
 
 func commandEnvironment(ctx context.Context, root string, hook Hook) ([]string, error) {
