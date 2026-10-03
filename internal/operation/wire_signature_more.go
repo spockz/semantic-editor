@@ -297,6 +297,7 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 
 func collectSignatureBodyBindings(snapshot *structuralSnapshot, symbol string) ([]astedit.SignatureBodyBinding, error) {
 	var bindings []astedit.SignatureBodyBinding
+	seen := make(map[astedit.SignatureBodyBinding]struct{})
 	found := false
 	for _, pkg := range snapshot.Packages {
 		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
@@ -342,7 +343,11 @@ func collectSignatureBodyBindings(snapshot *structuralSnapshot, symbol string) (
 						return true
 					}
 					start, end := pkg.Fset.Position(identifier.Pos()).Offset, pkg.Fset.Position(identifier.End()).Offset
-					bindings = append(bindings, astedit.SignatureBodyBinding{File: snapshot.File, Start: start, End: end, SourceIndex: index})
+					binding := astedit.SignatureBodyBinding{File: snapshot.File, Start: start, End: end, SourceIndex: index}
+					if _, ok := seen[binding]; !ok {
+						seen[binding] = struct{}{}
+						bindings = append(bindings, binding)
+					}
 					return true
 				})
 				if bodyStart < 0 || bodyEnd <= bodyStart {
@@ -436,7 +441,9 @@ func applySignatureExpansion(ctx context.Context, cc CallContext, snapshot *stru
 		}
 		draft.PlannedChanges = append(draft.PlannedChanges, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(planned.After)})
 	}
-	if diagnosticStatus == "changed" {
+	if !changed {
+		draft.Status = EditNoOp
+	} else if diagnosticStatus == "changed" {
 		draft.Status = EditPersistedWithDiagnostics
 	}
 	continuationRevision := structuralRevision(snapshot.Sources[snapshot.File])

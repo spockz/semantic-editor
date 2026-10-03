@@ -28,6 +28,26 @@ import (
 	"golang.org/x/tools/imports"
 )
 
+// ImportOutcomeError retains the known source-view changes when a later import step fails.
+type ImportOutcomeError struct {
+	Report ImportReport
+	Err    error
+}
+
+func (e *ImportOutcomeError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ImportOutcomeError) Unwrap() error {
+	return e.Err
+}
+
+// ImportReport records canonical paths changed in the active source view.
+type ImportReport struct {
+	ChangedFiles []string
+	Buffered     bool
+}
+
 var (
 	// ErrAtomicWrite indicates a failure during atomic file staging, sync, or rename.
 	ErrAtomicWrite = atomicfile.ErrAtomicWrite
@@ -164,72 +184,8 @@ func OrganizeImports(ctx context.Context, workDir string, paths ...string) error
 
 // OrganizeImportsWithOptions adjusts imports and formats using explicit additions/removals and imports.Process.
 func OrganizeImportsWithOptions(ctx context.Context, workDir string, opts ImportOptions, paths ...string) error {
-	finish := telemetry.Start(ctx, telemetry.PhaseFormattingImports)
-	defer finish()
-
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	var goFiles []string
-	for _, p := range paths {
-		target := p
-		if workDir != "" && !filepath.IsAbs(target) {
-			target = filepath.Join(workDir, target)
-		}
-		fi, err := os.Stat(target)
-		if err != nil {
-			return fmt.Errorf("stat path %s: %w", p, err)
-		}
-		if fi.IsDir() {
-			err := filepath.Walk(target, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if info.IsDir() {
-					name := info.Name()
-					if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if strings.HasSuffix(info.Name(), ".go") {
-					goFiles = append(goFiles, path)
-				}
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("walk dir %s: %w", target, err)
-			}
-		} else if strings.HasSuffix(target, ".go") {
-			goFiles = append(goFiles, target)
-		}
-	}
-
-	for _, file := range goFiles {
-		cleanFile := filepath.Clean(file)
-		data, err := sourcebuf.ReadFile(ctx, cleanFile)
-		if err != nil {
-			return fmt.Errorf("read file %s: %w", file, err)
-		}
-
-		modifiedData, err := applyExplicitImports(cleanFile, data, opts)
-		if err != nil {
-			return fmt.Errorf("apply explicit imports for %s: %w", file, err)
-		}
-
-		res, err := imports.Process(cleanFile, modifiedData, nil)
-		if err != nil {
-			return fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err)
-		}
-
-		if !bytes.Equal(data, res) {
-			if err := WriteAtomicContext(ctx, cleanFile, res); err != nil {
-				return fmt.Errorf("write organized file %s: %w", file, err)
-			}
-		}
-	}
-	return nil
+	_, err := OrganizeImportsWithOptionsReport(ctx, workDir, opts, paths...)
+	return err
 }
 
 func parseImportEntry(entry string) (alias string, path string) {
@@ -496,6 +452,90 @@ func NeedsFormatting(ctx context.Context, workDir string, paths ...string) (bool
 // WriteAtomicContext routes source writes through the active batch buffer.
 func WriteAtomicContext(ctx context.Context, targetPath string, data []byte) error {
 	return sourcebuf.WriteFile(ctx, targetPath, data)
+}
+
+// OrganizeImportsWithOptionsReport applies import changes and reports paths written in the current workspace view.
+func OrganizeImportsWithOptionsReport(ctx context.Context, workDir string, opts ImportOptions, paths ...string) (ImportReport, error) {
+	finish := func(report ImportReport, err error) (ImportReport, error) {
+		slices.Sort(report.ChangedFiles)
+		report.ChangedFiles = slices.Compact(report.ChangedFiles)
+		if err != nil {
+			err = &ImportOutcomeError{Report: report, Err: err}
+		}
+		return report, err
+	}
+	report := ImportReport{Buffered: sourcebuf.FromContext(ctx) != nil}
+	finishTelemetry := telemetry.Start(ctx, telemetry.PhaseFormattingImports)
+	defer finishTelemetry()
+
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+
+	var goFiles []string
+	for _, p := range paths {
+		target := p
+		if workDir != "" && !filepath.IsAbs(target) {
+			target = filepath.Join(workDir, target)
+		}
+		fi, err := os.Stat(target)
+		if err != nil {
+			return finish(report, fmt.Errorf("stat path %s: %w", p, err))
+		}
+		if fi.IsDir() {
+			err := filepath.Walk(target, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					name := info.Name()
+					if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if strings.HasSuffix(info.Name(), ".go") {
+					goFiles = append(goFiles, path)
+				}
+				return nil
+			})
+			if err != nil {
+				return finish(report, fmt.Errorf("walk dir %s: %w", target, err))
+			}
+		} else if strings.HasSuffix(target, ".go") {
+			goFiles = append(goFiles, target)
+		}
+	}
+
+	for _, file := range goFiles {
+		cleanFile := filepath.Clean(file)
+		data, err := sourcebuf.ReadFile(ctx, cleanFile)
+		if err != nil {
+			return finish(report, fmt.Errorf("read file %s: %w", file, err))
+		}
+
+		modifiedData, err := applyExplicitImports(cleanFile, data, opts)
+		if err != nil {
+			return finish(report, fmt.Errorf("apply explicit imports for %s: %w", file, err))
+		}
+
+		res, err := imports.Process(cleanFile, modifiedData, nil)
+		if err != nil {
+			return finish(report, fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err))
+		}
+
+		if !bytes.Equal(data, res) {
+			canonical, err := filepath.Abs(cleanFile)
+			if err != nil {
+				return finish(report, fmt.Errorf("resolve organized file path %s: %w", cleanFile, err))
+			}
+			if err := WriteAtomicContext(ctx, cleanFile, res); err != nil {
+				return finish(report, fmt.Errorf("write organized file %s: %w", file, err))
+			}
+			report.ChangedFiles = append(report.ChangedFiles, canonical)
+		}
+	}
+	return finish(report, nil)
 }
 
 // runGofmt invokes gofmt in bounded argument batches and never starts with no file arguments.

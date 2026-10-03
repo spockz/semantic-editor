@@ -55,6 +55,40 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			}
 		}
 	})
+	t.Run("field insertion uses the exact brace span for empty structs", func(t *testing.T) {
+		for _, tc := range []struct {
+			name, source, expected string
+		}{
+			{
+				name:     "empty struct",
+				source:   "package p\ntype options struct{}\n",
+				expected: "package p\ntype options struct{\n\ttimeout int\n}\n",
+			},
+			{
+				name:     "grouped type with indentation",
+				source:   "package p\ntype (\n\toptions struct{}\n)\n",
+				expected: "package p\ntype (\n\toptions struct{\n\t\ttimeout int\n\t}\n)\n",
+			},
+			{
+				name:     "CRLF",
+				source:   "package p\r\ntype options struct{}\r\n",
+				expected: "package p\r\ntype options struct{\r\n\ttimeout int\r\n}\r\n",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				plan, err := PlanInsertField([]byte(tc.source), InsertFieldIntent{TypeName: "options", FieldName: "timeout", FieldSource: "timeout int"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(plan.Source) != tc.expected {
+					t.Fatalf("empty struct edit = %q, want %q", plan.Source, tc.expected)
+				}
+				if err := typeCheckPlannedSource(t, plan.Source); err != nil {
+					t.Fatalf("empty struct result did not type-check: %v", err)
+				}
+			})
+		}
+	})
 	t.Run("statement insertion uses an exact direct anchor and refuses control flow", func(t *testing.T) {
 		source := []byte("package p\nfunc Handle() {\n\tfirst()\n\tsecond()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{

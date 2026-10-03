@@ -1,0 +1,21 @@
+# An already-satisfied spelling is refused instead of being reported as a persisted edit.
+! exec semedit migrate-type --file settings.go --symbol Settings.timeout --type int64
+stderr 'already uses the requested spelling'
+cmp settings.go .scratch/want/settings.go
+
+-- go.mod --
+module example.com/migratenoop
+
+go 1.24
+-- settings.go --
+package sample
+
+type Settings struct {
+	timeout int64
+}
+-- .scratch/want/settings.go --
+package sample
+
+type Settings struct {
+	timeout int64
+}

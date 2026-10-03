@@ -1,0 +1,24 @@
+# A successful MCP removal advertises the exact result shape and a checks_run array.
+stdin remove-success.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"checks_run":\["go_syntax_parse"'
+stdout '"safe_delete":false'
+cmp api/value.go want/api/value.go
+
+-- go.mod --
+module example.com/removesuccess
+
+go 1.23
+-- api/value.go --
+package api
+
+var Removed = 1
+var Kept = 2
+-- want/api/value.go --
+package api
+
+var Kept = 2
+-- remove-success.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_remove_construct","arguments":{"file":"api/value.go","kind":"variable","symbol":"Removed"}}}

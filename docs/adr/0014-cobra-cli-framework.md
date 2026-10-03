@@ -36,6 +36,9 @@ The initial CLI interface for `semedit` used the standard library `flag.FlagSet`
 5. **Testability Contract**:
    Keep `run(args []string) int` as the programmatic entry point tested by `testscript` / `txtar`. `run` configures a fresh Cobra root command instance with `SetArgs(args)` and captures exit codes explicitly.
 
+6. **CLI Payloads from Stdin**:
+   Registry-derived CLI string parameters named `source`, `body`, or `case` accept `-` as a request to read their complete payload from Cobra's stdin. The CLI expands these markers once after flag parsing and before operation parsing or dispatch. This convention stays at CLI ingress; MCP JSON values, including the literal string `-`, retain their existing meaning.
+
 ---
 
 ## Invariants
@@ -47,12 +50,14 @@ The initial CLI interface for `semedit` used the standard library `flag.FlagSet`
   0.
 * CLI commands must delegate heavy transformation and validation logic to internal domain packages (`internal/astedit`, `internal/pipeline`, `internal/symbol`, `internal/mcp`).
 * Commands must return exit code 0 on success and exit code 1 on user or validation errors.
+* CLI `--source -`, `--body -`, and `--case -` read one complete payload from stdin. At most one such flag may request stdin in a command; conflicts fail before reading or dispatch. An empty stdin stream remains an explicit empty string, read errors remain errors, and payload bytes are not trimmed. Other string flags keep `-` as a literal value. MCP input and nested batch parameters never inherit CLI stdin expansion.
 
 ---
 
 ## Consequences
 
 * The CLI entry point gains robust POSIX flag parsing, shorthand flags, and consistent subcommand lifecycle.
+* Users can pipe or provide multiline source, body, and case payloads through stdin without placing those snippets in shell arguments or temporary payload files. Registry-derived CLI help identifies the supported flags; MCP schemas and descriptions remain unchanged.
 * Dependency on `github.com/spf13/cobra` is introduced into `go.mod`.
 * Custom argument splitting and flag set declarations in `main.go` are eliminated in favor of idiomatic Cobra command definitions.
 * The CLI presents each successful operation through its registry formatter and

@@ -1,0 +1,18 @@
+# This CLI contract adds a field to the default empty struct emitted by semantic_insert_type.
+exec semedit insert-field --file config.go --in-type options --symbol options.timeout --source 'timeout int' --placement type_end
+cmp config.go .scratch/want/config.go
+
+-- go.mod --
+module example.com/insertfieldempty
+
+go 1.24
+-- config.go --
+package config
+
+type options struct{}
+-- .scratch/want/config.go --
+package config
+
+type options struct{
+	timeout int
+}

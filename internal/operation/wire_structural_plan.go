@@ -28,6 +28,7 @@ type structuralPlanSpec struct {
 	Result               func(CallContext, map[string]any, astedit.SourcePlan, string) FileEditRes
 	Continuations        func(CallContext, *structuralSnapshot, map[string]any, astedit.SourcePlan) ([]SymbolTarget, error)
 	ResolveContinuations ContinuationResolver
+	ResolveWithRoot      func(context.Context, string, SymbolTarget) (SymbolTarget, bool, error)
 }
 
 type structuralPlanResult struct {
@@ -95,7 +96,13 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 				return structuralPlanResult{}, err
 			}
 		}
-		return structuralPlanResult{Edit: result, Draft: draft, Resolve: spec.ResolveContinuations}, nil
+		resolve := spec.ResolveContinuations
+		if spec.ResolveWithRoot != nil {
+			resolve = func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
+				return spec.ResolveWithRoot(resolveCtx, cc.WorkDir, candidate)
+			}
+		}
+		return structuralPlanResult{Edit: result, Draft: draft, Resolve: resolve}, nil
 	}
 	return Def[map[string]any, structuralPlanResult]{
 		Key: spec.Key, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
@@ -125,6 +132,9 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 				}
 				if result.Edit.Symbol != "" {
 					projected["symbol"] = result.Edit.Symbol
+				}
+				if result.Edit.InType != "" {
+					projected["in_type"] = result.Edit.InType
 				}
 				if result.Edit.InFunction != "" {
 					projected[wireInFunction] = result.Edit.InFunction
@@ -243,7 +253,7 @@ func insertStatementStructuralDef() Def[map[string]any, structuralPlanResult] {
 	output := structuralOutputContract(false)
 	return structuralPlanDef(structuralPlanSpec{
 		Key: "insert_statement", CLIName: "insert-statement", MCPName: "semantic_insert_statement",
-		Summary:    "Use this tool instead of replacing a function body to insert one direct call or simple assignment immediately before or after a uniquely selected direct statement. The qualified owner preserves its receiver; the discriminator is exact anchor source. Control-flow constructs, labels, shared-line statements, and ambiguous anchors are refused. The operation typechecks the affected package before one buffered apply; batch receipts report applied_working without live selectors.",
+		Summary:    "Use this tool instead of replacing a function body to insert one direct call or simple assignment immediately before or after a uniquely selected direct statement. The qualified owner preserves its receiver; the discriminator is exact anchor source. This initial version only accepts straight-line owners without control-flow constructs or labels; shared-line statements and ambiguous anchors are refused. The operation typechecks the affected package before one buffered apply; batch receipts report applied_working without live selectors.",
 		Params:     params,
 		Output:     &output,
 		ExampleRaw: map[string]any{"file": "server.go", wireInFunction: "(*Server).Run", wireDiscriminator: "flush()", "source": "record()", "placement": "before_construct"},
@@ -265,6 +275,7 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 		"result":          {Kind: SchemaString},
 		"file":            {Kind: SchemaString},
 		"symbol":          {Kind: SchemaString},
+		"in_type":         {Kind: SchemaString},
 		wireInFunction:    {Kind: SchemaString},
 		wireDiscriminator: {Kind: SchemaString},
 		"diff":            {Kind: SchemaString},
@@ -284,7 +295,7 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 }
 
 func registerStructuralPlanOps(registry *Registry) error {
-	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertStatementStructuralDef()} {
+	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertStatementStructuralDef(), insertFieldStructuralDef()} {
 		if err := Register(registry, definition); err != nil {
 			return fmt.Errorf("register structural plan %q: %w", definition.Key, err)
 		}

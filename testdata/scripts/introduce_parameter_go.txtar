@@ -3,6 +3,21 @@ cp service.go .scratch/service-before.txt
 ! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode --expected-revision stale
 stderr 'expected_revision'
 cmp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"4"}]' --discriminator defaultMode
+stderr 'selected expression'
+cmp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol shadowed --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
+stderr 'compile-time typed constant'
+cmp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol repeated --parameters '[{"source_index":0,"parameter":{"name":"flag","type":"bool"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
+stderr 'resolve uniquely'
+cmp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol constantDecl --parameters '[{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]' --discriminator true
+stderr 'is not constant'
+cmp service.go .scratch/service-before.txt
+! exec semedit introduce-parameter --file service.go --symbol overflow --parameters '[{"parameter":{"name":"small","type":"int8"},"argument":"257"}]' --discriminator large
+stderr 'assignable to the appended parameter type'
+cmp service.go .scratch/service-before.txt
 exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
 stdout 'Replaced the selected constant expression'
 cmp service.go .scratch/want/service.txt
@@ -23,15 +38,21 @@ go 1.24
 -- service.go --
 package sample
 
-const defaultMode = 3
+const defaultMode int = 3
 var mutableMode = 2
 
 func transform(id int) int { return id + defaultMode }
 func unsafe(id int) int { return id + mutableMode }
+func shadowed(id int) int { defaultMode := 4; return id + defaultMode }
+func repeated(flag bool) bool { if flag { return true }; return true }
+func constantDecl() bool { const value = true; return value }
+const large = 257
+func overflow() int { return int(large) }
 -- calls.go --
 package sample
 
 func first() int { return transform(1) }
+func overflowCaller() int { return overflow() }
 -- other.go --
 package sample
 
@@ -39,15 +60,21 @@ func second() int { return transform(2) }
 -- .scratch/want/service.txt --
 package sample
 
-const defaultMode = 3
+const defaultMode int = 3
 var mutableMode = 2
 
 func transform(id int, mode int) int { return id + mode }
 func unsafe(id int) int { return id + mutableMode }
+func shadowed(id int) int { defaultMode := 4; return id + defaultMode }
+func repeated(flag bool) bool { if flag { return true }; return true }
+func constantDecl() bool { const value = true; return value }
+const large = 257
+func overflow() int { return int(large) }
 -- .scratch/want/calls.txt --
 package sample
 
 func first() int { return transform(1, 3) }
+func overflowCaller() int { return overflow() }
 -- .scratch/want/other.txt --
 package sample
 

@@ -29,6 +29,17 @@ func goModifiers() []string {
 	return modifiers
 }
 
+func supportedAccessModifiers(candidate backend.Backend) []string {
+	provider, ok := candidate.(backend.MatrixProvider)
+	if ok {
+		return slices.Clone(provider.CapabilityMatrix().SupportedModifiers)
+	}
+	if candidate.Language() == backend.LanguageGo {
+		return goModifiers()
+	}
+	return nil
+}
+
 func profileFor(language backend.LanguageID) (Profile, bool) {
 	switch language {
 	case backend.LanguageGo:

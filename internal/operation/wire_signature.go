@@ -49,8 +49,7 @@ func signatureOutputContract() OperationOutputContract {
 
 func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	mapping := ParameterMappingSchema()
-	minimumItems := 1
-	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping, MinItems: &minimumItems}
+	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping}
 	params := []ParameterContract{
 		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file"),
 		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated.", true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol"),
@@ -164,7 +163,9 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 		edit.Detail = "Signature output publication did not complete: " + applyErr.Error()
 	}
 	draft := EditReceiptDraft{Operation: "change_signature", Status: EditPersisted, ReadSet: readSet}
-	if diagnosticStatus == "changed" {
+	if !changed {
+		draft.Status = EditNoOp
+	} else if diagnosticStatus == "changed" {
 		draft.Status = EditPersistedWithDiagnostics
 	}
 	planned := make(map[string][]byte, len(plan.Files))

@@ -26,11 +26,37 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
    * **Dynamic Parameter Enums**: Operation parameter schemas with dynamic constraints (such as `kind` in `semantic_replace_construct` or `access_modifier` in insertion tools) emit `enum` definitions restricted strictly to the valid constructs/modifiers supported by the active language backend, enabling LLM token decoders to enforce valid tokens via logit masking.
    * **Dynamic Change Propagation**: When workspace focus shifts or an explicit language context changes, the server emits `notifications/tools/list_changed` so the client re-requests the adapted schema definitions.
 
+   Scope each operation to the enabled workspace backends that implement it.
+   When an operation supports multiple active languages, advertise the union
+   of their supported choices. A mixed Go/Java workspace does not make Java
+   modifiers available to an operation implemented only for Go.
+
+   Resolve the selected file or explicit language when executing a request;
+   that backend validates its own modifiers and construct constraints. A
+   choice valid for another supported backend can therefore appear in the
+   union while being invalid for the selected file. Workspace discovery does
+   not establish every file's valid argument combinations.
+
+   Derive direct-tool and batch-child schemas from the same registry metadata.
+   Keep automatic language selection distinct from concrete backend support.
+   Omit an example when it contradicts the scoped parameter contract.
+   Omit an operation whose required dynamic choices cannot be supplied by
+   registered backends; keep other available operations in the catalog.
+
+   Enforce the explicit language allowlist during execution, including
+   automatic verification and the final batch boundary. Reject explicitly
+   selected disabled source languages before normalization. Exclude disabled
+   backends from built-in formatting, LSP hooks, and diagnostics; report their source
+   coverage as disabled. No enabled verifiable source remains an error.
+   Project shell hooks retain their configured policy over the allowed source
+   scope; the language allowlist does not interpret or rewrite shell commands.
+
 ## Invariants
 
 * `semedit` tool names must never collide with standard LSP method names.
 * Mutating operations (`semantic_rename`, `organize_imports`, `verify_diagnostics`) are always exposed across all profiles.
-* Tool schemas and parameter enums presented after `initialize` must strictly reflect the capabilities of the active language backend without polluting the schema with unsupported cross-language constructs.
+* Tool schemas and parameter enums presented after `initialize` must reflect the capabilities of supported enabled workspace backends without including choices from unrelated backends.
+* An operation's choices are the union of its supported enabled workspace backends; execution validates the selected backend. Broad mixed-language unions are valid, while choices from backends with no implementation of that operation are not.
 
 ## Consequences
 

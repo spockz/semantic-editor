@@ -3,6 +3,7 @@ package operation
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,6 +25,20 @@ func (r OrganizeImportsReq) GetProjectContext() backend.ProjectContext { return 
 
 // SetProjectContext replaces the request project during dispatch merge.
 func (r *OrganizeImportsReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
+
+type organizeImportsError struct {
+	ApplicationState string
+	ChangedFiles     []string
+	DiagnosticStatus string
+	Err              error
+}
+
+const (
+	organizeImportsApplicationState = "application_state"
+	organizeImportsChangedFiles     = "changed_files"
+	organizeImportsDiagnosticStatus = "diagnostic_status"
+	organizeImportsDiagnosticDelta  = "diagnostic_delta"
+)
 
 var organizeImportsParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: optional file to constrain search scope. Optional Go file or directory path, relative to the active semedit workspace root. Omit it to organize imports across the entire workspace, which may write multiple files"},
@@ -56,23 +71,51 @@ func runOrganizeImports(ctx context.Context, cc CallContext, req OrganizeImports
 		paths = []string{resolveWorkPath(cc.WorkDir, req.File)}
 	}
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
-	err := pipeline.OrganizeImportsWithOptions(ctx, cc.WorkDir, pipeline.ImportOptions{
+	report, err := pipeline.OrganizeImportsWithOptionsReport(ctx, cc.WorkDir, pipeline.ImportOptions{
 		Add:    req.Add,
 		Remove: req.Remove,
 	}, paths...)
-	if err != nil {
-		return FileEditRes{}, err
+	diagnosticStatus := diagnosticStatusUnavailable
+	if report.Buffered {
+		diagnosticStatus = "deferred"
 	}
+	changedFiles := make([]string, 0, len(report.ChangedFiles))
+	for _, changedPath := range report.ChangedFiles {
+		relative, relErr := filepath.Rel(cc.WorkDir, changedPath)
+		if relErr != nil {
+			failure := fmt.Errorf("make changed import path relative %q: %w", changedPath, relErr)
+			return FileEditRes{ChangedFiles: changedFiles, ApplicationState: string(EditStatus("unknown"))}, &organizeImportsError{ApplicationState: string(EditStatus("unknown")), ChangedFiles: changedFiles, DiagnosticStatus: diagnosticStatus, Err: failure}
+		}
+		changedFiles = append(changedFiles, filepath.ToSlash(relative))
+	}
+	if err != nil {
+		state := EditStatus("unknown")
+		if len(changedFiles) > 0 {
+			if report.Buffered {
+				state = EditAppliedWorking
+			} else {
+				state = EditPartiallyPublished
+			}
+		}
+		return FileEditRes{ChangedFiles: changedFiles, ApplicationState: string(state)}, &organizeImportsError{ApplicationState: string(state), ChangedFiles: changedFiles, DiagnosticStatus: diagnosticStatus, Err: err}
+	}
+	state := EditPersisted
+	if report.Buffered {
+		state = EditAppliedWorking
+	}
+	if len(changedFiles) == 0 {
+		state = EditNoOp
+	}
+	delta, diagnosticStatus := finishDelta()
 	written := cc.WorkDir
 	if len(paths) > 0 {
 		written = paths[0]
 	}
-	delta, diagnosticStatus := finishDelta()
 	display := ""
 	if info, statErr := os.Stat(written); statErr == nil && info.Mode().IsRegular() {
 		display = displayWorkPath(cc.WorkDir, written)
 	}
-	return FileEditRes{File: written, Display: display, Detail: "Organized imports.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
+	return FileEditRes{File: written, Display: display, Detail: "Organized imports.", ChangedFiles: changedFiles, ApplicationState: string(state), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
@@ -88,11 +131,62 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 			backend.LanguageGo: runOrganizeImports,
 		},
 		Format: func(res FileEditRes) (string, error) {
-			return AppendDiagnosticDelta("Successfully organized imports.", res.Delta), nil
+			res.Detail = "Successfully organized imports."
+			return formatFileEdit(res)
+		},
+		Output: &OperationOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+			"status":                        {Kind: SchemaString, Enum: []any{"organized"}},
+			"file":                          nonEmptyStringSchema(),
+			organizeImportsApplicationState: {Kind: SchemaString, Enum: []any{"persisted", "applied_working", "no_op"}},
+			organizeImportsChangedFiles:     {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", diagnosticStatusUnavailable}},
+			organizeImportsDiagnosticDelta:  diagnosticDeltaSchema(),
+		}, Required: []string{"status", organizeImportsApplicationState, organizeImportsChangedFiles, organizeImportsDiagnosticStatus, organizeImportsDiagnosticDelta}}, Continuations: []OutputContinuation{
+			{Field: "file", Schema: nonEmptyStringSchema(), Role: RoleTarget, Consumers: organizeImportsFileConsumers, Optional: true},
+		}},
+		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+			organizeImportsApplicationState: {Kind: SchemaString, Enum: []any{"partially_published", "applied_working", "unknown"}},
+			organizeImportsChangedFiles:     {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+			organizeImportsDiagnosticStatus: {Kind: SchemaString, Enum: []any{"deferred", diagnosticStatusUnavailable}},
+		}, Required: []string{organizeImportsApplicationState, organizeImportsChangedFiles, organizeImportsDiagnosticStatus}}},
+		ProjectOutput: func(res FileEditRes) (any, error) {
+			if res.ApplicationState == "" {
+				return nil, fmt.Errorf("organize imports application state is unknown")
+			}
+			files := res.ChangedFiles
+			if files == nil {
+				files = []string{}
+			}
+			result := map[string]any{"status": "organized", organizeImportsApplicationState: res.ApplicationState, organizeImportsChangedFiles: files, organizeImportsDiagnosticStatus: res.DiagnosticStatus, organizeImportsDiagnosticDelta: diagnosticDeltaOutput(res.Delta)}
+			if res.Display != "" {
+				result["file"] = res.Display
+			}
+			return result, nil
+		},
+		ProjectErrorOutput: func(err error) (any, bool, error) {
+			var failure *organizeImportsError
+			if !errors.As(err, &failure) {
+				return nil, false, nil
+			}
+			files := failure.ChangedFiles
+			if files == nil {
+				files = []string{}
+			}
+			return map[string]any{organizeImportsApplicationState: failure.ApplicationState, organizeImportsChangedFiles: files, organizeImportsDiagnosticStatus: failure.DiagnosticStatus}, true, nil
 		},
 		ExampleRaw:    map[string]any{"file": wireExampleFile},
 		BufferedBatch: true, Batchable: true,
 	}
+}
+
+var organizeImportsFileConsumers = []string{
+	"semantic_lookup", "semantic_rename", "semantic_verify",
+	"semantic_replace_body", "semantic_replace_construct", "semantic_move_construct",
+	"semantic_remove_construct", "semantic_insert_case", "semantic_insert_function",
+	"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
+	"semantic_insert_structure", "semantic_replace_decl", "semantic_extract_function",
+	"semantic_extract_variable", "semantic_inline_variable",
+	"semantic_find_references", "semantic_inspect_symbol", "semantic_assertion_mode",
 }
 
 // AddBuildDependencyReq fetches one external module into the build (go get + go mod tidy).
@@ -113,6 +207,14 @@ func (r *AddBuildDependencyReq) SetProjectContext(project backend.ProjectContext
 type BuildDependencyRes struct {
 	Package string
 	GoMod   string
+}
+
+func (e *organizeImportsError) Error() string {
+	return e.Err.Error()
+}
+
+func (e *organizeImportsError) Unwrap() error {
+	return e.Err
 }
 
 var addBuildDependencyParams = []ParameterContract{

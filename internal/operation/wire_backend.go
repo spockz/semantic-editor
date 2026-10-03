@@ -4,6 +4,7 @@ package operation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -15,9 +16,29 @@ import (
 	"semedit/internal/capability"
 	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
+	"semedit/internal/sourcebuf"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
+
+const wireCLIExpectedRevision = "expected-revision"
+
+var renameParams = []ParameterContract{
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(append(append([]string(nil), sourceSymbolContinuations...), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
+	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: append(append([]string{sourceLookupFile, sourceRenameFile, sourceContractExtractFile, sourceContractImplementFile}, sourceConcreteTargetFile), sourceGeneratedMethodFile)},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
+	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
+	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
+	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
+	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
+	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
+}
+
+var lookupParams = readRequestParams(
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(sourceSymbolContinuations, sourceContractExtractSymbol, sourceContractImplementSymbol)},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(sourceFileContinuations, sourceContractExtractFile, sourceContractImplementFile)},
+)
 
 const (
 	wireCLITrustWorkspace      = "trust-workspace"
@@ -42,6 +63,7 @@ const (
 
 	sourceLookupSymbol                 = "semantic_lookup.symbol"
 	sourceRenameSymbol                 = "semantic_rename.symbol"
+	sourceRenameExpectedRevision       = "semantic_rename.expected_revision"
 	sourceReplaceBodySymbol            = "semantic_replace_body.symbol"
 	sourceLookupFile                   = "semantic_lookup.file"
 	sourceRenameFile                   = "semantic_rename.file"
@@ -79,6 +101,11 @@ const (
 )
 
 const wireExpectedRevision = "expected_revision"
+
+const (
+	wireApplicationState = "application_state"
+	wireDiagnostics      = "diagnostics"
+)
 
 var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
@@ -164,27 +191,10 @@ type VerifyRes struct {
 	Coverage        []LanguageCoverage   `json:"coverage,omitempty"`
 }
 
-var lookupParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: sourceFileContinuations},
-)
-
-var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Server.ServeHTTP', '(*Client).Do', or 'ValidateToken')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
-	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
-	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
-	{Name: wireAutoOrganizeImports, CLIName: "", JSONName: wireAutoOrganizeImports, Description: "Automatically clean up and organize imports after rename (default true)", Type: ParamBoolean, Default: true},
-}
-
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
 	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
@@ -366,7 +376,7 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	return service.Rename(ctx, backend.RenameRequest{
+	result, err := service.Rename(ctx, backend.RenameRequest{
 		Project:           project,
 		Symbol:            request.Symbol,
 		To:                request.To,
@@ -374,6 +384,148 @@ func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend
 		DeferFormatting:   cc.DeferVerification,
 		DeferVerification: cc.DeferVerification,
 	})
+	if err != nil {
+		var diagnosticsError *backend.RenameDiagnosticsError
+		if errors.As(err, &diagnosticsError) && diagnosticsError.Result != nil {
+			diagnosticsError.Result.Source = cloneRenameLookup(diagnosticsError.Result.Lookup)
+			diagnosticsError.Result.Lookup = nil
+			diagnosticsError.Result.ProjectRoot = project.RootDir
+			diagnosticsError.Result.ApplicationState = string(EditPersisted)
+			if sourcebuf.FromContext(ctx) != nil {
+				diagnosticsError.Result.ApplicationState = string(EditAppliedWorking)
+			}
+		}
+		return result, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("rename backend returned no result")
+	}
+	result.ProjectRoot = project.RootDir
+	result.ApplicationState = string(EditPersisted)
+	if sourcebuf.FromContext(ctx) != nil {
+		result.ApplicationState = string(EditAppliedWorking)
+		result.Source = cloneRenameLookup(result.Lookup)
+		result.Lookup = nil
+		result.ContinuationUnavailable = "rename is part of an in-progress workspace batch"
+		return result, nil
+	}
+	return resolvePostRenameIdentity(ctx, service, project, request, result), nil
+}
+
+func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, project backend.ProjectContext, request RenameReq, result *backend.RenameResult) *backend.RenameResult {
+	if result.Lookup == nil {
+		result.ContinuationUnavailable = "backend returned no pre-rename identity"
+		return result
+	}
+	result.Source = cloneRenameLookup(result.Lookup)
+	result.Lookup = nil
+	query, expectedSymbol := postRenameLookupName(result.Source, request.To)
+	if query == "" {
+		result.ContinuationUnavailable = "rename source did not contain a qualified identity"
+		return result
+	}
+	resolved, err := service.Lookup(ctx, project, query)
+	if err != nil {
+		result.ContinuationUnavailable = "post-rename lookup failed: " + err.Error()
+		return result
+	}
+	if resolved == nil || resolved.Ambiguous || resolved.Definition == nil {
+		result.ContinuationUnavailable = "post-rename lookup did not resolve one declaration"
+		return result
+	}
+	resolvedSymbol := resolved.Definition.QualifiedName
+	if resolvedSymbol == "" || resolvedSymbol != expectedSymbol {
+		result.ContinuationUnavailable = "post-rename lookup did not resolve the expected qualified identity"
+		return result
+	}
+	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, result.Source.Definition.File, resolved.Definition.File) {
+		result.ContinuationUnavailable = "post-rename lookup resolved a different source file"
+		return result
+	}
+	resolved.Symbol = resolvedSymbol
+	result.Lookup = resolved
+	inspectProject := project
+	inspectProject.File = resolved.Definition.File
+	inspection, err := service.Inspect(ctx, backend.InspectRequest{Project: inspectProject, Symbol: resolvedSymbol})
+	if err != nil || inspection == nil {
+		if err != nil {
+			result.ContinuationUnavailable = "post-rename inspection failed: " + err.Error()
+		} else {
+			result.ContinuationUnavailable = "post-rename inspection returned no result"
+		}
+		return result
+	}
+	matched := ""
+	matchCount := 0
+	for _, match := range inspection.Matches {
+		if match.QualifiedName != resolvedSymbol || !sameWorkspacePath(project.RootDir, match.File, resolved.Definition.File) {
+			continue
+		}
+		matchCount++
+		if matchCount > 1 {
+			result.ContinuationUnavailable = "post-rename inspection matched multiple declarations"
+			return result
+		}
+		matched = match.Revision
+	}
+	result.Revision = matched
+	if matchCount != 1 || matched == "" {
+		result.ContinuationUnavailable = "post-rename inspection did not prove a matching file revision"
+	}
+	return result
+}
+
+func postRenameLookupName(source *backend.LookupResult, requestedName string) (string, string) {
+	if source == nil {
+		return "", ""
+	}
+	oldIdentity := source.Symbol
+	if source.Definition != nil && source.Definition.QualifiedName != "" {
+		oldIdentity = source.Definition.QualifiedName
+	}
+	newLeaf := backend.NormalizeRenameInput(requestedName)
+	if oldIdentity == "" || newLeaf == "" {
+		return "", ""
+	}
+	dot := strings.LastIndex(oldIdentity, ".")
+	colon := strings.LastIndex(oldIdentity, "::")
+	separator, width := dot, 1
+	if colon > separator {
+		separator, width = colon, 2
+	}
+	if separator < 0 {
+		return newLeaf, newLeaf
+	}
+	qualified := oldIdentity[:separator+width] + newLeaf
+	return qualified, qualified
+}
+
+func cloneRenameLookup(source *backend.LookupResult) *backend.LookupResult {
+	if source == nil {
+		return nil
+	}
+	clone := *source
+	if source.Definition != nil {
+		definition := *source.Definition
+		clone.Definition = &definition
+	}
+	return &clone
+}
+
+func sameWorkspacePath(root, left, right string) bool {
+	canonical := func(path string) (string, error) {
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(root, path)
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		return filepath.Clean(absolute), nil
+	}
+	leftPath, leftErr := canonical(left)
+	rightPath, rightErr := canonical(right)
+	return leftErr == nil && rightErr == nil && leftPath == rightPath
 }
 
 func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRes, error) {
@@ -395,6 +547,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 			return VerifyRes{}, err
 		}
 	}
+	selectedLanguage, explicitSelection := verificationSelectionLanguage(project, path)
+	if explicitSelection && !cc.AllowsLanguage(selectedLanguage) {
+		return VerifyRes{}, fmt.Errorf("verification language %q is disabled by --enabled-languages", selectedLanguage)
+	}
+	if !request.CheckOnly && cc.AllowedLanguages != nil && (request.FormatSelectedFile || request.OrganizeImports) && !explicitSelection {
+		return VerifyRes{Failure: "select an enabled source language or file before applying selected-file normalization"}, nil
+	}
 	if path != "." {
 		if _, statErr := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path))); statErr != nil {
 			return VerifyRes{}, fmt.Errorf("verification path %q: %w", path, statErr)
@@ -409,6 +568,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		requestedScope.Paths = []string{path}
 	}
 	actualPaths := scopedSourcePaths(plan, requestedScope)
+	allowedPlan := planForAllowedLanguages(plan, cc.AllowedLanguages)
 	if len(actualPaths) == 0 && path != "." {
 		actualPaths = []string{path}
 	}
@@ -421,7 +581,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 	}
 	goFormatPaths := make([]string, 0, len(formatPaths))
 	for _, formatPath := range formatPaths {
-		if shouldRunGofmt(project, formatPath) {
+		if cc.AllowsLanguage(backend.LanguageGo) && shouldRunGofmt(project, formatPath) {
 			goFormatPaths = append(goFormatPaths, formatPath)
 		}
 	}
@@ -438,13 +598,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		}
 	}
 	if !request.CheckOnly {
-		if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Normalize, scope); trustErr != nil {
+		if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Normalize, scope); trustErr != nil {
 			return response, trustErr
 		} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
 			response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
 			return response, nil
 		}
-		response.NormalizeReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize))
+		response.NormalizeReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize, cc.AllowedLanguages))
 		if err != nil {
 			response.Failure = err.Error()
 			// Preserve hook results while ingress maps Failure to a failed operation.
@@ -464,24 +624,25 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 			// Preserve completed normalization details in the public result.
 			return response, nil
 		}
+		allowedPlan = planForAllowedLanguages(plan, cc.AllowedLanguages)
 		response.Scope = projectverify.Scope{Paths: scopedSourcePaths(plan, scope)}
 		if len(response.Scope.Paths) == 0 && len(scope.Paths) > 0 {
 			response.Scope = scope
 		}
 	}
-	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope)
+	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope, cc.AllowedLanguages)
 	if err != nil {
 		response.Failure = err.Error()
 		// Preserve diagnostics gathered before the failed hook.
 		return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
 	}
-	if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Checks, scope); trustErr != nil {
+	if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Checks, scope); trustErr != nil {
 		return response, trustErr
 	} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
 		response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
 		return response, nil
 	}
-	response.CheckReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck))
+	response.CheckReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck, cc.AllowedLanguages))
 	if err != nil {
 		response.Failure = err.Error()
 	}
@@ -558,10 +719,18 @@ func formatLookup(result *backend.LookupResult) (string, error) {
 }
 
 func formatRename(result *backend.RenameResult) (string, error) {
-	if result == nil || result.Lookup == nil {
-		return "Successfully renamed symbol.", nil
+	text := "Successfully renamed symbol."
+	if result != nil && result.Lookup != nil {
+		symbol := result.Lookup.Symbol
+		if result.Lookup.Definition != nil && result.Lookup.Definition.QualifiedName != "" {
+			symbol = result.Lookup.Definition.QualifiedName
+		}
+		text = fmt.Sprintf("Successfully renamed %s.", symbol)
 	}
-	return fmt.Sprintf("Successfully renamed %s.", result.Lookup.Symbol), nil
+	if result != nil && result.ContinuationUnavailable != "" {
+		text += " Final continuation unavailable: " + result.ContinuationUnavailable + "."
+	}
+	return text, nil
 }
 
 func formatVerify(result VerifyRes) (string, error) {
@@ -631,13 +800,14 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 
 func renameDef() Def[RenameReq, *backend.RenameResult] {
 	run := renameRun
+	output := renameOutputContract()
 	return Def[RenameReq, *backend.RenameResult]{
 		Key:           capability.OpRename,
 		Summary:       "Use this tool instead of text search-and-replace when renaming a symbol and its references through the selected language backend. Go supports workspace rename; trusted Rust and Java support selected-file language-server rename. Other languages may be lookup-only." + automaticVerificationGuidance,
 		Params:        renameParams,
 		Level:         LevelSymbol,
 		CLIName:       "rename",
-		MCPName:       "semantic_rename",
+		MCPName:       contractRenameTool,
 		BufferedBatch: true, Batchable: true,
 		Parse: parseRename,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, RenameReq) (*backend.RenameResult, error){
@@ -645,7 +815,11 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 			backend.LanguageRust: run,
 			backend.LanguageJava: run,
 		},
-		Format: formatRename,
+		Format:             formatRename,
+		Output:             output,
+		ErrorOutput:        &OperationErrorOutputContract{ResultSchema: renameErrorOutputSchema()},
+		ProjectOutput:      projectRenameOutput,
+		ProjectErrorOutput: projectRenameErrorOutput,
 		ExampleRaw: map[string]any{
 			"symbol":                "Server.Start",
 			"to":                    "Serve",
@@ -653,6 +827,184 @@ func renameDef() Def[RenameReq, *backend.RenameResult] {
 			wireAutoOrganizeImports: true,
 		},
 	}
+}
+
+func renameOutputContract() *OperationOutputContract {
+	text := nonEmptyStringSchema()
+	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"file": text, "symbol": text,
+	}, Required: []string{"file", "symbol"}}
+	properties := map[string]ValueSchema{
+		"status":                   {Kind: SchemaString, Enum: []any{"renamed"}},
+		wireApplicationState:       {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
+		"origin":                   identitySchema,
+		"file":                     text,
+		"symbol":                   text,
+		wireExpectedRevision:       text,
+		wireDiagnostics:            diagnosticDeltaSchema(),
+		"active":                   {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+		"continuation_unavailable": {Kind: SchemaString},
+	}
+	return &OperationOutputContract{
+		ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: properties, Required: []string{"status", wireApplicationState, wireDiagnostics, "active"}},
+		Continuations: []OutputContinuation{
+			{Field: "file", Schema: text, Role: RoleTarget, Consumers: renameFileConsumers, Optional: true},
+			{Field: "symbol", Schema: text, Role: RoleTarget, Consumers: renameSymbolConsumers, Optional: true},
+			{Field: wireExpectedRevision, Schema: text, Role: RoleTarget, Consumers: renameRevisionConsumers, Optional: true},
+		},
+	}
+}
+
+func renameErrorOutputSchema() *ValueSchema {
+	text := nonEmptyStringSchema()
+	identitySchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text, "symbol": text}, Required: []string{"file", "symbol"}}
+	return &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"status":             {Kind: SchemaString, Enum: []any{"applied_with_diagnostics"}},
+		wireApplicationState: {Kind: SchemaString, Enum: []any{string(EditPersisted), string(EditAppliedWorking)}},
+		"origin":             identitySchema,
+		wireDiagnostics:      diagnosticDeltaSchema(),
+		"active":             {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+	}, Required: []string{"status", wireApplicationState, "origin", wireDiagnostics, "active"}}
+}
+
+func projectRenameOutput(result *backend.RenameResult) (any, error) {
+	if result == nil {
+		return nil, fmt.Errorf("rename result is nil")
+	}
+	if result.ApplicationState == "" {
+		return nil, fmt.Errorf("rename application state is unknown")
+	}
+	active := result.Active
+	if active == nil {
+		active = []string{}
+	}
+	projection := map[string]any{
+		"status": "renamed", wireApplicationState: result.ApplicationState,
+		wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+	}
+	if origin := projectRenameIdentity(result.ProjectRoot, result.Source); origin != nil {
+		projection["origin"] = origin
+	}
+	if result.ContinuationUnavailable != "" {
+		projection["continuation_unavailable"] = result.ContinuationUnavailable
+	}
+	if result.Lookup != nil && result.Revision != "" && result.ApplicationState == string(EditPersisted) {
+		if identity := projectRenameIdentity(result.ProjectRoot, result.Lookup); identity != nil {
+			projection["file"] = identity["file"]
+			projection["symbol"] = identity["symbol"]
+			projection[wireExpectedRevision] = result.Revision
+		}
+	}
+	return projection, nil
+}
+
+func projectRenameErrorOutput(err error) (any, bool, error) {
+	var diagnosticsError *backend.RenameDiagnosticsError
+	if !errors.As(err, &diagnosticsError) || diagnosticsError.Result == nil || diagnosticsError.Result.Source == nil {
+		return nil, false, nil
+	}
+	result := diagnosticsError.Result
+	active := result.Active
+	if active == nil {
+		active = []string{}
+	}
+	if result.ApplicationState != string(EditPersisted) && result.ApplicationState != string(EditAppliedWorking) {
+		return nil, false, nil
+	}
+	origin := projectRenameIdentity(result.ProjectRoot, result.Source)
+	if origin == nil {
+		return nil, false, nil
+	}
+	return map[string]any{
+		"status": "applied_with_diagnostics", wireApplicationState: result.ApplicationState,
+		"origin": origin, wireDiagnostics: projectRenameDiagnostics(result.Diagnostics), "active": active,
+	}, true, nil
+}
+
+func projectRenameIdentity(root string, lookup *backend.LookupResult) map[string]any {
+	if lookup == nil {
+		return nil
+	}
+	file, symbol := lookup.File, lookup.Symbol
+	if lookup.Definition != nil {
+		file = lookup.Definition.File
+		if lookup.Definition.QualifiedName != "" {
+			symbol = lookup.Definition.QualifiedName
+		}
+	}
+	file = renameProjectRelativeFile(root, file)
+	if file == "" || symbol == "" {
+		return nil
+	}
+	return map[string]any{"file": file, "symbol": symbol}
+}
+
+func renameProjectRelativeFile(root, file string) string {
+	if file == "" {
+		return ""
+	}
+	if root == "" {
+		if filepath.IsAbs(file) {
+			return ""
+		}
+		clean := filepath.Clean(file)
+		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
+			return ""
+		}
+		return filepath.ToSlash(clean)
+	}
+	rootPath, err := filepath.Abs(root)
+	if err != nil {
+		return ""
+	}
+	filePath := file
+	if !filepath.IsAbs(filePath) {
+		filePath = filepath.Join(rootPath, filePath)
+	}
+	filePath, err = filepath.Abs(filePath)
+	if err != nil {
+		return ""
+	}
+	relative, err := filepath.Rel(rootPath, filePath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return ""
+	}
+	return filepath.ToSlash(relative)
+}
+
+func projectRenameDiagnostics(delta backend.DiagnosticDelta) map[string]any {
+	introduced := delta.Introduced
+	if introduced == nil {
+		introduced = []string{}
+	}
+	resolved := delta.Resolved
+	if resolved == nil {
+		resolved = []string{}
+	}
+	suggestions := delta.Suggestions
+	if suggestions == nil {
+		suggestions = []string{}
+	}
+	return map[string]any{"net_delta": delta.NetDelta, "introduced": introduced, "resolved": resolved, "suggestions": suggestions}
+}
+
+var renameFileConsumers = []string{
+	"semantic_lookup", "semantic_rename", "semantic_verify", "semantic_replace_body",
+	"semantic_move_construct", "semantic_remove_construct", "semantic_insert_case",
+	"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+	"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+	"semantic_extract_function", "semantic_extract_variable",
+	"semantic_inline_function", "semantic_inline_variable", "semantic_migrate_type",
+}
+
+var renameSymbolConsumers = []string{
+	"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_move_construct",
+	"semantic_replace_decl", "semantic_extract_function", "semantic_extract_variable",
+	"semantic_inline_function", "semantic_inline_variable", "semantic_migrate_type",
+}
+
+var renameRevisionConsumers = []string{
+	"semantic_replace_body", semanticInlineFunctionToolName, semanticMigrateTypeToolName,
 }
 
 func verifyDef() Def[VerifyReq, VerifyRes] {
@@ -669,7 +1021,6 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 			backend.LanguageJava:   verifyRun,
 			backend.LanguageKotlin: verifyRun,
 			backend.LanguageBash:   verifyRun,
-			backend.LanguageMake:   verifyRun,
 			backend.LanguageAuto:   verifyRun,
 		},
 		Format: formatVerify,
@@ -708,11 +1059,14 @@ func DefaultRegistry() *Registry {
 	if err := registerMavenOps(registry); err != nil {
 		panic(err)
 	}
+	if err := registerContractOps(registry); err != nil {
+		panic(err)
+	}
 	return registry
 }
 
 var readProjectParams = []ParameterContract{
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Bash and Make require a selected source file)", Type: ParamString, Enums: languageEnums},
+	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Bash and Make require a selected source file)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends including Bash, Make, Kotlin, Java, Rust, Scala, and Haskell (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
 	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},

@@ -1,0 +1,35 @@
+# A failed workspace import pass preserves files already written and reports only those paths.
+stdin organize-partial.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"application_state":"partially_published"'
+stdout '"changed_files":\["a.go"\]'
+stdout '"diagnostic_status":"unavailable"'
+cmp a.go want-a.go
+cmp b.go want-b.go
+
+-- go.mod --
+module example.com/importpartial
+
+go 1.23
+-- a.go --
+package p
+
+func First() { fmt.Println("first") }
+-- want-a.go --
+package p
+
+import "fmt"
+
+func First() { fmt.Println("first") }
+-- b.go --
+package p
+
+func Broken( {
+-- want-b.go --
+package p
+
+func Broken( {
+-- organize-partial.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"."}}}

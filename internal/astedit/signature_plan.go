@@ -502,7 +502,11 @@ func signatureAppendInsertion(source []byte, interiorStart, close int, item stri
 	if bytes.Contains(gap, []byte("//")) || bytes.Contains(gap, []byte("/*")) {
 		return 0, "", fmt.Errorf("trailing-comma list comments are unsupported")
 	}
-	return comma + 1, " " + item, nil
+	insertion := " " + item
+	if bytes.ContainsAny(gap, "\r\n") {
+		insertion += ","
+	}
+	return comma + 1, insertion, nil
 }
 
 // ParameterObjectField maps one original parameter to a generated struct field.
@@ -546,7 +550,7 @@ func PlanIntroduceParameterObject(request ParameterObjectRequest, proof Paramete
 	if request.File == "" || request.Symbol == "" || !signatureIdentifier(request.ParameterName) || !signatureIdentifier(request.TypeName) {
 		return SignaturePlan{}, fmt.Errorf("introduce parameter object: file, symbol, and valid object names are required")
 	}
-	if request.ParameterName == "_" || ast.IsExported(request.ParameterName) || ast.IsExported(request.TypeName) {
+	if request.ParameterName == "_" || request.TypeName == "_" || ast.IsExported(request.ParameterName) || ast.IsExported(request.TypeName) {
 		return SignaturePlan{}, fmt.Errorf("introduce parameter object: the callable parameter and object type must be private identifiers")
 	}
 	files, err := signatureSourceMap(proof.Files)

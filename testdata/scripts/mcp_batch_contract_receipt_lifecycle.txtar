@@ -1,0 +1,33 @@
+# Buffered extraction reports no finalized target aliases after later removal, same-name replacement, and rename.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"contract":\s*"StoreAPI"'
+! stdout '"contract_file":\s*"contracts.go"'
+cmp store.go .scratch/want/store.go
+cmp contracts.go .scratch/want/contracts.go
+exec go test ./...
+-- go.mod --
+module example.com/contract-lifecycle
+
+go 1.27.1
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_extract_interface","params":{"file":"store.go","in_type":"Store","symbol":"StoreAPI","destination_file":"contracts.go","receiver_kind":"pointer","members":[{"file":"store.go","symbol":"(*Store).Read"}]}},{"tool":"semantic_remove_construct","params":{"file":"contracts.go","kind":"type","symbol":"StoreAPI"}},{"tool":"semantic_insert_type","params":{"file":"contracts.go","source":"type StoreAPI interface { Write() error }"}},{"tool":"semantic_rename","params":{"file":"contracts.go","symbol":"StoreAPI","to":"ReplacementAPI"}}]}}}
+-- store.go --
+package sample
+
+type Store struct{}
+
+func (*Store) Read() error { return nil }
+-- contracts.go --
+package sample
+-- .scratch/want/store.go --
+package sample
+
+type Store struct{}
+
+func (*Store) Read() error { return nil }
+-- .scratch/want/contracts.go --
+package sample
+
+type ReplacementAPI interface{ Write() error }
