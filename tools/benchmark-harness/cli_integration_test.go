@@ -72,60 +72,84 @@ func TestBenchmarkProcessHelper(t *testing.T) {
 
 func TestCLIPlansBeforeExecutionAndIsolatesRestrictionPolicies(t *testing.T) {
 	var baselinePrompt string
-	readRestriction := "Do not inspect Go implementation files (non-test *.go)"
 	for _, policy := range []string{"read", "write", "readwrite", "default"} {
 		t.Run(policy, func(t *testing.T) {
-			flags := []string{}
-			resolved := policy
-			if policy == "default" {
-				resolved = "write"
-			} else {
-				flags = append(flags, "--semedit-arm-restrict="+policy)
-			}
-			trial := runCLITrial(t, flags, false)
-			if trial.Err != nil {
-				t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
-			}
-			if len(trial.Invocations) != 2 || len(trial.Report.Runs) != 2 {
-				t.Fatalf("invocations=%d results=%d, want paired jobs\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
-			}
-			for _, invocation := range trial.Invocations {
-				if !strings.Contains(invocation.Plan, "Resolved benchmark plan: 2 jobs") || !strings.Contains(invocation.Plan, "arm=baseline-diff") || !strings.Contains(invocation.Plan, "arm=semedit") {
-					t.Errorf("provider started before complete plan:\n%s", invocation.Plan)
-				}
-				baseline := slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=false")
-				if baseline {
-					if baselinePrompt == "" {
-						baselinePrompt = invocation.Prompt
-					}
-					if invocation.Prompt != baselinePrompt {
-						t.Errorf("policy %s altered baseline prompt", policy)
-					}
-					if strings.Contains(invocation.Prompt, readRestriction) || strings.Contains(invocation.Prompt, "Shell commands for builds") {
-						t.Errorf("baseline received policy steering: %s", invocation.Prompt)
-					}
-				} else {
-					if !slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=true") {
-						t.Error("semedit MCP not enabled")
-					}
-					read := strings.Contains(invocation.Prompt, readRestriction)
-					write := strings.Contains(invocation.Prompt, "supported source code modifications")
-					if read != (resolved != "write") || write != (resolved != "read") {
-						t.Errorf("policy %s wrong steering: %s", policy, invocation.Prompt)
-					}
-					if !strings.Contains(invocation.Prompt, "Shell commands for builds and tests are allowed") {
-						t.Error("shell build/test permission missing")
-					}
-				}
-			}
-			assertCLIResultConditions(t, trial, resolved)
-			if trial.Report.Runs[0].ComparisonPairID != trial.Report.Runs[1].ComparisonPairID {
-				t.Error("agent arms not paired")
-			}
-			if !strings.Contains(trial.Output, "[2/2 completed · 0 remaining]") {
-				t.Error("completion accounting missing")
-			}
+			assertCLIRestrictionPolicy(t, policy, &baselinePrompt)
 		})
+	}
+}
+
+func assertCLIRestrictionPolicy(t *testing.T, policy string, baselinePrompt *string) {
+	t.Helper()
+	flags, resolved := cliRestrictionFlags(policy)
+	trial := runCLITrial(t, flags, false)
+	if trial.Err != nil {
+		t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
+	}
+	assertCLIPairedResults(t, trial)
+	for _, invocation := range trial.Invocations {
+		assertCLIPlanWasResolved(t, invocation)
+		if slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=false") {
+			assertCLIBaselinePolicyIsolation(t, policy, baselinePrompt, invocation.Prompt)
+			continue
+		}
+		assertCLISemeditPolicy(t, policy, resolved, invocation.Prompt, invocation.Args)
+	}
+	assertCLIResultConditions(t, trial, resolved)
+	if trial.Report.Runs[0].ComparisonPairID != trial.Report.Runs[1].ComparisonPairID {
+		t.Error("agent arms not paired")
+	}
+	if !strings.Contains(trial.Output, "[2/2 completed · 0 remaining]") {
+		t.Error("completion accounting missing")
+	}
+}
+
+func cliRestrictionFlags(policy string) ([]string, string) {
+	if policy == "default" {
+		return nil, "write"
+	}
+	return []string{"--semedit-arm-restrict=" + policy}, policy
+}
+
+func assertCLIPairedResults(t *testing.T, trial cliTrial) {
+	t.Helper()
+	if len(trial.Invocations) != 2 || len(trial.Report.Runs) != 2 {
+		t.Fatalf("invocations=%d results=%d, want paired jobs\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	}
+}
+
+func assertCLIPlanWasResolved(t *testing.T, invocation cliProviderInvocation) {
+	t.Helper()
+	if !strings.Contains(invocation.Plan, "Resolved benchmark plan: 2 jobs") || !strings.Contains(invocation.Plan, "arm=baseline-diff") || !strings.Contains(invocation.Plan, "arm=semedit") {
+		t.Errorf("provider started before complete plan:\n%s", invocation.Plan)
+	}
+}
+
+func assertCLIBaselinePolicyIsolation(t *testing.T, policy string, baselinePrompt *string, prompt string) {
+	t.Helper()
+	if *baselinePrompt == "" {
+		*baselinePrompt = prompt
+	}
+	if prompt != *baselinePrompt {
+		t.Errorf("policy %s altered baseline prompt", policy)
+	}
+	if strings.Contains(prompt, "Do not inspect Go implementation files (non-test *.go)") || strings.Contains(prompt, "Shell commands for builds") {
+		t.Errorf("baseline received policy steering: %s", prompt)
+	}
+}
+
+func assertCLISemeditPolicy(t *testing.T, policy, resolved, prompt string, args []string) {
+	t.Helper()
+	if !slices.Contains(args, "mcp_servers.semedit.enabled=true") {
+		t.Error("semedit MCP not enabled")
+	}
+	read := strings.Contains(prompt, "Do not inspect Go implementation files (non-test *.go)")
+	write := strings.Contains(prompt, "supported source code modifications")
+	if read != (resolved != "write") || write != (resolved != "read") {
+		t.Errorf("policy %s wrong steering: %s", policy, prompt)
+	}
+	if !strings.Contains(prompt, "Shell commands for builds and tests are allowed") {
+		t.Error("shell build/test permission missing")
 	}
 }
 
@@ -354,8 +378,12 @@ func prepareCLITrialWorkspace(t *testing.T, malformed bool) cliTrialWorkspace {
 		t.Fatal(err)
 	}
 	return cliTrialWorkspace{
-		root: root, bin: bin, fixtures: fixtures, evidence: evidence,
-		outputPath: filepath.Join(root, "output.log"), resultPath: filepath.Join(root, "result.json"),
+		root:       root,
+		bin:        bin,
+		fixtures:   fixtures,
+		evidence:   evidence,
+		outputPath: filepath.Join(root, "output.log"),
+		resultPath: filepath.Join(root, "result.json"),
 		executable: executable,
 	}
 }

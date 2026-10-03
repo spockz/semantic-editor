@@ -65,73 +65,111 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 
 func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 	const threadStarted = "{\"type\":\"thread.started\",\"thread_id\":\"thread-123\"}\\n"
-	cases := []struct {
-		name, stderr, stdout string
-		exit, wantStatus     int
-		wantErr              bool
-	}{
+	cases := []codexDiagnosticCase{
 		{name: "success with stderr", stderr: "MCP startup warning\n", stdout: threadStarted},
 		{name: "success empty stderr", stdout: threadStarted},
 		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: threadStarted},
 		{name: "failure retains stderr", stderr: "server failed to start", stdout: threadStarted, exit: 7, wantErr: true, wantStatus: 7},
 		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n" + threadStarted, wantErr: true},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			binDir := t.TempDir()
-			script := filepath.Join(binDir, "codex")
-			content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q >&2\nprintf '%%b' %q\nexit %d\n", tc.stderr, tc.stdout, tc.exit)
-			if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			// #nosec G302 -- the temporary test command must be executable.
-			if err := os.Chmod(script, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			res := &RunResult{Arm: ArmBaseline}
-			_, err := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", res, "")
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("runCodex error = %v, want error=%t", err, tc.wantErr)
-			}
-			if res.CodexExitCode == nil || *res.CodexExitCode != tc.wantStatus {
-				t.Fatalf("exit status = %v, want %d", res.CodexExitCode, tc.wantStatus)
-			}
-			if tc.stderr != "" && !strings.Contains(res.CodexStderr, strings.TrimSpace(tc.stderr)[:min(len(strings.TrimSpace(tc.stderr)), 20)]) {
-				t.Fatalf("stderr = %q, missing diagnostic", res.CodexStderr)
-			}
-			if len(res.CodexStderr) > maxCodexStderrBytes+64 {
-				t.Fatalf("stderr retained %d bytes, expected bounded output", len(res.CodexStderr))
-			}
-			if tc.name == "oversized stderr" {
-				if !strings.Contains(res.CodexStderr, "[stderr truncated; retained first 65536 bytes]") {
-					t.Fatal("oversized stderr missing truncation marker")
-				}
-				if !strings.HasPrefix(res.CodexStderr, strings.Repeat("x", maxCodexStderrBytes)) {
-					t.Fatal("oversized stderr payload was not retained up to the boundary")
-				}
-			}
-			if tc.name == "malformed stdout" && res.Turns != 0 {
-				t.Fatalf("malformed event stream manufactured task turns: %d", res.Turns)
-			}
-			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0 || res.agentResponse != "") {
-				t.Fatalf("malformed stdout contaminated metrics: %#v", res)
-			}
-			if tc.name == "success with stderr" {
-				data, marshalErr := json.Marshal(res)
-				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":0`) {
-					t.Fatalf("successful exit status was not serialized: %s (%v)", data, marshalErr)
-				}
-			}
-			if tc.name == "failure retains stderr" {
-				data, marshalErr := json.Marshal(res)
-				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":7`) {
-					t.Fatalf("failed exit status was not serialized: %s (%v)", data, marshalErr)
-				}
-			}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			runCodexDiagnosticCase(t, testCase)
 		})
 	}
+}
 
+type codexDiagnosticCase struct {
+	name       string
+	stderr     string
+	stdout     string
+	exit       int
+	wantStatus int
+	wantErr    bool
+}
+
+func runCodexDiagnosticCase(t *testing.T, testCase codexDiagnosticCase) {
+	t.Helper()
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "codex")
+	content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q >&2\nprintf '%%b' %q\nexit %d\n", testCase.stderr, testCase.stdout, testCase.exit)
+	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G302 -- the temporary test command must be executable.
+	if err := os.Chmod(script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	result := &RunResult{Arm: ArmBaseline}
+	_, runErr := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", result, "")
+	assertCodexRunStatus(t, testCase, result, runErr)
+	assertCodexStderr(t, testCase, result)
+	assertCodexMalformedOutput(t, testCase, result)
+	assertCodexExitCodeSerialization(t, testCase, result)
+}
+
+func assertCodexRunStatus(t *testing.T, testCase codexDiagnosticCase, result *RunResult, runErr error) {
+	t.Helper()
+	if (runErr != nil) != testCase.wantErr {
+		t.Fatalf("runCodex error = %v, want error=%t", runErr, testCase.wantErr)
+	}
+	if result.CodexExitCode == nil || *result.CodexExitCode != testCase.wantStatus {
+		t.Fatalf("exit status = %v, want %d", result.CodexExitCode, testCase.wantStatus)
+	}
+}
+
+func assertCodexStderr(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	if testCase.stderr != "" && !strings.Contains(result.CodexStderr, strings.TrimSpace(testCase.stderr)[:min(len(strings.TrimSpace(testCase.stderr)), 20)]) {
+		t.Fatalf("stderr = %q, missing diagnostic", result.CodexStderr)
+	}
+	if len(result.CodexStderr) > maxCodexStderrBytes+64 {
+		t.Fatalf("stderr retained %d bytes, expected bounded output", len(result.CodexStderr))
+	}
+	if testCase.name == "oversized stderr" {
+		assertCodexStderrTruncation(t, result.CodexStderr)
+	}
+}
+
+func assertCodexStderrTruncation(t *testing.T, stderr string) {
+	t.Helper()
+	if !strings.Contains(stderr, "[stderr truncated; retained first 65536 bytes]") {
+		t.Fatal("oversized stderr missing truncation marker")
+	}
+	if !strings.HasPrefix(stderr, strings.Repeat("x", maxCodexStderrBytes)) {
+		t.Fatal("oversized stderr payload was not retained up to the boundary")
+	}
+}
+
+func assertCodexMalformedOutput(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	if testCase.name != "malformed stdout" {
+		return
+	}
+	if result.Turns != 0 {
+		t.Fatalf("malformed event stream manufactured task turns: %d", result.Turns)
+	}
+	if result.ToolCount != 0 || result.OutputTokens != 0 || result.ReasoningTokens != 0 || result.PromptTokens != 0 || result.agentResponse != "" {
+		t.Fatalf("malformed stdout contaminated metrics: %#v", result)
+	}
+}
+
+func assertCodexExitCodeSerialization(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	var wantCode string
+	switch testCase.name {
+	case "success with stderr":
+		wantCode = `"codex_exit_code":0`
+	case "failure retains stderr":
+		wantCode = `"codex_exit_code":7`
+	default:
+		return
+	}
+	data, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(data), wantCode) {
+		t.Fatalf("exit status %s was not serialized: %s (%v)", wantCode, data, err)
+	}
 }
 
 func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
@@ -267,6 +305,12 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 		t.Errorf("OPENCODE_CONFIG = %q, want %q", got, configPath)
 	}
 
+	assertOpenCodeBaselineConfiguration(t, runner)
+	assertLegacyOpenCodeConfiguration(t, runner)
+}
+
+func assertOpenCodeBaselineConfiguration(t *testing.T, runner *Runner) {
+	t.Helper()
 	baselinePath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +323,10 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if strings.Contains(string(baseline), `"mcp"`) {
 		t.Errorf("baseline config unexpectedly enables MCP: %s", baseline)
 	}
+}
 
+func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
+	t.Helper()
 	legacyPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/qwen36-coder"})
 	if err != nil {
 		t.Fatal(err)
@@ -1133,6 +1180,54 @@ func TestParseTaskRejectsMalformedAndMissingOracleSettings(t *testing.T) {
 				t.Fatalf("ParseTask error = %v, want field %s", err, tc.field)
 			}
 		})
+	}
+}
+
+func TestEvaluateUsesProjectLocalGoEnvironment(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(root, "go-environment")
+	fakeGo := filepath.Join(binDir, "go")
+	script := `#!/bin/sh
+set -eu
+test "$GOENV" = "$PWD/.scratch/go/env"
+test "$GOCACHE" = "$PWD/.scratch/go/build"
+test "$GOMODCACHE" = "$PWD/.scratch/go/mod"
+test "$GOTMPDIR" = "$PWD/.scratch/go/tmp"
+test "$GOPATH" = "$PWD/.scratch/go"
+test "$GOFLAGS" = ""
+test "$GOWORK" = "off"
+printf ok > "$SEMEDIT_TEST_CAPTURE"
+`
+	if err := os.WriteFile(fakeGo, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_TEST_CAPTURE", capture)
+	for _, key := range []string{"GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOPATH", "GOFLAGS", "GOWORK"} {
+		t.Setenv(key, filepath.Join(root, "inherited", key))
+	}
+	task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{Build: BuildConfig{CleanCompile: true}}}}
+	result, err := Evaluate(t.Context(), task, workDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Passed || !result.Level3Build {
+		t.Fatalf("oracle result = %+v, want passing isolated build", result)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("fake Go environment validation = %q, want ok", data)
 	}
 }
 

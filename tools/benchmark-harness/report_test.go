@@ -106,10 +106,51 @@ type comparisonFixtureSpec struct {
 
 func comparisonFixtureRuns(target Target) []*RunResult {
 	specs := []comparisonFixtureSpec{
-		{variant: "small", arm: ArmBaseline, turns: 3, wallClock: 12 * time.Second, promptTokens: 15000, cachedPromptTokens: 10000, uncachedPromptTokens: 5000, outputTokens: 800, reasoningTokens: 200},
-		{variant: "small", arm: ArmSemedit, turns: 1, wallClock: 2 * time.Second, promptTokens: 12000, cachedPromptTokens: 10000, uncachedPromptTokens: 2000, outputTokens: 150, reasoningTokens: 50, reflections: true},
-		{variant: "large", arm: ArmBaseline, turns: 5, wallClock: 25 * time.Second, promptTokens: 30000, cachedPromptTokens: 25000, uncachedPromptTokens: 5000, outputTokens: 1200, reasoningTokens: 300},
-		{variant: "large", arm: ArmSemedit, turns: 1, wallClock: 2 * time.Second, promptTokens: 27000, cachedPromptTokens: 25000, uncachedPromptTokens: 2000, outputTokens: 160, reasoningTokens: 50},
+		{
+			variant:              "small",
+			arm:                  ArmBaseline,
+			turns:                3,
+			wallClock:            12 * time.Second,
+			promptTokens:         15000,
+			cachedPromptTokens:   10000,
+			uncachedPromptTokens: 5000,
+			outputTokens:         800,
+			reasoningTokens:      200,
+		},
+		{
+			variant:              "small",
+			arm:                  ArmSemedit,
+			turns:                1,
+			wallClock:            2 * time.Second,
+			promptTokens:         12000,
+			cachedPromptTokens:   10000,
+			uncachedPromptTokens: 2000,
+			outputTokens:         150,
+			reasoningTokens:      50,
+			reflections:          true,
+		},
+		{
+			variant:              "large",
+			arm:                  ArmBaseline,
+			turns:                5,
+			wallClock:            25 * time.Second,
+			promptTokens:         30000,
+			cachedPromptTokens:   25000,
+			uncachedPromptTokens: 5000,
+			outputTokens:         1200,
+			reasoningTokens:      300,
+		},
+		{
+			variant:              "large",
+			arm:                  ArmSemedit,
+			turns:                1,
+			wallClock:            2 * time.Second,
+			promptTokens:         27000,
+			cachedPromptTokens:   25000,
+			uncachedPromptTokens: 2000,
+			outputTokens:         160,
+			reasoningTokens:      50,
+		},
 	}
 	runs := make([]*RunResult, 0, len(specs))
 	for _, spec := range specs {
