@@ -257,6 +257,9 @@ func hasFunctionBinding(fn *ast.FuncDecl, name string) bool {
 func functionDeclaresName(fn *ast.FuncDecl, name string) bool {
 	found := false
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
+		if found {
+			return false
+		}
 		found = nodeDeclaresName(node, name)
 		return !found
 	})

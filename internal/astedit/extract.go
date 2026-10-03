@@ -102,19 +102,19 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	} else if err := validateOutputTypeNames(ctx, cleanPath, file, outputs, owner, content); err != nil {
 		return "", err
 	}
-	paramNames, paramDecls, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
+	params, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
 	if err != nil {
 		return "", fmt.Errorf("cannot extract %s: %w", owner, err)
 	}
-	if err := validateForwardedNames(target, selected, paramNames, owner); err != nil {
+	if err := validateForwardedNames(target, selected, params.names, owner); err != nil {
 		return "", err
 	}
-	if err := validateExtractedScope(file, target, selected, paramNames, outputs, owner); err != nil {
+	if err := validateExtractedScope(file, target, selected, params.names, outputs, owner); err != nil {
 		return "", err
 	}
 	selectedSource := strings.TrimSpace(string(content[fset.Position(selected[0].Pos()).Offset:fset.Position(selected[len(selected)-1].End()).Offset]))
-	callSource := extractionCall(target, helper, paramNames, outputs, opts.Kind)
-	declSource, err := extractionDeclaration(fset, target, helper, opts.Kind, paramDecls, outputs, selectedSource)
+	callSource := extractionCall(target, helper, params.names, outputs, opts.Kind)
+	declSource, err := extractionDeclaration(fset, target, helper, opts.Kind, params.declarations, outputs, selectedSource)
 	if err != nil {
 		return "", err
 	}
@@ -660,7 +660,27 @@ func formatExpr(fset *token.FileSet, expr ast.Expr) string {
 	return text
 }
 
-func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt, kind ExtractKind, outputs []extractionOutput) ([]string, []string, error) {
+type extractionParameterSet struct {
+	names        []string
+	declarations []string
+}
+
+func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt, kind ExtractKind, outputs []extractionOutput) (extractionParameterSet, error) {
+	used := extractionUsedNames(selected, outputs)
+	params := extractionParameterSet{}
+	if err := appendReceiverParameter(fset, owner, kind, used, &params); err != nil {
+		return extractionParameterSet{}, err
+	}
+	if err := appendFunctionParameters(fset, owner, used, &params); err != nil {
+		return extractionParameterSet{}, err
+	}
+	if kind == ExtractMethod && owner.Recv == nil {
+		return extractionParameterSet{}, fmt.Errorf("method extraction requires an owner receiver")
+	}
+	return params, nil
+}
+
+func extractionUsedNames(selected []ast.Stmt, outputs []extractionOutput) map[string]bool {
 	used := make(map[string]bool)
 	for _, stmt := range selected {
 		ast.Inspect(stmt, func(node ast.Node) bool {
@@ -672,45 +692,52 @@ func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []a
 			return true
 		})
 	}
-	var names, decls []string
-	if owner.Recv != nil {
-		field := owner.Recv.List[0]
-		name := field.Names[0].Name
-		if used[name] {
-			names = append(names, name)
-			if kind == ExtractKindFunction {
-				text, err := nodeSource(fset, field.Type)
-				if err != nil {
-					return nil, nil, err
-				}
-				decls = append(decls, name+" "+text)
-			}
-		}
+	return used
+}
+
+func appendReceiverParameter(fset *token.FileSet, owner *ast.FuncDecl, kind ExtractKind, used map[string]bool, params *extractionParameterSet) error {
+	if owner.Recv == nil {
+		return nil
 	}
+	field := owner.Recv.List[0]
+	name := field.Names[0].Name
+	if !used[name] {
+		return nil
+	}
+	params.names = append(params.names, name)
+	if kind != ExtractKindFunction {
+		return nil
+	}
+	text, err := nodeSource(fset, field.Type)
+	if err != nil {
+		return err
+	}
+	params.declarations = append(params.declarations, name+" "+text)
+	return nil
+}
+
+func appendFunctionParameters(fset *token.FileSet, owner *ast.FuncDecl, used map[string]bool, params *extractionParameterSet) error {
 	if owner.Type.Params != nil {
 		for _, field := range owner.Type.Params.List {
 			if _, ok := field.Type.(*ast.Ellipsis); ok {
-				return nil, nil, fmt.Errorf("variadic owner parameters are unsupported")
+				return fmt.Errorf("variadic owner parameters are unsupported")
 			}
 			if len(field.Names) == 0 {
 				continue
 			}
 			typeText, err := nodeSource(fset, field.Type)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
 			for _, ident := range field.Names {
-				if used[ident.Name] && !slices.Contains(names, ident.Name) {
-					decls = append(decls, ident.Name+" "+typeText)
-					names = append(names, ident.Name)
+				if used[ident.Name] && !slices.Contains(params.names, ident.Name) {
+					params.declarations = append(params.declarations, ident.Name+" "+typeText)
+					params.names = append(params.names, ident.Name)
 				}
 			}
 		}
 	}
-	if kind == ExtractMethod && owner.Recv == nil {
-		return nil, nil, fmt.Errorf("method extraction requires an owner receiver")
-	}
-	return names, decls, nil
+	return nil
 }
 
 func extractionScope(file *ast.File, params []string) map[string]bool {
