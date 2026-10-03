@@ -265,59 +265,87 @@ func safeDeleteVariableInitializer(pkg *packages.Package, declaration *ast.GenDe
 func safeDeleteImportProblem(pkgs []*packages.Package, targetPath string, target safeDeleteTarget) string {
 	problem := ""
 	packages.Visit(pkgs, func(pkg *packages.Package) bool {
-		if problem != "" || pkg.TypesInfo == nil || pkg.Fset == nil {
-			return problem == ""
+		if problem != "" {
+			return false
 		}
-		for index, path := range pkg.CompiledGoFiles {
-			if filepath.Clean(path) != filepath.Clean(targetPath) || index >= len(pkg.Syntax) {
-				continue
-			}
-			file := pkg.Syntax[index]
-			var selected ast.Node
-			for _, declaration := range file.Decls {
-				object, _ := safeDeleteDefinitionInDecl(pkg, declaration, target)
-				if object != nil {
-					selected = declaration
-					break
-				}
-			}
-			if selected == nil {
-				continue
-			}
-			for _, imported := range file.Imports {
-				if imported.Name != nil && imported.Name.Name == "." {
-					problem = "safe_delete cannot prove import initialization with a dot import"
-					return false
-				}
-				var importedName types.Object
-				if imported.Name != nil {
-					importedName = pkg.TypesInfo.Defs[imported.Name]
-				} else {
-					importedName = pkg.TypesInfo.Implicits[imported]
-				}
-				if importedName == nil || importedName.Name() == "_" {
-					continue
-				}
-				inside, outside := false, false
-				for identifier, object := range pkg.TypesInfo.Uses {
-					if object != importedName || identifier.Pos() < file.Pos() || identifier.End() > file.End() {
-						continue
-					}
-					if identifier.Pos() >= selected.Pos() && identifier.End() <= selected.End() {
-						inside = true
-					} else {
-						outside = true
-					}
-				}
-				if inside && !outside {
-					problem = "safe_delete would remove the final use of an import and change package initialization; retain initialization explicitly before deleting"
-					return false
-				}
-			}
-		}
+		problem = safeDeletePackageImportProblem(pkg, targetPath, target)
 		return problem == ""
 	}, nil)
 	return problem
+}
+
+func safeDeletePackageImportProblem(pkg *packages.Package, targetPath string, target safeDeleteTarget) string {
+	if pkg.TypesInfo == nil || pkg.Fset == nil {
+		return ""
+	}
+	for index, path := range pkg.CompiledGoFiles {
+		if filepath.Clean(path) != filepath.Clean(targetPath) || index >= len(pkg.Syntax) {
+			continue
+		}
+		file := pkg.Syntax[index]
+		selected := safeDeleteSelectedDeclaration(pkg, file, target)
+		if selected == nil {
+			continue
+		}
+		if problem := safeDeleteSelectedImportProblem(pkg, file, selected); problem != "" {
+			return problem
+		}
+	}
+	return ""
+}
+
+func safeDeleteSelectedDeclaration(pkg *packages.Package, file *ast.File, target safeDeleteTarget) ast.Node {
+	for _, declaration := range file.Decls {
+		object, _ := safeDeleteDefinitionInDecl(pkg, declaration, target)
+		if object != nil {
+			return declaration
+		}
+	}
+	return nil
+}
+
+func safeDeleteSelectedImportProblem(pkg *packages.Package, file *ast.File, selected ast.Node) string {
+	for _, imported := range file.Imports {
+		if imported.Name != nil && imported.Name.Name == "." {
+			return "safe_delete cannot prove import initialization with a dot import"
+		}
+		importedName := safeDeleteImportObject(pkg.TypesInfo, imported)
+		if importedName == nil || importedName.Name() == "_" {
+			continue
+		}
+		uses := safeDeleteImportUses(pkg.TypesInfo, file, selected, importedName)
+		if uses.inside && !uses.outside {
+			return "safe_delete would remove the final use of an import and change package initialization; retain initialization explicitly before deleting"
+		}
+	}
+	return ""
+}
+
+func safeDeleteImportObject(info *types.Info, imported *ast.ImportSpec) types.Object {
+	if imported.Name != nil {
+		return info.Defs[imported.Name]
+	}
+	return info.Implicits[imported]
+}
+
+type safeDeleteImportUseSet struct {
+	inside  bool
+	outside bool
+}
+
+func safeDeleteImportUses(info *types.Info, file *ast.File, selected ast.Node, imported types.Object) safeDeleteImportUseSet {
+	uses := safeDeleteImportUseSet{}
+	for identifier, object := range info.Uses {
+		if object != imported || identifier.Pos() < file.Pos() || identifier.End() > file.End() {
+			continue
+		}
+		if identifier.Pos() >= selected.Pos() && identifier.End() <= selected.End() {
+			uses.inside = true
+		} else {
+			uses.outside = true
+		}
+	}
+	return uses
 }
 
 func safeDeleteModuleSource(root, path string) bool {
