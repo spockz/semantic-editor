@@ -60,9 +60,6 @@ func checkRoundTripProperty(rt *rapid.T) {
 		return
 	}
 	fixture := createRoundTripFixture(rt, typeName, oldMethod, newMethod)
-	if fixture == nil {
-		return
-	}
 	defer func() {
 		if err := os.RemoveAll(fixture.root); err != nil {
 			rt.Errorf("remove round-trip fixture: %v", err)
@@ -79,7 +76,9 @@ func createRoundTripFixture(rt *rapid.T, typeName, oldMethod, newMethod string) 
 	cleanupOnError := true
 	defer func() {
 		if cleanupOnError {
-			_ = os.RemoveAll(root)
+			if err := os.RemoveAll(root); err != nil {
+				rt.Errorf("remove failed round-trip fixture: %v", err)
+			}
 		}
 	}()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/prop\n\ngo 1.23\n"), 0o600); err != nil {

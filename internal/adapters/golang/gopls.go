@@ -85,39 +85,44 @@ func renameSelected(ctx context.Context, workDir string, selected backend.Symbol
 		if err != nil {
 			return err
 		}
-		line, column, err := validateRenameLookupSnapshot(ctx, file, document.Content, selected, expected)
+		coordinate, err := validateRenameLookupSnapshot(ctx, file, document.Content, selected, expected)
 		if err != nil {
 			return err
 		}
-		return renameInSessionFiles(ctx, session, file, line, column, newName, record)
+		return renameInSessionFiles(ctx, session, file, coordinate.line, coordinate.column, newName, record)
 	}); err != nil {
 		return fmt.Errorf("%w: %w", ErrRenameFailed, err)
 	}
 	return nil
 }
 
-func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.SymbolCandidate, expected map[string][]byte) (int, int, error) {
+type renameCoordinate struct {
+	line   int
+	column int
+}
+
+func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.SymbolCandidate, expected map[string][]byte) (renameCoordinate, error) {
 	if err := validateRenameExpectedFiles(ctx, expected); err != nil {
-		return 0, 0, err
+		return renameCoordinate{}, err
 	}
 	selectedPath, err := filepath.Abs(file)
 	if err != nil {
-		return 0, 0, fmt.Errorf("resolve rename lookup file: %w", err)
+		return renameCoordinate{}, fmt.Errorf("resolve rename lookup file: %w", err)
 	}
 	source, ok := expected[filepath.Clean(selectedPath)]
 	if !ok {
-		return 0, 0, errors.New("rename lookup lacks its selected source")
+		return renameCoordinate{}, errors.New("rename lookup lacks its selected source")
 	}
 	if !bytes.Equal(current, source) {
-		return 0, 0, errors.New("rename source changed since symbol lookup")
+		return renameCoordinate{}, errors.New("rename source changed since symbol lookup")
 	}
 	if selected.Offset < 0 || selected.Offset+len(selected.Name) > len(source) || string(source[selected.Offset:selected.Offset+len(selected.Name)]) != selected.Name {
-		return 0, 0, errors.New("rename identity does not match the lookup source")
+		return renameCoordinate{}, errors.New("rename identity does not match the lookup source")
 	}
 	prefix := source[:selected.Offset]
 	line := bytes.Count(prefix, []byte{'\n'}) + 1
 	column := selected.Offset - bytes.LastIndexByte(prefix, '\n')
-	return line, column, nil
+	return renameCoordinate{line: line, column: column}, nil
 }
 
 func validateRenameExpectedFiles(ctx context.Context, expected map[string][]byte) error {
