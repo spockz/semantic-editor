@@ -243,3 +243,23 @@ func Value() int { fmt.Println("old"); return 1 }
 		t.Fatalf("orphaned fmt import was retained:\n%s", updated)
 	}
 }
+
+func TestReplaceBody_RejectsWrapperEscapeWithoutMutation(t *testing.T) {
+	filePath := filepath.Join(t.TempDir(), "body.go")
+	initial := "package sample\nfunc Run() { old() }\n"
+	if err := os.WriteFile(filePath, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	_, err := astedit.ReplaceBody(context.Background(), filePath, "Run", "return\n}\nfunc Injected() {", astedit.BodyOptions{})
+	if err == nil {
+		t.Fatal("expected wrapper escape to be rejected")
+	}
+	after, err := os.ReadFile(filePath)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(after) != initial {
+		t.Fatalf("file changed after wrapper escape: %s", after)
+	}
+}

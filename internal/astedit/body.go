@@ -26,26 +26,46 @@ type BodyOptions struct {
 // ReplaceBody replaces the statements of an existing function or method body.
 func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, opts BodyOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
+	target, err := readBodyTarget(ctx, cleanPath, filePath, symbolQuery)
+	if err != nil {
+		return "", err
+	}
+	bodyTrimmed, err := validateBodySnippet(bodySource)
+	if err != nil {
+		return "", err
+	}
+	formatted, err := formatBodyReplacement(ctx, cleanPath, target, bodySource, bodyTrimmed)
+	if err != nil {
+		return "", err
+	}
+	if err := publishBodyReplacement(ctx, cleanPath, formatted, filepath.Dir(cleanPath), opts.AutoOrganizeImports); err != nil {
+		return "", err
+	}
+	return UnifiedDiff(symbolQuery, strings.TrimSpace(target.oldBody), bodyTrimmed), nil
+}
+
+type bodyTarget struct {
+	content  []byte
+	fset     *token.FileSet
+	function *ast.FuncDecl
+	oldBody  string
+}
+
+func readBodyTarget(ctx context.Context, cleanPath, filePath, symbolQuery string) (*bodyTarget, error) {
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("read target file: %w", err)
+		return nil, fmt.Errorf("read target file: %w", err)
 	}
-
-	recv, name, err := symbol.ParseIdentifier(symbolQuery)
+	receiver, name, err := symbol.ParseIdentifier(symbolQuery)
 	if err != nil {
-		return "", &symbol.SymbolError{
-			Op:     "replace_body",
-			File:   filePath,
-			Symbol: symbolQuery,
-			Err:    err,
-		}
+		return nil, &symbol.SymbolError{Op: "replace_body", File: filePath, Symbol: symbolQuery, Err: err}
 	}
 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments)
 	if err != nil {
 		pos := extractSyntaxPosition(fset, err)
-		return "", &SyntaxError{
+		return nil, &SyntaxError{
 			File:  cleanPath,
 			Pos:   pos,
 			Cause: err,
@@ -53,21 +73,21 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 		}
 	}
 
-	var targetFunc *ast.FuncDecl
+	var target *ast.FuncDecl
 	for _, decl := range fileNode.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok {
 			continue
 		}
 		fnRecv := extractReceiverName(fn.Recv)
-		if fnRecv == recv && fn.Name.Name == name {
-			targetFunc = fn
+		if fnRecv == receiver && fn.Name.Name == name {
+			target = fn
 			break
 		}
 	}
 
-	if targetFunc == nil {
-		return "", &symbol.SymbolError{
+	if target == nil {
+		return nil, &symbol.SymbolError{
 			Op:     "replace_body",
 			File:   filePath,
 			Symbol: symbolQuery,
@@ -75,9 +95,9 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 		}
 	}
 
-	if targetFunc.Body == nil {
-		pos := fset.Position(targetFunc.Pos())
-		return "", &symbol.SymbolError{
+	if target.Body == nil {
+		pos := fset.Position(target.Pos())
+		return nil, &symbol.SymbolError{
 			Op:     "replace_body",
 			File:   filePath,
 			Symbol: symbolQuery,
@@ -86,10 +106,22 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 		}
 	}
 
+	lbraceOffset := fset.Position(target.Body.Lbrace).Offset
+	rbraceOffset := fset.Position(target.Body.Rbrace).Offset
+	return &bodyTarget{
+		content:  content,
+		fset:     fset,
+		function: target,
+		oldBody:  string(content[lbraceOffset+1 : rbraceOffset]),
+	}, nil
+}
+
+func validateBodySnippet(bodySource string) (string, error) {
 	bodyTrimmed := strings.TrimSpace(bodySource)
 	synthetic := "package dummy\n\nfunc _() {\n" + bodyTrimmed + "\n}\n"
 	synthFset := token.NewFileSet()
-	if _, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); err != nil {
+	file, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments)
+	if err != nil {
 		pos := extractSyntaxPosition(synthFset, err)
 		if pos.Line > 3 {
 			pos.Line -= 3
@@ -102,51 +134,61 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 			Err:     ErrSyntax,
 		}
 	}
+	if len(file.Decls) != 1 {
+		return "", fmt.Errorf("replacement body must remain inside its function wrapper")
+	}
+	function, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || function.Name.Name != "_" || function.Body == nil {
+		return "", fmt.Errorf("replacement body wrapper is not one complete function")
+	}
 
-	lbraceOffset := fset.Position(targetFunc.Body.Lbrace).Offset
-	rbraceOffset := fset.Position(targetFunc.Body.Rbrace).Offset
-	oldBody := string(content[lbraceOffset+1 : rbraceOffset])
+	return bodyTrimmed, nil
+}
 
+func formatBodyReplacement(ctx context.Context, cleanPath string, target *bodyTarget, bodySource, bodyTrimmed string) ([]byte, error) {
+	lbraceOffset := target.fset.Position(target.function.Body.Lbrace).Offset
+	rbraceOffset := target.fset.Position(target.function.Body.Rbrace).Offset
 	var newContent bytes.Buffer
-	newContent.Write(content[:lbraceOffset+1])
+	newContent.Write(target.content[:lbraceOffset+1])
 	newContent.WriteString("\n")
 	newContent.WriteString(bodyTrimmed)
 	newContent.WriteString("\n")
-	newContent.Write(content[rbraceOffset:])
+	newContent.Write(target.content[rbraceOffset:])
 
 	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
 	formatted, err := format.Source(newContent.Bytes())
 	finishFormatting()
 	if err != nil {
-		return "", &SyntaxError{
+		return nil, &SyntaxError{
 			File:    cleanPath,
 			Snippet: bodySource,
 			Cause:   err,
 			Err:     ErrSyntax,
 		}
 	}
-	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	return formatted, nil
+}
+
+func publishBodyReplacement(ctx context.Context, cleanPath string, formatted []byte, directory string, organizeImports bool) error {
+	formatted, err := cleanupMoveImports(ctx, cleanPath, formatted)
 	if err != nil {
-		return "", fmt.Errorf("prune orphan imports: %w", err)
+		return fmt.Errorf("prune orphan imports: %w", err)
 	}
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write atomic: %w", err)
+		return fmt.Errorf("write atomic: %w", err)
 	}
 
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return "", fmt.Errorf("organize imports: %w", err)
+	if organizeImports {
+		if err := pipeline.OrganizeImports(ctx, directory, cleanPath); err != nil {
+			_ = pipeline.Format(ctx, directory, cleanPath)
+			return fmt.Errorf("organize imports: %w", err)
 		}
 	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return "", fmt.Errorf("format file: %w", err)
+		if err := pipeline.Format(ctx, directory, cleanPath); err != nil {
+			return fmt.Errorf("format file: %w", err)
 		}
 	}
-
-	diff := UnifiedDiff(symbolQuery, strings.TrimSpace(oldBody), bodyTrimmed)
-	return diff, nil
+	return nil
 }
 
 func extractReceiverName(recv *ast.FieldList) string {

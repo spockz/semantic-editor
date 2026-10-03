@@ -129,6 +129,19 @@ func TestReplaceConstruct_RejectsMalformedReplacementWithoutMutation(t *testing.
 	}
 }
 
+func TestReplaceConstruct_RejectsNonBlockElseWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "else.go")
+	initial := "package sample\nfunc Check() { if ready { proceed() } else { fallback() } }\n"
+	writeGo(t, path, initial)
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructElse, "ready", "if condition {}", astedit.ConstructOptions{})
+	if err == nil {
+		t.Fatal("expected an else replacement to require a block")
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("file changed after invalid else replacement:\n%s", got)
+	}
+}
+
 func TestReplaceConstruct_ReplacesEveryGoKind(t *testing.T) {
 	cases := []struct {
 		name, source, discriminator, replacement, want string
