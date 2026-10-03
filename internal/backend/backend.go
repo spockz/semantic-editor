@@ -24,6 +24,18 @@ type ConstructKind string
 
 // Canonical construct kinds reserved by the cross-language taxonomy.
 const (
+	ConstructFunction         ConstructKind = "function"
+	ConstructMethod           ConstructKind = "method"
+	ConstructType             ConstructKind = "type"
+	ConstructField            ConstructKind = "field"
+	ConstructConst            ConstructKind = "const"
+	ConstructVar              ConstructKind = "var"
+	ConstructDeclaration      ConstructKind = "declaration"
+	ConstructDecl             ConstructKind = "decl"
+	ConstructStatementOrExpr  ConstructKind = "statement/expression"
+	ConstructClass            ConstructKind = "class"
+	ConstructInterface        ConstructKind = "interface"
+	ConstructEnum             ConstructKind = "enum"
 	ConstructLoop             ConstructKind = "loop"
 	ConstructIf               ConstructKind = "if"
 	ConstructElse             ConstructKind = "else"
@@ -46,25 +58,6 @@ const (
 	ConstructRule             ConstructKind = "rule"
 	ConstructVariable         ConstructKind = "variable"
 	ConstructInclude          ConstructKind = "include"
-)
-
-// StructureKind names a structural construct type in the cross-language capability taxonomy for insertion.
-// Membership here does not claim that any registered backend can insert that kind.
-type StructureKind string
-
-// Canonical structure kinds reserved by the cross-language taxonomy for insertion.
-const (
-	StructureFunction    StructureKind = "function"
-	StructureMethod      StructureKind = "method"
-	StructureType        StructureKind = "type"
-	StructureConst       StructureKind = "const"
-	StructureVar         StructureKind = "var"
-	StructureDecl        StructureKind = "decl"
-	StructureDeclaration StructureKind = "declaration"
-	StructureCase        StructureKind = "case"
-	StructureClass       StructureKind = "class"
-	StructureInterface   StructureKind = "interface"
-	StructureEnum        StructureKind = "enum"
 )
 
 const (
@@ -97,7 +90,11 @@ const (
 	// OperationRename performs a semantic rename.
 	OperationRename Operation = "rename"
 	// OperationVerify formats and checks project diagnostics.
-	OperationVerify Operation = "verify"
+	OperationVerify           Operation = "verify"
+	OperationInsertConstruct  Operation = "insert_construct"
+	OperationReplaceConstruct Operation = "replace_construct"
+	OperationRemoveConstruct  Operation = "remove_construct"
+	OperationMoveConstruct    Operation = "move_construct"
 	// CapabilityLookup is the lookup capability key.
 	CapabilityLookup = OperationLookup
 	// CapabilityRename is the rename capability key.
@@ -279,14 +276,9 @@ type MatrixProvider interface {
 	CapabilityMatrix() capability.LanguageMatrix
 }
 
-// ConstructCapabilityProvider reports construct mutations implemented by a backend.
+// ConstructCapabilityProvider reports executable construct kinds per operation.
 type ConstructCapabilityProvider interface {
-	SupportedConstructs() []ConstructKind
-}
-
-// StructureCapabilityProvider reports structural construct insertions implemented by a backend.
-type StructureCapabilityProvider interface {
-	SupportedStructures() []StructureKind
+	SupportedConstructs(Operation) []ConstructKind
 }
 
 // ProjectContext identifies the project and optional source file selected by an ingress.

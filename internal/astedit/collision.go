@@ -14,40 +14,24 @@ import (
 
 type declarationCollision struct{ name, file string }
 
-func handleInsertDeclCollisions(ctx context.Context, path, source string, declarations []ast.Decl, file *ast.File, opts DeclOptions) (bool, error) {
+func checkInsertDeclCollisions(ctx context.Context, path string, declarations []ast.Decl, file *ast.File) error {
 	seen := make(map[string]struct{})
 	for _, decl := range declarations {
 		for _, name := range extractDeclNames(decl) {
 			if _, exists := seen[name]; exists {
-				return false, fmt.Errorf("incoming declarations repeat symbol %q: %w", name, ErrDeclCollision)
+				return fmt.Errorf("incoming declarations repeat symbol %q: %w", name, ErrDeclCollision)
 			}
 			seen[name] = struct{}{}
 		}
 	}
 	collisions, err := findPackageDeclarationCollisions(ctx, path, file, declarations)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if len(collisions) == 0 {
-		return false, nil
+		return nil
 	}
-	if !opts.Overwrite {
-		return false, fmt.Errorf("declaration %q already exists in %s: %w", collisions[0].name, collisions[0].file, ErrDeclCollision)
-	}
-	if len(declarations) != 1 || len(collisions) != 1 {
-		return false, fmt.Errorf("overwrite requires one declaration with one colliding symbol")
-	}
-	targetAbs, err := filepath.Abs(path)
-	if err != nil {
-		return false, fmt.Errorf("resolve target path: %w", err)
-	}
-	if collisions[0].file != targetAbs {
-		return false, fmt.Errorf("cannot overwrite %q: it is declared in %s, not target file %s", collisions[0].name, collisions[0].file, targetAbs)
-	}
-	if _, err := ReplaceDecl(ctx, path, collisions[0].name, source, ReplaceDeclOptions{AutoOrganizeImports: opts.AutoOrganizeImports}); err != nil {
-		return false, err
-	}
-	return true, nil
+	return fmt.Errorf("declaration %q already exists in %s: %w", collisions[0].name, collisions[0].file, ErrDeclCollision)
 }
 
 func findPackageDeclarationCollisions(ctx context.Context, targetPath string, target *ast.File, incoming []ast.Decl) ([]declarationCollision, error) {
@@ -106,7 +90,7 @@ func findPackageDeclarationCollisions(ctx context.Context, targetPath string, ta
 	return collisions, nil
 }
 
-func checkStructureDeclarationCollision(ctx context.Context, targetPath string, target *ast.File, incoming ast.Decl) error {
+func checkConstructDeclarationCollision(ctx context.Context, targetPath string, target *ast.File, incoming ast.Decl) error {
 	if fn, ok := incoming.(*ast.FuncDecl); ok && fn.Recv != nil {
 		receiverType := extractReceiverTypeName(fn.Recv)
 		absTarget, err := filepath.Abs(targetPath)

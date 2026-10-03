@@ -34,6 +34,9 @@ type MoveConstructOptions struct {
 	DeferFormatting     bool
 }
 
+// GoMoveConstructKinds lists declaration kinds supported by Go's move handler.
+var GoMoveConstructKinds = []ConstructKind{ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar}
+
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
 func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)

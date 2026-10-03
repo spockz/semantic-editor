@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
@@ -43,8 +44,8 @@ type Options struct {
 
 // InsertDeclaration parses and injects one or more top-level declarations into filePath.
 func InsertDeclaration(ctx context.Context, filePath string, source string, opts Options) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindDeclaration,
+	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
+		Kind:                backend.ConstructDeclaration,
 		Placement:           opts.Placement,
 		TargetSymbol:        opts.TargetSymbol,
 		Visibility:          opts.Visibility,
@@ -75,9 +76,8 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil && fileNode == nil {
-
-		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
+	if err != nil {
+		return fmt.Errorf("parse target file before insertion: %w", err)
 	}
 
 	insertOffset, err := calculateInsertionOffset(fset, fileNode, content, opts)
@@ -409,28 +409,4 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		TargetSymbol: targetSymbol,
 		Err:          ErrSymbolNotFound,
 	}
-}
-
-func appendToEOF(ctx context.Context, filePath string, content []byte, source string, autoOrganize bool) error {
-	var buf bytes.Buffer
-	buf.Write(content)
-	if len(content) > 0 && !bytes.HasSuffix(content, []byte("\n\n")) {
-		if bytes.HasSuffix(content, []byte("\n")) {
-			buf.WriteString("\n")
-		} else {
-			buf.WriteString("\n\n")
-		}
-	}
-	buf.WriteString(strings.TrimSpace(source))
-	buf.WriteString("\n")
-
-	if err := pipeline.WriteAtomicContext(ctx, filePath, buf.Bytes()); err != nil {
-		return fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(filePath)
-	if autoOrganize {
-		return pipeline.OrganizeImports(ctx, dir, filePath)
-	}
-	return pipeline.Format(ctx, dir, filePath)
 }
