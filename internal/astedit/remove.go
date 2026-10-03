@@ -265,9 +265,9 @@ func scanModuleSources(ctx context.Context, root, target string, targetOffset in
 		}
 		files[absolute] = sha256.Sum256(data)
 		scanSet := token.NewFileSet()
-		parsed, err := parser.ParseFile(scanSet, absolute, data, parser.ParseComments|parser.AllErrors)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", absolute, err)
+		parsed, parseErr := parser.ParseFile(scanSet, absolute, data, parser.ParseComments|parser.AllErrors)
+		if parseErr != nil {
+			return fmt.Errorf("parse %s: %w", absolute, parseErr)
 		}
 		for _, group := range parsed.Comments {
 			for _, comment := range group.List {

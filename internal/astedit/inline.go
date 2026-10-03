@@ -25,81 +25,102 @@ func InlineVariable(ctx context.Context, filePath, function, name string) (strin
 	if err != nil {
 		return "", err
 	}
+	edit, err := planInlineVariable(ctx, cleanPath, function, name, ownedBuffer, standalone)
+	if err != nil {
+		return "", err
+	}
+	return publishInlineVariable(ctx, edit)
+}
+
+type inlineVariableEdit struct {
+	path       string
+	name       string
+	before     []byte
+	after      []byte
+	owned      *sourcebuf.Buffer
+	standalone bool
+}
+
+func planInlineVariable(ctx context.Context, cleanPath, function, name string, ownedBuffer *sourcebuf.Buffer, standalone bool) (inlineVariableEdit, error) {
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("read target file: %w", err)
+		return inlineVariableEdit{}, fmt.Errorf("read target file: %w", err)
 	}
 	if !token.IsIdentifier(name) || name == "_" {
-		return "", fmt.Errorf("inline variable target %q is not a Go identifier", name)
+		return inlineVariableEdit{}, fmt.Errorf("inline variable target %q is not a Go identifier", name)
 	}
 	recv, functionName, err := symbol.ParseIdentifier(function)
 	if err != nil {
-		return "", fmt.Errorf("parse containing function %q: %w", function, err)
+		return inlineVariableEdit{}, fmt.Errorf("parse containing function %q: %w", function, err)
 	}
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+		return inlineVariableEdit{}, &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
 	}
 	fn, err := findInlineFunction(fileNode, recv, functionName)
 	if err != nil {
-		return "", err
+		return inlineVariableEdit{}, err
 	}
 	target, err := findInlineTarget(fn, name)
 	if err != nil {
-		return "", err
+		return inlineVariableEdit{}, err
 	}
 	if target.explicitType {
-		return "", fmt.Errorf("cannot inline %q: explicitly typed declarations require preserving their declared type", name)
+		return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: explicitly typed declarations require preserving their declared type", name)
 	}
 	if target.value == nil || !literalExpression(target.value) {
-		return "", fmt.Errorf("cannot inline %q: initializer must be a literal expression", name)
+		return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: initializer must be a literal expression", name)
 	}
 	if !target.constant {
 		typeName, ok := defaultTypeName(target.value)
 		if !ok {
-			return "", fmt.Errorf("cannot inline %q: initializer literal has no supported default type", name)
+			return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: initializer literal has no supported default type", name)
 		}
-		shadowed, err := conversionNameShadowed(ctx, cleanPath, fileNode, fn, typeName)
-		if err != nil {
-			return "", fmt.Errorf("cannot inline %q: check default type name %s bindings: %w", name, typeName, err)
+		shadowed, shadowErr := conversionNameShadowed(ctx, cleanPath, fileNode, fn, typeName)
+		if shadowErr != nil {
+			return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: check default type name %s bindings: %w", name, typeName, shadowErr)
 		}
 		if shadowed {
-			return "", fmt.Errorf("cannot inline %q: default type name %s is shadowed by a local or package binding or import", name, typeName)
+			return inlineVariableEdit{}, fmt.Errorf("cannot inline %q: default type name %s is shadowed by a local or package binding or import", name, typeName)
 		}
 	}
 	positions, err := inlineUsePositions(fn, target, name)
 	if err != nil {
-		return "", err
+		return inlineVariableEdit{}, err
 	}
 	formatted, err := inlineSource(content, fset, fileNode, target, positions, name)
 	if err != nil {
-		return "", err
+		return inlineVariableEdit{}, err
 	}
-	current, err := sourcebuf.ReadFile(ctx, cleanPath)
+	return inlineVariableEdit{path: cleanPath, name: name, before: content, after: formatted, owned: ownedBuffer, standalone: standalone}, nil
+}
+
+func publishInlineVariable(ctx context.Context, edit inlineVariableEdit) (string, error) {
+	current, err := sourcebuf.ReadFile(ctx, edit.path)
 	if err != nil {
 		return "", fmt.Errorf("recheck inline source before publication: %w", err)
 	}
-	if !bytes.Equal(current, content) {
-		return "", fmt.Errorf("cannot inline %q: source changed during planning", name)
+	if !bytes.Equal(current, edit.before) {
+		return "", fmt.Errorf("cannot inline %q: source changed during planning", edit.name)
 	}
-	if err := validateExtractionCandidate(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("validate inlined package: %w", err)
+	if validationErr := validateExtractionCandidate(ctx, edit.path, edit.after); validationErr != nil {
+		return "", fmt.Errorf("validate inlined package: %w", validationErr)
 	}
 	buffer := sourcebuf.FromContext(ctx)
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
-		return "", fmt.Errorf("apply inlined source after compiler preflight: %w", err)
+	if applyErr := buffer.Apply(ctx, []sourcebuf.Change{{Path: edit.path, Before: edit.before, After: edit.after}}); applyErr != nil {
+		return "", fmt.Errorf("apply inlined source after compiler preflight: %w", applyErr)
 	}
-	current, err = sourcebuf.ReadFile(ctx, cleanPath)
+	current, err = sourcebuf.ReadFile(ctx, edit.path)
 	if err != nil {
 		return "", fmt.Errorf("read inlined file: %w", err)
 	}
-	if standalone {
-		if err := ownedBuffer.Flush(ctx); err != nil {
+	if edit.standalone {
+		if err := edit.owned.Flush(ctx); err != nil {
 			return "", fmt.Errorf("publish inlined source: %w", err)
 		}
 	}
-	return UnifiedDiff(cleanPath, string(content), string(current)), nil
+	return UnifiedDiff(edit.path, string(edit.before), string(current)), nil
 }
 
 type inlineTarget struct {

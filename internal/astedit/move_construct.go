@@ -341,7 +341,16 @@ func readMovePair(ctx context.Context, sourcePath, destinationPath string) (move
 	if sourceAST.Name.Name != destinationAST.Name.Name {
 		return movePairSnapshot{}, fmt.Errorf("source and destination must belong to the same Go package")
 	}
-	return movePairSnapshot{sourcePath: sourcePath, destinationPath: destinationPath, source: source, destination: destination, sourceSet: sourceSet, destinationSet: destinationSet, sourceAST: sourceAST, destinationAST: destinationAST}, nil
+	return movePairSnapshot{
+		sourcePath:      sourcePath,
+		destinationPath: destinationPath,
+		source:          source,
+		destination:     destination,
+		sourceSet:       sourceSet,
+		destinationSet:  destinationSet,
+		sourceAST:       sourceAST,
+		destinationAST:  destinationAST,
+	}, nil
 }
 
 func planSamePackageMove(ctx context.Context, snapshot movePairSnapshot, symbolQuery string, opts MoveConstructOptions) (movePairPlan, error) {

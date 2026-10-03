@@ -58,15 +58,15 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if !moveWithin(moduleRoot, destinationPath) {
 		return "", fmt.Errorf("cross-package move requires source and destination in the same Go module")
 	}
-	if err := rejectMoveSymlinkPath(moduleRoot, sourcePath); err != nil {
-		return "", err
+	if pathErr := rejectMoveSymlinkPath(moduleRoot, sourcePath); pathErr != nil {
+		return "", pathErr
 	}
-	if err := rejectMoveSymlinkPath(moduleRoot, destinationPath); err != nil {
-		return "", err
+	if pathErr := rejectMoveSymlinkPath(moduleRoot, destinationPath); pathErr != nil {
+		return "", pathErr
 	}
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return "", err
+		if authorizationErr := buffer.AuthorizeWrites(ctx, moduleRoot); authorizationErr != nil {
+			return "", authorizationErr
 		}
 	}
 	original, err := inspectMoveModuleFiles(ctx, moduleRoot, sourcePath, destinationPath, symbolQuery)
@@ -91,8 +91,8 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 			return "", fmt.Errorf("cannot establish complete Go references: package %s: %s", pkg.PkgPath, pkg.Errors[0].Msg)
 		}
 	}
-	if err := rejectUntypedMoveReferences(original, pkgs, symbolQuery); err != nil {
-		return "", err
+	if referenceErr := rejectUntypedMoveReferences(original, pkgs, symbolQuery); referenceErr != nil {
+		return "", referenceErr
 	}
 	sourcePkg, destinationPkg := packageForMoveFile(pkgs, sourcePath), packageForMoveFile(pkgs, destinationPath)
 	if sourcePkg == nil || destinationPkg == nil {
@@ -125,8 +125,8 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if declarationNameCollision(destinationFile, decl) {
 		return "", fmt.Errorf("destination already declares %q", symbolQuery)
 	}
-	if err := rejectSourceLocalMoveDependencies(sourcePkg, decl); err != nil {
-		return "", err
+	if dependencyErr := rejectSourceLocalMoveDependencies(sourcePkg, decl); dependencyErr != nil {
+		return "", dependencyErr
 	}
 	start, end := moveDeclOffsets(sourcePkg.Fset, decl, sourceFile, original[sourcePath])
 	if start < 0 || end < start || end > len(original[sourcePath]) {
@@ -182,22 +182,22 @@ func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPat
 	if err != nil {
 		return "", fmt.Errorf("parse destination after declaration insertion: %w", err)
 	}
-	if err := mergeMoveImports(destinationNode, neededImports); err != nil {
-		return "", err
+	if importErr := mergeMoveImports(destinationNode, neededImports); importErr != nil {
+		return "", importErr
 	}
 	var mergedDestination bytes.Buffer
-	if err := format.Node(&mergedDestination, destinationFset, destinationNode); err != nil {
-		return "", fmt.Errorf("format destination imports: %w", err)
+	if formatErr := format.Node(&mergedDestination, destinationFset, destinationNode); formatErr != nil {
+		return "", fmt.Errorf("format destination imports: %w", formatErr)
 	}
 	formattedDestination, err = format.Source(mergedDestination.Bytes())
 	if err != nil {
 		return "", fmt.Errorf("format destination imports: %w", err)
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), sourcePath, changes[sourcePath], parser.ParseComments|parser.AllErrors); err != nil {
-		return "", fmt.Errorf("validate source after move: %w", err)
+	if _, sourceParseErr := parser.ParseFile(token.NewFileSet(), sourcePath, changes[sourcePath], parser.ParseComments|parser.AllErrors); sourceParseErr != nil {
+		return "", fmt.Errorf("validate source after move: %w", sourceParseErr)
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors); err != nil {
-		return "", fmt.Errorf("validate destination after move: %w", err)
+	if _, destinationParseErr := parser.ParseFile(token.NewFileSet(), destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors); destinationParseErr != nil {
+		return "", fmt.Errorf("validate destination after move: %w", destinationParseErr)
 	}
 	changes[destinationPath] = formattedDestination
 	expectedDestinationReferences := map[moveReferenceKey][]moveReferenceExpectation{}
