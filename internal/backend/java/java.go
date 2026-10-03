@@ -344,8 +344,8 @@ func (b *JavaBackend) Lookup(ctx context.Context, project backend.ProjectContext
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "lookup"); err != nil {
-		return nil, err
+	if sessionErr := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "lookup"); sessionErr != nil {
+		return nil, sessionErr
 	}
 	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
 	if err != nil {
@@ -376,8 +376,8 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "rename"); err != nil {
-		return nil, err
+	if sessionErr := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "rename"); sessionErr != nil {
+		return nil, sessionErr
 	}
 	session := b.session
 	defer func() {
@@ -386,8 +386,8 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 		}
 		retErr = errors.Join(retErr, b.invalidateJavaSessionLocked(session))
 	}()
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
-		return nil, &JavaError{Op: "didOpen", File: file, Err: err}
+	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); openErr != nil {
+		return nil, &JavaError{Op: "didOpen", File: file, Err: openErr}
 	}
 	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
@@ -397,8 +397,8 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	if err != nil {
 		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
-	if err := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); err != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+	if uriErr := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); uriErr != nil {
+		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: uriErr}
 	}
 	lookup, err := selectJavaSymbol(request.Symbol, root, file, source, symbols)
 	if err != nil {
@@ -423,8 +423,8 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 	if err != nil {
 		return nil, &JavaError{Op: "rename", File: file, Err: err}
 	}
-	if err := pipeline.WriteAtomic(file, updated); err != nil {
-		return nil, &JavaError{Op: "write", File: file, Err: err}
+	if writeErr := pipeline.WriteAtomic(file, updated); writeErr != nil {
+		return nil, &JavaError{Op: "write", File: file, Err: writeErr}
 	}
 	// Preserve the committed rename result if only session cleanup fails.
 	_ = b.invalidateJavaSessionLocked(session)
@@ -621,8 +621,8 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if b.session != nil {
 		session := b.session
 		b.session, b.root, b.fingerprint = nil, "", ""
-		if err := session.Close(); err != nil {
-			return nil, fmt.Errorf("close retained Java session before verify: %w", err)
+		if closeSessionErr := session.Close(); closeSessionErr != nil {
+			return nil, fmt.Errorf("close retained Java session before verify: %w", closeSessionErr)
 		}
 	}
 	if b.factory == nil {
@@ -637,56 +637,56 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	}
 	b.session, b.root, b.fingerprint = session, root, fingerprint
 	cleanupOnError = true
-	if err := initializeJavaSession(ctx, session, root, config); err != nil {
-		return nil, err
+	if initializeErr := initializeJavaSession(ctx, session, root, config); initializeErr != nil {
+		return nil, initializeErr
 	}
 	if selector, ok := session.(javaDiagnosticsSelector); ok {
 		selector.SelectDiagnosticsURI(pathutil.FileURI(file))
 	}
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
-		return nil, err
+	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); openErr != nil {
+		return nil, openErr
 	}
 	updated := source
 	version := 1
 	formattingChanged := false
 	if request.FormatSelectedFile {
-		raw, err := session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
-		if err != nil {
-			return nil, err
+		raw, requestErr := session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
+		if requestErr != nil {
+			return nil, requestErr
 		}
-		updated, err = applyJavaFormattingEdits(updated, raw)
-		if err != nil {
-			return nil, err
+		updated, requestErr = applyJavaFormattingEdits(updated, raw)
+		if requestErr != nil {
+			return nil, requestErr
 		}
 		formattingChanged = !bytes.Equal(updated, source)
 	}
 	if request.OrganizeImports {
 		if formattingChanged {
 			version = 2
-			if err := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
-				return nil, err
+			if changeErr := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); changeErr != nil {
+				return nil, changeErr
 			}
 		}
-		raw, err := session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
-		if err != nil {
-			return nil, err
+		raw, requestErr := session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
+		if requestErr != nil {
+			return nil, requestErr
 		}
-		updated, err = applyJavaOrganizeImportsEditVersion(file, updated, raw, version)
-		if err != nil {
-			return nil, err
+		updated, requestErr = applyJavaOrganizeImportsEditVersion(file, updated, raw, version)
+		if requestErr != nil {
+			return nil, requestErr
 		}
 	}
 	diagnosticsVersion := 1
 	if !bytes.Equal(updated, source) {
-		if err := pipeline.WriteAtomic(file, updated); err != nil {
-			return nil, err
+		if writeErr := pipeline.WriteAtomic(file, updated); writeErr != nil {
+			return nil, writeErr
 		}
 		version++
-		if err := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); err != nil {
-			return nil, err
+		if changeErr := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); changeErr != nil {
+			return nil, changeErr
 		}
-		if err := session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
-			return nil, err
+		if saveErr := session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); saveErr != nil {
+			return nil, saveErr
 		}
 		diagnosticsVersion = version
 	}
@@ -941,16 +941,16 @@ func defaultJavaSessionFactory(ctx context.Context, root string, config backend.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrJavaRuntimeUnavailable, err)
 	}
-	if err := validateJavaRuntime(ctx, resolvedJava); err != nil {
-		return nil, err
+	if runtimeErr := validateJavaRuntime(ctx, resolvedJava); runtimeErr != nil {
+		return nil, runtimeErr
 	}
 	launcher, configuration, err := findJDTLSDistribution(config.JDTLSHome)
 	if err != nil {
 		return nil, err
 	}
 	dataPath := filepath.Join(root, ".scratch", "jdtls", stableJavaRootHash(root))
-	if err := os.MkdirAll(dataPath, 0o700); err != nil {
-		return nil, fmt.Errorf("create JDT LS data directory: %w", err)
+	if directoryErr := os.MkdirAll(dataPath, 0o700); directoryErr != nil {
+		return nil, fmt.Errorf("create JDT LS data directory: %w", directoryErr)
 	}
 	cmd := exec.CommandContext(ctx, resolvedJava, // #nosec G204 -- executable is resolved from an explicit path or PATH and arguments are fixed.
 		"-Declipse.application=org.eclipse.jdt.ls.core.id1",
@@ -977,8 +977,8 @@ func defaultJavaSessionFactory(ctx context.Context, root string, config backend.
 		if json.Unmarshal(notification.Params, &params) != nil {
 			return
 		}
-		uriPath, err := pathutil.FilePathFromURI(params.URI)
-		if err != nil {
+		uriPath, pathErr := pathutil.FilePathFromURI(params.URI)
+		if pathErr != nil {
 			return
 		}
 		uri := pathutil.FileURI(uriPath)
@@ -1618,8 +1618,8 @@ func (b *JavaBackend) Outline(ctx context.Context, request backend.OutlineReques
 	if err != nil {
 		return nil, err
 	}
-	if err := readlsp.ValidateOutlineRequest(request, directory); err != nil {
-		return nil, &backend.Error{Operation: backend.OperationOutline, Language: backend.LanguageJava, Err: err}
+	if requestErr := readlsp.ValidateOutlineRequest(request, directory); requestErr != nil {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: backend.LanguageJava, Err: requestErr}
 	}
 	if !strings.EqualFold(filepath.Ext(file), ".java") {
 		return nil, &JavaError{Op: "outline", File: file, Err: ErrJavaFileRequired}
@@ -1640,8 +1640,8 @@ func (b *JavaBackend) Outline(ctx context.Context, request backend.OutlineReques
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "outline"); err != nil {
-		return nil, err
+	if sessionErr := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "outline"); sessionErr != nil {
+		return nil, sessionErr
 	}
 	symbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
 	if err != nil {
@@ -1676,8 +1676,8 @@ func (b *JavaBackend) Inspect(ctx context.Context, request backend.InspectReques
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "inspect"); err != nil {
-		return nil, err
+	if sessionErr := b.ensureJavaSessionLocked(ctx, root, config, fingerprint, "inspect"); sessionErr != nil {
+		return nil, sessionErr
 	}
 	rawSymbols, err := b.readJavaSymbolsLocked(ctx, root, file, source)
 	if err != nil {

@@ -320,16 +320,16 @@ func defaultScalaSessionFactory(ctx context.Context, root string, config neutral
 	if err != nil || statErr != nil || javaInfo.IsDir() || javaInfo.Mode()&0o111 == 0 {
 		return nil, fmt.Errorf("%w: invalid java_bin %q", ErrScalaJavaRuntimeUnavailable, config.JavaBin)
 	}
-	if err := validateScalaJavaRuntime(ctx, javaBin, config.JavaVersion); err != nil {
-		return nil, err
+	if runtimeErr := validateScalaJavaRuntime(ctx, javaBin, config.JavaVersion); runtimeErr != nil {
+		return nil, runtimeErr
 	}
 	metalsBin, err := resolveMetalsBinary(config)
 	if err != nil {
 		return nil, err
 	}
 	dataPath := filepath.Join(root, ".scratch", "metals", stableScalaRootHash(root))
-	if err := os.MkdirAll(dataPath, 0o700); err != nil {
-		return nil, fmt.Errorf("create Metals data directory: %w", err)
+	if directoryErr := os.MkdirAll(dataPath, 0o700); directoryErr != nil {
+		return nil, fmt.Errorf("create Metals data directory: %w", directoryErr)
 	}
 	cmd := exec.CommandContext(ctx, metalsBin, "--stdio", "--no-http-server", "--data", dataPath) // #nosec G204 -- path and fixed arguments are explicitly configured.
 	cmd.Dir = root
@@ -834,8 +834,8 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 		return nil, fmt.Errorf("inspect outline path: %w", err)
 	}
 	request.Path = selected
-	if err := readlsp.ValidateOutlineRequest(request, info.IsDir()); err != nil {
-		return nil, err
+	if requestErr := readlsp.ValidateOutlineRequest(request, info.IsDir()); requestErr != nil {
+		return nil, requestErr
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("scala outline requires a regular source file")
