@@ -16,6 +16,7 @@ import (
 
 	"semedit/internal/backend"
 	gobackend "semedit/internal/backend/golang"
+	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
 	"semedit/internal/operation"
 	"semedit/internal/sourcebuf"
@@ -183,6 +184,28 @@ func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
 	}
 }
 
+func assertContractOutputSchema(t *testing.T, name string, schema any) {
+	t.Helper()
+	assertStandardOutputSchema(t, schema, "object")
+	output := schema.(map[string]any)["properties"].(map[string]any)
+	result := output["result"].(map[string]any)
+	properties := result["properties"].(map[string]any)
+	for _, field := range []string{"receipt", "signatures"} {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("%s result schema omitted %q", name, field)
+		}
+	}
+	fields := []string{"contract", "contract_file"}
+	if name == "semantic_implement_contract" {
+		fields = []string{"type_target", "generated_methods"}
+	}
+	for _, field := range fields {
+		if _, ok := properties[field]; !ok {
+			t.Errorf("%s result schema omitted %q", name, field)
+		}
+	}
+}
+
 func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
@@ -202,20 +225,14 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				case "semantic_insert_composite_element":
 					assertCompositeElementOutputSchema(t, tool["outputSchema"])
 				case "semantic_remove_construct":
-					assertStandardOutputSchema(t, tool["outputSchema"], "object")
-					output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-					for _, field := range []string{"file"} {
-						if _, ok := output[field]; !ok {
-							t.Errorf("remove outputSchema omitted continuation field %q", field)
-						}
-					}
-					result := output["result"].(map[string]any)
-					for _, field := range []string{"status", "safe_delete", "checks_run"} {
-						if _, ok := result["properties"].(map[string]any)[field]; !ok {
-							t.Errorf("remove result schema omitted %q", field)
-						}
-					}
-				case "semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
+					assertRemoveConstructOutputSchema(t, tool["outputSchema"])
+				case "semantic_extract_interface", "semantic_implement_contract":
+					assertContractOutputSchema(t, name, tool["outputSchema"])
+				case "semantic_inline_function", "semantic_migrate_type":
+					assertSemanticEditReceiptOutputSchema(t, name, tool["outputSchema"])
+				case "semantic_rename", "semantic_organize_imports":
+					assertTypedOutcomeOrLegacyStringSchema(t, name, tool["outputSchema"])
+				case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 					for _, field := range map[string][]string{
@@ -292,6 +309,30 @@ func assertCompositeElementOutputSchema(t *testing.T, raw any) {
 	}
 }
 
+func assertRemoveConstructOutputSchema(t *testing.T, raw any) {
+	t.Helper()
+	assertStandardOutputSchema(t, raw, "object")
+	output := raw.(map[string]any)["properties"].(map[string]any)
+	result := output["result"].(map[string]any)
+	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_remove_construct")
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
+		t.Fatalf("remove operation omitted its registered result schema")
+	}
+	assertResultSchemaMatchesRegistration(t, "semantic_remove_construct", result, entry)
+	for _, field := range []string{"status", "safe_delete", "checks_run"} {
+		if _, ok := result["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("remove result schema omitted %q", field)
+		}
+	}
+	if len(entry.Output.Continuations) == 0 {
+		for _, field := range []string{"file", "symbol", "expected_revision"} {
+			if _, ok := output[field]; ok {
+				t.Errorf("remove outputSchema advertised unresolved continuation alias %q", field)
+			}
+		}
+	}
+}
+
 func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
 	t.Helper()
 	assertStandardOutputSchema(t, raw, "object")
@@ -306,6 +347,24 @@ func assertStructuralOutputSchema(t *testing.T, raw any, name string) {
 	}
 	if got := receipt["required"]; !reflect.DeepEqual(got, []any{"schema_version", "status", "operation"}) {
 		t.Errorf("%s edit_receipt required = %#v", name, got)
+	}
+}
+
+func assertSemanticEditReceiptOutputSchema(t *testing.T, name string, schema any) {
+	t.Helper()
+	assertStandardOutputSchema(t, schema, "object")
+	result := schema.(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	for _, field := range []string{"schema_version", "status", "operation", "changes", "read_set", "continuations"} {
+		if _, ok := result["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("%s receipt schema omitted %q", name, field)
+		}
+	}
+	continuations := result["properties"].(map[string]any)["continuations"].(map[string]any)
+	item := continuations["items"].(map[string]any)
+	for _, field := range []string{"file", "symbol", "expected_revision"} {
+		if _, ok := item["properties"].(map[string]any)[field]; !ok {
+			t.Errorf("%s continuation schema omitted %q", name, field)
+		}
 	}
 }
 
@@ -356,14 +415,63 @@ func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
 		t.Fatalf("outputSchema required = %#v, want result only", got)
 	}
 	properties := schema["properties"].(map[string]any)
+	if got := properties["application_state"].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("application_state schema = %#v, want string", properties["application_state"])
+	}
 	if got := properties["result"].(map[string]any)["type"]; got != resultType {
 		t.Fatalf("outputSchema result type = %#v, want %s", got, resultType)
+	}
+	if got := properties["diagnostic_status"].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("diagnostic_status schema = %#v, want string", properties["diagnostic_status"])
+	}
+	if got := properties["diagnostic_delta"].(map[string]any)["type"]; got != "object" {
+		t.Fatalf("diagnostic_delta schema = %#v, want object", properties["diagnostic_delta"])
 	}
 	if _, ok := properties["metrics"]; ok {
 		t.Fatalf("standard outputSchema must not include per-call metrics: %#v", properties["metrics"])
 	}
 	if _, ok := properties["session_metrics"]; ok {
 		t.Fatalf("standard outputSchema must not include session metrics: %#v", properties["session_metrics"])
+	}
+}
+
+func assertTypedOutcomeOrLegacyStringSchema(t *testing.T, name string, raw any) {
+	t.Helper()
+	schema, ok := raw.(map[string]any)
+	if !ok {
+		t.Fatalf("%s outputSchema = %#v, want object", name, raw)
+	}
+	properties := schema["properties"].(map[string]any)
+	result := properties["result"].(map[string]any)
+	entry, ok := operation.DefaultRegistry().LookupMCP(name)
+	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
+		assertStandardOutputSchema(t, raw, "string")
+		return
+	}
+	assertResultSchemaMatchesRegistration(t, name, result, entry)
+	wantType, ok := result["type"].(string)
+	if !ok {
+		t.Fatalf("%s registered result schema omitted type: %#v", name, result)
+	}
+	assertStandardOutputSchema(t, raw, wantType)
+}
+
+func assertResultSchemaMatchesRegistration(t *testing.T, name string, result map[string]any, entry operation.Entry) {
+	t.Helper()
+	want, err := entry.Output.ResultSchema.JSONSchema()
+	if err != nil {
+		t.Fatalf("%s registered result schema: %v", name, err)
+	}
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatalf("%s encode registered result schema: %v", name, err)
+	}
+	var normalizedWant map[string]any
+	if err := json.Unmarshal(wantJSON, &normalizedWant); err != nil {
+		t.Fatalf("%s normalize registered result schema: %v", name, err)
+	}
+	if !reflect.DeepEqual(result, normalizedWant) {
+		t.Fatalf("%s advertised result schema = %#v, want registered schema %#v", name, result, normalizedWant)
 	}
 }
 
@@ -623,6 +731,9 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
 	}
+	if description, ok := batch["description"].(string); !ok || !strings.Contains(description, "Child outcomes and receipts are captured intermediate states, not final continuation targets") || !strings.Contains(description, "inspect final targets after the batch to resolve continuation fields") {
+		t.Fatalf("batch description omitted the child-state boundary: %#v", batch["description"])
+	}
 	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
 	branches := edits["items"].(map[string]any)["oneOf"].([]any)
 	batchTools := make(map[string]map[string]any, len(branches))
@@ -716,6 +827,7 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)))
+	replaceFound := false
 	for _, tool := range tools {
 		if tool["name"] != "semantic_replace_construct" {
 			continue
@@ -725,9 +837,37 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		if got, want := kind["enum"], toAnySlice([]string{"custom_kind", "loop"}); !reflect.DeepEqual(got, want) {
 			t.Fatalf("construct kind enum = %#v, want registered backend values %#v", got, want)
 		}
+		replaceFound = true
+	}
+	if !replaceFound {
+		t.Fatal("tools/list omitted semantic_replace_construct")
+	}
+	if hasTool(tools, "semantic_insert_structure") {
+		t.Fatal("tools/list advertised insertion without a structure capability provider")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_batch" {
+			continue
+		}
+		branches := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+		for _, raw := range branches {
+			branch := raw.(map[string]any)["properties"].(map[string]any)
+			if branch["tool"].(map[string]any)["const"] == "semantic_insert_structure" {
+				t.Fatal("semantic_batch advertised insertion without a structure capability provider")
+			}
+		}
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_insert_function" {
+			continue
+		}
+		access := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+		if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Go insertion access enum = %#v, want %#v", got, want)
+		}
 		return
 	}
-	t.Fatal("tools/list omitted semantic_replace_construct")
+	t.Fatal("tools/list omitted Go insertion despite the registered Go backend")
 }
 
 func hasTool(tools []map[string]any, name string) bool {
@@ -1022,6 +1162,13 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 			t.Errorf("move input property %s = %#v, want string", name, moveProperties[name])
 		}
 	}
+	moveOutput := move["outputSchema"].(map[string]any)["properties"].(map[string]any)
+	if file := moveOutput["file"].(map[string]any); !strings.Contains(file["description"].(string), "Live destination") {
+		t.Fatalf("standalone move file schema = %#v, want live destination semantics", file)
+	}
+	if origin := moveOutput["origin_file"].(map[string]any); !strings.Contains(origin["description"].(string), "evidence only") {
+		t.Fatalf("standalone move origin_file schema = %#v, want historical evidence", origin)
+	}
 	batch := byName["semantic_batch"]
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
@@ -1049,9 +1196,17 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 		if properties["tool"].(map[string]any)["const"] != "semantic_move_construct" {
 			continue
 		}
+		file := properties["file"].(map[string]any)
+		origin := properties["origin_file"].(map[string]any)
 		destination := properties["destination_file"].(map[string]any)
-		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "not a successful write") {
-			t.Fatalf("destination_file result schema = %#v, want requested-target semantics", destination)
+		if file["type"] != "string" || !strings.Contains(file["description"].(string), "Captured destination path on success") || !strings.Contains(file["description"].(string), "attempted source path on error") || !strings.Contains(file["description"].(string), "intermediate path rather than the final workspace target") {
+			t.Fatalf("file result schema = %#v, want captured intermediate evidence", file)
+		}
+		if origin["type"] != "string" || !strings.Contains(origin["description"].(string), "evidence only") {
+			t.Fatalf("origin_file result schema = %#v, want historical evidence", origin)
+		}
+		if destination["type"] != "string" || !strings.Contains(destination["description"].(string), "intermediate result rather than the final workspace target") {
+			t.Fatalf("destination_file result schema = %#v, want destination evidence", destination)
 		}
 		return
 	}
@@ -1380,8 +1535,8 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	result := inspected["result"].(map[string]any)
 	structured := result["structuredContent"].(map[string]any)["result"].(map[string]any)
 	inspection := structured["inspection"].(string)
-	if got := result["content"].([]any)[0].(map[string]any)["text"]; got != inspection {
-		t.Fatalf("CLI-compatible inspection text = %#v, projected inspection = %#v", got, inspection)
+	if got := result["content"].([]any)[0].(map[string]any)["text"].(string); !strings.HasPrefix(got, "Critical result (JSON): ") || !strings.HasSuffix(got, inspection) {
+		t.Fatalf("inspection text must prefix critical result and retain formatter body: %#v", got)
 	}
 	records := structured["continuations"].([]any)
 	if len(records) != 1 {
@@ -1719,5 +1874,151 @@ func TestTypedContinuationRegistrationRejectsIncompatibleConsumers(t *testing.T)
 				t.Fatal("incompatible typed consumer registration was accepted")
 			}
 		})
+	}
+}
+
+func TestToolsListScopesLanguageAndAccessEnums(t *testing.T) {
+	javaOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(javaOnly, "Main.java"), []byte("class Main {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		root      string
+		options   []mcp.Option
+		languages []string
+	}{
+		{name: "go only", root: func() string {
+			root := t.TempDir()
+			writeTestGoModule(t, root)
+			if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sample\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return root
+		}(), languages: []string{"auto", "go"}},
+		{name: "mixed", root: schemaWorkspace(t), languages: []string{"auto", "go", "java"}},
+		{name: "java only", root: javaOnly, languages: []string{"auto", "java"}},
+		{name: "mixed with Java enabled", root: schemaWorkspace(t), options: []mcp.Option{mcp.WithEnabledLanguages("java")}, languages: []string{"auto", "java"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tools := listToolsAt(t, tc.root, tc.options...)
+			byName := make(map[string]map[string]any, len(tools))
+			for _, tool := range tools {
+				byName[tool["name"].(string)] = tool
+			}
+			languageEnums := func(toolName string) []any {
+				t.Helper()
+				tool := byName[toolName]
+				if tool == nil {
+					t.Fatalf("tools/list omitted %s", toolName)
+				}
+				properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+				return properties["language"].(map[string]any)["enum"].([]any)
+			}
+			if got := languageEnums("semantic_lookup"); !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+				t.Errorf("lookup language enum = %#v, want %#v", got, tc.languages)
+			}
+			if got := languageEnums("semantic_inspect_symbol"); !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+				t.Errorf("inspect language enum = %#v, want %#v", got, tc.languages)
+			}
+			if tc.name == "java only" {
+				if _, ok := byName["semantic_insert_structure"]; ok {
+					t.Error("Java-only tools/list included the Go-only insertion tool")
+				}
+				if _, ok := byName["semantic_verify"]["inputSchema"].(map[string]any)["examples"]; ok {
+					t.Error("Java-only verify schema retained an example with an unsupported language")
+				}
+			}
+			if tc.name == "go only" || tc.name == "mixed" {
+				access := byName["semantic_insert_structure"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+				if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
+					t.Errorf("Go access enum = %#v, want %#v", got, want)
+				}
+			}
+			batch := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+			for _, raw := range batch {
+				branch := raw.(map[string]any)["properties"].(map[string]any)
+				if branch["tool"].(map[string]any)["const"] != "semantic_rename" {
+					continue
+				}
+				params := branch["params"].(map[string]any)
+				property := params["properties"].(map[string]any)["language"].(map[string]any)
+				if got := property["enum"]; !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+					t.Errorf("batch rename language enum = %#v, want %#v", got, tc.languages)
+				}
+				return
+			}
+			t.Error("batch schema omitted semantic_rename")
+		})
+	}
+}
+
+func TestToolsListScopesVerifyAndOmitsBatchForMakeOnlyWorkspace(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("all:\n\t@true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tools := listToolsAt(t, root)
+	if !hasTool(tools, "semantic_verify") {
+		t.Fatal("Auto verify tool was omitted from Make-only tools/list")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_verify" {
+			continue
+		}
+		language := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+		if got, want := language["enum"], toAnySlice([]string{"auto"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Make-only verify language enum = %#v, want %#v", got, want)
+		}
+	}
+	if hasTool(tools, "semantic_batch") {
+		t.Fatal("tools/list included semantic_batch without any eligible batch children")
+	}
+	for _, tool := range tools {
+		input, ok := tool["inputSchema"].(map[string]any)
+		if !ok {
+			continue
+		}
+		properties, ok := input["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for name, raw := range properties {
+			property, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if enum, hasEnum := property["enum"]; hasEnum && len(enum.([]any)) == 0 {
+				t.Errorf("%s.%s exposes an empty enum", tool["name"], name)
+			}
+		}
+	}
+}
+
+func TestToolsListUsesRegisteredBackendsForOperationInventory(t *testing.T) {
+	root := schemaWorkspace(t)
+	registry, err := backend.NewRegistry(javabackend.NewJavaBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := backend.NewService(registry)
+	tools := listToolsAt(t, root, mcp.WithService(service))
+	if hasTool(tools, "semantic_insert_structure") {
+		t.Fatal("Go-only insertion tool was listed without a registered Go backend")
+	}
+	if !hasTool(tools, "semantic_lookup") || !hasTool(tools, "semantic_metrics") {
+		t.Fatal("tools/list omitted language-compatible lookup or backend-independent metrics")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_lookup" {
+			continue
+		}
+		language := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+		if got, want := language["enum"], toAnySlice([]string{"auto", "java"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("lookup language enum = %#v, want %#v", got, want)
+		}
 	}
 }

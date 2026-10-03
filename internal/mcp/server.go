@@ -86,6 +86,8 @@ const semanticVerifyToolName = "semantic_verify"
 
 const finalDiffToolName = "final_diff"
 
+var errNoRegisteredParameterChoices = errors.New("no parameter choices for registered backends")
+
 // Option configures a Server instance.
 type Option func(*Server)
 
@@ -419,15 +421,22 @@ func (s *Server) listTools() ([]map[string]any, error) {
 		return nil, err
 	}
 	activeBackends := s.backendsForLanguages(languages)
+	activeLanguages := make([]backend.LanguageID, 0, len(activeBackends))
+	for _, candidate := range activeBackends {
+		activeLanguages = append(activeLanguages, candidate.Language())
+	}
 	for _, entry := range s.registry.All() {
 		if entry.MCPName == "" || (s.profile == "mutations-only" && entry.ReadOnly) {
 			continue
 		}
-		if !entrySupportsAny(entry, languages) {
+		if !entrySupportsAny(entry, activeLanguages) {
 			continue
 		}
 		tool, err := toolSchemaForLanguages(entry, activeBackends)
 		if err != nil {
+			if errors.Is(err, errNoRegisteredParameterChoices) {
+				continue
+			}
 			return nil, fmt.Errorf("build schema for %q: %w", entry.MCPName, err)
 		}
 		tools = append(tools, tool)
@@ -435,11 +444,14 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			batchable = append(batchable, entry)
 		}
 	}
-	batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends)
-	if err != nil {
-		return nil, err
+	if len(batchable) > 0 {
+		batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, batchTool)
 	}
-	tools = append(tools, batchTool, metricsToolSchema())
+	tools = append(tools, metricsToolSchema())
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", toolFieldDescription: "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
@@ -489,6 +501,10 @@ func (s *Server) activeLanguages() ([]backend.LanguageID, error) {
 		}
 	}
 	return allowed, nil
+}
+
+func (s *Server) goEnabled() bool {
+	return s.enabledLanguages == nil || slices.Contains(s.enabledLanguages, backend.LanguageGo)
 }
 
 func withoutImplicitHaskell(languages []backend.LanguageID) []backend.LanguageID {
@@ -567,11 +583,13 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 			}
 		}
 		slices.Sort(fieldNames)
-		description += " Successful structured results expose declared continuations: " + strings.Join(fieldNames, "; ") + "."
+		description += " Structured results may expose declared continuations when resolved: " + strings.Join(fieldNames, "; ") + ". An absent continuation means there is no resolved continuation target."
 	} else if len(continuations) > 0 {
 		fieldNames := make([]string, 0, len(continuations))
 		for name := range continuations {
 			switch name {
+			case "origin_file":
+				fieldNames = append(fieldNames, "`origin_file` (historical origin evidence; not a continuation target)")
 			case "line", "column":
 				fieldNames = append(fieldNames, "`"+name+"` (navigation only)")
 			case "kind":
@@ -601,13 +619,13 @@ func removeConstructResultSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"status":            map[string]any{"type": "string", "enum": []string{"removed", "refused"}},
-			"safe_delete":       map[string]any{"type": "boolean"},
-			"checks_run":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"refusal":           map[string]any{"type": "string"},
-			"diff":              map[string]any{"type": "string"},
-			"diagnostic_status": map[string]any{"type": "string"},
-			"diagnostic_delta":  map[string]any{"type": "object", additionalPropertiesKey: true},
+			"status":              map[string]any{"type": "string", "enum": []string{"removed", "refused"}},
+			"safe_delete":         map[string]any{"type": "boolean"},
+			"checks_run":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"refusal":             map[string]any{"type": "string"},
+			"diff":                map[string]any{"type": "string"},
+			diagnosticStatusField: map[string]any{"type": "string"},
+			diagnosticDeltaField:  map[string]any{"type": "object", additionalPropertiesKey: true},
 		},
 		"required":              []string{"status", "safe_delete", "checks_run"},
 		additionalPropertiesKey: false,
@@ -750,7 +768,8 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 	case "semantic_remove_construct":
 		fields["file"] = map[string]any{"type": "string"}
 	case "semantic_move_construct":
-		fields["file"] = map[string]any{"type": "string"}
+		fields["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Live destination file after a successful move; the source file on an error is only the attempted target."}
+		fields["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before the move; evidence only, not a continuation target."}
 		fields["symbol"] = map[string]any{"type": "string"}
 	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
@@ -779,6 +798,9 @@ func moveConstructContinuationFields(result any, root string) map[string]any {
 	if file := continuationPath(root, edit.DestinationFile); file != "" {
 		fields["file"] = file
 	}
+	if file := continuationPath(root, edit.File); file != "" {
+		fields["origin_file"] = file
+	}
 	if edit.Symbol != "" {
 		fields["symbol"] = edit.Symbol
 	}
@@ -788,7 +810,7 @@ func moveConstructContinuationFields(result any, root string) map[string]any {
 func structuredContinuationFields(toolName string, result any, root string, arguments map[string]any) map[string]any {
 	fields := map[string]any{}
 	addLookup := func(lookup *backend.LookupResult) {
-		if lookup == nil {
+		if lookup == nil || lookup.Ambiguous {
 			return
 		}
 		if lookup.Symbol != "" {
@@ -944,7 +966,12 @@ func standardOutputSchema(resultSchema map[string]any) map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"result": resultSchema,
+			applicationStateField:         map[string]any{"type": "string"},
+			"result":                      resultSchema,
+			"presentation_error":          map[string]any{"type": "string"},
+			"native_metadata_unavailable": map[string]any{"type": "boolean"},
+			diagnosticStatusField:         map[string]any{"type": "string"},
+			diagnosticDeltaField:          diagnosticDeltaSchema(),
 		},
 		"required": []string{"result"},
 	}
@@ -982,10 +1009,10 @@ func batchOutputSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"status":           map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"results":          map[string]any{"type": "array", "items": items},
-			"diagnostic_delta": diagnosticDeltaSchema(),
-			finalDiffToolName:  map[string]any{"type": "string"},
+			"status":             map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"results":            map[string]any{"type": "array", "items": items},
+			diagnosticDeltaField: diagnosticDeltaSchema(),
+			finalDiffToolName:    map[string]any{"type": "string"},
 		},
 		"required": []string{"status", "results", finalDiffToolName},
 	}, nil
@@ -995,17 +1022,19 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	branches := make([]any, 0, len(entries)+4)
 	baseProperties := func(name string) map[string]any {
 		return map[string]any{
-			"tool":              map[string]any{"const": name},
-			"file":              map[string]any{"type": "string", schemaDescriptionKey: "Requested source path for this operation; on errors it identifies the attempted target, not a successful write."},
-			"destination_file":  map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path for this operation; on errors it identifies the attempted target, not a successful write."},
-			"symbol":            map[string]any{"type": "string"},
-			"package":           map[string]any{"type": "string", schemaDescriptionKey: "Package result, not a symbol target."},
-			"in_function":       map[string]any{"type": "string"},
-			"discriminator":     map[string]any{"type": "string"},
-			"diagnostic_status": map[string]any{"type": "string"},
-			"status":            map[string]any{"type": "string", "enum": []string{"ok", "error"}},
-			"diff":              map[string]any{"type": "string"},
-			"error":             map[string]any{"type": "string"},
+			"tool":                map[string]any{"const": name},
+			"file":                map[string]any{"type": "string", schemaDescriptionKey: "Requested source path for this operation; on errors it identifies the attempted target, not a successful write."},
+			"destination_file":    map[string]any{"type": "string", schemaDescriptionKey: "Requested destination path for this operation; on errors it identifies the attempted target, not a successful write."},
+			"symbol":              map[string]any{"type": "string"},
+			"package":             map[string]any{"type": "string", schemaDescriptionKey: "Package result, not a symbol target."},
+			"in_function":         map[string]any{"type": "string"},
+			"discriminator":       map[string]any{"type": "string"},
+			diagnosticStatusField: map[string]any{"type": "string"},
+			"status":              map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			applicationStateField: map[string]any{"type": "string"},
+			"projection_error":    map[string]any{"type": "string"},
+			"diff":                map[string]any{"type": "string"},
+			"error":               map[string]any{"type": "string"},
 		}
 	}
 	appendBranch := func(properties map[string]any) {
@@ -1018,6 +1047,12 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	}
 	for _, entry := range entries {
 		properties := baseProperties(entry.MCPName)
+		if entry.MCPName == "semantic_move_construct" {
+			properties["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path on success; attempted source path on error. In a batch this may describe an intermediate path rather than the final workspace target."}
+			properties["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before a successful move; evidence only, not a continuation target."}
+			properties["destination_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path for this move; in a batch it may describe an intermediate result rather than the final workspace target."}
+		}
+		resultSchemas := make([]any, 0, 2)
 		if entry.ProjectOutput != nil {
 			if entry.Output == nil || entry.Output.ResultSchema == nil {
 				return nil, fmt.Errorf("batch result for %q has a projector without a result schema", entry.MCPName)
@@ -1026,7 +1061,22 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 			if err != nil {
 				return nil, fmt.Errorf("batch result schema for %q: %w", entry.MCPName, err)
 			}
-			properties["result"] = resultSchema
+			resultSchemas = append(resultSchemas, resultSchema)
+		}
+		if entry.ProjectErrorOutput != nil {
+			if entry.ErrorOutput == nil || entry.ErrorOutput.ResultSchema == nil {
+				return nil, fmt.Errorf("batch error result for %q has a projector without a result schema", entry.MCPName)
+			}
+			resultSchema, err := entry.ErrorOutput.ResultSchema.JSONSchema()
+			if err != nil {
+				return nil, fmt.Errorf("batch error result schema for %q: %w", entry.MCPName, err)
+			}
+			resultSchemas = append(resultSchemas, resultSchema)
+		}
+		if len(resultSchemas) == 1 {
+			properties["result"] = resultSchemas[0]
+		} else if len(resultSchemas) > 1 {
+			properties["result"] = map[string]any{"anyOf": resultSchemas}
 		}
 		appendBranch(properties)
 	}
@@ -1041,12 +1091,12 @@ func diagnosticDeltaSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
-			"net_delta":   map[string]any{"type": "integer"},
-			"introduced":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"resolved":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
-			"suggestions": map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"net_delta":      map[string]any{"type": "integer"},
+			introducedField:  map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			resolvedField:    map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			suggestionsField: map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
-		"required": []string{"net_delta", "introduced", "resolved"},
+		"required": []string{"net_delta", introducedField, resolvedField},
 	}
 }
 
@@ -1075,6 +1125,11 @@ func operationInputSchema(entry operation.Entry) (map[string]any, error) {
 
 func operationInputSchemaForBackends(entry operation.Entry, backends []backend.Backend) (map[string]any, error) {
 	params := operation.ParametersForBackends(entry, backends)
+	for _, param := range params {
+		if (param.DynamicEnums != nil || param.LanguageSelector) && len(param.Enums) == 0 {
+			return nil, fmt.Errorf("%w: parameter %q", errNoRegisteredParameterChoices, param.JSONName)
+		}
+	}
 	schema, err := operationInputSchemaForParams(params)
 	if err != nil {
 		return nil, err
@@ -1088,16 +1143,24 @@ func addOperationExample(schema map[string]any, example map[string]any, params [
 		return
 	}
 
-	supported := make(map[string]struct{}, len(params))
+	supported := make(map[string]operation.ParameterContract, len(params))
 	for _, param := range params {
-		supported[param.JSONName] = struct{}{}
+		supported[param.JSONName] = param
 	}
 
 	filtered := make(map[string]any, len(example))
 	for key, value := range example {
-		if _, ok := supported[key]; ok {
-			filtered[key] = value
+		param, ok := supported[key]
+		if !ok {
+			continue
 		}
+		if len(param.Enums) > 0 {
+			choice, ok := value.(string)
+			if !ok || !slices.Contains(param.Enums, choice) {
+				return
+			}
+		}
+		filtered[key] = value
 	}
 	schema["examples"] = []map[string]any{filtered}
 }
@@ -1176,7 +1239,7 @@ func operationInputSchemaForParams(params []operation.ParameterContract) (map[st
 }
 
 func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend) (map[string]any, error) {
-	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Successful batches return final_diff and diagnostic_delta."
+	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Child outcomes and receipts are captured intermediate states, not final continuation targets; inspect final targets after the batch to resolve continuation fields. Successful batches return final_diff and diagnostic_delta."
 	branches := make([]any, 0, len(entries))
 	for _, entry := range entries {
 		paramsSchema, err := operationInputSchemaForBackends(entry, backends)
@@ -1219,7 +1282,11 @@ type toolCallParams struct {
 }
 
 func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawParams json.RawMessage) {
-	ctx = operation.WithMutationObserver(ctx, godiagnostics.SynchronizeWithContext)
+	observer := godiagnostics.SynchronizeWithContext
+	if !s.goEnabled() {
+		observer = func(context.Context) error { return nil }
+	}
+	ctx = operation.WithMutationObserver(ctx, observer)
 
 	var params toolCallParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
@@ -1278,39 +1345,39 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
-	result, err := s.registry.Dispatch(operation.CallContext{
-		Ctx:      ctx,
-		WorkDir:  s.workDir,
-		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
-		Registry: s.registry,
-		Service:  s.service,
+	result, dispatchErr := s.registry.Dispatch(operation.CallContext{
+		Ctx:              ctx,
+		WorkDir:          s.workDir,
+		Project:          backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		Registry:         s.registry,
+		Service:          s.service,
+		AllowedLanguages: s.enabledLanguages,
 	}, entry.Key, raw)
 	finishDispatch()
-	if err != nil {
-		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+	if dispatchErr != nil {
+		s.sendOperationToolErrorWithTiming(id, dispatchErr.Error(), timing, entry, dispatchErr)
 		return
 	}
 	if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
 		finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
-		text, formatErr := entry.Format(result)
+		body, formatErr := entry.Format(result)
 		finishResponse()
 		if formatErr != nil {
 			s.sendToolErrorWithTiming(id, formatErr.Error(), timing, formatErr)
 			return
 		}
+		structured := timing.structuredContentWithResult(verify)
+		presented, presentationErr := criticalTextWithNative(structured, body, verify)
+		if presentationErr != nil {
+			structured["presentation_error"] = presentationErr.Error()
+			presented = fmt.Sprintf("Critical result projection unavailable: %v\n\n%s", presentationErr, body)
+		}
 		s.recordToolMetrics(timing)
 		s.sendResult(id, map[string]any{
-			"content":            []map[string]any{{"type": "text", "text": text}},
+			"content":            []map[string]any{{"type": "text", "text": presented}},
 			"isError":            true,
-			structuredContentKey: timing.structuredContentWithResult(verify),
+			structuredContentKey: structured,
 		})
-		return
-	}
-	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
-	text, err := entry.Format(result)
-	finishResponse()
-	if err != nil {
-		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
 	fields := structuredContinuationFields(params.Name, result, s.workDir, raw)
@@ -1328,11 +1395,18 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 		maps.Copy(fields, continuationFields)
 	}
-	s.sendToolSuccessWithContinuation(id, text, timing, fields)
+	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
+	text, formatErr := entry.Format(result)
+	finishResponse()
+	if formatErr != nil {
+		s.sendToolErrorWithTiming(id, formatErr.Error(), timing, formatErr)
+		return
+	}
+	s.sendToolSuccessWithNative(id, text, timing, result, fields)
 }
 
 func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {
-	if slices.Contains(entry.Languages, backend.LanguageAuto) {
+	if len(entry.Languages) == 1 && slices.Contains(entry.Languages, backend.LanguageAuto) {
 		return nil
 	}
 	active, err := s.activeLanguages()
@@ -1344,12 +1418,17 @@ func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]a
 		selected = backend.LanguageID(value)
 	}
 	if selected == "" {
-		if file, ok := raw["file"].(string); ok {
+		if file, ok := raw["file"].(string); ok && file != "" {
 			selected = backend.LanguageIDFromFile(file)
 		}
 	}
+	if selected == "" {
+		if path, ok := raw["path"].(string); ok && path != "" {
+			selected, _ = existingSourceLanguage(s.workDir, path)
+		}
+	}
 	if selected != "" {
-		if len(s.enabledLanguages) > 0 && !slices.Contains(s.enabledLanguages, selected) {
+		if s.enabledLanguages != nil && !slices.Contains(s.enabledLanguages, selected) {
 			return fmt.Errorf("language %q is disabled by --enabled-languages", selected)
 		}
 		if selected == backend.LanguageHaskell {
@@ -1370,6 +1449,18 @@ func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]a
 	return fmt.Errorf("operation %q is unavailable for the active workspace languages", entry.Key)
 }
 
+func existingSourceLanguage(root, path string) (backend.LanguageID, bool) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	language := backend.LanguageIDFromFile(path)
+	return language, language != ""
+}
+
 func (s *Server) handleReload(id json.RawMessage) {
 	if !s.liveReload {
 		s.sendError(id, -32601, "Unknown tool: semantic_reload")
@@ -1388,17 +1479,21 @@ func (s *Server) handleReload(id json.RawMessage) {
 }
 
 func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text string, structuredContent map[string]any) {
+	presented, err := criticalText(structuredContent, text)
+	if err != nil {
+		structuredContent["presentation_error"] = err.Error()
+		presented = criticalTextFallback(structuredContent, text, err)
+	}
 	s.sendResult(id, map[string]any{
-		"content":            []map[string]any{{"type": "text", "text": text}},
+		"content":            []map[string]any{{"type": "text", "text": presented}},
 		"isError":            false,
 		structuredContentKey: structuredContent,
 	})
 }
 
-func (s *Server) sendToolSuccessWithContinuation(id json.RawMessage, text string, timing *toolRequestTiming, fields map[string]any) {
+func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {
 	s.recordToolMetrics(timing)
-	structured := timing.structuredContentWithResult(text)
-	maps.Copy(structured, fields)
+	structured := timing.structuredContentWithResult(result)
 	s.sendResult(id, map[string]any{
 		"content":            []map[string]any{{"type": "text", "text": text}},
 		"isError":            false,
@@ -1406,30 +1501,34 @@ func (s *Server) sendToolSuccessWithContinuation(id json.RawMessage, text string
 	})
 }
 
-func (s *Server) sendToolSuccessWithTimingAndResult(id json.RawMessage, text string, result any, timing *toolRequestTiming) {
-	s.recordToolMetrics(timing)
-	s.sendResult(id, map[string]any{
-		"content":            []map[string]any{{"type": "text", "text": text}},
-		"isError":            false,
-		structuredContentKey: timing.structuredContentWithResult(result),
-	})
-}
-
 func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
-	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
+	structured := map[string]any{"error": text, applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if refusal, ok := errors.AsType[*operation.SafeDeleteRefusalError](errs[0]); ok {
-			result[structuredContentKey] = safeDeleteRefusalContent(refusal)
+			structured = safeDeleteRefusalContent(refusal)
+			structured[applicationStateField] = "not_applied"
 		}
 		var mavenErr *maven.Error
 		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
-			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}
+			structured = map[string]any{"error": text, "result": mavenErr.MavenResult(), applicationStateField: "unknown"}
 		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
-			result["location"] = loc
+			structured["location"] = loc
 		}
 	}
-	s.sendResult(id, result)
+	presented, err := criticalText(structured, text)
+	if err != nil {
+		structured["presentation_error"] = err.Error()
+		presented = criticalTextFallback(structured, text, err)
+	}
+	response := map[string]any{
+		"content": []map[string]any{{"type": "text", "text": presented}},
+		"isError": true, structuredContentKey: structured,
+	}
+	if location, ok := structured["location"]; ok {
+		response["location"] = location
+	}
+	s.sendResult(id, response)
 }
 
 func safeDeleteRefusalContent(refusal *operation.SafeDeleteRefusalError) map[string]any {
@@ -1453,20 +1552,104 @@ func safeDeleteRefusalContent(refusal *operation.SafeDeleteRefusalError) map[str
 
 func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, errs ...error) {
 	s.recordToolMetrics(timing)
-	result := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}, "isError": true}
+	structured := map[string]any{"error": text, applicationStateField: "unknown"}
 	if len(errs) > 0 && errs[0] != nil {
 		if refusal, ok := errors.AsType[*operation.SafeDeleteRefusalError](errs[0]); ok {
-			result[structuredContentKey] = safeDeleteRefusalContent(refusal)
+			structured = safeDeleteRefusalContent(refusal)
+			structured[applicationStateField] = "not_applied"
 		}
 		var mavenErr *maven.Error
 		if errors.As(errs[0], &mavenErr) && mavenErr.MavenResult() != nil {
-			result["structuredContent"] = map[string]any{"error": text, "result": mavenErr.MavenResult()}
+			structured = map[string]any{
+				"error": text, "result": mavenErr.MavenResult(),
+				applicationStateField: "unknown",
+			}
 		}
 		if loc := s.extractLocation(errs[0]); loc != nil {
-			result["location"] = loc
+			structured["location"] = loc
 		}
 	}
+	presented, err := criticalText(structured, text)
+	if err != nil {
+		structured["presentation_error"] = err.Error()
+		presented = criticalTextFallback(structured, text, err)
+	}
+	result := map[string]any{
+		"content": []map[string]any{{"type": "text", "text": presented}},
+		"isError": true, structuredContentKey: structured,
+	}
+	if location, ok := structured["location"]; ok {
+		result["location"] = location
+	}
 	s.sendResult(id, result)
+}
+
+func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text string, timing *toolRequestTiming, entry operation.Entry, operationErr error) {
+	if entry.ProjectErrorOutput == nil {
+		s.sendToolErrorWithTiming(id, text, timing, operationErr)
+		return
+	}
+	projected, known, projectErr := entry.ProjectErrorOutput(operationErr)
+	if projectErr != nil {
+		s.recordToolMetrics(timing)
+		structured := map[string]any{
+			"error":                    text,
+			applicationStateField:      "unknown",
+			"error_projection_failure": projectErr.Error(),
+		}
+		location := s.extractLocation(operationErr)
+		if location != nil {
+			structured["location"] = location
+		}
+		presented, presentationErr := criticalText(structured, text)
+		if presentationErr != nil {
+			structured["presentation_error"] = presentationErr.Error()
+			presented = criticalTextFallback(structured, text, presentationErr)
+		}
+		response := map[string]any{
+			"content": []map[string]any{{"type": "text", "text": presented}},
+			"isError": true, structuredContentKey: structured,
+		}
+		if location != nil {
+			response["location"] = location
+		}
+		s.sendResult(id, response)
+		return
+	}
+	if !known {
+		s.sendToolErrorWithTiming(id, text, timing, operationErr)
+		return
+	}
+	s.recordToolMetrics(timing)
+	structured := map[string]any{
+		"error":               text,
+		"result":              projected,
+		applicationStateField: "unknown",
+	}
+	if _, refusal := errors.AsType[*operation.SafeDeleteRefusalError](operationErr); refusal {
+		structured[applicationStateField] = "not_applied"
+	} else if result, ok := projected.(map[string]any); ok {
+		if state, ok := result[applicationStateField]; ok {
+			structured[applicationStateField] = state
+		}
+	}
+	location := s.extractLocation(operationErr)
+	if location != nil {
+		structured["location"] = location
+	}
+	presented, presentationErr := criticalText(structured, text)
+	if presentationErr != nil {
+		structured["presentation_error"] = presentationErr.Error()
+		presented = criticalTextFallback(structured, text, presentationErr)
+	}
+	response := map[string]any{
+		"content": []map[string]any{{"type": "text", "text": presented}},
+		"isError": true, structuredContentKey: structured,
+	}
+	if location != nil {
+		response["location"] = location
+	}
+	s.sendResult(id, response)
 }
 
 type toolRequestTiming struct {
@@ -1871,12 +2054,43 @@ func (s *Server) handleMetricsCall(id json.RawMessage, arguments json.RawMessage
 		return
 	}
 	records := s.recentToolMetrics(request.Limit)
-	text := fmt.Sprintf("Returned %d timing records, newest first.", len(records))
+	structured := map[string]any{"result": map[string]any{"records": records}}
+	body := fmt.Sprintf("Returned %d timing records, newest first.", len(records))
+	text, err := criticalText(structured, body)
+	if err != nil {
+		structured["presentation_error"] = err.Error()
+		text = criticalTextFallback(structured, body, err)
+	}
 	s.sendResult(id, map[string]any{
-		"content": []map[string]any{{"type": "text", "text": text}},
-		"isError": false,
-		"structuredContent": map[string]any{
-			"result": map[string]any{"records": records},
-		},
+		"content":           []map[string]any{{"type": "text", "text": text}},
+		"isError":           false,
+		"structuredContent": structured,
+	})
+}
+
+func (s *Server) sendToolSuccessWithNative(id json.RawMessage, text string, timing *toolRequestTiming, native any, fields map[string]any) {
+	s.recordToolMetrics(timing)
+	structured := timing.structuredContentWithResult(text)
+	maps.Copy(structured, fields)
+	nativeFields, nativeErr := criticalNativeFields(native)
+	if nativeErr == nil {
+		for key, value := range nativeFields {
+			if _, exists := structured[key]; !exists {
+				structured[key] = value
+			}
+		}
+	} else {
+		structured["presentation_error"] = nativeErr.Error()
+		structured["native_metadata_unavailable"] = true
+	}
+	presented, err := criticalText(structured, text)
+	if err != nil {
+		structured["presentation_error"] = err.Error()
+		presented = criticalTextFallback(structured, text, err)
+	}
+	s.sendResult(id, map[string]any{
+		"content":            []map[string]any{{"type": "text", "text": presented}},
+		"isError":            false,
+		structuredContentKey: structured,
 	})
 }

@@ -1,0 +1,32 @@
+# This mixed batch inserts a contract, generates its missing implementation, then edits the unsaved generated method body.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+cmp contracts/runner.go .scratch/want/runner.go
+cmp worker/methods.go .scratch/want/methods.go
+exec go test ./...
+-- go.mod --
+module example.com/contractbatch
+
+go 1.27.1
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_type","params":{"file":"contracts/runner.go","source":"type Runner interface { Run() error }"}},{"tool":"semantic_implement_contract","params":{"file":"worker/worker.go","symbol":"Worker","contract":"Runner","contract_file":"contracts/runner.go","destination_file":"worker/methods.go","receiver_kind":"pointer","body_policy":"panic_stub"}},{"tool":"semantic_replace_body","params":{"file":"worker/methods.go","symbol":"(*Worker).Run","body":"return nil"}}]}}}
+-- contracts/runner.go --
+package contracts
+-- worker/worker.go --
+package worker
+
+type Worker struct{}
+-- worker/methods.go --
+package worker
+-- .scratch/want/runner.go --
+package contracts
+
+type Runner interface{ Run() error }
+-- .scratch/want/methods.go --
+package worker
+
+func (*Worker) Run() error {
+	return nil
+}

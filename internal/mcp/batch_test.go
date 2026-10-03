@@ -577,7 +577,7 @@ func Local() int { return 1 }
 	if err != nil || response.Status != "ok" {
 		t.Fatalf("move batch = %+v, err = %v", response, err)
 	}
-	if len(response.Results) != 3 || response.Results[0].DestinationFile != "first.go" || response.Results[1].DestinationFile != "second.go" || response.Results[2].DestinationFile != "source.go" {
+	if len(response.Results) != 3 || response.Results[0].File != "first.go" || response.Results[0].OriginFile != "source.go" || response.Results[0].DestinationFile != "first.go" || response.Results[1].File != "second.go" || response.Results[1].OriginFile != "source.go" || response.Results[1].DestinationFile != "second.go" || response.Results[2].File != "source.go" || response.Results[2].OriginFile != "source.go" || response.Results[2].DestinationFile != "source.go" {
 		t.Fatalf("ordered move receipts = %+v", response.Results)
 	}
 	for _, result := range response.Results {

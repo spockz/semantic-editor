@@ -1,0 +1,29 @@
+# Multiline function-body source arrives directly on stdin and preserves quotes and backslashes.
+stdin body.txt
+exec semedit replace-body --file api/text.go --symbol Message --body -
+stdout 'Successfully replaced body of Message'
+cmp api/text.go want/api/text.go
+
+-- go.mod --
+module example.com/replace-body-stdin
+
+go 1.23
+
+-- api/text.go --
+package api
+
+func Message(value string) string {
+	return ""
+}
+
+-- body.txt --
+value = value + "!"
+return value + ` "quoted" \\ slash`
+
+-- want/api/text.go --
+package api
+
+func Message(value string) string {
+	value = value + "!"
+	return value + ` "quoted" \\ slash`
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"semedit/internal/backend"
 	"semedit/internal/backends"
@@ -31,11 +32,14 @@ func hasConfiguredCommandHooks(hooks []projectverify.Hook) bool {
 	return false
 }
 
-func verificationLSPRunner(service *backend.Service, project backend.ProjectContext, phase projectverify.Phase) projectverify.LSPRunner {
+func verificationLSPRunner(service *backend.Service, project backend.ProjectContext, phase projectverify.Phase, allowed []backend.LanguageID) projectverify.LSPRunner {
 	return func(ctx context.Context, hook projectverify.Hook, scope projectverify.Scope) (projectverify.HookResult, error) {
 		result := projectverify.HookResult{ID: hook.ID, Kind: "lsp", Signal: hook.Signal, ConfigPath: hook.ConfigPath, ScopePaths: append([]string(nil), scope.Paths...)}
 		if hook.LSP == nil {
 			return result, fmt.Errorf("hook %q has no LSP action", hook.ID)
+		}
+		if allowed != nil && !slices.Contains(allowed, backend.LanguageID(hook.LSP.Language)) {
+			return result, fmt.Errorf("hook %q LSP language %q is disabled by --enabled-languages", hook.ID, hook.LSP.Language)
 		}
 		if phase != projectverify.PhaseNormalize {
 			return result, fmt.Errorf("LSP code action %q is not supported in the check phase", hook.ID)

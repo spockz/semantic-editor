@@ -64,10 +64,10 @@ func insertCompositeElementStructuralDef() Def[map[string]any, compositePlanResu
 	}
 	output := structuralOutputContract(false)
 	selectorItem := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"file":              {Kind: SchemaString},
-		wireInDeclaration:   {Kind: SchemaString},
-		wireDiscriminator:   {Kind: SchemaString},
-		"expected_revision": {Kind: SchemaString},
+		"file":               {Kind: SchemaString},
+		wireInDeclaration:    {Kind: SchemaString},
+		wireDiscriminator:    {Kind: SchemaString},
+		wireExpectedRevision: {Kind: SchemaString},
 	}, Required: []string{"file", wireInDeclaration, wireDiscriminator, "expected_revision"}}
 	output.ResultSchema.Properties["selector_continuations"] = ValueSchema{Kind: SchemaArray, Items: &selectorItem}
 	for _, field := range []string{"file", wireInDeclaration, wireDiscriminator, "expected_revision"} {
