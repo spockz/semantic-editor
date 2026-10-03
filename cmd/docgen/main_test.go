@@ -166,6 +166,19 @@ func TestExtractCodeCapabilitiesReportsMalformedPlacementSource(t *testing.T) {
 	}
 }
 
+func TestExtractTxtarExamplesReportsUnreadableEntry(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	scriptsDir := filepath.Join(rootDir, "testdata", "scripts")
+	if err := os.MkdirAll(filepath.Join(scriptsDir, "unreadable.txtar"), 0o750); err != nil {
+		t.Fatalf("create unreadable txtar entry: %v", err)
+	}
+	_, err := extractTxtarExamples(rootDir)
+	if err == nil || !strings.Contains(err.Error(), "read txtar example") || !strings.Contains(err.Error(), "unreadable.txtar") {
+		t.Fatalf("extractTxtarExamples() error = %v, want txtar read failure", err)
+	}
+}
+
 func prepareHugoTestOutput(t *testing.T) string {
 	t.Helper()
 	outputDir := t.TempDir()

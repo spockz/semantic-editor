@@ -30,7 +30,7 @@ func extractTxtarExamples(rootDir string) ([]TxtarExample, error) {
 		// #nosec G304 -- reading verified test archive for example synthesis
 		content, err := os.ReadFile(cleanFilePath)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("read txtar example %s: %w", cleanFilePath, err)
 		}
 
 		ex, parseErr := parseTxtarFile(file.Name(), string(content))
