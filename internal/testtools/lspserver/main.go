@@ -27,122 +27,189 @@ func main() {
 func serve(input io.Reader, output io.Writer, server string) error {
 	reader := bufio.NewReader(input)
 	writer := bufio.NewWriter(output)
-	ambiguous := false
-	included := false
-	conditional := false
-	functionDeclarations := false
+	state := serverState{}
 	for {
-		headers := map[string]string{}
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				return err
-			}
-			line = strings.TrimSpace(line)
-			if line == "" {
-				break
-			}
-			k, v, ok := strings.Cut(line, ":")
-			if ok {
-				headers[strings.ToLower(strings.TrimSpace(k))] = strings.TrimSpace(v)
-			}
-		}
-		size := 0
-		if _, err := fmt.Sscanf(headers["content-length"], "%d", &size); err != nil || size < 0 {
-			return fmt.Errorf("bad content length")
-		}
-		data := make([]byte, size)
-		if _, err := io.ReadFull(reader, data); err != nil {
+		request, err := readMessage(reader)
+		if err != nil {
 			return err
 		}
-		var m message
-		if err := json.Unmarshal(data, &m); err != nil {
+		consumed, err := handleNotification(writer, server, request, &state)
+		if err != nil {
 			return err
 		}
-		if m.ID == nil {
-			if m.Method == "textDocument/didOpen" {
-				var p struct {
-					TextDocument struct {
-						Text string `json:"text"`
-					} `json:"textDocument"`
-				}
-				_ = json.Unmarshal(m.Params, &p)
-				ambiguous = strings.Contains(p.TextDocument.Text, "SEMEDIT_TEST_AMBIGUOUS")
-				included = strings.Contains(p.TextDocument.Text, "include ")
-				conditional = strings.Contains(p.TextDocument.Text, "ifeq (")
-				functionDeclarations = strings.Contains(p.TextDocument.Text, "function fun()")
-			}
-			if server == "bash-language-server" && m.Method == "textDocument/didOpen" {
-				var p struct {
-					TextDocument struct {
-						URI string `json:"uri"`
-					} `json:"textDocument"`
-				}
-				_ = json.Unmarshal(m.Params, &p)
-				if err := write(writer, message{JSONRPC: "2.0", Method: "textDocument/publishDiagnostics", Params: mustJSON(map[string]any{"uri": p.TextDocument.URI, "version": 1, "diagnostics": []any{}})}); err != nil {
-					return err
-				}
-			}
+		if consumed {
 			continue
 		}
-		var result any
-		switch m.Method {
-		case "initialize":
-			result = map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "documentSymbolProvider": true}}
-		case "textDocument/documentSymbol":
-			var params struct {
-				TextDocument struct {
-					URI string
-				}
-			}
-			_ = json.Unmarshal(m.Params, &params)
-			selectedURI := params.TextDocument.URI
-			if server == "bash-language-server" {
-				sym := map[string]any{"name": "f", "kind": 12, "location": map[string]any{"uri": selectedURI, "range": rng(1, 0, 6)}}
-				result = []any{sym}
-				if functionDeclarations {
-					result = []any{
-						map[string]any{"name": "fun", "kind": 12, "location": map[string]any{"uri": selectedURI, "range": rng(0, 0, 16)}},
-						map[string]any{"name": "loc", "kind": 13, "location": map[string]any{"uri": selectedURI, "range": rng(1, 1, 14)}},
-					}
-				}
-				if ambiguous {
-					result = []any{sym, sym}
-				}
-			} else {
-				sym := map[string]any{"name": "all", "kind": 12, "range": rng(0, 0, 4), "selectionRange": rng(0, 0, 3)}
-				result = []any{sym}
-				if strings.HasSuffix(selectedURI, "/Read.mk") {
-					sym["range"] = rng(0, 0, 0)
-					sym["range"] = map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 2, "character": 10}}
-					result = []any{sym}
-				}
-				if strings.HasSuffix(selectedURI, "/Variables.mk") {
-					result = []any{map[string]any{"name": "X", "kind": 13, "range": rng(0, 0, 5), "selectionRange": rng(0, 0, 1)}}
-				}
-				if conditional {
-					wholeBlock := map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 3, "character": 5}}
-					result = []any{map[string]any{"name": "ifeq $(MODE),1", "kind": 3, "range": wholeBlock, "selectionRange": wholeBlock}}
-				}
-				if included {
-					result = []any{map[string]any{"name": "external", "kind": 12, "range": rng(0, 0, 19), "selectionRange": rng(0, 8, 16)}}
-				}
-				if ambiguous {
-					result = []any{sym, sym}
-				}
-			}
-		case "shutdown":
-			result = nil
-		default:
-			result = map[string]any{}
-		}
-		if err := write(writer, message{JSONRPC: "2.0", ID: m.ID, Result: result}); err != nil {
+		result, shutdown := handleRequest(server, request, state)
+		if err := write(writer, message{JSONRPC: "2.0", ID: request.ID, Result: result}); err != nil {
 			return err
 		}
-		if m.Method == "shutdown" {
+		if shutdown {
 			return nil
 		}
 	}
+}
+
+type serverState struct {
+	ambiguous            bool
+	included             bool
+	conditional          bool
+	functionDeclarations bool
+}
+
+func readMessage(reader *bufio.Reader) (message, error) {
+	headers, err := readHeaders(reader)
+	if err != nil {
+		return message{}, err
+	}
+	size, err := contentLength(headers["content-length"])
+	if err != nil {
+		return message{}, err
+	}
+	data := make([]byte, size)
+	if _, err := io.ReadFull(reader, data); err != nil {
+		return message{}, err
+	}
+	var request message
+	if err := json.Unmarshal(data, &request); err != nil {
+		return message{}, err
+	}
+	return request, nil
+}
+
+func readHeaders(reader *bufio.Reader) (map[string]string, error) {
+	headers := make(map[string]string)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return nil, err
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return headers, nil
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if ok {
+			headers[strings.ToLower(strings.TrimSpace(key))] = strings.TrimSpace(value)
+		}
+	}
+}
+
+func contentLength(value string) (int, error) {
+	size := 0
+	if _, err := fmt.Sscanf(value, "%d", &size); err != nil || size < 0 {
+		return 0, fmt.Errorf("bad content length")
+	}
+	return size, nil
+}
+
+func handleNotification(writer *bufio.Writer, server string, request message, state *serverState) (bool, error) {
+	if request.ID != nil {
+		return false, nil
+	}
+	if request.Method == "textDocument/didOpen" {
+		state.observeOpenedDocument(request.Params)
+		if server == "bash-language-server" {
+			if err := publishEmptyDiagnostics(writer, request.Params); err != nil {
+				return true, err
+			}
+		}
+	}
+	return true, nil
+}
+
+func (state *serverState) observeOpenedDocument(params json.RawMessage) {
+	var opened struct {
+		TextDocument struct {
+			Text string `json:"text"`
+		} `json:"textDocument"`
+	}
+	_ = json.Unmarshal(params, &opened)
+	text := opened.TextDocument.Text
+	state.ambiguous = strings.Contains(text, "SEMEDIT_TEST_AMBIGUOUS")
+	state.included = strings.Contains(text, "include ")
+	state.conditional = strings.Contains(text, "ifeq (")
+	state.functionDeclarations = strings.Contains(text, "function fun()")
+}
+
+func publishEmptyDiagnostics(writer *bufio.Writer, params json.RawMessage) error {
+	var opened struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+	}
+	_ = json.Unmarshal(params, &opened)
+	result := map[string]any{"uri": opened.TextDocument.URI, "version": 1, "diagnostics": []any{}}
+	return write(writer, message{JSONRPC: "2.0", Method: "textDocument/publishDiagnostics", Params: mustJSON(result)})
+}
+
+func handleRequest(server string, request message, state serverState) (any, bool) {
+	switch request.Method {
+	case "initialize":
+		return map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "documentSymbolProvider": true}}, false
+	case "textDocument/documentSymbol":
+		return documentSymbols(server, request.Params, state), false
+	case "shutdown":
+		return nil, true
+	default:
+		return map[string]any{}, false
+	}
+}
+
+func documentSymbols(server string, params json.RawMessage, state serverState) any {
+	var document struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+	}
+	_ = json.Unmarshal(params, &document)
+	if server == "bash-language-server" {
+		return bashDocumentSymbols(document.TextDocument.URI, state)
+	}
+	return makeDocumentSymbols(document.TextDocument.URI, state)
+}
+
+func bashDocumentSymbols(uri string, state serverState) []any {
+	symbol := map[string]any{"name": "f", "kind": 12, "location": map[string]any{"uri": uri, "range": rng(1, 0, 6)}}
+	if state.ambiguous {
+		return []any{symbol, symbol}
+	}
+	if state.functionDeclarations {
+		return []any{
+			map[string]any{"name": "fun", "kind": 12, "location": map[string]any{"uri": uri, "range": rng(0, 0, 16)}},
+			map[string]any{"name": "loc", "kind": 13, "location": map[string]any{"uri": uri, "range": rng(1, 1, 14)}},
+		}
+	}
+	return []any{symbol}
+}
+
+func makeDocumentSymbols(uri string, state serverState) []any {
+	symbol := map[string]any{"name": "all", "kind": 12, "range": rng(0, 0, 4), "selectionRange": rng(0, 0, 3)}
+	if state.ambiguous {
+		return []any{symbol, symbol}
+	}
+	if state.included {
+		return []any{makeIncludedSymbol()}
+	}
+	if state.conditional {
+		return []any{makeConditionalSymbol()}
+	}
+	if strings.HasSuffix(uri, "/Variables.mk") {
+		return []any{map[string]any{"name": "X", "kind": 13, "range": rng(0, 0, 5), "selectionRange": rng(0, 0, 1)}}
+	}
+	if strings.HasSuffix(uri, "/Read.mk") {
+		symbol["range"] = map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 2, "character": 10}}
+	}
+	return []any{symbol}
+}
+
+func makeIncludedSymbol() map[string]any {
+	return map[string]any{"name": "external", "kind": 12, "range": rng(0, 0, 19), "selectionRange": rng(0, 8, 16)}
+}
+
+func makeConditionalSymbol() map[string]any {
+	block := map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 3, "character": 5}}
+	return map[string]any{"name": "ifeq $(MODE),1", "kind": 3, "range": block, "selectionRange": block}
 }
 func rng(line, start, end int) map[string]any {
 	return map[string]any{"start": map[string]int{"line": line, "character": start}, "end": map[string]int{"line": line, "character": end}}

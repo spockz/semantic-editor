@@ -1,4 +1,4 @@
-// This file verifies structural no-op plans still reject analysis read-set drift.
+// This file verifies structural snapshot, field-selector, and continuation behavior through operation boundaries.
 
 package operation
 
@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,36 +91,62 @@ func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
 
 func TestInsertFieldRegistryRejectsLeadingDotQualifierWithoutWriting(t *testing.T) {
 	t.Parallel()
+	root, path, before := newStructuralFieldFixture(t)
+	err := invokeStructuralFieldInsert(root, ".t", ".t.extra")
+	if err == nil || !strings.Contains(err.Error(), "invalid package qualifier") {
+		t.Fatalf("leading-dot in_type error = %v, want invalid package qualifier refusal", err)
+	}
+	assertSourceBytes(t, path, before, "source changed after invalid in_type")
+
+	validRoot, validPath, _ := newStructuralFieldFixture(t)
+	if err := invokeStructuralFieldInsert(validRoot, "t", "t.extra"); err != nil {
+		t.Fatalf("valid field insertion rejected: %v", err)
+	}
+	updated, readErr := os.ReadFile(validPath)
+	if readErr != nil {
+		t.Fatalf("read valid field insertion result: %v", readErr)
+	}
+	if !strings.Contains(string(updated), "extra int") {
+		t.Fatalf("valid field insertion result missing extra field: %q", updated)
+	}
+}
+
+func newStructuralFieldFixture(t *testing.T) (string, string, []byte) {
+	t.Helper()
 	root := t.TempDir()
-	files := map[string]string{
-		"go.mod":   "module example.com/fieldselector\n\ngo 1.24\n",
-		"types.go": "package fieldselector\n\ntype T struct { Existing int }\n",
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
-			t.Fatalf("write %s: %v", name, err)
-		}
-	}
+	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/fieldselector\n\ngo 1.24\n")
 	path := filepath.Join(root, "types.go")
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read source before insertion: %v", err)
-	}
-	entry, ok := DefaultRegistry().LookupMCP("semantic_insert_construct")
+	before := []byte("package fieldselector\n\ntype t struct { existing int }\n")
+	writeFixtureFile(t, path, string(before))
+	return root, path, before
+}
+
+func invokeStructuralFieldInsert(root, inType, symbol string) error {
+	entry, ok := DefaultRegistry().LookupMCP("semantic_insert_field")
 	if !ok {
-		t.Fatal("generic construct operation is not registered")
+		return fmt.Errorf("struct field operation is not registered")
 	}
-	_, err = entry.Invoke(CallContext{Ctx: context.Background(), WorkDir: root}, map[string]any{
-		"file": "types.go", "kind": "field", "source": "Extra int", "in_type": ".T", "placement": "last",
+	_, err := entry.Invoke(CallContext{Ctx: context.Background(), WorkDir: root}, map[string]any{
+		"file": "types.go", "in_type": inType, "symbol": symbol,
+		"source": "extra int", "placement": "type_end",
 	})
-	if err == nil || !strings.Contains(err.Error(), "invalid struct type name") {
-		t.Fatalf("leading-dot in_type error = %v, want invalid struct selector refusal", err)
+	return err
+}
+
+func writeFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func assertSourceBytes(t *testing.T, path string, want []byte, detail string) {
+	t.Helper()
 	after, readErr := os.ReadFile(path)
 	if readErr != nil {
-		t.Fatalf("read source after refused insertion: %v", readErr)
+		t.Fatalf("read source after operation: %v", readErr)
 	}
-	if string(after) != string(before) {
-		t.Fatalf("source changed after invalid in_type: %q", after)
+	if string(after) != string(want) {
+		t.Fatalf("%s: %q", detail, after)
 	}
 }
