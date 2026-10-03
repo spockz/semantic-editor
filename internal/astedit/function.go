@@ -151,8 +151,11 @@ func publishInsertedDeclaration(ctx context.Context, path string, content []byte
 	directory := filepath.Dir(path)
 	if organizeImports {
 		if err := pipeline.OrganizeImports(ctx, directory, path); err != nil {
-			_ = pipeline.Format(ctx, directory, path)
-			return fmt.Errorf("organize imports: %w", err)
+			organizeErr := fmt.Errorf("organize imports: %w", err)
+			if formatErr := pipeline.Format(ctx, directory, path); formatErr != nil {
+				return errors.Join(organizeErr, fmt.Errorf("format file after import organization failure: %w", formatErr))
+			}
+			return organizeErr
 		}
 		return nil
 	}
@@ -260,16 +263,16 @@ func calculateTopLevelFunctionOffset(fset *token.FileSet, fileNode *ast.File, co
 }
 
 func calculateReceiverFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, receiver string, access AccessModifier) (int, error) {
-	methods, typeDeclaration := receiverFunctionTargets(fileNode, receiver)
+	targets := receiverFunctionTargets(fileNode, receiver)
 	wantedAccess := access
-	if wantedAccess == AccessModifierPublic && len(methods.public) > 0 {
-		return fset.Position(methods.public[len(methods.public)-1].End()).Offset, nil
+	if wantedAccess == AccessModifierPublic && len(targets.methods.public) > 0 {
+		return fset.Position(targets.methods.public[len(targets.methods.public)-1].End()).Offset, nil
 	}
-	if wantedAccess == AccessModifierPublic && typeDeclaration != nil && isDeclExported(typeDeclaration) {
-		return fset.Position(typeDeclaration.End()).Offset, nil
+	if wantedAccess == AccessModifierPublic && targets.typeDeclaration != nil && isDeclExported(targets.typeDeclaration) {
+		return fset.Position(targets.typeDeclaration.End()).Offset, nil
 	}
-	if wantedAccess == AccessModifierPrivate && len(methods.private) > 0 {
-		return fset.Position(methods.private[len(methods.private)-1].End()).Offset, nil
+	if wantedAccess == AccessModifierPrivate && len(targets.methods.private) > 0 {
+		return fset.Position(targets.methods.private[len(targets.methods.private)-1].End()).Offset, nil
 	}
 	placement := PlacementPrivateStart
 	if wantedAccess == AccessModifierPublic {
@@ -283,21 +286,25 @@ type receiverFunctionMethods struct {
 	private []*ast.FuncDecl
 }
 
-func receiverFunctionTargets(file *ast.File, receiver string) (receiverFunctionMethods, ast.Decl) {
-	var methods receiverFunctionMethods
-	var typeDeclaration ast.Decl
+type receiverFunctionTargetSet struct {
+	methods         receiverFunctionMethods
+	typeDeclaration ast.Decl
+}
+
+func receiverFunctionTargets(file *ast.File, receiver string) receiverFunctionTargetSet {
+	var targets receiverFunctionTargetSet
 	for _, declaration := range file.Decls {
 		if function, ok := declaration.(*ast.FuncDecl); ok {
 			if extractReceiverTypeName(function.Recv) == receiver {
-				methods.add(function)
+				targets.methods.add(function)
 			}
 			continue
 		}
 		if declarationTypeMatches(declaration, receiver) {
-			typeDeclaration = declaration
+			targets.typeDeclaration = declaration
 		}
 	}
-	return methods, typeDeclaration
+	return targets
 }
 
 func (methods *receiverFunctionMethods) add(function *ast.FuncDecl) {
