@@ -3,10 +3,10 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
-	"go/importer"
 	"go/parser"
 	"go/scanner"
 	"go/token"
@@ -42,11 +42,16 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 	if err != nil {
 		return "", err
 	}
-	candidates := collectStatementExpressionCandidates(fset, content, file, owner)
+	candidates, typeFacts := collectStatementExpressionCandidates(fset, content, file, owner)
 	matches := make([]constructCandidate, 0, 1)
+	unresolved := make([]constructCandidate, 0)
 	for _, candidate := range candidates {
 		if candidate.key == normalizeConstructSelector(discriminator) {
-			matches = append(matches, candidate)
+			if candidate.class == unresolvedExpressionClass {
+				unresolved = append(unresolved, candidate)
+			} else {
+				matches = append(matches, candidate)
+			}
 		}
 	}
 	if opts.ConstructPath != "" {
@@ -57,12 +62,24 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 			}
 		}
 		if len(selected) == 0 {
+			for _, candidate := range unresolved {
+				if candidate.path == opts.ConstructPath {
+					return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, []constructCandidate{candidate})
+				}
+			}
 			return "", fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", opts.ConstructPath, discriminator, ownerName, formatSpanCandidates(fset, matches))
 		}
 		matches = selected
+		unresolved = nil
 	}
 	if len(matches) == 0 {
+		if len(unresolved) > 0 {
+			return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, unresolved)
+		}
 		return "", fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", discriminator, ownerName, formatSpanCandidates(fset, candidates))
+	}
+	if len(unresolved) > 0 {
+		return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, unresolved)
 	}
 	if len(matches) > 1 {
 		return "", fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", discriminator, ownerName, formatSpanCandidates(fset, matches))
@@ -128,7 +145,7 @@ func findConstructOwner(file *ast.File, ownerName string) (*ast.FuncDecl, error)
 	return matches[0], nil
 }
 
-func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, file *ast.File, owner *ast.FuncDecl) []constructCandidate {
+func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, file *ast.File, owner *ast.FuncDecl) ([]constructCandidate, constructTypeFacts) {
 	var candidates []constructCandidate
 	info := collectExpressionTypes(fset, file, owner)
 	var walkBlock func(*ast.BlockStmt, string)
@@ -153,14 +170,15 @@ func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, fi
 	if owner != nil {
 		walkBlock(owner.Body, "")
 	}
-	return candidates
+	return candidates, info
 }
 
 // Partial type information remains useful, while a missing fact stays ambiguous.
 type constructTypeFacts struct {
 	info *types.Info
 	// checkErr records whether this snapshot is partial.
-	checkErr error
+	checkErr    error
+	diagnostics []error
 }
 
 func collectExpressionTypes(fset *token.FileSet, file *ast.File, owner *ast.FuncDecl) constructTypeFacts {
@@ -171,9 +189,10 @@ func collectExpressionTypes(fset *token.FileSet, file *ast.File, owner *ast.Func
 	if file == nil || owner == nil || !needsExpressionTypeInfo(owner.Body) {
 		return constructTypeFacts{info: info}
 	}
-	config := types.Config{Importer: importer.Default()}
+	var diagnostics []error
+	config := types.Config{Error: func(err error) { diagnostics = append(diagnostics, err) }}
 	_, checkErr := config.Check(file.Name.Name, fset, []*ast.File{file}, info)
-	return constructTypeFacts{info: info, checkErr: checkErr}
+	return constructTypeFacts{info: info, checkErr: checkErr, diagnostics: diagnostics}
 }
 
 func needsExpressionTypeInfo(body *ast.BlockStmt) bool {
@@ -240,11 +259,29 @@ func makeSpanExpressionAdder(fset *token.FileSet, candidates *[]constructCandida
 				}
 			}
 		}
+		if indexed, ok := root.(*ast.IndexExpr); ok && !isKnownType(info, indexed.Index) && !isKnownValue(info, indexed.Index) {
+			indexPath := childLoopPath(path, 1)
+			*candidates = append(*candidates, constructCandidate{
+				node: indexed.Index, path: indexPath, key: strings.TrimSpace(nodeText(fset, indexed.Index)), class: unresolvedExpressionClass,
+			})
+		}
 		for index, child := range expressionChildren(root, info) {
 			add(child, childLoopPath(path, index))
 		}
 	}
 	return add
+}
+
+const unresolvedExpressionClass = "unresolved expression"
+
+func unresolvedExpressionError(fset *token.FileSet, selector, ownerName string, facts constructTypeFacts, candidates []constructCandidate) error {
+	reason := "type analysis did not prove the selected index operand is a runtime value"
+	if len(facts.diagnostics) > 0 {
+		reason = errors.Join(facts.diagnostics...).Error()
+	} else if facts.checkErr != nil {
+		reason = facts.checkErr.Error()
+	}
+	return fmt.Errorf("cannot classify %q in %s as a runtime expression because type analysis is incomplete: %s; candidates:\n%s", selector, ownerName, reason, formatSpanCandidates(fset, candidates))
 }
 
 func addStatementExpressionRoots(stmt ast.Stmt, path string, addExprRoot func(ast.Expr, string)) {

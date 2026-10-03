@@ -117,7 +117,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 			return SourcePlan{}, fmt.Errorf("function %q has no direct return statement", intent.Function)
 		}
 	case "before", "after":
-		candidates := collectStatementExpressionCandidates(fset, source, file, owner)
+		candidates, _ := collectStatementExpressionCandidates(fset, source, file, owner)
 		matches := make([]constructCandidate, 0, 1)
 		for _, candidate := range candidates {
 			if !isDirectOwnerStatementCandidate(candidate) || candidate.key != normalizeConstructSelector(intent.Discriminator) {
@@ -135,7 +135,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 			return SourcePlan{}, fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
 		}
 		if len(matches) > 1 {
-			return SourcePlan{}, fmt.Errorf("ambiguous statement anchor %q; select construct_path from:\n%s", intent.Discriminator, formatSpanCandidates(fset, matches))
+			return SourcePlan{}, fmt.Errorf("ambiguous statement anchor %q; select construct_path with expected_revision %q from:\n%s", intent.Discriminator, goReadRevision(source), formatSpanCandidates(fset, matches))
 		}
 		selected := matches[0]
 		if selected.class != "statement" {

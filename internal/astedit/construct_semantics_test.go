@@ -297,6 +297,40 @@ func TestReplaceConstructFindsHeaderInitializerAndAssignmentIndexExpressions(t *
 	}
 }
 
+func TestReplaceConstructClassifiesIndexSlotsWithPartialTypeInfo(t *testing.T) {
+	t.Run("unresolved import does not hide known literal index", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "main.go")
+		writeConstructFixture(t, path, "package p\nimport _ \"example.com/unavailable\"\nfunc run(items []int) int { return items[17] }\n")
+		if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.1"}); err != nil {
+			t.Fatalf("replace known runtime index with partial type info: %v", err)
+		}
+		updated, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertReturnIndexOperand(t, updated, "18")
+	})
+	t.Run("unresolved index operand reports why selection is refused", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "main.go")
+		writeConstructFixture(t, path, "package p\nimport _ \"example.com/unavailable\"\nfunc run(items []int) int { return items[Missing] }\n")
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "Missing", "17", ConstructOptions{ConstructPath: "0.e0.1"})
+		if err == nil || !strings.Contains(err.Error(), "type analysis is incomplete") {
+			t.Fatalf("unresolved index operand was not refused with a reason: %v", err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(before) {
+			t.Fatal("unresolved index refusal changed the file")
+		}
+	})
+}
+
 func assertReturnIndexOperand(t *testing.T, source []byte, want string) {
 	t.Helper()
 	fset := token.NewFileSet()
@@ -593,6 +627,58 @@ func TestInsertConstructRejectsStatementsEscapingWrapper(t *testing.T) {
 	}
 	if string(after) != string(before) {
 		t.Fatalf("rejected snippet changed target file: %s", after)
+	}
+}
+
+func TestInsertConstructAmbiguityRevisionBoundRetry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "main.go")
+	writeConstructFixture(t, path, "package p\nfunc run() {\n\tflush()\n\tflush()\n}\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := InsertConstructOptions{Kind: backend.ConstructStatementOrExpr, Function: "run", Anchor: "before", Discriminator: "flush()"}
+	_, err = InsertConstruct(context.Background(), path, "audit()", base)
+	revision := goReadRevision(before)
+	if err == nil || !strings.Contains(err.Error(), "ambiguous statement anchor") || !strings.Contains(err.Error(), "construct_path") || !strings.Contains(err.Error(), revision) {
+		t.Fatalf("ambiguity did not provide revision-bound candidates: %v", err)
+	}
+	selected := base
+	selected.ConstructPath = "0"
+	_, err = InsertConstruct(context.Background(), path, "audit()", selected)
+	if err == nil || !strings.Contains(err.Error(), "construct_path requires its matching expected_revision") {
+		t.Fatalf("path without expected_revision was not refused: %v", err)
+	}
+	selected.ExpectedRevision = "stale"
+	_, err = InsertConstruct(context.Background(), path, "audit()", selected)
+	if err == nil || !strings.Contains(err.Error(), "expected_revision does not match") {
+		t.Fatalf("stale expected_revision was not refused: %v", err)
+	}
+	afterRefusals, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterRefusals) != string(before) {
+		t.Fatal("refused selector retry changed the target file")
+	}
+	selected.ExpectedRevision = revision
+	_, err = InsertConstruct(context.Background(), path, "audit()", selected)
+	if err != nil {
+		t.Fatalf("revision-bound retry failed: %v", err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", updated, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	first := fn.Body.List[0].(*ast.ExprStmt).X.(*ast.CallExpr)
+	name, ok := first.Fun.(*ast.Ident)
+	if !ok || name.Name != "audit" {
+		t.Fatalf("revision-bound retry inserted at the wrong target: %s", updated)
 	}
 }
 
