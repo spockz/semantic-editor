@@ -72,9 +72,9 @@ func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.
 	if err := validateFreshPrivateIdentifier("field", fieldName); err != nil {
 		return astedit.SourcePlan{}, err
 	}
-	owner, named, typeName, err := structuralFieldOwner(snapshot, inType)
-	if err != nil {
-		return astedit.SourcePlan{}, err
+	owner, named, typeName, ownerErr := structuralFieldOwner(snapshot, inType)
+	if ownerErr != nil {
+		return astedit.SourcePlan{}, ownerErr
 	}
 	if err := rejectGeneratedExtractFile(snapshot, owner); err != nil {
 		return astedit.SourcePlan{}, err
@@ -98,21 +98,21 @@ func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.
 	if err := rejectStructuralBuildVariants(snapshot, owner); err != nil {
 		return astedit.SourcePlan{}, err
 	}
-	selected, err := parseExtractTypeMembers(raw["members"], snapshot, owner, structure, typeName)
-	if err != nil {
-		return astedit.SourcePlan{}, err
+	selected, selectionErr := parseExtractTypeMembers(raw["members"], snapshot, owner, structure, typeName)
+	if selectionErr != nil {
+		return astedit.SourcePlan{}, selectionErr
 	}
 	if err := proveExtractTypeUses(snapshot, owner, selected); err != nil {
 		return astedit.SourcePlan{}, err
 	}
 	source := snapshot.Sources[snapshot.File]
-	fset, file, err := parsePlanExtractSource(snapshot.File, source)
-	if err != nil {
-		return astedit.SourcePlan{}, err
+	fset, file, parseErr := parsePlanExtractSource(snapshot.File, source)
+	if parseErr != nil {
+		return astedit.SourcePlan{}, parseErr
 	}
-	ownerGroup, err := findExtractTypeOwner(file, typeName)
-	if err != nil {
-		return astedit.SourcePlan{}, err
+	ownerGroup, ownerGroupErr := findExtractTypeOwner(file, typeName)
+	if ownerGroupErr != nil {
+		return astedit.SourcePlan{}, ownerGroupErr
 	}
 	ownerLine := fset.Position(ownerGroup.End()).Line
 	for _, group := range file.Comments {

@@ -2123,8 +2123,8 @@ func (s *Server) recordToolMetrics(timing *toolRequestTiming) {
 		data, err := os.ReadFile(s.metricsFile)
 		switch {
 		case err == nil:
-			if err := json.Unmarshal(data, &s.fileMetrics); err != nil {
-				s.metricsPersistErr = fmt.Errorf("decode MCP metrics file %s: %w", s.metricsFile, err)
+			if decodeErr := json.Unmarshal(data, &s.fileMetrics); decodeErr != nil {
+				s.metricsPersistErr = fmt.Errorf("decode MCP metrics file %s: %w", s.metricsFile, decodeErr)
 				return
 			}
 			if len(s.fileMetrics) > 0 {

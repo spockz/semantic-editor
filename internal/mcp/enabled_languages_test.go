@@ -198,9 +198,9 @@ func TestMCPBatchJavaOnlySkipsGoBaselineAndVerification(t *testing.T) {
 		}
 		return &mcpVerifySession{}, nil
 	})
-	registry, err := backend.NewRegistry(javaBackend)
-	if err != nil {
-		t.Fatal(err)
+	registry, registryErr := backend.NewRegistry(javaBackend)
+	if registryErr != nil {
+		t.Fatal(registryErr)
 	}
 	input := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}`,

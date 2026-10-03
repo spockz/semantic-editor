@@ -72,8 +72,8 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 		t.Fatalf("follow-up selector does not match final source: %#v", secondRecord)
 	}
 	staleSource := append(bytes.Clone(updated), []byte("// external drift\n")...)
-	if err := os.WriteFile(path, staleSource, 0o600); err != nil {
-		t.Fatalf("introduce stale selector revision: %v", err)
+	if writeErr := os.WriteFile(path, staleSource, 0o600); writeErr != nil {
+		t.Fatalf("introduce stale selector revision: %v", writeErr)
 	}
 	beforeStale := bytes.Clone(staleSource)
 	stale := callCompositeTool(t, root, 4, "semantic_insert_composite_element", map[string]any{

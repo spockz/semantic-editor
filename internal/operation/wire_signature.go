@@ -245,8 +245,8 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
-	if err := validateSignatureOverlay(snapshot, plan); err != nil {
-		return structuralPlanResult{}, err
+	if overlayErr := validateSignatureOverlay(snapshot, plan); overlayErr != nil {
+		return structuralPlanResult{}, overlayErr
 	}
 	readSet, err := signatureReadSet(cc.WorkDir, snapshot)
 	if err != nil {
@@ -466,8 +466,8 @@ func collectSignatureCallSetWithName(snapshot *structuralSnapshot, symbol, newPa
 	if err != nil {
 		return astedit.SignatureCallSetProof{}, err
 	}
-	if err := rejectSignatureVariantReferences(snapshot, symbol); err != nil {
-		return astedit.SignatureCallSetProof{}, err
+	if variantErr := rejectSignatureVariantReferences(snapshot, symbol); variantErr != nil {
+		return astedit.SignatureCallSetProof{}, variantErr
 	}
 	proof := astedit.SignatureCallSetProof{Complete: true}
 	paths, err := signatureWorkspacePaths(snapshot.Root, snapshot.Sources)

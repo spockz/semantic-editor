@@ -128,18 +128,23 @@ func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
 
 func assertBooleanCLIStringsParse(t *testing.T, entry operation.Entry) {
 	t.Helper()
-	shaped, converted := stringBooleanExample(entry)
-	if !converted {
+	example := stringBooleanExample(entry)
+	if !example.Converted {
 		t.Skip("no boolean parameter in ExampleRaw")
 	}
-	if _, err := entry.Parse(shaped); err != nil {
+	if _, err := entry.Parse(example.Raw); err != nil {
 		t.Errorf("CLI string boolean parse failed: %v", err)
 	}
 }
 
-func stringBooleanExample(entry operation.Entry) (map[string]any, bool) {
+type booleanCLIExample struct {
+	Raw       map[string]any
+	Converted bool
+}
+
+func stringBooleanExample(entry operation.Entry) booleanCLIExample {
 	shaped := cloneExample(entry.ExampleRaw)
-	converted := false
+	example := booleanCLIExample{Raw: shaped}
 	for _, param := range entry.Params {
 		if param.Type != operation.ParamBoolean {
 			continue
@@ -153,9 +158,9 @@ func stringBooleanExample(entry operation.Entry) (map[string]any, bool) {
 			continue
 		}
 		shaped[param.JSONName] = strconv.FormatBool(flag)
-		converted = true
+		example.Converted = true
 	}
-	return shaped, converted
+	return example
 }
 
 func assertRequiredEntryParamsFail(t *testing.T, entry operation.Entry) {
