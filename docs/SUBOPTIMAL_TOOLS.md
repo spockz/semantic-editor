@@ -3459,3 +3459,11 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: gopls diagnostics shutdown returned `JSON-RPC client is closed` during concurrently running race suites.
 - Workaround: rerun the unchanged public fixture with bounded test concurrency and retain the combined integration gate.
 - Root cause: transport failure observed; process/resource causation is not established by this log.
+
+## 2026-10-03: extraction review guessed a helper selector
+
+- Tool: `semantic_inspect_symbol`.
+- Target: extraction worktree `internal/astedit/extract_constant.go`.
+- Observed failure: `captureExtractionPackageFile` was not found. The caller constructed that name without a discovery record.
+- Workaround: use the actual declaration outline or a canonical name already returned in inspected source.
+- Root cause: caller skipped selector discovery; the tool rejected the nonexistent selector without changing source.
