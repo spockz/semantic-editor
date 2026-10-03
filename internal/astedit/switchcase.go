@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
-	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
@@ -123,69 +122,61 @@ func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSourc
 		return "", fmt.Errorf("locate switch %q in %s: %w", switchOn, funcName, err)
 	}
 
-	caseTrimmed := strings.TrimSpace(caseSource)
-	synthetic := "package dummy\n\nfunc _() {\nswitch {\n" + caseTrimmed + "\n}\n}\n"
-	synthFset := token.NewFileSet()
-	if _, parseErr := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); parseErr != nil {
-		pos := extractSyntaxPosition(synthFset, parseErr)
-		if pos.Line > 4 {
-			pos.Line -= 4
-		}
-		return "", &SyntaxError{
-			File:    "snippet",
-			Snippet: caseSource,
-			Pos:     pos,
-			Cause:   parseErr,
-			Err:     ErrSyntax,
-		}
-	}
-
-	offset, err := calculateCaseOffset(fset, content, switchBody, opts)
+	caseTrimmed, err := validateCaseSource(caseSource)
 	if err != nil {
 		return "", err
 	}
-
-	offset = normalizeInsertionOffset(fset, fileNode, content, offset)
-
-	var newContent bytes.Buffer
-	newContent.Write(content[:offset])
-	if offset == 0 || content[offset-1] != '\n' {
-		newContent.WriteByte('\n')
-	}
-	newContent.WriteString(caseTrimmed)
-	newContent.WriteString("\n")
-	newContent.Write(content[offset:])
-
-	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
-	formatted, err := format.Source(newContent.Bytes())
-	finishFormatting()
+	formatted, err := planCaseInsertion(ctx, cleanPath, caseSource, caseTrimmed, content, fset, fileNode, switchBody, opts)
 	if err != nil {
-		return "", &SyntaxError{
-			File:    cleanPath,
-			Snippet: caseSource,
-			Cause:   err,
-			Err:     ErrSyntax,
-		}
+		return "", err
 	}
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return "", fmt.Errorf("organize imports: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return "", fmt.Errorf("format file: %w", err)
-		}
+	if err := publishCaseInsertion(ctx, cleanPath, formatted, opts.AutoOrganizeImports); err != nil {
+		return "", err
 	}
 
 	diff := UnifiedDiff(funcName, "", caseTrimmed)
 	return diff, nil
+}
+
+func validateCaseSource(source string) (string, error) {
+	trimmed := strings.TrimSpace(source)
+	synthetic := "package dummy\n\nfunc _() {\nswitch {\n" + trimmed + "\n}\n}\n"
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "snippet", synthetic, parser.ParseComments); err != nil {
+		position := extractSyntaxPosition(fset, err)
+		if position.Line > 4 {
+			position.Line -= 4
+		}
+		return "", &SyntaxError{File: "snippet", Snippet: source, Pos: position, Cause: err, Err: ErrSyntax}
+	}
+	return trimmed, nil
+}
+
+func planCaseInsertion(ctx context.Context, path, source, caseText string, content []byte, fset *token.FileSet, file *ast.File, switchBody *ast.BlockStmt, opts CaseOptions) ([]byte, error) {
+	offset, err := calculateCaseOffset(fset, content, switchBody, opts)
+	if err != nil {
+		return nil, err
+	}
+	offset = normalizeInsertionOffset(fset, file, content, offset)
+	var updated bytes.Buffer
+	updated.Write(content[:offset])
+	if offset == 0 || content[offset-1] != '\n' {
+		updated.WriteByte('\n')
+	}
+	updated.WriteString(caseText)
+	updated.WriteString("\n")
+	updated.Write(content[offset:])
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
+	formatted, err := format.Source(updated.Bytes())
+	finishFormatting()
+	if err != nil {
+		return nil, &SyntaxError{File: path, Snippet: source, Cause: err, Err: ErrSyntax}
+	}
+	return formatted, nil
+}
+
+func publishCaseInsertion(ctx context.Context, path string, content []byte, organizeImports bool) error {
+	return publishInsertedDeclaration(ctx, path, content, organizeImports)
 }
 
 func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, switchPath string) (*ast.BlockStmt, error) {
