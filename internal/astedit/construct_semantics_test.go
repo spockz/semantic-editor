@@ -415,6 +415,12 @@ func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
 			name: "new named type argument", source: "package p\ntype Value struct{}\nfunc run() { _ = new(Value) }\n", selector: "Value", path: "0.e0.0",
 		},
 		{
+			name: "parenthesized make named type argument", source: "package p\ntype Values []int\nfunc run() { _ = (make)(Values, 0) }\n", selector: "Values", path: "0.e0.0",
+		},
+		{
+			name: "parenthesized new type argument", source: "package p\nfunc run() { _ = (new)(int) }\n", selector: "int", path: "0.e0.0",
+		},
+		{
 			name: "unresolved imported make type argument", source: "package p\nimport \"example.com/types\"\nfunc run() { _ = make(types.Slice, 0) }\n", selector: "types.Slice", path: "0.e0.0",
 		},
 	} {
@@ -442,7 +448,7 @@ func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
 
 func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "main.go")
-	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = make(17, 0) }\n")
+	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = (make)(17, 0) }\n")
 	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.0"}); err != nil {
 		t.Fatalf("replace shadowed make argument: %v", err)
 	}

@@ -205,7 +205,7 @@ func needsExpressionTypeInfo(body *ast.BlockStmt) bool {
 		case *ast.IndexExpr:
 			needsInfo = true
 		case *ast.CallExpr:
-			if ident, ok := value.Fun.(*ast.Ident); ok && (ident.Name == "make" || ident.Name == "new") {
+			if ident, ok := typeConstructorIdent(value); ok && (ident.Name == "make" || ident.Name == "new") {
 				needsInfo = true
 			}
 		}
@@ -437,7 +437,7 @@ func expressionChildren(expr ast.Expr, info constructTypeFacts) []ast.Expr {
 }
 
 func isBuiltinTypeConstructor(info constructTypeFacts, call *ast.CallExpr) bool {
-	ident, ok := call.Fun.(*ast.Ident)
+	ident, ok := typeConstructorIdent(call)
 	if !ok || (ident.Name != "make" && ident.Name != "new") {
 		return false
 	}
@@ -450,6 +450,19 @@ func isBuiltinTypeConstructor(info constructTypeFacts, call *ast.CallExpr) bool 
 		}
 	}
 	return true
+}
+
+func typeConstructorIdent(call *ast.CallExpr) (*ast.Ident, bool) {
+	callee := call.Fun
+	for {
+		parenthesized, ok := callee.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		callee = parenthesized.X
+	}
+	ident, ok := callee.(*ast.Ident)
+	return ident, ok
 }
 
 func normalizeConstructSelector(source string) string {
