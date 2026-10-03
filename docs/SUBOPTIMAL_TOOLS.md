@@ -3368,3 +3368,11 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: `inspect --help` failed with unknown command; the CLI suggested `inspect-symbol`.
 - Workaround: use the reported canonical command `inspect-symbol`.
 - Root cause: reconstructed the CLI name instead of checking the command inventory.
+
+## 2026-10-03: thread inventory limit rejected
+
+- Tool: `list_threads`.
+- Target: outstanding-work inventory for the main integration audit.
+- Observed failure: `limit: 60` was rejected because the server maximum is 50.
+- Workaround: retry with `limit: 50`.
+- Root cause: the exposed tool schema does not specify its server-enforced maximum.
