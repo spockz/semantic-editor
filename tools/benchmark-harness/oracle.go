@@ -554,9 +554,10 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", targetOpenErr), sourceFS.Close(), os.RemoveAll(target), scratch.cleanup())
 	}
 	cleanup := func() error {
+		writableErr := makeSessionWorkspaceRemovable(targetFS)
 		closeSourceErr, closeTargetErr := sourceFS.Close(), targetFS.Close()
 		removeErr := os.RemoveAll(target)
-		return errors.Join(closeSourceErr, closeTargetErr, removeErr, scratch.cleanup())
+		return errors.Join(writableErr, closeSourceErr, closeTargetErr, removeErr, scratch.cleanup())
 	}
 	if walkErr := copyOracleWorkspaceFiles(sourceRoot, sourceFS, targetFS); walkErr != nil {
 		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", walkErr), cleanup())

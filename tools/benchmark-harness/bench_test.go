@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1228,6 +1229,129 @@ printf ok > "$SEMEDIT_TEST_CAPTURE"
 	}
 	if string(data) != "ok" {
 		t.Fatalf("fake Go environment validation = %q, want ok", data)
+	}
+}
+
+type oracleCleanupCase struct {
+	name           string
+	failOperation  string
+	wantPassed     bool
+	wantStage      string
+	wantOperations []string
+}
+
+type oracleCleanupFixture struct {
+	workDir       string
+	originalCache string
+	commandLog    string
+	task          *Task
+}
+
+func TestEvaluateCleansReadOnlyPrivateGoCaches(t *testing.T) {
+	cases := []oracleCleanupCase{
+		{name: "build and test pass", wantPassed: true, wantOperations: []string{"build", "test"}},
+		{name: "build fails", failOperation: "build", wantStage: "level_3_build", wantOperations: []string{"build"}},
+		{name: "test fails", failOperation: "test", wantStage: "level_4_test", wantOperations: []string{"build", "test"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := createOracleCleanupFixture(t, testCase.failOperation)
+			result, err := Evaluate(t.Context(), fixture.task, fixture.workDir, nil)
+			if err != nil {
+				t.Fatalf("Evaluate returned cleanup or execution error: %v", err)
+			}
+			assertOracleCleanupResult(t, testCase, result)
+			assertOracleCleanupArtifacts(t, testCase, fixture)
+		})
+	}
+}
+
+func createOracleCleanupFixture(t *testing.T, failOperation string) oracleCleanupFixture {
+	t.Helper()
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	hiddenTests := filepath.Join(root, "hidden")
+	binDir := filepath.Join(root, "bin")
+	for _, dir := range []string{workDir, hiddenTests, binDir, filepath.Join(workDir, ".scratch")} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalCache := filepath.Join(workDir, ".scratch", "owner-cache")
+	if err := os.WriteFile(originalCache, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hiddenTests, "acceptance_test.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commandLog := filepath.Join(root, "commands")
+	program := oracleCleanupFakeGoProgram()
+	if err := os.WriteFile(filepath.Join(binDir, "go"), []byte(program), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_ORACLE_COMMAND_LOG", commandLog)
+	t.Setenv("SEMEDIT_ORACLE_FAIL_OPERATION", failOperation)
+	task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{
+		Build: BuildConfig{CleanCompile: true},
+		Test:  TestConfig{PassTests: true, HiddenTestDir: hiddenTests},
+	}}}
+	return oracleCleanupFixture{workDir: workDir, originalCache: originalCache, commandLog: commandLog, task: task}
+}
+
+func oracleCleanupFakeGoProgram() string {
+	return `#!/bin/sh
+set -eu
+operation="$1"
+test "$GOENV" = "$PWD/.scratch/go/env"
+test "$GOCACHE" = "$PWD/.scratch/go/build"
+test "$GOMODCACHE" = "$PWD/.scratch/go/mod"
+test "$GOTMPDIR" = "$PWD/.scratch/go/tmp"
+cache="$GOMODCACHE/$operation/nested"
+mkdir -p "$cache"
+printf module > "$cache/module.zip"
+chmod 0444 "$cache/module.zip"
+chmod 0555 "$cache"
+printf '%s\t%s\n' "$operation" "$PWD" >> "$SEMEDIT_ORACLE_COMMAND_LOG"
+if [ "$operation" = build ]; then test ! -f acceptance_test.go; else test -f acceptance_test.go; fi
+if [ "$SEMEDIT_ORACLE_FAIL_OPERATION" = "$operation" ]; then exit 9; fi
+`
+}
+
+func assertOracleCleanupResult(t *testing.T, testCase oracleCleanupCase, result *OracleResult) {
+	t.Helper()
+	if result.Passed != testCase.wantPassed || result.FailureStage != testCase.wantStage {
+		t.Fatalf("oracle result = %+v, want passed=%t stage=%q", result, testCase.wantPassed, testCase.wantStage)
+	}
+	if testCase.wantPassed && (!result.Level3Build || !result.Level4Test) {
+		t.Fatalf("successful build and test levels were not retained: %+v", result)
+	}
+}
+
+func assertOracleCleanupArtifacts(t *testing.T, testCase oracleCleanupCase, fixture oracleCleanupFixture) {
+	t.Helper()
+	if data, err := os.ReadFile(fixture.originalCache); err != nil || string(data) != "keep" {
+		t.Fatalf("preexisting workspace scratch changed: data=%q err=%v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.workDir, "acceptance_test.go")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("hidden tests reached original workspace: %v", err)
+	}
+	data, err := os.ReadFile(fixture.commandLog)
+	if err != nil {
+		t.Fatalf("read fake Go command log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != len(testCase.wantOperations) {
+		t.Fatalf("fake Go operations = %q, want %v", lines, testCase.wantOperations)
+	}
+	for index, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 2 || fields[0] != testCase.wantOperations[index] {
+			t.Fatalf("fake Go command %d = %q, want operation %q and private path", index, line, testCase.wantOperations[index])
+		}
+		if _, err := os.Stat(fields[1]); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("private oracle workspace remains after cleanup: %s (%v)", fields[1], err)
+		}
 	}
 }
 
