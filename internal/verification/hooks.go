@@ -1,5 +1,6 @@
-// Package operation adapts only bounded, backend-supported LSP actions for configured verification hooks.
-package operation
+// Package verification adapts only bounded, backend-supported LSP actions for configured verification hooks.
+// WHY: Hook execution and trust checks are part of the verification feature lifecycle, not request parsing.
+package verification
 
 import (
 	"context"
@@ -13,11 +14,20 @@ import (
 	"semedit/internal/projectverify"
 )
 
-func serviceForContext(cc CallContext) *backend.Service {
-	if cc.Service != nil {
-		return cc.Service
+func serviceForContext(service *backend.Service) *backend.Service {
+	if service != nil {
+		return service
 	}
 	return backends.NewDefaultService()
+}
+
+func hasMutatingLSPHooks(hooks []projectverify.Hook) bool {
+	for _, hook := range hooks {
+		if hook.LSP != nil && (hook.LSP.ActionKind != "" || hook.LSP.Command != "") {
+			return true
+		}
+	}
+	return false
 }
 
 func hasConfiguredCommandHooks(hooks []projectverify.Hook) bool {

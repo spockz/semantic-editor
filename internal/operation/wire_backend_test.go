@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing
 		"semantic_insert_function",
 		"semantic_insert_type",
 		"semantic_insert_decl",
-		"semantic_insert_structure",
+		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_replace_body",
 		"semantic_extract_function",
@@ -98,89 +99,106 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 41 {
-		t.Errorf("registered operations = %d, want 41", len(entries))
+	if len(entries) != 40 {
+		t.Errorf("registered operations = %d, want 40", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
 			t.Parallel()
+			assertRegisteredEntryContract(t, entry)
+		})
+	}
+}
 
-			if entry.Key == "" {
-				t.Error("operation key is empty")
-			}
-			if entry.Summary == "" {
-				t.Error("operation summary is empty")
-			}
-			if entry.MCPName == "" {
-				t.Error("operation MCP name is empty")
-			}
-			if len(entry.Params) == 0 {
-				t.Error("operation params are empty")
-			}
-			if _, err := entry.Parse(entry.ExampleRaw); err != nil {
-				t.Errorf("ExampleRaw parse failed: %v", err)
-			}
-			t.Run("cli-string-shapes", func(t *testing.T) {
-				t.Parallel()
+func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	if entry.Key == "" || entry.Summary == "" || entry.MCPName == "" || len(entry.Params) == 0 {
+		t.Errorf("entry has incomplete public metadata: %+v", entry)
+	}
+	if _, err := entry.Parse(entry.ExampleRaw); err != nil {
+		t.Errorf("ExampleRaw parse failed: %v", err)
+	}
+	t.Run("cli-string-shapes", func(t *testing.T) {
+		t.Parallel()
+		assertBooleanCLIStringsParse(t, entry)
+	})
+	assertRequiredEntryParamsFail(t, entry)
+	assertEnumEntryParamsFail(t, entry)
+}
 
-				shaped := cloneExample(entry.ExampleRaw)
-				converted := false
-				for _, param := range entry.Params {
-					if param.Type != operation.ParamBoolean {
-						continue
-					}
-					value, ok := shaped[param.JSONName]
-					if !ok {
-						continue
-					}
-					if flag, ok := value.(bool); ok {
-						if flag {
-							shaped[param.JSONName] = "true"
-						} else {
-							shaped[param.JSONName] = "false"
-						}
-						converted = true
-					}
-				}
-				if !converted {
-					t.Skip("no boolean parameter in ExampleRaw")
-				}
-				if _, err := entry.Parse(shaped); err != nil {
-					t.Errorf("CLI string boolean parse failed: %v", err)
-				}
-			})
-			for _, param := range entry.Params {
-				if !param.Required {
-					continue
-				}
-				t.Run("missing-required-"+param.JSONName, func(t *testing.T) {
-					t.Parallel()
+func assertBooleanCLIStringsParse(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	example := stringBooleanExample(entry)
+	if !example.Converted {
+		t.Skip("no boolean parameter in ExampleRaw")
+	}
+	if _, err := entry.Parse(example.Raw); err != nil {
+		t.Errorf("CLI string boolean parse failed: %v", err)
+	}
+}
 
-					without := cloneExample(entry.ExampleRaw)
-					delete(without, param.JSONName)
-					delete(without, param.CLIName)
-					if _, err := entry.Parse(without); err == nil {
-						t.Errorf("parse without required param %q succeeded, want error", param.JSONName)
-					} else if !errors.Is(err, operation.ErrInvalidParams) {
-						t.Errorf("missing required param error = %v, want ErrInvalidParams", err)
-					}
-				})
+type booleanCLIExample struct {
+	Raw       map[string]any
+	Converted bool
+}
+
+func stringBooleanExample(entry operation.Entry) booleanCLIExample {
+	shaped := cloneExample(entry.ExampleRaw)
+	example := booleanCLIExample{Raw: shaped}
+	for _, param := range entry.Params {
+		if param.Type != operation.ParamBoolean {
+			continue
+		}
+		value, exists := shaped[param.JSONName]
+		if !exists {
+			continue
+		}
+		flag, isBool := value.(bool)
+		if !isBool {
+			continue
+		}
+		shaped[param.JSONName] = strconv.FormatBool(flag)
+		example.Converted = true
+	}
+	return example
+}
+
+func assertRequiredEntryParamsFail(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	for _, param := range entry.Params {
+		if !param.Required {
+			continue
+		}
+
+		t.Run("missing-required-"+param.JSONName, func(t *testing.T) {
+			t.Parallel()
+			without := cloneExample(entry.ExampleRaw)
+			delete(without, param.JSONName)
+			delete(without, param.CLIName)
+			if _, err := entry.Parse(without); err == nil {
+				t.Errorf("parse without required param %q succeeded, want error", param.JSONName)
+			} else if !errors.Is(err, operation.ErrInvalidParams) {
+				t.Errorf("missing required param error = %v, want ErrInvalidParams", err)
 			}
-			for _, param := range entry.Params {
-				if len(param.Enums) == 0 {
-					continue
-				}
-				t.Run("bad-enum-"+param.JSONName, func(t *testing.T) {
-					t.Parallel()
+		})
+	}
+}
 
-					invalid := cloneExample(entry.ExampleRaw)
-					invalid[param.JSONName] = "___not_a_value___"
-					if _, err := entry.Parse(invalid); err == nil {
-						t.Errorf("parse with bad enum %q succeeded, want error", param.JSONName)
-					} else if !errors.Is(err, operation.ErrInvalidParams) {
-						t.Errorf("bad enum error = %v, want ErrInvalidParams", err)
-					}
-				})
+func assertEnumEntryParamsFail(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	for _, param := range entry.Params {
+		if len(param.Enums) == 0 {
+			continue
+		}
+
+		t.Run("bad-enum-"+param.JSONName, func(t *testing.T) {
+			t.Parallel()
+			invalid := cloneExample(entry.ExampleRaw)
+			invalid[param.JSONName] = "___not_a_value___"
+			if _, err := entry.Parse(invalid); err == nil {
+				t.Errorf("parse with bad enum %q succeeded, want error", param.JSONName)
+			} else if !errors.Is(err, operation.ErrInvalidParams) {
+				t.Errorf("bad enum error = %v, want ErrInvalidParams", err)
 			}
 		})
 	}
@@ -454,12 +472,12 @@ func TestRemoveConstructSelectorContract(t *testing.T) {
 	if !ok {
 		t.Fatal("remove-construct registry entry missing")
 	}
-	request, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "in_function": "Route", "discriminator": "route", "target_case": `"old"`, "safe_delete": true})
+	request, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "in_function": "Route", "discriminator": "route", "target_case": `"old"`})
 	if err != nil {
 		t.Fatal(err)
 	}
 	remove, ok := request.(operation.RemoveReq)
-	if !ok || remove.Symbol != "" || remove.InFunction != "Route" || remove.TargetCase != `"old"` || !remove.SafeDelete {
+	if !ok || remove.Symbol != "" || remove.InFunction != "Route" || remove.TargetCase != `"old"` || remove.SafeDelete {
 		t.Fatalf("parsed remove request = %#v", request)
 	}
 	if _, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "symbol": "Route", "in_function": "Route"}); err == nil || !strings.Contains(err.Error(), "symbol is a declaration target") {
@@ -534,38 +552,56 @@ func TestRenameContinuationConsumersMatchLiveInputFields(t *testing.T) {
 	}
 	entries := registry.All()
 	for _, continuation := range producer.Output.Continuations {
-		if continuation.Field != "file" && continuation.Field != "symbol" && continuation.Field != "expected_revision" {
-			continue
+		if renameContinuationField(continuation.Field) {
+			assertRenameContinuationConsumers(t, registry, entries, producer.MCPName, continuation)
 		}
-		source := producer.MCPName + "." + continuation.Field
-		for _, consumer := range entries {
-			for _, parameter := range consumer.Params {
-				if parameter.Role != continuation.Role || !slices.Contains(parameter.SourceFields, source) {
-					continue
-				}
-				if !slices.Contains(continuation.Consumers, consumer.MCPName) {
-					t.Errorf("%s.%s accepts %s without a declared continuation consumer edge", consumer.MCPName, parameter.JSONName, source)
-				}
-			}
-		}
-		for _, consumerName := range continuation.Consumers {
-			consumer, exists := registry.LookupMCP(consumerName)
-			if !exists {
-				t.Errorf("%s continuation names unknown consumer %q", continuation.Field, consumerName)
-				continue
-			}
-			compatible := false
-			for _, parameter := range consumer.Params {
-				if slices.Contains(parameter.SourceFields, source) && (parameter.Role == "" || parameter.Role == continuation.Role) {
-					compatible = true
-					break
-				}
-			}
-			if !compatible {
-				t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
+	}
+}
+
+func renameContinuationField(field string) bool {
+	return field == "file" || field == "symbol" || field == "expected_revision"
+}
+
+func assertRenameContinuationConsumers(t *testing.T, registry *operation.Registry, entries []operation.Entry, producer string, continuation operation.OutputContinuation) {
+	t.Helper()
+	source := producer + "." + continuation.Field
+	assertRenameConsumerEdges(t, entries, continuation, source)
+	assertDeclaredRenameConsumers(t, registry, continuation, source)
+}
+
+func assertRenameConsumerEdges(t *testing.T, entries []operation.Entry, continuation operation.OutputContinuation, source string) {
+	t.Helper()
+	for _, consumer := range entries {
+		for _, parameter := range consumer.Params {
+			acceptsSource := parameter.Role == continuation.Role && slices.Contains(parameter.SourceFields, source)
+			if acceptsSource && !slices.Contains(continuation.Consumers, consumer.MCPName) {
+				t.Errorf("%s.%s accepts %s without a declared continuation consumer edge", consumer.MCPName, parameter.JSONName, source)
 			}
 		}
 	}
+}
+
+func assertDeclaredRenameConsumers(t *testing.T, registry *operation.Registry, continuation operation.OutputContinuation, source string) {
+	t.Helper()
+	for _, consumerName := range continuation.Consumers {
+		consumer, exists := registry.LookupMCP(consumerName)
+		if !exists {
+			t.Errorf("%s continuation names unknown consumer %q", continuation.Field, consumerName)
+			continue
+		}
+		if !renameConsumerAcceptsSource(consumer, continuation, source) {
+			t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
+		}
+	}
+}
+
+func renameConsumerAcceptsSource(consumer operation.Entry, continuation operation.OutputContinuation, source string) bool {
+	for _, parameter := range consumer.Params {
+		if slices.Contains(parameter.SourceFields, source) && (parameter.Role == "" || parameter.Role == continuation.Role) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestVerifyPolicyKeepsNilUnrestrictedAndEmptyFailClosed(t *testing.T) {

@@ -535,8 +535,8 @@ func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testin
 	if partial.Status != EditPartiallyPublished || len(partial.Changes) != 1 || partial.Changes[0].Path != "first.go" {
 		t.Fatalf("mixed published and unchanged files = %#v", partial)
 	}
-	if err := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); err != nil {
-		t.Fatalf("restore unchanged preimage: %v", err)
+	if writeErr := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); writeErr != nil {
+		t.Fatalf("restore unchanged preimage: %v", writeErr)
 	}
 	refused, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
 	if err != nil {
@@ -623,8 +623,8 @@ func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
-	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
-		t.Fatal(err)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
+		t.Fatal(authorizeErr)
 	}
 	working, err := FinalizeEditReceipt(ctx, root, true, draft, nil)
 	if err != nil {

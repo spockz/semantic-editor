@@ -199,6 +199,19 @@ func findInsertFieldType(file *ast.File, typeName string) (*ast.TypeSpec, error)
 }
 
 func validateInsertFieldContext(file *ast.File, structure *ast.StructType, typeName, fieldName string) error {
+	if err := validateUniqueStructField(structure, typeName, fieldName); err != nil {
+		return err
+	}
+	if err := validateFieldMethodCollision(file, typeName, fieldName); err != nil {
+		return err
+	}
+	if hasUnkeyedStructLiteral(file, typeName) {
+		return fmt.Errorf("cannot insert field %q while this file contains an unkeyed %s literal", fieldName, typeName)
+	}
+	return nil
+}
+
+func validateUniqueStructField(structure *ast.StructType, typeName, fieldName string) error {
 	for _, field := range structure.Fields.List {
 		if len(field.Names) == 0 {
 			return fmt.Errorf("struct type %q contains an embedded field", typeName)
@@ -209,6 +222,10 @@ func validateInsertFieldContext(file *ast.File, structure *ast.StructType, typeN
 			}
 		}
 	}
+	return nil
+}
+
+func validateFieldMethodCollision(file *ast.File, typeName, fieldName string) error {
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok || fn.Recv == nil || fn.Name.Name != fieldName {
@@ -224,8 +241,15 @@ func validateInsertFieldContext(file *ast.File, structure *ast.StructType, typeN
 			}
 		}
 	}
-	var unkeyed bool
+	return nil
+}
+
+func hasUnkeyedStructLiteral(file *ast.File, typeName string) bool {
+	var found bool
 	ast.Inspect(file, func(node ast.Node) bool {
+		if found {
+			return false
+		}
 		literal, ok := node.(*ast.CompositeLit)
 		if !ok {
 			return true
@@ -236,16 +260,13 @@ func validateInsertFieldContext(file *ast.File, structure *ast.StructType, typeN
 		}
 		for _, element := range literal.Elts {
 			if _, ok := element.(*ast.KeyValueExpr); !ok {
-				unkeyed = true
+				found = true
 				break
 			}
 		}
 		return true
 	})
-	if unkeyed {
-		return fmt.Errorf("cannot insert field %q while this file contains an unkeyed %s literal", fieldName, typeName)
-	}
-	return nil
+	return found
 }
 
 func fieldInsertionOffset(source []byte, fset *token.FileSet, structure *ast.StructType, intent InsertFieldIntent) (int, string, error) {

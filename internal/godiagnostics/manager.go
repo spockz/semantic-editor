@@ -298,29 +298,9 @@ func (m *SessionManager) use(ctx context.Context, root, executable string, envir
 	}
 	sessionCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
-	var err error
-	root, err = filepath.Abs(root)
+	root, executableInfo, err := validateManagedRequest(root, executable)
 	if err != nil {
-		return fmt.Errorf("resolve Go LSP root: %w", err)
-	}
-	root, err = filepath.EvalSymlinks(root)
-	if err != nil {
-		return fmt.Errorf("canonicalize Go LSP root: %w", err)
-	}
-	info, err := os.Stat(root)
-	if err != nil {
-		return fmt.Errorf("stat Go LSP root: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("gopls root %q is not a directory", root)
-	}
-	if executable == "" {
-		return errors.New("gopls executable is required")
-	}
-
-	executableInfo, err := os.Stat(executable)
-	if err != nil {
-		return fmt.Errorf("stat gopls executable: %w", err)
+		return err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -329,30 +309,13 @@ func (m *SessionManager) use(ctx context.Context, root, executable string, envir
 	}
 	scope, err := loadManagedScope(sessionCtx, root, environment)
 	if err != nil {
-		for retainedRoot := range m.sessions {
-			if pathutil.PathWithin(retainedRoot, root) || pathutil.PathWithin(root, retainedRoot) {
-				err = m.discard(retainedRoot, err)
-			}
-		}
+		return m.discardOverlappingScopes(root, err)
+	}
+	if err := validateBufferedScope(sessionCtx, scope); err != nil {
 		return err
 	}
-	if buffer := sourcebuf.FromContext(sessionCtx); buffer != nil {
-		for path := range scope.manifests {
-			if _, err := sourcebuf.ReadFile(sessionCtx, path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			if filepath.Base(path) == "go.mod" {
-				if err := sourcebuf.ObserveTree(sessionCtx, filepath.Dir(path)); err != nil {
-					return err
-				}
-			}
-		}
-		if err := buffer.AssertDisk(); err != nil {
-			return err
-		}
-	}
 	session := m.sessions[scope.root]
-	if session != nil && (session.executable != executable || !os.SameFile(session.executableInfo, executableInfo) || session.executableInfo.Size() != executableInfo.Size() || !session.executableInfo.ModTime().Equal(executableInfo.ModTime()) || !slices.Equal(session.environment, environment) || !slices.Equal(session.files, scope.files) || !maps.Equal(session.manifests, scope.manifests)) {
+	if session != nil && !managedSessionMatches(session, executable, executableInfo, environment, scope) {
 		delete(m.sessions, scope.root)
 		closeCtx, closeCancel := context.WithTimeout(sessionCtx, 5*time.Second)
 		closeErr := closeManagedSession(closeCtx, session)
@@ -391,6 +354,69 @@ func (m *SessionManager) use(ctx context.Context, root, executable string, envir
 		return m.discard(scope.root, fmt.Errorf("gopls session: %w", err))
 	}
 	return nil
+}
+
+func validateManagedRequest(root, executable string) (string, os.FileInfo, error) {
+	canonical, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve Go LSP root: %w", err)
+	}
+	canonical, err = filepath.EvalSymlinks(canonical)
+	if err != nil {
+		return "", nil, fmt.Errorf("canonicalize Go LSP root: %w", err)
+	}
+	info, err := os.Stat(canonical)
+	if err != nil {
+		return "", nil, fmt.Errorf("stat Go LSP root: %w", err)
+	}
+	if !info.IsDir() {
+		return "", nil, fmt.Errorf("gopls root %q is not a directory", canonical)
+	}
+	if executable == "" {
+		return "", nil, errors.New("gopls executable is required")
+	}
+	executableInfo, err := os.Stat(executable)
+	if err != nil {
+		return "", nil, fmt.Errorf("stat gopls executable: %w", err)
+	}
+	return canonical, executableInfo, nil
+}
+
+func (m *SessionManager) discardOverlappingScopes(root string, cause error) error {
+	for retainedRoot := range m.sessions {
+		if pathutil.PathWithin(retainedRoot, root) || pathutil.PathWithin(root, retainedRoot) {
+			cause = m.discard(retainedRoot, cause)
+		}
+	}
+	return cause
+}
+
+func validateBufferedScope(ctx context.Context, scope diagnosticsScope) error {
+	buffer := sourcebuf.FromContext(ctx)
+	if buffer == nil {
+		return nil
+	}
+	for path := range scope.manifests {
+		if _, err := sourcebuf.ReadFile(ctx, path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if filepath.Base(path) == "go.mod" {
+			if err := sourcebuf.ObserveTree(ctx, filepath.Dir(path)); err != nil {
+				return err
+			}
+		}
+	}
+	return buffer.AssertDisk()
+}
+
+func managedSessionMatches(session *managedSession, executable string, executableInfo os.FileInfo, environment []string, scope diagnosticsScope) bool {
+	return session.executable == executable &&
+		os.SameFile(session.executableInfo, executableInfo) &&
+		session.executableInfo.Size() == executableInfo.Size() &&
+		session.executableInfo.ModTime().Equal(executableInfo.ModTime()) &&
+		slices.Equal(session.environment, environment) &&
+		slices.Equal(session.files, scope.files) &&
+		maps.Equal(session.manifests, scope.manifests)
 }
 
 func (s *managedSession) syncDocuments(ctx context.Context, files []string) error {
@@ -504,28 +530,9 @@ func loadManagedScope(ctx context.Context, root string, environment []string) (d
 			return scope, nil
 		}
 		bound[scope.root] = true
-		reload := false
-		for path, expected := range scope.manifests {
-			data, err := sourcebuf.ReadFile(ctx, path)
-			actual := manifestState{}
-			if err == nil {
-				actual = manifestState{exists: true, digest: sha256.Sum256(data)}
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return diagnosticsScope{}, fmt.Errorf("bind Go analysis input: %w", err)
-			}
-			if actual != expected {
-				reload = true
-			}
-			if filepath.Base(path) == "go.mod" {
-				tree := filepath.Dir(path)
-				if !bound[tree] {
-					if err := sourcebuf.ObserveTree(ctx, tree); err != nil {
-						return diagnosticsScope{}, err
-					}
-					bound[tree] = true
-					reload = true
-				}
-			}
+		reload, err := bindScopeInputs(ctx, scope, bound)
+		if err != nil {
+			return diagnosticsScope{}, err
 		}
 		if err := buffer.AssertDisk(); err != nil {
 			return diagnosticsScope{}, err
@@ -537,6 +544,30 @@ func loadManagedScope(ctx context.Context, root string, environment []string) (d
 			return diagnosticsScope{}, fmt.Errorf("bind Go analysis scope: %w", err)
 		}
 	}
+}
+
+func bindScopeInputs(ctx context.Context, scope diagnosticsScope, bound map[string]bool) (bool, error) {
+	reload := false
+	for path, expected := range scope.manifests {
+		data, err := sourcebuf.ReadFile(ctx, path)
+		actual := manifestState{}
+		if err == nil {
+			actual = manifestState{exists: true, digest: sha256.Sum256(data)}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false, fmt.Errorf("bind Go analysis input: %w", err)
+		}
+		if actual != expected {
+			reload = true
+		}
+		if filepath.Base(path) == "go.mod" && !bound[filepath.Dir(path)] {
+			if err := sourcebuf.ObserveTree(ctx, filepath.Dir(path)); err != nil {
+				return false, err
+			}
+			bound[filepath.Dir(path)] = true
+			reload = true
+		}
+	}
+	return reload, nil
 }
 
 func readInputState(path string) (manifestState, error) {
@@ -552,39 +583,64 @@ func readInputState(path string) (manifestState, error) {
 }
 
 func discoverManagedScope(ctx context.Context, root string, environment []string) (diagnosticsScope, error) {
+	moduleRoot, err := resolveDiagnosticsModule(ctx, root, environment)
+	if err != nil {
+		return diagnosticsScope{}, err
+	}
+	loaded, err := loadDiagnosticsPackages(ctx, moduleRoot, environment)
+	if err != nil {
+		return diagnosticsScope{}, err
+	}
+	return assembleDiagnosticsScope(moduleRoot, loaded)
+}
+
+func resolveDiagnosticsModule(ctx context.Context, root string, environment []string) (string, error) {
 	cmd := exec.CommandContext(ctx, "go", "env", "GOMOD")
-	cmd.Dir = root
-	cmd.Env = environment
+	cmd.Dir, cmd.Env = root, environment
 	output, err := cmd.Output()
 	if err != nil {
-		return diagnosticsScope{}, fmt.Errorf("resolve Go diagnostics module: %w", err)
+		return "", fmt.Errorf("resolve Go diagnostics module: %w", err)
 	}
 	moduleFile := strings.TrimSpace(string(output))
 	if moduleFile == "" || moduleFile == os.DevNull {
-		return diagnosticsScope{}, errors.New("go diagnostics require an enclosing module")
+		return "", errors.New("go diagnostics require an enclosing module")
 	}
 	moduleRoot := filepath.Dir(moduleFile)
-	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		for _, name := range []string{"go.mod", "go.sum"} {
-			if _, err := sourcebuf.ReadFile(ctx, filepath.Join(moduleRoot, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return diagnosticsScope{}, fmt.Errorf("bind main Go manifest: %w", err)
-			}
-		}
-		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return diagnosticsScope{}, err
+	if err := bindMainManifests(ctx, moduleRoot); err != nil {
+		return "", err
+	}
+	return moduleRoot, nil
+}
+
+func bindMainManifests(ctx context.Context, moduleRoot string) error {
+	buffer := sourcebuf.FromContext(ctx)
+	if buffer == nil {
+		return nil
+	}
+	for _, name := range []string{"go.mod", "go.sum"} {
+		if _, err := sourcebuf.ReadFile(ctx, filepath.Join(moduleRoot, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("bind main Go manifest: %w", err)
 		}
 	}
+	return buffer.AuthorizeWrites(ctx, moduleRoot)
+}
+
+func loadDiagnosticsPackages(ctx context.Context, moduleRoot string, environment []string) ([]*packages.Package, error) {
 	loaded, err := packages.Load(&packages.Config{
 		Context: ctx, Dir: moduleRoot, Env: environment, Overlay: sourcebuf.Overlay(ctx),
 		Mode:  packages.NeedName | packages.NeedFiles | packages.NeedModule | packages.NeedImports | packages.NeedDeps | packages.NeedEmbedFiles,
 		Tests: true, BuildFlags: []string{"-mod=readonly"},
 	}, "./...")
 	if err != nil {
-		return diagnosticsScope{}, fmt.Errorf("load Go diagnostics session scope: %w", err)
+		return nil, fmt.Errorf("load Go diagnostics session scope: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return diagnosticsScope{}, fmt.Errorf("load Go diagnostics session scope: %w", err)
+		return nil, fmt.Errorf("load Go diagnostics session scope: %w", err)
 	}
+	return loaded, nil
+}
+
+func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (diagnosticsScope, error) {
 	fileSet := make(map[string]struct{})
 	manifestRoots := map[string]struct{}{moduleRoot: {}}
 	auxiliary := make(map[string]manifestState)

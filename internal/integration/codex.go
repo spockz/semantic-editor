@@ -89,71 +89,92 @@ type tomlSection struct {
 	lines      []string
 }
 
+type tomlSectionParser struct {
+	sections map[string]tomlSection
+	current  string
+	start    int
+	offset   int
+	lines    []string
+}
+
 func parseTOMLSections(text string) (map[string]tomlSection, error) {
 	var decoded map[string]any
 	if _, err := toml.Decode(text, &decoded); err != nil {
 		return nil, err
 	}
-	result := map[string]tomlSection{}
-	offset := 0
-	current := ""
-	start := 0
-	lines := []string{}
+	parser := tomlSectionParser{sections: make(map[string]tomlSection)}
 	for _, line := range strings.SplitAfter(text, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\n"))
-		header := strings.TrimSpace(stripTOMLComment(trimmed))
-		switch {
-		case strings.HasPrefix(header, "["):
-			if !strings.HasSuffix(header, "]") {
-				return nil, fmt.Errorf("invalid table header %q", trimmed)
-			}
-			if strings.HasPrefix(header, "[[") {
-				name := normalizeTOMLTableName(strings.TrimSpace(header[2 : len(header)-2]))
-				if name == "mcp_servers.semedit" {
-					return nil, fmt.Errorf("semedit registration cannot be an array table")
-				}
-				if current != "" {
-					if _, duplicate := result[current]; duplicate {
-						return nil, fmt.Errorf("duplicate TOML table %q", current)
-					}
-					result[current] = tomlSection{start: start, end: offset, lines: lines}
-				}
-				current, lines = "", nil
-				offset += len(line)
-				continue
-			}
-			name := normalizeTOMLTableName(strings.TrimSpace(header[1 : len(header)-1]))
-			if name == "" {
-				return nil, fmt.Errorf("empty table header")
-			}
-			if current != "" {
-				if _, duplicate := result[current]; duplicate {
-					return nil, fmt.Errorf("duplicate TOML table %q", current)
-				}
-				result[current] = tomlSection{start: start, end: offset, lines: lines}
-			}
-			current, start, lines = name, offset, []string{line}
-		case trimmed != "" && !strings.HasPrefix(trimmed, "#"):
-			if _, _, ok := strings.Cut(trimmed, "="); !ok {
-				return nil, fmt.Errorf("invalid TOML setting %q", trimmed)
-			}
-			if current != "" {
-				lines = append(lines, line)
-			}
-		default:
-			if current != "" {
-				lines = append(lines, line)
-			}
+		if err := parser.consume(line); err != nil {
+			return nil, err
 		}
-		offset += len(line)
 	}
-	if current != "" {
-		if _, duplicate := result[current]; duplicate {
-			return nil, fmt.Errorf("duplicate TOML table %q", current)
+	if err := parser.closeCurrent(); err != nil {
+		return nil, err
+	}
+	return parser.sections, nil
+}
+
+func (p *tomlSectionParser) consume(line string) error {
+	trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\n"))
+	header := strings.TrimSpace(stripTOMLComment(trimmed))
+	var err error
+	if strings.HasPrefix(header, "[") {
+		err = p.consumeHeader(header, trimmed, line)
+	} else {
+		err = p.consumeSetting(trimmed, line)
+	}
+	p.offset += len(line)
+	return err
+}
+
+func (p *tomlSectionParser) consumeHeader(header, trimmed, line string) error {
+	if !strings.HasSuffix(header, "]") {
+		return fmt.Errorf("invalid table header %q", trimmed)
+	}
+	if strings.HasPrefix(header, "[[") {
+		name := normalizeTOMLTableName(strings.TrimSpace(header[2 : len(header)-2]))
+		if name == "mcp_servers.semedit" {
+			return fmt.Errorf("semedit registration cannot be an array table")
 		}
-		result[current] = tomlSection{start: start, end: offset, lines: lines}
+		if err := p.closeCurrent(); err != nil {
+			return err
+		}
+		p.current, p.lines = "", nil
+		return nil
 	}
-	return result, nil
+	name := normalizeTOMLTableName(strings.TrimSpace(header[1 : len(header)-1]))
+	if name == "" {
+		return fmt.Errorf("empty table header")
+	}
+	if err := p.closeCurrent(); err != nil {
+		return err
+	}
+	p.current, p.start, p.lines = name, p.offset, []string{line}
+	return nil
+}
+
+func (p *tomlSectionParser) consumeSetting(trimmed, line string) error {
+	if trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+		if _, _, ok := strings.Cut(trimmed, "="); !ok {
+			return fmt.Errorf("invalid TOML setting %q", trimmed)
+		}
+	}
+	if p.current != "" {
+		p.lines = append(p.lines, line)
+	}
+	return nil
+}
+
+func (p *tomlSectionParser) closeCurrent() error {
+	if p.current == "" {
+		return nil
+	}
+	if _, duplicate := p.sections[p.current]; duplicate {
+		return fmt.Errorf("duplicate TOML table %q", p.current)
+	}
+	p.sections[p.current] = tomlSection{start: p.start, end: p.offset, lines: p.lines}
+	p.current, p.lines = "", nil
+	return nil
 }
 
 func normalizeTOMLTableName(name string) string {

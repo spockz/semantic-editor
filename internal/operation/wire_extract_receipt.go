@@ -37,7 +37,7 @@ var extractionReceiptFileConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, "semantic_find_references", semanticInspectSymbolToolName,
 	semanticReplaceBodyToolName, "semantic_replace_construct", semanticMoveConstructToolName, "semantic_remove_construct",
 	"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-	"semantic_insert_declaration", "semantic_insert_structure", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	"semantic_insert_declaration", "semantic_insert_construct", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
 	"semantic_extract_constant", semanticExtractVariableToolName, semanticInlineVariableToolName, "semantic_insert_field",
 	"semantic_assertion_mode",
 }
@@ -56,8 +56,8 @@ func beginExtractionReceipt(ctx context.Context, root, file, operationName strin
 	}
 	selected := filepath.Join(root, filepath.FromSlash(file))
 	dir := filepath.Dir(selected)
-	if err := sourcebuf.ObserveTree(ctx, dir); err != nil {
-		return EditReceiptDraft{}, fmt.Errorf("capture extraction package read set: %w", err)
+	if observeErr := sourcebuf.ObserveTree(ctx, dir); observeErr != nil {
+		return EditReceiptDraft{}, fmt.Errorf("capture extraction package read set: %w", observeErr)
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -148,32 +148,44 @@ func extractionDeclarationLive(file *ast.File, symbol string) bool {
 	for _, declaration := range file.Decls {
 		switch node := declaration.(type) {
 		case *ast.FuncDecl:
-			if node.Name.Name != name {
-				continue
-			}
-			if receiver == "" && node.Recv == nil {
+			if extractionFunctionLive(node, receiver, name) {
 				return true
 			}
-			if receiver != "" && node.Recv != nil && len(node.Recv.List) == 1 {
-				_, receiverName, supported := extractionReceiverQualifier(node.Recv.List[0].Type)
-				if supported && receiverName == receiver {
-					return true
-				}
-			}
 		case *ast.GenDecl:
-			if receiver != "" || node.Tok != token.CONST {
-				continue
+			if extractionConstantLive(node, receiver, name) {
+				return true
 			}
-			for _, spec := range node.Specs {
-				value, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, declared := range value.Names {
-					if declared.Name == name {
-						return true
-					}
-				}
+		}
+	}
+	return false
+}
+
+func extractionFunctionLive(function *ast.FuncDecl, receiver, name string) bool {
+	if function.Name.Name != name {
+		return false
+	}
+	if receiver == "" {
+		return function.Recv == nil
+	}
+	if function.Recv == nil || len(function.Recv.List) != 1 {
+		return false
+	}
+	_, receiverName, supported := extractionReceiverQualifier(function.Recv.List[0].Type)
+	return supported && receiverName == receiver
+}
+
+func extractionConstantLive(declaration *ast.GenDecl, receiver, name string) bool {
+	if receiver != "" || declaration.Tok != token.CONST {
+		return false
+	}
+	for _, spec := range declaration.Specs {
+		value, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+		for _, declared := range value.Names {
+			if declared.Name == name {
+				return true
 			}
 		}
 	}

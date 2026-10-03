@@ -1,10 +1,16 @@
-# Replace selected constructs and declarations; reject declaration collisions until overwrite is explicit.
+# Replace selected constructs and declarations; insertion collisions fail closed.
+! exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) == 0' --source 'if condition {}'
+stderr 'replacement must be one complete Go else construct'
+cmp api/messages_test.go want/api/messages_before.go
 ! exec semedit insert-decl --file api/settings.go --source 'var Revision = 2'
 stderr 'Revision.*already exists'
 cmp api/settings.go want/api/settings_before.go
-exec semedit insert-decl --file api/settings.go --source 'var Revision = 2' --overwrite
-exec semedit replace-decl --file api/settings.go --symbol DefaultLimit --source 'const DefaultLimit = 10'
-! exec semedit replace-construct --file api/messages_test.go --function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha"} { t.Log(want) }'
+! exec semedit insert-decl --file api/settings.go --overwrite --source 'var Revision = 2'
+stderr 'unknown flag.*overwrite'
+cmp api/settings.go want/api/settings_before.go
+exec semedit replace-construct --file api/settings.go --kind var --symbol Revision --source 'var Revision = 2'
+exec semedit replace-construct --file api/settings.go --kind const --symbol DefaultLimit --source 'const DefaultLimit = 10'
+! exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha"}'
 exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind loop --discriminator want --source 'for _, want := range []string{"alpha", "beta"} { if want == "" { t.Fatal(want) } }'
 cmp api/settings.go want/api/settings.go
 ! exec semedit replace-construct --file api/loops_test.go --in-function TestAmbiguousLoops --kind loop --discriminator item --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
@@ -72,6 +78,25 @@ func TestAmbiguousLoops(t *testing.T) {
 		t.Log(item)
 	}
 }
+-- want/api/messages_before.go --
+package api
+
+import "testing"
+
+func TestMessages(t *testing.T) {
+	original := []string{"old"}
+	if len(original) == 0 {
+		t.Fatal("missing originals")
+	} else {
+		t.Log("fallback")
+	}
+	for _, want := range original {
+		if want == "" {
+			t.Fatal(want)
+		}
+	}
+}
+
 -- want/api/loops_before.go --
 package api
 

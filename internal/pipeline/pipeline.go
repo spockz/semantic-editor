@@ -214,102 +214,88 @@ func applyExplicitImports(filePath string, src []byte, opts ImportOptions) ([]by
 		return nil, fmt.Errorf("parse source for import edits: %w", err)
 	}
 
-	if len(opts.Remove) > 0 {
-		var newDecls []ast.Decl
-		for _, decl := range fileNode.Decls {
-			gen, ok := decl.(*ast.GenDecl)
-			if !ok || gen.Tok != token.IMPORT {
-				newDecls = append(newDecls, decl)
-				continue
-			}
-
-			var newSpecs []ast.Spec
-			for _, spec := range gen.Specs {
-				imp, ok := spec.(*ast.ImportSpec)
-				if !ok {
-					newSpecs = append(newSpecs, spec)
-					continue
-				}
-				impPath := strings.Trim(imp.Path.Value, `"'`)
-				if slices.Contains(opts.Remove, impPath) {
-					continue
-				}
-				newSpecs = append(newSpecs, spec)
-			}
-			gen.Specs = newSpecs
-			if len(gen.Specs) > 0 {
-				newDecls = append(newDecls, gen)
-			}
-		}
-		fileNode.Decls = newDecls
-	}
-
-	if len(opts.Add) > 0 {
-		for _, entry := range opts.Add {
-			alias, pkgPath := parseImportEntry(entry)
-			if pkgPath == "" {
-				continue
-			}
-			found := false
-			for _, decl := range fileNode.Decls {
-				gen, ok := decl.(*ast.GenDecl)
-				if !ok || gen.Tok != token.IMPORT {
-					continue
-				}
-				for _, spec := range gen.Specs {
-					imp, ok := spec.(*ast.ImportSpec)
-					if !ok || strings.Trim(imp.Path.Value, `"'`) != pkgPath {
-						continue
-					}
-					if alias != "" {
-						imp.Name = ast.NewIdent(alias)
-					}
-					found = true
-					break
-				}
-				if found {
-					break
-				}
-			}
-			if found {
-				continue
-			}
-
-			newSpec := &ast.ImportSpec{
-				Path: &ast.BasicLit{
-					Kind:  token.STRING,
-					Value: strconv.Quote(pkgPath),
-				},
-			}
-			if alias != "" {
-				newSpec.Name = ast.NewIdent(alias)
-			}
-
-			var firstImportDecl *ast.GenDecl
-			for _, decl := range fileNode.Decls {
-				if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-					firstImportDecl = gen
-					break
-				}
-			}
-
-			if firstImportDecl != nil {
-				firstImportDecl.Specs = append(firstImportDecl.Specs, newSpec)
-			} else {
-				newGen := &ast.GenDecl{
-					Tok:   token.IMPORT,
-					Specs: []ast.Spec{newSpec},
-				}
-				fileNode.Decls = slices.Insert(fileNode.Decls, 0, ast.Decl(newGen))
-			}
-		}
-	}
+	removeExplicitImports(fileNode, opts.Remove)
+	addExplicitImports(fileNode, opts.Add)
 
 	var buf bytes.Buffer
 	if err := format.Node(&buf, fset, fileNode); err != nil {
 		return nil, fmt.Errorf("format explicit import edits: %w", err)
 	}
 	return buf.Bytes(), nil
+}
+
+func removeExplicitImports(fileNode *ast.File, paths []string) {
+	if len(paths) == 0 {
+		return
+	}
+	newDecls := make([]ast.Decl, 0, len(fileNode.Decls))
+	for _, decl := range fileNode.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT {
+			newDecls = append(newDecls, decl)
+			continue
+		}
+		gen.Specs = filterImportSpecs(gen.Specs, paths)
+		if len(gen.Specs) > 0 {
+			newDecls = append(newDecls, gen)
+		}
+	}
+	fileNode.Decls = newDecls
+}
+
+func filterImportSpecs(specs []ast.Spec, paths []string) []ast.Spec {
+	kept := make([]ast.Spec, 0, len(specs))
+	for _, spec := range specs {
+		imp, ok := spec.(*ast.ImportSpec)
+		if !ok || !slices.Contains(paths, strings.Trim(imp.Path.Value, `"'`)) {
+			kept = append(kept, spec)
+		}
+	}
+	return kept
+}
+
+func addExplicitImports(fileNode *ast.File, entries []string) {
+	for _, entry := range entries {
+		alias, pkgPath := parseImportEntry(entry)
+		if pkgPath == "" || updateExistingImport(fileNode, alias, pkgPath) {
+			continue
+		}
+		insertExplicitImport(fileNode, alias, pkgPath)
+	}
+}
+
+func updateExistingImport(fileNode *ast.File, alias, pkgPath string) bool {
+	for _, decl := range fileNode.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok || gen.Tok != token.IMPORT {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			imp, ok := spec.(*ast.ImportSpec)
+			if !ok || strings.Trim(imp.Path.Value, `"'`) != pkgPath {
+				continue
+			}
+			if alias != "" {
+				imp.Name = ast.NewIdent(alias)
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func insertExplicitImport(fileNode *ast.File, alias, pkgPath string) {
+	newSpec := &ast.ImportSpec{Path: &ast.BasicLit{Kind: token.STRING, Value: strconv.Quote(pkgPath)}}
+	if alias != "" {
+		newSpec.Name = ast.NewIdent(alias)
+	}
+	for _, decl := range fileNode.Decls {
+		if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
+			gen.Specs = append(gen.Specs, newSpec)
+			return
+		}
+	}
+	fileNode.Decls = slices.Insert(fileNode.Decls, 0, ast.Decl(&ast.GenDecl{Tok: token.IMPORT, Specs: []ast.Spec{newSpec}}))
 }
 
 // FindModuleRoot locates the nearest enclosing directory containing go.mod.
@@ -382,45 +368,7 @@ func GoFiles(workDir string, paths ...string) ([]string, error) {
 
 	selected := make(map[string]string)
 	for _, source := range paths {
-		if source == "" {
-			return nil, fmt.Errorf("empty Go source path")
-		}
-		target := source
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(base, target)
-		}
-		target, err = filepath.Abs(target)
-		if err != nil {
-			return nil, fmt.Errorf("resolve Go source path %q: %w", source, err)
-		}
-		info, err := os.Lstat(target)
-		if err != nil {
-			return nil, fmt.Errorf("stat Go source path %q: %w", source, err)
-		}
-		if info.Mode()&os.ModeSymlink != 0 {
-			targetInfo, err := os.Stat(target)
-			if err != nil {
-				return nil, fmt.Errorf("stat Go source symlink %q: %w", source, err)
-			}
-			if targetInfo.IsDir() {
-				continue
-			}
-			if targetInfo.Mode().IsRegular() {
-				addGoFile(selected, target, source)
-			}
-			continue
-		}
-		if !info.IsDir() {
-			if info.Mode().IsRegular() {
-				addGoFile(selected, target, source)
-			}
-			continue
-		}
-		walkCacheRoots, err := cacheRootsForGoDirectory(target, cacheRoots)
-		if err != nil {
-			return nil, err
-		}
-		if err := collectGoDirectory(base, target, source, walkCacheRoots, selected); err != nil {
+		if err := collectGoPath(base, source, cacheRoots, selected); err != nil {
 			return nil, err
 		}
 	}
@@ -431,6 +379,50 @@ func GoFiles(workDir string, paths ...string) ([]string, error) {
 	}
 	slices.Sort(files)
 	return files, nil
+}
+
+func collectGoPath(base, source string, cacheRoots []string, selected map[string]string) error {
+	if source == "" {
+		return fmt.Errorf("empty Go source path")
+	}
+	target := source
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(base, target)
+	}
+	var err error
+	target, err = filepath.Abs(target)
+	if err != nil {
+		return fmt.Errorf("resolve Go source path %q: %w", source, err)
+	}
+	info, err := os.Lstat(target)
+	if err != nil {
+		return fmt.Errorf("stat Go source path %q: %w", source, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return collectExplicitSymlink(selected, target, source)
+	}
+	if !info.IsDir() {
+		if info.Mode().IsRegular() {
+			addGoFile(selected, target, source)
+		}
+		return nil
+	}
+	walkCacheRoots, err := cacheRootsForGoDirectory(target, cacheRoots)
+	if err != nil {
+		return err
+	}
+	return collectGoDirectory(base, target, source, walkCacheRoots, selected)
+}
+
+func collectExplicitSymlink(selected map[string]string, target, source string) error {
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		return fmt.Errorf("stat Go source symlink %q: %w", source, err)
+	}
+	if !targetInfo.IsDir() && targetInfo.Mode().IsRegular() {
+		addGoFile(selected, target, source)
+	}
+	return nil
 }
 
 // NeedsFormatting reports whether selected Go files differ from gofmt output.
@@ -468,74 +460,102 @@ func OrganizeImportsWithOptionsReport(ctx context.Context, workDir string, opts 
 	finishTelemetry := telemetry.Start(ctx, telemetry.PhaseFormattingImports)
 	defer finishTelemetry()
 
-	if len(paths) == 0 {
-		paths = []string{"."}
-	}
-
-	var goFiles []string
-	for _, p := range paths {
-		target := p
-		if workDir != "" && !filepath.IsAbs(target) {
-			target = filepath.Join(workDir, target)
-		}
-		fi, err := os.Stat(target)
-		if err != nil {
-			return finish(report, fmt.Errorf("stat path %s: %w", p, err))
-		}
-		if fi.IsDir() {
-			err := filepath.Walk(target, func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					return err
-				}
-				if info.IsDir() {
-					name := info.Name()
-					if name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if strings.HasSuffix(info.Name(), ".go") {
-					goFiles = append(goFiles, path)
-				}
-				return nil
-			})
-			if err != nil {
-				return finish(report, fmt.Errorf("walk dir %s: %w", target, err))
-			}
-		} else if strings.HasSuffix(target, ".go") {
-			goFiles = append(goFiles, target)
-		}
+	goFiles, err := selectImportFiles(workDir, paths)
+	if err != nil {
+		return finish(report, err)
 	}
 
 	for _, file := range goFiles {
-		cleanFile := filepath.Clean(file)
-		data, err := sourcebuf.ReadFile(ctx, cleanFile)
+		changed, err := organizeImportFile(ctx, file, opts)
 		if err != nil {
-			return finish(report, fmt.Errorf("read file %s: %w", file, err))
+			return finish(report, err)
 		}
-
-		modifiedData, err := applyExplicitImports(cleanFile, data, opts)
-		if err != nil {
-			return finish(report, fmt.Errorf("apply explicit imports for %s: %w", file, err))
-		}
-
-		res, err := imports.Process(cleanFile, modifiedData, nil)
-		if err != nil {
-			return finish(report, fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err))
-		}
-
-		if !bytes.Equal(data, res) {
-			canonical, err := filepath.Abs(cleanFile)
-			if err != nil {
-				return finish(report, fmt.Errorf("resolve organized file path %s: %w", cleanFile, err))
-			}
-			if err := WriteAtomicContext(ctx, cleanFile, res); err != nil {
-				return finish(report, fmt.Errorf("write organized file %s: %w", file, err))
-			}
-			report.ChangedFiles = append(report.ChangedFiles, canonical)
+		if changed != "" {
+			report.ChangedFiles = append(report.ChangedFiles, changed)
 		}
 	}
 	return finish(report, nil)
+}
+
+func selectImportFiles(workDir string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		paths = []string{"."}
+	}
+	var goFiles []string
+	for _, path := range paths {
+		target := path
+		if workDir != "" && !filepath.IsAbs(target) {
+			target = filepath.Join(workDir, target)
+		}
+		info, err := os.Stat(target)
+		if err != nil {
+			return nil, fmt.Errorf("stat path %s: %w", path, err)
+		}
+		if err := appendImportFiles(target, info, &goFiles); err != nil {
+			return nil, err
+		}
+	}
+	return goFiles, nil
+}
+
+func appendImportFiles(target string, info os.FileInfo, goFiles *[]string) error {
+	if !info.IsDir() {
+		if strings.HasSuffix(target, ".go") {
+			*goFiles = append(*goFiles, target)
+		}
+		return nil
+	}
+	err := filepath.Walk(target, func(path string, entry os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() && excludedImportDirectory(entry.Name()) {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".go") {
+			*goFiles = append(*goFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("walk dir %s: %w", target, err)
+	}
+	return nil
+}
+
+func excludedImportDirectory(name string) bool {
+	return name == ".git" || name == ".scratch" || name == "vendor" || name == "node_modules"
+}
+
+func organizeImportFile(ctx context.Context, file string, opts ImportOptions) (string, error) {
+	cleanFile := filepath.Clean(file)
+	data, err := sourcebuf.ReadFile(ctx, cleanFile)
+	if err != nil {
+		return "", fmt.Errorf("read file %s: %w", file, err)
+	}
+	modifiedData, err := applyExplicitImports(cleanFile, data, opts)
+	if err != nil {
+		return "", fmt.Errorf("apply explicit imports for %s: %w", file, err)
+	}
+	result, err := imports.Process(cleanFile, modifiedData, nil)
+	if err != nil {
+		return "", fmt.Errorf("%w for %s: %w", ErrOrganizeImportsFailed, file, err)
+	}
+	if bytes.Equal(data, result) {
+		return "", nil
+	}
+	return publishOrganizedImports(ctx, file, cleanFile, result)
+}
+
+func publishOrganizedImports(ctx context.Context, file, cleanFile string, result []byte) (string, error) {
+	canonical, err := filepath.Abs(cleanFile)
+	if err != nil {
+		return "", fmt.Errorf("resolve organized file path %s: %w", cleanFile, err)
+	}
+	if err := WriteAtomicContext(ctx, cleanFile, result); err != nil {
+		return "", fmt.Errorf("write organized file %s: %w", file, err)
+	}
+	return canonical, nil
 }
 
 // runGofmt invokes gofmt in bounded argument batches and never starts with no file arguments.

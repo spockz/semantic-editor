@@ -202,52 +202,77 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	}
 }
 
+type signatureChangeIntent struct {
+	Symbol           string
+	Mappings         []astedit.SignatureParameterMapping
+	ExpectedRevision string
+	NewParameterName string
+}
+
 func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any) (structuralPlanResult, error) {
 	file := stringParam(raw, "file")
-	symbol := stringParam(raw, "symbol")
 	snapshot, err := prepareStructuralSnapshot(ctx, cc, file)
 	if err != nil {
 		return structuralPlanResult{}, err
 	}
-	before := snapshot.Sources[snapshot.File]
-	expected, supplied := raw[wireExpectedRevision]
-	if supplied {
+	intent, err := parseSignatureChangeIntent(raw, snapshot.Sources[snapshot.File])
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	plan, err := planSignatureChange(snapshot, intent)
+	if err != nil {
+		return structuralPlanResult{}, err
+	}
+	return applySignatureChange(cc, file, snapshot, intent, plan)
+}
+
+func parseSignatureChangeIntent(raw map[string]any, before []byte) (signatureChangeIntent, error) {
+	intent := signatureChangeIntent{Symbol: stringParam(raw, "symbol")}
+	if expected, supplied := raw[wireExpectedRevision]; supplied {
 		revision, ok := expected.(string)
 		if !ok || revision == "" {
-			return structuralPlanResult{}, fmt.Errorf("expected_revision must be a non-empty string")
+			return signatureChangeIntent{}, fmt.Errorf("expected_revision must be a non-empty string")
 		}
 		if revision != structuralRevision(before) {
-			return structuralPlanResult{}, fmt.Errorf("expected_revision does not match the selected full-file revision")
+			return signatureChangeIntent{}, fmt.Errorf("expected_revision does not match the selected full-file revision")
 		}
+		intent.ExpectedRevision = revision
 	}
 	mappings, err := decodeSignatureMappings(raw[signatureParameters])
 	if err != nil {
-		return structuralPlanResult{}, err
+		return signatureChangeIntent{}, err
 	}
-	newParameterName := ""
+	intent.Mappings = mappings
 	for _, mapping := range mappings {
-		if mapping.SourceIndex == nil {
-			if newParameterName != "" {
-				return structuralPlanResult{}, fmt.Errorf("only one new parameter is supported")
-			}
-			newParameterName = mapping.Name
+		if mapping.SourceIndex != nil {
+			continue
 		}
+		if intent.NewParameterName != "" {
+			return signatureChangeIntent{}, fmt.Errorf("only one new parameter is supported")
+		}
+		intent.NewParameterName = mapping.Name
 	}
-	proof, err := collectSignatureCallSetWithName(snapshot, symbol, newParameterName)
+	return intent, nil
+}
+
+func planSignatureChange(snapshot *structuralSnapshot, intent signatureChangeIntent) (astedit.SignaturePlan, error) {
+	proof, err := collectSignatureCallSetWithName(snapshot, intent.Symbol, intent.NewParameterName)
 	if err != nil {
-		return structuralPlanResult{}, err
+		return astedit.SignaturePlan{}, err
 	}
-	request := astedit.SignatureChangeRequest{File: snapshot.File, Symbol: symbol, Parameters: mappings}
-	if supplied {
-		request.ExpectedRevision = expected.(string)
-	}
+	request := astedit.SignatureChangeRequest{File: snapshot.File, Symbol: intent.Symbol, Parameters: intent.Mappings, ExpectedRevision: intent.ExpectedRevision}
 	plan, err := astedit.PlanChangeSignature(request, proof)
 	if err != nil {
-		return structuralPlanResult{}, err
+		return astedit.SignaturePlan{}, err
 	}
 	if err := validateSignatureOverlay(snapshot, plan); err != nil {
-		return structuralPlanResult{}, err
+		return astedit.SignaturePlan{}, err
 	}
+	return plan, nil
+}
+
+func applySignatureChange(cc CallContext, file string, snapshot *structuralSnapshot, intent signatureChangeIntent, plan astedit.SignaturePlan) (structuralPlanResult, error) {
+	before := snapshot.Sources[snapshot.File]
 	readSet, err := signatureReadSet(cc.WorkDir, snapshot)
 	if err != nil {
 		return structuralPlanResult{}, err
@@ -258,7 +283,7 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 		return structuralPlanResult{}, applyErr
 	}
 	delta, diagnosticStatus := finishDelta()
-	edit := FileEditRes{File: snapshot.File, Display: displayWorkPath(cc.WorkDir, file), Symbol: symbol,
+	edit := FileEditRes{File: snapshot.File, Display: displayWorkPath(cc.WorkDir, file), Symbol: intent.Symbol,
 		Detail: "Updated the function signature and every proven direct caller.", Diff: strings.Join(diffs, "\n"), Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}
 	if !changed {
 		edit.Detail = "The requested signature is already present."
@@ -286,7 +311,7 @@ func runChangeSignature(ctx context.Context, cc CallContext, raw map[string]any)
 		finalSource = changedSource
 	}
 	continuationRevision := structuralRevision(finalSource)
-	draft.Continuations = []SymbolTarget{{File: edit.Display, Symbol: symbol, ExpectedRevision: &continuationRevision}}
+	draft.Continuations = []SymbolTarget{{File: edit.Display, Symbol: intent.Symbol, ExpectedRevision: &continuationRevision}}
 	resolve := func(resolveCtx context.Context, candidate SymbolTarget) (SymbolTarget, bool, error) {
 		return resolveSignatureContinuation(resolveCtx, cc.WorkDir, candidate)
 	}
@@ -466,8 +491,8 @@ func collectSignatureCallSetWithName(snapshot *structuralSnapshot, symbol, newPa
 	if err != nil {
 		return astedit.SignatureCallSetProof{}, err
 	}
-	if err := rejectSignatureVariantReferences(snapshot, symbol); err != nil {
-		return astedit.SignatureCallSetProof{}, err
+	if variantErr := rejectSignatureVariantReferences(snapshot, symbol); variantErr != nil {
+		return astedit.SignatureCallSetProof{}, variantErr
 	}
 	proof := astedit.SignatureCallSetProof{Complete: true}
 	paths, err := signatureWorkspacePaths(snapshot.Root, snapshot.Sources)
@@ -513,56 +538,99 @@ func signatureNameCollision(pkg *packages.Package, body *ast.BlockStmt, name str
 }
 
 func resolveSignatureCallTarget(snapshot *structuralSnapshot, symbol, newParameterName string) (signatureCallTarget, error) {
-	var target signatureCallTarget
-	found := false
+	var result signatureTargetSearch
 	for _, pkg := range snapshot.Packages {
-		if pkg.TypesInfo == nil || pkg.Fset == nil {
-			return signatureCallTarget{}, fmt.Errorf("package %s has incomplete Go type information", pkg.PkgPath)
+		candidate, err := signatureTargetInPackage(snapshot, pkg, symbol, newParameterName)
+		if err != nil {
+			return signatureCallTarget{}, err
 		}
-		if pkg.ID != pkg.PkgPath {
+		if !candidate.Found {
 			continue
 		}
-		for _, file := range pkg.Syntax {
-			position := pkg.Fset.Position(file.Pos())
-			absolute, err := filepath.Abs(position.Filename)
-			if err != nil {
-				return signatureCallTarget{}, fmt.Errorf("resolve analyzed Go file: %w", err)
-			}
-			if absolute != snapshot.File {
-				continue
-			}
-			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Recv != nil || function.Name.Name != symbol {
-					continue
-				}
-				if token.IsExported(symbol) || function.Type.TypeParams != nil && len(function.Type.TypeParams.List) != 0 {
-					return signatureCallTarget{}, fmt.Errorf("change signature supports only private non-generic free functions")
-				}
-				object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func)
-				if !ok || object == nil || object.Pkg() == nil {
-					return signatureCallTarget{}, fmt.Errorf("target %q has no resolved Go function object", symbol)
-				}
-				if err := signatureNameCollision(pkg, function.Body, newParameterName); err != nil {
-					return signatureCallTarget{}, err
-				}
-				signature, ok := object.Type().(*types.Signature)
-				if !ok || signature.Variadic() {
-					return signatureCallTarget{}, fmt.Errorf("variadic or unresolved target signatures are unsupported")
-				}
-				declarationPosition := pkg.Fset.Position(object.Pos())
-				if found {
-					return signatureCallTarget{}, fmt.Errorf("target %q is ambiguous across loaded packages", symbol)
-				}
-				target = signatureCallTarget{packagePath: pkg.PkgPath, file: filepath.Clean(declarationPosition.Filename), offset: declarationPosition.Offset}
-				found = true
-			}
+		if result.Found {
+			return signatureCallTarget{}, fmt.Errorf("target %q is ambiguous across loaded packages", symbol)
 		}
+		result = candidate
 	}
-	if !found {
+	if !result.Found {
 		return signatureCallTarget{}, fmt.Errorf("private function %q was not found in the selected file", symbol)
 	}
-	return target, nil
+	return result.Target, nil
+}
+
+type signatureTargetSearch struct {
+	Target signatureCallTarget
+	Found  bool
+}
+
+func signatureTargetInPackage(snapshot *structuralSnapshot, pkg *packages.Package, symbol, newParameterName string) (signatureTargetSearch, error) {
+	if pkg.TypesInfo == nil || pkg.Fset == nil {
+		return signatureTargetSearch{}, fmt.Errorf("package %s has incomplete Go type information", pkg.PkgPath)
+	}
+	if pkg.ID != pkg.PkgPath {
+		return signatureTargetSearch{}, nil
+	}
+	var result signatureTargetSearch
+	for _, file := range pkg.Syntax {
+		absolute, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+		if err != nil {
+			return signatureTargetSearch{}, fmt.Errorf("resolve analyzed Go file: %w", err)
+		}
+		if absolute != snapshot.File {
+			continue
+		}
+		candidate, err := signatureTargetInFile(pkg, file, symbol, newParameterName)
+		if err != nil {
+			return signatureTargetSearch{}, err
+		}
+		if !candidate.Found {
+			continue
+		}
+		if result.Found {
+			return signatureTargetSearch{}, fmt.Errorf("target %q is ambiguous in the selected file", symbol)
+		}
+		result = candidate
+	}
+	return result, nil
+}
+
+func signatureTargetInFile(pkg *packages.Package, file *ast.File, symbol, newParameterName string) (signatureTargetSearch, error) {
+	var result signatureTargetSearch
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Recv != nil || function.Name.Name != symbol {
+			continue
+		}
+		candidate, err := signatureTargetForFunction(pkg, function, symbol, newParameterName)
+		if err != nil {
+			return signatureTargetSearch{}, err
+		}
+		if result.Found {
+			return signatureTargetSearch{}, fmt.Errorf("target %q is ambiguous in the selected file", symbol)
+		}
+		result = candidate
+	}
+	return result, nil
+}
+
+func signatureTargetForFunction(pkg *packages.Package, function *ast.FuncDecl, symbol, newParameterName string) (signatureTargetSearch, error) {
+	if token.IsExported(symbol) || function.Type.TypeParams != nil && len(function.Type.TypeParams.List) != 0 {
+		return signatureTargetSearch{}, fmt.Errorf("change signature supports only private non-generic free functions")
+	}
+	object, ok := pkg.TypesInfo.Defs[function.Name].(*types.Func)
+	if !ok || object == nil || object.Pkg() == nil {
+		return signatureTargetSearch{}, fmt.Errorf("target %q has no resolved Go function object", symbol)
+	}
+	if err := signatureNameCollision(pkg, function.Body, newParameterName); err != nil {
+		return signatureTargetSearch{}, err
+	}
+	signature, ok := object.Type().(*types.Signature)
+	if !ok || signature.Variadic() {
+		return signatureTargetSearch{}, fmt.Errorf("variadic or unresolved target signatures are unsupported")
+	}
+	position := pkg.Fset.Position(object.Pos())
+	target := signatureCallTarget{packagePath: pkg.PkgPath, file: filepath.Clean(position.Filename), offset: position.Offset}
+	return signatureTargetSearch{Target: target, Found: true}, nil
 }
 
 func signatureObjectMatches(pkg *packages.Package, object types.Object, target signatureCallTarget, symbol string) bool {
@@ -583,46 +651,68 @@ func collectSignaturePackageCalls(pkg *packages.Package, target signatureCallTar
 	}
 	calls := make([]astedit.SignatureCallSite, 0)
 	for _, file := range pkg.Syntax {
-		var parents []ast.Node
-		var visitErr error
-		ast.Inspect(file, func(node ast.Node) bool {
-			if node == nil {
-				if len(parents) > 0 {
-					parents = parents[:len(parents)-1]
-				}
-				return false
-			}
-			identifier, ok := node.(*ast.Ident)
-			if ok && signatureObjectMatches(pkg, pkg.TypesInfo.Uses[identifier], target, symbol) {
-				var parent ast.Node
-				if len(parents) > 0 {
-					parent = parents[len(parents)-1]
-				}
-				call, direct := parent.(*ast.CallExpr)
-				if !direct || call.Fun != identifier {
-					visitErr = fmt.Errorf("function %q has a non-direct use at %s; function values and indirect callers are unsupported", symbol, pkg.Fset.Position(identifier.Pos()))
-					return false
-				}
-				start, end := pkg.Fset.Position(call.Pos()), pkg.Fset.Position(call.End())
-				path, err := filepath.Abs(start.Filename)
-				if err != nil {
-					visitErr = fmt.Errorf("resolve caller path: %w", err)
-					return false
-				}
-				key := fmt.Sprintf("%s:%d:%d", path, start.Offset, end.Offset)
-				if !seen[key] {
-					seen[key] = true
-					calls = append(calls, astedit.SignatureCallSite{File: path, Start: start.Offset, End: end.Offset})
-				}
-			}
-			parents = append(parents, node)
-			return true
-		})
-		if visitErr != nil {
-			return nil, visitErr
+		fileCalls, err := collectSignatureFileCalls(pkg, file, target, symbol, seen)
+		if err != nil {
+			return nil, err
 		}
+		calls = append(calls, fileCalls...)
 	}
 	return calls, nil
+}
+
+func collectSignatureFileCalls(pkg *packages.Package, file *ast.File, target signatureCallTarget, symbol string, seen map[string]bool) ([]astedit.SignatureCallSite, error) {
+	var parents []ast.Node
+	var calls []astedit.SignatureCallSite
+	var visitErr error
+	ast.Inspect(file, func(node ast.Node) bool {
+		if node == nil {
+			if len(parents) > 0 {
+				parents = parents[:len(parents)-1]
+			}
+			return false
+		}
+		if visitErr != nil {
+			return false
+		}
+		identifier, ok := node.(*ast.Ident)
+		if ok && signatureObjectMatches(pkg, pkg.TypesInfo.Uses[identifier], target, symbol) {
+			call, err := directSignatureCall(pkg, identifier, parents, symbol)
+			if err != nil {
+				visitErr = err
+				return false
+			}
+			if call != nil {
+				key := fmt.Sprintf("%s:%d:%d", call.File, call.Start, call.End)
+				if !seen[key] {
+					seen[key] = true
+					calls = append(calls, *call)
+				}
+			}
+		}
+		parents = append(parents, node)
+		return true
+	})
+	if visitErr != nil {
+		return nil, visitErr
+	}
+	return calls, nil
+}
+
+func directSignatureCall(pkg *packages.Package, identifier *ast.Ident, parents []ast.Node, symbol string) (*astedit.SignatureCallSite, error) {
+	var parent ast.Node
+	if len(parents) > 0 {
+		parent = parents[len(parents)-1]
+	}
+	call, direct := parent.(*ast.CallExpr)
+	if !direct || call.Fun != identifier {
+		return nil, fmt.Errorf("function %q has a non-direct use at %s; function values and indirect callers are unsupported", symbol, pkg.Fset.Position(identifier.Pos()))
+	}
+	start, end := pkg.Fset.Position(call.Pos()), pkg.Fset.Position(call.End())
+	path, err := filepath.Abs(start.Filename)
+	if err != nil {
+		return nil, fmt.Errorf("resolve caller path: %w", err)
+	}
+	return &astedit.SignatureCallSite{File: path, Start: start.Offset, End: end.Offset}, nil
 }
 
 func signatureWorkspacePaths(workDir string, sources map[string][]byte) ([]string, error) {

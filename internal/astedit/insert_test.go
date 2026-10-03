@@ -91,88 +91,52 @@ func TestInsertDeclaration_FileStartAndEnd(t *testing.T) {
 
 func TestInsertDeclaration_PublicAndPrivateSections(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-
-	t.Run("public_start", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func FirstPublic() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement: astedit.PlacementPublicStart,
+	for _, tc := range []struct {
+		name, snippet string
+		placement     astedit.Placement
+		before, after string
+	}{
+		{name: "public_start", snippet: "func FirstPublic() {}", placement: astedit.PlacementPublicStart, before: "func ExportedOne()"},
+		{name: "public_end", snippet: "func LastPublic() {}", placement: astedit.PlacementPublicEnd, before: "func unexportedOne()", after: "func ExportedTwo()"},
+		{name: "private_start", snippet: "func firstPrivate() {}", placement: astedit.PlacementPrivateStart, before: "func unexportedOne()"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assertInsertedBetween(t, baseFile, tc.snippet, tc.placement, tc.after, tc.before)
 		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, _ := os.ReadFile(filepath.Clean(file))
-		content := string(data)
-		idxNew := strings.Index(content, "func FirstPublic()")
-		idxOne := strings.Index(content, "func ExportedOne()")
-		if idxNew > idxOne {
-			t.Errorf("expected FirstPublic before ExportedOne, got:\n%s", content)
-		}
-	})
-
-	t.Run("public_end", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func LastPublic() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement: astedit.PlacementPublicEnd,
-		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, _ := os.ReadFile(filepath.Clean(file))
-		content := string(data)
-		idxNew := strings.Index(content, "func LastPublic()")
-		idxTwo := strings.Index(content, "func ExportedTwo()")
-		idxPrivOne := strings.Index(content, "func unexportedOne()")
-		if idxNew < idxTwo || idxNew > idxPrivOne {
-			t.Errorf("expected LastPublic between ExportedTwo and unexportedOne, got:\n%s", content)
-		}
-	})
-
-	t.Run("private_start", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func firstPrivate() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement: astedit.PlacementPrivateStart,
-		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, _ := os.ReadFile(filepath.Clean(file))
-		content := string(data)
-		idxNew := strings.Index(content, "func firstPrivate()")
-		idxPrivOne := strings.Index(content, "func unexportedOne()")
-		if idxNew > idxPrivOne {
-			t.Errorf("expected firstPrivate before unexportedOne, got:\n%s", content)
-		}
-	})
-
+	}
 	t.Run("public_section_fallback_when_only_private_exists", func(t *testing.T) {
 		t.Parallel()
-		onlyPrivate := `package testpkg
-
-func privOnly() {}
-`
-		file := setupTestFile(t, onlyPrivate)
-		snippet := "func ExportedNew() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement: astedit.PlacementPublicStart,
-		})
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		data, _ := os.ReadFile(filepath.Clean(file))
-		content := string(data)
-		idxNew := strings.Index(content, "func ExportedNew()")
-		idxPriv := strings.Index(content, "func privOnly()")
-		if idxNew > idxPriv {
-			t.Errorf("expected ExportedNew before privOnly due to public-precedes-private invariant, got:\n%s", content)
-		}
+		assertInsertedBetween(t, "package testpkg\n\nfunc privOnly() {}\n", "func ExportedNew() {}", astedit.PlacementPublicStart, "", "func privOnly()")
 	})
+}
+
+func assertInsertedBetween(t *testing.T, source, snippet string, placement astedit.Placement, after, before string) {
+	t.Helper()
+	file := setupTestFile(t, source)
+	if err := astedit.InsertDeclaration(context.Background(), file, snippet, astedit.Options{Placement: placement}); err != nil {
+		t.Fatalf("InsertDeclaration() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	name, _, hasCall := strings.Cut(snippet, "(")
+	if !hasCall {
+		t.Fatalf("test snippet has no declaration name: %q", snippet)
+	}
+	inserted := strings.Index(content, name)
+	afterIndex, beforeIndex := 0, len(content)
+	if after != "" {
+		afterIndex = strings.Index(content, after)
+	}
+	if before != "" {
+		beforeIndex = strings.Index(content, before)
+	}
+	if inserted < 0 || afterIndex < 0 || beforeIndex < 0 || inserted < afterIndex || inserted > beforeIndex {
+		t.Fatalf("inserted %q outside expected bounds %q..%q:\n%s", snippet, after, before, content)
+	}
 }
 
 func TestInsertDeclaration_SymbolRelative(t *testing.T) {
@@ -223,96 +187,51 @@ func TestInsertDeclaration_SymbolRelative(t *testing.T) {
 
 func TestInsertDeclaration_Validation(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	t.Run("visibility_mismatch_public_requested", func(t *testing.T) { assertVisibilityMismatch(t, "func privateHelper() {}", "public", "privateHelper") })
+	t.Run("visibility_mismatch_private_requested", func(t *testing.T) { assertVisibilityMismatch(t, "func PublicHelper() {}", "private", "PublicHelper") })
+	t.Run("missing_target_symbol", func(t *testing.T) { assertMissingTargetSymbol(t) })
+	t.Run("syntax_error_zero_disk_mutation", func(t *testing.T) { assertSyntaxErrorDoesNotMutate(t) })
+}
 
-	t.Run("visibility_mismatch_public_requested", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func privateHelper() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement:  astedit.PlacementFileEnd,
-			Visibility: "public",
-		})
-		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
-			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
-		}
-		var visErr *astedit.VisibilityMismatchError
-		if !errors.As(err, &visErr) {
-			t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
-		}
-		if visErr.Identifier != "privateHelper" {
-			t.Errorf("expected Identifier 'privateHelper', got %q", visErr.Identifier)
-		}
-	})
+func assertVisibilityMismatch(t *testing.T, snippet, visibility, identifier string) {
+	t.Helper()
+	file := setupTestFile(t, baseFile)
+	err := astedit.InsertDeclaration(context.Background(), file, snippet, astedit.Options{Placement: astedit.PlacementFileEnd, Visibility: visibility})
+	if !errors.Is(err, astedit.ErrVisibilityMismatch) {
+		t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
+	}
+	var visibilityError *astedit.VisibilityMismatchError
+	if !errors.As(err, &visibilityError) || visibilityError.Identifier != identifier {
+		t.Fatalf("visibility error = %#v, want identifier %q", visibilityError, identifier)
+	}
+}
 
-	t.Run("visibility_mismatch_private_requested", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func PublicHelper() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement:  astedit.PlacementFileEnd,
-			Visibility: "private",
-		})
-		if !errors.Is(err, astedit.ErrVisibilityMismatch) {
-			t.Fatalf("expected ErrVisibilityMismatch, got %v", err)
-		}
-		var visErr *astedit.VisibilityMismatchError
-		if !errors.As(err, &visErr) {
-			t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
-		}
-		if visErr.Identifier != "PublicHelper" {
-			t.Errorf("expected Identifier 'PublicHelper', got %q", visErr.Identifier)
-		}
-	})
+func assertMissingTargetSymbol(t *testing.T) {
+	t.Helper()
+	file := setupTestFile(t, baseFile)
+	err := astedit.InsertDeclaration(context.Background(), file, "func NewFunc() {}", astedit.Options{Placement: astedit.PlacementBeforeSymbol, TargetSymbol: "NoSuchSymbol"})
+	var placementError *astedit.PlacementError
+	if !errors.Is(err, astedit.ErrSymbolNotFound) || !errors.As(err, &placementError) || placementError.TargetSymbol != "NoSuchSymbol" || placementError.Strategy != astedit.PlacementBeforeSymbol {
+		t.Fatalf("placement error = %#v, want missing NoSuchSymbol before symbol", placementError)
+	}
+}
 
-	t.Run("missing_target_symbol", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func NewFunc() {}"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement:    astedit.PlacementBeforeSymbol,
-			TargetSymbol: "NoSuchSymbol",
-		})
-		if !errors.Is(err, astedit.ErrSymbolNotFound) {
-			t.Fatalf("expected ErrSymbolNotFound, got %v", err)
-		}
-		var placeErr *astedit.PlacementError
-		if !errors.As(err, &placeErr) {
-			t.Fatalf("expected *PlacementError via errors.As, got %T", err)
-		}
-		if placeErr.TargetSymbol != "NoSuchSymbol" {
-			t.Errorf("expected TargetSymbol 'NoSuchSymbol', got %q", placeErr.TargetSymbol)
-		}
-		if placeErr.Strategy != astedit.PlacementBeforeSymbol {
-			t.Errorf("expected Strategy 'before_symbol', got %q", placeErr.Strategy)
-		}
-	})
-
-	t.Run("syntax_error_zero_disk_mutation", func(t *testing.T) {
-		t.Parallel()
-		file := setupTestFile(t, baseFile)
-		snippet := "func broken( { return"
-		err := astedit.InsertDeclaration(ctx, file, snippet, astedit.Options{
-			Placement: astedit.PlacementFileEnd,
-		})
-		if !errors.Is(err, astedit.ErrSyntax) {
-			t.Fatalf("expected ErrSyntax, got %v", err)
-		}
-		var synErr *astedit.SyntaxError
-		if !errors.As(err, &synErr) {
-			t.Fatalf("expected *SyntaxError via errors.As, got %T", err)
-		}
-		if !synErr.Pos.IsValid() {
-			t.Errorf("expected valid Pos, got %v", synErr.Pos)
-		}
-		if synErr.Snippet != snippet {
-			t.Errorf("expected Snippet %q, got %q", snippet, synErr.Snippet)
-		}
-		data, _ := os.ReadFile(filepath.Clean(file))
-		if string(data) != baseFile {
-			t.Errorf("file was mutated on invalid syntax error:\n%s", string(data))
-		}
-	})
+func assertSyntaxErrorDoesNotMutate(t *testing.T) {
+	t.Helper()
+	file := setupTestFile(t, baseFile)
+	snippet := "func broken( { return"
+	err := astedit.InsertDeclaration(context.Background(), file, snippet, astedit.Options{Placement: astedit.PlacementFileEnd})
+	var syntaxError *astedit.SyntaxError
+	if !errors.Is(err, astedit.ErrSyntax) || !errors.As(err, &syntaxError) || !syntaxError.Pos.IsValid() || syntaxError.Snippet != snippet {
+		t.Fatalf("syntax error = %#v, want located source failure", syntaxError)
+	}
+	data, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != baseFile {
+		t.Fatalf("file mutated on syntax error:\n%s", data)
+	}
 }
 
 func TestInsertDeclaration_AutoOrganizeImports(t *testing.T) {

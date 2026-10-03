@@ -5,6 +5,7 @@ run:
   issues-exit-code: 1
   tests: true
   modules-download-mode: readonly
+  allow-serial-runners: true
 
 output:
   formats:
@@ -63,17 +64,16 @@ linters:
       min-len: 10
       min-occurrences: 5
     gocognit:
-      min-complexity: 80
+      min-complexity: 30
     funlen:
-      lines: -1
-      statements: 100
+      lines: 80
+      statements: 50
     exhaustive:
       default-signifies-exhaustive: true
     govet:
       enable-all: true
       disable:
         - fieldalignment
-        - shadow
     revive:
       rules:
         - name: exported
@@ -113,7 +113,6 @@ linters:
       - path: _test\.go
         linters:
           - gosec
-          - errcheck
           - noctx
           - nilnil
 

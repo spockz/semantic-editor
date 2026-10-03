@@ -53,61 +53,103 @@ type SchemaKind string
 func ValidateSchema(schema ValueSchema) error {
 	switch schema.Kind {
 	case SchemaString:
-		if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
-			return fmt.Errorf("string schema contains fields for another kind")
-		}
-		if err := validateBounds(schema.MinLength, schema.MaxLength, "string length"); err != nil {
+		if err := validateStringSchema(schema); err != nil {
 			return err
 		}
 	case SchemaBoolean:
-		if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
+		if schemaHasNonBooleanFields(schema) {
 			return fmt.Errorf("boolean schema contains fields for another kind")
 		}
 	case SchemaInteger, SchemaNumber:
-		if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil {
-			return fmt.Errorf("%s schema contains fields for another kind", schema.Kind)
-		}
-		if err := validateNumberBounds(schema.Minimum, schema.Maximum); err != nil {
+		if err := validateNumericSchema(schema); err != nil {
 			return err
 		}
 	case SchemaObject:
-		if schema.Items != nil || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
-			return fmt.Errorf("object schema contains fields for another kind")
-		}
-		for name, property := range schema.Properties {
-			if name == "" {
-				return fmt.Errorf("object schema has an empty property name")
-			}
-			if err := ValidateSchema(property); err != nil {
-				return fmt.Errorf("property %q schema: %w", name, err)
-			}
-		}
-		seen := make(map[string]struct{}, len(schema.Required))
-		for _, name := range schema.Required {
-			if _, ok := schema.Properties[name]; !ok {
-				return fmt.Errorf("required property %q has no schema", name)
-			}
-			if _, ok := seen[name]; ok {
-				return fmt.Errorf("required property %q is repeated", name)
-			}
-			seen[name] = struct{}{}
+		if err := validateObjectSchema(schema); err != nil {
+			return err
 		}
 	case SchemaArray:
-		if schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.Minimum != nil || schema.Maximum != nil {
-			return fmt.Errorf("array schema contains fields for another kind")
-		}
-		if schema.Items == nil {
-			return fmt.Errorf("array schema requires an item schema")
-		}
-		if err := ValidateSchema(*schema.Items); err != nil {
-			return fmt.Errorf("array item schema: %w", err)
-		}
-		if err := validateBounds(schema.MinItems, schema.MaxItems, "array length"); err != nil {
+		if err := validateArraySchema(schema); err != nil {
 			return err
 		}
 	default:
 		return fmt.Errorf("unsupported schema kind %q", schema.Kind)
 	}
+	return validateSchemaEnum(schema)
+}
+
+func validateStringSchema(schema ValueSchema) error {
+	if schemaHasNonStringFields(schema) {
+		return fmt.Errorf("string schema contains fields for another kind")
+	}
+	return validateBounds(schema.MinLength, schema.MaxLength, "string length")
+}
+
+func schemaHasNonStringFields(schema ValueSchema) bool {
+	return schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil
+}
+
+func schemaHasNonBooleanFields(schema ValueSchema) bool {
+	return schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil
+}
+
+func validateNumericSchema(schema ValueSchema) error {
+	if schema.Items != nil || schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil {
+		return fmt.Errorf("%s schema contains fields for another kind", schema.Kind)
+	}
+	return validateNumberBounds(schema.Minimum, schema.Maximum)
+}
+
+func validateObjectSchema(schema ValueSchema) error {
+	if schema.Items != nil || schema.MinLength != nil || schema.MaxLength != nil || schema.MinItems != nil || schema.MaxItems != nil || schema.Minimum != nil || schema.Maximum != nil {
+		return fmt.Errorf("object schema contains fields for another kind")
+	}
+	if err := validateObjectProperties(schema.Properties); err != nil {
+		return err
+	}
+	return validateRequiredProperties(schema.Properties, schema.Required)
+}
+
+func validateObjectProperties(properties map[string]ValueSchema) error {
+	for name, property := range properties {
+		if name == "" {
+			return fmt.Errorf("object schema has an empty property name")
+		}
+		if err := ValidateSchema(property); err != nil {
+			return fmt.Errorf("property %q schema: %w", name, err)
+		}
+	}
+	return nil
+}
+
+func validateRequiredProperties(properties map[string]ValueSchema, required []string) error {
+	seen := make(map[string]struct{}, len(required))
+	for _, name := range required {
+		if _, ok := properties[name]; !ok {
+			return fmt.Errorf("required property %q has no schema", name)
+		}
+		if _, ok := seen[name]; ok {
+			return fmt.Errorf("required property %q is repeated", name)
+		}
+		seen[name] = struct{}{}
+	}
+	return nil
+}
+
+func validateArraySchema(schema ValueSchema) error {
+	if schema.Properties != nil || len(schema.Required) > 0 || schema.MinLength != nil || schema.MaxLength != nil || schema.Minimum != nil || schema.Maximum != nil {
+		return fmt.Errorf("array schema contains fields for another kind")
+	}
+	if schema.Items == nil {
+		return fmt.Errorf("array schema requires an item schema")
+	}
+	if err := ValidateSchema(*schema.Items); err != nil {
+		return fmt.Errorf("array item schema: %w", err)
+	}
+	return validateBounds(schema.MinItems, schema.MaxItems, "array length")
+}
+
+func validateSchemaEnum(schema ValueSchema) error {
 	for _, value := range schema.Enum {
 		if value == nil {
 			if !schema.Nullable {
@@ -177,72 +219,116 @@ func validateValue(schema ValueSchema, value any) error {
 	if len(schema.Enum) > 0 && !enumContains(schema.Enum, value, schema.Kind) {
 		return fmt.Errorf("value %v is not in the allowed enum", value)
 	}
+	return validateValueKind(schema, value)
+}
+
+func validateValueKind(schema ValueSchema, value any) error {
 	switch schema.Kind {
 	case SchemaString:
-		text, _ := value.(string)
-		length := utf8.RuneCountInString(text)
-		if schema.MinLength != nil && length < *schema.MinLength {
-			return fmt.Errorf("string length %d is below minimum %d", length, *schema.MinLength)
-		}
-		if schema.MaxLength != nil && length > *schema.MaxLength {
-			return fmt.Errorf("string length %d exceeds maximum %d", length, *schema.MaxLength)
-		}
+		return validateStringValue(schema, value)
 	case SchemaInteger, SchemaNumber:
-		number, ok := exactNumericValue(value)
-		if !ok {
-			return fmt.Errorf("numeric value %T is invalid", value)
-		}
-		if schema.Minimum != nil {
-			minimum := new(big.Rat).SetFloat64(*schema.Minimum)
-			if number.Cmp(minimum) < 0 {
-				return fmt.Errorf("number %s is below minimum %v", number.RatString(), *schema.Minimum)
-			}
-		}
-		if schema.Maximum != nil {
-			maximum := new(big.Rat).SetFloat64(*schema.Maximum)
-			if number.Cmp(maximum) > 0 {
-				return fmt.Errorf("number %s exceeds maximum %v", number.RatString(), *schema.Maximum)
-			}
-		}
+		return validateNumberValue(schema, value)
 	case SchemaBoolean:
-		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("boolean value has type %T", value)
-		}
+		return validateBooleanValue(value)
 	case SchemaObject:
-		object, ok := value.(map[string]any)
-		if !ok {
-			return fmt.Errorf("object value has type %T", value)
-		}
-		for name := range object {
-			if _, ok := schema.Properties[name]; !ok {
-				return fmt.Errorf("unknown property %q", name)
-			}
-		}
-		for _, name := range schema.Required {
-			if _, ok := object[name]; !ok {
-				return fmt.Errorf("required property %q is missing", name)
-			}
-		}
-		for name, propertyValue := range object {
-			if err := validateValue(schema.Properties[name], propertyValue); err != nil {
-				return fmt.Errorf("property %q: %w", name, err)
-			}
-		}
+		return validateObjectValue(schema, value)
 	case SchemaArray:
-		items, ok := value.([]any)
-		if !ok {
-			return fmt.Errorf("array value has type %T", value)
+		return validateArrayValue(schema, value)
+	default:
+		return fmt.Errorf("unsupported schema kind %q", schema.Kind)
+	}
+}
+
+func validateStringValue(schema ValueSchema, value any) error {
+	text, _ := value.(string)
+	length := utf8.RuneCountInString(text)
+	if schema.MinLength != nil && length < *schema.MinLength {
+		return fmt.Errorf("string length %d is below minimum %d", length, *schema.MinLength)
+	}
+	if schema.MaxLength != nil && length > *schema.MaxLength {
+		return fmt.Errorf("string length %d exceeds maximum %d", length, *schema.MaxLength)
+	}
+	return nil
+}
+
+func validateNumberValue(schema ValueSchema, value any) error {
+	number, ok := exactNumericValue(value)
+	if !ok {
+		return fmt.Errorf("numeric value %T is invalid", value)
+	}
+	if schema.Minimum != nil {
+		minimum := new(big.Rat).SetFloat64(*schema.Minimum)
+		if number.Cmp(minimum) < 0 {
+			return fmt.Errorf("number %s is below minimum %v", number.RatString(), *schema.Minimum)
 		}
-		if schema.MinItems != nil && len(items) < *schema.MinItems {
-			return fmt.Errorf("array length %d is below minimum %d", len(items), *schema.MinItems)
+	}
+	if schema.Maximum != nil {
+		maximum := new(big.Rat).SetFloat64(*schema.Maximum)
+		if number.Cmp(maximum) > 0 {
+			return fmt.Errorf("number %s exceeds maximum %v", number.RatString(), *schema.Maximum)
 		}
-		if schema.MaxItems != nil && len(items) > *schema.MaxItems {
-			return fmt.Errorf("array length %d exceeds maximum %d", len(items), *schema.MaxItems)
+	}
+	return nil
+}
+
+func validateBooleanValue(value any) error {
+	if _, ok := value.(bool); !ok {
+		return fmt.Errorf("boolean value has type %T", value)
+	}
+	return nil
+}
+
+func validateObjectValue(schema ValueSchema, value any) error {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("object value has type %T", value)
+	}
+	if err := validateObjectKeys(schema.Properties, object); err != nil {
+		return err
+	}
+	if err := validateObjectRequired(schema.Required, object); err != nil {
+		return err
+	}
+	for name, propertyValue := range object {
+		if err := validateValue(schema.Properties[name], propertyValue); err != nil {
+			return fmt.Errorf("property %q: %w", name, err)
 		}
-		for index, item := range items {
-			if err := validateValue(*schema.Items, item); err != nil {
-				return fmt.Errorf("array item %d: %w", index, err)
-			}
+	}
+	return nil
+}
+
+func validateObjectKeys(properties map[string]ValueSchema, object map[string]any) error {
+	for name := range object {
+		if _, ok := properties[name]; !ok {
+			return fmt.Errorf("unknown property %q", name)
+		}
+	}
+	return nil
+}
+
+func validateObjectRequired(required []string, object map[string]any) error {
+	for _, name := range required {
+		if _, ok := object[name]; !ok {
+			return fmt.Errorf("required property %q is missing", name)
+		}
+	}
+	return nil
+}
+
+func validateArrayValue(schema ValueSchema, value any) error {
+	items, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("array value has type %T", value)
+	}
+	if schema.MinItems != nil && len(items) < *schema.MinItems {
+		return fmt.Errorf("array length %d is below minimum %d", len(items), *schema.MinItems)
+	}
+	if schema.MaxItems != nil && len(items) > *schema.MaxItems {
+		return fmt.Errorf("array length %d exceeds maximum %d", len(items), *schema.MaxItems)
+	}
+	for index, item := range items {
+		if err := validateValue(*schema.Items, item); err != nil {
+			return fmt.Errorf("array item %d: %w", index, err)
 		}
 	}
 	return nil

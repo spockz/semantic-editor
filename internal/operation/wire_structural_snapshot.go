@@ -60,33 +60,58 @@ func structuralModuleRoot(selected string) (string, error) {
 }
 
 func loadStructuralPackages(ctx context.Context, root string, extra map[string][]byte) ([]*packages.Package, map[string][]byte, error) {
-	captured := make(map[string][]byte)
-	var mu sync.Mutex
-	parse := func(fset *token.FileSet, filename string, src []byte) (*ast.File, error) {
-		path, err := filepath.Abs(filename)
-		if err != nil {
-			return nil, fmt.Errorf("resolve package source %q: %w", filename, err)
-		}
-		content := bytes.Clone(src)
-		if src == nil {
-			content, err = sourcebuf.ReadFile(ctx, path)
-			if err != nil {
-				return nil, fmt.Errorf("read package source %q: %w", path, err)
-			}
-		}
-		mu.Lock()
-		if previous, ok := captured[path]; ok && !bytes.Equal(previous, content) {
-			mu.Unlock()
-			return nil, fmt.Errorf("package source %q changed during analysis", path)
-		}
-		captured[path] = bytes.Clone(content)
-		mu.Unlock()
-		file, err := parser.ParseFile(fset, path, content, parser.ParseComments|parser.AllErrors)
-		if err != nil {
-			return nil, fmt.Errorf("parse package source %q: %w", path, err)
-		}
-		return file, nil
+	capture := &structuralPackageCapture{ctx: ctx, sources: make(map[string][]byte)}
+	overlay := structuralPackageOverlay(ctx, extra)
+	if err := captureManifests(capture, root); err != nil {
+		return nil, nil, err
 	}
+	loaded, err := loadStructuralPackageGraph(capture, root, overlay)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(loaded) == 0 {
+		return nil, nil, fmt.Errorf("load structural package snapshot: no packages in %q", root)
+	}
+	if err := captureLoadedStructuralInputs(capture, root, loaded, extra); err != nil {
+		return nil, nil, err
+	}
+	return loaded, capture.sources, nil
+}
+
+type structuralPackageCapture struct {
+	ctx     context.Context
+	sources map[string][]byte
+	mu      sync.Mutex
+}
+
+func (capture *structuralPackageCapture) parse(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
+	path, err := filepath.Abs(filename)
+	if err != nil {
+		return nil, fmt.Errorf("resolve package source %q: %w", filename, err)
+	}
+	content := bytes.Clone(source)
+	if source == nil {
+		content, err = sourcebuf.ReadFile(capture.ctx, path)
+		if err != nil {
+			return nil, fmt.Errorf("read package source %q: %w", path, err)
+		}
+	}
+	capture.mu.Lock()
+	previous, exists := capture.sources[path]
+	if exists && !bytes.Equal(previous, content) {
+		capture.mu.Unlock()
+		return nil, fmt.Errorf("package source %q changed during analysis", path)
+	}
+	capture.sources[path] = bytes.Clone(content)
+	capture.mu.Unlock()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return nil, fmt.Errorf("parse package source %q: %w", path, err)
+	}
+	return file, nil
+}
+
+func structuralPackageOverlay(ctx context.Context, extra map[string][]byte) map[string][]byte {
 	overlay := sourcebuf.Overlay(ctx)
 	if overlay == nil {
 		overlay = make(map[string][]byte)
@@ -94,63 +119,80 @@ func loadStructuralPackages(ctx context.Context, root string, extra map[string][
 	for path, content := range extra {
 		overlay[path] = bytes.Clone(content)
 	}
+	return overlay
+}
+
+func captureManifests(capture *structuralPackageCapture, root string) error {
 	for _, name := range []string{"go.mod", "go.sum"} {
 		path := filepath.Join(root, name)
-		content, err := sourcebuf.ReadFile(ctx, path)
+		content, err := sourcebuf.ReadFile(capture.ctx, path)
 		if errors.Is(err, os.ErrNotExist) && name == "go.sum" {
 			continue
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("capture structural manifest %q before package loading: %w", path, err)
+			return fmt.Errorf("capture structural manifest %q before package loading: %w", path, err)
 		}
-		captured[path] = bytes.Clone(content)
+		capture.sources[path] = bytes.Clone(content)
 	}
-	environment, err := gocache.Environment(ctx, root)
+	return nil
+}
+
+func loadStructuralPackageGraph(capture *structuralPackageCapture, root string, overlay map[string][]byte) ([]*packages.Package, error) {
+	environment, err := gocache.Environment(capture.ctx, root)
 	if err != nil {
-		return nil, nil, fmt.Errorf("prepare structural Go package environment: %w", err)
+		return nil, fmt.Errorf("prepare structural Go package environment: %w", err)
 	}
 	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
-	loaded, err := packages.Load(&packages.Config{Context: ctx, Dir: root, Env: environment, Mode: mode, Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, ParseFile: parse}, "./...")
+	loaded, err := packages.Load(&packages.Config{
+		Context: capture.ctx, Dir: root, Env: environment, Mode: mode,
+		Tests: true, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, ParseFile: capture.parse,
+	}, "./...")
 	if err != nil {
-		return nil, nil, fmt.Errorf("load structural package snapshot: %w", err)
+		return nil, fmt.Errorf("load structural package snapshot: %w", err)
 	}
-	if len(loaded) == 0 {
-		return nil, nil, fmt.Errorf("load structural package snapshot: no packages in %q", root)
-	}
+	return loaded, nil
+}
+
+func captureLoadedStructuralInputs(capture *structuralPackageCapture, root string, loaded []*packages.Package, extra map[string][]byte) error {
 	for _, pkg := range loaded {
 		for _, files := range [][]string{pkg.GoFiles, pkg.CompiledGoFiles} {
 			for _, filename := range files {
-				path, err := filepath.Abs(filename)
-				if err != nil {
-					return nil, nil, fmt.Errorf("resolve package input %q: %w", filename, err)
+				if err := captureLoadedStructuralFile(capture, root, filename, extra); err != nil {
+					return err
 				}
-				relative, err := filepath.Rel(root, path)
-				if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-					continue
-				}
-				content, err := sourcebuf.ReadFile(ctx, path)
-				if err != nil {
-					return nil, nil, fmt.Errorf("capture package input %q: %w", path, err)
-				}
-				mu.Lock()
-				previous, analyzed := captured[path]
-				candidate, replaced := extra[path]
-				if replaced {
-					content = bytes.Clone(candidate)
-					if analyzed && !bytes.Equal(previous, candidate) {
-						mu.Unlock()
-						return nil, nil, fmt.Errorf("package input %q differs from its simulated output", path)
-					}
-				} else if analyzed && !bytes.Equal(previous, content) {
-					mu.Unlock()
-					return nil, nil, fmt.Errorf("package input %q differs from its analyzed snapshot", path)
-				}
-				captured[path] = bytes.Clone(content)
-				mu.Unlock()
 			}
 		}
 	}
-	return loaded, captured, nil
+	return nil
+}
+
+func captureLoadedStructuralFile(capture *structuralPackageCapture, root, filename string, extra map[string][]byte) error {
+	path, err := filepath.Abs(filename)
+	if err != nil {
+		return fmt.Errorf("resolve package input %q: %w", filename, err)
+	}
+	relative, err := filepath.Rel(root, path)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return nil
+	}
+	content, err := sourcebuf.ReadFile(capture.ctx, path)
+	if err != nil {
+		return fmt.Errorf("capture package input %q: %w", path, err)
+	}
+	capture.mu.Lock()
+	defer capture.mu.Unlock()
+	previous, analyzed := capture.sources[path]
+	candidate, replaced := extra[path]
+	if replaced {
+		content = bytes.Clone(candidate)
+		if analyzed && !bytes.Equal(previous, candidate) {
+			return fmt.Errorf("package input %q differs from its simulated output", path)
+		}
+	} else if analyzed && !bytes.Equal(previous, content) {
+		return fmt.Errorf("package input %q differs from its analyzed snapshot", path)
+	}
+	capture.sources[path] = bytes.Clone(content)
+	return nil
 }
 
 func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string) (*structuralSnapshot, error) {
@@ -177,8 +219,8 @@ func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string)
 		ctx = sourcebuf.WithBuffer(ctx, buffer)
 		owned = true
 	}
-	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
-		return nil, fmt.Errorf("authorize structural module: %w", err)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
+		return nil, fmt.Errorf("authorize structural module: %w", authorizeErr)
 	}
 	selectedSource, err := sourcebuf.ReadFile(ctx, absolute)
 	if err != nil {

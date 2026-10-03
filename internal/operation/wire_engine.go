@@ -18,12 +18,11 @@ import (
 const diagnosticStatusUnavailable = "unavailable"
 
 var (
-	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
-	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
-	accessEnum             = goModifiers()
-	visibilityEnum         = []string{"public", "private"}
-	groupEnum              = []string{"append", "standalone"}
-	caseEnum               = []string{"first", "last", "before_default", "before", "after"}
+	placementEnum  = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
+	accessEnum     = goModifiers()
+	visibilityEnum = []string{"public", "private"}
+	groupEnum      = []string{"append", "standalone"}
+	caseEnum       = []string{"first", "last", "before_default", "before", "after"}
 )
 
 // AppendDiagnosticDelta appends a compiler diagnostic delta to a response base string.
@@ -226,7 +225,7 @@ func registerEngineOps(registry *Registry) error {
 		if err := Register(registry, assertionModeDef()); err != nil {
 			return err
 		}
-		if err := Register(registry, insertStructureDef()); err != nil {
+		if err := Register(registry, insertConstructDef()); err != nil {
 			return err
 		}
 		if err := Register(registry, insertDeclarationDef()); err != nil {
@@ -291,88 +290,140 @@ func registerEngineOps(registry *Registry) error {
 }
 
 func goTargetAfterEdit(ctx context.Context, filePath, source string) (string, int, error) {
-	prefix := "package p\n"
-	if strings.HasPrefix(strings.TrimSpace(source), "package ") {
-		prefix = ""
-	}
-	snippet, err := parser.ParseFile(token.NewFileSet(), "snippet.go", prefix+source, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", 0, fmt.Errorf("parse inserted declaration after write: %w", err)
-	}
-	if len(snippet.Decls) != 1 {
-		return "", 0, nil
-	}
-	var name, receiver string
-	switch decl := snippet.Decls[0].(type) {
-	case *ast.FuncDecl:
-		name = decl.Name.Name
-		if decl.Recv != nil && len(decl.Recv.List) == 1 {
-			receiver = receiverName(decl.Recv.List[0].Type)
-			if receiver == "" {
-				return "", 0, nil
-			}
-		}
-	case *ast.GenDecl:
-		if len(decl.Specs) != 1 {
-			return "", 0, nil
-		}
-		switch spec := decl.Specs[0].(type) {
-		case *ast.TypeSpec:
-			name = spec.Name.Name
-		case *ast.ValueSpec:
-			if len(spec.Names) != 1 {
-				return "", 0, nil
-			}
-			name = spec.Names[0].Name
-		}
-	}
-	if name == "" {
-		return "", 0, nil
+	selector, selected, err := parseGoTargetSelector(source)
+	if err != nil || !selected {
+		return "", 0, err
 	}
 	content, err := sourcebuf.ReadFile(ctx, filePath) // #nosec G304 -- filePath is the resolved target of a validated edit operation.
 	if err != nil {
 		return "", 0, fmt.Errorf("read edited file %q: %w", filePath, err)
 	}
 	fset := token.NewFileSet()
-	final, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
+	file, err := parser.ParseFile(fset, filePath, content, parser.ParseComments|parser.AllErrors)
 	if err != nil {
 		return "", 0, fmt.Errorf("parse edited file %q: %w", filePath, err)
 	}
-	var foundSymbol string
-	var foundLine int
-	for _, decl := range final.Decls {
-		switch node := decl.(type) {
-		case *ast.FuncDecl:
-			if node.Name.Name == name && receiverNameForDecl(node) == receiver {
-				if foundSymbol != "" {
-					return "", 0, nil
-				}
-				foundSymbol, foundLine = qualifiedGoTarget(receiver, name), fset.Position(node.Pos()).Line
+	match := findGoTarget(file, fset, selector)
+	if match.Count > 1 {
+		return "", 0, nil
+	}
+	if match.Count == 1 {
+		return match.Symbol, match.Line, nil
+	}
+	return "", 0, fmt.Errorf("inserted declaration target %q is absent from edited file %q", selector.Name, filePath)
+}
+
+type goTargetSelector struct {
+	Name     string
+	Receiver string
+}
+
+type goTargetMatch struct {
+	Symbol string
+	Line   int
+	Count  int
+}
+
+func parseGoTargetSelector(source string) (goTargetSelector, bool, error) {
+	prefix := "package p\n"
+	if strings.HasPrefix(strings.TrimSpace(source), "package ") {
+		prefix = ""
+	}
+	snippet, err := parser.ParseFile(token.NewFileSet(), "snippet.go", prefix+source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return goTargetSelector{}, false, fmt.Errorf("parse inserted declaration after write: %w", err)
+	}
+	if len(snippet.Decls) != 1 {
+		return goTargetSelector{}, false, nil
+	}
+	var selector goTargetSelector
+	switch decl := snippet.Decls[0].(type) {
+	case *ast.FuncDecl:
+		selector.Name = decl.Name.Name
+		if decl.Recv != nil && len(decl.Recv.List) == 1 {
+			selector.Receiver = receiverName(decl.Recv.List[0].Type)
+			if selector.Receiver == "" {
+				return goTargetSelector{}, false, nil
 			}
-		case *ast.GenDecl:
-			for _, spec := range node.Specs {
-				var found bool
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					found = item.Name.Name == name
-				case *ast.ValueSpec:
-					for _, candidate := range item.Names {
-						found = found || candidate.Name == name
-					}
-				}
-				if found {
-					if foundSymbol != "" {
-						return "", 0, nil
-					}
-					foundSymbol, foundLine = name, fset.Position(spec.Pos()).Line
-				}
+		}
+	case *ast.GenDecl:
+		if len(decl.Specs) != 1 {
+			return goTargetSelector{}, false, nil
+		}
+		switch spec := decl.Specs[0].(type) {
+		case *ast.TypeSpec:
+			selector.Name = spec.Name.Name
+		case *ast.ValueSpec:
+			if len(spec.Names) != 1 {
+				return goTargetSelector{}, false, nil
+			}
+			selector.Name = spec.Names[0].Name
+		}
+	}
+	if selector.Name == "" {
+		return goTargetSelector{}, false, nil
+	}
+	return selector, true, nil
+}
+
+func findGoTarget(file *ast.File, fset *token.FileSet, selector goTargetSelector) goTargetMatch {
+	var result goTargetMatch
+	for _, declaration := range file.Decls {
+		match := goTargetInDeclaration(declaration, fset, selector)
+		if match.Count == 0 {
+			continue
+		}
+		result.Count += match.Count
+		if result.Count > 1 {
+			return goTargetMatch{Count: result.Count}
+		}
+		result.Symbol = match.Symbol
+		result.Line = match.Line
+	}
+	return result
+}
+
+func goTargetInDeclaration(declaration ast.Decl, fset *token.FileSet, selector goTargetSelector) goTargetMatch {
+	switch node := declaration.(type) {
+	case *ast.FuncDecl:
+		if node.Name.Name != selector.Name || receiverNameForDecl(node) != selector.Receiver {
+			return goTargetMatch{}
+		}
+		return goTargetMatch{Symbol: qualifiedGoTarget(selector.Receiver, selector.Name), Line: fset.Position(node.Pos()).Line, Count: 1}
+	case *ast.GenDecl:
+		return goTargetInSpecs(node.Specs, fset, selector.Name)
+	default:
+		return goTargetMatch{}
+	}
+}
+
+func goTargetInSpecs(specs []ast.Spec, fset *token.FileSet, name string) goTargetMatch {
+	var result goTargetMatch
+	for _, spec := range specs {
+		if !goSpecDeclaresName(spec, name) {
+			continue
+		}
+		result.Count++
+		if result.Count == 1 {
+			result.Symbol = name
+			result.Line = fset.Position(spec.Pos()).Line
+		}
+	}
+	return result
+}
+
+func goSpecDeclaresName(spec ast.Spec, name string) bool {
+	switch item := spec.(type) {
+	case *ast.TypeSpec:
+		return item.Name.Name == name
+	case *ast.ValueSpec:
+		for _, candidate := range item.Names {
+			if candidate.Name == name {
+				return true
 			}
 		}
 	}
-	if foundSymbol != "" {
-		return foundSymbol, foundLine, nil
-	}
-	return "", 0, fmt.Errorf("inserted declaration target %q is absent from edited file %q", name, filePath)
+	return false
 }
 
 func goExistingTargetAfterEdit(ctx context.Context, filePath, symbol string) (string, int, error) {

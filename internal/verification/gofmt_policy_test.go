@@ -1,5 +1,6 @@
-// Package operation tests the source-selection boundary for pre-verification gofmt listing.
-package operation
+// Package verification tests the source-selection boundary for pre-verification gofmt listing.
+// WHY: These cases protect language-based formatting selection at the verification feature boundary.
+package verification
 
 import (
 	"testing"

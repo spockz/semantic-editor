@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"semedit/internal/astedit"
+	"semedit/internal/gocache"
 	"semedit/internal/godiagnostics"
 
 	"semedit/internal/backend"
@@ -23,6 +24,7 @@ import (
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
+	"semedit/internal/sourcebuf"
 	"semedit/internal/telemetry"
 )
 
@@ -54,6 +56,7 @@ type BatchResult struct {
 // BatchResponse aggregates the outcomes of a semantic batch execution.
 type BatchResponse struct {
 	Status              string                    `json:"status"`
+	WorkspaceRoot       string                    `json:"workspace_root"`
 	Results             []BatchResult             `json:"results"`
 	DiagnosticDelta     *pipeline.DiagnosticDelta `json:"diagnostic_delta,omitempty"`
 	DiagnosticDeltaNote string                    `json:"diagnostic_delta_note,omitempty"`
@@ -63,6 +66,27 @@ type BatchResponse struct {
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	return s.ExecuteBatchForWorkspace(ctx, s.workDir, s.workspaceTrust.Trusted && s.workspaceTrust.Allows(s.workDir), edits, autoOrganizeImports)
+}
+
+// ExecuteBatchForWorkspace binds all child edits and final verification to one request root.
+func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	canonicalRoot, err := resolveRequestRoot(s.workDir, root)
+	if err != nil {
+		return nil, err
+	}
+	preparedEdits, err := prepareBatchEntries(s.workDir, canonicalRoot, edits)
+	if err != nil {
+		return nil, err
+	}
+	edits = preparedEdits
+	root = canonicalRoot
+	requestServer := s.requestView(root, trustWorkspace)
+	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(root))
+	return requestServer.executeBatchWithContext(ctx, edits, autoOrganizeImports)
+}
+
+func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	ctx, release := godiagnostics.EnsureSessionManager(ctx)
 	observer := godiagnostics.SynchronizeWithContext
 	if !s.goEnabled() {
@@ -127,13 +151,13 @@ func snapshotBatchWorkspace(root string) (map[string]string, error) {
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return fmt.Errorf("relativize %s: %w", path, err)
+		rel, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			return fmt.Errorf("relativize %s: %w", path, relativeErr)
 		}
-		data, err := workspace.ReadFile(rel)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", rel, err)
+		data, readErr := workspace.ReadFile(rel)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", rel, readErr)
 		}
 		files[filepath.ToSlash(rel)] = string(data)
 		return nil
@@ -242,43 +266,56 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		DeferVerification: true,
 	}, entry.Key, raw)
 	if err != nil {
-		batchResult := batchMoveReceipt(batchEntry.Tool, raw, s.workDir)
-		batchResult.ApplicationState = "unknown"
-		if entry.ProjectErrorOutput != nil {
-			projected, known, projectErr := entry.ProjectErrorOutput(err)
-			if projectErr != nil {
-				batchResult.ProjectionError = projectErr.Error()
-			} else if known {
-				encoded, encodeErr := json.Marshal(projected)
-				if encodeErr != nil {
-					batchResult.ProjectionError = fmt.Sprintf("encode known error projection: %v", encodeErr)
-				} else {
-					batchResult.Result = json.RawMessage(encoded)
-					if projection, ok := projected.(map[string]any); ok {
-						if state, ok := projection[applicationStateField].(string); ok {
-							batchResult.ApplicationState = state
-						} else if projection["status"] == "refused" && projection["safe_delete"] == true {
-							batchResult.ApplicationState = "not_applied"
-						}
-					}
-				}
-			}
-		}
-		return batchResult, err
+		return s.projectBatchDispatchError(batchEntry, entry, raw, err), err
 	}
-	batchResult := resultForBatch(result, s.workDir)
-	if entry.ProjectOutput != nil {
-		projected, err := entry.ProjectOutput(result)
-		if err != nil {
-			return BatchResult{}, fmt.Errorf("project batch result for %q: %w", batchEntry.Tool, err)
-		}
-		encoded, err := json.Marshal(projected)
-		if err != nil {
-			return BatchResult{}, fmt.Errorf("encode batch result for %q: %w", batchEntry.Tool, err)
-		}
-		batchResult.Result = json.RawMessage(encoded)
+	return projectBatchDispatchSuccess(batchEntry, entry, result, s.workDir)
+}
+
+func (s *Server) projectBatchDispatchError(batchEntry BatchEntry, entry operation.Entry, raw map[string]any, dispatchErr error) BatchResult {
+	result := batchMoveReceipt(batchEntry.Tool, raw, s.workDir)
+	result.ApplicationState = "unknown"
+	if entry.ProjectErrorOutput == nil {
+		return result
 	}
-	return batchResult, nil
+	projected, known, err := entry.ProjectErrorOutput(dispatchErr)
+	if err != nil {
+		result.ProjectionError = err.Error()
+		return result
+	}
+	if !known {
+		return result
+	}
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		result.ProjectionError = fmt.Sprintf("encode known error projection: %v", err)
+		return result
+	}
+	result.Result = json.RawMessage(encoded)
+	if projection, ok := projected.(map[string]any); ok {
+		if state, ok := projection[applicationStateField].(string); ok {
+			result.ApplicationState = state
+		} else if projection["status"] == "refused" && projection["safe_delete"] == true {
+			result.ApplicationState = "not_applied"
+		}
+	}
+	return result
+}
+
+func projectBatchDispatchSuccess(batchEntry BatchEntry, entry operation.Entry, dispatched any, workDir string) (BatchResult, error) {
+	result := resultForBatch(dispatched, workDir)
+	if entry.ProjectOutput == nil {
+		return result, nil
+	}
+	projected, err := entry.ProjectOutput(dispatched)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("project batch result for %q: %w", batchEntry.Tool, err)
+	}
+	encoded, err := json.Marshal(projected)
+	if err != nil {
+		return BatchResult{}, fmt.Errorf("encode batch result for %q: %w", batchEntry.Tool, err)
+	}
+	result.Result = json.RawMessage(encoded)
+	return result, nil
 }
 
 func batchMoveReceipt(tool string, raw map[string]any, workDir string) BatchResult {
@@ -328,6 +365,69 @@ func resultForBatch(result any, workDir string) BatchResult {
 	}
 }
 
+func parseBatchWorkspaceRequest(configuredRoot string, rootJSON, trustJSON json.RawMessage) (string, bool, error) {
+	var requestedRoot string
+	if len(rootJSON) > 0 {
+		if strings.TrimSpace(string(rootJSON)) == "null" {
+			return "", false, fmt.Errorf("workspace_root must be a string")
+		}
+		if err := json.Unmarshal(rootJSON, &requestedRoot); err != nil {
+			return "", false, fmt.Errorf("workspace_root must be a string: %w", err)
+		}
+	}
+	trusted := false
+	if len(trustJSON) > 0 {
+		if strings.TrimSpace(string(trustJSON)) == "null" {
+			return "", false, fmt.Errorf("trust_workspace must be a boolean")
+		}
+		if err := json.Unmarshal(trustJSON, &trusted); err != nil {
+			return "", false, fmt.Errorf("trust_workspace must be a boolean: %w", err)
+		}
+	}
+	root, err := resolveRequestRoot(configuredRoot, requestedRoot)
+	return root, trusted, err
+}
+
+func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) ([]BatchEntry, error) {
+	prepared := append([]BatchEntry(nil), edits...)
+	for index := range prepared {
+		entry := &prepared[index]
+		if len(entry.Params) == 0 || strings.TrimSpace(string(entry.Params)) == "null" {
+			continue
+		}
+		var child map[string]any
+		if err := decodeArgumentObject(entry.Params, &child); err != nil {
+			continue
+		}
+		if child == nil {
+			continue
+		}
+		if childRootValue, present := child["workspace_root"]; present {
+			childRoot, ok := childRootValue.(string)
+			if !ok {
+				return nil, fmt.Errorf("edit %d workspace_root must be a string", index)
+			}
+			resolvedChildRoot, err := resolveRequestRoot(configuredRoot, childRoot)
+			if err != nil {
+				return nil, fmt.Errorf("edit %d: %w", index, err)
+			}
+			if resolvedChildRoot != batchRoot {
+				return nil, fmt.Errorf("edit %d workspace_root %q resolves to %q, differing from batch root %q", index, childRoot, resolvedChildRoot, batchRoot)
+			}
+			delete(child, "workspace_root")
+		}
+		if err := validateRequestPaths(batchRoot, child); err != nil {
+			return nil, fmt.Errorf("edit %d: %w", index, err)
+		}
+		encoded, err := json.Marshal(child)
+		if err != nil {
+			return nil, fmt.Errorf("edit %d encode normalized arguments: %w", index, err)
+		}
+		entry.Params = encoded
+	}
+	return prepared, nil
+}
+
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
 	s.sessionMu.Lock()
 	uninitialized := s.initializedAt.IsZero()
@@ -341,23 +441,22 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
 	timing.toolName = "semantic_batch"
 	ctx = timing.Context(ctx)
-	var request struct {
-		Edits               []BatchEntry `json:"edits"`
-		AutoOrganizeImports bool         `json:"auto_organize_imports"`
-	}
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
-	if err := json.Unmarshal(raw, &request); err != nil {
-		finishArguments()
-		s.sendToolErrorWithTiming(id, fmt.Sprintf("invalid arguments: %v", err), timing, err)
+	request, err := parseBatchToolRequest(s.workDir, raw)
+	finishArguments()
+	if err != nil {
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
-	finishArguments()
-	if len(request.Edits) == 0 {
-		s.sendToolErrorWithTiming(id, "semantic_batch requires non-empty 'edits' list", timing)
+	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(request.root))
+	requestServer := s.requestView(request.root, request.trustWorkspace)
+	request.request.Edits, err = prepareBatchEntries(s.workDir, request.root, request.request.Edits)
+	if err != nil {
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
-	response, err := s.ExecuteBatch(ctx, request.Edits, request.AutoOrganizeImports)
+	response, err := requestServer.executeBatchWithContext(ctx, request.request.Edits, request.request.AutoOrganizeImports)
 	finishDispatch()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, fmt.Sprintf("batch execution error: %v", err), timing, err)
@@ -410,8 +509,36 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	})
 }
 
+type batchToolPayload struct {
+	Edits               []BatchEntry    `json:"edits"`
+	AutoOrganizeImports bool            `json:"auto_organize_imports"`
+	WorkspaceRoot       json.RawMessage `json:"workspace_root"`
+	TrustWorkspace      json.RawMessage `json:"trust_workspace"`
+}
+
+type parsedBatchToolRequest struct {
+	request        batchToolPayload
+	root           string
+	trustWorkspace bool
+}
+
+func parseBatchToolRequest(configuredRoot string, raw []byte) (parsedBatchToolRequest, error) {
+	var payload batchToolPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return parsedBatchToolRequest{}, fmt.Errorf("invalid arguments: %w", err)
+	}
+	if len(payload.Edits) == 0 {
+		return parsedBatchToolRequest{}, fmt.Errorf("semantic_batch requires non-empty 'edits' list")
+	}
+	root, trustWorkspace, err := parseBatchWorkspaceRequest(configuredRoot, payload.WorkspaceRoot, payload.TrustWorkspace)
+	if err != nil {
+		return parsedBatchToolRequest{}, err
+	}
+	return parsedBatchToolRequest{request: payload, root: root, trustWorkspace: trustWorkspace}, nil
+}
+
 func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	response := &BatchResponse{Status: "ok", WorkspaceRoot: s.workDir, Results: make([]BatchResult, 0, len(edits))}
 	verifyOptions := make(map[string]any)
 	for index, batchEntry := range edits {
 		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
@@ -423,7 +550,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 		raw := map[string]any{}
 		if len(batchEntry.Params) == 0 || string(batchEntry.Params) == "null" {
 			response.Status = "error"
-			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
+			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, batchEntry.Tool)})
 			return response, nil
 		}
 		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
@@ -452,42 +579,67 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			return response, nil
 		}
 	}
-	workspaceBefore, err := snapshotBatchWorkspace(s.workDir)
-	if err != nil {
-		return nil, fmt.Errorf("snapshot workspace before batch: %w", err)
-	}
-	plan, err := projectverify.Discover(s.workDir)
-	if err != nil {
-		return nil, fmt.Errorf("discover batch verification plan: %w", err)
-	}
-	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan, s.enabledLanguages)
+	snapshot, err := s.captureBatchExecutionSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}
+	workspaceBefore, baseline := snapshot.workspace, snapshot.baseline
 	ctx = context.WithValue(ctx, batchJournalKey{}, &batchJournal{before: workspaceBefore, root: s.workDir, roots: make(map[string]bool)})
 	buffer, err := s.executeBufferedBatchEdits(ctx, edits, response)
 	if err != nil {
-		response.Status = "error"
-		if len(response.Results) == 0 || response.Results[len(response.Results)-1].Status != "error" {
-			response.Results = append(response.Results, BatchResult{Tool: "batch_buffers", Status: "error", Error: err.Error()})
-		}
-		s.finishBufferedBatch(ctx, buffer, response)
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil
+		return s.finishFailedBatchEdits(ctx, buffer, response, workspaceBefore, err)
 	}
 	normalizationPaths, err := s.normalizeBufferedBatch(ctx, buffer, workspaceBefore, autoOrganizeImports)
 	if err != nil {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: err.Error()})
-		s.finishBufferedBatch(ctx, buffer, response)
-		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
-		return response, nil //nolint:nilerr // Batch results carry the failure and disk diff.
+		return s.finishFailedBatchNormalization(ctx, buffer, response, workspaceBefore, err)
 	}
 	if !s.finishBufferedBatch(ctx, buffer, response) {
 		_ = captureBatchDiff(response, s.workDir, workspaceBefore)
 		return response, nil
 	}
+	return s.verifyFinishedBatch(ctx, response, workspaceBefore, baseline, verifyOptions, normalizationPaths)
+}
 
+func (s *Server) finishFailedBatchEdits(ctx context.Context, buffer *sourcebuf.Buffer, response *BatchResponse, workspaceBefore map[string]string, cause error) (*BatchResponse, error) {
+	response.Status = "error"
+	if len(response.Results) == 0 || response.Results[len(response.Results)-1].Status != "error" {
+		response.Results = append(response.Results, BatchResult{Tool: "batch_buffers", Status: "error", Error: cause.Error()})
+	}
+	s.finishBufferedBatch(ctx, buffer, response)
+	_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+	return response, nil
+}
+
+func (s *Server) finishFailedBatchNormalization(ctx context.Context, buffer *sourcebuf.Buffer, response *BatchResponse, workspaceBefore map[string]string, cause error) (*BatchResponse, error) {
+	response.Status = "error"
+	response.Results = append(response.Results, BatchResult{Tool: "post_process", Status: "error", Error: cause.Error()})
+	s.finishBufferedBatch(ctx, buffer, response)
+	_ = captureBatchDiff(response, s.workDir, workspaceBefore)
+	return response, nil
+}
+
+type batchExecutionSnapshot struct {
+	workspace map[string]string
+	baseline  batchVerificationBaseline
+}
+
+func (s *Server) captureBatchExecutionSnapshot(ctx context.Context) (batchExecutionSnapshot, error) {
+	workspace, err := snapshotBatchWorkspace(s.workDir)
+	if err != nil {
+		return batchExecutionSnapshot{}, fmt.Errorf("snapshot workspace before batch: %w", err)
+	}
+	plan, err := projectverify.Discover(s.workDir)
+	if err != nil {
+		return batchExecutionSnapshot{}, fmt.Errorf("discover batch verification plan: %w", err)
+	}
+	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan, s.enabledLanguages)
+	if err != nil {
+		return batchExecutionSnapshot{}, err
+	}
+	return batchExecutionSnapshot{workspace: workspace, baseline: baseline}, nil
+}
+
+func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchResponse, workspaceBefore map[string]string, baseline batchVerificationBaseline, verifyOptions map[string]any, normalizationPaths []string) (*BatchResponse, error) {
 	verifyEntry, ok := s.registry.LookupMCP(semanticVerifyToolName)
 	if !ok {
 		response.Status = "error"
@@ -497,14 +649,8 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}
 	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
 	maps.Copy(verifyRaw, verifyOptions)
-	goFormattingPaths := make([]string, 0, len(normalizationPaths))
-	if s.goEnabled() {
-		for _, path := range normalizationPaths {
-			if filepath.Ext(path) == ".go" {
-				goFormattingPaths = append(goFormattingPaths, path)
-			}
-		}
-	}
+	verifyRaw["trust_workspace"] = s.workspaceTrust.Trusted
+	goFormattingPaths := batchGoFormattingPaths(normalizationPaths, s.goEnabled())
 	verified, err := s.registry.Dispatch(operation.CallContext{
 		Ctx: ctx, WorkDir: s.workDir,
 		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
@@ -538,8 +684,24 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	return response, nil
 }
 
+func batchGoFormattingPaths(paths []string, goEnabled bool) []string {
+	formatted := make([]string, 0, len(paths))
+	if !goEnabled {
+		return formatted
+	}
+	for _, path := range paths {
+		if filepath.Ext(path) == ".go" {
+			formatted = append(formatted, path)
+		}
+	}
+	return formatted
+}
+
 func mergeBatchVerificationOptions(options, raw map[string]any) error {
 	for _, key := range batchVerificationOptionKeys {
+		if key == "trust_workspace" {
+			continue
+		}
 		value, present := raw[key]
 		if !present {
 			value, present = raw[strings.ReplaceAll(key, "_", "-")]

@@ -18,9 +18,24 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GOENV: ${{ github.workspace }}/.scratch/go/env
+      GOCACHE: ${{ github.workspace }}/.scratch/go/build
+      GOMODCACHE: ${{ github.workspace }}/.scratch/go/mod
+      GOTMPDIR: ${{ github.workspace }}/.scratch/go/tmp
+      GOBIN: ${{ github.workspace }}/.scratch/go/bin
+      GOPATH: ${{ github.workspace }}/.scratch/go
+      GOPLSCACHE: ${{ github.workspace }}/.scratch/go/gopls
+      GOFLAGS: ""
+      GOWORK: "off"
+      GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.scratch/golangci-lint-cache
+      HUGO_CACHEDIR: ${{ github.workspace }}/.scratch/hugo-cache
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Prepare project-local caches
+        run: mkdir -p "$GOCACHE" "$GOMODCACHE" "$GOTMPDIR" "$GOBIN" "$GOPLSCACHE" "$GOLANGCI_LINT_CACHE" "$HUGO_CACHEDIR"
 
       - name: Set up Go
         uses: actions/setup-go@v5

@@ -19,95 +19,177 @@ import (
 )
 
 func TestBatch_SuccessfulExecution(t *testing.T) {
-	tmpDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	fixture := createSuccessfulBatchFixture(t)
+	run := executeSuccessfulBatch(t, fixture.Root)
+	assertSuccessfulBatchResponse(t, run.Response, run.Metrics)
+	assertSuccessfulBatchSources(t, fixture)
+}
 
-	file1 := filepath.Join(tmpDir, "file1.go")
-	if err := os.WriteFile(file1, []byte("package testpkg\n\nfunc Foo() string {\n\treturn \"old\"\n}\n"), 0o600); err != nil {
-		t.Fatalf("write file1: %v", err)
-	}
+type successfulBatchFixture struct {
+	Root       string
+	FirstFile  string
+	SecondFile string
+}
 
-	file2 := filepath.Join(tmpDir, "file2.go")
-	if err := os.WriteFile(file2, []byte("package testpkg\n\nfunc Dispatch(op string) string {\n\tswitch op {\n\tdefault:\n\t\treturn \"none\"\n\t}\n}\n"), 0o600); err != nil {
-		t.Fatalf("write file2: %v", err)
-	}
+type successfulBatchRun struct {
+	Response *mcp.BatchResponse
+	Metrics  telemetry.Snapshot
+}
 
-	var out bytes.Buffer
-	srv := mcp.NewServer("full", tmpDir, &out)
+func createSuccessfulBatchFixture(t *testing.T) successfulBatchFixture {
+	t.Helper()
+	root := t.TempDir()
+	writeBatchFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/batch\n\ngo 1.23\n")
+	first := filepath.Join(root, "file1.go")
+	writeBatchFixtureFile(t, first, "package testpkg\n\nfunc Foo() string {\n\treturn \"old\"\n}\n")
+	second := filepath.Join(root, "file2.go")
+	writeBatchFixtureFile(t, second, "package testpkg\n\nfunc Dispatch(op string) string {\n\tswitch op {\n\tdefault:\n\t\treturn \"none\"\n\t}\n}\n")
+	return successfulBatchFixture{Root: root, FirstFile: first, SecondFile: second}
+}
+
+func writeBatchFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func executeSuccessfulBatch(t *testing.T, root string) successfulBatchRun {
+	t.Helper()
+	edits := successfulBatchEdits()
 	metrics := telemetry.NewMetrics()
-
-	edits := []mcp.BatchEntry{
-		{
-			Tool:   "semantic_replace_body",
-			Params: json.RawMessage(`{"file":"file1.go","symbol":"Foo","body":"return \"new\""}`),
-		},
-		{
-			Tool:   "semantic_insert_structure",
-			Params: json.RawMessage(`{"file":"file2.go","kind":"case","in_function":"Dispatch","discriminator":"op","source":"case \"ping\":\n\treturn \"pong\""}`),
-		},
-		{
-			Tool:   "semantic_insert_function",
-			Params: json.RawMessage(`{"file":"file1.go","source":"func Added() int { return 3 }"}`),
-		},
-		{
-			Tool:   "semantic_scaffold_file",
-			Params: json.RawMessage(`{"file":"generated.go","package":"testpkg"}`),
-		},
-	}
-
-	resp, err := srv.ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), edits, false)
+	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), edits, false)
 	if err != nil {
 		t.Fatalf("ExecuteBatch failed: %v", err)
 	}
+	return successfulBatchRun{Response: response, Metrics: metrics.Snapshot(0)}
+}
 
-	if resp.Status != "ok" {
-		t.Errorf("expected status ok, got %s", resp.Status)
+func successfulBatchEdits() []mcp.BatchEntry {
+	return []mcp.BatchEntry{
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file1.go","symbol":"Foo","body":"return \"new\""}`)},
+		{Tool: "semantic_insert_construct", Params: json.RawMessage(`{"file":"file2.go","kind":"case","in_function":"Dispatch","discriminator":"op","source":"case \"ping\":\n\treturn \"pong\""}`)},
+		{Tool: "semantic_insert_function", Params: json.RawMessage(`{"file":"file1.go","source":"func Added() int { return 3 }"}`)},
+		{Tool: "semantic_scaffold_file", Params: json.RawMessage(`{"file":"generated.go","package":"testpkg"}`)},
 	}
-	if len(resp.Results) != 4 {
-		t.Fatalf("expected 4 results, got %d", len(resp.Results))
+}
+
+func assertSuccessfulBatchResponse(t *testing.T, response *mcp.BatchResponse, metrics telemetry.Snapshot) {
+	t.Helper()
+	if response.Status != "ok" {
+		t.Errorf("expected status ok, got %s", response.Status)
 	}
-	if resp.DiagnosticDelta == nil {
+	if len(response.Results) != 4 {
+		t.Fatalf("expected 4 results, got %d", len(response.Results))
+	}
+	if response.DiagnosticDelta == nil {
 		t.Fatal("successful batch omitted diagnostic delta")
 	}
-	if !strings.Contains(resp.FinalDiff, "file1.go") || !strings.Contains(resp.FinalDiff, `return "new"`) || !strings.Contains(resp.FinalDiff, "file2.go") {
-		t.Fatalf("final workspace diff omitted batch edits: %s", resp.FinalDiff)
+	if !strings.Contains(response.FinalDiff, "file1.go") || !strings.Contains(response.FinalDiff, `return "new"`) || !strings.Contains(response.FinalDiff, "file2.go") {
+		t.Fatalf("final workspace diff omitted batch edits: %s", response.FinalDiff)
 	}
-	snapshot := metrics.Snapshot(0)
-	if before, diagnostics := snapshot.Phases[string(telemetry.PhaseVerificationBefore)].Count, snapshot.Phases[string(telemetry.PhaseVerificationDiagnostics)].Count; before != 1 || diagnostics != 1 {
+	if before, diagnostics := metrics.Phases[string(telemetry.PhaseVerificationBefore)].Count, metrics.Phases[string(telemetry.PhaseVerificationDiagnostics)].Count; before != 1 || diagnostics != 1 {
 		t.Fatalf("diagnostic invocation counts = before:%d diagnostics:%d, want one baseline and one outer verification", before, diagnostics)
 	}
-	if resp.Results[0].Status != "ok" || resp.Results[1].Status != "ok" || resp.Results[2].Status != "ok" || resp.Results[3].Status != "ok" {
-		t.Errorf("expected all results ok: %+v", resp.Results)
-	}
-	if resp.Results[0].File != "file1.go" || resp.Results[0].Symbol != "Foo" || resp.Results[0].DiagnosticStatus != "deferred" {
-		t.Errorf("replace_body batch continuation = %+v", resp.Results[0])
-	}
-	if resp.Results[1].File != "file2.go" || resp.Results[1].Symbol != "" || resp.Results[1].InFunction != "Dispatch" || resp.Results[1].Discriminator != "op" {
-		t.Errorf("insert_case batch continuation = %+v", resp.Results[1])
-	}
-	if resp.Results[2].File != "file1.go" || resp.Results[2].Symbol != "Added" {
-		t.Errorf("insert_function batch continuation = %+v", resp.Results[2])
-	}
-	if resp.Results[3].File != "generated.go" || resp.Results[3].Package != "testpkg" || resp.Results[3].Symbol != "" {
-		t.Errorf("scaffold_file batch continuation = %+v", resp.Results[3])
-	}
+	assertSuccessfulBatchContinuations(t, response.Results)
+}
 
-	c1, err := os.ReadFile(filepath.Clean(file1))
+func assertSuccessfulBatchContinuations(t *testing.T, results []mcp.BatchResult) {
+	t.Helper()
+	for _, result := range results {
+		if result.Status != "ok" {
+			t.Errorf("expected all results ok: %+v", results)
+			return
+		}
+	}
+	if results[0].File != "file1.go" || results[0].Symbol != "Foo" || results[0].DiagnosticStatus != "deferred" {
+		t.Errorf("replace_body batch continuation = %+v", results[0])
+	}
+	if results[1].File != "file2.go" || results[1].Symbol != "" || results[1].InFunction != "Dispatch" || results[1].Discriminator != "op" {
+		t.Errorf("insert_case batch continuation = %+v", results[1])
+	}
+	if results[2].File != "file1.go" || results[2].Symbol != "Added" {
+		t.Errorf("insert_function batch continuation = %+v", results[2])
+	}
+	if results[3].File != "generated.go" || results[3].Package != "testpkg" || results[3].Symbol != "" {
+		t.Errorf("scaffold_file batch continuation = %+v", results[3])
+	}
+}
+
+func assertSuccessfulBatchSources(t *testing.T, fixture successfulBatchFixture) {
+	t.Helper()
+	first, err := os.ReadFile(filepath.Clean(fixture.FirstFile))
 	if err != nil {
 		t.Fatalf("read file1: %v", err)
 	}
-	if !strings.Contains(string(c1), `return "new"`) {
-		t.Errorf("file1 not updated:\n%s", string(c1))
+	if !strings.Contains(string(first), `return "new"`) {
+		t.Errorf("file1 not updated:\n%s", string(first))
 	}
-
-	c2, err := os.ReadFile(filepath.Clean(file2))
+	second, err := os.ReadFile(filepath.Clean(fixture.SecondFile))
 	if err != nil {
 		t.Fatalf("read file2: %v", err)
 	}
-	if !strings.Contains(string(c2), `case "ping":`) {
-		t.Errorf("file2 not updated:\n%s", string(c2))
+	if !strings.Contains(string(second), `case "ping":`) {
+		t.Errorf("file2 not updated:\n%s", string(second))
+	}
+}
+
+func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
+	configuredRoot := t.TempDir()
+	worktree := filepath.Join(configuredRoot, ".scratch", "worktrees", "selected")
+	if err := os.MkdirAll(worktree, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mainFile := filepath.Join(configuredRoot, "main.go")
+	mainSource := []byte("package main\n\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(mainFile, mainSource, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	worktreeFile := filepath.Join(worktree, "value.go")
+	if err := os.WriteFile(filepath.Join(worktree, "go.mod"), []byte("module example.com/worktree\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(worktreeFile, []byte("package worktree\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := mcp.NewServer("full", configuredRoot, &bytes.Buffer{})
+	var response *mcp.BatchResponse
+	var err error
+
+	_, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(`{"file":"../main.go","symbol":"Value","body":"return 2"}`),
+	}}, false)
+	if err == nil || !strings.Contains(err.Error(), "outside workspace root") {
+		t.Fatalf("outside-file batch error = %v", err)
+	}
+	if got, readErr := os.ReadFile(mainFile); readErr != nil || !bytes.Equal(got, mainSource) {
+		t.Fatalf("rejected batch changed configured-root file: got %q, err %v", got, readErr)
+	}
+
+	_, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(`{"workspace_root":".","file":"value.go","symbol":"Value","body":"return 2"}`),
+	}}, false)
+	if err == nil || !strings.Contains(err.Error(), "differing from batch root") {
+		t.Fatalf("differing child-root batch error = %v", err)
+	}
+	if got, readErr := os.ReadFile(worktreeFile); readErr != nil || string(got) != "package worktree\n\nfunc Value() int { return 1 }\n" {
+		t.Fatalf("refused direct batch changed selected-worktree file: got %q, err %v", got, readErr)
+	}
+
+	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"symbol":"Value","body":"return 2"}`, worktreeFile)),
+	}}, false)
+	if err != nil || response.Status != "ok" || len(response.Results) != 1 {
+		t.Fatalf("contained absolute-file batch = %+v, err %v", response, err)
+	}
+	if response.Results[0].File != "value.go" {
+		t.Fatalf("absolute file continuation = %q, want normalized worktree-relative path", response.Results[0].File)
+	}
+	if got, readErr := os.ReadFile(mainFile); readErr != nil || !bytes.Equal(got, mainSource) {
+		t.Fatalf("valid worktree batch changed configured-root file: got %q, err %v", got, readErr)
 	}
 }
 
@@ -129,41 +211,59 @@ func TestBatchExpectedRevisionUsesCurrentWorkingOverlay(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/revisionbatch\n\ngo 1.24\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			path := filepath.Join(root, "main.go")
-			if err := os.WriteFile(path, initial, 0o600); err != nil {
-				t.Fatal(err)
-			}
-			srv := mcp.NewServer("full", root, &bytes.Buffer{})
-			response, err := srv.ExecuteBatch(context.Background(), []mcp.BatchEntry{
-				{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"main.go","symbol":"Value","body":"return 2"}`)},
-				{Tool: "semantic_replace_body", Params: json.RawMessage(fmt.Sprintf(`{"file":"main.go","symbol":"Value","expected_revision":%q,"body":"return 3"}`, test.revision))},
-			}, false)
-			if err != nil {
-				t.Fatalf("execute batch: %v", err)
-			}
-			if response.Status != test.wantStatus {
-				t.Fatalf("batch status = %q, want %q; results=%+v", response.Status, test.wantStatus, response.Results)
-			}
-			if test.wantErrorText != "" {
-				if len(response.Results) < 2 || !strings.Contains(response.Results[1].Error, test.wantErrorText) {
-					t.Fatalf("guard failure = %+v, want %q", response.Results, test.wantErrorText)
-				}
-			}
-			actual, err := os.ReadFile(path)
-			if err != nil {
-				t.Fatalf("read published batch result: %v", err)
-			}
-			if !strings.Contains(string(actual), test.wantBody) {
-				t.Fatalf("published source = %s, want %q", actual, test.wantBody)
-			}
-			if test.wantStatus == "error" && strings.Contains(string(actual), "return 3") {
-				t.Fatalf("guarded child wrote after stale revision refusal: %s", actual)
-			}
+			assertBatchExpectedRevisionCase(t, initial, test.revision, test.wantStatus, test.wantBody, test.wantErrorText)
 		})
+	}
+}
+
+func assertBatchExpectedRevisionCase(t *testing.T, initial []byte, revision, wantStatus, wantBody, wantErrorText string) {
+	t.Helper()
+	root := t.TempDir()
+	writeBatchFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/revisionbatch\n\ngo 1.24\n")
+	path := filepath.Join(root, "main.go")
+	writeBatchFixtureFile(t, path, string(initial))
+	response := executeRevisionGuardBatch(t, root, revision)
+	assertRevisionGuardResult(t, response, wantStatus, wantErrorText)
+	assertRevisionGuardSource(t, path, wantStatus, wantBody)
+}
+
+func executeRevisionGuardBatch(t *testing.T, root, revision string) *mcp.BatchResponse {
+	t.Helper()
+	edits := []mcp.BatchEntry{
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"main.go","symbol":"Value","body":"return 2"}`)},
+		{Tool: "semantic_replace_body", Params: json.RawMessage(fmt.Sprintf(`{"file":"main.go","symbol":"Value","expected_revision":%q,"body":"return 3"}`, revision))},
+	}
+	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), edits, false)
+	if err != nil {
+		t.Fatalf("execute batch: %v", err)
+	}
+	return response
+}
+
+func assertRevisionGuardResult(t *testing.T, response *mcp.BatchResponse, wantStatus, wantError string) {
+	t.Helper()
+	if response.Status != wantStatus {
+		t.Fatalf("batch status = %q, want %q; results=%+v", response.Status, wantStatus, response.Results)
+	}
+	if wantError == "" {
+		return
+	}
+	if len(response.Results) < 2 || !strings.Contains(response.Results[1].Error, wantError) {
+		t.Fatalf("guard failure = %+v, want %q", response.Results, wantError)
+	}
+}
+
+func assertRevisionGuardSource(t *testing.T, path string, wantStatus, wantBody string) {
+	t.Helper()
+	actual, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read published batch result: %v", err)
+	}
+	if !strings.Contains(string(actual), wantBody) {
+		t.Fatalf("published source = %s, want %q", actual, wantBody)
+	}
+	if wantStatus == "error" && strings.Contains(string(actual), "return 3") {
+		t.Fatalf("guarded child wrote after stale revision refusal: %s", actual)
 	}
 }
 
@@ -224,7 +324,7 @@ func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 	var out bytes.Buffer
 	server := mcp.NewServer("full", tmpDir, &out)
 	response, err := server.ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-		Tool: "semantic_rename",
+		Tool: "semantic_replace_body",
 	}}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -233,7 +333,7 @@ func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 		t.Fatalf("response = %#v", response)
 	}
 	message := response.Results[0].Error
-	if !strings.Contains(message, "edit 0 params") || !strings.Contains(message, `"params"`) || !strings.Contains(message, `"symbol":"Old"`) {
+	if !strings.Contains(message, "edit 0 params for semantic_replace_body") || !strings.Contains(message, `"params"`) || !strings.Contains(message, `"symbol":"Old"`) {
 		t.Fatalf("error = %q, want indexed params-shape guidance and example", message)
 	}
 }
@@ -310,7 +410,7 @@ func TestBatch_FailFast(t *testing.T) {
 		},
 		{
 			// Edit 3: should be skipped
-			Tool:   "semantic_insert_structure",
+			Tool:   "semantic_insert_construct",
 			Params: json.RawMessage(`{"file":"file2.go","kind":"case","in_function":"Bar","source":"case 1:"}`),
 		},
 	}
@@ -594,9 +694,9 @@ func Local() int { return 1 }
 		}
 	}
 	read := func(name string) string {
-		content, err := os.ReadFile(filepath.Join(root, name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+		content, readErr := os.ReadFile(filepath.Join(root, name))
+		if readErr != nil {
+			t.Fatalf("read %s: %v", name, readErr)
 		}
 		return string(content)
 	}
@@ -699,47 +799,107 @@ func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 }
 
 func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
-	for _, test := range []struct{ name, file, destination string }{
-		{name: "file", file: "source-link.go", destination: "dest.go"},
-		{name: "directory", file: "source.go", destination: "linked/dest.go"},
+	for _, test := range []moveSymlinkCase{
+		{name: "file", source: "source-link.go", destination: "dest.go"},
+		{name: "directory", source: "source.go", destination: "linked/dest.go"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovesymlink\n\ngo 1.23\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "source.go"), []byte("package batchmovesymlink\n\nfunc MoveMe() int { return 3 }\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Mkdir(filepath.Join(root, "real"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "real", "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(filepath.Join(root, "source.go"), filepath.Join(root, "source-link.go")); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
-				t.Fatal(err)
-			}
-			file := test.file
-			if file == "" {
-				file = "source.go"
-			}
-			response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-				Tool:   "semantic_move_construct",
-				Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, file, test.destination)),
-			}}, false)
-			if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "symlink") {
-				t.Fatalf("symlink move response = %+v, err = %v", response, err)
-			}
-			if strings.Contains(response.FinalDiff, "func MoveMe") {
-				t.Fatalf("symlink refusal changed a target: %s", response.FinalDiff)
-			}
+			assertMoveSymlinkRefused(t, test)
 		})
 	}
+}
+
+type moveSymlinkCase struct {
+	name        string
+	source      string
+	destination string
+}
+
+func assertMoveSymlinkRefused(t *testing.T, test moveSymlinkCase) {
+	t.Helper()
+	root := createMoveSymlinkWorkspace(t)
+	files := snapshotMoveFiles(t, root)
+	response, err := executeMoveSymlinkCase(root, test)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink move error = %v, response = %+v", err, response)
+	}
+	for _, file := range files {
+		assertFixtureBytesUnchanged(t, file.path, file.content, file.label)
+	}
+}
+
+type moveFileSnapshot struct {
+	path    string
+	label   string
+	content []byte
+}
+
+func snapshotMoveFiles(t *testing.T, root string) []moveFileSnapshot {
+	t.Helper()
+	paths := []moveFileSnapshot{
+		{path: filepath.Join(root, "source.go"), label: "source"},
+		{path: filepath.Join(root, "dest.go"), label: "file-symlink destination"},
+		{path: filepath.Join(root, "real", "dest.go"), label: "directory-symlink destination"},
+	}
+	for index := range paths {
+		paths[index].content = readFixtureFile(t, paths[index].path)
+	}
+	return paths
+}
+
+func createMoveSymlinkWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for path, content := range map[string]string{
+		"go.mod":       "module example.com/batchmovesymlink\n\ngo 1.23\n",
+		"source.go":    "package batchmovesymlink\n\nfunc MoveMe() int { return 3 }\n",
+		"dest.go":      "package batchmovesymlink\n",
+		"real/dest.go": "package batchmovesymlink\n",
+	} {
+		fullPath := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "source.go"), filepath.Join(root, "source-link.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func executeMoveSymlinkCase(root string, test moveSymlinkCase) (*mcp.BatchResponse, error) {
+	params, err := json.Marshal(map[string]string{
+		"file":             test.source,
+		"destination_file": test.destination,
+		"symbol":           "MoveMe",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode symlink move test parameters: %w", err)
+	}
+	return mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+		Tool:   "semantic_move_construct",
+		Params: params,
+	}}, false)
+}
+
+func assertFixtureBytesUnchanged(t *testing.T, path string, before []byte, label string) {
+	t.Helper()
+	if after := readFixtureFile(t, path); !bytes.Equal(before, after) {
+		t.Fatalf("symlink refusal changed %s: %q", label, after)
+	}
+}
+
+func readFixtureFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

@@ -11,6 +11,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"golang.org/x/tools/go/packages"
 	"maps"
 	"path/filepath"
 	"semedit/internal/astedit"
@@ -97,8 +98,8 @@ func runIntroduceParameter(ctx context.Context, cc CallContext, raw map[string]a
 		return structuralPlanResult{}, err
 	}
 	before := snapshot.Sources[snapshot.File]
-	if err := validateSignatureExpectedRevision(raw, before); err != nil {
-		return structuralPlanResult{}, err
+	if revisionErr := validateSignatureExpectedRevision(raw, before); revisionErr != nil {
+		return structuralPlanResult{}, revisionErr
 	}
 	mappings, err := decodeSignatureMappings(raw[signatureParameters])
 	if err != nil {
@@ -141,8 +142,8 @@ func runIntroduceParameterObject(ctx context.Context, cc CallContext, raw map[st
 		return structuralPlanResult{}, err
 	}
 	before := snapshot.Sources[snapshot.File]
-	if err := validateSignatureExpectedRevision(raw, before); err != nil {
-		return structuralPlanResult{}, err
+	if revisionErr := validateSignatureExpectedRevision(raw, before); revisionErr != nil {
+		return structuralPlanResult{}, revisionErr
 	}
 	parameter, err := decodeParameterSpec(raw["parameter"])
 	if err != nil {
@@ -217,76 +218,28 @@ func appendedSignatureMapping(mappings []astedit.SignatureParameterMapping) (ast
 	return *added, nil
 }
 
+type signatureExpressionOccurrence struct {
+	file  string
+	start int
+	end   int
+}
+
+type typedSignatureExpression struct {
+	typeAndValue types.TypeAndValue
+	ownerPackage *types.Package
+	ownerPos     token.Pos
+	fset         *token.FileSet
+}
+
 func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expression, parameterType, argument string) (astedit.SignatureConstantEvidence, error) {
-	type expressionOccurrence struct {
-		file  string
-		start int
-		end   int
+	selected, err := selectedSignatureConstant(snapshot, symbol, expression)
+	if err != nil {
+		return astedit.SignatureConstantEvidence{}, err
 	}
-	type typedExpressionEvidence struct {
-		typeAndValue types.TypeAndValue
-		ownerPackage *types.Package
-		ownerPos     token.Pos
-		fset         *token.FileSet
-	}
-	selectedByOccurrence := make(map[expressionOccurrence]typedExpressionEvidence)
-	for _, pkg := range snapshot.Packages {
-		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
-			continue
-		}
-		for _, file := range pkg.Syntax {
-			position := pkg.Fset.Position(file.Pos())
-			path, err := filepath.Abs(position.Filename)
-			if err != nil {
-				return astedit.SignatureConstantEvidence{}, fmt.Errorf("resolve selected expression file: %w", err)
-			}
-			if filepath.Clean(path) != snapshot.File {
-				continue
-			}
-			source := snapshot.Sources[snapshot.File]
-			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Recv != nil || function.Name.Name != symbol || function.Body == nil {
-					continue
-				}
-				ast.Inspect(function.Body, func(node ast.Node) bool {
-					expr, ok := node.(ast.Expr)
-					if !ok {
-						return true
-					}
-					start, end := pkg.Fset.Position(expr.Pos()).Offset, pkg.Fset.Position(expr.End()).Offset
-					if start >= 0 && end > start && end <= len(source) && string(source[start:end]) == strings.TrimSpace(expression) {
-						occurrence := expressionOccurrence{file: filepath.Clean(path), start: start, end: end}
-						evidence := typedExpressionEvidence{typeAndValue: pkg.TypesInfo.Types[expr], ownerPackage: pkg.Types, ownerPos: function.Type.Pos(), fset: pkg.Fset}
-						if previous, found := selectedByOccurrence[occurrence]; found {
-							if previous.typeAndValue.Value == nil || previous.typeAndValue.Type == nil || evidence.typeAndValue.Value == nil || evidence.typeAndValue.Type == nil || previous.ownerPackage == nil || evidence.ownerPackage == nil || previous.ownerPackage.Path() != evidence.ownerPackage.Path() || previous.typeAndValue.Value.Kind() != evidence.typeAndValue.Value.Kind() || !constant.Compare(previous.typeAndValue.Value, token.EQL, evidence.typeAndValue.Value) || !equivalentSignatureVariantType(previous.typeAndValue.Type, previous.fset, evidence.typeAndValue.Type, evidence.fset) {
-								selectedByOccurrence[occurrence] = typedExpressionEvidence{}
-							}
-						} else {
-							selectedByOccurrence[occurrence] = evidence
-						}
-					}
-					return true
-				})
-			}
-		}
-	}
-	if len(selectedByOccurrence) != 1 {
-		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant")
-	}
-	var selected types.TypeAndValue
-	var selectedOwner *types.Package
-	var selectedPosition token.Pos
-	var selectedFset *token.FileSet
-	for _, evidence := range selectedByOccurrence {
-		selected = evidence.typeAndValue
-		selectedOwner = evidence.ownerPackage
-		selectedPosition = evidence.ownerPos
-		selectedFset = evidence.fset
-	}
-	if selected.Value == nil || selected.Type == nil || selectedOwner == nil || !selectedPosition.IsValid() || selectedFset == nil {
-		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant with consistent evidence across package variants")
-	}
+	selectedOwner := selected.ownerPackage
+	selectedFset := selected.fset
+	selectedPosition := selected.ownerPos
+	selectedValue := selected.typeAndValue
 	if err := validateClosedSignatureArgument(argument); err != nil {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("validate constant caller argument: %w", err)
 	}
@@ -295,7 +248,7 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("evaluate caller constant in selected function scope: %w", argumentErr)
 	}
 	argumentValue, argumentType := argumentResult.Value, argumentResult.Type
-	if argumentValue == nil || argumentType == nil || selected.Value.Kind() != argumentValue.Kind() || !constant.Compare(selected.Value, token.EQL, argumentValue) {
+	if argumentValue == nil || argumentType == nil || selectedValue.Value.Kind() != argumentValue.Kind() || !constant.Compare(selectedValue.Value, token.EQL, argumentValue) {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("caller argument must be a compile-time constant with the selected expression's value")
 	}
 	targetResult, targetErr := types.Eval(selectedFset, selectedOwner, selectedPosition, parameterType)
@@ -306,10 +259,79 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 	if targetResult.IsType() {
 		targetType = targetResult.Type
 	}
-	if targetType == nil || !types.AssignableTo(selected.Type, targetType) || !types.AssignableTo(argumentType, targetType) {
+	if targetType == nil || !types.AssignableTo(selectedValue.Type, targetType) || !types.AssignableTo(argumentType, targetType) {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected and caller constants must both be assignable to the appended parameter type")
 	}
-	return astedit.SignatureConstantEvidence{Type: parameterType, SelectedValue: selected.Value.String(), ArgumentValue: argumentValue.String(), ArgumentSource: argument}, nil
+	return astedit.SignatureConstantEvidence{Type: parameterType, SelectedValue: selectedValue.Value.String(), ArgumentValue: argumentValue.String(), ArgumentSource: argument}, nil
+}
+
+func selectedSignatureConstant(snapshot *structuralSnapshot, symbol, expression string) (typedSignatureExpression, error) {
+	selected := make(map[signatureExpressionOccurrence]typedSignatureExpression)
+	for _, pkg := range snapshot.Packages {
+		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
+			continue
+		}
+		for _, file := range pkg.Syntax {
+			if err := collectSignatureExpressionEvidence(snapshot, pkg, file, symbol, expression, selected); err != nil {
+				return typedSignatureExpression{}, err
+			}
+		}
+	}
+	if len(selected) != 1 {
+		return typedSignatureExpression{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant")
+	}
+	for _, evidence := range selected {
+		if !validTypedSignatureExpression(evidence) {
+			return typedSignatureExpression{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant with consistent evidence across package variants")
+		}
+		return evidence, nil
+	}
+	return typedSignatureExpression{}, fmt.Errorf("selected body expression evidence is unavailable")
+}
+
+func collectSignatureExpressionEvidence(snapshot *structuralSnapshot, pkg *packages.Package, file *ast.File, symbol, expression string, selected map[signatureExpressionOccurrence]typedSignatureExpression) error {
+	path, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+	if err != nil {
+		return fmt.Errorf("resolve selected expression file: %w", err)
+	}
+	path = filepath.Clean(path)
+	if path != snapshot.File {
+		return nil
+	}
+	source := snapshot.Sources[snapshot.File]
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Recv != nil || function.Name.Name != symbol || function.Body == nil {
+			continue
+		}
+		ast.Inspect(function.Body, func(node ast.Node) bool {
+			expr, ok := node.(ast.Expr)
+			if !ok {
+				return true
+			}
+			start, end := pkg.Fset.Position(expr.Pos()).Offset, pkg.Fset.Position(expr.End()).Offset
+			if start < 0 || end <= start || end > len(source) || string(source[start:end]) != strings.TrimSpace(expression) {
+				return true
+			}
+			key := signatureExpressionOccurrence{file: path, start: start, end: end}
+			evidence := typedSignatureExpression{typeAndValue: pkg.TypesInfo.Types[expr], ownerPackage: pkg.Types, ownerPos: function.Type.Pos(), fset: pkg.Fset}
+			if previous, found := selected[key]; found && !equivalentTypedSignatureExpression(previous, evidence) {
+				selected[key] = typedSignatureExpression{}
+			} else if !found {
+				selected[key] = evidence
+			}
+			return true
+		})
+	}
+	return nil
+}
+
+func equivalentTypedSignatureExpression(left, right typedSignatureExpression) bool {
+	return left.typeAndValue.Value != nil && left.typeAndValue.Type != nil && right.typeAndValue.Value != nil && right.typeAndValue.Type != nil && left.ownerPackage != nil && right.ownerPackage != nil && left.ownerPackage.Path() == right.ownerPackage.Path() && left.typeAndValue.Value.Kind() == right.typeAndValue.Value.Kind() && constant.Compare(left.typeAndValue.Value, token.EQL, right.typeAndValue.Value) && equivalentSignatureVariantType(left.typeAndValue.Type, left.fset, right.typeAndValue.Type, right.fset)
+}
+
+func validTypedSignatureExpression(evidence typedSignatureExpression) bool {
+	return evidence.typeAndValue.Value != nil && evidence.typeAndValue.Type != nil && evidence.ownerPackage != nil && evidence.ownerPos.IsValid() && evidence.fset != nil
 }
 
 func equivalentSignatureVariantType(left types.Type, leftFset *token.FileSet, right types.Type, rightFset *token.FileSet) bool {
@@ -363,63 +385,89 @@ func collectSignatureBodyBindings(snapshot *structuralSnapshot, symbol string) (
 		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
 			continue
 		}
-		for _, file := range pkg.Syntax {
-			position := pkg.Fset.Position(file.Pos())
-			path, err := filepath.Abs(position.Filename)
-			if err != nil {
-				return nil, fmt.Errorf("resolve parameter binding file: %w", err)
-			}
-			if filepath.Clean(path) != snapshot.File {
-				continue
-			}
-			for _, declaration := range file.Decls {
-				function, ok := declaration.(*ast.FuncDecl)
-				if !ok || function.Recv != nil || function.Name.Name != symbol || function.Body == nil {
-					continue
-				}
-				found = true
-				var parameterObjects []types.Object
-				for _, field := range function.Type.Params.List {
-					for _, name := range field.Names {
-						parameterObjects = append(parameterObjects, pkg.TypesInfo.Defs[name])
-					}
-				}
-				objectIndex := make(map[types.Object]int, len(parameterObjects))
-				for index, object := range parameterObjects {
-					if object == nil {
-						return nil, fmt.Errorf("parameter %d has no resolved Go object", index)
-					}
-					objectIndex[object] = index
-				}
-				bodyStart, bodyEnd := pkg.Fset.Position(function.Body.Pos()).Offset, pkg.Fset.Position(function.Body.End()).Offset
-				ast.Inspect(function.Body, func(node ast.Node) bool {
-					identifier, ok := node.(*ast.Ident)
-					if !ok {
-						return true
-					}
-					object := pkg.TypesInfo.Uses[identifier]
-					index, parameter := objectIndex[object]
-					if !parameter {
-						return true
-					}
-					start, end := pkg.Fset.Position(identifier.Pos()).Offset, pkg.Fset.Position(identifier.End()).Offset
-					binding := astedit.SignatureBodyBinding{File: snapshot.File, Start: start, End: end, SourceIndex: index}
-					if _, ok := seen[binding]; !ok {
-						seen[binding] = struct{}{}
-						bindings = append(bindings, binding)
-					}
-					return true
-				})
-				if bodyStart < 0 || bodyEnd <= bodyStart {
-					return nil, fmt.Errorf("function body positions are unavailable")
-				}
-			}
+		matched, err := collectSignaturePackageBindings(snapshot, pkg, symbol, seen, &bindings)
+		if err != nil {
+			return nil, err
 		}
+		found = found || matched
 	}
 	if !found {
 		return nil, fmt.Errorf("private function %q was not found in the selected file", symbol)
 	}
 	return bindings, nil
+}
+
+func collectSignaturePackageBindings(snapshot *structuralSnapshot, pkg *packages.Package, symbol string, seen map[astedit.SignatureBodyBinding]struct{}, bindings *[]astedit.SignatureBodyBinding) (bool, error) {
+	found := false
+	for _, file := range pkg.Syntax {
+		path, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+		if err != nil {
+			return false, fmt.Errorf("resolve parameter binding file: %w", err)
+		}
+		if filepath.Clean(path) != snapshot.File {
+			continue
+		}
+		for _, declaration := range file.Decls {
+			function, ok := declaration.(*ast.FuncDecl)
+			if !ok || function.Recv != nil || function.Name.Name != symbol || function.Body == nil {
+				continue
+			}
+			functionBindings, err := signatureFunctionBindings(snapshot.File, pkg, function)
+			if err != nil {
+				return false, err
+			}
+			found = true
+			for _, binding := range functionBindings {
+				if _, exists := seen[binding]; exists {
+					continue
+				}
+				seen[binding] = struct{}{}
+				*bindings = append(*bindings, binding)
+			}
+		}
+	}
+	return found, nil
+}
+
+func signatureFunctionBindings(file string, pkg *packages.Package, function *ast.FuncDecl) ([]astedit.SignatureBodyBinding, error) {
+	objectIndex := make(map[types.Object]int)
+	for index, object := range signatureParameterObjects(pkg, function) {
+		if object == nil {
+			return nil, fmt.Errorf("parameter %d has no resolved Go object", index)
+		}
+		objectIndex[object] = index
+	}
+	bodyStart, bodyEnd := pkg.Fset.Position(function.Body.Pos()).Offset, pkg.Fset.Position(function.Body.End()).Offset
+	if bodyStart < 0 || bodyEnd <= bodyStart {
+		return nil, fmt.Errorf("function body positions are unavailable")
+	}
+	var bindings []astedit.SignatureBodyBinding
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		index, parameter := objectIndex[pkg.TypesInfo.Uses[identifier]]
+		if !parameter {
+			return true
+		}
+		bindings = append(bindings, astedit.SignatureBodyBinding{
+			File: file, Start: pkg.Fset.Position(identifier.Pos()).Offset,
+			End: pkg.Fset.Position(identifier.End()).Offset, SourceIndex: index,
+		})
+		return true
+	})
+	return bindings, nil
+}
+
+func signatureParameterObjects(pkg *packages.Package, function *ast.FuncDecl) []types.Object {
+	var objects []types.Object
+	for _, field := range function.Type.Params.List {
+		for _, name := range field.Names {
+			objects = append(objects, pkg.TypesInfo.Defs[name])
+		}
+	}
+	return objects
 }
 
 func decodeParameterSpec(value any) (ParameterSpec, error) {

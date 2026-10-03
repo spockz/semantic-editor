@@ -24,6 +24,19 @@ workspace root supplied by the client before deriving the default Go state
 directory as `<workspace-root>/.scratch/go`; retain an explicitly configured
 `--go-base-dir`. The workspace root and Go cache base directory are distinct.
 
+Each MCP operation may also select an optional `workspace_root` beneath the
+configured server root. Resolve relative roots against that root, canonicalize
+the result, and require an existing directory contained by the configured tree.
+This permits an in-repository worktree such as `.scratch/worktrees/task` while
+keeping paths contained. Resolve relative file selectors beneath the selected
+root, normalize in-root absolute file selectors to relative paths, and reject
+parent traversal, symlinks, or escape across recursively checked file fields.
+Pass the canonical effective root through project and call contexts, trust
+scopes, continuations, and the default Go cache path so later operations keep
+using the same workspace boundary. A session manager reuses Go state for the
+configured root and same-module subdirectories; a different worktree module
+gets its own `<workspace-root>/.scratch/go` state.
+
 After those directories are set, detect source languages and verification
 configuration in the resolved workspace, as specified by ADR-0054. Do not retain
 an activation plan derived from a different launch CWD. Detection establishes

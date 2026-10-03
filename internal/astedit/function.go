@@ -26,29 +26,16 @@ type FunctionOptions struct {
 
 // InsertFunction injects a function or method declaration into filePath.
 func InsertFunction(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindFunction,
-		AccessModifier:      opts.AccessModifier,
-		Placement:           opts.Placement,
-		TargetSymbol:        opts.TargetSymbol,
-		AutoOrganizeImports: opts.AutoOrganizeImports,
-	})
-	return err
+	return insertFunctionImpl(ctx, filePath, source, opts)
 }
 
 // InsertFunction injects a function or method declaration into filePath.
 func insertFunctionImpl(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
-	source = strings.TrimSpace(source)
-	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
-		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
-		source = source[1 : len(source)-1]
-	}
+	source = normalizeDeclarationSnippet(source)
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
-
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	target, err := readDeclarationTarget(ctx, filePath)
 	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
+		return err
 	}
 
 	fnDecl, err := parseFunctionSnippet(source)
@@ -57,87 +44,124 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	}
 
 	fnName := fnDecl.Name.Name
-	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, fnName); err != nil {
-		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+	if accessErr := ValidateAccess(DefaultBackend, opts.AccessModifier, fnName); accessErr != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](accessErr); ok {
 			visErr.File = "snippet"
 		}
-		return fmt.Errorf("validate access modifier: %w", err)
+		return fmt.Errorf("validate access modifier: %w", accessErr)
 	}
 
-	effectiveAccess, err := ResolveAccess(DefaultBackend, opts.AccessModifier, fnName)
+	effectiveAccess, err := resolveDeclarationAccess(opts.AccessModifier, fnName)
 	if err != nil {
-		return fmt.Errorf("resolve effective access: %w", err)
+		return err
+	}
+	if collisionErr := checkConstructDeclarationCollision(ctx, target.path, target.file, fnDecl); collisionErr != nil {
+		return fmt.Errorf("check declaration collision: %w", collisionErr)
 	}
 
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil && fileNode == nil {
-		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
-	}
-	if err := checkStructureDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); err != nil {
-		return fmt.Errorf("check declaration collision: %w", err)
-	}
-
-	insertOffset, err := calculateFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)
+	insertOffset, err := calculateFunctionOffset(target.set, target.file, target.content, fnDecl, effectiveAccess, opts)
 	if err != nil {
-		if pErr, ok := errors.AsType[*PlacementError](err); ok {
-			if pErr.File == "" {
-				pErr.File = cleanPath
-			}
-			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
-				pErr.Pos = fset.Position(fileNode.Package)
-			}
-		}
-		return fmt.Errorf("calculate function offset: %w", err)
+		return fmt.Errorf("calculate function offset: %w", annotatePlacementError(err, target.path, target.set, target.file))
 	}
+	insertOffset = normalizeInsertionOffset(target.set, target.file, target.content, insertOffset)
+	updated := insertDeclarationText(target.content, source, insertOffset)
+	return publishInsertedDeclaration(ctx, target.path, updated, opts.AutoOrganizeImports)
+}
 
-	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
+type declarationInsertionTarget struct {
+	path    string
+	content []byte
+	set     *token.FileSet
+	file    *ast.File
+}
 
-	var newContent bytes.Buffer
-	newContent.Write(content[:insertOffset])
+func normalizeDeclarationSnippet(source string) string {
+	source = strings.TrimSpace(source)
+	quoted := (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
+		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'"))
+	if quoted {
+		return source[1 : len(source)-1]
+	}
+	return source
+}
 
-	snippetText := strings.TrimSpace(source)
-	if strings.HasPrefix(snippetText, "package ") {
-		lines := strings.SplitN(snippetText, "\n", 2)
+func readDeclarationTarget(ctx context.Context, filePath string) (declarationInsertionTarget, error) {
+	path := filepath.Clean(filePath)
+	content, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		return declarationInsertionTarget{}, fmt.Errorf("read target file: %w", err)
+	}
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, path, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return declarationInsertionTarget{}, fmt.Errorf("parse target file before insertion: %w", err)
+	}
+	return declarationInsertionTarget{path: path, content: content, set: set, file: file}, nil
+}
+
+func resolveDeclarationAccess(access AccessModifier, name string) (AccessModifier, error) {
+	effective, err := ResolveAccess(DefaultBackend, access, name)
+	if err != nil {
+		return "", fmt.Errorf("resolve effective access: %w", err)
+	}
+	return effective, nil
+}
+
+func annotatePlacementError(err error, path string, set *token.FileSet, file *ast.File) error {
+	placementErr, ok := errors.AsType[*PlacementError](err)
+	if !ok {
+		return err
+	}
+	if placementErr.File == "" {
+		placementErr.File = path
+	}
+	if !placementErr.Pos.IsValid() && file != nil && file.Package.IsValid() {
+		placementErr.Pos = set.Position(file.Package)
+	}
+	return placementErr
+}
+
+func insertDeclarationText(content []byte, source string, offset int) []byte {
+	var updated bytes.Buffer
+	updated.Write(content[:offset])
+	snippet := strings.TrimSpace(source)
+	if strings.HasPrefix(snippet, "package ") {
+		lines := strings.SplitN(snippet, "\n", 2)
 		if len(lines) > 1 {
-			snippetText = strings.TrimSpace(lines[1])
+			snippet = strings.TrimSpace(lines[1])
 		}
 	}
-
-	if insertOffset > 0 {
-		prev := content[:insertOffset]
-		if !bytes.HasSuffix(prev, []byte("\n\n")) {
-			if bytes.HasSuffix(prev, []byte("\n")) {
-				newContent.WriteString("\n")
-			} else {
-				newContent.WriteString("\n\n")
-			}
+	if offset > 0 && !bytes.HasSuffix(content[:offset], []byte("\n\n")) {
+		if bytes.HasSuffix(content[:offset], []byte("\n")) {
+			updated.WriteString("\n")
+		} else {
+			updated.WriteString("\n\n")
 		}
 	}
+	updated.WriteString(snippet)
+	updated.WriteString("\n\n")
+	updated.Write(bytes.TrimLeft(content[offset:], "\r\n"))
+	return updated.Bytes()
+}
 
-	newContent.WriteString(snippetText)
-	newContent.WriteString("\n\n")
-
-	rest := content[insertOffset:]
-	restTrimmed := bytes.TrimLeft(rest, "\r\n")
-	newContent.Write(restTrimmed)
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
+func publishInsertedDeclaration(ctx context.Context, path string, content []byte, organizeImports bool) error {
+	if err := pipeline.WriteAtomicContext(ctx, path, content); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return fmt.Errorf("organize imports: %w", err)
+	directory := filepath.Dir(path)
+	if organizeImports {
+		if err := pipeline.OrganizeImports(ctx, directory, path); err != nil {
+			organizeErr := fmt.Errorf("organize imports: %w", err)
+			if formatErr := pipeline.Format(ctx, directory, path); formatErr != nil {
+				return errors.Join(organizeErr, fmt.Errorf("format file after import organization failure: %w", formatErr))
+			}
+			return organizeErr
 		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return fmt.Errorf("format file: %w", err)
-		}
+		return nil
 	}
-
+	if err := pipeline.Format(ctx, directory, path); err != nil {
+		return fmt.Errorf("format file: %w", err)
+	}
 	return nil
 }
 
@@ -211,75 +235,95 @@ func extractReceiverTypeName(recv *ast.FieldList) string {
 
 func calculateFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, fnDecl *ast.FuncDecl, effectiveAccess AccessModifier, opts FunctionOptions) (int, error) {
 	if opts.Placement != "" {
-		if effectiveAccess == AccessModifierPublic && (opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd) {
-			return 0, &PlacementError{
-				Strategy:     opts.Placement,
-				TargetSymbol: fnDecl.Name.Name,
-				Err:          ErrSectionViolation,
-			}
-		}
-		if effectiveAccess == AccessModifierPrivate && (opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd) {
-			return 0, &PlacementError{
-				Strategy:     opts.Placement,
-				TargetSymbol: fnDecl.Name.Name,
-				Err:          ErrSectionViolation,
-			}
-		}
-
-		insertOpts := Options{
-			Placement:    opts.Placement,
-			TargetSymbol: opts.TargetSymbol,
-		}
-		return calculateInsertionOffset(fset, fileNode, content, insertOpts)
+		return calculateExplicitFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)
 	}
-
 	recvType := extractReceiverTypeName(fnDecl.Recv)
-	if recvType != "" {
-		var publicReceiverMethods []*ast.FuncDecl
-		var privateReceiverMethods []*ast.FuncDecl
-		var targetTypeDecl ast.Decl
-
-		for _, decl := range fileNode.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok {
-				if extractReceiverTypeName(fn.Recv) == recvType {
-					if isDeclExported(fn) {
-						publicReceiverMethods = append(publicReceiverMethods, fn)
-					} else {
-						privateReceiverMethods = append(privateReceiverMethods, fn)
-					}
-				}
-			} else if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.TYPE {
-				for _, spec := range gen.Specs {
-					if ts, ok := spec.(*ast.TypeSpec); ok && ts.Name.Name == recvType {
-						targetTypeDecl = decl
-						break
-					}
-				}
-			}
-		}
-
-		if effectiveAccess == AccessModifierPublic {
-			if len(publicReceiverMethods) > 0 {
-				return fset.Position(publicReceiverMethods[len(publicReceiverMethods)-1].End()).Offset, nil
-			}
-			if targetTypeDecl != nil && isDeclExported(targetTypeDecl) {
-				return fset.Position(targetTypeDecl.End()).Offset, nil
-			}
-			// Fall back to public section placement
-			return calculateInsertionOffset(fset, fileNode, content, Options{Placement: PlacementPublicEnd})
-		}
-
-		// Private method placement
-		if len(privateReceiverMethods) > 0 {
-			return fset.Position(privateReceiverMethods[len(privateReceiverMethods)-1].End()).Offset, nil
-		}
-		// Fall back to private section start
-		return calculateInsertionOffset(fset, fileNode, content, Options{Placement: PlacementPrivateStart})
+	if recvType == "" {
+		return calculateTopLevelFunctionOffset(fset, fileNode, content, effectiveAccess)
 	}
+	return calculateReceiverFunctionOffset(fset, fileNode, content, recvType, effectiveAccess)
+}
 
-	// Regular function placement
-	if effectiveAccess == AccessModifierPublic {
-		return calculateInsertionOffset(fset, fileNode, content, Options{Placement: PlacementPublicEnd})
+func calculateExplicitFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, function *ast.FuncDecl, access AccessModifier, opts FunctionOptions) (int, error) {
+	public := access == AccessModifierPublic
+	privateSection := opts.Placement == PlacementPrivateStart || opts.Placement == PlacementPrivateEnd
+	publicSection := opts.Placement == PlacementPublicStart || opts.Placement == PlacementPublicEnd
+	if (public && privateSection) || (access == AccessModifierPrivate && publicSection) {
+		return 0, &PlacementError{Strategy: opts.Placement, TargetSymbol: function.Name.Name, Err: ErrSectionViolation}
 	}
-	return calculateInsertionOffset(fset, fileNode, content, Options{Placement: PlacementPrivateEnd})
+	return calculateInsertionOffset(fset, fileNode, content, Options{Placement: opts.Placement, TargetSymbol: opts.TargetSymbol})
+}
+
+func calculateTopLevelFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, access AccessModifier) (int, error) {
+	placement := PlacementPrivateEnd
+	if access == AccessModifierPublic {
+		placement = PlacementPublicEnd
+	}
+	return calculateInsertionOffset(fset, fileNode, content, Options{Placement: placement})
+}
+
+func calculateReceiverFunctionOffset(fset *token.FileSet, fileNode *ast.File, content []byte, receiver string, access AccessModifier) (int, error) {
+	targets := receiverFunctionTargets(fileNode, receiver)
+	wantedAccess := access
+	if wantedAccess == AccessModifierPublic && len(targets.methods.public) > 0 {
+		return fset.Position(targets.methods.public[len(targets.methods.public)-1].End()).Offset, nil
+	}
+	if wantedAccess == AccessModifierPublic && targets.typeDeclaration != nil && isDeclExported(targets.typeDeclaration) {
+		return fset.Position(targets.typeDeclaration.End()).Offset, nil
+	}
+	if wantedAccess == AccessModifierPrivate && len(targets.methods.private) > 0 {
+		return fset.Position(targets.methods.private[len(targets.methods.private)-1].End()).Offset, nil
+	}
+	placement := PlacementPrivateStart
+	if wantedAccess == AccessModifierPublic {
+		placement = PlacementPublicEnd
+	}
+	return calculateInsertionOffset(fset, fileNode, content, Options{Placement: placement})
+}
+
+type receiverFunctionMethods struct {
+	public  []*ast.FuncDecl
+	private []*ast.FuncDecl
+}
+
+type receiverFunctionTargetSet struct {
+	methods         receiverFunctionMethods
+	typeDeclaration ast.Decl
+}
+
+func receiverFunctionTargets(file *ast.File, receiver string) receiverFunctionTargetSet {
+	var targets receiverFunctionTargetSet
+	for _, declaration := range file.Decls {
+		if function, ok := declaration.(*ast.FuncDecl); ok {
+			if extractReceiverTypeName(function.Recv) == receiver {
+				targets.methods.add(function)
+			}
+			continue
+		}
+		if declarationTypeMatches(declaration, receiver) {
+			targets.typeDeclaration = declaration
+		}
+	}
+	return targets
+}
+
+func (methods *receiverFunctionMethods) add(function *ast.FuncDecl) {
+	if isDeclExported(function) {
+		methods.public = append(methods.public, function)
+		return
+	}
+	methods.private = append(methods.private, function)
+}
+
+func declarationTypeMatches(declaration ast.Decl, name string) bool {
+	group, ok := declaration.(*ast.GenDecl)
+	if !ok || group.Tok != token.TYPE {
+		return false
+	}
+	for _, spec := range group.Specs {
+		if typeSpec, ok := spec.(*ast.TypeSpec); ok && typeSpec.Name.Name == name {
+			return true
+		}
+	}
+	return false
 }

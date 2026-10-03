@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"semedit/internal/gocache"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
@@ -34,6 +35,9 @@ type MoveConstructOptions struct {
 	DeferFormatting     bool
 }
 
+// GoMoveConstructKinds lists declaration kinds supported by Go's move handler.
+var GoMoveConstructKinds = []ConstructKind{ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar}
+
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
 func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
@@ -44,151 +48,139 @@ func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveC
 	if destinationPath != cleanPath {
 		return moveConstructTo(ctx, cleanPath, destinationPath, symbolQuery, opts)
 	}
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("read target file: %w", err)
-	}
-
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
-	}
-
-	recv, name, _ := symbol.ParseIdentifier(symbolQuery)
-	var targetDecl ast.Decl
-	for _, decl := range fileNode.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok {
-			if fn.Name.Name == name && extractReceiverName(fn.Recv) == recv {
-				targetDecl = fn
-				break
-			}
-		}
-		if gen, ok := decl.(*ast.GenDecl); ok {
-			matched := false
-			for _, spec := range gen.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == symbolQuery {
-						targetDecl = gen
-						matched = true
-						break
-					}
-				case *ast.ValueSpec:
-					for _, ident := range s.Names {
-						if ident.Name == symbolQuery {
-							targetDecl = gen
-							matched = true
-							break
-						}
-					}
-				}
-				if matched {
-					break
-				}
-			}
-			if matched {
-				break
-			}
-		}
-	}
-
-	if targetDecl == nil {
-		return "", &symbol.SymbolError{Op: "move_construct", File: filePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
-	}
-	if group, ok := targetDecl.(*ast.GenDecl); ok && len(group.Specs) > 1 {
-		return "", fmt.Errorf("cannot move one member of a grouped declaration; split the group first")
-	}
-	if opts.TargetSymbol == symbolQuery && (opts.Placement == PlacementBeforeSymbol || opts.Placement == PlacementAfterSymbol) {
-		return "", nil
-	}
-
-	var startPos, endPos token.Pos
-	switch d := targetDecl.(type) {
-	case *ast.FuncDecl:
-		if d.Doc != nil {
-			startPos = d.Doc.Pos()
-		} else {
-			startPos = d.Pos()
-		}
-		endPos = d.End()
-	case *ast.GenDecl:
-		if d.Doc != nil {
-			startPos = d.Doc.Pos()
-		} else {
-			startPos = d.Pos()
-		}
-		endPos = d.End()
-	}
-
-	startOffset := fset.Position(startPos).Offset
-	endOffset := fset.Position(endPos).Offset
-	declText := string(content[startOffset:endOffset])
-
-	cutEnd := endOffset
-	for cutEnd < len(content) && (content[cutEnd] == ' ' || content[cutEnd] == '\t' || content[cutEnd] == '\r') {
-		cutEnd++
-	}
-	if cutEnd < len(content) && content[cutEnd] == '\n' {
-		cutEnd++
-	}
-
-	remaining := make([]byte, 0, len(content)-(cutEnd-startOffset))
-	remaining = append(remaining, content[:startOffset]...)
-	remaining = append(remaining, content[cutEnd:]...)
-
-	fset2 := token.NewFileSet()
-	fileNode2, err := parser.ParseFile(fset2, cleanPath, remaining, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", fmt.Errorf("parse file after cutting %s: %w", symbolQuery, err)
-	}
-
-	insertOffset, err := calculateMoveOffset(fset2, fileNode2, remaining, opts)
+	snapshot, err := readMoveSource(ctx, cleanPath)
 	if err != nil {
 		return "", err
 	}
+	formatted, err := planSameFileMove(snapshot, filePath, symbolQuery, opts)
+	if err != nil || formatted == nil {
+		return "", err
+	}
+	return publishSameFileMove(ctx, snapshot, symbolQuery, opts, formatted)
+}
 
-	var buf bytes.Buffer
-	buf.Write(remaining[:insertOffset])
-	if insertOffset > 0 && !bytes.HasSuffix(buf.Bytes(), []byte("\n\n")) {
-		if bytes.HasSuffix(buf.Bytes(), []byte("\n")) {
-			buf.WriteString("\n")
+type moveSourceSnapshot struct {
+	path    string
+	content []byte
+	file    *ast.File
+	set     *token.FileSet
+}
+
+func readMoveSource(ctx context.Context, path string) (moveSourceSnapshot, error) {
+	content, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		return moveSourceSnapshot{}, fmt.Errorf("read target file: %w", err)
+	}
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, path, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return moveSourceSnapshot{}, &SyntaxError{File: path, Pos: extractSyntaxPosition(set, err), Cause: err, Err: ErrSyntax}
+	}
+	return moveSourceSnapshot{path: path, content: content, file: file, set: set}, nil
+}
+
+func planSameFileMove(snapshot moveSourceSnapshot, displayPath, symbolQuery string, opts MoveConstructOptions) ([]byte, error) {
+	declaration := findMoveDeclaration(snapshot.file, symbolQuery)
+	if declaration == nil {
+		return nil, &symbol.SymbolError{Op: "move_construct", File: displayPath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
+	}
+	if group, ok := declaration.(*ast.GenDecl); ok && len(group.Specs) > 1 {
+		return nil, fmt.Errorf("cannot move one member of a grouped declaration; split the group first")
+	}
+	if opts.TargetSymbol == symbolQuery && (opts.Placement == PlacementBeforeSymbol || opts.Placement == PlacementAfterSymbol) {
+		return nil, nil
+	}
+	cut := cutMoveDeclaration(snapshot, declaration)
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, snapshot.path, cut.remaining, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return nil, fmt.Errorf("parse file after cutting %s: %w", symbolQuery, err)
+	}
+	insertOffset, err := calculateMoveOffset(set, file, cut.remaining, opts)
+	if err != nil {
+		return nil, err
+	}
+	formatted, err := format.Source(spliceMoveDeclaration(cut.remaining, cut.source, insertOffset))
+	if err != nil {
+		return nil, fmt.Errorf("format moved construct: %w", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), snapshot.path, formatted, parser.ParseComments); err != nil {
+		return nil, fmt.Errorf("verify moved syntax: %w", err)
+	}
+	return formatted, nil
+}
+
+type moveDeclarationCut struct {
+	remaining []byte
+	source    string
+}
+
+func cutMoveDeclaration(snapshot moveSourceSnapshot, declaration ast.Decl) moveDeclarationCut {
+	start, end := moveDeclarationSourceOffsets(snapshot.set, declaration)
+	cutEnd := end
+	for cutEnd < len(snapshot.content) && (snapshot.content[cutEnd] == ' ' || snapshot.content[cutEnd] == '\t' || snapshot.content[cutEnd] == '\r') {
+		cutEnd++
+	}
+	if cutEnd < len(snapshot.content) && snapshot.content[cutEnd] == '\n' {
+		cutEnd++
+	}
+	remaining := make([]byte, 0, len(snapshot.content)-(cutEnd-start))
+	remaining = append(remaining, snapshot.content[:start]...)
+	remaining = append(remaining, snapshot.content[cutEnd:]...)
+	return moveDeclarationCut{remaining: remaining, source: string(snapshot.content[start:end])}
+}
+
+func moveDeclarationSourceOffsets(set *token.FileSet, declaration ast.Decl) (int, int) {
+	startPos, endPos := declaration.Pos(), declaration.End()
+	switch item := declaration.(type) {
+	case *ast.FuncDecl:
+		if item.Doc != nil {
+			startPos = item.Doc.Pos()
+		}
+	case *ast.GenDecl:
+		if item.Doc != nil {
+			startPos = item.Doc.Pos()
+		}
+	}
+	return set.Position(startPos).Offset, set.Position(endPos).Offset
+}
+
+func spliceMoveDeclaration(remaining []byte, declaration string, insertOffset int) []byte {
+	var result bytes.Buffer
+	result.Write(remaining[:insertOffset])
+	if insertOffset > 0 && !bytes.HasSuffix(result.Bytes(), []byte("\n\n")) {
+		if bytes.HasSuffix(result.Bytes(), []byte("\n")) {
+			result.WriteString("\n")
 		} else {
-			buf.WriteString("\n\n")
+			result.WriteString("\n\n")
 		}
 	}
 	rest := remaining[insertOffset:]
-	buf.WriteString(declText)
+	result.WriteString(declaration)
 	if len(bytes.TrimLeft(rest, "\r\n")) == 0 {
-		buf.WriteByte('\n')
+		result.WriteByte('\n')
 	} else {
-		buf.WriteString("\n\n")
+		result.WriteString("\n\n")
 	}
-	buf.Write(bytes.TrimLeft(rest, "\r\n"))
+	result.Write(bytes.TrimLeft(rest, "\r\n"))
+	return result.Bytes()
+}
 
-	formatted, err := format.Source(buf.Bytes())
-	if err != nil {
-		return "", fmt.Errorf("format moved construct: %w", err)
-	}
-
-	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments); err != nil {
-		return "", fmt.Errorf("verify moved syntax: %w", err)
-	}
-
-	if err := verifyMoveFileUnchanged(ctx, cleanPath, content); err != nil {
+func publishSameFileMove(ctx context.Context, snapshot moveSourceSnapshot, symbolQuery string, opts MoveConstructOptions, formatted []byte) (string, error) {
+	if err := verifyMoveFileUnchanged(ctx, snapshot.path, snapshot.content); err != nil {
 		return "", err
 	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
+	if err := pipeline.WriteAtomicContext(ctx, snapshot.path, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if err := finalizeMovedFile(ctx, cleanPath, opts); err != nil {
+	if err := finalizeMovedFile(ctx, snapshot.path, opts); err != nil {
 		return "", err
 	}
-	finalContent, err := sourcebuf.ReadFile(ctx, cleanPath)
+	finalContent, err := sourcebuf.ReadFile(ctx, snapshot.path)
 	if err != nil {
 		return "", fmt.Errorf("read moved file after formatting: %w", err)
 	}
-	return UnifiedDiff(symbolQuery, string(content), string(finalContent)), nil
+	return UnifiedDiff(symbolQuery, string(snapshot.content), string(finalContent)), nil
 }
 
 func finalizeMovedFile(ctx context.Context, filePath string, opts MoveConstructOptions) error {
@@ -236,47 +228,63 @@ func findSymbolBoundaryOffset(fset *token.FileSet, fileNode *ast.File, targetSym
 	}
 	targetRecv, targetName, _ := symbol.ParseIdentifier(targetSymbol)
 	for _, decl := range fileNode.Decls {
-		if fn, ok := decl.(*ast.FuncDecl); ok {
-			if fn.Name.Name == targetName && extractReceiverName(fn.Recv) == targetRecv {
-				if placement == PlacementBeforeSymbol {
-					if fn.Doc != nil {
-						return fset.Position(fn.Doc.Pos()).Offset, nil
-					}
-					return fset.Position(fn.Pos()).Offset, nil
-				}
-				return fset.Position(fn.End()).Offset, nil
+		if function, ok := decl.(*ast.FuncDecl); ok {
+			boundary := functionSymbolBoundary(fset, function, targetRecv, targetName, placement)
+			if boundary.found {
+				return boundary.offset, nil
 			}
 		}
-		if gen, ok := decl.(*ast.GenDecl); ok {
-			for _, spec := range gen.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == targetSymbol {
-						if placement == PlacementBeforeSymbol {
-							if gen.Doc != nil {
-								return fset.Position(gen.Doc.Pos()).Offset, nil
-							}
-							return fset.Position(gen.Pos()).Offset, nil
-						}
-						return fset.Position(gen.End()).Offset, nil
-					}
-				case *ast.ValueSpec:
-					for _, ident := range s.Names {
-						if ident.Name == targetSymbol {
-							if placement == PlacementBeforeSymbol {
-								if gen.Doc != nil {
-									return fset.Position(gen.Doc.Pos()).Offset, nil
-								}
-								return fset.Position(gen.Pos()).Offset, nil
-							}
-							return fset.Position(gen.End()).Offset, nil
-						}
-					}
+		if group, ok := decl.(*ast.GenDecl); ok && generalDeclarationHasName(group, targetSymbol) {
+			return generalDeclarationBoundary(fset, group, placement), nil
+		}
+	}
+	return 0, fmt.Errorf("target symbol %q not found: %w", targetSymbol, ErrSymbolNotFound)
+}
+
+type moveSymbolBoundaryResult struct {
+	offset int
+	found  bool
+}
+
+func functionSymbolBoundary(fset *token.FileSet, function *ast.FuncDecl, receiver, name string, placement Placement) moveSymbolBoundaryResult {
+	if function.Name.Name != name || extractReceiverName(function.Recv) != receiver {
+		return moveSymbolBoundaryResult{}
+	}
+	if placement == PlacementAfterSymbol {
+		return moveSymbolBoundaryResult{offset: fset.Position(function.End()).Offset, found: true}
+	}
+	if function.Doc != nil {
+		return moveSymbolBoundaryResult{offset: fset.Position(function.Doc.Pos()).Offset, found: true}
+	}
+	return moveSymbolBoundaryResult{offset: fset.Position(function.Pos()).Offset, found: true}
+}
+
+func generalDeclarationHasName(group *ast.GenDecl, name string) bool {
+	for _, spec := range group.Specs {
+		switch item := spec.(type) {
+		case *ast.TypeSpec:
+			if item.Name.Name == name {
+				return true
+			}
+		case *ast.ValueSpec:
+			for _, identifier := range item.Names {
+				if identifier.Name == name {
+					return true
 				}
 			}
 		}
 	}
-	return 0, fmt.Errorf("target symbol %q not found: %w", targetSymbol, ErrSymbolNotFound)
+	return false
+}
+
+func generalDeclarationBoundary(fset *token.FileSet, declaration *ast.GenDecl, placement Placement) int {
+	if placement == PlacementAfterSymbol {
+		return fset.Position(declaration.End()).Offset
+	}
+	if declaration.Doc != nil {
+		return fset.Position(declaration.Doc.Pos()).Offset
+	}
+	return fset.Position(declaration.Pos()).Offset
 }
 
 func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQuery string, opts MoveConstructOptions) (string, error) {
@@ -284,137 +292,220 @@ func moveConstructTo(ctx context.Context, sourcePath, destinationPath, symbolQue
 	if filepath.Dir(sourcePath) != filepath.Dir(destinationPath) {
 		return moveConstructAcrossPackages(ctx, sourcePath, destinationPath, symbolQuery, opts)
 	}
+	snapshot, err := readMovePair(ctx, sourcePath, destinationPath)
+	if err != nil {
+		return "", err
+	}
+	plan, err := planSamePackageMove(ctx, snapshot, symbolQuery, opts)
+	if err != nil {
+		return "", err
+	}
+	return publishSamePackageMove(ctx, snapshot, plan, symbolQuery, opts)
+}
+
+type movePairSnapshot struct {
+	sourcePath      string
+	destinationPath string
+	source          []byte
+	destination     []byte
+	sourceSet       *token.FileSet
+	destinationSet  *token.FileSet
+	sourceAST       *ast.File
+	destinationAST  *ast.File
+}
+
+type movePairPlan struct {
+	source      []byte
+	destination []byte
+}
+
+func readMovePair(ctx context.Context, sourcePath, destinationPath string) (movePairSnapshot, error) {
 	source, err := sourcebuf.ReadFile(ctx, sourcePath)
 	if err != nil {
-		return "", fmt.Errorf("read source file: %w", err)
+		return movePairSnapshot{}, fmt.Errorf("read source file: %w", err)
 	}
-
 	destination, err := sourcebuf.ReadFile(ctx, destinationPath)
 	if err != nil {
-		return "", fmt.Errorf("read destination file: %w", err)
+		return movePairSnapshot{}, fmt.Errorf("read destination file: %w", err)
 	}
-	fset := token.NewFileSet()
-	srcFile, err := parser.ParseFile(fset, sourcePath, source, parser.ParseComments|parser.AllErrors)
+	sourceSet := token.NewFileSet()
+	sourceAST, err := parser.ParseFile(sourceSet, sourcePath, source, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", fmt.Errorf("parse source file: %w", err)
+		return movePairSnapshot{}, fmt.Errorf("parse source file: %w", err)
 	}
-	dstFset := token.NewFileSet()
-	dstFile, err := parser.ParseFile(dstFset, destinationPath, destination, parser.ParseComments|parser.AllErrors)
+	destinationSet := token.NewFileSet()
+	destinationAST, err := parser.ParseFile(destinationSet, destinationPath, destination, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", fmt.Errorf("parse destination file: %w", err)
+		return movePairSnapshot{}, fmt.Errorf("parse destination file: %w", err)
 	}
-	if srcFile.Name.Name != dstFile.Name.Name {
-		return "", fmt.Errorf("source and destination must belong to the same Go package")
+	if sourceAST.Name.Name != destinationAST.Name.Name {
+		return movePairSnapshot{}, fmt.Errorf("source and destination must belong to the same Go package")
 	}
+	return movePairSnapshot{
+		sourcePath:      sourcePath,
+		destinationPath: destinationPath,
+		source:          source,
+		destination:     destination,
+		sourceSet:       sourceSet,
+		destinationSet:  destinationSet,
+		sourceAST:       sourceAST,
+		destinationAST:  destinationAST,
+	}, nil
+}
 
-	decl := findMoveDeclaration(srcFile, symbolQuery)
-	if decl == nil {
-		return "", &symbol.SymbolError{Op: "move_construct", File: sourcePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
+func planSamePackageMove(ctx context.Context, snapshot movePairSnapshot, symbolQuery string, opts MoveConstructOptions) (movePairPlan, error) {
+	declaration := findMoveDeclaration(snapshot.sourceAST, symbolQuery)
+	if err := validateMovePairTarget(snapshot, declaration, symbolQuery); err != nil {
+		return movePairPlan{}, err
 	}
-	if group, ok := decl.(*ast.GenDecl); ok && len(group.Specs) > 1 {
-		return "", fmt.Errorf("cannot move one member of a grouped declaration; split the group first")
+	cut, err := cutCrossFileMove(snapshot, declaration)
+	if err != nil {
+		return movePairPlan{}, err
 	}
-	if declarationNameCollision(dstFile, decl) {
-		return "", fmt.Errorf("destination already declares a name from %q", symbolQuery)
+	insertion, err := insertCrossFileMove(snapshot, cut.declaration, opts)
+	if err != nil {
+		return movePairPlan{}, err
 	}
-	if moveBuildConstraint(srcFile)+moveFilenameBuildConstraint(sourcePath) != moveBuildConstraint(dstFile)+moveFilenameBuildConstraint(destinationPath) {
-		return "", fmt.Errorf("source and destination have different Go build constraints")
+	imports, err := moveImportsForDeclaration(ctx, filepath.Dir(snapshot.sourcePath), declaration, snapshot.sourceAST)
+	if err != nil {
+		return movePairPlan{}, err
 	}
-	start, end := moveDeclOffsets(fset, decl, srcFile, source)
-	declText := string(source[start:end])
-	remaining := append(append([]byte(nil), source[:start]...), source[end:]...)
+	if mergeErr := mergeMoveImports(insertion.file, imports); mergeErr != nil {
+		return movePairPlan{}, mergeErr
+	}
+	destination, err := formatMoveDestination(insertion.file, insertion.set)
+	if err != nil {
+		return movePairPlan{}, err
+	}
+	source, err := format.Source(cut.remaining)
+	if err != nil {
+		return movePairPlan{}, fmt.Errorf("format source after move: %w", err)
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), snapshot.destinationPath, destination, parser.ParseComments|parser.AllErrors); err != nil {
+		return movePairPlan{}, fmt.Errorf("validate destination after move: %w", err)
+	}
+	return movePairPlan{source: source, destination: destination}, nil
+}
+
+func validateMovePairTarget(snapshot movePairSnapshot, declaration ast.Decl, symbolQuery string) error {
+	if declaration == nil {
+		return &symbol.SymbolError{Op: "move_construct", File: snapshot.sourcePath, Symbol: symbolQuery, Err: symbol.ErrNotFound}
+	}
+	if group, ok := declaration.(*ast.GenDecl); ok && len(group.Specs) > 1 {
+		return fmt.Errorf("cannot move one member of a grouped declaration; split the group first")
+	}
+	if declarationNameCollision(snapshot.destinationAST, declaration) {
+		return fmt.Errorf("destination already declares a name from %q", symbolQuery)
+	}
+	if moveBuildConstraint(snapshot.sourceAST)+moveFilenameBuildConstraint(snapshot.sourcePath) != moveBuildConstraint(snapshot.destinationAST)+moveFilenameBuildConstraint(snapshot.destinationPath) {
+		return fmt.Errorf("source and destination have different Go build constraints")
+	}
+	return nil
+}
+
+type crossFileMoveCut struct {
+	remaining   []byte
+	declaration string
+}
+
+func cutCrossFileMove(snapshot movePairSnapshot, declaration ast.Decl) (crossFileMoveCut, error) {
+	start, end := moveDeclOffsets(snapshot.sourceSet, declaration, snapshot.sourceAST, snapshot.source)
+	declarationText := string(snapshot.source[start:end])
+	remaining := append(append([]byte(nil), snapshot.source[:start]...), snapshot.source[end:]...)
 	if len(remaining) > 0 && remaining[len(remaining)-1] != '\n' {
 		remaining = append(remaining, '\n')
 	}
-	if _, err := parser.ParseFile(token.NewFileSet(), sourcePath, remaining, parser.ParseComments|parser.AllErrors); err != nil {
-		return "", fmt.Errorf("validate source after move: %w", err)
+	if _, err := parser.ParseFile(token.NewFileSet(), snapshot.sourcePath, remaining, parser.ParseComments|parser.AllErrors); err != nil {
+		return crossFileMoveCut{}, fmt.Errorf("validate source after move: %w", err)
 	}
-	dstOffset, err := calculateMoveOffset(dstFset, dstFile, destination, opts)
+	return crossFileMoveCut{remaining: remaining, declaration: declarationText}, nil
+}
+
+type moveDestinationInsertion struct {
+	file *ast.File
+	set  *token.FileSet
+}
+
+func insertCrossFileMove(snapshot movePairSnapshot, declaration string, opts MoveConstructOptions) (moveDestinationInsertion, error) {
+	offset, err := calculateMoveOffset(snapshot.destinationSet, snapshot.destinationAST, snapshot.destination, opts)
 	if err != nil {
-		return "", err
+		return moveDestinationInsertion{}, err
 	}
-	var destBuf bytes.Buffer
-	destBuf.Write(destination[:dstOffset])
-	if dstOffset > 0 && !bytes.HasSuffix(destBuf.Bytes(), []byte("\n\n")) {
-		if bytes.HasSuffix(destBuf.Bytes(), []byte("\n")) {
-			destBuf.WriteByte('\n')
-		} else {
-			destBuf.WriteString("\n\n")
-		}
-	}
-	destinationRest := bytes.TrimLeft(destination[dstOffset:], "\r\n")
-	destBuf.WriteString(declText)
-	if len(destinationRest) == 0 {
-		destBuf.WriteByte('\n')
-	} else {
-		destBuf.WriteString("\n\n")
-	}
-	destBuf.Write(destinationRest)
-	formattedDestination, err := format.Source(destBuf.Bytes())
+	updated := spliceMoveDeclaration(snapshot.destination, declaration, offset)
+	formatted, err := format.Source(updated)
 	if err != nil {
-		return "", fmt.Errorf("format destination after move: %w", err)
+		return moveDestinationInsertion{}, fmt.Errorf("format destination after move: %w", err)
 	}
-	destinationFset := token.NewFileSet()
-	destinationAST, err := parser.ParseFile(destinationFset, destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors)
+	set := token.NewFileSet()
+	file, err := parser.ParseFile(set, snapshot.destinationPath, formatted, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", fmt.Errorf("parse destination after declaration insertion: %w", err)
+		return moveDestinationInsertion{}, fmt.Errorf("parse destination after declaration insertion: %w", err)
 	}
-	neededImports, err := moveImportsForDeclaration(ctx, filepath.Dir(sourcePath), decl, srcFile)
-	if err != nil {
-		return "", err
+	return moveDestinationInsertion{file: file, set: set}, nil
+}
+
+func formatMoveDestination(file *ast.File, set *token.FileSet) ([]byte, error) {
+	var output bytes.Buffer
+	if err := format.Node(&output, set, file); err != nil {
+		return nil, fmt.Errorf("format destination imports: %w", err)
 	}
-	if err := mergeMoveImports(destinationAST, neededImports); err != nil {
-		return "", err
-	}
-	var mergedDestination bytes.Buffer
-	if err := format.Node(&mergedDestination, destinationFset, destinationAST); err != nil {
-		return "", fmt.Errorf("format destination imports: %w", err)
-	}
-	formattedDestination = mergedDestination.Bytes()
-	formattedSource, err := format.Source(remaining)
-	if err != nil {
-		return "", fmt.Errorf("format source after move: %w", err)
-	}
-	if _, err := parser.ParseFile(token.NewFileSet(), destinationPath, formattedDestination, parser.ParseComments|parser.AllErrors); err != nil {
-		return "", fmt.Errorf("validate destination after move: %w", err)
-	}
+	return output.Bytes(), nil
+}
+
+func publishSamePackageMove(ctx context.Context, snapshot movePairSnapshot, plan movePairPlan, symbolQuery string, opts MoveConstructOptions) (string, error) {
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		formattedSource, err = cleanupMoveImports(ctx, sourcePath, formattedSource)
+		cleanSource, err := cleanupMoveImports(ctx, snapshot.sourcePath, plan.source)
 		if err != nil {
 			return "", err
 		}
-		return applyBufferedMove(ctx, map[string][]byte{sourcePath: source, destinationPath: destination}, map[string][]byte{sourcePath: formattedSource, destinationPath: formattedDestination})
+		return applyBufferedMove(ctx, map[string][]byte{snapshot.sourcePath: snapshot.source, snapshot.destinationPath: snapshot.destination}, map[string][]byte{snapshot.sourcePath: cleanSource, snapshot.destinationPath: plan.destination})
 	}
-	if err := verifyMoveFileUnchanged(ctx, sourcePath, source); err != nil {
+	if err := verifyMoveFileUnchanged(ctx, snapshot.sourcePath, snapshot.source); err != nil {
 		return "", err
 	}
-	if err := verifyMoveFileUnchanged(ctx, destinationPath, destination); err != nil {
+	if err := verifyMoveFileUnchanged(ctx, snapshot.destinationPath, snapshot.destination); err != nil {
 		return "", err
 	}
-
-	if err := pipeline.WriteAtomicContext(ctx, destinationPath, formattedDestination); err != nil {
-		return "", fmt.Errorf("write destination atomically: %w", err)
-	}
-	if err := pipeline.WriteAtomicContext(ctx, sourcePath, formattedSource); err != nil {
-		return "", fmt.Errorf("destination %s was written but source %s remains unchanged: %w", destinationPath, sourcePath, err)
+	if err := writeSamePackageMove(ctx, snapshot, plan); err != nil {
+		return "", err
 	}
 	if opts.AutoOrganizeImports {
-		for _, path := range []string{sourcePath, destinationPath} {
-			if err := pipeline.OrganizeImports(ctx, filepath.Dir(path), path); err != nil {
-				return "", fmt.Errorf("organize imports in %s after move: %w", path, err)
-			}
+		if err := organizeMovedFiles(ctx, snapshot); err != nil {
+			return "", err
 		}
 	}
-	finalSource, err := sourcebuf.ReadFile(ctx, sourcePath)
+	return readMovedFileDiff(ctx, snapshot, symbolQuery)
+}
+
+func writeSamePackageMove(ctx context.Context, snapshot movePairSnapshot, plan movePairPlan) error {
+	if err := pipeline.WriteAtomicContext(ctx, snapshot.destinationPath, plan.destination); err != nil {
+		return fmt.Errorf("write destination atomically: %w", err)
+	}
+	if err := pipeline.WriteAtomicContext(ctx, snapshot.sourcePath, plan.source); err != nil {
+		return fmt.Errorf("destination %s was written but source %s remains unchanged: %w", snapshot.destinationPath, snapshot.sourcePath, err)
+	}
+	return nil
+}
+
+func organizeMovedFiles(ctx context.Context, snapshot movePairSnapshot) error {
+	for _, path := range []string{snapshot.sourcePath, snapshot.destinationPath} {
+		if err := pipeline.OrganizeImports(ctx, filepath.Dir(path), path); err != nil {
+			return fmt.Errorf("organize imports in %s after move: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func readMovedFileDiff(ctx context.Context, snapshot movePairSnapshot, symbolQuery string) (string, error) {
+	finalSource, err := sourcebuf.ReadFile(ctx, snapshot.sourcePath)
 	if err != nil {
 		return "", fmt.Errorf("read source after move: %w", err)
 	}
-
-	finalDestination, err := sourcebuf.ReadFile(ctx, destinationPath)
+	finalDestination, err := sourcebuf.ReadFile(ctx, snapshot.destinationPath)
 	if err != nil {
 		return "", fmt.Errorf("read destination after move: %w", err)
 	}
-	return UnifiedDiff(symbolQuery, string(source), string(finalSource)) + "\n" + UnifiedDiff(symbolQuery, string(destination), string(finalDestination)), nil
+	return UnifiedDiff(symbolQuery, string(snapshot.source), string(finalSource)) + "\n" + UnifiedDiff(symbolQuery, string(snapshot.destination), string(finalDestination)), nil
 }
 
 func findMoveDeclaration(file *ast.File, query string) ast.Decl {
@@ -473,8 +564,12 @@ func moveDeclOffsets(fset *token.FileSet, decl ast.Decl, file *ast.File, source 
 }
 
 func declarationNameCollision(file *ast.File, moved ast.Decl) bool {
+	return declarationNameCollisionSet(file, movedDeclarationNames(moved))
+}
+
+func movedDeclarationNames(declaration ast.Decl) map[string]bool {
 	names := map[string]bool{}
-	switch decl := moved.(type) {
+	switch decl := declaration.(type) {
 	case *ast.FuncDecl:
 		names[decl.Name.Name] = true
 	case *ast.GenDecl:
@@ -489,27 +584,22 @@ func declarationNameCollision(file *ast.File, moved ast.Decl) bool {
 			}
 		}
 	}
+	return names
+}
+
+func declarationNameCollisionSet(file *ast.File, names map[string]bool) bool {
 	for _, decl := range file.Decls {
-		switch item := decl.(type) {
-		case *ast.FuncDecl:
-			if names[item.Name.Name] {
-				return true
-			}
-		case *ast.GenDecl:
-			for _, spec := range item.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if names[s.Name.Name] {
-						return true
-					}
-				case *ast.ValueSpec:
-					for _, name := range s.Names {
-						if names[name.Name] {
-							return true
-						}
-					}
-				}
-			}
+		if fileDeclarationHasName(decl, names) {
+			return true
+		}
+	}
+	return false
+}
+
+func fileDeclarationHasName(declaration ast.Decl, names map[string]bool) bool {
+	for name := range movedDeclarationNames(declaration) {
+		if names[name] {
+			return true
 		}
 	}
 	return false
@@ -621,8 +711,13 @@ func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (
 	}
 
 	// #nosec G204 -- executable is fixed to go; importPath is one parsed import literal.
-	command := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", importPath)
+	command := exec.CommandContext(ctx, "go", "list", "-mod=readonly", "-f", "{{.Name}}", importPath)
 	command.Dir = workingDir
+	environment, err := gocache.Environment(ctx, workingDir)
+	if err != nil {
+		return "", fmt.Errorf("configure Go state for package-name lookup: %w", err)
+	}
+	command.Env = environment
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve package name for import %q; refusing move: %w", importPath, err)
@@ -705,9 +800,12 @@ func cleanupMoveImports(ctx context.Context, path string, content []byte) ([]byt
 		return nil, fmt.Errorf("parse move imports: %w", err)
 	}
 	for _, spec := range slices.Clone(file.Imports) {
-		importPath, err := strconv.Unquote(spec.Path.Value)
-		if err != nil {
-			return nil, fmt.Errorf("decode move import: %w", err)
+		importPath, decodeErr := strconv.Unquote(spec.Path.Value)
+		if decodeErr != nil {
+			return nil, fmt.Errorf("decode move import: %w", decodeErr)
+		}
+		if importPath == "C" {
+			continue
 		}
 		var name string
 		if spec.Name != nil {
@@ -730,8 +828,8 @@ func cleanupMoveImports(ctx context.Context, path string, content []byte) ([]byt
 		}
 	}
 	var out bytes.Buffer
-	if err := format.Node(&out, fset, file); err != nil {
-		return nil, fmt.Errorf("format move imports: %w", err)
+	if formatErr := format.Node(&out, fset, file); formatErr != nil {
+		return nil, fmt.Errorf("format move imports: %w", formatErr)
 	}
 	formatted, err := format.Source(out.Bytes())
 	if err != nil {

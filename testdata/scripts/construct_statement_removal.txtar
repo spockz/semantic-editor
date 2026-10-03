@@ -1,0 +1,23 @@
+# Generic removal deletes direct statements and refuses expression-only targets.
+exec semedit remove-construct --file cleanup.go --kind statement/expression --in-function Clean --discriminator 'obsolete()'
+cp cleanup.go .scratch/removed.go
+! exec semedit remove-construct --file cleanup.go --kind statement/expression --in-function Clean --discriminator '7'
+stderr 'statement|remove'
+cmp cleanup.go .scratch/removed.go
+grep 'func obsolete()' cleanup.go
+! grep '^\s*obsolete\(\)' .scratch/removed.go
+grep 'return 7' cleanup.go
+
+-- go.mod --
+module example.com/constructremove
+
+go 1.24
+-- cleanup.go --
+package sample
+
+func Clean() int {
+	obsolete()
+	return 7
+}
+
+func obsolete() {}

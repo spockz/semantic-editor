@@ -109,14 +109,14 @@ func (b testBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.D
 }
 
 func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
-	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
-	if err != nil {
-		t.Fatalf("NewRegistry failed: %v", err)
+	registry, registryErr := backend.NewRegistry(gobackend.NewGoBackend())
+	if registryErr != nil {
+		t.Fatalf("NewRegistry failed: %v", registryErr)
 	}
 
-	selected, err := registry.Select(backend.ProjectContext{Language: backend.LanguageGo})
-	if err != nil {
-		t.Fatalf("explicit selection failed: %v", err)
+	selected, selectionErr := registry.Select(backend.ProjectContext{Language: backend.LanguageGo})
+	if selectionErr != nil {
+		t.Fatalf("explicit selection failed: %v", selectionErr)
 	}
 	if selected.Language() != backend.LanguageGo {
 		t.Fatalf("selected language = %q, want %q", selected.Language(), backend.LanguageGo)
@@ -129,25 +129,25 @@ func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	selected, err = registry.Select(backend.ProjectContext{RootDir: root})
-	if err != nil || selected.Language() != backend.LanguageGo {
-		t.Fatalf("auto selection = %v, backend = %v", err, selected)
+	selected, selectionErr = registry.Select(backend.ProjectContext{RootDir: root})
+	if selectionErr != nil || selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto selection = %v, backend = %v", selectionErr, selected)
 	}
 
 	sourceLess := t.TempDir()
 	if err := os.WriteFile(filepath.Join(sourceLess, "go.mod"), []byte("module empty\n"), 0o600); err != nil {
 		t.Fatalf("write source-less module: %v", err)
 	}
-	_, err = registry.Select(backend.ProjectContext{RootDir: sourceLess})
-	if err == nil || !errors.Is(err, backend.ErrLanguageUndetected) {
-		t.Fatalf("auto selection without source files error = %v", err)
+	_, sourceLessErr := registry.Select(backend.ProjectContext{RootDir: sourceLess})
+	if sourceLessErr == nil || !errors.Is(sourceLessErr, backend.ErrLanguageUndetected) {
+		t.Fatalf("auto selection without source files error = %v", sourceLessErr)
 	}
 }
 
 func TestRegistryAutoSelectionIgnoresDetectedLanguagesWithoutBackends(t *testing.T) {
-	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
-	if err != nil {
-		t.Fatal(err)
+	registry, registryErr := backend.NewRegistry(gobackend.NewGoBackend())
+	if registryErr != nil {
+		t.Fatal(registryErr)
 	}
 	root := t.TempDir()
 	for name, source := range map[string]string{
@@ -315,75 +315,83 @@ func TestCapabilityMatrixConformance(t *testing.T) {
 		backend.LanguageHaskell,
 	}
 	for _, lang := range langs {
-		b, ok := svc.Registry.Backend(lang)
-		if !ok {
-			t.Errorf("language %q: not found in default registry", lang)
+		assertLanguageCapabilityMatrix(t, svc, lang)
+	}
+}
+
+func assertLanguageCapabilityMatrix(t *testing.T, svc *backend.Service, lang backend.LanguageID) {
+	t.Helper()
+	b, ok := svc.Registry.Backend(lang)
+	if !ok {
+		t.Errorf("language %q: not found in default registry", lang)
+		return
+	}
+	mp, ok := b.(backend.MatrixProvider)
+	if !ok {
+		t.Errorf("language %q: Backend does not implement MatrixProvider", lang)
+		return
+	}
+	matrix := mp.CapabilityMatrix()
+	caps := b.Capabilities()
+	opMapping := capabilityOperationMapping()
+	assertMatrixOperationsSupported(t, lang, matrix, caps, opMapping)
+	assertRuntimeOperationsDeclared(t, lang, matrix, caps, opMapping)
+	assertCapabilityMatrixIdentity(t, lang, matrix)
+}
+
+func capabilityOperationMapping() map[string]backend.Operation {
+	return map[string]backend.Operation{"rename": backend.OperationRename, "lookup": backend.OperationLookup, "verify": backend.OperationVerify}
+}
+
+func assertMatrixOperationsSupported(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix, caps backend.Capabilities, opMapping map[string]backend.Operation) {
+	t.Helper()
+	for opName, opCap := range matrix.Operations {
+		if !opCap.Supported {
 			continue
 		}
-		mp, ok := b.(backend.MatrixProvider)
-		if !ok {
-			// Not every backend must implement MatrixProvider, but all current ones do.
-			t.Errorf("language %q: Backend does not implement MatrixProvider", lang)
+		runtimeOp, known := opMapping[opName]
+		if known && !caps.Supports(runtimeOp) {
+			t.Errorf("language %q operation %q: declared Supported=true in matrix but Capabilities().Supports(%q)=false", lang, opName, runtimeOp)
+		}
+	}
+}
+
+func assertRuntimeOperationsDeclared(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix, caps backend.Capabilities, opMapping map[string]backend.Operation) {
+	t.Helper()
+	for _, runtimeOp := range []backend.Operation{backend.OperationLookup, backend.OperationRename, backend.OperationVerify} {
+		if !caps.Supports(runtimeOp) {
 			continue
 		}
-		matrix := mp.CapabilityMatrix()
-		caps := b.Capabilities()
+		matrixKey := operationMatrixKey(runtimeOp, opMapping)
+		if matrixKey == "" {
+			continue
+		}
+		opCap, declared := matrix.Operations[matrixKey]
+		if !declared || !opCap.Supported {
+			t.Errorf("language %q: runtime Capabilities().Supports(%q)=true but matrix operation %q is absent or Supported=false", lang, runtimeOp, matrixKey)
+		}
+	}
+}
 
-		// Map operation names used in the matrix to the backend.Operation constants.
-		opMapping := map[string]backend.Operation{
-			"rename": backend.OperationRename,
-			"lookup": backend.OperationLookup,
-			"verify": backend.OperationVerify,
+func operationMatrixKey(operation backend.Operation, mapping map[string]backend.Operation) string {
+	for key, mapped := range mapping {
+		if mapped == operation {
+			return key
 		}
+	}
+	return ""
+}
 
-		for opName, opCap := range matrix.Operations {
-			if !opCap.Supported {
-				continue
-			}
-			runtimeOp, known := opMapping[opName]
-			if !known {
-				// Operations like insert_func are Go-AST-layer operations not in the
-				// backend.Operation set; they are not gated by Capabilities().Supports().
-				continue
-			}
-			if !caps.Supports(runtimeOp) {
-				t.Errorf("language %q operation %q: declared Supported=true in matrix but Capabilities().Supports(%q)=false",
-					lang, opName, runtimeOp)
-			}
-		}
-
-		// Verify that runtime operations not in the matrix are not silently missing.
-		for _, runtimeOp := range []backend.Operation{backend.OperationLookup, backend.OperationRename, backend.OperationVerify} {
-			if !caps.Supports(runtimeOp) {
-				continue
-			}
-			// Find the matrix key that maps to this runtime operation.
-			matrixKey := ""
-			for key, mapped := range opMapping {
-				if mapped == runtimeOp {
-					matrixKey = key
-					break
-				}
-			}
-			if matrixKey == "" {
-				continue
-			}
-			opCap, declared := matrix.Operations[matrixKey]
-			if !declared || !opCap.Supported {
-				t.Errorf("language %q: runtime Capabilities().Supports(%q)=true but matrix operation %q is absent or Supported=false",
-					lang, runtimeOp, matrixKey)
-			}
-		}
-
-		if matrix.Language == "" {
-			t.Errorf("language %q: LanguageMatrix.Language is empty", lang)
-		}
-		if matrix.DisplayName == "" {
-			t.Errorf("language %q: LanguageMatrix.DisplayName is empty", lang)
-		}
-		if matrix.Maturity == "" {
-			t.Errorf("language %q: LanguageMatrix.Maturity is empty", lang)
-		}
+func assertCapabilityMatrixIdentity(t *testing.T, lang backend.LanguageID, matrix backend.LanguageMatrix) {
+	t.Helper()
+	if matrix.Language == "" {
+		t.Errorf("language %q: LanguageMatrix.Language is empty", lang)
+	}
+	if matrix.DisplayName == "" {
+		t.Errorf("language %q: LanguageMatrix.DisplayName is empty", lang)
+	}
+	if matrix.Maturity == "" {
+		t.Errorf("language %q: LanguageMatrix.Maturity is empty", lang)
 	}
 }
 
@@ -438,17 +446,17 @@ func TestReadServiceChecksCapabilityInterfaceAndTrust(t *testing.T) {
 			capabilities: backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationInspect),
 			result:       result,
 		}
-		registry, err := backend.NewRegistry(reader)
-		if err != nil {
-			t.Fatal(err)
+		registry, registryErr := backend.NewRegistry(reader)
+		if registryErr != nil {
+			t.Fatal(registryErr)
 		}
 		service := backend.NewService(registry)
 		request := backend.InspectRequest{
 			Project: backend.ProjectContext{RootDir: root, Language: "external"},
 			Symbol:  "(*Server).Serve",
 		}
-		if _, err := service.Inspect(context.Background(), request); !errors.Is(err, backend.ErrWorkspaceTrustRequired) {
-			t.Fatalf("untrusted Inspect error = %v, want ErrWorkspaceTrustRequired", err)
+		if _, inspectErr := service.Inspect(context.Background(), request); !errors.Is(inspectErr, backend.ErrWorkspaceTrustRequired) {
+			t.Fatalf("untrusted Inspect error = %v, want ErrWorkspaceTrustRequired", inspectErr)
 		}
 		request.Project.WorkspaceTrust = backend.NewWorkspaceTrust(root, true)
 		got, err := service.Inspect(context.Background(), request)

@@ -40,8 +40,8 @@ func insertFieldStructuralDef() Def[map[string]any, structuralPlanResult] {
 		OutputContinuation{Path: "result.edit_receipt.continuations[].expected_revision", Schema: targetProperties["expected_revision"], Role: RoleTarget, Consumers: []string{insertFieldToolName}},
 	)
 	return structuralPlanDef(structuralPlanSpec{
-		Key: "insert_field", CLIName: "insert-field", MCPName: insertFieldToolName,
-		Summary: "Use this tool instead of replacing a struct body or inserting a complete declaration when adding exactly one named field to an existing private, non-generic Go struct. The struct must be multiline or empty. `in_type` selects the owner; `symbol` is the caller-chosen new Type.Field target and `source` supplies that one field. Use semantic_insert_function for methods, semantic_insert_type for a whole type, semantic_insert_decl for top-level declarations, and semantic_insert_statement for function-body statements. Placement defaults to type_end; before_symbol and after_symbol require a live qualified target_symbol. The engine rejects aliases, generic or exported owners, embedded fields, method-name collisions, unkeyed literals in any same-package source variant, malformed fields, and stale revisions before applying one buffered edit. A field addition is structural and does not rewrite literal initializers or claim behavior preservation.",
+		Key: "insert_field", VariantVerb: "insert", VariantKind: "field", CLIName: "insert-field", MCPName: insertFieldToolName,
+		Summary: "Use this tool instead of editing a struct declaration to add one named field to an existing private, non-generic Go struct. Use semantic_insert_construct with kind=field for the generic interface; in_type selects the owner.",
 		Params:  params, Output: &output,
 		ExampleRaw: map[string]any{"file": "config.go", "in_type": "config", "symbol": "config.timeout", "source": "timeout int", "placement": "type_end"},
 		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
@@ -60,8 +60,8 @@ func insertFieldStructuralDef() Def[map[string]any, structuralPlanResult] {
 					return astedit.SourcePlan{}, fmt.Errorf("in_type %q has embedded fields outside this insertion's proof scope", inType)
 				}
 			}
-			if err := structuralFieldSourceSet(snapshot, owner, named, typeName, fieldName); err != nil {
-				return astedit.SourcePlan{}, err
+			if sourceErr := structuralFieldSourceSet(snapshot, owner, named, typeName, fieldName); sourceErr != nil {
+				return astedit.SourcePlan{}, sourceErr
 			}
 			targetField := ""
 			if rawTarget, ok := raw["target_symbol"]; ok {

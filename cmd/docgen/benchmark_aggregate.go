@@ -306,6 +306,29 @@ func writeBenchmarkBrowserAssets(rootDir, outputDir string) error {
 
 func addBenchmarkBrowserComparisonDeltas(rows []map[string]json.RawMessage) error {
 	metrics := []string{"cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens"}
+	dimensions := benchmarkComparisonDimensions(rows)
+	pairs := make(map[string]*benchmarkComparisonPair)
+	for index := range rows {
+		row := rows[index]
+		initializeBenchmarkComparisonMetrics(row, metrics)
+		if err := addBenchmarkComparisonArm(pairs, dimensions, row, index); err != nil {
+			return err
+		}
+	}
+	for _, matched := range pairs {
+		if err := applyBenchmarkComparisonPair(rows, matched, metrics); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type benchmarkComparisonPair struct {
+	baseline []int
+	semedit  []int
+}
+
+func benchmarkComparisonDimensions(rows []map[string]json.RawMessage) []string {
 	targetDimensions := make(map[string]struct{})
 	for _, row := range rows {
 		for key := range row {
@@ -314,65 +337,81 @@ func addBenchmarkBrowserComparisonDeltas(rows []map[string]json.RawMessage) erro
 			}
 		}
 	}
-	dimensions := make([]string, 0, 8+len(targetDimensions))
+	dimensions := make([]string, 0, 11+len(targetDimensions))
 	dimensions = append(dimensions, "_run_id", "_source_file", "_record_type", "task_id", "context_variant", "variant", "prompt_variant", "mcp_server_instructions", "semedit_arm_restrict", "comparison_pair_id", "repeat")
 	for dimension := range targetDimensions {
 		dimensions = append(dimensions, dimension)
 	}
 	sort.Strings(dimensions)
-	type pair struct {
-		baseline []int
-		semedit  []int
+	return dimensions
+}
+
+func initializeBenchmarkComparisonMetrics(row map[string]json.RawMessage, metrics []string) {
+	for _, metric := range metrics {
+		row[metric+"_delta"] = json.RawMessage("null")
+		row["baseline_"+metric] = json.RawMessage("null")
+		row["semedit_"+metric] = json.RawMessage("null")
 	}
-	pairs := make(map[string]*pair)
-	for index := range rows {
-		row := rows[index]
-		for _, metric := range metrics {
-			row[metric+"_delta"] = json.RawMessage("null")
-			row["baseline_"+metric] = json.RawMessage("null")
-			row["semedit_"+metric] = json.RawMessage("null")
-		}
-		var arm string
-		if err := json.Unmarshal(row["arm"], &arm); err != nil || (arm != "baseline" && arm != "semedit") {
-			continue
-		}
-		values := make([]json.RawMessage, 0, len(dimensions))
-		for _, dimension := range dimensions {
-			values = append(values, row[dimension])
-		}
-		encodedKey, err := json.Marshal(values)
-		if err != nil {
-			return fmt.Errorf("encode pair dimensions: %w", err)
-		}
-		key := string(encodedKey)
-		if pairs[key] == nil {
-			pairs[key] = &pair{}
-		}
-		if arm == "baseline" {
-			pairs[key].baseline = append(pairs[key].baseline, index)
-		} else {
-			pairs[key].semedit = append(pairs[key].semedit, index)
+}
+
+func addBenchmarkComparisonArm(pairs map[string]*benchmarkComparisonPair, dimensions []string, row map[string]json.RawMessage, index int) error {
+	arm, recognized := recognizedBenchmarkComparisonArm(row)
+	if !recognized {
+		return nil
+	}
+	values := make([]json.RawMessage, 0, len(dimensions))
+	for _, dimension := range dimensions {
+		values = append(values, row[dimension])
+	}
+	encodedKey, err := json.Marshal(values)
+	if err != nil {
+		return fmt.Errorf("encode pair dimensions: %w", err)
+	}
+	key := string(encodedKey)
+	if pairs[key] == nil {
+		pairs[key] = &benchmarkComparisonPair{}
+	}
+	if arm == "baseline" {
+		pairs[key].baseline = append(pairs[key].baseline, index)
+	} else {
+		pairs[key].semedit = append(pairs[key].semedit, index)
+	}
+	return nil
+}
+
+func recognizedBenchmarkComparisonArm(row map[string]json.RawMessage) (string, bool) {
+	var arm string
+	if json.Unmarshal(row["arm"], &arm) != nil {
+		return "", false
+	}
+	return arm, arm == "baseline" || arm == "semedit"
+}
+
+func applyBenchmarkComparisonPair(rows []map[string]json.RawMessage, matched *benchmarkComparisonPair, metrics []string) error {
+	if len(matched.baseline) != 1 || len(matched.semedit) != 1 {
+		return nil
+	}
+	baseline, semedit := rows[matched.baseline[0]], rows[matched.semedit[0]]
+	for _, metric := range metrics {
+		if err := writeBenchmarkComparisonDelta(baseline, semedit, metric); err != nil {
+			return err
 		}
 	}
-	for _, matched := range pairs {
-		if len(matched.baseline) != 1 || len(matched.semedit) != 1 {
-			continue
-		}
-		baseline, semedit := rows[matched.baseline[0]], rows[matched.semedit[0]]
-		for _, metric := range metrics {
-			var before, after float64
-			if !isBenchmarkNumber(baseline[metric], &before) || !isBenchmarkNumber(semedit[metric], &after) {
-				continue
-			}
-			semedit["baseline_"+metric] = append(json.RawMessage(nil), baseline[metric]...)
-			semedit["semedit_"+metric] = append(json.RawMessage(nil), semedit[metric]...)
-			encoded, err := json.Marshal(after - before)
-			if err != nil {
-				return fmt.Errorf("encode %s change: %w", metric, err)
-			}
-			semedit[metric+"_delta"] = encoded
-		}
+	return nil
+}
+
+func writeBenchmarkComparisonDelta(baseline, semedit map[string]json.RawMessage, metric string) error {
+	var before, after float64
+	if !isBenchmarkNumber(baseline[metric], &before) || !isBenchmarkNumber(semedit[metric], &after) {
+		return nil
 	}
+	semedit["baseline_"+metric] = append(json.RawMessage(nil), baseline[metric]...)
+	semedit["semedit_"+metric] = append(json.RawMessage(nil), semedit[metric]...)
+	encoded, err := json.Marshal(after - before)
+	if err != nil {
+		return fmt.Errorf("encode %s change: %w", metric, err)
+	}
+	semedit[metric+"_delta"] = encoded
 	return nil
 }
 
@@ -384,11 +423,13 @@ func isBenchmarkNumber(raw json.RawMessage, value *float64) bool {
 	return json.Unmarshal(raw, value) == nil
 }
 
-var benchmarkComparisonArms = []struct {
+type benchmarkComparisonArm struct {
 	field   string
 	context string
 	arm     string
-}{
+}
+
+var benchmarkComparisonArms = []benchmarkComparisonArm{
 	{field: "small_baseline", context: "small", arm: "baseline"},
 	{field: "small_semedit", context: "small", arm: "semedit"},
 	{field: "small_verified_baseline", context: "small_verified", arm: "baseline"},
@@ -400,6 +441,24 @@ var benchmarkComparisonArms = []struct {
 }
 
 func splitBenchmarkComparison(comparison map[string]json.RawMessage, legacyDurations bool) ([]map[string]json.RawMessage, error) {
+	base, err := flattenBenchmarkComparisonBase(comparison)
+	if err != nil {
+		return nil, err
+	}
+	var rows []map[string]json.RawMessage
+	for _, arm := range benchmarkComparisonArms {
+		row, ok, err := splitBenchmarkComparisonArm(comparison, base, arm, legacyDurations)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
+func flattenBenchmarkComparisonBase(comparison map[string]json.RawMessage) (map[string]json.RawMessage, error) {
 	base := make(map[string]json.RawMessage, len(comparison))
 	for key, value := range comparison {
 		if isBenchmarkComparisonArm(key) || isBenchmarkComparisonPrompt(key) {
@@ -409,52 +468,65 @@ func splitBenchmarkComparison(comparison map[string]json.RawMessage, legacyDurat
 			return nil, fmt.Errorf("flatten comparison field %s: %w", key, err)
 		}
 	}
+	return base, nil
+}
 
-	var rows []map[string]json.RawMessage
-	for _, arm := range benchmarkComparisonArms {
-		raw, ok := comparison[arm.field]
-		if !ok || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+func splitBenchmarkComparisonArm(comparison, base map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) (map[string]json.RawMessage, bool, error) {
+	raw, exists := comparison[arm.field]
+	if !exists || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return nil, false, nil
+	}
+	var run map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &run); err != nil {
+		return nil, false, fmt.Errorf("decode %s result: %w", arm.field, err)
+	}
+	if run == nil {
+		return nil, false, fmt.Errorf("decode %s result: expected a JSON object", arm.field)
+	}
+	row := make(map[string]json.RawMessage, len(base)+len(run)+2)
+	maps.Copy(row, base)
+	if err := flattenBenchmarkRunFields(run, arm.field, row); err != nil {
+		return nil, false, err
+	}
+	if err := normalizeBenchmarkComparisonArm(raw, comparison["target"], row, arm, legacyDurations); err != nil {
+		return nil, false, err
+	}
+	return row, true, nil
+}
+
+func flattenBenchmarkRunFields(run map[string]json.RawMessage, arm string, row map[string]json.RawMessage) error {
+	for key, value := range run {
+		if isBenchmarkRunDetail(key) {
 			continue
 		}
-		var run map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &run); err != nil {
-			return nil, fmt.Errorf("decode %s result: %w", arm.field, err)
+		if err := flattenBenchmarkField(key, value, row); err != nil {
+			return fmt.Errorf("flatten %s result field %s: %w", arm, key, err)
 		}
-		if run == nil {
-			return nil, fmt.Errorf("decode %s result: expected a JSON object", arm.field)
-		}
-		row := make(map[string]json.RawMessage, len(base)+len(run)+2)
-		maps.Copy(row, base)
-		for key, value := range run {
-			if isBenchmarkRunDetail(key) {
-				continue
-			}
-			if err := flattenBenchmarkField(key, value, row); err != nil {
-				return nil, fmt.Errorf("flatten %s result field %s: %w", arm.field, key, err)
-			}
-		}
-		if err := addBenchmarkBrowserCost(raw, comparison["target"], row); err != nil {
-			return nil, fmt.Errorf("calculate %s result cost: %w", arm.field, err)
-		}
-		for key, value := range map[string]string{"context_variant": arm.context, "arm": arm.arm} {
-			encoded, err := json.Marshal(value)
-			if err != nil {
-				return nil, fmt.Errorf("encode benchmark %s: %w", key, err)
-			}
-			row[key] = encoded
-		}
-		if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
-			return nil, fmt.Errorf("derive %s semantic tool pass: %w", arm.field, err)
-		}
-		if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
-			return nil, fmt.Errorf("normalize %s result durations: %w", arm.field, err)
-		}
-		if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
-			return nil, fmt.Errorf("derive %s wall-clock seconds: %w", arm.field, err)
-		}
-		rows = append(rows, row)
 	}
-	return rows, nil
+	return nil
+}
+
+func normalizeBenchmarkComparisonArm(raw, target json.RawMessage, row map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) error {
+	if err := addBenchmarkBrowserCost(raw, target, row); err != nil {
+		return fmt.Errorf("calculate %s result cost: %w", arm.field, err)
+	}
+	for key, value := range map[string]string{"context_variant": arm.context, "arm": arm.arm} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode benchmark %s: %w", key, err)
+		}
+		row[key] = encoded
+	}
+	if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
+		return fmt.Errorf("derive %s semantic tool pass: %w", arm.field, err)
+	}
+	if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
+		return fmt.Errorf("normalize %s result durations: %w", arm.field, err)
+	}
+	if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
+		return fmt.Errorf("derive %s wall-clock seconds: %w", arm.field, err)
+	}
+	return nil
 }
 
 func addBenchmarkBrowserWallClockSeconds(row map[string]json.RawMessage) error {
@@ -650,20 +722,15 @@ func flattenBenchmarkField(name string, value json.RawMessage, row map[string]js
 }
 
 func loadBenchmarkBrowserResult(resultsDir, path, relativePath string, data []byte) ([]map[string]json.RawMessage, error) {
-	var rows []map[string]json.RawMessage
 	var report map[string]json.RawMessage
 	if err := json.Unmarshal(data, &report); err != nil {
 		return nil, fmt.Errorf("decode benchmark result %s: %w", path, err)
 	}
-	var formatVersion int
-	formatVersionValue := bytes.TrimSpace(report["format_version"])
-	if len(formatVersionValue) > 0 && !bytes.Equal(formatVersionValue, []byte("null")) {
-		if err := json.Unmarshal(formatVersionValue, &formatVersion); err != nil {
-			return nil, fmt.Errorf("decode benchmark format version in %s: %w", path, err)
-		}
-	}
-	legacyDurations := formatVersion == 0
 	runID, err := benchmarkRunID(resultsDir, path)
+	if err != nil {
+		return nil, err
+	}
+	legacyDurations, err := benchmarkBrowserLegacyDurations(report, path)
 	if err != nil {
 		return nil, err
 	}
@@ -679,54 +746,78 @@ func loadBenchmarkBrowserResult(resultsDir, path, relativePath string, data []by
 			return nil, fmt.Errorf("decode benchmark %s records in %s: %w", recordType, path, err)
 		}
 	}
+	return loadBenchmarkBrowserEntries(entries, report, recordType, runID, path, relativePath, legacyDurations)
+}
+
+func benchmarkBrowserLegacyDurations(report map[string]json.RawMessage, path string) (bool, error) {
+	raw := bytes.TrimSpace(report["format_version"])
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return true, nil
+	}
+	var version int
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return false, fmt.Errorf("decode benchmark format version in %s: %w", path, err)
+	}
+	return version == 0, nil
+}
+
+func loadBenchmarkBrowserEntries(entries []json.RawMessage, report map[string]json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
+	var rows []map[string]json.RawMessage
 	for _, entry := range entries {
-		var sourceRow map[string]json.RawMessage
-		if err := json.Unmarshal(entry, &sourceRow); err != nil {
-			return nil, fmt.Errorf("decode benchmark %s in %s: %w", recordType, path, err)
-		}
-		if sourceRow == nil {
-			return nil, fmt.Errorf("decode benchmark %s in %s: expected a JSON object", recordType, path)
-		}
-		if recordType == "comparison" {
-			comparisonRows, err := splitBenchmarkComparison(sourceRow, legacyDurations)
-			if err != nil {
-				return nil, fmt.Errorf("split benchmark comparison in %s: %w", path, err)
-			}
-			for _, row := range comparisonRows {
-				if err := addBenchmarkBrowserMetadata(row, runID, relativePath, "result"); err != nil {
-					return nil, err
-				}
-				rows = append(rows, row)
-			}
-			continue
-		}
-		row := make(map[string]json.RawMessage, len(sourceRow))
-		for key, value := range sourceRow {
-			if key == "semantic_tool_reflection" || key == "semantic_batch_reflection" {
-				continue
-			}
-			if err := flattenBenchmarkField(key, value, row); err != nil {
-				return nil, fmt.Errorf("flatten benchmark field %s in %s: %w", key, path, err)
-			}
-		}
-		if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
-			return nil, fmt.Errorf("derive semantic tool pass in %s: %w", path, err)
-		}
-		if err := addBenchmarkBrowserCost(entry, report["target"], row); err != nil {
-			return nil, fmt.Errorf("calculate benchmark cost in %s: %w", path, err)
-		}
-		if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
-			return nil, fmt.Errorf("normalize benchmark durations in %s: %w", path, err)
-		}
-		if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
-			return nil, fmt.Errorf("derive benchmark wall-clock seconds in %s: %w", path, err)
-		}
-		if err := addBenchmarkBrowserMetadata(row, runID, relativePath, recordType); err != nil {
+		row, err := loadBenchmarkBrowserEntry(entry, report, recordType, runID, path, relativePath, legacyDurations)
+		if err != nil {
 			return nil, err
 		}
-		rows = append(rows, row)
+		rows = append(rows, row...)
 	}
 	return rows, nil
+}
+
+func loadBenchmarkBrowserEntry(entry json.RawMessage, report map[string]json.RawMessage, recordType, runID, path, relativePath string, legacyDurations bool) ([]map[string]json.RawMessage, error) {
+	var sourceRow map[string]json.RawMessage
+	if err := json.Unmarshal(entry, &sourceRow); err != nil {
+		return nil, fmt.Errorf("decode benchmark %s in %s: %w", recordType, path, err)
+	}
+	if sourceRow == nil {
+		return nil, fmt.Errorf("decode benchmark %s in %s: expected a JSON object", recordType, path)
+	}
+	if recordType == "comparison" {
+		comparisonRows, err := splitBenchmarkComparison(sourceRow, legacyDurations)
+		if err != nil {
+			return nil, fmt.Errorf("split benchmark comparison in %s: %w", path, err)
+		}
+		for _, row := range comparisonRows {
+			if err := addBenchmarkBrowserMetadata(row, runID, relativePath, "result"); err != nil {
+				return nil, err
+			}
+		}
+		return comparisonRows, nil
+	}
+	row := make(map[string]json.RawMessage, len(sourceRow))
+	for key, value := range sourceRow {
+		if key == "semantic_tool_reflection" || key == "semantic_batch_reflection" {
+			continue
+		}
+		if err := flattenBenchmarkField(key, value, row); err != nil {
+			return nil, fmt.Errorf("flatten benchmark field %s in %s: %w", key, path, err)
+		}
+	}
+	if err := addBenchmarkBrowserSemanticToolPass(row); err != nil {
+		return nil, fmt.Errorf("derive semantic tool pass in %s: %w", path, err)
+	}
+	if err := addBenchmarkBrowserCost(entry, report["target"], row); err != nil {
+		return nil, fmt.Errorf("calculate benchmark cost in %s: %w", path, err)
+	}
+	if err := normalizeLegacyBenchmarkDurations(row, legacyDurations); err != nil {
+		return nil, fmt.Errorf("normalize benchmark durations in %s: %w", path, err)
+	}
+	if err := addBenchmarkBrowserWallClockSeconds(row); err != nil {
+		return nil, fmt.Errorf("derive benchmark wall-clock seconds in %s: %w", path, err)
+	}
+	if err := addBenchmarkBrowserMetadata(row, runID, relativePath, recordType); err != nil {
+		return nil, err
+	}
+	return []map[string]json.RawMessage{row}, nil
 }
 
 func readBenchmarkBrowserRows(resultsDir string) ([]map[string]json.RawMessage, error) {
@@ -745,13 +836,13 @@ func readBenchmarkBrowserRows(resultsDir string) ([]map[string]json.RawMessage, 
 			if entry.IsDir() || filepath.Ext(path) != ".json" {
 				return nil
 			}
-			relativePath, err := filepath.Rel(resultsDir, path)
-			if err != nil {
-				return fmt.Errorf("make benchmark result path relative: %w", err)
+			relativePath, relativeErr := filepath.Rel(resultsDir, path)
+			if relativeErr != nil {
+				return fmt.Errorf("make benchmark result path relative: %w", relativeErr)
 			}
-			resultFile, err := resultsRoot.Open(relativePath)
-			if err != nil {
-				return fmt.Errorf("open benchmark result %s: %w", relativePath, err)
+			resultFile, openErr := resultsRoot.Open(relativePath)
+			if openErr != nil {
+				return fmt.Errorf("open benchmark result %s: %w", relativePath, openErr)
 			}
 			data, readErr := io.ReadAll(resultFile)
 			closeErr := resultFile.Close()
@@ -761,9 +852,9 @@ func readBenchmarkBrowserRows(resultsDir string) ([]map[string]json.RawMessage, 
 			if closeErr != nil {
 				return fmt.Errorf("close benchmark result %s: %w", relativePath, closeErr)
 			}
-			resultRows, err := loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
-			if err != nil {
-				return err
+			resultRows, loadErr := loadBenchmarkBrowserResult(resultsDir, path, relativePath, data)
+			if loadErr != nil {
+				return loadErr
 			}
 			rows = append(rows, resultRows...)
 			return nil
@@ -792,25 +883,25 @@ func writeBenchmarkBrowserViewerAssets(rootDir, outputDir string) error {
 		if walkErr != nil {
 			return walkErr
 		}
-		relativePath, err := filepath.Rel(vendorRoot, path)
-		if err != nil {
-			return fmt.Errorf("make Perspective asset path relative: %w", err)
+		relativePath, relativeErr := filepath.Rel(vendorRoot, path)
+		if relativeErr != nil {
+			return fmt.Errorf("make Perspective asset path relative: %w", relativeErr)
 		}
 		if entry.IsDir() {
 			if relativePath == "." {
 				return nil
 			}
-			if err := os.MkdirAll(filepath.Join(outputDir, "static", "vendor", "perspective", relativePath), 0o750); err != nil {
-				return fmt.Errorf("create Perspective asset directory: %w", err)
+			if mkdirErr := os.MkdirAll(filepath.Join(outputDir, "static", "vendor", "perspective", relativePath), 0o750); mkdirErr != nil {
+				return fmt.Errorf("create Perspective asset directory: %w", mkdirErr)
 			}
 			return nil
 		}
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		assetFile, err := vendor.Open(relativePath)
-		if err != nil {
-			return fmt.Errorf("open Perspective asset %s: %w", relativePath, err)
+		assetFile, assetErr := vendor.Open(relativePath)
+		if assetErr != nil {
+			return fmt.Errorf("open Perspective asset %s: %w", relativePath, assetErr)
 		}
 		asset, readErr := io.ReadAll(assetFile)
 		closeErr := assetFile.Close()
@@ -821,8 +912,8 @@ func writeBenchmarkBrowserViewerAssets(rootDir, outputDir string) error {
 			return fmt.Errorf("close Perspective asset %s: %w", relativePath, closeErr)
 		}
 		targetPath := filepath.Join(outputDir, "static", "vendor", "perspective", relativePath)
-		if err := writeGeneratedFile(targetPath, asset); err != nil {
-			return fmt.Errorf("write Perspective asset %s: %w", relativePath, err)
+		if writeErr := writeGeneratedFile(targetPath, asset); writeErr != nil {
+			return fmt.Errorf("write Perspective asset %s: %w", relativePath, writeErr)
 		}
 		return nil
 	})
@@ -860,7 +951,43 @@ weight: 20
 	return nil
 }
 
+type browserMetricGroup struct {
+	row    map[string]json.RawMessage
+	values map[string][]float64
+	passes map[string]int
+	boolN  map[string]int
+}
+
+type browserMetricGroupKeyResult struct {
+	key []byte
+	row map[string]json.RawMessage
+}
+
 func summarizeBenchmarkBrowserRows(rows []map[string]json.RawMessage) ([]map[string]json.RawMessage, error) {
+	dimensions := benchmarkBrowserSummaryDimensions(rows)
+	metrics := benchmarkBrowserNumericMetrics()
+	booleanMetrics := []string{"success", "oracle_pass", "expected_semantic_tools_used"}
+	groups, err := collectBrowserMetricGroups(rows, dimensions, metrics, booleanMetrics)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]map[string]json.RawMessage, 0, len(keys))
+	for _, key := range keys {
+		group := groups[key]
+		if err := addBrowserGroupStatistics(group, booleanMetrics); err != nil {
+			return nil, err
+		}
+		result = append(result, group.row)
+	}
+	return result, nil
+}
+
+func benchmarkBrowserSummaryDimensions(rows []map[string]json.RawMessage) []string {
 	targetDimensions := make(map[string]struct{})
 	for _, row := range rows {
 		for key := range row {
@@ -875,103 +1002,132 @@ func summarizeBenchmarkBrowserRows(rows []map[string]json.RawMessage) ([]map[str
 		dimensions = append(dimensions, dimension)
 	}
 	sort.Strings(dimensions)
-	metrics := []string{"cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens", "baseline_cost", "semedit_cost", "cost_delta", "baseline_turns", "semedit_turns", "turns_delta", "baseline_wall_clock_seconds", "semedit_wall_clock_seconds", "wall_clock_seconds_delta", "baseline_input_tokens", "semedit_input_tokens", "input_tokens_delta", "baseline_cached_input_tokens", "semedit_cached_input_tokens", "cached_input_tokens_delta", "baseline_output_tokens", "semedit_output_tokens", "output_tokens_delta", "baseline_reasoning_tokens", "semedit_reasoning_tokens", "reasoning_tokens_delta"}
-	booleanMetrics := []string{"success", "oracle_pass", "expected_semantic_tools_used"}
-	type metricGroup struct {
-		row    map[string]json.RawMessage
-		values map[string][]float64
-		passes map[string]int
-		boolN  map[string]int
-	}
-	groups := make(map[string]*metricGroup)
+	return dimensions
+}
+
+func benchmarkBrowserNumericMetrics() []string {
+	return []string{"cost", "turns", "wall_clock_seconds", "input_tokens", "cached_input_tokens", "output_tokens", "reasoning_tokens", "baseline_cost", "semedit_cost", "cost_delta", "baseline_turns", "semedit_turns", "turns_delta", "baseline_wall_clock_seconds", "semedit_wall_clock_seconds", "wall_clock_seconds_delta", "baseline_input_tokens", "semedit_input_tokens", "input_tokens_delta", "baseline_cached_input_tokens", "semedit_cached_input_tokens", "cached_input_tokens_delta", "baseline_output_tokens", "semedit_output_tokens", "output_tokens_delta", "baseline_reasoning_tokens", "semedit_reasoning_tokens", "reasoning_tokens_delta"}
+}
+
+func collectBrowserMetricGroups(rows []map[string]json.RawMessage, dimensions, metrics, booleanMetrics []string) (map[string]*browserMetricGroup, error) {
+	groups := make(map[string]*browserMetricGroup)
 	for _, row := range rows {
-		keyValues := make([]json.RawMessage, 0, len(dimensions))
-		groupRow := make(map[string]json.RawMessage, len(dimensions)+len(metrics)*5)
-		for _, dimension := range dimensions {
-			keyValues = append(keyValues, row[dimension])
-			if value, ok := row[dimension]; ok {
-				groupRow[dimension] = append(json.RawMessage(nil), value...)
-			} else {
-				groupRow[dimension] = json.RawMessage("null")
-			}
-		}
-		key, err := json.Marshal(keyValues)
+		keyResult, err := browserMetricGroupKey(row, dimensions, metrics)
 		if err != nil {
-			return nil, fmt.Errorf("encode benchmark summary group: %w", err)
+			return nil, err
 		}
-		group := groups[string(key)]
+		group := groups[string(keyResult.key)]
 		if group == nil {
-			group = &metricGroup{row: groupRow, values: make(map[string][]float64), passes: make(map[string]int), boolN: make(map[string]int)}
-			groups[string(key)] = group
+			group = &browserMetricGroup{row: keyResult.row, values: make(map[string][]float64), passes: make(map[string]int), boolN: make(map[string]int)}
+			groups[string(keyResult.key)] = group
 		}
-		for _, metric := range metrics {
-			var value float64
-			if isBenchmarkNumber(row[metric], &value) {
-				group.values[metric] = append(group.values[metric], value)
-			}
+		accumulateBrowserMetricValues(group, row, metrics, booleanMetrics)
+	}
+	return groups, nil
+}
+
+func browserMetricGroupKey(row map[string]json.RawMessage, dimensions, metrics []string) (browserMetricGroupKeyResult, error) {
+	keyValues := make([]json.RawMessage, 0, len(dimensions))
+	groupRow := make(map[string]json.RawMessage, len(dimensions)+len(metrics)*5)
+	for _, dimension := range dimensions {
+		keyValues = append(keyValues, row[dimension])
+		if value, ok := row[dimension]; ok {
+			groupRow[dimension] = append(json.RawMessage(nil), value...)
+		} else {
+			groupRow[dimension] = json.RawMessage("null")
 		}
-		for _, metric := range booleanMetrics {
-			var value bool
-			if json.Unmarshal(row[metric], &value) == nil {
-				group.boolN[metric]++
-				if value {
-					group.passes[metric]++
-				}
+	}
+	key, err := json.Marshal(keyValues)
+	if err != nil {
+		return browserMetricGroupKeyResult{}, fmt.Errorf("encode benchmark summary group: %w", err)
+	}
+	return browserMetricGroupKeyResult{key: key, row: groupRow}, nil
+}
+
+func accumulateBrowserMetricValues(group *browserMetricGroup, row map[string]json.RawMessage, metrics, booleanMetrics []string) {
+	for _, metric := range metrics {
+		var value float64
+		if isBenchmarkNumber(row[metric], &value) {
+			group.values[metric] = append(group.values[metric], value)
+		}
+	}
+	for _, metric := range booleanMetrics {
+		var value bool
+		if json.Unmarshal(row[metric], &value) == nil {
+			group.boolN[metric]++
+			if value {
+				group.passes[metric]++
 			}
 		}
 	}
-	keys := make([]string, 0, len(groups))
-	for key := range groups {
-		keys = append(keys, key)
+}
+
+func addBrowserGroupStatistics(group *browserMetricGroup, booleanMetrics []string) error {
+	for metric, values := range group.values {
+		if err := addBrowserNumericStatistics(group.row, metric, values); err != nil {
+			return err
+		}
 	}
-	sort.Strings(keys)
-	result := make([]map[string]json.RawMessage, 0, len(keys))
-	for _, key := range keys {
-		group := groups[key]
-		for metric, values := range group.values {
-			sort.Float64s(values)
-			quantile := func(p float64) float64 {
-				position := p * float64(len(values)-1)
-				lower := int(position)
-				upper := min(lower+1, len(values)-1)
-				fraction := position - float64(lower)
-				return values[lower] + (values[upper]-values[lower])*fraction
-			}
-			for suffix, value := range map[string]float64{"p50": quantile(0.5), "iqr": quantile(0.75) - quantile(0.25), "p90": quantile(0.9), "max": values[len(values)-1], "n": float64(len(values))} {
-				encoded, err := json.Marshal(value)
-				if err != nil {
-					return nil, fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
-				}
-				group.row[metric+"__"+suffix] = encoded
-			}
+	for _, metric := range booleanMetrics {
+		if err := addBrowserBooleanStatistics(group.row, group, metric); err != nil {
+			return err
 		}
-		for _, metric := range booleanMetrics {
-			passes, count := group.passes[metric], group.boolN[metric]
-			for suffix, value := range map[string]any{"passes": passes, "success_rate": nil, "n": count} {
-				if suffix == "success_rate" && count > 0 {
-					value = float64(passes) / float64(count)
-				}
-				encoded, err := json.Marshal(value)
-				if err != nil {
-					return nil, fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
-				}
-				group.row[metric+"__"+suffix] = encoded
-			}
-		}
-		for _, metric := range []string{"oracle_pass", "expected_semantic_tools_used"} {
-			encoded := json.RawMessage("null")
-			if group.boolN[metric] > 0 {
-				var err error
-				encoded, err = json.Marshal(group.passes[metric] == group.boolN[metric])
-				if err != nil {
-					return nil, fmt.Errorf("encode benchmark filter %s: %w", metric, err)
-				}
-			}
-			group.row[metric] = encoded
-		}
-		result = append(result, group.row)
 	}
-	return result, nil
+	for _, metric := range []string{"oracle_pass", "expected_semantic_tools_used"} {
+		if err := addBrowserBooleanFilter(group, metric); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func addBrowserNumericStatistics(row map[string]json.RawMessage, metric string, values []float64) error {
+	sort.Float64s(values)
+	for suffix, value := range map[string]float64{"p50": benchmarkQuantile(values, 0.5), "iqr": benchmarkQuantile(values, 0.75) - benchmarkQuantile(values, 0.25), "p90": benchmarkQuantile(values, 0.9), "max": values[len(values)-1], "n": float64(len(values))} {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
+		}
+		row[metric+"__"+suffix] = encoded
+	}
+	return nil
+}
+
+func benchmarkQuantile(values []float64, percentile float64) float64 {
+	position := percentile * float64(len(values)-1)
+	lower := int(position)
+	upper := min(lower+1, len(values)-1)
+	fraction := position - float64(lower)
+	return values[lower] + (values[upper]-values[lower])*fraction
+}
+
+func addBrowserBooleanStatistics(row map[string]json.RawMessage, group *browserMetricGroup, metric string) error {
+	passes, count := group.passes[metric], group.boolN[metric]
+	values := map[string]any{"passes": passes, "success_rate": nil, "n": count}
+	if count > 0 {
+		values["success_rate"] = float64(passes) / float64(count)
+	}
+	for suffix, value := range values {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Errorf("encode benchmark %s %s: %w", metric, suffix, err)
+		}
+		row[metric+"__"+suffix] = encoded
+	}
+	return nil
+}
+
+func addBrowserBooleanFilter(group *browserMetricGroup, metric string) error {
+	encoded := json.RawMessage("null")
+	if group.boolN[metric] > 0 {
+		value, err := json.Marshal(group.passes[metric] == group.boolN[metric])
+		if err != nil {
+			return fmt.Errorf("encode benchmark filter %s: %w", metric, err)
+		}
+		encoded = value
+	}
+	group.row[metric] = encoded
+	return nil
 }
 
 func writeBenchmarkBrowserData(outputDir, relativePath string, rows []map[string]json.RawMessage) error {

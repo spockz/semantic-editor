@@ -1,11 +1,14 @@
 # Standard Go Makefile for semedit
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
+ifeq ($(shell uname -s),Darwin)
 export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
-HUGO_BASE_URL ?= /
-ifeq ($(MAKELEVEL),0)
-export PATH := $(CURDIR)/.scratch/go/bin:$(PATH)
 endif
+HUGO_BASE_URL ?= /
+GOLANGCI_LINT_VERSION ?= v2.13.2
+MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
+VALE_VERSION ?= v3.22.0
+GOPLS_VERSION ?= v0.23.0
 # GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
 # Set it only in the top-level process so recursive make shares its jobserver.
 MAKE_JOBS ?= 8
@@ -20,16 +23,21 @@ export GOMODCACHE := $(GO_SCRATCH)/mod
 export GOTMPDIR := $(GO_SCRATCH)/tmp
 export GOBIN := $(GO_SCRATCH)/bin
 export GOPATH := $(GO_SCRATCH)
+export GOPLSCACHE := $(GO_SCRATCH)/gopls
 export GOFLAGS :=
 export GOWORK := off
 export GOLANGCI_LINT_CACHE := $(CURDIR)/.scratch/golangci-lint-cache
+export HUGO_CACHEDIR := $(CURDIR)/.scratch/hugo-cache
+ifeq ($(MAKELEVEL),0)
+export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
+endif
 
 .DEFAULT_GOAL := check
 
 ## Go commands use project-local state so caches and temporary files stay under the workspace.
 .PHONY: go-env
 go-env:
-	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOLANGCI_LINT_CACHE)"
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOPLSCACHE)" "$(GOLANGCI_LINT_CACHE)" "$(HUGO_CACHEDIR)" "$(CURDIR)/.scratch/tools"
 
 ## ---------------------------------------------------------
 ## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
@@ -52,19 +60,17 @@ deps: go-env ## Download and verify module dependencies
 .PHONY: tools
 tools: go-env ## Install development tools (linters, formatters, scanners)
 	@echo "==> Installing development tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install mvdan.cc/gofumpt@latest
 	go install golang.org/x/tools/cmd/goimports@latest
+	go install golang.org/x/tools/gopls@$(GOPLS_VERSION)
 	go install golang.org/x/vuln/cmd/govulncheck@latest
-	@if command -v pnpm >/dev/null 2>&1; then \
-		pnpm install -g markdownlint-cli2; \
-	elif command -v npm >/dev/null 2>&1; then \
-		npm install -g markdownlint-cli2; \
-	fi
-	@if command -v brew >/dev/null 2>&1; then \
-		brew install vale; \
+	go install github.com/errata-ai/vale/v3/cmd/vale@$(VALE_VERSION)
+	@if command -v npm >/dev/null 2>&1; then \
+		npm install --prefix "$(CURDIR)/.scratch/tools" --no-save --package-lock=false --no-audit --no-fund markdownlint-cli2@$(MARKDOWNLINT_CLI2_VERSION); \
 	else \
-		go install github.com/errata-ai/vale/v3/cmd/vale@latest; \
+		echo "npm not installed. Install Node.js to install markdownlint-cli2 locally."; \
+		exit 1; \
 	fi
 
 ## ---------------------------------------------------------
@@ -82,7 +88,7 @@ lint-fix: go-env fix-markdown ## Apply unambiguous fixes supplied by configured 
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run --fix ./...; \
 	else \
-		echo "golangci-lint not installed. Run 'make tools' or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "golangci-lint not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 
@@ -98,7 +104,15 @@ fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 		go fmt ./...; \
 	fi
 	@if command -v goimports >/dev/null 2>&1; then \
-		goimports -w -local $$(go list -m 2>/dev/null || echo "") .; \
+		if ! module_path=$$(go list -m); then \
+			echo "Unable to determine the Go module for goimports." >&2; \
+			exit 1; \
+		fi; \
+		if [ -z "$$module_path" ]; then \
+			echo "Go module lookup returned an empty module path." >&2; \
+			exit 1; \
+		fi; \
+		goimports -w -local "$$module_path" .; \
 	fi
 
 .PHONY: tidy
@@ -112,13 +126,49 @@ tidy: fmt ## Ensure dependencies match source code
 .PHONY: lint
 lint: lint-go lint-markdown lint-vale ## Run all static linters (golangci-lint, markdownlint-cli2, vale)
 
+.PHONY: lint-check
+lint-check: go-env ## Run configured Go, Markdown, and Vale linters without source fixers
+	@echo "==> Running read-only Go lint..."
+	@if command -v golangci-lint >/dev/null 2>&1; then \
+		golangci-lint run ./...; \
+	else \
+		echo "golangci-lint not installed. Run 'make tools'."; \
+		exit 1; \
+	fi
+	@echo "==> Running read-only Markdown lint..."
+	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
+		markdownlint-cli2 "**/*.md" "!.agents/"; \
+	else \
+		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
+		exit 1; \
+	fi
+	@echo "==> Running read-only Vale lint..."
+	@if command -v vale >/dev/null 2>&1; then \
+		find . -path './.scratch' -prune -o -path './.git' -prune -o -path './data' -prune -o -type f -name '*.md' -print0 | xargs -0 vale; \
+	else \
+		echo "vale not installed. Run 'make tools'."; \
+		exit 1; \
+	fi
+
+.PHONY: check-clean
+check-clean: check ## Run checks and fail if any tracked, staged, or untracked files remain
+	@status=$$(git status --porcelain=v1 --untracked-files=all -- 2>&1) || { \
+		status_code=$$?; \
+		printf 'git status failed (%s): %s\n' "$$status_code" "$$status" >&2; \
+		exit "$$status_code"; \
+	}; \
+	if [[ -n "$$status" ]]; then \
+		printf 'working tree is not clean after checks:\n%s\n' "$$status" >&2; \
+		exit 1; \
+	fi
+
 .PHONY: lint-go
 lint-go: go-env ## Run golangci-lint
 	@echo "==> Running golangci-lint..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "golangci-lint not installed. Run 'make tools' or: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+		echo "golangci-lint not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 
@@ -128,7 +178,7 @@ lint-markdown: ## Run markdownlint-cli2
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
 		markdownlint-cli2 "**/*.md" "!.agents/"; \
 	else \
-		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
+		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 
@@ -138,7 +188,7 @@ fix-markdown: ## Apply automatic markdownlint-cli2 fixes
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
 		markdownlint-cli2 --fix "**/*.md"; \
 	else \
-		echo "markdownlint-cli2 not installed. Run 'make tools' or: pnpm install -g markdownlint-cli2"; \
+		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 
@@ -148,7 +198,7 @@ lint-vale: ## Run vale prose linter
 	@if command -v vale >/dev/null 2>&1; then \
 		find . -path './.scratch' -prune -o -path './.git' -prune -o -path './data' -prune -o -type f -name '*.md' -print0 | xargs -0 vale; \
 	else \
-		echo "vale not installed. Run 'make tools' or: brew install vale"; \
+		echo "vale not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 

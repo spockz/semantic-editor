@@ -129,6 +129,19 @@ func TestReplaceConstruct_RejectsMalformedReplacementWithoutMutation(t *testing.
 	}
 }
 
+func TestReplaceConstruct_RejectsNonBlockElseWithoutMutation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "else.go")
+	initial := "package sample\nfunc Check() { if ready { proceed() } else { fallback() } }\n"
+	writeGo(t, path, initial)
+	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructElse, "ready", "if condition {}", astedit.ConstructOptions{})
+	if err == nil {
+		t.Fatal("expected an else replacement to require a block")
+	}
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("file changed after invalid else replacement:\n%s", got)
+	}
+}
+
 func TestReplaceConstruct_ReplacesEveryGoKind(t *testing.T) {
 	cases := []struct {
 		name, source, discriminator, replacement, want string
@@ -251,20 +264,16 @@ func TestReplaceDecl_ReplacesTypeAlias(t *testing.T) {
 	}
 }
 
-func TestInsertDeclRejectsPackageCollisionAndOverwritesOnlyTarget(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "one.go")
-	writeGo(t, path, "package sample\nconst Existing = 1\n")
+func TestInsertDeclRejectsPackageCollisionWithoutWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "one.go")
+	initial := "package sample\nconst Existing = 1\n"
+	writeGo(t, path, initial)
 	err := astedit.InsertDecl(context.Background(), path, "const Existing = 2", astedit.DeclOptions{})
 	if !errors.Is(err, astedit.ErrDeclCollision) {
 		t.Fatalf("expected collision sentinel, got %v", err)
 	}
-	if err := astedit.InsertDecl(context.Background(), path, "const Existing = 2", astedit.DeclOptions{Overwrite: true}); err != nil {
-		t.Fatalf("overwrite: %v", err)
-	}
-	got := readGo(t, path)
-	if !strings.Contains(got, "Existing = 2") || strings.Contains(got, "Existing = 1") {
-		t.Fatalf("overwrite did not replace target:\n%s", got)
+	if got := readGo(t, path); got != initial {
+		t.Fatalf("file changed after collision: %s", got)
 	}
 }
 

@@ -32,6 +32,19 @@ func rawLookup(raw map[string]any, jsonName, cliName string) (any, bool) {
 // CheckParams validates required presence and enum membership for every contract.
 // Empty strings count as absent so optional enum parameters accept the zero value.
 func CheckParams(raw map[string]any, params []ParameterContract) error {
+	allowed := parameterKeys(params)
+	if err := rejectUnknownParams(raw, allowed); err != nil {
+		return err
+	}
+	for _, param := range params {
+		if err := validateParameter(raw, param); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parameterKeys(params []ParameterContract) map[string]struct{} {
 	allowed := make(map[string]struct{}, len(params)*2)
 	for _, param := range params {
 		if param.JSONName != "" {
@@ -41,65 +54,76 @@ func CheckParams(raw map[string]any, params []ParameterContract) error {
 			allowed[param.CLIName] = struct{}{}
 		}
 	}
+	return allowed
+}
+
+func rejectUnknownParams(raw map[string]any, allowed map[string]struct{}) error {
 	unknown := make([]string, 0)
 	for key := range raw {
 		if _, ok := allowed[key]; !ok {
 			unknown = append(unknown, key)
 		}
 	}
-	if len(unknown) > 0 {
-		slices.Sort(unknown)
-		supported := make([]string, 0, len(allowed))
-		for key := range allowed {
-			supported = append(supported, key)
-		}
-		slices.Sort(supported)
-		return fmt.Errorf("unknown param %q; supported keys are [%s]: %w", unknown[0], strings.Join(supported, ", "), ErrInvalidParams)
+	if len(unknown) == 0 {
+		return nil
 	}
-	for _, param := range params {
-		value, present := rawLookup(raw, param.JSONName, param.CLIName)
-		if param.Schema != nil {
-			if !present {
-				if param.Required {
-					return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
-				}
-				continue
-			}
-			if err := ValidateValue(*param.Schema, value); err != nil {
-				return fmt.Errorf("param %q: %w: %w", param.JSONName, err, ErrInvalidParams)
-			}
-			continue
+	slices.Sort(unknown)
+	supported := make([]string, 0, len(allowed))
+	for key := range allowed {
+		supported = append(supported, key)
+	}
+	slices.Sort(supported)
+	return fmt.Errorf("unknown param %q; supported keys are [%s]: %w", unknown[0], strings.Join(supported, ", "), ErrInvalidParams)
+}
+
+func validateParameter(raw map[string]any, param ParameterContract) error {
+	value, present := rawLookup(raw, param.JSONName, param.CLIName)
+	if param.Schema != nil {
+		return validateSchemaParameter(param, value, present)
+	}
+	if !present || value == nil {
+		return requiredParameterError(param, param.Required)
+	}
+	if param.Type == ParamInteger {
+		if _, err := exactNativeInteger(value); err != nil {
+			return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
 		}
-		if !present || value == nil {
-			if param.Required {
-				return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
-			}
-			continue
-		}
-		if param.Type == ParamInteger {
-			if _, err := exactNativeInteger(value); err != nil {
-				return fmt.Errorf("param %q must be an integer: %w", param.JSONName, ErrInvalidParams)
-			}
-		}
-		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
-			if param.Required {
-				return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
-			}
-			continue
-		}
-		if len(param.Enums) == 0 {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("param %q must be a string: %w", param.JSONName, ErrInvalidParams)
-		}
-		matched := slices.Contains(param.Enums, text)
-		if !matched {
-			return fmt.Errorf("param %q value %q must be one of [%s]: %w", param.JSONName, text, strings.Join(param.Enums, ", "), ErrInvalidParams)
-		}
+	}
+	text, isText := value.(string)
+	if isText && strings.TrimSpace(text) == "" {
+		return requiredParameterError(param, param.Required)
+	}
+	return validateEnumParameter(param, text, isText)
+}
+
+func validateSchemaParameter(param ParameterContract, value any, present bool) error {
+	if !present {
+		return requiredParameterError(param, param.Required)
+	}
+	if err := ValidateValue(*param.Schema, value); err != nil {
+		return fmt.Errorf("param %q: %w: %w", param.JSONName, err, ErrInvalidParams)
 	}
 	return nil
+}
+
+func requiredParameterError(param ParameterContract, required bool) error {
+	if required {
+		return fmt.Errorf("param %q is required: %w", param.JSONName, ErrInvalidParams)
+	}
+	return nil
+}
+
+func validateEnumParameter(param ParameterContract, text string, isText bool) error {
+	if len(param.Enums) == 0 {
+		return nil
+	}
+	if !isText {
+		return fmt.Errorf("param %q must be a string: %w", param.JSONName, ErrInvalidParams)
+	}
+	if slices.Contains(param.Enums, text) {
+		return nil
+	}
+	return fmt.Errorf("param %q value %q must be one of [%s]: %w", param.JSONName, text, strings.Join(param.Enums, ", "), ErrInvalidParams)
 }
 
 // ParseString extracts an optional or required string parameter.

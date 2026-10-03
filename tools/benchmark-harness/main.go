@@ -283,124 +283,188 @@ type benchmarkCLIOptions struct {
 	TaskID    string
 }
 
+type benchmarkCLIValidation struct {
+	explicit          map[string]bool
+	targets           []Target
+	repeats           int
+	concurrency       int
+	timeout           time.Duration
+	harness           string
+	tasksRaw          string
+	openRouterFreeTop bool
+}
+
+type benchmarkCLIFlags struct {
+	settings            benchmarkCLIOptions
+	explicit            map[string]bool
+	args                []string
+	taskID              string
+	tasksRaw            string
+	arm                 string
+	harness             string
+	variantsRaw         string
+	targets             TargetList
+	matrixMode          bool
+	listMode            bool
+	listFree            bool
+	openRouterFreeTop10 bool
+	outJSON             string
+	outMD               string
+	outDir              string
+	runID               string
+	timeout             time.Duration
+	concurrency         int
+	repeats             int
+	mcpRaw              string
+	policyRaw           string
+	provenance          ProvenanceSet
+}
+
 func parseBenchmarkCLI(args []string) (benchmarkCLIOptions, error) {
-	fs := flag.NewFlagSet("benchmark-harness", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	var settings benchmarkCLIOptions
-	var taskID, tasksRaw, arm, harness, variantsRaw string
-	var targets TargetList
-	var matrixMode, listMode, listFree, openRouterFreeTop10 bool
-	var outJSON, outMD, outDir, runID string
-	var timeout time.Duration
-	var concurrency, repeats int
-	var mcpRaw, policyRaw string
-	var provenance ProvenanceSet
-	fs.StringVar(&taskID, "task", "", "Benchmark task ID; default selects all discoverable fixtures")
-	fs.StringVar(&tasksRaw, "tasks", "", "Comma-separated benchmark task IDs; default selects all fixtures")
-	fs.StringVar(&settings.Plan.BenchDir, "dir", "testdata/bench", "Benchmark fixture directory")
-	fs.StringVar(&arm, "arm", "", "Deprecated; use --target (explicit use is rejected)")
-	fs.StringVar(&harness, "harness", "", "Deprecated single-target alias for --target")
-	fs.Var(&targets, "target", "Execution target harness[/model[/effort]] (repeatable)")
-	fs.IntVar(&repeats, "repeats", 1, "Number of independent trials")
-	fs.StringVar(&variantsRaw, "variants", "small,large", "Comma-separated contexts with optional prompt")
-	fs.BoolVar(&matrixMode, "matrix", false, "Deprecated no-op; all runs use the resolved plan pipeline")
-	fs.IntVar(&concurrency, "concurrency", 4, "Concurrent benchmark jobs")
-	fs.StringVar(&outJSON, "out-json", "", "Optional report JSON output path")
-	fs.StringVar(&outMD, "out-md", "", "Optional report Markdown output path")
-	fs.StringVar(&outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped results; empty disables run output")
-	fs.StringVar(&runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
-	fs.StringVar(&settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
-	fs.StringVar(&settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
-	fs.DurationVar(&timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
-	fs.StringVar(&mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
-	fs.StringVar(&policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
-	fs.BoolVar(&settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", true, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
-	fs.Var(&provenance, "provenance", "Technical execution provenance key=value (repeatable)")
-	fs.Var(&provenance, "classifier", "Deprecated alias for provenance")
-	fs.BoolVar(&listMode, "list", false, "List benchmark fixtures and prompt variants")
-	fs.BoolVar(&listFree, "list-openrouter-free", false, "List the OpenRouter free-model catalog")
-	fs.BoolVar(&openRouterFreeTop10, "openrouter-free-top10", false, "Add the pinned free-model target")
-	if err := fs.Parse(args); err != nil {
-		return settings, fmt.Errorf("parse flags: %w", err)
+	input, err := parseBenchmarkCLIFlags(args)
+	if err != nil {
+		return benchmarkCLIOptions{}, err
 	}
-	explicit := make(map[string]bool)
-	fs.Visit(func(f *flag.Flag) { explicit[f.Name] = true })
-	if len(fs.Args()) > 0 && (len(fs.Args()) != 1 || fs.Args()[0] != "list") {
-		return settings, fmt.Errorf("unexpected positional arguments: %s", strings.Join(fs.Args(), " "))
+	settings := input.settings
+	targets, err := validateBenchmarkCLI(benchmarkCLIValidation{
+		explicit:          input.explicit,
+		targets:           input.targets,
+		repeats:           input.repeats,
+		concurrency:       input.concurrency,
+		timeout:           input.timeout,
+		harness:           input.harness,
+		tasksRaw:          input.tasksRaw,
+		openRouterFreeTop: input.openRouterFreeTop10,
+	})
+	if err != nil {
+		return settings, err
 	}
-	settings.ListFree = listFree
-	settings.List = listMode || len(fs.Args()) == 1
-	settings.TaskID = taskID
-	if explicit["repeats"] && repeats < 1 {
-		return settings, fmt.Errorf("--repeats must be at least 1")
-	}
-	if explicit["concurrency"] && concurrency < 1 {
-		return settings, fmt.Errorf("--concurrency must be at least 1")
-	}
-	if explicit["timeout"] && timeout <= 0 {
-		return settings, fmt.Errorf("--timeout must be positive")
-	}
-	if explicit["arm"] {
-		return settings, fmt.Errorf("--arm is no longer supported; use --target to request paired baseline and semedit jobs")
-	}
-	if explicit["harness"] && len(targets) > 0 {
-		return settings, fmt.Errorf("--harness cannot be combined with --target")
-	}
-	if explicit["task"] && tasksRaw != "" {
-		return settings, fmt.Errorf("--task cannot be combined with --tasks")
-	}
-	if explicit["harness"] {
-		target, err := ParseTarget(harness)
-		if err != nil {
-			return settings, fmt.Errorf("invalid --harness: %w", err)
-		}
-		targets = append(targets, target)
-	}
-	if openRouterFreeTop10 {
-		targets = append(targets, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free-top10"})
-	}
-	if explicit["harness"] && len(targets) > 1 {
-		return settings, fmt.Errorf("--harness selects exactly one target")
-	}
-	tasks := make([]string, 0)
-	if taskID != "" {
-		tasks = append(tasks, taskID)
-	}
-	for value := range strings.SplitSeq(tasksRaw, ",") {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			tasks = append(tasks, value)
-		}
-	}
-	variants := make([]string, 0)
-	for value := range strings.SplitSeq(variantsRaw, ",") {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			variants = append(variants, value)
-		}
-	}
-	policy, err := ParseSemeditArmRestriction(policyRaw)
+	tasks := parseCLIList(input.taskID, input.tasksRaw)
+	variants := parseCLIList("", input.variantsRaw)
+	policy, err := ParseSemeditArmRestriction(input.policyRaw)
 	if err != nil {
 		return settings, fmt.Errorf("invalid --semedit-arm-restrict: %w", err)
 	}
-	mcpModes, err := ParseMCPServerInstructionModes(mcpRaw)
+	mcpModes, err := ParseMCPServerInstructionModes(input.mcpRaw)
 	if err != nil {
 		return settings, fmt.Errorf("invalid --mcp-server-instructions: %w", err)
 	}
+	applyBenchmarkCLIPlan(&settings, input, targets, tasks, variants, policy, mcpModes)
+	return settings, nil
+}
+
+func parseBenchmarkCLIFlags(args []string) (benchmarkCLIFlags, error) {
+	var input benchmarkCLIFlags
+	fs := flag.NewFlagSet("benchmark-harness", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	registerBenchmarkCLIFlags(fs, &input)
+	if err := fs.Parse(args); err != nil {
+		return input, fmt.Errorf("parse flags: %w", err)
+	}
+	input.explicit = make(map[string]bool)
+	fs.Visit(func(f *flag.Flag) { input.explicit[f.Name] = true })
+	input.args = fs.Args()
+	if len(input.args) > 0 && (len(input.args) != 1 || input.args[0] != "list") {
+		return input, fmt.Errorf("unexpected positional arguments: %s", strings.Join(input.args, " "))
+	}
+	input.settings.ListFree = input.listFree
+	input.settings.List = input.listMode || len(input.args) == 1
+	input.settings.TaskID = input.taskID
+	return input, nil
+}
+
+func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
+	fs.StringVar(&input.taskID, "task", "", "Benchmark task ID; default selects all discoverable fixtures")
+	fs.StringVar(&input.tasksRaw, "tasks", "", "Comma-separated benchmark task IDs; default selects all fixtures")
+	fs.StringVar(&input.settings.Plan.BenchDir, "dir", "testdata/bench", "Benchmark fixture directory")
+	fs.StringVar(&input.arm, "arm", "", "Deprecated; use --target (explicit use is rejected)")
+	fs.StringVar(&input.harness, "harness", "", "Deprecated single-target alias for --target")
+	fs.Var(&input.targets, "target", "Execution target harness[/model[/effort]] (repeatable)")
+	fs.IntVar(&input.repeats, "repeats", 1, "Number of independent trials")
+	fs.StringVar(&input.variantsRaw, "variants", "small,large", "Comma-separated contexts with optional prompt")
+	fs.BoolVar(&input.matrixMode, "matrix", false, "Deprecated no-op; all runs use the resolved plan pipeline")
+	fs.IntVar(&input.concurrency, "concurrency", 4, "Concurrent benchmark jobs")
+	fs.StringVar(&input.outJSON, "out-json", "", "Optional report JSON output path")
+	fs.StringVar(&input.outMD, "out-md", "", "Optional report Markdown output path")
+	fs.StringVar(&input.outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped results; empty disables run output")
+	fs.StringVar(&input.runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
+	fs.StringVar(&input.settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
+	fs.StringVar(&input.settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
+	fs.DurationVar(&input.timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
+	fs.StringVar(&input.mcpRaw, "mcp-server-instructions", "none", "Comma-separated server-wide MCP instruction modes: none, descriptive, prescriptive")
+	fs.StringVar(&input.policyRaw, "semedit-arm-restrict", "write", "Semedit arm policy: read, write, readwrite")
+	fs.BoolVar(&input.settings.Plan.SemeditPrewarmVerify, "semedit-prewarm-verify", true, "Prewarm the semedit arm fixture with a check-only verify CLI before agent execution")
+	fs.Var(&input.provenance, "provenance", "Technical execution provenance key=value (repeatable)")
+	fs.Var(&input.provenance, "classifier", "Deprecated alias for provenance")
+	fs.BoolVar(&input.listMode, "list", false, "List benchmark fixtures and prompt variants")
+	fs.BoolVar(&input.listFree, "list-openrouter-free", false, "List the OpenRouter free-model catalog")
+	fs.BoolVar(&input.openRouterFreeTop10, "openrouter-free-top10", false, "Add the pinned free-model target")
+}
+
+func parseCLIList(first, second string) []string {
+	values := make([]string, 0)
+	if first != "" {
+		values = append(values, first)
+	}
+	for value := range strings.SplitSeq(second, ",") {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func applyBenchmarkCLIPlan(settings *benchmarkCLIOptions, input benchmarkCLIFlags, targets []Target, tasks, variants []string, policy SemeditArmRestriction, mcpModes []MCPServerInstructionMode) {
 	settings.Plan.TaskIDs = tasks
 	settings.Plan.Targets = targets
 	settings.Plan.Variants = variants
-	settings.Plan.Repeats = repeats
-	settings.Plan.Concurrency = concurrency
-	settings.Plan.Timeout = timeout
-	settings.Plan.OutDir = outDir
-	settings.Plan.RunID = runID
-	settings.Plan.OutJSON = outJSON
-	settings.Plan.OutMD = outMD
+	settings.Plan.Repeats = input.repeats
+	settings.Plan.Concurrency = input.concurrency
+	settings.Plan.Timeout = input.timeout
+	settings.Plan.OutDir = input.outDir
+	settings.Plan.RunID = input.runID
+	settings.Plan.OutJSON = input.outJSON
+	settings.Plan.OutMD = input.outMD
 	settings.Plan.MCPServerInstructions = mcpModes
 	settings.Plan.SemeditArmRestriction = policy
-	settings.Plan.Provenance = provenance.Clone()
-	return settings, nil
+	settings.Plan.Provenance = input.provenance.Clone()
+}
+
+func validateBenchmarkCLI(input benchmarkCLIValidation) ([]Target, error) {
+	targets := append([]Target(nil), input.targets...)
+	if input.explicit["repeats"] && input.repeats < 1 {
+		return nil, fmt.Errorf("--repeats must be at least 1")
+	}
+	if input.explicit["concurrency"] && input.concurrency < 1 {
+		return nil, fmt.Errorf("--concurrency must be at least 1")
+	}
+	if input.explicit["timeout"] && input.timeout <= 0 {
+		return nil, fmt.Errorf("--timeout must be positive")
+	}
+	if input.explicit["arm"] {
+		return nil, fmt.Errorf("--arm is no longer supported; use --target to request paired baseline and semedit jobs")
+	}
+	if input.explicit["harness"] && len(targets) > 0 {
+		return nil, fmt.Errorf("--harness cannot be combined with --target")
+	}
+	if input.explicit["task"] && input.tasksRaw != "" {
+		return nil, fmt.Errorf("--task cannot be combined with --tasks")
+	}
+	if input.explicit["harness"] {
+		target, err := ParseTarget(input.harness)
+		if err != nil {
+			return nil, fmt.Errorf("invalid --harness: %w", err)
+		}
+		targets = append(targets, target)
+	}
+	if input.openRouterFreeTop {
+		targets = append(targets, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free-top10"})
+	}
+	if input.explicit["harness"] && len(targets) > 1 {
+		return nil, fmt.Errorf("--harness selects exactly one target")
+	}
+	return targets, nil
 }
 
 func runFixtureUtility(cli benchmarkCLIOptions) int {

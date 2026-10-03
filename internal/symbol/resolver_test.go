@@ -186,8 +186,8 @@ func TestResolveInterfaceMethods(t *testing.T) {
 		"cycle.go": "package api\ntype Cyclic interface { Loop }\ntype Loop interface { Cyclic; Ping() }\n",
 	}
 	for name, content := range cycleFiles {
-		if err := os.WriteFile(filepath.Join(cycleDir, name), []byte(content), 0o600); err != nil {
-			t.Fatalf("write cycle %s: %v", name, err)
+		if writeErr := os.WriteFile(filepath.Join(cycleDir, name), []byte(content), 0o600); writeErr != nil {
+			t.Fatalf("write cycle %s: %v", name, writeErr)
 		}
 	}
 	cycleResult, err := symbol.Resolve(cycleDir, "cycle.go", "Cyclic.Ping")
@@ -250,6 +250,25 @@ func TestResolveLocalOnlyLookupPromotesDefinition(t *testing.T) {
 	}
 	if len(result.Usages) != 1 || result.Usages[0] != result.Definition {
 		t.Fatalf("local usages = %#v, want promoted binding", result.Usages)
+	}
+}
+
+func TestResolveBodylessFunctionBindings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "assembly.go")
+	source := "package api\nfunc external(input int) (output int)\n"
+	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
+		t.Fatalf("write bodyless declaration: %v", err)
+	}
+	for name, wantKind := range map[string]string{"input": "parameter", "output": "result"} {
+		result, err := symbol.Resolve(dir, "assembly.go", name)
+		if err != nil {
+			t.Fatalf("Resolve %s: %v", name, err)
+		}
+		if result.Definition == nil || result.Definition.Kind != wantKind {
+			t.Fatalf("Resolve %s definition = %#v, want %s", name, result.Definition, wantKind)
+		}
 	}
 }
 

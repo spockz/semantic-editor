@@ -141,54 +141,82 @@ func schemaAssignable(source, target ValueSchema) bool {
 	if source.Kind != target.Kind || source.Nullable && !target.Nullable {
 		return false
 	}
-	if len(target.Enum) > 0 {
-		if len(source.Enum) == 0 {
-			return false
-		}
-		for _, value := range source.Enum {
-			if !slices.ContainsFunc(target.Enum, func(candidate any) bool { return reflect.DeepEqual(value, candidate) }) {
-				return false
-			}
-		}
-	}
-	within := func(sourceMin, sourceMax, targetMin, targetMax *int) bool {
-		if targetMin != nil && (sourceMin == nil || *sourceMin < *targetMin) {
-			return false
-		}
-		if targetMax != nil && (sourceMax == nil || *sourceMax > *targetMax) {
-			return false
-		}
-		return true
-	}
-	withinNumbers := func() bool {
-		if target.Minimum != nil && (source.Minimum == nil || *source.Minimum < *target.Minimum) {
-			return false
-		}
-		if target.Maximum != nil && (source.Maximum == nil || *source.Maximum > *target.Maximum) {
-			return false
-		}
-		return true
+	if !schemaEnumAssignable(source.Enum, target.Enum) {
+		return false
 	}
 	switch source.Kind {
 	case SchemaBoolean:
 		return true
 	case SchemaString:
-		return within(source.MinLength, source.MaxLength, target.MinLength, target.MaxLength)
+		return integerBoundsAssignable(source.MinLength, source.MaxLength, target.MinLength, target.MaxLength)
 	case SchemaInteger, SchemaNumber:
-		return withinNumbers()
+		return numberBoundsAssignable(source, target)
 	case SchemaArray:
-		return source.Items != nil && target.Items != nil && within(source.MinItems, source.MaxItems, target.MinItems, target.MaxItems) && schemaAssignable(*source.Items, *target.Items)
+		return arraySchemaAssignable(source, target)
 	case SchemaObject:
-		for _, required := range target.Required {
-			if !slices.Contains(source.Required, required) {
-				return false
-			}
+		return objectSchemaAssignable(source, target)
+	}
+	return true
+}
+
+func schemaEnumAssignable(source, target []any) bool {
+	if len(target) == 0 {
+		return true
+	}
+	if len(source) == 0 {
+		return false
+	}
+	for _, value := range source {
+		if !slices.ContainsFunc(target, func(candidate any) bool { return reflect.DeepEqual(value, candidate) }) {
+			return false
 		}
-		for name, sourceProperty := range source.Properties {
-			targetProperty, ok := target.Properties[name]
-			if !ok || !schemaAssignable(sourceProperty, targetProperty) {
-				return false
-			}
+	}
+	return true
+}
+
+func integerBoundsAssignable(sourceMin, sourceMax, targetMin, targetMax *int) bool {
+	if targetMin != nil && (sourceMin == nil || *sourceMin < *targetMin) {
+		return false
+	}
+	if targetMax != nil && (sourceMax == nil || *sourceMax > *targetMax) {
+		return false
+	}
+	return true
+}
+
+func numberBoundsAssignable(source, target ValueSchema) bool {
+	if target.Minimum != nil && (source.Minimum == nil || *source.Minimum < *target.Minimum) {
+		return false
+	}
+	if target.Maximum != nil && (source.Maximum == nil || *source.Maximum > *target.Maximum) {
+		return false
+	}
+	return true
+}
+
+func arraySchemaAssignable(source, target ValueSchema) bool {
+	return source.Items != nil && target.Items != nil &&
+		integerBoundsAssignable(source.MinItems, source.MaxItems, target.MinItems, target.MaxItems) &&
+		schemaAssignable(*source.Items, *target.Items)
+}
+
+func objectSchemaAssignable(source, target ValueSchema) bool {
+	if !requiredPropertiesAssignable(source.Required, target.Required) {
+		return false
+	}
+	for name, sourceProperty := range source.Properties {
+		targetProperty, ok := target.Properties[name]
+		if !ok || !schemaAssignable(sourceProperty, targetProperty) {
+			return false
+		}
+	}
+	return true
+}
+
+func requiredPropertiesAssignable(source, target []string) bool {
+	for _, required := range target {
+		if !slices.Contains(source, required) {
+			return false
 		}
 	}
 	return true

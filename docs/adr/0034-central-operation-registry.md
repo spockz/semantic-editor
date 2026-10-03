@@ -21,6 +21,17 @@ schemas plus dispatch, batch entries, and the docgen capability matrix all
 derive from registered `Def` values. Registration is the act that makes an
 operation invokable, documented, and tested.
 
+Execution code is grouped into feature packages where a feature has a cohesive
+capture, validation, or publication lifecycle. `internal/contractedit` owns
+typed contract-edit execution, including source capture, rendering, test
+preflight, read-set checks, and checked publication. `internal/operation`
+retains request parsing, schemas, dispatch, presentation, and receipt
+finalization. `internal/navigation` owns backend lookup and rename execution,
+including post-rename identity proof. `internal/verification` owns project-plan
+discovery, trust checks, normalization, language-server verification, and
+coverage results. Feature packages accept typed request DTOs and backend
+services; they do not import `internal/operation` or receive its `CallContext`.
+
 Typing contract: each def pairs typed `Parse` (raw map to request) with typed
 `Run` handlers in `Def[Req,Res]`; type erasure lives only inside the
 `Register` closure. Handlers are per language

@@ -131,7 +131,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	inBuf := bytes.NewBufferString(input)
 	var outBuf bytes.Buffer
 
-	srv := mcp.NewServer("full", ".", &outBuf)
+	srv := mcp.NewServer("full", ".", &outBuf, mcp.WithToolProfile("full"))
 	ctx := t.Context()
 
 	if err := srv.Serve(ctx, inBuf); err != nil {
@@ -181,7 +181,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 	for _, required := range []string{
 		"semantic_rename",
-		"semantic_insert_structure",
+		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_add_build_dependency",
 		"semantic_verify",
@@ -514,10 +514,10 @@ func TestMCPContinuationOmitsAmbiguousSymbolAndStructureSelectorIsNotTarget(t *t
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package continuationcases\n\nfunc Handle(v string) int { switch v { default: return 0 } }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_structure\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"case\",\"in_function\":\"Handle\",\"discriminator\":\"v\",\"source\":\"case \\\"x\\\": return 1\"}}}\n" +
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_construct\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"case\",\"in_function\":\"Handle\",\"discriminator\":\"v\",\"source\":\"case \\\"x\\\": return 1\"}}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_declaration\",\"arguments\":{\"file\":\"main.go\",\"source\":\"const (Alpha = 1; Beta = 2)\"}}}\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", root, &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -603,24 +603,46 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	if len(lines) != 3 {
 		t.Fatalf("response lines = %d, want 3: %s", len(lines), out.String())
 	}
-	var toolResponse struct {
+	assertSemanticResponseKeepsMetricsSeparate(t, lines[1])
+	metrics := decodeFirstSemanticMetrics(t, lines[2])
+	assertSemanticSessionMetrics(t, metrics)
+	assertMetricsPresentationMatchesStructuredResult(t, metrics)
+}
+
+type firstSemanticMetricsResponse struct {
+	content    []string
+	structured json.RawMessage
+}
+
+type firstSemanticMetricsRecord struct {
+	Tool           string              `json:"tool"`
+	Metrics        map[string]any      `json:"metrics"`
+	SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+}
+
+func assertSemanticResponseKeepsMetricsSeparate(t *testing.T, raw string) {
+	t.Helper()
+	var response struct {
 		Result struct {
 			StructuredContent map[string]json.RawMessage `json:"structuredContent"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(lines[1]), &toolResponse); err != nil {
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := toolResponse.Result.StructuredContent["result"]; !ok {
-		t.Fatalf("semantic result missing structured result: %s", lines[1])
+	if _, ok := response.Result.StructuredContent["result"]; !ok {
+		t.Fatalf("semantic result missing structured result: %s", raw)
 	}
-	if _, ok := toolResponse.Result.StructuredContent["metrics"]; ok {
-		t.Fatalf("semantic response included inline metrics: %s", lines[1])
+	for _, field := range []string{"metrics", "session_metrics"} {
+		if _, ok := response.Result.StructuredContent[field]; ok {
+			t.Fatalf("semantic response included inline %s: %s", field, raw)
+		}
 	}
-	if _, ok := toolResponse.Result.StructuredContent["session_metrics"]; ok {
-		t.Fatalf("semantic response included inline session metrics: %s", lines[1])
-	}
-	var metricsResponse struct {
+}
+
+func decodeFirstSemanticMetrics(t *testing.T, raw string) firstSemanticMetricsResponse {
+	t.Helper()
+	var response struct {
 		Result struct {
 			Content []struct {
 				Text string `json:"text"`
@@ -630,50 +652,63 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(lines[2]), &metricsResponse); err != nil {
+	if err := json.Unmarshal([]byte(raw), &response); err != nil {
 		t.Fatal(err)
 	}
-	var metricsData struct {
-		Records []struct {
-			Tool           string              `json:"tool"`
-			Metrics        map[string]any      `json:"metrics"`
-			SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
-		} `json:"records"`
+	content := make([]string, len(response.Result.Content))
+	for index, item := range response.Result.Content {
+		content[index] = item.Text
 	}
-	if err := json.Unmarshal(metricsResponse.Result.StructuredContent.Result, &metricsData); err != nil {
+	return firstSemanticMetricsResponse{content: content, structured: response.Result.StructuredContent.Result}
+}
+
+func assertSemanticSessionMetrics(t *testing.T, response firstSemanticMetricsResponse) {
+	t.Helper()
+	var data struct {
+		Records []firstSemanticMetricsRecord `json:"records"`
+	}
+	if err := json.Unmarshal(response.structured, &data); err != nil {
 		t.Fatalf("decode structured metrics records: %v", err)
 	}
-	records := metricsData.Records
-	if len(records) != 1 || records[0].Tool != "semantic_verify" {
-		t.Fatalf("metrics records = %#v, want latest semantic_verify call", records)
+	if len(data.Records) != 1 || data.Records[0].Tool != "semantic_verify" {
+		t.Fatalf("metrics records = %#v, want latest semantic_verify call", data.Records)
 	}
-	if records[0].Metrics["schema_version"] == nil {
-		t.Fatalf("separate metrics record has no timings: %#v", records[0])
+	record := data.Records[0]
+	if record.Metrics["schema_version"] == nil {
+		t.Fatalf("separate metrics record has no timings: %#v", record)
 	}
-	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
+	if got := record.SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
 	}
+}
+
+func assertMetricsPresentationMatchesStructuredResult(t *testing.T, response firstSemanticMetricsResponse) {
+	t.Helper()
+	if len(response.content) == 0 {
+		t.Fatal("metrics response has no presentation content")
+	}
 	const prefixLabel = "Critical result (JSON): "
-	text := metricsResponse.Result.Content[0].Text
+	text := response.content[0]
 	prefix, _, found := strings.Cut(text, "\n\n")
 	if !found || !strings.HasPrefix(prefix, prefixLabel) {
 		t.Fatalf("metrics text omitted the critical JSON prefix: %q", text)
 	}
-	var presented map[string]any
-	decoder := json.NewDecoder(strings.NewReader(strings.TrimPrefix(prefix, prefixLabel)))
-	decoder.UseNumber()
-	if err := decoder.Decode(&presented); err != nil {
-		t.Fatalf("decode metrics text prefix: %v", err)
-	}
-	var structured any
-	decoder = json.NewDecoder(bytes.NewReader(metricsResponse.Result.StructuredContent.Result))
-	decoder.UseNumber()
-	if err := decoder.Decode(&structured); err != nil {
-		t.Fatalf("decode structured metrics result: %v", err)
-	}
+	presented := decodeUseNumberJSON(t, strings.TrimPrefix(prefix, prefixLabel))
+	structured := decodeUseNumberJSON(t, string(response.structured))
 	if !reflect.DeepEqual(presented["result"], structured) {
 		t.Fatalf("metrics text records differ from structured result: text=%#v structured=%#v", presented["result"], structured)
 	}
+}
+
+func decodeUseNumberJSON(t *testing.T, source string) map[string]any {
+	t.Helper()
+	decoder := json.NewDecoder(strings.NewReader(source))
+	decoder.UseNumber()
+	var decoded map[string]any
+	if err := decoder.Decode(&decoded); err != nil {
+		t.Fatalf("decode JSON presentation: %v", err)
+	}
+	return decoded
 }
 
 func TestMCPMetricsFileSurvivesServerRestart(t *testing.T) {
@@ -860,7 +895,7 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
 	var out bytes.Buffer
-	srv := mcp.NewServer("full", ".", &out)
+	srv := mcp.NewServer("full", ".", &out, mcp.WithToolProfile("full"))
 	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -1031,6 +1066,7 @@ func TestMCPMutationsOnlyProfile(t *testing.T) {
 
 func TestMCPSpecializedInsertAndImports(t *testing.T) {
 	dir := t.TempDir()
+	writeMCPFixtureModule(t, dir)
 	filePath := filepath.Join(dir, "app.go")
 	initial := `package app
 
@@ -1041,9 +1077,9 @@ func Existing() {}
 	}
 
 	messages := []string{
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"type","source":"type Item struct { ID string }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"decl","source":"const DefaultLimit = 50"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"type","source":"type Item struct { ID string }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"function","source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"const","source":"const DefaultLimit = 50"}}}`, filePath),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":%q,"add":["crand crypto/rand"]}}}`, filePath),
 	}
 
@@ -1107,101 +1143,91 @@ func TestMCPToolLocationError(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	writeMCPFixtureModule(t, dir)
 	filePath := filepath.Join(dir, "app.go")
 	if err := os.WriteFile(filePath, []byte("package app\n"), 0o600); err != nil {
 		t.Fatalf("write initial file: %v", err)
 	}
+	snippetResponse := callMCPErrorLocation(t, dir, "semantic_insert_construct", map[string]any{"file": filePath, "kind": "function", "source": "func broken( {"})
+	assertSnippetErrorLocation(t, snippetResponse)
 
-	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func broken( {"}}}`, filePath) + "\n"
-	inBuf := bytes.NewBufferString(callMsg)
-	var outBuf bytes.Buffer
-
-	srv := mcp.NewServer("full", dir, &outBuf)
-	ctx := context.Background()
-
-	if err := srv.Serve(ctx, inBuf); err != nil {
-		t.Fatalf("Serve failed: %v", err)
-	}
-
-	var resp struct {
-		JSONRPC string `json:"jsonrpc"`
-		ID      int    `json:"id"`
-		Result  struct {
-			IsError  bool `json:"isError"`
-			Location *struct {
-				URI   string `json:"uri"`
-				Range struct {
-					Start struct {
-						Line      int `json:"line"`
-						Character int `json:"character"`
-					} `json:"start"`
-					End struct {
-						Line      int `json:"line"`
-						Character int `json:"character"`
-					} `json:"end"`
-				} `json:"range"`
-			} `json:"location"`
-		} `json:"result"`
-	}
-
-	if err := json.Unmarshal(outBuf.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal error response: %v\nraw: %s", err, outBuf.String())
-	}
-
-	if !resp.Result.IsError {
-		t.Fatalf("expected isError true, got false")
-	}
-
-	if resp.Result.Location == nil {
-		t.Fatalf("expected location in tool error response, got nil:\n%s", outBuf.String())
-	}
-
-	expectedURI := "snippet:///source"
-	if resp.Result.Location.URI != expectedURI {
-		t.Errorf("expected snippet URI %q, got %q", expectedURI, resp.Result.Location.URI)
-	}
-
-	if resp.Result.Location.Range.Start.Line < 0 || resp.Result.Location.Range.Start.Character < 0 {
-		t.Errorf("expected non-negative 0-indexed range, got %+v", resp.Result.Location.Range)
-	}
-
-	// Also verify disk file location on parse error
 	brokenPath := filepath.Join(dir, "broken.go")
 	if err := os.WriteFile(brokenPath, []byte("package app\nfunc bad( {\n"), 0o600); err != nil {
 		t.Fatalf("write broken file: %v", err)
 	}
+	fileResponse := callMCPErrorLocation(t, dir, "semantic_lookup", map[string]any{"file": brokenPath, "symbol": "bad"})
+	assertDiskErrorLocation(t, fileResponse)
+}
 
-	callFileMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":%q,"symbol":"bad"}}}`, brokenPath) + "\n"
-	var outBuf2 bytes.Buffer
-	srv2 := mcp.NewServer("full", dir, &outBuf2)
-	if err := srv2.Serve(ctx, bytes.NewBufferString(callFileMsg)); err != nil {
+func writeMCPFixtureModule(t *testing.T, root string) {
+	t.Helper()
+	module := []byte("module example.com/mcpfixture\n\ngo 1.27.1\n")
+	if err := pipeline.WriteAtomic(filepath.Join(root, "go.mod"), module); err != nil {
+		t.Fatalf("write isolated Go fixture module: %v", err)
+	}
+}
+
+type mcpErrorLocationResponse struct {
+	Result struct {
+		IsError  bool `json:"isError"`
+		Location *struct {
+			URI   string `json:"uri"`
+			Range struct {
+				Start struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"start"`
+				End struct {
+					Line      int `json:"line"`
+					Character int `json:"character"`
+				} `json:"end"`
+			} `json:"range"`
+		} `json:"location"`
+	} `json:"result"`
+}
+
+func callMCPErrorLocation(t *testing.T, root, tool string, arguments map[string]any) mcpErrorLocationResponse {
+	t.Helper()
+	var input, output bytes.Buffer
+	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": arguments}}
+	if err := json.NewEncoder(&input).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), &input); err != nil {
 		t.Fatalf("Serve failed: %v", err)
 	}
+	var response mcpErrorLocationResponse
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal location response: %v\nraw: %s", err, output.String())
+	}
+	return response
+}
 
-	var resp2 struct {
-		JSONRPC string `json:"jsonrpc"`
-		ID      int    `json:"id"`
-		Result  struct {
-			IsError  bool `json:"isError"`
-			Location *struct {
-				URI   string `json:"uri"`
-				Range struct {
-					Start struct {
-						Line      int `json:"line"`
-						Character int `json:"character"`
-					} `json:"start"`
-				} `json:"range"`
-			} `json:"location"`
-		} `json:"result"`
+func assertSnippetErrorLocation(t *testing.T, response mcpErrorLocationResponse) {
+	t.Helper()
+	if !response.Result.IsError {
+		t.Fatal("expected tool error")
 	}
-	if err := json.Unmarshal(outBuf2.Bytes(), &resp2); err != nil {
-		t.Fatalf("unmarshal resp2: %v", err)
+	location := response.Result.Location
+	if location == nil {
+		t.Fatal("expected location in tool error response")
 	}
-	if resp2.Result.Location == nil {
-		t.Fatalf("expected location in file error response, got nil")
+	if location.URI != "snippet:///source" {
+		t.Errorf("snippet URI = %q, want snippet:///source", location.URI)
 	}
-	if !strings.HasPrefix(resp2.Result.Location.URI, "file://") {
-		t.Errorf("expected file:// URI for disk file, got %q", resp2.Result.Location.URI)
+	if location.Range.Start.Line < 0 || location.Range.Start.Character < 0 {
+		t.Errorf("expected non-negative 0-indexed snippet range, got %+v", location.Range)
+	}
+}
+
+func assertDiskErrorLocation(t *testing.T, response mcpErrorLocationResponse) {
+	t.Helper()
+	location := response.Result.Location
+	if location == nil {
+		t.Fatal("expected location in file error response")
+	}
+	if !strings.HasPrefix(location.URI, "file://") {
+		t.Errorf("expected file:// URI for disk file, got %q", location.URI)
 	}
 }
 
@@ -1214,71 +1240,11 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatalf("write calc.go: %v", err)
 	}
-
-	ctx := t.Context()
-
-	// 1. Take snapshot
-	snapReq := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_snapshot","arguments":{"label":"test-snap"}}}` + "\n"
-	var snapOut bytes.Buffer
-	srv := mcp.NewServer("full", dir, &snapOut)
-	if err := srv.Serve(ctx, bytes.NewBufferString(snapReq)); err != nil {
-		t.Fatalf("snapshot call: %v", err)
-	}
-
-	var snapResp struct {
-		Result struct {
-			IsError bool `json:"isError"`
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(snapOut.Bytes(), &snapResp); err != nil {
-		t.Fatalf("unmarshal snapResp: %v", err)
-	}
-	if snapResp.Result.IsError || len(snapResp.Result.Content) == 0 {
-		t.Fatalf("snapshot failed: %s", snapOut.String())
-	}
-
-	var snapData struct {
-		SnapshotID string `json:"snapshot_id"`
-	}
-	if err := json.Unmarshal([]byte(snapResp.Result.Content[0].Text), &snapData); err != nil {
-		t.Fatalf("unmarshal snapData: %v", err)
-	}
-	if snapData.SnapshotID == "" {
-		t.Fatalf("empty snapshot id")
-	}
-
-	// 2. Modify file on disk
+	snapshotID := createMCPSnapshot(t, dir)
 	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 99 }\n"), 0o600); err != nil {
 		t.Fatalf("modify calc.go: %v", err)
 	}
-
-	// 3. Undo snapshot
-	undoReq := fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_undo","arguments":{"snapshot_id":%q}}}`, snapData.SnapshotID) + "\n"
-	var undoOut bytes.Buffer
-	srv2 := mcp.NewServer("full", dir, &undoOut)
-	if err := srv2.Serve(ctx, bytes.NewBufferString(undoReq)); err != nil {
-		t.Fatalf("undo call: %v", err)
-	}
-
-	var undoResp struct {
-		Result struct {
-			IsError bool `json:"isError"`
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(undoOut.Bytes(), &undoResp); err != nil {
-		t.Fatalf("unmarshal undoResp: %v", err)
-	}
-	if undoResp.Result.IsError || len(undoResp.Result.Content) == 0 {
-		t.Fatalf("undo failed: %s", undoOut.String())
-	}
-
-	// 4. Verify restored content on disk
+	undoMCPSnapshot(t, dir, snapshotID)
 	// #nosec G304 -- test reads temporary file
 	restored, err := os.ReadFile(calcFile)
 	if err != nil {
@@ -1287,6 +1253,74 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	if !strings.Contains(string(restored), "return 1") {
 		t.Errorf("expected return 1, got %s", string(restored))
 	}
+}
+
+func createMCPSnapshot(t *testing.T, root string) string {
+	t.Helper()
+	response := runMCPToolCall(t, root, "semantic_snapshot", map[string]any{"label": "test-snap"})
+	var envelope struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			StructuredContent struct {
+				Result json.RawMessage `json:"result"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &envelope); err != nil {
+		t.Fatalf("unmarshal snapshot response: %v", err)
+	}
+	if envelope.Result.IsError || len(envelope.Result.Content) == 0 {
+		t.Fatalf("snapshot failed: %s", response)
+	}
+	var snapshotText string
+	if err := json.Unmarshal(envelope.Result.StructuredContent.Result, &snapshotText); err != nil {
+		t.Fatalf("unmarshal snapshot text: %v", err)
+	}
+	var snapshot struct {
+		ID string `json:"snapshot_id"`
+	}
+	if err := json.Unmarshal([]byte(snapshotText), &snapshot); err != nil {
+		t.Fatalf("unmarshal snapshot data: %v", err)
+	}
+	if snapshot.ID == "" {
+		t.Fatal("empty snapshot id")
+	}
+	return snapshot.ID
+}
+
+func undoMCPSnapshot(t *testing.T, root, snapshotID string) {
+	t.Helper()
+	response := runMCPToolCall(t, root, "semantic_undo", map[string]any{"snapshot_id": snapshotID})
+	var envelope struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(response, &envelope); err != nil {
+		t.Fatalf("unmarshal undo response: %v", err)
+	}
+	if envelope.Result.IsError || len(envelope.Result.Content) == 0 {
+		t.Fatalf("undo failed: %s", response)
+	}
+}
+
+func runMCPToolCall(t *testing.T, root, tool string, arguments map[string]any) []byte {
+	t.Helper()
+	request := map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": arguments}}
+	var input, output bytes.Buffer
+	if err := json.NewEncoder(&input).Encode(request); err != nil {
+		t.Fatal(err)
+	}
+	if err := mcp.NewServer("full", root, &output).Serve(t.Context(), &input); err != nil {
+		t.Fatalf("MCP tool call %s: %v", tool, err)
+	}
+	return output.Bytes()
 }
 
 type mcpExampleProperty struct {
@@ -1346,67 +1380,13 @@ func mcpExampleObjectMatches(value any, property mcpExampleProperty) bool {
 }
 
 func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
-	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
-		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
-		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
-	var output bytes.Buffer
-	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
-		t.Fatal(err)
-	}
-	var response struct {
-		Result struct {
-			Tools []struct {
-				Name        string `json:"name"`
-				InputSchema struct {
-					Properties map[string]mcpExampleProperty `json:"properties"`
-					Required   []string                      `json:"required"`
-					Examples   []map[string]json.RawMessage  `json:"examples"`
-				} `json:"inputSchema"`
-			} `json:"tools"`
-		} `json:"result"`
-	}
-	responses := strings.Split(strings.TrimSpace(output.String()), "\n")
-	if len(responses) == 0 {
-		t.Fatal("tools/list produced no response")
-	}
-	if err := json.Unmarshal([]byte(responses[len(responses)-1]), &response); err != nil {
-		t.Fatal(err)
-	}
-
+	tools := advertisedMCPExampleTools(t)
 	exampleCount := 0
-	for _, tool := range response.Result.Tools {
+	for _, tool := range tools {
 		for _, example := range tool.InputSchema.Examples {
 			exampleCount++
-			for _, required := range tool.InputSchema.Required {
-				if _, ok := example[required]; !ok {
-					t.Errorf("%s example is missing required parameter %q", tool.Name, required)
-				}
-			}
-			for key, raw := range example {
-				property, ok := tool.InputSchema.Properties[key]
-				if !ok {
-					t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
-					continue
-				}
-				var value any
-				if err := json.Unmarshal(raw, &value); err != nil {
-					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
-					continue
-				}
-				validType := mcpExampleValueMatches(value, property)
-				if !validType {
-					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
-				}
-				if len(property.Enum) > 0 {
-					matched := false
-					for _, allowed := range property.Enum {
-						matched = matched || string(allowed) == string(raw)
-					}
-					if !matched {
-						t.Errorf("%s example parameter %q is outside its enum", tool.Name, key)
-					}
-				}
-			}
+			assertMCPExampleRequiredParameters(t, tool, example)
+			assertMCPExampleProperties(t, tool, example)
 		}
 	}
 	if exampleCount == 0 {
@@ -1414,11 +1394,92 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 	}
 }
 
+type mcpExampleTool struct {
+	Name        string `json:"name"`
+	InputSchema struct {
+		Properties map[string]mcpExampleProperty `json:"properties"`
+		Required   []string                      `json:"required"`
+		Examples   []map[string]json.RawMessage  `json:"examples"`
+	} `json:"inputSchema"`
+}
+
+func advertisedMCPExampleTools(t *testing.T) []mcpExampleTool {
+	t.Helper()
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n" +
+		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
+		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
+	var output bytes.Buffer
+	if err := mcp.NewServer("full", ".", &output, mcp.WithToolProfile("full")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	responses := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(responses) == 0 {
+		t.Fatal("tools/list produced no response")
+	}
+	var response struct {
+		Result struct {
+			Tools []mcpExampleTool `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(responses[len(responses)-1]), &response); err != nil {
+		t.Fatal(err)
+	}
+	return response.Result.Tools
+}
+
+func assertMCPExampleRequiredParameters(t *testing.T, tool mcpExampleTool, example map[string]json.RawMessage) {
+	t.Helper()
+	for _, required := range tool.InputSchema.Required {
+		if _, ok := example[required]; !ok {
+			t.Errorf("%s example is missing required parameter %q", tool.Name, required)
+		}
+	}
+}
+
+func assertMCPExampleProperties(t *testing.T, tool mcpExampleTool, example map[string]json.RawMessage) {
+	t.Helper()
+	for key, raw := range example {
+		property, ok := tool.InputSchema.Properties[key]
+		if !ok {
+			t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
+			continue
+		}
+		value, err := mcpExampleJSONValue(raw)
+		if err != nil {
+			t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
+			continue
+		}
+		if !mcpExampleValueMatches(value, property) {
+			t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
+		}
+		assertMCPExampleEnum(t, tool.Name, key, raw, property.Enum)
+	}
+}
+
+func mcpExampleJSONValue(raw json.RawMessage) (any, error) {
+	var value any
+	err := json.Unmarshal(raw, &value)
+	return value, err
+}
+
+func assertMCPExampleEnum(t *testing.T, tool, key string, raw json.RawMessage, allowedValues []json.RawMessage) {
+	t.Helper()
+	if len(allowedValues) == 0 {
+		return
+	}
+	for _, allowed := range allowedValues {
+		if string(allowed) == string(raw) {
+			return
+		}
+	}
+	t.Errorf("%s example parameter %q is outside its enum", tool, key)
+}
+
 func TestFeedbackToolAdvertisesStructuredSchemaAndPrivacyGuidance(t *testing.T) {
 	t.Parallel()
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("mutations-only", t.TempDir(), &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("mutations-only", t.TempDir(), &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -1547,7 +1608,7 @@ func TestReportFeedbackRejectsMissingCoreFields(t *testing.T) {
 	arguments := `{"intent":"Fix a tool issue","interface":"mcp","command":"semantic_verify","parameters":{},"observed_result":"Unexpected error","unexpected_reason":"The file is valid.","manual_touchups":""}`
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_feedback","arguments":` + arguments + `}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", dir, &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -1571,7 +1632,7 @@ func TestMCPFullProfileListsFindReferences(t *testing.T) {
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", ".", &output, mcp.WithToolProfile("full")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "\"semantic_find_references\"") {
@@ -1663,11 +1724,11 @@ func TestMCPExpectedRootGuard(t *testing.T) {
 			t.Errorf("Initialize error %q does not include %q", err, want)
 		}
 	}
-	if got, err := os.ReadFile(marker); err != nil || string(got) != "unchanged" {
-		t.Errorf("mismatch changed fixture marker: contents=%q error=%v", got, err)
+	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "unchanged" {
+		t.Errorf("mismatch changed fixture marker: contents=%q error=%v", got, readErr)
 	}
-	if _, err := os.Stat(filepath.Join(actualRoot, ".scratch")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("mismatch initialized fixture Go state: %v", err)
+	if _, statErr := os.Stat(filepath.Join(actualRoot, ".scratch")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("mismatch initialized fixture Go state: %v", statErr)
 	}
 
 	matchingRoot := t.TempDir()
@@ -1910,19 +1971,51 @@ func TestMCPCancellationClosesIdleDiagnostics(t *testing.T) {
 }
 
 func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
+	fixture := writeMCPRefactoringFixture(t)
+	calls := mcpSessionReuseCalls()
+	requests := encodeMCPRefactoringRequests(t, calls)
+	responses := serveMCPRefactoringCalls(t, fixture.root, calls, requests.input)
+	assertMCPResponsesSuccessful(t, responses)
+	assertMCPMoveReceipt(t, responses, requests.moveID)
+	assertMCPGoSessionReused(t, fixture.counter)
+	assertMCPRefactoringResults(t, fixture.root)
+}
+
+type mcpRefactoringCall struct {
+	name      string
+	arguments map[string]any
+}
+
+type encodedMCPRefactoringRequests struct {
+	input  *bytes.Buffer
+	moveID int
+}
+
+func writeMCPRefactoringFixture(t *testing.T) managedMCPFixture {
+	t.Helper()
 	fixture := newManagedMCPFixture(t)
 	source := "package sample\n\nfunc Print(value int) { _ = value }\n\nfunc Emit() {\n\tPrint(1)\n}\n\nfunc Render(count int) {\n\tPrint(count + 1)\n}\n\nfunc Value() int {\n\tlocal := 2\n\treturn local\n}\n"
-	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "value.go"), []byte(source)); err != nil {
+	writeMCPFixtureFile(t, filepath.Join(fixture.root, "value.go"), source)
+	writeMCPFixtureFile(t, filepath.Join(fixture.root, "moved.go"), "package sample\n")
+	nested := filepath.Join(fixture.root, "nested")
+	if err := os.Mkdir(nested, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "moved.go"), []byte("package sample\n")); err != nil {
+	writeMCPFixtureFile(t, filepath.Join(nested, "nested.go"), "package nested\n\nfunc Nested() int { return 1 }\n")
+	return fixture
+}
+
+func writeMCPFixtureFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := pipeline.WriteAtomic(path, []byte(content)); err != nil {
 		t.Fatal(err)
 	}
-	calls := []struct {
-		name      string
-		arguments map[string]any
-	}{
+}
+
+func mcpSessionReuseCalls() []mcpRefactoringCall {
+	return []mcpRefactoringCall{
 		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
+		{"semantic_verify", map[string]any{"workspace_root": "nested", "path": ".", "language": "go", "check_only": true}},
 		{"semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
 		{"semantic_extract_function", map[string]any{"file": "value.go", "symbol": "emitOne", "in_function": "Emit", "kind": "function", "start_line": 6, "end_line": 6}},
 		{"semantic_extract_variable", map[string]any{"file": "value.go", "symbol": "total", "in_function": "Render", "discriminator": "count + 1"}},
@@ -1935,24 +2028,47 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 		}}},
 		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
 	}
-	var input bytes.Buffer
-	encoder := json.NewEncoder(&input)
+}
+
+func encodeMCPRefactoringRequests(t *testing.T, calls []mcpRefactoringCall) encodedMCPRefactoringRequests {
+	t.Helper()
+	input := &bytes.Buffer{}
+	encoder := json.NewEncoder(input)
 	if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
+	moveID := 0
 	for index, call := range calls {
-		if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": index + 2, "method": "tools/call", "params": map[string]any{"name": call.name, "arguments": call.arguments}}); err != nil {
+		requestID := index + 2
+		if call.name == "semantic_move_construct" {
+			moveID = requestID
+		}
+		request := map[string]any{"jsonrpc": "2.0", "id": requestID, "method": "tools/call", "params": map[string]any{"name": call.name, "arguments": call.arguments}}
+		if err := encoder.Encode(request); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if moveID == 0 {
+		t.Fatal("move_construct request missing from session reuse sequence")
+	}
+	return encodedMCPRefactoringRequests{input: input, moveID: moveID}
+}
+
+func serveMCPRefactoringCalls(t *testing.T, root string, calls []mcpRefactoringCall, input *bytes.Buffer) []string {
+	t.Helper()
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", fixture.root, &output).Serve(t.Context(), &input); err != nil {
+	if err := mcp.NewServer("full", root, &output).Serve(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
 	responses := strings.Split(strings.TrimSpace(output.String()), "\n")
 	if len(responses) != len(calls)+1 {
 		t.Fatalf("responses = %s", output.String())
 	}
+	return responses
+}
+
+func assertMCPResponsesSuccessful(t *testing.T, responses []string) {
+	t.Helper()
 	for _, line := range responses {
 		var response struct {
 			Error  json.RawMessage `json:"error"`
@@ -1967,30 +2083,55 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 			t.Fatalf("failed response: %s", line)
 		}
 	}
-	var moved struct {
-		Result struct {
-			Structured map[string]any `json:"structuredContent"`
-		} `json:"result"`
+}
+
+func assertMCPMoveReceipt(t *testing.T, responses []string, moveID int) {
+	t.Helper()
+	for _, line := range responses {
+		var response struct {
+			ID     int `json:"id"`
+			Result struct {
+				Structured map[string]any `json:"structuredContent"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &response); err != nil {
+			t.Fatalf("decode semantic response: %v", err)
+		}
+		if response.ID != moveID {
+			continue
+		}
+		fields := response.Result.Structured
+		if fields["file"] != "moved.go" || fields["origin_file"] != "value.go" || fields["symbol"] != "emitOne" {
+			t.Fatalf("move continuation fields = %#v, want destination file, historical source, and live symbol", fields)
+		}
+		return
 	}
-	if err := json.Unmarshal([]byte(responses[6]), &moved); err != nil {
-		t.Fatalf("decode move response: %v", err)
-	}
-	if moved.Result.Structured["file"] != "moved.go" || moved.Result.Structured["origin_file"] != "value.go" || moved.Result.Structured["symbol"] != "emitOne" {
-		t.Fatalf("move continuation fields = %#v, want destination file, historical source, and live symbol", moved.Result.Structured)
-	}
-	starts, err := os.ReadFile(fixture.counter)
+	t.Fatal("move_construct response missing from session reuse requests")
+}
+
+func assertMCPGoSessionReused(t *testing.T, counterPath string) {
+	t.Helper()
+	starts, err := os.ReadFile(counterPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Count(string(starts), "start\n"); got != 1 {
 		t.Fatalf("gopls starts = %d, want 1", got)
 	}
-	for file, expected := range map[string][]string{"value.go": {"emitThree()", "total := count + 1", "return int(2)", "func Value()"}, "moved.go": {"func emitThree()", "Print(3)"}} {
-		content, err := os.ReadFile(filepath.Join(fixture.root, file))
+}
+
+func assertMCPRefactoringResults(t *testing.T, root string) {
+	t.Helper()
+	expected := map[string][]string{
+		"value.go": {"emitThree()", "total := count + 1", "return int(2)", "func Value()"},
+		"moved.go": {"func emitThree()", "Print(3)"},
+	}
+	for file, fragments := range expected {
+		content, err := os.ReadFile(filepath.Join(root, file))
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, fragment := range expected {
+		for _, fragment := range fragments {
 			if !strings.Contains(string(content), fragment) {
 				t.Fatalf("%s missing %q: %s", file, fragment, content)
 			}

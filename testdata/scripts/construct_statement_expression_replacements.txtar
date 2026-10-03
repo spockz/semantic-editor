@@ -1,0 +1,97 @@
+# Generic replacement targets expression slots and whole statements by explicit selectors.
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Values --discriminator '1' --source '3'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Values --discriminator 'value > 0' --source 'value > 2'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Values --discriminator 'return 2' --source 'if value > 0 { return 5 }'
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function Repeated --discriminator '1' --source '9'
+stderr 'ambiguous.*construct_path'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Repeated --discriminator '1' --construct-path 1.e0 --source '9'
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function Shared --discriminator 'callValue()' --source 'return'
+stderr 'ambiguous.*construct_path'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Shared --discriminator 'callValue()' --construct-path 0.e0 --source 'recordValue()'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function Index --discriminator 'items[17]' --source 'items[18]'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function RuntimeNew --discriminator 'new(value)' --source 'new(value + 1)'
+cp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function Values --discriminator '3' --source 'if ('
+stderr 'syntax|expression'
+cmp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function Injection --discriminator '1' --source '2); injected()'
+stderr 'syntax|expression'
+cmp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function TypeOnly --discriminator int --source string
+stderr 'not found|match'
+cmp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function ParenthesizedMake --discriminator '[]int' --source '[]string'
+stderr 'not found|match'
+cmp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function ParenthesizedNew --discriminator int --source string
+stderr 'not found|match'
+cmp values.go .scratch/replaced.go
+! exec semedit replace-construct --file values.go --kind statement/expression --in-function Commented --discriminator 'old()' --construct-path 0 --source 'next() // keep this trailing comment'
+stderr 'comment|trailing'
+cmp values.go .scratch/replaced.go
+grep 'value := \(3\)' values.go
+grep 'if value > 2' values.go
+grep 'if value > 0' values.go
+grep 'return 5' values.go
+grep 'b := \(9\)' values.go
+grep 'recordValue()' values.go
+grep 'items.*18' values.go
+grep 'return new\(value \+ 1\)' values.go
+exec go test ./...
+
+-- go.mod --
+module example.com/constructreplace
+
+go 1.27.1
+-- values.go --
+package sample
+
+func Values(ok bool) int {
+	value := 1
+	if value > 0 {
+		return 2
+	}
+	return value
+}
+
+func Repeated() int {
+	a := 1
+	b := 1
+	return a + b
+}
+
+func Shared() {
+	callValue()
+}
+
+func callValue() {}
+func recordValue() {}
+
+func Index(items []int) int {
+	return items[17]
+}
+
+func RuntimeNew(value int) *int {
+	return new(value)
+}
+
+func Injection() int {
+	return 1
+}
+
+func TypeOnly() []int {
+	return make([]int, 2)
+}
+
+func ParenthesizedMake() []int {
+	return (make)([]int, 2)
+}
+
+func ParenthesizedNew() *int {
+	return (new)(int)
+}
+
+func Commented() { old(); keep() }
+func old() {}
+func keep() {}
+func next() {}

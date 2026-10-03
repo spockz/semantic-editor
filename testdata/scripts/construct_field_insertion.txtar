@@ -1,0 +1,24 @@
+# Generic construct insertion adds one field and refuses an existing field name.
+exec semedit insert-construct --file model.go --kind field --in-type Config --source 'Port int' --placement type_end
+stdout 'Successfully inserted field construct'
+! exec semedit insert-construct --file model.go --kind field --in-type Config --source 'Port string' --placement type_end
+stderr 'already exists|collision'
+cmp model.go want/model.go
+
+-- go.mod --
+module example.com/constructfield
+
+go 1.24
+-- model.go --
+package model
+
+type Config struct {
+	Host string
+}
+-- want/model.go --
+package model
+
+type Config struct {
+	Host string
+	Port int
+}

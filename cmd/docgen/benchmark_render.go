@@ -39,89 +39,108 @@ func renderBenchmarkComparisonsDoc(title, description, preamble string, comparis
 	sb.WriteString(benchmarkMethodology)
 
 	if len(comparisons) == 0 {
-		sb.WriteString(`> [!NOTE]
-> No benchmark evaluations exist yet in ` + "`data/benchmarks/results/`" + `. Run the benchmark harness using ` + "`go run ./tools/benchmark-harness --target ...`" + ` to record empirical results.
-`)
+		writeEmptyBenchmarkNote(&sb)
 		return sb.String()
 	}
-
-	currentTaskID := ""
-	currentTarget := ""
-	for _, comp := range comparisons {
-		if comp.TaskID != currentTaskID {
-			if currentTaskID != "" {
-				sb.WriteString("---\n\n")
-			}
-			fmt.Fprintf(&sb, "## Test case: `%s`\n\n", comp.TaskID)
-			currentTaskID = comp.TaskID
-			currentTarget = ""
-		}
-
-		targetStr := comp.Target.String()
-		if targetStr != currentTarget {
-			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
-			currentTarget = targetStr
-		}
-		fmt.Fprintf(&sb, "#### %s\n\n", formatDocConfiguration(comp))
-		writeDocConfigurationDetails(&sb, comp)
-
-		if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
-			writeDocPrompt(&sb, "LLM Prompt", comp.VanillaPrompt)
-		} else {
-			if comp.VanillaPrompt != "" {
-				writeDocPrompt(&sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
-			}
-			if comp.MCPPrompt != "" {
-				writeDocPrompt(&sb, "Semedit MCP Prompt", comp.MCPPrompt)
-			}
-		}
-
-		hasVerified := comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
-			comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
-
-		if hasVerified {
-			if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
-				writeDocPrompt(&sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
-			} else {
-				if comp.VanillaVerifiedPrompt != "" {
-					writeDocPrompt(&sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
-				}
-				if comp.MCPVerifiedPrompt != "" {
-					writeDocPrompt(&sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
-				}
-			}
-		}
-
-		if comp.BeforeState != "" {
-			sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
-			sb.WriteString(comp.BeforeState)
-			sb.WriteString("\n```\n</details>\n\n")
-		}
-
-		// 1. Standard Comparison Table (Unverified)
-		hasStandard := comp.SmallBaseline != nil || comp.SmallSemedit != nil ||
-			comp.LargeBaseline != nil || comp.LargeSemedit != nil
-
-		if hasStandard {
-			renderDocComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDocRunSummary(&sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
-			renderDocSemanticToolDiagnostic(&sb, comp.SmallSemedit)
-			renderDocRunSummary(&sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
-			renderDocSemanticToolDiagnostic(&sb, comp.LargeSemedit)
-		}
-
-		// 2. Verified Directive Comparison Table
-		if hasVerified {
-			sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
-			renderDocComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDocRunSummary(&sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDocSemanticToolDiagnostic(&sb, comp.SmallVerifiedSemedit)
-			renderDocRunSummary(&sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDocSemanticToolDiagnostic(&sb, comp.LargeVerifiedSemedit)
-		}
+	grouping := benchmarkDocGrouping{}
+	for _, comparison := range comparisons {
+		renderDocComparison(&sb, comparison, &grouping)
 	}
-
 	return sb.String()
+}
+
+func writeEmptyBenchmarkNote(sb *strings.Builder) {
+	sb.WriteString(`> [!NOTE]
+> No benchmark evaluations exist yet in ` + "`data/benchmarks/results/`" + `. Run the benchmark harness using ` + "`go run ./tools/benchmark-harness --target ...`" + ` to record empirical results.
+`)
+}
+
+type benchmarkDocGrouping struct {
+	task   string
+	target string
+}
+
+func renderDocComparison(sb *strings.Builder, comp *BenchComparisonSummary, grouping *benchmarkDocGrouping) {
+	writeBenchmarkDocGroupHeading(sb, comp, grouping)
+	fmt.Fprintf(sb, "#### %s\n\n", formatDocConfiguration(comp))
+	writeDocConfigurationDetails(sb, comp)
+	writeDocComparisonPrompts(sb, comp)
+	writeDocBeforeState(sb, comp.BeforeState)
+	writeDocRunComparisons(sb, comp)
+}
+
+func writeBenchmarkDocGroupHeading(sb *strings.Builder, comp *BenchComparisonSummary, grouping *benchmarkDocGrouping) {
+	if comp.TaskID != grouping.task {
+		if grouping.task != "" {
+			sb.WriteString("---\n\n")
+		}
+		fmt.Fprintf(sb, "## Test case: `%s`\n\n", comp.TaskID)
+		grouping.task = comp.TaskID
+		grouping.target = ""
+	}
+	target := comp.Target.String()
+	if target != grouping.target {
+		fmt.Fprintf(sb, "### Target: `%s`\n\n", target)
+		grouping.target = target
+	}
+}
+
+func writeDocComparisonPrompts(sb *strings.Builder, comp *BenchComparisonSummary) {
+	writeComparablePrompt(sb, "LLM Prompt", "Vanilla LLM Prompt", "Semedit MCP Prompt", comp.VanillaPrompt, comp.MCPPrompt)
+	if hasVerifiedBenchmarkRuns(comp) {
+		writeComparablePrompt(sb, "Verified Prompt", "Vanilla (Verified) Prompt", "Semedit MCP (Verified) Prompt", comp.VanillaVerifiedPrompt, comp.MCPVerifiedPrompt)
+	}
+}
+
+func writeComparablePrompt(sb *strings.Builder, equalLabel, leftLabel, rightLabel, leftPrompt, rightPrompt string) {
+	if leftPrompt != "" && rightPrompt != "" && leftPrompt == rightPrompt {
+		writeDocPrompt(sb, equalLabel, leftPrompt)
+		return
+	}
+	if leftPrompt != "" {
+		writeDocPrompt(sb, leftLabel, leftPrompt)
+	}
+	if rightPrompt != "" {
+		writeDocPrompt(sb, rightLabel, rightPrompt)
+	}
+}
+
+func writeDocBeforeState(sb *strings.Builder, state string) {
+	if state == "" {
+		return
+	}
+	sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
+	sb.WriteString(state)
+	sb.WriteString("\n```\n</details>\n\n")
+}
+
+func writeDocRunComparisons(sb *strings.Builder, comp *BenchComparisonSummary) {
+	if hasStandardBenchmarkRuns(comp) {
+		writeDocComparisonResults(sb, "Standard vs Semedit", 5, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+	}
+	if hasVerifiedBenchmarkRuns(comp) {
+		sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
+		writeDocComparisonResults(sb, "Verified vs Semedit", 6, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	}
+}
+
+func writeDocComparisonResults(sb *strings.Builder, label string, headingLevel int, smallBaseline, smallSemedit, largeBaseline, largeSemedit *BenchRunResult) {
+	renderDocComparisonTable(sb, smallBaseline, smallSemedit, largeBaseline, largeSemedit)
+	writeDocComparisonContext(sb, headingLevel, label+" in Small Context", smallBaseline, smallSemedit)
+	writeDocComparisonContext(sb, headingLevel, label+" in Large Context", largeBaseline, largeSemedit)
+}
+
+func writeDocComparisonContext(sb *strings.Builder, headingLevel int, label string, baseline, semedit *BenchRunResult) {
+	renderDocRunSummary(sb, headingLevel, label, baseline, semedit)
+	renderDocSemanticToolDiagnostic(sb, semedit)
+}
+
+func hasStandardBenchmarkRuns(comp *BenchComparisonSummary) bool {
+	return comp.SmallBaseline != nil || comp.SmallSemedit != nil || comp.LargeBaseline != nil || comp.LargeSemedit != nil
+}
+
+func hasVerifiedBenchmarkRuns(comp *BenchComparisonSummary) bool {
+	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil || comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
 }
 
 func writeDocPrompt(sb *strings.Builder, label, prompt string) {
@@ -218,7 +237,13 @@ func displayProvenance(provenance, legacyClassifiers map[string]string) string {
 func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
 	fmt.Fprintf(sb, "| Metric | Vanilla (Small) | %s | Δ (Small) | Vanilla (Large) | %s | Δ (Large) |\n", docMCPColumnHeader("Small", smRun), docMCPColumnHeader("Large", lmRun))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
+	renderDocLatencyRows(sb, sbRun, smRun, lbRun, lmRun)
+	renderDocUsageRows(sb, sbRun, smRun, lbRun, lmRun)
+	renderDocOutcomeRows(sb, sbRun, smRun, lbRun, lmRun)
+	sb.WriteString("\n")
+}
 
+func renderDocLatencyRows(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
 	sb.WriteString(formatDocMetricRowDuration("Wall-Clock Latency",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) time.Duration { return r.WallClock }))
@@ -238,7 +263,9 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 	sb.WriteString(formatDocMetricRowOptionalDuration("MCP Server Start → Initialize",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) *time.Duration { return r.MCPServerStartToInitialize }))
+}
 
+func renderDocUsageRows(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
 	sb.WriteString(formatDocMetricRowInt("Top-Level User Turns",
 		sbRun, smRun, lbRun, lmRun,
 		func(r *BenchRunResult) int { return r.Turns }))
@@ -282,7 +309,9 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 	sb.WriteString(formatDocCostRow(sbRun, smRun, lbRun, lmRun))
 
 	sb.WriteString(formatDocCachedToUncachedRatioRow(sbRun, smRun, lbRun, lmRun))
+}
 
+func renderDocOutcomeRows(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *BenchRunResult) {
 	sb.WriteString(formatDocOracleRow("Oracle L1: Mutation Policy",
 		sbRun, smRun, lbRun, lmRun,
 		func(o *BenchOracleResult) bool { return o.Level1Policy }))
@@ -301,8 +330,6 @@ func renderDocComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *B
 
 	sb.WriteString(formatDocMCPVerifiedRow("Semantic Tool Invocation Verified (per run)",
 		sbRun, smRun, lbRun, lmRun))
-
-	sb.WriteString("\n")
 }
 
 func docMCPColumnHeader(context string, run *BenchRunResult) string {

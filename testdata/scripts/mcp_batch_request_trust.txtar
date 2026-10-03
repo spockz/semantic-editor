@@ -1,0 +1,85 @@
+# Final batch hooks require trust on that request and use it only for the selected root.
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout '"isError":false'
+cmp .scratch/worktrees/selected/hook.log want-selected-hook.log
+cmp value.go want/main.go
+cmp value_test.go want/value_test.go
+cmp .scratch/worktrees/selected/value.go want/selected.go
+! exists main-hook.log
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_assertion_mode","params":{"file":"value_test.go","mode":"relax","trust_workspace":true}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"workspace_root":".scratch/worktrees/selected","trust_workspace":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"value.go","symbol":"Second","body":"return 2"}}]}}}
+-- go.mod --
+module example.com/batch-request-trust
+
+go 1.23
+-- value.go --
+package sample
+
+func First() int { return 0 }
+func Second() int { return 0 }
+-- value_test.go --
+package sample
+
+import "testing"
+
+func TestFirst(t *testing.T) {
+	if First() != 0 {
+		t.Fatalf("unexpected result")
+	}
+}
+-- .semedit.yaml --
+version: 1
+verify:
+  check:
+    - id: record-trust
+      languages: [go]
+      shell:
+        executable: sh
+        args: [-c]
+        script: 'printf "main\n" >> main-hook.log'
+-- .scratch/worktrees/selected/go.mod --
+module example.com/batch-request-trust-worktree
+
+go 1.23
+-- .scratch/worktrees/selected/value.go --
+package selected
+
+func Second() int { return 0 }
+-- .scratch/worktrees/selected/.semedit.yaml --
+version: 1
+verify:
+  check:
+    - id: record-selected-trust
+      languages: [go]
+      shell:
+        executable: sh
+        args: [-c]
+        script: 'printf "selected\n" >> hook.log'
+-- want-selected-hook.log --
+selected
+-- want/main.go --
+package sample
+
+func First() int { return 0 }
+func Second() int { return 0 }
+-- want/value_test.go --
+package sample
+
+import "testing"
+
+func TestFirst(t *testing.T) {
+	if First() != 0 {
+		t.Errorf("unexpected result")
+	}
+}
+-- want/selected.go --
+package selected
+
+func Second() int {
+	return 2
+}

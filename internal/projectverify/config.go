@@ -46,11 +46,11 @@ func Discover(root string) (Plan, error) {
 	}
 	plan := Plan{Root: absolute, Sources: sources, Checks: checks}
 	configPath := filepath.Join(absolute, ".semedit.yaml")
-	if _, err := os.Lstat(configPath); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
+	if _, configErr := os.Lstat(configPath); configErr != nil {
+		if errors.Is(configErr, fs.ErrNotExist) {
 			return plan, nil
 		}
-		return Plan{}, fmt.Errorf("inspect project verification config: %w", err)
+		return Plan{}, fmt.Errorf("inspect project verification config: %w", configErr)
 	}
 	configInfo, err := os.Lstat(configPath)
 	if err != nil {
@@ -280,103 +280,161 @@ func convertHooks(root string, configured []hookConfig, phase Phase, configPath 
 	seen := make(map[string]struct{}, len(configured))
 	for i, item := range configured {
 		where := fmt.Sprintf("verify.%s[%d]", phase, i)
-		if strings.TrimSpace(item.ID) == "" {
-			return nil, fmt.Errorf("%s: id is required", where)
-		}
 		if _, exists := seen[item.ID]; exists {
 			return nil, fmt.Errorf("%s: duplicate hook id %q", where, item.ID)
 		}
 		seen[item.ID] = struct{}{}
-		hook := Hook{ID: item.ID, Languages: canonicalLanguages(item.Languages), Disabled: item.Disabled, Signal: "explicit-config", ConfigPath: configPath}
-		if !hook.Disabled {
-			for _, language := range hook.Languages {
-				if !knownLanguage(language) {
-					return nil, fmt.Errorf("%s: unknown language %q", where, language)
-				}
-			}
-			if len(hook.Languages) == 0 {
-				return nil, fmt.Errorf("%s: at least one language filter is required", where)
-			}
-		}
-		if item.Cwd != "" {
-			cwd, err := safeRelativePath(item.Cwd)
-			if err != nil {
-				return nil, fmt.Errorf("%s cwd: %w", where, err)
-			}
-			info, err := os.Stat(filepath.Join(root, cwd))
-			if err != nil {
-				return nil, fmt.Errorf("%s cwd %q: %w", where, item.Cwd, err)
-			}
-			if !info.IsDir() {
-				return nil, fmt.Errorf("%s cwd %q is not a directory", where, item.Cwd)
-			}
-			hook.Cwd = filepath.ToSlash(cwd)
-		}
-		if item.Timeout != "" {
-			timeout, err := time.ParseDuration(item.Timeout)
-			if err != nil || timeout <= 0 || timeout > time.Hour {
-				if err == nil {
-					err = fmt.Errorf("timeout must be greater than zero and at most one hour")
-				}
-				return nil, fmt.Errorf("%s timeout: %w", where, err)
-			}
-			hook.Timeout = timeout
-		}
-		if hook.Disabled {
-			if len(item.Exec) > 0 || item.Shell != nil || item.LSP != nil {
-				return nil, fmt.Errorf("%s: disabled hook cannot also define an execution form", where)
-			}
-			hooks = append(hooks, hook)
-			continue
-		}
-		forms := 0
-		if len(item.Exec) > 0 {
-			forms++
-		}
-		if item.Shell != nil {
-			forms++
-		}
-		if item.LSP != nil {
-			forms++
-		}
-		if forms != 1 {
-			return nil, fmt.Errorf("%s: specify exactly one of exec, shell, or lsp", where)
-		}
-		if len(item.Exec) > 0 {
-			if strings.TrimSpace(item.Exec[0]) == "" {
-				return nil, fmt.Errorf("%s exec[0] must name an executable", where)
-			}
-			hook.Exec = append([]string(nil), item.Exec...)
-		}
-		if item.Shell != nil {
-			if strings.TrimSpace(item.Shell.Executable) == "" || strings.TrimSpace(item.Shell.Script) == "" {
-				return nil, fmt.Errorf("%s shell requires executable and script", where)
-			}
-			shell := *item.Shell
-			shell.Args = append([]string(nil), item.Shell.Args...)
-			hook.Shell = &shell
-		}
-		if item.LSP != nil {
-			lsp := &LSPSpec{
-				Language:   strings.ToLower(strings.TrimSpace(item.LSP.Language)),
-				ActionKind: strings.TrimSpace(item.LSP.ActionKind),
-				Command:    strings.TrimSpace(item.LSP.Command),
-				Arguments:  item.LSP.Arguments,
-			}
-			if lsp.Language == "" || (lsp.ActionKind == "") == (lsp.Command == "") {
-				return nil, fmt.Errorf("%s lsp requires language and exactly one of action_kind or command", where)
-			}
-			if !slices.Contains(hook.Languages, lsp.Language) {
-				return nil, fmt.Errorf("%s lsp language %q must be included in its language filters", where, lsp.Language)
-			}
-			if phase == PhaseCheck && lsp.ActionKind != "" {
-				return nil, fmt.Errorf("%s lsp code actions are only allowed during normalization", where)
-			}
-			hook.LSP = lsp
+		hook, err := convertConfiguredHook(root, item, phase, configPath, where)
+		if err != nil {
+			return nil, err
 		}
 		hooks = append(hooks, hook)
 	}
 	return hooks, nil
+}
+
+func convertConfiguredHook(root string, item hookConfig, phase Phase, configPath, where string) (Hook, error) {
+	if strings.TrimSpace(item.ID) == "" {
+		return Hook{}, fmt.Errorf("%s: id is required", where)
+	}
+	hook := Hook{ID: item.ID, Languages: canonicalLanguages(item.Languages), Disabled: item.Disabled, Signal: "explicit-config", ConfigPath: configPath}
+	if err := validateHookLanguages(hook, where); err != nil {
+		return Hook{}, err
+	}
+	if err := configureHookPaths(root, item, where, &hook); err != nil {
+		return Hook{}, err
+	}
+	if err := configureHookTimeout(item, where, &hook); err != nil {
+		return Hook{}, err
+	}
+	if err := configureHookExecution(item, phase, where, &hook); err != nil {
+		return Hook{}, err
+	}
+	return hook, nil
+}
+
+func validateHookLanguages(hook Hook, where string) error {
+	if hook.Disabled {
+		return nil
+	}
+	if len(hook.Languages) == 0 {
+		return fmt.Errorf("%s: at least one language filter is required", where)
+	}
+	for _, language := range hook.Languages {
+		if !knownLanguage(language) {
+			return fmt.Errorf("%s: unknown language %q", where, language)
+		}
+	}
+	return nil
+}
+
+func configureHookPaths(root string, item hookConfig, where string, hook *Hook) error {
+	if item.Cwd == "" {
+		return nil
+	}
+	cwd, err := safeRelativePath(item.Cwd)
+	if err != nil {
+		return fmt.Errorf("%s cwd: %w", where, err)
+	}
+	info, err := os.Stat(filepath.Join(root, cwd))
+	if err != nil {
+		return fmt.Errorf("%s cwd %q: %w", where, item.Cwd, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s cwd %q is not a directory", where, item.Cwd)
+	}
+	hook.Cwd = filepath.ToSlash(cwd)
+	return nil
+}
+
+func configureHookTimeout(item hookConfig, where string, hook *Hook) error {
+	if item.Timeout == "" {
+		return nil
+	}
+	timeout, err := time.ParseDuration(item.Timeout)
+	if err != nil || timeout <= 0 || timeout > time.Hour {
+		if err == nil {
+			err = fmt.Errorf("timeout must be greater than zero and at most one hour")
+		}
+		return fmt.Errorf("%s timeout: %w", where, err)
+	}
+	hook.Timeout = timeout
+	return nil
+}
+
+func configureHookExecution(item hookConfig, phase Phase, where string, hook *Hook) error {
+	if hook.Disabled {
+		if len(item.Exec) > 0 || item.Shell != nil || item.LSP != nil {
+			return fmt.Errorf("%s: disabled hook cannot also define an execution form", where)
+		}
+		return nil
+	}
+	if countHookForms(item) != 1 {
+		return fmt.Errorf("%s: specify exactly one of exec, shell, or lsp", where)
+	}
+	if err := configureExec(item, where, hook); err != nil {
+		return err
+	}
+	if err := configureShell(item, where, hook); err != nil {
+		return err
+	}
+	return configureLSP(item, phase, where, hook)
+}
+
+func countHookForms(item hookConfig) int {
+	count := 0
+	if len(item.Exec) > 0 {
+		count++
+	}
+	if item.Shell != nil {
+		count++
+	}
+	if item.LSP != nil {
+		count++
+	}
+	return count
+}
+
+func configureExec(item hookConfig, where string, hook *Hook) error {
+	if len(item.Exec) == 0 {
+		return nil
+	}
+	if strings.TrimSpace(item.Exec[0]) == "" {
+		return fmt.Errorf("%s exec[0] must name an executable", where)
+	}
+	hook.Exec = append([]string(nil), item.Exec...)
+	return nil
+}
+
+func configureShell(item hookConfig, where string, hook *Hook) error {
+	if item.Shell == nil {
+		return nil
+	}
+	if strings.TrimSpace(item.Shell.Executable) == "" || strings.TrimSpace(item.Shell.Script) == "" {
+		return fmt.Errorf("%s shell requires executable and script", where)
+	}
+	shell := *item.Shell
+	shell.Args = append([]string(nil), item.Shell.Args...)
+	hook.Shell = &shell
+	return nil
+}
+
+func configureLSP(item hookConfig, phase Phase, where string, hook *Hook) error {
+	if item.LSP == nil {
+		return nil
+	}
+	lsp := &LSPSpec{Language: strings.ToLower(strings.TrimSpace(item.LSP.Language)), ActionKind: strings.TrimSpace(item.LSP.ActionKind), Command: strings.TrimSpace(item.LSP.Command), Arguments: item.LSP.Arguments}
+	if lsp.Language == "" || (lsp.ActionKind == "") == (lsp.Command == "") {
+		return fmt.Errorf("%s lsp requires language and exactly one of action_kind or command", where)
+	}
+	if !slices.Contains(hook.Languages, lsp.Language) {
+		return fmt.Errorf("%s lsp language %q must be included in its language filters", where, lsp.Language)
+	}
+	if phase == PhaseCheck && lsp.ActionKind != "" {
+		return fmt.Errorf("%s lsp code actions are only allowed during normalization", where)
+	}
+	hook.LSP = lsp
+	return nil
 }
 
 func mergeChecks(explicit, detected []Hook) ([]Hook, error) {

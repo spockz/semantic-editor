@@ -28,7 +28,7 @@ func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext)
 
 var replaceDeclParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceReplaceDeclFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol, sourceExtractConstantReceiptSymbol}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, sourceExtractConstantReceiptSymbol}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
 }
@@ -107,7 +107,7 @@ func finishInsertedGoDeclaration(cc CallContext, file, targetPath, source, detai
 func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 	return Def[InsertDeclarationReq, FileEditRes]{
 		Key:     "insert_declaration",
-		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one top-level Go declaration and its generic placement controls fit the task. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, methods, types, constants, or variables so the operation matches the declaration. Accurately places one declaration at file boundaries, public/private sections, or relative to an existing symbol." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text replacement when role-based placement and generic placement controls for one top-level Go declaration fit the intent. Prefer semantic_insert_function, semantic_insert_type, semantic_insert_decl, or semantic_insert_construct for their matching kinds." + automaticVerificationGuidance,
 		Params:  insertDeclarationParams,
 		Level:   LevelFile,
 		CLIName: "insert",
@@ -164,8 +164,8 @@ func runInsertFunction(ctx context.Context, cc CallContext, req InsertFunctionRe
 
 func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 	return Def[InsertFunctionReq, FileEditRes]{
-		Key:     "insert_function",
-		Summary: "Use this tool instead of replace_file_content or write_to_file to add one complete Go function or method declaration to an existing file. Provide the full declaration, including parameters, results, and body. Exported names are public and lowercase names are private; access must match the name. Methods are clustered near receiver methods, with public declarations before private declarations. Example: func (s *Server) Stop(ctx context.Context) error { return nil }." + automaticVerificationGuidance,
+		Key: "insert_function", VariantVerb: "insert", VariantKind: "function",
+		Summary: "Use this tool instead of text replacement to add one complete Go function or method. Provide parameters, results, and body. Use semantic_insert_construct with kind=function or method for the generic interface; exported names require public access." + automaticVerificationGuidance,
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",
@@ -222,8 +222,8 @@ func runInsertType(ctx context.Context, cc CallContext, req InsertTypeReq) (File
 
 func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 	return Def[InsertTypeReq, FileEditRes]{
-		Key:     "insert_type",
-		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go struct, interface, or type alias to an existing file. Supply one type declaration; exported names require public access. Automatically anchors types within the appropriate section and resolves package imports." + automaticVerificationGuidance,
+		Key: "insert_type", VariantVerb: "insert", VariantKind: "type",
+		Summary: "Use this tool instead of replace_file_content to add one Go struct, interface, or type alias. Use semantic_insert_construct with kind=type for the generic interface; exported names require public access." + automaticVerificationGuidance,
 		Params:  insertTypeParams,
 		Level:   LevelFile,
 		CLIName: "insert-type",
@@ -249,7 +249,6 @@ type InsertDeclReq struct {
 	Placement           string
 	TargetSymbol        string
 	AutoOrganizeImports bool
-	Overwrite           bool
 }
 
 // ReplaceDeclReq replaces one package-level Go constant, variable, or type alias.
@@ -281,7 +280,6 @@ var insertDeclParams = []ParameterContract{
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically resolve and organize package imports (default true)", Default: true},
-	{Name: "overwrite", CLIName: "overwrite", JSONName: "overwrite", Type: ParamBoolean, Description: "Replace an existing declaration with the same name (default false)"},
 }
 
 func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
@@ -312,9 +310,6 @@ func parseInsertDecl(raw map[string]any) (InsertDeclReq, error) {
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
 		return req, err
 	}
-	if req.Overwrite, err = ParseBool(raw, "overwrite", "overwrite", false); err != nil {
-		return req, err
-	}
 	return req, nil
 }
 
@@ -326,7 +321,6 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 		Group:               req.Group,
 		Placement:           astedit.Placement(req.Placement),
 		TargetSymbol:        req.TargetSymbol,
-		Overwrite:           req.Overwrite,
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
 	if err != nil {
@@ -337,8 +331,8 @@ func runInsertDecl(ctx context.Context, cc CallContext, req InsertDeclReq) (File
 
 func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 	return Def[InsertDeclReq, FileEditRes]{
-		Key:     "insert_decl",
-		Summary: "Use this tool instead of replace_file_content or write_to_file when adding one Go constant or variable to an existing file. A single declaration with default placement merges into the parenthesized block matching its kind and visibility. Sentinel-shaped vars (`Err*`) resolve to the block already holding sentinel errors, placed alphabetically; without such a block they land alphabetically at the canonical section location, so sentinel grouping emerges without managed state. Existing package symbols are rejected by default; use semantic_replace_decl for updates or set overwrite=true intentionally. Use `target_symbol` with before/after placement for explicit anchoring, or `group: standalone` to opt out of merging." + automaticVerificationGuidance,
+		Key: "insert_decl", VariantVerb: "insert", VariantKind: "declaration",
+		Summary: "Use this tool instead of replace_file_content to add one Go constant or variable declaration. Use semantic_insert_construct with kind=const or var for the generic interface. Existing package symbols fail closed." + automaticVerificationGuidance,
 		Params:  insertDeclParams,
 		Level:   LevelFile,
 		CLIName: "insert-decl",
@@ -348,7 +342,7 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 			backend.LanguageGo: runInsertDecl,
 		},
 		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080", "overwrite": false},
+		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -429,8 +423,8 @@ func runReplaceDecl(ctx context.Context, cc CallContext, req ReplaceDeclReq) (Fi
 
 func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 	return Def[ReplaceDeclReq, FileEditRes]{
-		Key:     "replace_decl",
-		Summary: "Use this tool instead of replace_file_content or inserting a duplicate declaration when updating an existing package-level Go constant, variable, or type alias. The selected name must match the replacement declaration; grouped specs and collisions are checked before writing.",
+		Key: "replace_decl", VariantVerb: "replace", VariantKind: "declaration",
+		Summary: "Use this tool instead of replace_file_content to update one package-level Go constant, variable, or type alias. Use semantic_replace_construct with symbol and kind=const, var, or type for the generic interface; the selected name must match.",
 		Params:  replaceDeclParams,
 		Level:   LevelFile,
 		CLIName: "replace-decl",

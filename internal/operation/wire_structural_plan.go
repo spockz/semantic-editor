@@ -18,6 +18,8 @@ import (
 
 type structuralPlanSpec struct {
 	Key                  string
+	VariantVerb          string
+	VariantKind          string
 	CLIName              string
 	MCPName              string
 	Summary              string
@@ -44,7 +46,7 @@ func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPl
 		return runStructuralPlan(ctx, cc, raw, spec)
 	}
 	return Def[map[string]any, structuralPlanResult]{
-		Key: spec.Key, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
+		Key: spec.Key, VariantVerb: spec.VariantVerb, VariantKind: spec.VariantKind, Summary: spec.Summary, Params: spec.Params, Level: LevelFile,
 		CLIName: spec.CLIName, MCPName: spec.MCPName, Batchable: true, BufferedBatch: true,
 		ExampleRaw: spec.ExampleRaw,
 		Parse:      func(raw map[string]any) (map[string]any, error) { return maps.Clone(raw), nil },
@@ -111,8 +113,8 @@ func runStructuralPlan(ctx context.Context, cc CallContext, raw map[string]any, 
 		return structuralPlanResult{}, err
 	}
 	if plan.Changed {
-		if err := snapshot.validateOutput(plan.Source); err != nil {
-			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", err)
+		if outputErr := snapshot.validateOutput(plan.Source); outputErr != nil {
+			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", outputErr)
 		}
 	}
 	changed, err := snapshot.applyOutput(plan.Source)
@@ -247,37 +249,6 @@ func rawOptionalString(raw map[string]any, name string) astedit.OptionalString {
 	return result
 }
 
-func insertStatementStructuralDef() Def[map[string]any, structuralPlanResult] {
-	placement := structuralStringParam("placement", "Placement: insert immediately before or after the selected direct statement.", true, false, RolePolicy)
-	placement.Schema.Enum = []any{"before_construct", "after_construct"}
-	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, false, RoleSelector),
-		structuralStringParam(wireInFunction, "Selector: qualified function or receiver-qualified method owning the direct statement.", true, false, RoleSelector),
-		structuralStringParam(wireDiscriminator, "Selector: exact source text of one direct call or simple assignment statement.", true, false, RoleSelector),
-		structuralStringParam("source", "Value: exactly one direct call or simple assignment statement on one line.", true, false, RoleValue),
-		placement,
-		structuralStringParam("expected_revision", "Precondition: optional opaque full-file revision; stale values are refused.", false, false, RoleSelector),
-	}
-	output := structuralOutputContract(false)
-	return structuralPlanDef(structuralPlanSpec{
-		Key: "insert_statement", CLIName: "insert-statement", MCPName: "semantic_insert_statement",
-		Summary:    "Use this tool instead of replacing a function body to insert one direct call or simple assignment immediately before or after a uniquely selected direct statement. The qualified owner preserves its receiver; the discriminator is exact anchor source. This initial version only accepts straight-line owners without control-flow constructs or labels; shared-line statements and ambiguous anchors are refused. The operation typechecks the affected package before one buffered apply; batch receipts report applied_working without live selectors.",
-		Params:     params,
-		Output:     &output,
-		ExampleRaw: map[string]any{"file": "server.go", wireInFunction: "(*Server).Run", wireDiscriminator: "flush()", "source": "record()", "placement": "before_construct"},
-		Plan: func(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
-			return astedit.PlanInsertStatement(snapshot.Sources[snapshot.File], astedit.InsertStatementIntent{
-				Function: stringParam(raw, wireInFunction), Discriminator: stringParam(raw, wireDiscriminator),
-				ExpectedRevision: rawOptionalString(raw, "expected_revision"),
-				Source:           stringParam(raw, "source"), Placement: astedit.StatementPlacement(stringParam(raw, "placement")),
-			})
-		},
-		Result: func(cc CallContext, raw map[string]any, plan astedit.SourcePlan, status string) FileEditRes {
-			return FileEditRes{InFunction: stringParam(raw, wireInFunction), Discriminator: stringParam(raw, wireDiscriminator), Detail: "Inserted statement adjacent to the selected statement."}
-		},
-	})
-}
-
 func structuralOutputContract(includeContinuations bool) OperationOutputContract {
 	properties := map[string]ValueSchema{
 		"result":          {Kind: SchemaString},
@@ -303,7 +274,7 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 }
 
 func registerStructuralPlanOps(registry *Registry) error {
-	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertStatementStructuralDef(), insertFieldStructuralDef(), extractTypeStructuralDef()} {
+	for _, definition := range []Def[map[string]any, structuralPlanResult]{setDocCommentStructuralDef(), insertFieldStructuralDef(), extractTypeStructuralDef()} {
 		if err := Register(registry, definition); err != nil {
 			return fmt.Errorf("register structural plan %q: %w", definition.Key, err)
 		}

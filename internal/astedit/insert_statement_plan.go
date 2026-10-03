@@ -1,5 +1,4 @@
-// This file plans one direct call or assignment insertion without changing files or claiming control-flow equivalence.
-
+// Package astedit plans direct statement insertions without claiming control-flow equivalence.
 package astedit
 
 import (
@@ -8,18 +7,18 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"slices"
 	"strings"
 )
 
 type (
 	// StatementPlacement selects the side of a direct anchor statement.
-	// StatementPlacement selects the side of a direct anchor statement.
 	StatementPlacement string
 
 	// InsertStatementIntent supplies one direct statement and its exact owner anchor.
-	// InsertStatementIntent supplies one direct statement and its exact owner anchor.
 	InsertStatementIntent struct {
 		Function         string
+		Anchor           string
 		Discriminator    string
 		ConstructPath    OptionalString
 		ExpectedRevision OptionalString
@@ -29,113 +28,232 @@ type (
 )
 
 // Statement positions are relative to one live direct statement.
-// Statement positions are relative to one live direct statement.
 const (
 	StatementBefore StatementPlacement = "before_construct"
 	StatementAfter  StatementPlacement = "after_construct"
 )
 
 // PlanInsertStatement plans a direct call or assignment insertion without publication.
-// PlanInsertStatement plans a direct call or assignment insertion without publication.
 func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePlan, error) {
-	if intent.Function == "" || intent.Discriminator == "" || intent.Source == "" {
-		return SourcePlan{}, fmt.Errorf("function, discriminator, and source are required")
-	}
-	if intent.Placement != StatementBefore && intent.Placement != StatementAfter {
-		return SourcePlan{}, fmt.Errorf("unsupported statement placement %q", intent.Placement)
-	}
-	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
+	anchorMode, err := validateInsertStatementIntent(source, intent)
+	if err != nil {
 		return SourcePlan{}, err
-	}
-	if strings.ContainsAny(intent.Source, "\r\n") {
-		return SourcePlan{}, fmt.Errorf("inserted statement must be one single-line statement")
 	}
 	fset, file, err := parsePlanSource(source)
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	if intent.ConstructPath.Present {
-		return SourcePlan{}, fmt.Errorf("construct_path has no compatible live producer for direct call or assignment statements")
+	_, err = parseSingleDirectStatement(intent.Source)
+	if err != nil {
+		return SourcePlan{}, fmt.Errorf("validate inserted statement: %w", err)
 	}
-	functionName := intent.Function
+	owner, err := findInsertStatementOwner(file, intent.Function)
+	if err != nil {
+		return SourcePlan{}, err
+	}
+	selection, err := resolveInsertStatementAnchor(source, fset, file, owner, intent, anchorMode)
+	if err != nil {
+		return SourcePlan{}, err
+	}
+	return buildInsertStatementPlan(source, fset, owner, intent, selection)
+}
+
+func validateInsertStatementIntent(source []byte, intent InsertStatementIntent) (string, error) {
+	if intent.Function == "" || intent.Source == "" {
+		return "", fmt.Errorf("function and source are required")
+	}
+	anchorMode := resolveInsertStatementAnchorMode(intent.Anchor, intent.Placement)
+	if !slices.Contains([]string{"start", "end", "before_return", "before", "after"}, anchorMode) {
+		return "", fmt.Errorf("unsupported statement anchor %q", anchorMode)
+	}
+	if (anchorMode == "before" || anchorMode == "after") && intent.Discriminator == "" {
+		return "", fmt.Errorf("discriminator is required for %s insertion", anchorMode)
+	}
+	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
+		return "", err
+	}
+	return anchorMode, nil
+}
+
+func resolveInsertStatementAnchorMode(anchor string, placement StatementPlacement) string {
+	if anchor != "" {
+		return anchor
+	}
+	switch placement {
+	case StatementBefore:
+		return "before"
+	case StatementAfter:
+		return "after"
+	case "":
+		return "end"
+	default:
+		return string(placement)
+	}
+}
+
+func findInsertStatementOwner(file *ast.File, selector string) (*ast.FuncDecl, error) {
+	functionName, ownerSelector := splitFunctionOwnerSelector(selector)
+	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
+		return nil, fmt.Errorf("function selector %q is invalid", selector)
+	}
+	var owner *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != functionName || !matchesFunctionOwner(function, ownerSelector) {
+			continue
+		}
+		if owner != nil {
+			return nil, fmt.Errorf("function selector %q is ambiguous in this file", selector)
+		}
+		owner = function
+	}
+	if owner == nil || owner.Body == nil {
+		return nil, fmt.Errorf("function %q not found", selector)
+	}
+	return owner, nil
+}
+
+func splitFunctionOwnerSelector(selector string) (string, string) {
+	functionName := selector
 	ownerSelector := ""
 	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
 		ownerSelector, functionName = functionName[:dot], functionName[dot+1:]
 	}
-	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
-		return SourcePlan{}, fmt.Errorf("function selector %q is invalid", intent.Function)
+	return functionName, ownerSelector
+}
+
+type insertStatementAnchor struct {
+	statement ast.Stmt
+	mode      string
+}
+
+func resolveInsertStatementAnchor(source []byte, fset *token.FileSet, file *ast.File, owner *ast.FuncDecl, intent InsertStatementIntent, mode string) (insertStatementAnchor, error) {
+	if mode == "before" || mode == "after" {
+		return selectDirectStatementAnchor(source, fset, file, owner, intent, mode)
 	}
-	var owner *ast.FuncDecl
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != functionName {
-			continue
+	return selectConvenienceStatementAnchor(owner, intent.Function, mode)
+}
+
+func selectConvenienceStatementAnchor(owner *ast.FuncDecl, function, mode string) (insertStatementAnchor, error) {
+	selection := insertStatementAnchor{mode: mode}
+	switch mode {
+	case "start":
+		if len(owner.Body.List) > 0 {
+			selection.statement = owner.Body.List[0]
 		}
-		if !matchesFunctionOwner(fn, ownerSelector) {
-			continue
+	case "end":
+		if len(owner.Body.List) > 0 {
+			selection.statement = owner.Body.List[len(owner.Body.List)-1]
+			if isInsertTerminal(selection.statement) {
+				selection.mode = "before"
+			}
 		}
-		if owner != nil {
-			return SourcePlan{}, fmt.Errorf("function selector %q is ambiguous in this file", intent.Function)
+	case "before_return":
+		for _, statement := range slices.Backward(owner.Body.List) {
+			if _, ok := statement.(*ast.ReturnStmt); ok {
+				selection.statement, selection.mode = statement, "before"
+				break
+			}
 		}
-		owner = fn
-	}
-	if owner == nil || owner.Body == nil {
-		return SourcePlan{}, fmt.Errorf("function %q not found", intent.Function)
-	}
-	var unsafeControlFlow bool
-	ast.Inspect(owner.Body, func(node ast.Node) bool {
-		switch node.(type) {
-		case *ast.BranchStmt, *ast.LabeledStmt, *ast.ReturnStmt, *ast.IfStmt,
-			*ast.ForStmt, *ast.RangeStmt, *ast.SwitchStmt, *ast.TypeSwitchStmt,
-			*ast.SelectStmt, *ast.GoStmt, *ast.DeferStmt:
-			unsafeControlFlow = true
-		}
-		return true
-	})
-	if unsafeControlFlow {
-		return SourcePlan{}, fmt.Errorf("function %q contains control-flow or label constructs outside this planner's supported scope", intent.Function)
-	}
-	newStmt, err := parseSingleDirectStatement(intent.Source)
-	if err != nil {
-		return SourcePlan{}, fmt.Errorf("validate inserted statement: %w", err)
-	}
-	if !supportedDirectStatement(newStmt) {
-		return SourcePlan{}, fmt.Errorf("inserted statement must be one direct call or simple assignment")
-	}
-	matches := make([]ast.Stmt, 0, 1)
-	for _, stmt := range owner.Body.List {
-		start := fset.Position(stmt.Pos()).Offset
-		end := fset.Position(stmt.End()).Offset
-		if start >= 0 && end <= len(source) && string(source[start:end]) == intent.Discriminator && supportedDirectStatement(stmt) {
-			matches = append(matches, stmt)
+		if selection.statement == nil {
+			return insertStatementAnchor{}, fmt.Errorf("function %q has no direct return statement", function)
 		}
 	}
+	return selection, nil
+}
+
+func selectDirectStatementAnchor(source []byte, fset *token.FileSet, file *ast.File, owner *ast.FuncDecl, intent InsertStatementIntent, mode string) (insertStatementAnchor, error) {
+	candidates, _ := collectStatementExpressionCandidates(fset, source, file, owner)
+	matches := matchingDirectStatementCandidates(candidates, intent)
 	if len(matches) == 0 {
-		return SourcePlan{}, fmt.Errorf("direct call or assignment discriminator not found in %q", intent.Function)
+		return insertStatementAnchor{}, missingDirectStatementAnchorError(intent)
 	}
-	if len(matches) != 1 {
-		return SourcePlan{}, fmt.Errorf("discriminator matches %d direct statements; no compatible construct_path producer exists", len(matches))
+	if len(matches) > 1 {
+		return insertStatementAnchor{}, fmt.Errorf("ambiguous statement anchor %q; select construct_path with expected_revision %q from:\n%s", intent.Discriminator, goReadRevision(source), formatSpanCandidates(fset, matches))
 	}
-	anchor := matches[0]
-	if err := requireDedicatedStatementLine(source, fset, owner.Body, anchor); err != nil {
+	selected := matches[0]
+	if selected.class != "statement" {
+		return insertStatementAnchor{}, fmt.Errorf("construct_path %s selects an expression, not a direct statement anchor", selected.path)
+	}
+	statement, _ := selected.node.(ast.Stmt)
+	return insertStatementAnchor{statement: statement, mode: mode}, nil
+}
+
+func matchingDirectStatementCandidates(candidates []constructCandidate, intent InsertStatementIntent) []constructCandidate {
+	matches := make([]constructCandidate, 0, 1)
+	for _, candidate := range candidates {
+		if isDirectOwnerStatementCandidate(candidate) && candidate.key == normalizeConstructSelector(intent.Discriminator) {
+			matches = append(matches, candidate)
+		}
+	}
+	if intent.ConstructPath.Present {
+		matches = slices.DeleteFunc(matches, func(candidate constructCandidate) bool { return candidate.path != intent.ConstructPath.Value })
+	}
+	return matches
+}
+
+func missingDirectStatementAnchorError(intent InsertStatementIntent) error {
+	if intent.ConstructPath.Present {
+		return fmt.Errorf("construct_path %q does not select a direct statement anchor %q", intent.ConstructPath.Value, intent.Discriminator)
+	}
+	return fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
+}
+
+func buildInsertStatementPlan(source []byte, fset *token.FileSet, owner *ast.FuncDecl, intent InsertStatementIntent, selection insertStatementAnchor) (SourcePlan, error) {
+	if selection.statement == nil && (selection.mode == "start" || selection.mode == "end") {
+		offset, indent := emptyBlockInsertionOffset(source, fset, owner.Body)
+		newline := sourceNewline(source)
+		updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.Source)+newline))
+		return newSourcePlan(source, updated, PlanSelection{Kind: "statement", Owner: intent.Function}, ProofCompleteSourceSet), nil
+	}
+	if err := requireDedicatedStatementLine(source, fset, owner.Body, selection.statement); err != nil {
 		return SourcePlan{}, err
 	}
 	var offset int
 	var indent string
-	if intent.Placement == StatementBefore {
-		offset, indent = fieldLineStart(source, fset.Position(anchor.Pos()).Offset)
+	if selection.mode == "start" || selection.mode == "before" {
+		offset, indent = fieldLineStart(source, fset.Position(selection.statement.Pos()).Offset)
 	} else {
-		offset, indent = fieldLineEnd(source, fset.Position(anchor.End()).Offset)
+		if isInsertTerminal(selection.statement) {
+			return SourcePlan{}, fmt.Errorf("cannot insert after a terminal return, panic, or branch statement")
+		}
+		offset, indent = fieldLineEnd(source, fset.Position(selection.statement.End()).Offset)
 	}
-	newline := "\n"
-	if bytes.Contains(source, []byte("\r\n")) {
-		newline = "\r\n"
-	}
+	newline := sourceNewline(source)
 	updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.Source)+newline))
 	return newSourcePlan(source, updated, PlanSelection{
 		Kind: "statement", Owner: intent.Function, Target: intent.Discriminator,
-		Start: fset.Position(anchor.Pos()).Offset, End: fset.Position(anchor.End()).Offset,
+		Start: fset.Position(selection.statement.Pos()).Offset, End: fset.Position(selection.statement.End()).Offset,
 	}, ProofCompleteSourceSet, ProofBlockBinding, ProofControlFlowSet), nil
+}
+
+func isInsertTerminal(stmt ast.Stmt) bool {
+	switch value := stmt.(type) {
+	case *ast.ReturnStmt, *ast.BranchStmt:
+		return true
+	case *ast.ExprStmt:
+		call, ok := value.X.(*ast.CallExpr)
+		if !ok {
+			return false
+		}
+		ident, ok := call.Fun.(*ast.Ident)
+		return ok && ident.Name == "panic"
+	default:
+		return false
+	}
+}
+
+func sourceNewline(source []byte) string {
+	if bytes.Contains(source, []byte("\r\n")) {
+		return "\r\n"
+	}
+	return "\n"
+}
+
+func emptyBlockInsertionOffset(source []byte, fset *token.FileSet, body *ast.BlockStmt) (int, string) {
+	open := fset.Position(body.Lbrace).Offset
+	_, ownerIndent := fieldLineStart(source, open)
+	return open + 1, ownerIndent + "\t"
 }
 
 func matchesFunctionOwner(fn *ast.FuncDecl, selector string) bool {
@@ -186,26 +304,20 @@ func requireDedicatedStatementLine(source []byte, fset *token.FileSet, block *as
 	return nil
 }
 
-func parseSingleDirectStatement(source string) (ast.Stmt, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), "statement.go", []byte("package p\nfunc _() {\n"+source+"\n}"), parser.ParseComments|parser.AllErrors)
+func parseSingleDirectStatement(source string) (int, error) {
+	const wrapperPrefix = "package p\nfunc _() {\n"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "statement.go", []byte(wrapperPrefix+source+"\n}"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	fn := file.Decls[0].(*ast.FuncDecl)
-	if len(fn.Body.List) != 1 {
-		return nil, fmt.Errorf("expected exactly one statement")
+	if len(file.Decls) != 1 {
+		return 0, fmt.Errorf("expected exactly one statement and no declarations outside the wrapper function")
 	}
-	return fn.Body.List[0], nil
-}
-
-func supportedDirectStatement(stmt ast.Stmt) bool {
-	switch value := stmt.(type) {
-	case *ast.ExprStmt:
-		_, ok := value.X.(*ast.CallExpr)
-		return ok
-	case *ast.AssignStmt:
-		return value.Tok == token.ASSIGN && len(value.Lhs) == 1 && len(value.Rhs) == 1
-	default:
-		return false
+	fn, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || fn.Name.Name != "_" || fn.Recv != nil || len(fn.Body.List) != 1 {
+		return 0, fmt.Errorf("expected exactly one statement")
 	}
+	endOffset := fset.Position(fn.Body.List[0].End()).Offset - len(wrapperPrefix)
+	return endOffset, nil
 }

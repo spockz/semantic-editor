@@ -23,166 +23,216 @@ type DeclOptions struct {
 	Group               string // "append" (default for const/var) or "standalone"
 	Placement           Placement
 	TargetSymbol        string
-	Overwrite           bool
 	AutoOrganizeImports bool
 }
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindDecl,
-		AccessModifier:      opts.AccessModifier,
-		Group:               opts.Group,
-		Placement:           opts.Placement,
-		TargetSymbol:        opts.TargetSymbol,
-		Overwrite:           opts.Overwrite,
-		AutoOrganizeImports: opts.AutoOrganizeImports,
-	})
-	return err
+	return insertDeclImpl(ctx, filePath, source, opts)
 }
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func insertDeclImpl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
+	source = normalizeDeclSource(source)
+	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
+	target, err := prepareDeclInsertion(ctx, filePath, source, opts)
+	if err != nil {
+		return err
+	}
+	handled, err := insertDeclIntoGroup(ctx, target, source, opts)
+	if err != nil || handled {
+		return err
+	}
+	return insertDeclAtOffset(ctx, target, source, opts)
+}
+
+type declInsertionTarget struct {
+	cleanPath       string
+	content         []byte
+	fset            *token.FileSet
+	file            *ast.File
+	snippetDecls    []ast.Decl
+	effectiveAccess AccessModifier
+}
+
+func normalizeDeclSource(source string) string {
 	source = strings.TrimSpace(source)
 	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
 		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
-		source = source[1 : len(source)-1]
+		return source[1 : len(source)-1]
 	}
-	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
+	return source
+}
 
+func prepareDeclInsertion(ctx context.Context, filePath, source string, opts DeclOptions) (*declInsertionTarget, error) {
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
+		return nil, fmt.Errorf("read target file: %w", err)
 	}
-
 	snippetDecls, err := verifySnippetSyntax(source, "")
 	if err != nil {
-		return fmt.Errorf("validate declaration snippet: %w", err)
+		return nil, fmt.Errorf("validate declaration snippet: %w", err)
 	}
+	accessErr := validateDeclAccess(opts.AccessModifier, snippetDecls)
+	if accessErr != nil {
+		return nil, accessErr
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return nil, fmt.Errorf("cannot check package declaration collisions in unparseable target file: %w", err)
+	}
+	if err := checkInsertDeclCollisions(ctx, cleanPath, snippetDecls, file); err != nil {
+		return nil, err
+	}
+	return &declInsertionTarget{
+		cleanPath:       cleanPath,
+		content:         content,
+		fset:            fset,
+		file:            file,
+		snippetDecls:    snippetDecls,
+		effectiveAccess: declEffectiveAccess(snippetDecls, opts.AccessModifier),
+	}, nil
+}
 
-	for _, decl := range snippetDecls {
+func validateDeclAccess(access AccessModifier, decls []ast.Decl) error {
+	for _, decl := range decls {
 		for _, name := range extractDeclNames(decl) {
-			if err := ValidateAccess(DefaultBackend, opts.AccessModifier, name); err != nil {
-				if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
-					visErr.File = "snippet"
+			if err := ValidateAccess(DefaultBackend, access, name); err != nil {
+				if mismatch, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+					mismatch.File = "snippet"
 				}
 				return fmt.Errorf("validate access modifier for %q: %w", name, err)
 			}
 		}
 	}
+	return nil
+}
 
-	effectiveAccess := AccessModifierPublic
-	if len(snippetDecls) > 0 {
-		names := extractDeclNames(snippetDecls[0])
-		if len(names) > 0 {
-			eff, err := ResolveAccess(DefaultBackend, opts.AccessModifier, names[0])
-			if err == nil {
-				effectiveAccess = eff
-			}
+func declEffectiveAccess(decls []ast.Decl, requested AccessModifier) AccessModifier {
+	if len(decls) == 0 {
+		return AccessModifierPublic
+	}
+	names := extractDeclNames(decls[0])
+	if len(names) == 0 {
+		return AccessModifierPublic
+	}
+	access, err := ResolveAccess(DefaultBackend, requested, names[0])
+	if err != nil {
+		return AccessModifierPublic
+	}
+	return access
+}
+
+func insertDeclIntoGroup(ctx context.Context, target *declInsertionTarget, source string, opts DeclOptions) (bool, error) {
+	if opts.Group != "" && opts.Group != "append" || opts.Placement != "" || len(target.snippetDecls) != 1 {
+		return false, nil
+	}
+	incoming, ok := target.snippetDecls[0].(*ast.GenDecl)
+	if !ok || (incoming.Tok != token.CONST && incoming.Tok != token.VAR) {
+		return false, nil
+	}
+	group := findMatchingGroup(target.file, incoming.Tok, target.effectiveAccess)
+	if group == nil || !group.Rparen.IsValid() {
+		return false, nil
+	}
+	return true, writeGroupedDecl(ctx, target, group, incoming, source, opts.AutoOrganizeImports)
+}
+
+func writeGroupedDecl(ctx context.Context, target *declInsertionTarget, group, incoming *ast.GenDecl, source string, organizeImports bool) error {
+	specSource := extractSpecSource(source, incoming.Tok)
+	insertOffset := target.fset.Position(group.Rparen).Offset
+	if incoming.Tok == token.VAR {
+		if sentinelOffset, ok := sentinelVarInsertionOffset(target.fset, group, incoming); ok {
+			insertOffset = sentinelOffset
 		}
 	}
-
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
+	insertOffset = normalizeInsertionOffset(target.fset, target.file, target.content, insertOffset)
+	var buffer bytes.Buffer
+	buffer.Write(target.content[:insertOffset])
+	groupEnd := target.fset.Position(group.Rparen).Offset
+	writeGroupedDeclSeparator(&buffer, target.content, insertOffset, groupEnd, specSource)
+	buffer.Write(target.content[insertOffset:])
+	formatted, err := format.Source(buffer.Bytes())
 	if err != nil {
-		return fmt.Errorf("cannot check package declaration collisions in unparseable target file: %w", err)
+		return fmt.Errorf("preflight format grouped declaration insertion: %w", err)
 	}
-	handled, err := handleInsertDeclCollisions(ctx, cleanPath, source, snippetDecls, fileNode, opts)
+	return writeAndOrganize(ctx, target.cleanPath, formatted, organizeImports)
+}
+
+func writeGroupedDeclSeparator(buffer *bytes.Buffer, content []byte, insertOffset, groupEnd int, source string) {
+	switch {
+	case insertOffset != groupEnd:
+		buffer.WriteString(source)
+		buffer.WriteString("\n\t")
+	case !bytes.HasSuffix(content[:insertOffset], []byte("\n")):
+		buffer.WriteString("\n\t")
+	default:
+		buffer.WriteString("\t")
+	}
+	if insertOffset == groupEnd {
+		buffer.WriteString(source)
+		buffer.WriteString("\n")
+	}
+}
+
+func insertDeclAtOffset(ctx context.Context, target *declInsertionTarget, source string, opts DeclOptions) error {
+	insertOffset, err := calculateDeclOffset(target.fset, target.file, target.content, target.effectiveAccess, opts)
 	if err != nil {
-		return err
+		return enrichDeclPlacementError(err, target)
 	}
-	if handled {
-		return nil
-	}
+	insertOffset = normalizeInsertionOffset(target.fset, target.file, target.content, insertOffset)
+	newContent := buildDeclInsertionContent(target.content, insertOffset, source)
+	return writeAndOrganize(ctx, target.cleanPath, newContent, opts.AutoOrganizeImports)
+}
 
-	if (opts.Group == "" || opts.Group == "append") && opts.Placement == "" && len(snippetDecls) == 1 {
-		if gen, ok := snippetDecls[0].(*ast.GenDecl); ok && (gen.Tok == token.CONST || gen.Tok == token.VAR) {
-			targetGroup := findMatchingGroup(fileNode, gen.Tok, effectiveAccess)
-			if targetGroup != nil && targetGroup.Rparen.IsValid() {
-				specSource := extractSpecSource(source, gen.Tok)
-				insertOffset := fset.Position(targetGroup.Rparen).Offset
-				if gen.Tok == token.VAR {
-					if sentinelOffset, ok := sentinelVarInsertionOffset(fset, targetGroup, gen); ok {
-						insertOffset = sentinelOffset
-					}
-				}
-
-				insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
-
-				var buf bytes.Buffer
-				buf.Write(content[:insertOffset])
-				groupEnd := fset.Position(targetGroup.Rparen).Offset
-				switch {
-				case insertOffset != groupEnd:
-					buf.WriteString(specSource)
-					buf.WriteString("\n\t")
-				case !bytes.HasSuffix(content[:insertOffset], []byte("\n")):
-					buf.WriteString("\n")
-					buf.WriteString("\t")
-				default:
-					buf.WriteString("\t")
-				}
-				if insertOffset == groupEnd {
-					buf.WriteString(specSource)
-					buf.WriteString("\n")
-				}
-				buf.Write(content[insertOffset:])
-
-				formatted, err := format.Source(buf.Bytes())
-				if err != nil {
-					return fmt.Errorf("preflight format grouped declaration insertion: %w", err)
-				}
-				return writeAndOrganize(ctx, cleanPath, formatted, opts.AutoOrganizeImports)
-			}
+func enrichDeclPlacementError(err error, target *declInsertionTarget) error {
+	if placementErr, ok := errors.AsType[*PlacementError](err); ok {
+		if placementErr.File == "" {
+			placementErr.File = target.cleanPath
+		}
+		if !placementErr.Pos.IsValid() && target.file.Package.IsValid() {
+			placementErr.Pos = target.fset.Position(target.file.Package)
 		}
 	}
+	return fmt.Errorf("calculate declaration offset: %w", err)
+}
 
-	insertOffset, err := calculateDeclOffset(fset, fileNode, content, effectiveAccess, opts)
-	if err != nil {
-		if pErr, ok := errors.AsType[*PlacementError](err); ok {
-			if pErr.File == "" {
-				pErr.File = cleanPath
-			}
-			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
-				pErr.Pos = fset.Position(fileNode.Package)
-			}
-		}
-		return fmt.Errorf("calculate declaration offset: %w", err)
-	}
-
-	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
-
+func buildDeclInsertionContent(content []byte, insertOffset int, source string) []byte {
 	var newContent bytes.Buffer
 	newContent.Write(content[:insertOffset])
-
-	snippetText := strings.TrimSpace(source)
-	if strings.HasPrefix(snippetText, "package ") {
-		lines := strings.SplitN(snippetText, "\n", 2)
-		if len(lines) > 1 {
-			snippetText = strings.TrimSpace(lines[1])
-		}
-	}
-
+	snippetText := normalizePackageDeclSnippet(source)
 	if insertOffset > 0 {
-		prev := content[:insertOffset]
-		if !bytes.HasSuffix(prev, []byte("\n\n")) {
-			if bytes.HasSuffix(prev, []byte("\n")) {
-				newContent.WriteString("\n")
-			} else {
-				newContent.WriteString("\n\n")
-			}
-		}
+		writeDeclLeadingSeparator(&newContent, content[:insertOffset])
 	}
-
 	newContent.WriteString(snippetText)
 	newContent.WriteString("\n\n")
+	newContent.Write(bytes.TrimLeft(content[insertOffset:], "\r\n"))
+	return newContent.Bytes()
+}
 
-	rest := content[insertOffset:]
-	restTrimmed := bytes.TrimLeft(rest, "\r\n")
-	newContent.Write(restTrimmed)
+func normalizePackageDeclSnippet(source string) string {
+	snippet := strings.TrimSpace(source)
+	if !strings.HasPrefix(snippet, "package ") {
+		return snippet
+	}
+	lines := strings.SplitN(snippet, "\n", 2)
+	if len(lines) == 1 {
+		return snippet
+	}
+	return strings.TrimSpace(lines[1])
+}
 
-	return writeAndOrganize(ctx, cleanPath, newContent.Bytes(), opts.AutoOrganizeImports)
+func writeDeclLeadingSeparator(buffer *bytes.Buffer, previous []byte) {
+	if bytes.HasSuffix(previous, []byte("\n\n")) {
+		return
+	}
+	if bytes.HasSuffix(previous, []byte("\n")) {
+		buffer.WriteString("\n")
+		return
+	}
+	buffer.WriteString("\n\n")
 }
 
 func sentinelVarInsertionOffset(fset *token.FileSet, group *ast.GenDecl, incoming *ast.GenDecl) (int, bool) {
@@ -252,26 +302,12 @@ func extractSpecSource(raw string, tok token.Token) string {
 	}
 	leadingDoc := gen.Doc
 	if leadingDoc == nil {
-		for _, commentGroup := range file.Comments {
-			if commentGroup.End() <= gen.TokPos &&
-				fset.Position(commentGroup.End()).Line+1 >= fset.Position(gen.TokPos).Line {
-				leadingDoc = commentGroup
-			}
-		}
+		leadingDoc = nearestLeadingDeclComment(fset, file, gen)
 	}
 
 	parts := make([]string, 0, len(gen.Specs))
 	for index, spec := range gen.Specs {
-		start := spec.Pos()
-		end := spec.End()
-		if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-			if valueSpec.Doc != nil {
-				start = valueSpec.Doc.Pos()
-			}
-			if valueSpec.Comment != nil {
-				end = valueSpec.Comment.End()
-			}
-		}
+		start, end := specSourcePositions(spec)
 		startOffset := sourceOffset(start)
 		endOffset := sourceOffset(end)
 		if index == 0 && leadingDoc != nil {
@@ -289,6 +325,31 @@ func extractSpecSource(raw string, tok token.Token) string {
 		parts = append(parts, strings.TrimSpace(raw[startOffset:endOffset]))
 	}
 	return strings.Join(parts, "\n")
+}
+
+func nearestLeadingDeclComment(fset *token.FileSet, file *ast.File, decl *ast.GenDecl) *ast.CommentGroup {
+	var leading *ast.CommentGroup
+	for _, comment := range file.Comments {
+		if comment.End() <= decl.TokPos && fset.Position(comment.End()).Line+1 >= fset.Position(decl.TokPos).Line {
+			leading = comment
+		}
+	}
+	return leading
+}
+
+func specSourcePositions(spec ast.Spec) (token.Pos, token.Pos) {
+	start, end := spec.Pos(), spec.End()
+	valueSpec, ok := spec.(*ast.ValueSpec)
+	if !ok {
+		return start, end
+	}
+	if valueSpec.Doc != nil {
+		start = valueSpec.Doc.Pos()
+	}
+	if valueSpec.Comment != nil {
+		end = valueSpec.Comment.End()
+	}
+	return start, end
 }
 
 func calculateDeclOffset(fset *token.FileSet, fileNode *ast.File, content []byte, effectiveAccess AccessModifier, opts DeclOptions) (int, error) {

@@ -117,29 +117,12 @@ func (b *boundedBuffer) String() string {
 
 // Run executes one fixed Maven goal without a shell.
 func Run(ctx context.Context, req Request) (Result, error) {
-	root := backend.CanonicalWorkspaceRoot(req.Root)
-	trustRoot := backend.CanonicalWorkspaceRoot(req.Trust.WorkspaceRoot)
-	if !req.Trust.Trusted || trustRoot == "" || !within(trustRoot, root) {
-		return Result{}, &Error{Kind: "trust", Err: fmt.Errorf("%w: %w", ErrTrustRequired, ErrRootOutsideTrust)}
-	}
-	if req.Goal != "test-compile" && req.Goal != "test" {
-		return Result{}, &Error{Kind: "goal", Err: fmt.Errorf("unsupported Maven goal %q", req.Goal)}
-	}
-	pom := filepath.Join(root, "pom.xml")
-	canonicalPOM, err := filepath.EvalSymlinks(pom)
+	root, pom, err := validateRunRequest(req)
 	if err != nil {
-		return Result{}, &Error{Kind: "root pom", Err: ErrRootPOMRequired}
+		return Result{}, err
 	}
-	canonicalPOM = filepath.Clean(canonicalPOM)
-	if !within(root, canonicalPOM) {
-		return Result{}, &Error{Kind: "root pom", Err: ErrRootPOMOutsideTrust}
-	}
-	if info, err := os.Stat(canonicalPOM); err != nil || info.IsDir() {
-		return Result{}, &Error{Kind: "root pom", Err: ErrRootPOMRequired}
-	}
-	pom = canonicalPOM
-	if err := os.MkdirAll(filepath.Join(root, ".scratch"), 0o700); err != nil {
-		return Result{}, &Error{Kind: "scratch", Err: err}
+	if mkdirErr := os.MkdirAll(filepath.Join(root, ".scratch"), 0o700); mkdirErr != nil {
+		return Result{}, &Error{Kind: "scratch", Err: mkdirErr}
 	}
 	if req.Tool == "" {
 		req.Tool = ToolAuto
@@ -192,6 +175,30 @@ func Run(ctx context.Context, req Request) (Result, error) {
 	}
 	result.Error = err.Error()
 	return result, &Error{Kind: "Maven execution", Err: err, Result: &result}
+}
+
+func validateRunRequest(req Request) (string, string, error) {
+	root := backend.CanonicalWorkspaceRoot(req.Root)
+	trustRoot := backend.CanonicalWorkspaceRoot(req.Trust.WorkspaceRoot)
+	if !req.Trust.Trusted || trustRoot == "" || !within(trustRoot, root) {
+		return "", "", &Error{Kind: "trust", Err: fmt.Errorf("%w: %w", ErrTrustRequired, ErrRootOutsideTrust)}
+	}
+	if req.Goal != "test-compile" && req.Goal != "test" {
+		return "", "", &Error{Kind: "goal", Err: fmt.Errorf("unsupported Maven goal %q", req.Goal)}
+	}
+	pom := filepath.Join(root, "pom.xml")
+	canonicalPOM, resolveErr := filepath.EvalSymlinks(pom)
+	if resolveErr != nil {
+		return "", "", &Error{Kind: "root pom", Err: ErrRootPOMRequired}
+	}
+	canonicalPOM = filepath.Clean(canonicalPOM)
+	if !within(root, canonicalPOM) {
+		return "", "", &Error{Kind: "root pom", Err: ErrRootPOMOutsideTrust}
+	}
+	if info, statErr := os.Stat(canonicalPOM); statErr != nil || info.IsDir() {
+		return "", "", &Error{Kind: "root pom", Err: ErrRootPOMRequired}
+	}
+	return root, canonicalPOM, nil
 }
 
 func isolatedEnvironment(home string) []string {

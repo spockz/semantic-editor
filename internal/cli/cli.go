@@ -76,43 +76,71 @@ func rawParams(entry operation.Entry, values *flagValues, flagChanged func(strin
 		if param.CLIName == "" {
 			continue
 		}
-		switch param.Type {
-		case operation.ParamObject, operation.ParamArray:
-			if variable, ok := values.json[param.CLIName]; ok && (*variable != "" || (flagChanged != nil && flagChanged(param.CLIName))) {
-				decoder := json.NewDecoder(strings.NewReader(*variable))
-				decoder.UseNumber()
-				var decoded any
-				if err := decoder.Decode(&decoded); err != nil {
-					return nil, fmt.Errorf("decode --%s JSON value: %w", param.CLIName, err)
-				}
-				var trailing any
-				if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-					if err == nil {
-						return nil, fmt.Errorf("decode --%s JSON value: multiple values", param.CLIName)
-					}
-					return nil, fmt.Errorf("decode --%s JSON value trailing data: %w", param.CLIName, err)
-				}
-				raw[param.JSONName] = decoded
-			}
-		case operation.ParamBoolean:
-			if variable, ok := values.bools[param.CLIName]; ok {
-				raw[param.JSONName] = *variable
-			}
-		case operation.ParamStringSlice:
-			if variable, ok := values.slices[param.CLIName]; ok && len(*variable) > 0 {
-				raw[param.JSONName] = append([]string(nil), *variable...)
-			}
-		case operation.ParamInteger:
-			if variable, ok := values.ints[param.CLIName]; ok && *variable != 0 {
-				raw[param.JSONName] = *variable
-			}
-		default:
-			if variable, ok := values.strings[param.CLIName]; ok && (*variable != "" || (flagChanged != nil && flagChanged(param.CLIName))) {
-				raw[param.JSONName] = *variable
-			}
+		value, include, err := rawParamValue(param, values, flagChanged)
+		if err != nil {
+			return nil, err
+		}
+		if include {
+			raw[param.JSONName] = value
 		}
 	}
 	return raw, nil
+}
+
+func rawParamValue(param operation.ParameterContract, values *flagValues, changed func(string) bool) (any, bool, error) {
+	switch param.Type {
+	case operation.ParamObject, operation.ParamArray:
+		return rawJSONParam(param, values, changed)
+	case operation.ParamBoolean:
+		value, exists := values.bools[param.CLIName]
+		if !exists {
+			return nil, false, nil
+		}
+		return *value, true, nil
+	case operation.ParamStringSlice:
+		value, exists := values.slices[param.CLIName]
+		if !exists || len(*value) == 0 {
+			return nil, false, nil
+		}
+		return append([]string(nil), (*value)...), true, nil
+	case operation.ParamInteger:
+		value, exists := values.ints[param.CLIName]
+		if !exists || *value == 0 {
+			return nil, false, nil
+		}
+		return *value, true, nil
+	default:
+		value, exists := values.strings[param.CLIName]
+		if !exists || *value == "" && !isChanged(changed, param.CLIName) {
+			return nil, false, nil
+		}
+		return *value, true, nil
+	}
+}
+
+func rawJSONParam(param operation.ParameterContract, values *flagValues, changed func(string) bool) (any, bool, error) {
+	value, exists := values.json[param.CLIName]
+	if !exists || *value == "" && !isChanged(changed, param.CLIName) {
+		return nil, false, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(*value))
+	decoder.UseNumber()
+	var decoded any
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, false, fmt.Errorf("decode --%s JSON value: %w", param.CLIName, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return nil, false, fmt.Errorf("decode --%s JSON value: multiple values", param.CLIName)
+		}
+		return nil, false, fmt.Errorf("decode --%s JSON value trailing data: %w", param.CLIName, err)
+	}
+	return decoded, true, nil
+}
+
+func isChanged(changed func(string) bool, name string) bool {
+	return changed != nil && changed(name)
 }
 
 func writeMavenFailure(stderr io.Writer, err error) (bool, error) {
@@ -224,9 +252,9 @@ func newInstallCommand(workDir string) *cobra.Command {
 func newIntegrationStatusCommand(workDir string) *cobra.Command {
 	var scope, workspace string
 	cmd := &cobra.Command{Use: "status TARGET", Short: "Report native semedit harness integration status", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		target, err := targetArgs(args)
-		if err != nil {
-			return err
+		target, targetErr := targetArgs(args)
+		if targetErr != nil {
+			return targetErr
 		}
 		if workspace == "" {
 			workspace = workDir
@@ -291,52 +319,70 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cc := operation.NewCallContext(workDir, backend.ProjectContext{})
-			cc.Ctx = cmd.Context()
-			raw, err := rawParams(entry, values, func(name string) bool { return cmd.Flags().Changed(name) })
-			if err != nil {
-				return err
-			}
-			if err := expandStdinPayloads(entry, raw, cmd.InOrStdin()); err != nil {
-				return err
-			}
-			result, err := registry.Dispatch(cc, entry.Key, raw)
-			if err != nil {
-				written, writeErr := writeMavenFailure(cmd.ErrOrStderr(), err)
-				if writeErr != nil {
-					return writeErr
-				}
-				if !written {
-					if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", entry.CLIName, err); writeErr != nil {
-						return fmt.Errorf("write %s error: %w", entry.CLIName, writeErr)
-					}
-				}
-				return ErrCommandFailed
-			}
-			text, err := entry.Format(result)
-			if err != nil {
-				if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: format result: %v\n", entry.CLIName, err); writeErr != nil {
-					return fmt.Errorf("write %s format error: %w", entry.CLIName, writeErr)
-				}
-				return ErrCommandFailed
-			}
-			if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
-				if _, writeErr := fmt.Fprintln(cmd.OutOrStdout(), text); writeErr != nil {
-					return fmt.Errorf("write %s result: %w", entry.CLIName, writeErr)
-				}
-				if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", entry.CLIName, verify.Failure); writeErr != nil {
-					return fmt.Errorf("write %s verification error: %w", entry.CLIName, writeErr)
-				}
-				return ErrCommandFailed
-			}
-			if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
-				return fmt.Errorf("write %s result: %w", entry.CLIName, err)
-			}
-			return nil
+			return executeCommand(cmd, workDir, registry, entry, values)
 		},
 	}
 	registerFlags(cmd, entry.Params, values)
 	return cmd
+}
+
+func executeCommand(cmd *cobra.Command, workDir string, registry *operation.Registry, entry operation.Entry, values *flagValues) error {
+	cc := operation.NewCallContext(workDir, backend.ProjectContext{})
+	cc.Ctx = cmd.Context()
+	raw, err := rawParams(entry, values, func(name string) bool { return cmd.Flags().Changed(name) })
+	if err != nil {
+		return err
+	}
+	err = expandStdinPayloads(entry, raw, cmd.InOrStdin())
+	if err != nil {
+		return err
+	}
+	result, err := registry.Dispatch(cc, entry.Key, raw)
+	if err != nil {
+		return reportCommandFailure(cmd, entry, err)
+	}
+	return writeCommandResult(cmd, entry, result)
+}
+
+func reportCommandFailure(cmd *cobra.Command, entry operation.Entry, operationErr error) error {
+	written, err := writeMavenFailure(cmd.ErrOrStderr(), operationErr)
+	if err != nil {
+		return err
+	}
+	if written {
+		return ErrCommandFailed
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %v\n", entry.CLIName, operationErr); err != nil {
+		return fmt.Errorf("write %s error: %w", entry.CLIName, err)
+	}
+	return ErrCommandFailed
+}
+
+func writeCommandResult(cmd *cobra.Command, entry operation.Entry, result any) error {
+	text, err := entry.Format(result)
+	if err != nil {
+		if _, writeErr := fmt.Fprintf(cmd.ErrOrStderr(), "%s: format result: %v\n", entry.CLIName, err); writeErr != nil {
+			return fmt.Errorf("write %s format error: %w", entry.CLIName, writeErr)
+		}
+		return ErrCommandFailed
+	}
+	if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
+		return writeVerificationFailure(cmd, entry, text, verify.Failure)
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), text); err != nil {
+		return fmt.Errorf("write %s result: %w", entry.CLIName, err)
+	}
+	return nil
+}
+
+func writeVerificationFailure(cmd *cobra.Command, entry operation.Entry, result, failure string) error {
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), result); err != nil {
+		return fmt.Errorf("write %s result: %w", entry.CLIName, err)
+	}
+	if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", entry.CLIName, failure); err != nil {
+		return fmt.Errorf("write %s verification error: %w", entry.CLIName, err)
+	}
+	return ErrCommandFailed
 }
 
 func isStdinPayloadParameter(param operation.ParameterContract) bool {

@@ -136,9 +136,9 @@ func referencesModuleRoot(project backend.ProjectContext) (string, error) {
 		if !pathWithin(workspaceRoot, selected) {
 			return "", fmt.Errorf("selected file %s is outside the project root %s", selected, workspaceRoot)
 		}
-		moduleRoot, found, err := enclosingGoModule(filepath.Dir(selected))
-		if err != nil {
-			return "", err
+		moduleRoot, found, moduleErr := enclosingGoModule(filepath.Dir(selected))
+		if moduleErr != nil {
+			return "", moduleErr
 		}
 		if found && pathWithin(moduleRoot, selected) {
 			return moduleRoot, nil
@@ -323,8 +323,8 @@ func (GoBackend) FindReferences(ctx context.Context, request backend.ReferencesR
 	if err != nil {
 		return nil, fmt.Errorf("find references: %w", err)
 	}
-	if err := rejectActiveGoWorkspace(ctx, root); err != nil {
-		return nil, fmt.Errorf("find references: %w", err)
+	if workspaceErr := rejectActiveGoWorkspace(ctx, root); workspaceErr != nil {
+		return nil, fmt.Errorf("find references: %w", workspaceErr)
 	}
 	selectedFile, err := selectedReferenceFile(request.Project, root)
 	if err != nil {
@@ -352,8 +352,8 @@ func (GoBackend) FindReferences(ctx context.Context, request backend.ReferencesR
 	if err != nil {
 		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: err}
 	}
-	if err := sources.verifyUnchanged(); err != nil {
-		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: err}
+	if verifyErr := sources.verifyUnchanged(); verifyErr != nil {
+		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: verifyErr}
 	}
 	scopePath, err := referenceScopePath(workspaceRoot, root)
 	if err != nil {
@@ -454,54 +454,8 @@ func collectTypedReferencesInScope(moduleRoot, outputRoot string, target *refere
 	files := make(map[string][]byte)
 	for _, pkg := range loaded {
 		for _, file := range pkg.Syntax {
-			filePath, err := packageSyntaxPath(pkg, file)
-			if err != nil {
+			if err := collectTypedReferencesInFile(moduleRoot, outputRoot, target, pkg, file, originals, sources, records); err != nil {
 				return nil, nil, err
-			}
-			if !originals[filePath] || !pathWithin(moduleRoot, filePath) {
-				continue
-			}
-			for ident, object := range pkg.TypesInfo.Uses {
-				if !ident.Pos().IsValid() || ident.Pos() < file.Pos() || ident.Pos() >= file.End() {
-					continue
-				}
-				identity, valid, err := referenceObjectIdentity(object, pkg.Fset)
-				if err != nil {
-					return nil, nil, err
-				}
-				if !valid || identity != target.identity {
-					continue
-				}
-				position := pkg.Fset.PositionFor(ident.Pos(), false)
-				absolute, err := cleanAbsolutePath(position.Filename)
-				if err != nil {
-					return nil, nil, err
-				}
-				if !originals[absolute] {
-					continue
-				}
-				source, ok := sources.source(absolute)
-				if !ok {
-					return nil, nil, fmt.Errorf("reference source was not captured by parser: %s", absolute)
-				}
-				start := position.Offset
-				end := pkg.Fset.PositionFor(ident.End(), false).Offset
-				rangeValue, err := sourceRange(source, start, end)
-				if err != nil {
-					return nil, nil, err
-				}
-				filePath, err := relativeSourcePath(outputRoot, absolute)
-				if err != nil {
-					return nil, nil, err
-				}
-				key := fmt.Sprintf("%s:%d:%d", absolute, start, end)
-				if _, exists := records[key]; exists {
-					continue
-				}
-				records[key] = referenceRecord{file: absolute, offset: start, reference: backend.Reference{
-					File: filePath, Range: rangeValue, EnclosingSymbol: enclosingReferenceSymbol(file, ident.Pos()),
-					Snippet: sourceLine(source, start),
-				}}
 			}
 		}
 	}
@@ -513,6 +467,76 @@ func collectTypedReferencesInScope(moduleRoot, outputRoot string, target *refere
 		files[path] = source
 	}
 
+	references := orderReferenceRecords(records)
+	revisions, err := revisionRecords(outputRoot, files)
+	return references, revisions, err
+}
+
+func collectTypedReferencesInFile(moduleRoot, outputRoot string, target *referenceTarget, pkg *packages.Package, file *ast.File, originals map[string]bool, sources *referenceSourceSnapshot, records map[string]referenceRecord) error {
+	filePath, err := packageSyntaxPath(pkg, file)
+	if err != nil {
+		return err
+	}
+	if !originals[filePath] || !pathWithin(moduleRoot, filePath) {
+		return nil
+	}
+	for ident, object := range pkg.TypesInfo.Uses {
+		if !ident.Pos().IsValid() || ident.Pos() < file.Pos() || ident.Pos() >= file.End() {
+			continue
+		}
+		match, err := typedReferenceRecord(outputRoot, target, pkg, file, ident, object, originals, sources)
+		if err != nil {
+			return err
+		}
+		if match.include {
+			if _, exists := records[match.key]; exists {
+				continue
+			}
+			records[match.key] = match.record
+		}
+	}
+	return nil
+}
+
+type typedReferenceMatch struct {
+	record  referenceRecord
+	key     string
+	include bool
+}
+
+func typedReferenceRecord(outputRoot string, target *referenceTarget, pkg *packages.Package, file *ast.File, ident *ast.Ident, object types.Object, originals map[string]bool, sources *referenceSourceSnapshot) (typedReferenceMatch, error) {
+	identity, valid, err := referenceObjectIdentity(object, pkg.Fset)
+	if err != nil || !valid || identity != target.identity {
+		return typedReferenceMatch{}, err
+	}
+	position := pkg.Fset.PositionFor(ident.Pos(), false)
+	absolute, err := cleanAbsolutePath(position.Filename)
+	if err != nil || !originals[absolute] {
+		return typedReferenceMatch{}, err
+	}
+	source, ok := sources.source(absolute)
+	if !ok {
+		return typedReferenceMatch{}, fmt.Errorf("reference source was not captured by parser: %s", absolute)
+	}
+	start := position.Offset
+	end := pkg.Fset.PositionFor(ident.End(), false).Offset
+	rangeValue, err := sourceRange(source, start, end)
+	if err != nil {
+		return typedReferenceMatch{}, err
+	}
+	filePath, err := relativeSourcePath(outputRoot, absolute)
+	if err != nil {
+		return typedReferenceMatch{}, err
+	}
+	key := fmt.Sprintf("%s:%d:%d", absolute, start, end)
+	record := referenceRecord{file: absolute, offset: start, reference: backend.Reference{
+		File: filePath, Range: rangeValue, EnclosingSymbol: enclosingReferenceSymbol(file, ident.Pos()),
+		Snippet: sourceLine(source, start),
+	}}
+	return typedReferenceMatch{record: record, key: key, include: true}, nil
+}
+
+func orderReferenceRecords(records map[string]referenceRecord) []backend.Reference {
 	ordered := make([]referenceRecord, 0, len(records))
 	for _, record := range records {
 		ordered = append(ordered, record)
@@ -527,7 +551,10 @@ func collectTypedReferencesInScope(moduleRoot, outputRoot string, target *refere
 	for _, record := range ordered {
 		references = append(references, record.reference)
 	}
+	return references
+}
 
+func revisionRecords(outputRoot string, files map[string][]byte) ([]backend.FileRevision, error) {
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
@@ -537,12 +564,12 @@ func collectTypedReferencesInScope(moduleRoot, outputRoot string, target *refere
 	for _, path := range paths {
 		filePath, err := relativeSourcePath(outputRoot, path)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		digest := sha256.Sum256(files[path])
 		revisions = append(revisions, backend.FileRevision{File: filePath, Revision: hex.EncodeToString(digest[:])})
 	}
-	return references, revisions, nil
+	return revisions, nil
 }
 
 func sourceLine(source []byte, offset int) string {
@@ -718,7 +745,10 @@ func localReferenceBindingKind(file *ast.File, ident *ast.Ident) string {
 		stack = append(stack, node)
 		return true
 	})
-	parent := parents[ident]
+	return localBindingKindForParent(file, ident, parents, parents[ident])
+}
+
+func localBindingKindForParent(file *ast.File, ident *ast.Ident, parents map[ast.Node]ast.Node, parent ast.Node) string {
 	switch declaration := parent.(type) {
 	case *ast.AssignStmt:
 		if declaration.Tok == token.DEFINE {
@@ -733,35 +763,51 @@ func localReferenceBindingKind(file *ast.File, ident *ast.Ident) string {
 			return "variable"
 		}
 	case *ast.ValueSpec:
-		if genDecl, ok := parents[declaration].(*ast.GenDecl); ok && !isFileDeclaration(file, genDecl) {
-			if genDecl.Tok == token.CONST {
-				return "constant"
-			}
-			return "variable"
-		}
+		return valueSpecBindingKind(file, parents, declaration)
 	case *ast.Field:
-		fieldList, ok := parents[declaration].(*ast.FieldList)
-		if !ok {
-			return ""
+		return fieldBindingKind(parents, declaration)
+	}
+	return ""
+}
+
+func valueSpecBindingKind(file *ast.File, parents map[ast.Node]ast.Node, declaration *ast.ValueSpec) string {
+	genDecl, ok := parents[declaration].(*ast.GenDecl)
+	if !ok || isFileDeclaration(file, genDecl) {
+		return ""
+	}
+	if genDecl.Tok == token.CONST {
+		return "constant"
+	}
+	return "variable"
+}
+
+func fieldBindingKind(parents map[ast.Node]ast.Node, declaration *ast.Field) string {
+	fieldList, ok := parents[declaration].(*ast.FieldList)
+	if !ok {
+		return ""
+	}
+	switch owner := parents[fieldList].(type) {
+	case *ast.FuncDecl:
+		if owner.Recv == fieldList {
+			return "receiver"
 		}
-		switch owner := parents[fieldList].(type) {
-		case *ast.FuncDecl:
-			if owner.Recv == fieldList {
-				return "receiver"
-			}
-		case *ast.FuncType:
-			if owner.TypeParams == fieldList {
-				return ""
-			}
-			switch parents[owner].(type) {
-			case *ast.FuncDecl, *ast.FuncLit:
-				if owner.Params == fieldList {
-					return "parameter"
-				}
-				if owner.Results == fieldList {
-					return "result"
-				}
-			}
+	case *ast.FuncType:
+		return functionFieldBindingKind(parents, fieldList, owner)
+	}
+	return ""
+}
+
+func functionFieldBindingKind(parents map[ast.Node]ast.Node, fieldList *ast.FieldList, owner *ast.FuncType) string {
+	if owner.TypeParams == fieldList {
+		return ""
+	}
+	switch parents[owner].(type) {
+	case *ast.FuncDecl, *ast.FuncLit:
+		if owner.Params == fieldList {
+			return "parameter"
+		}
+		if owner.Results == fieldList {
+			return "result"
 		}
 	}
 	return ""
@@ -777,7 +823,34 @@ func isFileDeclaration(file *ast.File, target ast.Node) bool {
 }
 
 func originalModuleSources(root string, loaded []*packages.Package) (map[string]bool, error) {
-	testedPackages := make(map[string]bool)
+	testedPackages, err := testedModulePackages(root, loaded)
+	if err != nil {
+		return nil, err
+	}
+	originals := make(map[string]bool)
+	for _, pkg := range loaded {
+		include, err := isOriginalModulePackage(root, pkg, testedPackages)
+		if err != nil {
+			return nil, err
+		}
+		if !include {
+			continue
+		}
+		if err := addOriginalPackageFiles(root, pkg, originals); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateOriginalCompilerFiles(root, loaded, testedPackages, originals); err != nil {
+		return nil, err
+	}
+	if len(originals) == 0 {
+		return nil, fmt.Errorf("go module %s has no original active Go source files", root)
+	}
+	return originals, nil
+}
+
+func testedModulePackages(root string, loaded []*packages.Package) (map[string]bool, error) {
+	tested := make(map[string]bool)
 	for _, pkg := range loaded {
 		if pkg == nil || pkg.Module == nil {
 			continue
@@ -786,90 +859,84 @@ func originalModuleSources(root string, loaded []*packages.Package) (map[string]
 		if err != nil {
 			return nil, err
 		}
-		if moduleDir != root {
-			continue
-		}
-		if pkg.PkgPath != "" {
-			testedPackages[pkg.PkgPath] = true
+		if moduleDir == root && pkg.PkgPath != "" {
+			tested[pkg.PkgPath] = true
 		}
 	}
-	isGeneratedTestMain := func(pkg *packages.Package) bool {
-		if pkg == nil || pkg.Name != "main" || len(pkg.GoFiles) != 1 || filepath.Ext(pkg.GoFiles[0]) == ".go" {
-			return false
-		}
-		for _, suffix := range []string{".test", ".test.exe"} {
-			candidate := strings.TrimSuffix(pkg.PkgPath, suffix)
-			if candidate != pkg.PkgPath && testedPackages[candidate] {
-				return true
-			}
-			candidate = strings.TrimSuffix(pkg.ID, suffix)
-			if candidate != pkg.ID && testedPackages[candidate] {
-				return true
-			}
-		}
+	return tested, nil
+}
+
+func isOriginalModulePackage(root string, pkg *packages.Package, tested map[string]bool) (bool, error) {
+	if pkg == nil || pkg.Module == nil || isGeneratedTestMain(pkg, tested) {
+		return false, nil
+	}
+	moduleDir, err := cleanAbsolutePath(pkg.Module.Dir)
+	if err != nil {
+		return false, err
+	}
+	return moduleDir == root, nil
+}
+
+func isGeneratedTestMain(pkg *packages.Package, tested map[string]bool) bool {
+	if pkg == nil || pkg.Name != "main" || len(pkg.GoFiles) != 1 || filepath.Ext(pkg.GoFiles[0]) == ".go" {
 		return false
 	}
-
-	originals := make(map[string]bool)
-	for _, pkg := range loaded {
-		if pkg == nil || pkg.Module == nil || isGeneratedTestMain(pkg) {
-			continue
-		}
-		moduleDir, err := cleanAbsolutePath(pkg.Module.Dir)
-		if err != nil {
-			return nil, err
-		}
-		if moduleDir != root {
-			continue
-		}
-		for _, name := range pkg.GoFiles {
-			if filepath.Ext(name) != ".go" {
-				continue
-			}
-			path := name
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(pkg.Module.Dir, path)
-			}
-			path, err = cleanAbsolutePath(path)
-			if err != nil {
-				return nil, err
-			}
-			if pathWithin(root, path) {
-				originals[path] = true
-			}
+	for _, suffix := range []string{".test", ".test.exe"} {
+		if generatedTestPackageMatches(pkg.PkgPath, suffix, tested) || generatedTestPackageMatches(pkg.ID, suffix, tested) {
+			return true
 		}
 	}
+	return false
+}
 
-	for _, pkg := range loaded {
-		if pkg == nil || pkg.Module == nil || isGeneratedTestMain(pkg) {
+func generatedTestPackageMatches(packagePath, suffix string, tested map[string]bool) bool {
+	candidate := strings.TrimSuffix(packagePath, suffix)
+	return candidate != packagePath && tested[candidate]
+}
+
+func addOriginalPackageFiles(root string, pkg *packages.Package, originals map[string]bool) error {
+	for _, name := range pkg.GoFiles {
+		if filepath.Ext(name) != ".go" {
 			continue
 		}
-		moduleDir, err := cleanAbsolutePath(pkg.Module.Dir)
+		path, err := packageSourcePath(pkg.Module.Dir, name)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		if moduleDir != root {
+		if pathWithin(root, path) {
+			originals[path] = true
+		}
+	}
+	return nil
+}
+
+func validateOriginalCompilerFiles(root string, loaded []*packages.Package, tested, originals map[string]bool) error {
+	for _, pkg := range loaded {
+		include, err := isOriginalModulePackage(root, pkg, tested)
+		if err != nil {
+			return err
+		}
+		if !include {
 			continue
 		}
 		for _, name := range pkg.CompiledGoFiles {
-			path := name
-			if !filepath.IsAbs(path) {
-				path = filepath.Join(pkg.Module.Dir, path)
-			}
-			path, err = cleanAbsolutePath(path)
+			path, err := packageSourcePath(pkg.Module.Dir, name)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			if originals[path] {
-				continue
+			if !originals[path] {
+				return fmt.Errorf("go reference analysis cannot guarantee source mappings for transformed or generated compiler input %s in package %s", path, pkg.PkgPath)
 			}
-			return nil, fmt.Errorf("go reference analysis cannot guarantee source mappings for transformed or generated compiler input %s in package %s", path, pkg.PkgPath)
 		}
 	}
-	if len(originals) == 0 {
-		return nil, fmt.Errorf("go module %s has no original active Go source files", root)
+	return nil
+}
+
+func packageSourcePath(moduleDir, name string) (string, error) {
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(moduleDir, name)
 	}
-	return originals, nil
+	return cleanAbsolutePath(name)
 }
 
 func packageTypeError(pkg *packages.Package, visited map[string]bool) string {
@@ -974,33 +1041,47 @@ func qualifiedReferenceTargets(root, selectedPath, receiver, name string, loaded
 			if !originals[filePath] {
 				continue
 			}
-			for _, declaration := range file.Decls {
-				general, ok := declaration.(*ast.GenDecl)
-				if !ok {
-					continue
-				}
-				for _, raw := range general.Specs {
-					spec, ok := raw.(*ast.TypeSpec)
-					if !ok || spec.Name.Name != receiver {
-						continue
-					}
-					typeName, ok := pkg.TypesInfo.Defs[spec.Name].(*types.TypeName)
-					if !ok {
-						continue
-					}
-					target, err := qualifiedMemberTarget(root, selectedPath, receiver, name, filePath, pkg, typeName, loaded, originals, sources)
-					if errors.Is(err, errNoTypedReferenceTarget) {
-						continue
-					}
-					if err != nil {
-						return nil, err
-					}
-					targets[target.identity] = target
-				}
+			if err := collectQualifiedTargetsInFile(root, selectedPath, receiver, name, filePath, pkg, file, loaded, originals, sources, targets); err != nil {
+				return nil, err
 			}
 		}
 	}
 	return targets, nil
+}
+
+func collectQualifiedTargetsInFile(root, selectedPath, receiver, name, filePath string, pkg *packages.Package, file *ast.File, loaded []*packages.Package, originals map[string]bool, sources *referenceSourceSnapshot, targets map[string]*referenceTarget) error {
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, raw := range general.Specs {
+			if err := collectQualifiedTargetSpec(root, selectedPath, receiver, name, filePath, pkg, raw, loaded, originals, sources, targets); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func collectQualifiedTargetSpec(root, selectedPath, receiver, name, filePath string, pkg *packages.Package, raw ast.Spec, loaded []*packages.Package, originals map[string]bool, sources *referenceSourceSnapshot, targets map[string]*referenceTarget) error {
+	spec, ok := raw.(*ast.TypeSpec)
+	if !ok || spec.Name.Name != receiver {
+		return nil
+	}
+	typeName, ok := pkg.TypesInfo.Defs[spec.Name].(*types.TypeName)
+	if !ok {
+		return nil
+	}
+	target, err := qualifiedMemberTarget(root, selectedPath, receiver, name, filePath, pkg, typeName, loaded, originals, sources)
+	if errors.Is(err, errNoTypedReferenceTarget) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	targets[target.identity] = target
+	return nil
 }
 
 func qualifiedMemberTarget(root, selectedPath, receiver, name, receiverPath string, pkg *packages.Package, typeName *types.TypeName, loaded []*packages.Package, originals map[string]bool, sources *referenceSourceSnapshot) (*referenceTarget, error) {
@@ -1050,7 +1131,7 @@ func methodDeclaredOnReceiver(method *types.Func, receiver *types.TypeName, fset
 		return false, nil
 	}
 	receiverType := types.Unalias(signature.Recv().Type())
-	if pointer, ok := receiverType.(*types.Pointer); ok {
+	if pointer, isPointer := receiverType.(*types.Pointer); isPointer {
 		receiverType = types.Unalias(pointer.Elem())
 	}
 	named, ok := receiverType.(*types.Named)
@@ -1082,23 +1163,35 @@ func declarationReferenceTargets(root, selectedPath, name string, loaded []*pack
 			if !originals[filePath] || (selectedPath != "" && filePath != selectedPath) {
 				continue
 			}
-			for _, declaration := range file.Decls {
-				switch declaration := declaration.(type) {
-				case *ast.FuncDecl:
-					if declaration.Name.Name == name {
-						if err := addTypedReferenceTarget(root, targets, pkg, declaration.Name, pkg.TypesInfo.Defs[declaration.Name], extractReceiver(declaration.Recv), sources); err != nil {
-							return nil, err
-						}
-					}
-				case *ast.GenDecl:
-					if err := addDeclarationSpecs(root, targets, pkg, declaration, name, sources); err != nil {
-						return nil, err
-					}
-				}
+			if err := collectDeclarationTargetsInFile(root, pkg, file, name, sources, targets); err != nil {
+				return nil, err
 			}
 		}
 	}
 	return targets, nil
+}
+
+func collectDeclarationTargetsInFile(root string, pkg *packages.Package, file *ast.File, name string, sources *referenceSourceSnapshot, targets map[string]*referenceTarget) error {
+	for _, declaration := range file.Decls {
+		if err := collectDeclarationTarget(root, pkg, declaration, name, sources, targets); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func collectDeclarationTarget(root string, pkg *packages.Package, declaration ast.Decl, name string, sources *referenceSourceSnapshot, targets map[string]*referenceTarget) error {
+	switch declaration := declaration.(type) {
+	case *ast.FuncDecl:
+		if declaration.Name.Name != name {
+			return nil
+		}
+		return addTypedReferenceTarget(root, targets, pkg, declaration.Name, pkg.TypesInfo.Defs[declaration.Name], extractReceiver(declaration.Recv), sources)
+	case *ast.GenDecl:
+		return addDeclarationSpecs(root, targets, pkg, declaration, name, sources)
+	default:
+		return nil
+	}
 }
 
 func addDeclarationSpecs(root string, targets map[string]*referenceTarget, pkg *packages.Package, declaration *ast.GenDecl, name string, sources *referenceSourceSnapshot) error {

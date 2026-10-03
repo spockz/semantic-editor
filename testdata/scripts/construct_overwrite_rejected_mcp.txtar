@@ -1,0 +1,50 @@
+# Structural overwrite requests fail through the public MCP tool without changing source.
+mkdir -p .scratch
+cp api/model.go .scratch/original.go
+stdin input.json
+exec semedit mcp
+stdout 'supported keys'
+cmp api/model.go .scratch/original.go
+grep 'Keep this comment' api/model.go
+grep 'type Config struct' api/model.go
+grep 'Other' api/model.go
+
+stdin insert_decl.json
+exec semedit mcp
+stdout 'supported keys'
+cmp api/model.go .scratch/original.go
+
+stdin null_path.json
+exec semedit mcp
+stdout 'construct_path.*non-empty string'
+cmp api/model.go .scratch/original.go
+
+stdin empty_revision.json
+exec semedit mcp
+stdout 'expected_revision.*non-empty string'
+cmp api/model.go .scratch/original.go
+grep 'Keep this comment' api/model.go
+grep 'type Config struct' api/model.go
+grep 'Other' api/model.go
+
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":"api/model.go","kind":"type","source":"type Config struct { Port int }","overwrite":true}}}
+-- insert_decl.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_decl","arguments":{"file":"api/model.go","source":"var Revision = 2","overwrite":true}}}
+-- null_path.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":"api/model.go","kind":"statement/expression","source":"audit()","in_function":"Run","discriminator":"ready()","construct_path":null}}}
+-- empty_revision.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":"api/model.go","kind":"statement/expression","source":"audit()","in_function":"Run","discriminator":"ready()","construct_path":"0","expected_revision":""}}}
+
+-- go.mod --
+module example.com/structureoverwrite
+
+go 1.23
+
+-- api/model.go --
+package api
+
+// Keep this comment.
+type Config struct { Host string }
+
+type Other struct{}

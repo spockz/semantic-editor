@@ -70,48 +70,72 @@ func essentialPresentationValue(value any) (any, error) {
 	if !ok {
 		return projected, nil
 	}
+	if err := sanitizeBatchPresentation(result); err != nil {
+		return nil, err
+	}
+	sanitizePresentationMap(result)
+	return result, nil
+}
+
+func sanitizeBatchPresentation(result map[string]any) error {
 	if results, batch := result["results"].([]any); batch {
 		if _, isBatchResponse := result["final_diff"]; isBatchResponse {
 			delete(result, "final_diff")
 			for _, item := range results {
-				child, ok := item.(map[string]any)
-				if !ok {
-					continue
-				}
-				delete(child, "diff")
-				if working, ok := child["result"].(map[string]any); ok {
-					deleteBatchWorkingContinuations(working)
-					essential, err := essentialPresentationValue(working)
-					if err != nil {
-						return nil, fmt.Errorf("project batch child result: %w", err)
-					}
-					child["result"] = essential
+				if err := sanitizeBatchItem(item); err != nil {
+					return err
 				}
 			}
 			if verification, ok := result["verification"].(map[string]any); ok {
-				delete(verification, "diagnostics")
-				for _, reportName := range []string{"normalize", "checks"} {
-					report, ok := verification[reportName].(map[string]any)
-					if !ok {
-						continue
-					}
-					hooks, ok := report["Results"].([]any)
-					if !ok {
-						continue
-					}
-					for _, hookValue := range hooks {
-						hook, ok := hookValue.(map[string]any)
-						if !ok {
-							continue
-						}
-						delete(hook, "Stdout")
-						delete(hook, "Stderr")
-						delete(hook, "Diagnostics")
-					}
-				}
+				sanitizeVerificationPresentation(verification)
 			}
 		}
 	}
+	return nil
+}
+
+func sanitizeBatchItem(item any) error {
+	child, ok := item.(map[string]any)
+	if !ok {
+		return nil
+	}
+	delete(child, "diff")
+	working, ok := child["result"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	deleteBatchWorkingContinuations(working)
+	essential, err := essentialPresentationValue(working)
+	if err != nil {
+		return fmt.Errorf("project batch child result: %w", err)
+	}
+	child["result"] = essential
+	return nil
+}
+
+func sanitizeVerificationPresentation(verification map[string]any) {
+	delete(verification, "diagnostics")
+	for _, reportName := range []string{"normalize", "checks"} {
+		report, ok := verification[reportName].(map[string]any)
+		if !ok {
+			continue
+		}
+		hooks, ok := report["Results"].([]any)
+		if !ok {
+			continue
+		}
+		for _, hookValue := range hooks {
+			hook, ok := hookValue.(map[string]any)
+			if ok {
+				delete(hook, "Stdout")
+				delete(hook, "Stderr")
+				delete(hook, "Diagnostics")
+			}
+		}
+	}
+}
+
+func sanitizePresentationMap(result map[string]any) {
 	if _, bulkDiff := result["diff"].(string); bulkDiff {
 		delete(result, "diff")
 	}
@@ -132,7 +156,6 @@ func essentialPresentationValue(value any) (any, error) {
 			}
 		}
 	}
-	return result, nil
 }
 
 func isLargeTextPayload(value string) bool {

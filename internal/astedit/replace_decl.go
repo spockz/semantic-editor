@@ -5,6 +5,7 @@ package astedit
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -24,127 +25,206 @@ type ReplaceDeclOptions struct {
 
 // ReplaceDecl replaces one existing package constant, variable, or type alias.
 func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts ReplaceDeclOptions) (string, error) {
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	target, err := loadDeclarationReplacementTarget(ctx, filePath)
 	if err != nil {
-		return "", fmt.Errorf("read target file: %w", err)
-	}
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+		return "", err
 	}
 	replacement, err := parseSingleReplacementDecl(source, symbolQuery)
 	if err != nil {
 		return "", err
 	}
-	type declMatch struct {
-		decl ast.Decl
-		gen  *ast.GenDecl
-		spec ast.Spec
-		name string
+	match, err := findDeclarationReplacementMatch(target.file, symbolQuery, target.path)
+	if err != nil {
+		return "", err
 	}
-	var matches []declMatch
-	for _, decl := range fileNode.Decls {
-		gen, ok := decl.(*ast.GenDecl)
+	if err := validateDeclarationReplacement(match, replacement, symbolQuery); err != nil {
+		return "", err
+	}
+	span := declarationReplacementSpan(target, match, replacement)
+	if err := publishDeclarationReplacement(ctx, target.path, target.content, source, span, opts.AutoOrganizeImports); err != nil {
+		return "", err
+	}
+	previous := strings.TrimSpace(string(target.content[span.start:span.end]))
+	return UnifiedDiff(symbolQuery, previous, strings.TrimSpace(span.text)), nil
+}
+
+type declarationReplacementTarget struct {
+	path    string
+	content []byte
+	fset    *token.FileSet
+	file    *ast.File
+}
+
+type declarationReplacementMatch struct {
+	declaration ast.Decl
+	group       *ast.GenDecl
+	spec        ast.Spec
+}
+
+type declarationReplacementSource struct {
+	start int
+	end   int
+	text  string
+}
+
+func loadDeclarationReplacementTarget(ctx context.Context, filePath string) (declarationReplacementTarget, error) {
+	path := filepath.Clean(filePath)
+	content, err := sourcebuf.ReadFile(ctx, path)
+	if err != nil {
+		return declarationReplacementTarget{}, fmt.Errorf("read target file: %w", err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return declarationReplacementTarget{}, &SyntaxError{File: path, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+	}
+	return declarationReplacementTarget{path: path, content: content, fset: fset, file: file}, nil
+}
+
+func findDeclarationReplacementMatch(file *ast.File, symbol, path string) (declarationReplacementMatch, error) {
+	matches := collectDeclarationReplacementMatches(file, symbol)
+	if len(matches) == 0 {
+		return declarationReplacementMatch{}, fmt.Errorf("declaration %q not found in %s: %w", symbol, path, ErrSymbolNotFound)
+	}
+	if len(matches) > 1 {
+		return declarationReplacementMatch{}, fmt.Errorf("declaration %q is ambiguous in %s", symbol, path)
+	}
+	return matches[0], nil
+}
+
+func collectDeclarationReplacementMatches(file *ast.File, symbol string) []declarationReplacementMatch {
+	var matches []declarationReplacementMatch
+	for _, declaration := range file.Decls {
+		group, ok := declaration.(*ast.GenDecl)
 		if !ok {
 			continue
 		}
-		for _, spec := range gen.Specs {
-			switch s := spec.(type) {
-			case *ast.ValueSpec:
-				if gen.Tok != token.CONST && gen.Tok != token.VAR {
-					continue
-				}
-				for _, ident := range s.Names {
-					if ident.Name == symbolQuery {
-						matches = append(matches, declMatch{decl: decl, gen: gen, spec: spec, name: ident.Name})
-					}
-				}
-			case *ast.TypeSpec:
-				if gen.Tok == token.TYPE && s.Assign.IsValid() && s.Name.Name == symbolQuery {
-					matches = append(matches, declMatch{decl: decl, gen: gen, spec: spec, name: s.Name.Name})
-				}
+		for _, spec := range group.Specs {
+			if declarationSpecHasName(group, spec, symbol) {
+				matches = append(matches, declarationReplacementMatch{declaration: declaration, group: group, spec: spec})
 			}
 		}
 	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("declaration %q not found in %s: %w", symbolQuery, cleanPath, ErrSymbolNotFound)
+	return matches
+}
+
+func declarationSpecHasName(group *ast.GenDecl, spec ast.Spec, name string) bool {
+	switch candidate := spec.(type) {
+	case *ast.ValueSpec:
+		if group.Tok != token.CONST && group.Tok != token.VAR {
+			return false
+		}
+		for _, identifier := range candidate.Names {
+			if identifier.Name == name {
+				return true
+			}
+		}
+	case *ast.TypeSpec:
+		return group.Tok == token.TYPE && candidate.Name.Name == name
 	}
-	if len(matches) > 1 {
-		return "", fmt.Errorf("declaration %q is ambiguous in %s", symbolQuery, cleanPath)
+	return false
+}
+
+func validateDeclarationReplacement(match declarationReplacementMatch, replacement replacementDecl, symbol string) error {
+	if match.group.Tok != replacement.kind {
+		return fmt.Errorf("replacement declaration %q has kind %s; existing declaration uses %s", symbol, replacement.kind, match.group.Tok)
 	}
-	match := matches[0]
-	if match.gen.Tok != replacement.kind {
-		return "", fmt.Errorf("replacement declaration %q has kind %s; existing declaration uses %s", symbolQuery, replacement.kind, match.gen.Tok)
-	}
-	if value, ok := match.spec.(*ast.ValueSpec); ok && match.gen.Tok == token.CONST {
+	if value, ok := match.spec.(*ast.ValueSpec); ok && match.group.Tok == token.CONST {
 		if len(value.Names) != 1 {
-			return "", fmt.Errorf("cannot replace %q inside a shared const spec; split the spec first", symbolQuery)
+			return fmt.Errorf("cannot replace %q inside a shared const spec; split the spec first", symbol)
 		}
-		for _, later := range match.gen.Specs {
-			if later.Pos() <= value.Pos() {
-				continue
-			}
-			if next, ok := later.(*ast.ValueSpec); ok && len(next.Values) == 0 {
-				return "", fmt.Errorf("cannot replace %q: later const spec inherits its expression and would change", symbolQuery)
-			}
+		if constSpecInheritsExpression(match.group, value) {
+			return fmt.Errorf("cannot replace %q: later const spec inherits its expression and would change", symbol)
 		}
 	}
 	if value, ok := match.spec.(*ast.ValueSpec); ok && len(value.Names) != 1 {
-		return "", fmt.Errorf("cannot replace %q inside a shared value spec; split the spec first", symbolQuery)
+		return fmt.Errorf("cannot replace %q inside a shared value spec; split the spec first", symbol)
 	}
-	targetStart := match.spec.Pos()
-	targetEnd := match.spec.End()
-	switch spec := match.spec.(type) {
-	case *ast.ValueSpec:
-		if replacement.hasLeadingComment && spec.Doc != nil {
-			targetStart = spec.Doc.Pos()
+	return nil
+}
+
+func constSpecInheritsExpression(group *ast.GenDecl, target *ast.ValueSpec) bool {
+	for _, later := range group.Specs {
+		if later.Pos() <= target.Pos() {
+			continue
 		}
-		if replacement.hasTrailingComment && spec.Comment != nil {
-			targetEnd = spec.Comment.End()
-		}
-	case *ast.TypeSpec:
-		if replacement.hasLeadingComment && spec.Doc != nil {
-			targetStart = spec.Doc.Pos()
-		}
-		if replacement.hasTrailingComment && spec.Comment != nil {
-			targetEnd = spec.Comment.End()
+		if next, ok := later.(*ast.ValueSpec); ok && len(next.Values) == 0 {
+			return true
 		}
 	}
-	standalone := len(match.gen.Specs) == 1 && !match.gen.Lparen.IsValid()
-	replacementText := replacement.specText
+	return false
+}
+
+func declarationReplacementSpan(target declarationReplacementTarget, match declarationReplacementMatch, replacement replacementDecl) declarationReplacementSource {
+	start, end := match.spec.Pos(), match.spec.End()
+	if replacement.hasLeadingComment && specDoc(match.spec) != nil {
+		start = specDoc(match.spec).Pos()
+	}
+	if replacement.hasTrailingComment && specTrailingComment(match.spec) != nil {
+		end = specTrailingComment(match.spec).End()
+	}
+	text := replacement.specText
+	standalone := len(match.group.Specs) == 1 && !match.group.Lparen.IsValid()
 	if standalone {
-		if match.decl.Pos() < targetStart {
-			targetStart = match.decl.Pos()
+		if match.declaration.Pos() < start {
+			start = match.declaration.Pos()
 		}
-		if replacement.hasLeadingComment && match.gen.Doc != nil && match.gen.Doc.Pos() < targetStart {
-			targetStart = match.gen.Doc.Pos()
+		if replacement.hasLeadingComment && match.group.Doc != nil && match.group.Doc.Pos() < start {
+			start = match.group.Doc.Pos()
 		}
-		if match.decl.End() > targetEnd {
-			targetEnd = match.decl.End()
+		if match.declaration.End() > end {
+			end = match.declaration.End()
 		}
-		replacementText = replacement.text
+		text = replacement.text
 	}
-	startOffset := fset.Position(targetStart).Offset
-	endOffset := fset.Position(targetEnd).Offset
-	newContent := replaceBytes(content, startOffset, endOffset, []byte(replacementText))
-	formatted, err := format.Source(newContent)
+	return declarationReplacementSource{start: target.fset.Position(start).Offset, end: target.fset.Position(end).Offset, text: text}
+}
+
+func specDoc(spec ast.Spec) *ast.CommentGroup {
+	switch candidate := spec.(type) {
+	case *ast.ValueSpec:
+		return candidate.Doc
+	case *ast.TypeSpec:
+		return candidate.Doc
+	default:
+		return nil
+	}
+}
+
+func specTrailingComment(spec ast.Spec) *ast.CommentGroup {
+	switch candidate := spec.(type) {
+	case *ast.ValueSpec:
+		return candidate.Comment
+	case *ast.TypeSpec:
+		return candidate.Comment
+	default:
+		return nil
+	}
+}
+
+func publishDeclarationReplacement(ctx context.Context, path string, original []byte, snippet string, span declarationReplacementSource, organizeImports bool) error {
+	updated := replaceBytes(original, span.start, span.end, []byte(span.text))
+	formatted, err := format.Source(updated)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
+		return &SyntaxError{File: path, Snippet: snippet, Cause: err, Err: ErrSyntax}
 	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write atomic: %w", err)
+	formatted, err = cleanupMoveImports(ctx, path, formatted)
+	if err != nil {
+		return fmt.Errorf("clean imports after declaration replacement: %w", err)
 	}
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
-			return "", fmt.Errorf("organize imports: %w", err)
+	if err := pipeline.WriteAtomicContext(ctx, path, formatted); err != nil {
+		return fmt.Errorf("write atomic: %w", err)
+	}
+	if organizeImports {
+		if err := pipeline.OrganizeImports(ctx, filepath.Dir(path), path); err != nil {
+			organizeErr := fmt.Errorf("organize imports: %w", err)
+			if formatErr := pipeline.Format(ctx, filepath.Dir(path), path); formatErr != nil {
+				return errors.Join(organizeErr, fmt.Errorf("format file after import organization failure: %w", formatErr))
+			}
+			return organizeErr
 		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
 	}
-	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[startOffset:endOffset])), strings.TrimSpace(replacementText)), nil
+	return nil
 }
 
 type replacementDecl struct {
@@ -169,13 +249,9 @@ func parseSingleReplacementDecl(source, symbol string) (replacementDecl, error) 
 	if len(gen.Specs) != 1 {
 		return replacementDecl{}, ErrMultipleDeclarations
 	}
-	spec := gen.Specs[0]
 	declared := extractDeclNames(gen)
 	if len(declared) != 1 || declared[0] != symbol {
 		return replacementDecl{}, fmt.Errorf("replacement must declare only requested symbol %q", symbol)
-	}
-	if typeSpec, ok := spec.(*ast.TypeSpec); ok && !typeSpec.Assign.IsValid() {
-		return replacementDecl{}, fmt.Errorf("replacement of %q requires a type alias", symbol)
 	}
 	parseSource := strings.TrimSpace(source)
 	if !strings.HasPrefix(parseSource, "package ") {

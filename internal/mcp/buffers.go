@@ -117,15 +117,15 @@ func (s *Server) normalizeBufferedBatch(ctx context.Context, buffer *sourcebuf.B
 		selected[path] = true
 	}
 	for _, path := range buffer.ChangedPaths() {
-		relative, err := filepath.Rel(s.workDir, path)
-		if err != nil {
-			return nil, fmt.Errorf("relativize buffered source: %w", err)
+		relative, relativeErr := filepath.Rel(s.workDir, path)
+		if relativeErr != nil {
+			return nil, fmt.Errorf("relativize buffered source: %w", relativeErr)
 		}
 		relative = filepath.ToSlash(relative)
 		if strings.HasPrefix(relative, "../") {
-			content, err := sourcebuf.ReadFile(sourcebuf.WithBuffer(ctx, buffer), path)
-			if err != nil {
-				return nil, err
+			content, readErr := sourcebuf.ReadFile(sourcebuf.WithBuffer(ctx, buffer), path)
+			if readErr != nil {
+				return nil, readErr
 			}
 			if original, exists := before[relative]; exists && original == string(content) {
 				delete(selected, relative)
