@@ -87,25 +87,25 @@ func TestGoRenameProtocolHelper(t *testing.T) {
 	writer := lsp.NewFrameWriter(os.Stdout, 0)
 	methods := make([]string, 0)
 	for {
-		data, err := reader.ReadMessage()
-		if err != nil {
+		messageData, readErr := reader.ReadMessage()
+		if readErr != nil {
 			os.Exit(1)
 		}
 		var request struct {
 			ID     json.RawMessage `json:"id"`
 			Method string          `json:"method"`
 		}
-		if err := json.Unmarshal(data, &request); err != nil {
+		if decodeErr := json.Unmarshal(messageData, &request); decodeErr != nil {
 			os.Exit(1)
 		}
 		if len(request.ID) == 0 {
 			methods = append(methods, request.Method)
 			if path := os.Getenv("SEMEDIT_GO_RENAME_LOG"); path != "" {
-				data, err := json.Marshal(methods)
-				if err != nil {
+				logData, marshalErr := json.Marshal(methods)
+				if marshalErr != nil {
 					os.Exit(1)
 				}
-				if err := atomicfile.WriteAtomic(path, data); err != nil {
+				if writeErr := atomicfile.WriteAtomic(path, logData); writeErr != nil {
 					os.Exit(1)
 				}
 			}
@@ -126,20 +126,20 @@ func TestGoRenameProtocolHelper(t *testing.T) {
 		default:
 			os.Exit(1)
 		}
-		data, err = json.Marshal(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
-		if err != nil {
+		messageData, encodeErr := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": result})
+		if encodeErr != nil {
 			os.Exit(1)
 		}
-		if err := writer.WriteMessage(data); err != nil {
+		if writeErr := writer.WriteMessage(messageData); writeErr != nil {
 			os.Exit(1)
 		}
 	}
 }
 
 func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	root, rootErr := filepath.EvalSymlinks(t.TempDir())
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	source := []byte("package sample\n\nfunc Value() int { return 1 }\n")
 	for name, content := range map[string][]byte{"go.mod": []byte("module example.com/renamepolicy\n\ngo 1.24\n"), "value.go": source, "other.go": []byte("package sample\n\nfunc Other() int { return 2 }\n")} {
@@ -158,9 +158,9 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 	if err := os.Chmod(wrapper, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+	executable, executableErr := os.Executable()
+	if executableErr != nil {
+		t.Fatal(executableErr)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SEMEDIT_GO_RENAME_TEST_BIN", executable)
@@ -193,12 +193,12 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("SEMEDIT_GO_RENAME_EDIT", string(data))
-			if err := Rename(t.Context(), root, filepath.Join(root, "value.go"), 3, 6, "Renamed"); !errors.Is(err, ErrRenameFailed) {
-				t.Fatalf("Rename error = %v", err)
+			if renameErr := Rename(t.Context(), root, filepath.Join(root, "value.go"), 3, 6, "Renamed"); !errors.Is(renameErr, ErrRenameFailed) {
+				t.Fatalf("Rename error = %v", renameErr)
 			}
-			actual, err := os.ReadFile(filepath.Join(root, "value.go"))
-			if err != nil {
-				t.Fatal(err)
+			actual, readErr := os.ReadFile(filepath.Join(root, "value.go"))
+			if readErr != nil {
+				t.Fatal(readErr)
 			}
 			if !bytes.Equal(actual, source) {
 				t.Fatalf("rejected edit changed source: %s", actual)
@@ -213,8 +213,8 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 			t.Fatal(err)
 		}
 		expected := map[string][]byte{filepath.Join(root, "value.go"): source, otherPath: other}
-		if err := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); err != nil {
-			t.Fatal(err)
+		if writeErr := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 		selected := backend.SymbolCandidate{Name: "Value", File: "value.go", Offset: bytes.Index(source, []byte("Value"))}
 		err = RenameSelected(t.Context(), root, selected, expected, "Renamed")
@@ -232,9 +232,9 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 }
 
 func TestBufferedRenameSaveNotifications(t *testing.T) {
-	root, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	root, rootErr := filepath.EvalSymlinks(t.TempDir())
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	source := []byte("package sample\n\nfunc Value() int { return 1 }\n")
 	target := filepath.Join(root, "value.go")
@@ -243,9 +243,9 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	binary, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+	binary, executableErr := os.Executable()
+	if executableErr != nil {
+		t.Fatal(executableErr)
 	}
 	wrapper := filepath.Join(root, "gopls")
 	if err := atomicfile.WriteAtomic(wrapper, []byte("#!/bin/sh\nexec \"$SEMEDIT_GO_RENAME_TEST_BIN\" -test.run=^TestGoRenameProtocolHelper$\n")); err != nil {
@@ -262,9 +262,9 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 		t.Setenv(key, value)
 	}
 	t.Setenv("SEMEDIT_GO_RENAME_EDIT", `{"documentChanges":[{"textDocument":{"uri":"`+pathutil.FileURI(target)+`","version":1},"edits":[{"range":{"start":{"line":2,"character":5},"end":{"line":2,"character":10}},"newText":"Renamed"}]}]}`)
-	environment, err := gocache.Environment(t.Context(), root)
-	if err != nil {
-		t.Fatal(err)
+	environment, environmentErr := gocache.Environment(t.Context(), root)
+	if environmentErr != nil {
+		t.Fatal(environmentErr)
 	}
 	manager := godiagnostics.NewSessionManager()
 	t.Cleanup(func() {
@@ -272,9 +272,9 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	buffer, err := sourcebuf.New(root)
-	if err != nil {
-		t.Fatal(err)
+	buffer, bufferErr := sourcebuf.New(root)
+	if bufferErr != nil {
+		t.Fatal(bufferErr)
 	}
 	diskCtx := godiagnostics.WithSessionManager(t.Context(), manager)
 	ctx := sourcebuf.WithBuffer(diskCtx, buffer)
@@ -309,9 +309,9 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 	if !slices.Contains(unsaved, "textDocument/didChange") || slices.Contains(unsaved, "textDocument/didSave") || slices.Contains(unsaved, "workspace/didChangeWatchedFiles") {
 		t.Fatalf("unsaved notifications=%v", unsaved)
 	}
-	disk, err := os.ReadFile(target)
-	if err != nil {
-		t.Fatal(err)
+	disk, readErr := os.ReadFile(target)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	if !bytes.Equal(disk, source) {
 		t.Fatalf("rename published early: %s", disk)
@@ -327,9 +327,9 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 	if !slices.Contains(saved, "textDocument/didSave") || !slices.Contains(saved, "workspace/didChangeWatchedFiles") {
 		t.Fatalf("published notifications=%v", saved)
 	}
-	disk, err = os.ReadFile(target)
-	if err != nil {
-		t.Fatal(err)
+	disk, readErr = os.ReadFile(target)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	if !strings.Contains(string(disk), "func Renamed()") {
 		t.Fatalf("published source=%s", disk)
@@ -337,8 +337,8 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 }
 
 func envValue(env []string, key string) string {
-	for _, value := range env {
-		candidate, value, found := strings.Cut(value, "=")
+	for _, entry := range env {
+		candidate, value, found := strings.Cut(entry, "=")
 		if found && candidate == key {
 			return value
 		}

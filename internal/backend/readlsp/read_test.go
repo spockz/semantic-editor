@@ -102,9 +102,9 @@ func TestInspectPreservesAllMatchesAndValidatesUnmatchedMappedSymbols(t *testing
 	first := makeReadSymbol(file, "foo", "target", backend.Position{Line: 0, Character: 0}, backend.Position{Line: 0, Character: 5}, backend.Position{Line: 0, Character: 0}, backend.Position{Line: 0, Character: 3})
 	second := makeReadSymbol(file, "foo", "target", backend.Position{Line: 1, Character: 0}, backend.Position{Line: 1, Character: 5}, backend.Position{Line: 1, Character: 0}, backend.Position{Line: 1, Character: 3})
 	document := makeDocument(root, file, source, []backend.ReadSymbol{second, first}, nil)
-	result, err := Inspect(document, []InspectMatch{{Symbol: second, SourceExtent: "server_range"}, {Symbol: first, SourceExtent: "server_range"}})
-	if err != nil {
-		t.Fatal(err)
+	result, inspectErr := Inspect(document, []InspectMatch{{Symbol: second, SourceExtent: "server_range"}, {Symbol: first, SourceExtent: "server_range"}})
+	if inspectErr != nil {
+		t.Fatal(inspectErr)
 	}
 	if len(result.Matches) != 2 || result.Matches[0].Range.Start.Line != 0 || result.Matches[1].Range.Start.Line != 1 || result.Matches[0].Source != "foo()" || result.Matches[1].Source != "foo()" {
 		t.Fatalf("matches = %#v", result.Matches)
@@ -114,7 +114,7 @@ func TestInspectPreservesAllMatchesAndValidatesUnmatchedMappedSymbols(t *testing
 	}
 	bad := makeReadSymbol(file, "bad", "variable", backend.Position{Line: 1, Character: 0}, backend.Position{Line: 1, Character: 5}, backend.Position{Line: 1, Character: 4}, backend.Position{Line: 1, Character: 6})
 	document.Symbols = append(document.Symbols, bad)
-	if _, err := Inspect(document, []InspectMatch{{Symbol: first, SourceExtent: "declaration"}}); err == nil {
+	if _, malformedErr := Inspect(document, []InspectMatch{{Symbol: first, SourceExtent: "declaration"}}); malformedErr == nil {
 		t.Fatal("Inspect ignored malformed unmatched mapped symbol")
 	}
 	document.Symbols = []backend.ReadSymbol{first, second}

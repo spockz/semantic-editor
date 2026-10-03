@@ -56,9 +56,9 @@ func TestProperty_RoundTripInvertibility(t *testing.T) {
 
 		callCount := rapid.IntRange(1, 4).Draw(rt, "callCount")
 
-		tmpDir, err := os.MkdirTemp("", "prop-*")
-		if err != nil {
-			rt.Fatalf("create temp dir: %v", err)
+		tmpDir, tempErr := os.MkdirTemp("", "prop-*")
+		if tempErr != nil {
+			rt.Fatalf("create temp dir: %v", tempErr)
 		}
 		defer func() {
 			_ = os.RemoveAll(tmpDir)
@@ -97,48 +97,48 @@ func Execute() {
 			rt.Fatalf("format initial source: %v", err)
 		}
 
-		originalBytes, err := os.ReadFile(filepath.Clean(targetFile))
-		if err != nil {
-			rt.Fatalf("read initial source: %v", err)
+		originalBytes, readInitialErr := os.ReadFile(filepath.Clean(targetFile))
+		if readInitialErr != nil {
+			rt.Fatalf("read initial source: %v", readInitialErr)
 		}
 
 		// Step 1: Forward transformation (A -> B)
 		symQuery := typeName + "." + oldMethod
-		res, err := symbol.Resolve(tmpDir, "prop.go", symQuery)
-		if err != nil {
-			rt.Fatalf("resolve forward symbol %s: %v", symQuery, err)
+		res, resolveErr := symbol.Resolve(tmpDir, "prop.go", symQuery)
+		if resolveErr != nil {
+			rt.Fatalf("resolve forward symbol %s: %v", symQuery, resolveErr)
 		}
 
-		if err := golang.Rename(ctx, tmpDir, res.File, res.Line, res.Column, newMethod); err != nil {
-			rt.Fatalf("forward rename failed: %v", err)
+		if renameErr := golang.Rename(ctx, tmpDir, res.File, res.Line, res.Column, newMethod); renameErr != nil {
+			rt.Fatalf("forward rename failed: %v", renameErr)
 		}
-		if err := pipeline.Format(ctx, tmpDir, targetFile); err != nil {
-			rt.Fatalf("format forward source: %v", err)
+		if formatErr := pipeline.Format(ctx, tmpDir, targetFile); formatErr != nil {
+			rt.Fatalf("format forward source: %v", formatErr)
 		}
 
 		// Invariant: Compilation health after transformation
-		diags, err := pipeline.CheckDiagnostics(ctx, tmpDir)
-		if err != nil || len(diags) > 0 {
-			rt.Fatalf("compilation health broken after forward rename: %v (%v)", err, diags)
+		diags, diagnosticsErr := pipeline.CheckDiagnostics(ctx, tmpDir)
+		if diagnosticsErr != nil || len(diags) > 0 {
+			rt.Fatalf("compilation health broken after forward rename: %v (%v)", diagnosticsErr, diags)
 		}
 
 		// Step 2: Inverse transformation (B -> A)
 		invQuery := typeName + "." + newMethod
-		resInv, err := symbol.Resolve(tmpDir, "prop.go", invQuery)
-		if err != nil {
-			rt.Fatalf("resolve inverse symbol %s: %v", invQuery, err)
+		resInv, resolveInverseErr := symbol.Resolve(tmpDir, "prop.go", invQuery)
+		if resolveInverseErr != nil {
+			rt.Fatalf("resolve inverse symbol %s: %v", invQuery, resolveInverseErr)
 		}
 
-		if err := golang.Rename(ctx, tmpDir, resInv.File, resInv.Line, resInv.Column, oldMethod); err != nil {
-			rt.Fatalf("inverse rename failed: %v", err)
+		if renameErr := golang.Rename(ctx, tmpDir, resInv.File, resInv.Line, resInv.Column, oldMethod); renameErr != nil {
+			rt.Fatalf("inverse rename failed: %v", renameErr)
 		}
-		if err := pipeline.Format(ctx, tmpDir, targetFile); err != nil {
-			rt.Fatalf("format inverse source: %v", err)
+		if formatErr := pipeline.Format(ctx, tmpDir, targetFile); formatErr != nil {
+			rt.Fatalf("format inverse source: %v", formatErr)
 		}
 
-		roundTripBytes, err := os.ReadFile(filepath.Clean(targetFile))
-		if err != nil {
-			rt.Fatalf("read round-trip source: %v", err)
+		roundTripBytes, readRoundTripErr := os.ReadFile(filepath.Clean(targetFile))
+		if readRoundTripErr != nil {
+			rt.Fatalf("read round-trip source: %v", readRoundTripErr)
 		}
 
 		// Invariant: Round-trip invertibility R^-1(R(P)) == P

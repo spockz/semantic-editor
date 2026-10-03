@@ -277,24 +277,24 @@ func TestJavaServiceDiscoversNearestRootAndRejectsSameLevelAmbiguity(t *testing.
 		t.Fatal(err)
 	}
 	session := &fakeJavaSession{symbols: json.RawMessage(`[]`)}
-	service, err := backend.NewRegistry(javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+	service, registryErr := backend.NewRegistry(javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		return session, nil
 	}))
-	if err != nil {
-		t.Fatal(err)
+	if registryErr != nil {
+		t.Fatal(registryErr)
 	}
-	result, err := backend.NewService(service).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
-	if err == nil || result != nil || !errors.Is(err, javabackend.ErrJavaSymbolNotFound) {
-		t.Fatalf("nearest root lookup = %#v, %v", result, err)
+	result, lookupErr := backend.NewService(service).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
+	if lookupErr == nil || result != nil || !errors.Is(lookupErr, javabackend.ErrJavaSymbolNotFound) {
+		t.Fatalf("nearest root lookup = %#v, %v", result, lookupErr)
 	}
 	if err := os.WriteFile(filepath.Join(root, "build.gradle"), []byte(""), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err = javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+	_, ambiguityErr := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
 		return session, nil
 	}).Lookup(context.Background(), backend.ProjectContext{File: file, Language: backend.LanguageJava, WorkspaceTrust: backend.NewWorkspaceTrust(root, true)}, "Thing")
-	if !errors.Is(err, javabackend.ErrJavaWorkspaceAmbiguous) {
-		t.Fatalf("ambiguity error = %v", err)
+	if !errors.Is(ambiguityErr, javabackend.ErrJavaWorkspaceAmbiguous) {
+		t.Fatalf("ambiguity error = %v", ambiguityErr)
 	}
 }
 
@@ -1086,9 +1086,9 @@ func TestJavaSuccessfulRenameClosesSessionBeforeReadUsesUpdatedSource(t *testing
 	edit := map[string]any{"changes": map[string]any{pathutil.FileURI(file): []any{
 		map[string]any{"range": map[string]any{"start": map[string]int{"line": 0, "character": 6}, "end": map[string]int{"line": 0, "character": 11}}, "newText": "Gadget"},
 	}}}
-	renameRaw, err := json.Marshal(edit)
-	if err != nil {
-		t.Fatal(err)
+	renameRaw, marshalErr := json.Marshal(edit)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
 	}
 	first := &fakeJavaSession{symbols: oldSymbols, prepareRename: json.RawMessage(`{"start":{"line":0,"character":6},"end":{"line":0,"character":11}}`), renameResult: renameRaw}
 	second := &fakeJavaSession{symbols: newSymbols}
@@ -1101,8 +1101,8 @@ func TestJavaSuccessfulRenameClosesSessionBeforeReadUsesUpdatedSource(t *testing
 		return second, nil
 	})
 	project := trustedJavaProject(root, file)
-	if _, err := underTest.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "Thing", To: "Gadget"}); err != nil {
-		t.Fatalf("rename: %v", err)
+	if _, renameErr := underTest.Rename(context.Background(), backend.RenameRequest{Project: project, Symbol: "Thing", To: "Gadget"}); renameErr != nil {
+		t.Fatalf("rename: %v", renameErr)
 	}
 	result, err := underTest.Inspect(context.Background(), backend.InspectRequest{Project: project, Symbol: "Gadget"})
 	if err != nil {
