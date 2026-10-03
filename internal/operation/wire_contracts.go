@@ -22,7 +22,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"golang.org/x/tools/go/packages"
 )
@@ -236,127 +235,27 @@ func renderContractCandidate(source []byte, destination *ast.File, fset *token.F
 }
 
 func preflightContractCandidate(ctx context.Context, snapshot *contractSnapshot, destination string, candidate []byte) (*packages.Package, error) {
-	if snapshot == nil {
-		return nil, fmt.Errorf("contract analysis snapshot is required")
-	}
-	originalPackage := snapshot.packageForFile(destination)
-	if originalPackage == nil {
-		return nil, fmt.Errorf("destination file %q is not in the analyzed package set", destination)
-	}
-	overlay := sourcebuf.Overlay(snapshot.Context)
-	if overlay == nil {
-		overlay = make(map[string][]byte)
-	}
-	overlay[destination] = bytes.Clone(candidate)
-	mode := packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps | packages.NeedModule
-	parsedTests := make(map[string][]byte)
-	var parsedTestsMu sync.Mutex
-	capturedPreflight := make(map[string][]byte)
-	var capturedPreflightMu sync.Mutex
-	destinationDirectory, err := canonicalContractDirectory(filepath.Dir(destination))
+	state, err := newContractPreflightState(snapshot, destination, candidate)
 	if err != nil {
-		return nil, fmt.Errorf("resolve contract destination directory: %w", err)
-	}
-	if err := validateContractTestSymlinks(snapshot.Root, destinationDirectory); err != nil {
-		return nil, fmt.Errorf("validate contract test sources: %w", err)
-	}
-	loaded, err := packages.Load(&packages.Config{
-		Context: ctx, Dir: snapshot.ModuleRoot, Env: snapshot.Env, BuildFlags: []string{"-mod=readonly"}, Mode: mode, Overlay: overlay, Tests: true,
-		ParseFile: func(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
-			absolute, err := filepath.Abs(filename)
-			if err != nil {
-				return nil, fmt.Errorf("resolve preflight Go source %q: %w", filename, err)
-			}
-			canonical, err := filepath.EvalSymlinks(absolute)
-			if err != nil {
-				return nil, fmt.Errorf("canonicalize preflight Go source %q: %w", filename, err)
-			}
-			if canonical == destination {
-				capturedPreflightMu.Lock()
-				defer capturedPreflightMu.Unlock()
-				return parseContractSource(snapshot.Context, snapshot.Root, fset, filename, candidate, capturedPreflight, nil)
-			}
-			if strings.HasSuffix(filename, "_test.go") {
-				logicalDirectory, err := canonicalContractDirectory(filepath.Dir(filename))
-				if err != nil {
-					return nil, fmt.Errorf("resolve logical test source directory %q: %w", filename, err)
-				}
-				if logicalDirectory == destinationDirectory {
-					if err := contractTestSymlinkError(snapshot.Root, filename); err != nil {
-						return nil, err
-					}
-				}
-			}
-			relative, err := filepath.Rel(snapshot.Root, canonical)
-			if err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-				current, err := sourcebuf.ReadFile(snapshot.Context, canonical)
-				if err != nil {
-					return nil, fmt.Errorf("read preflight Go source %q: %w", canonical, err)
-				}
-				if source != nil && !bytes.Equal(current, source) {
-					return nil, fmt.Errorf("preflight Go source %q changed while packages.Load analyzed it", canonical)
-				}
-				if strings.HasSuffix(canonical, "_test.go") {
-					parsedTestsMu.Lock()
-					parsedTests[canonical] = bytes.Clone(current)
-					parsedTestsMu.Unlock()
-				}
-				capturedPreflightMu.Lock()
-				defer capturedPreflightMu.Unlock()
-				return parseContractSource(snapshot.Context, snapshot.Root, fset, filename, current, capturedPreflight, nil)
-			}
-			return parser.ParseFile(fset, filename, source, parser.ParseComments|parser.AllErrors)
-		},
-	}, "./...")
-	if err != nil {
-		return nil, fmt.Errorf("type-check generated contract output: %w", err)
-	}
-	if err := validateContractTestSymlinks(snapshot.Root, destinationDirectory); err != nil {
-		return nil, fmt.Errorf("revalidate contract test sources: %w", err)
-	}
-	finalPackages := make(map[string]*packages.Package)
-	primaryPackagePaths := make(map[string]string, len(snapshot.ByPath))
-	for path, pkg := range snapshot.ByPath {
-		if pkg != nil {
-			primaryPackagePaths[pkg.ID] = path
-		}
-	}
-	if err := validateContractTestVariants(loaded, destinationDirectory); err != nil {
 		return nil, err
 	}
-	packages.Visit(loaded, func(pkg *packages.Package) bool {
-		if pkg == nil {
-			return true
-		}
-		path, primary := primaryPackagePaths[pkg.ID]
-		if primary && pkg.PkgPath == path {
-			finalPackages[path] = pkg
-		}
-		return true
-	}, nil)
-	requiredPackages := make(map[string]bool, len(snapshot.RequiredPkgPaths)+1)
-	requiredPackages[originalPackage.PkgPath] = true
-	for path := range snapshot.RequiredPkgPaths {
-		requiredPackages[path] = true
+	if validationErr := validateContractTestSymlinks(snapshot.Root, state.destinationDirectory); validationErr != nil {
+		return nil, fmt.Errorf("validate contract test sources: %w", validationErr)
 	}
-	if err := validateContractPackageGraph(finalPackages, requiredPackages); err != nil {
-		return nil, fmt.Errorf("validate final contract package graph: %w", err)
+	loaded, err := loadContractPreflightPackages(ctx, state)
+	if err != nil {
+		return nil, err
 	}
-	finalPackage := finalPackages[originalPackage.PkgPath]
-	if finalPackage == nil || finalPackage.Types == nil {
-		return nil, fmt.Errorf("generated output package %q did not type-check", originalPackage.PkgPath)
+	if validationErr := validateContractTestSymlinks(snapshot.Root, state.destinationDirectory); validationErr != nil {
+		return nil, fmt.Errorf("revalidate contract test sources: %w", validationErr)
 	}
-	if len(finalPackage.Errors) > 0 {
-		return nil, fmt.Errorf("generated output package %q has type errors: %s", originalPackage.PkgPath, finalPackage.Errors[0].Msg)
+	finalPackages, finalPackage, err := validateContractPreflightPackages(snapshot, state, loaded)
+	if err != nil {
+		return nil, err
 	}
-	for path, data := range parsedTests {
-		relative, err := filepath.Rel(snapshot.Root, path)
-		if err != nil {
-			return nil, fmt.Errorf("relativize preflight test source %q: %w", path, err)
-		}
-		snapshot.ReadSet = append(snapshot.ReadSet, contractRevision{Path: filepath.ToSlash(relative), Revision: contractDigest(data)})
+	if err := recordContractPreflightTests(snapshot, state.parsedTests); err != nil {
+		return nil, err
 	}
-	slices.SortFunc(snapshot.ReadSet, func(left, right contractRevision) int { return strings.Compare(left.Path, right.Path) })
 	snapshot.ByPath = finalPackages
 	return finalPackage, nil
 }

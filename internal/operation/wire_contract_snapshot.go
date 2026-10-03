@@ -43,8 +43,8 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 	if err != nil {
 		return nil, err
 	}
-	if err := buffer.AuthorizeWrites(analysisCtx, moduleRoot); err != nil {
-		return nil, fmt.Errorf("authorize contract module writes: %w", err)
+	if authorizeErr := buffer.AuthorizeWrites(analysisCtx, moduleRoot); authorizeErr != nil {
+		return nil, fmt.Errorf("authorize contract module writes: %w", authorizeErr)
 	}
 	environment, err := gocache.Environment(analysisCtx, moduleRoot)
 	if err != nil {

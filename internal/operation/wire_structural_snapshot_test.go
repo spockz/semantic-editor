@@ -26,8 +26,8 @@ func TestStructuralNoopRejectsManifestDrift(t *testing.T) {
 		t.Fatalf("prepare structural snapshot: %v", err)
 	}
 	manifest := filepath.Join(root, "go.mod")
-	if err := os.WriteFile(manifest, []byte("module example.com/structuraldrift\n\ngo 1.25\n"), 0o600); err != nil {
-		t.Fatalf("change module manifest: %v", err)
+	if writeErr := os.WriteFile(manifest, []byte("module example.com/structuraldrift\n\ngo 1.25\n"), 0o600); writeErr != nil {
+		t.Fatalf("change module manifest: %v", writeErr)
 	}
 	changed, err := snapshot.applyOutput(snapshot.Sources[snapshot.File])
 	if err == nil || !strings.Contains(err.Error(), "revalidate structural read set") {
