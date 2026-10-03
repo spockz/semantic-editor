@@ -15,7 +15,10 @@ import (
 
 func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error) {
 	insertFile := filepath.Join(rootDir, "internal", "astedit", "insert.go")
-	placements := extractPlacementConstants(insertFile)
+	placements, err := extractPlacementConstants(insertFile)
+	if err != nil {
+		return nil, nil, err
+	}
 	if len(placements) == 0 {
 		placements = defaultPlacementConstants()
 	}
@@ -26,13 +29,13 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 	return capabilities, placements, nil
 }
 
-func extractPlacementConstants(insertFile string) []string {
+func extractPlacementConstants(insertFile string) ([]string, error) {
 	fset := token.NewFileSet()
 	insertNode, err := parser.ParseFile(fset, insertFile, nil, 0)
-	var placements []string
 	if err != nil {
-		return placements
+		return nil, fmt.Errorf("parse placement constants %s: %w", insertFile, err)
 	}
+	var placements []string
 	ast.Inspect(insertNode, func(n ast.Node) bool {
 		gen, ok := n.(*ast.GenDecl)
 		if !ok || gen.Tok != token.CONST {
@@ -49,7 +52,7 @@ func extractPlacementConstants(insertFile string) []string {
 		}
 		return true
 	})
-	return placements
+	return placements, nil
 }
 
 func appendPlacementConstant(placements *[]string, value ast.Expr) {

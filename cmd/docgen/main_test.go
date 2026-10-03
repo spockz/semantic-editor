@@ -149,6 +149,23 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	}, "Hugo documentation section")
 }
 
+func TestExtractCodeCapabilitiesReportsMalformedPlacementSource(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	insertDir := filepath.Join(rootDir, "internal", "astedit")
+	if err := os.MkdirAll(insertDir, 0o750); err != nil {
+		t.Fatalf("create placement source directory: %v", err)
+	}
+	insertPath := filepath.Join(insertDir, "insert.go")
+	if err := os.WriteFile(insertPath, []byte("package astedit\nconst Placement = \"file_start\"\nfunc broken( {"), 0o600); err != nil {
+		t.Fatalf("write malformed placement source: %v", err)
+	}
+	_, _, err := extractCodeCapabilities(rootDir)
+	if err == nil || !strings.Contains(err.Error(), "parse placement constants") || !strings.Contains(err.Error(), insertPath) {
+		t.Fatalf("extractCodeCapabilities() error = %v, want malformed source path", err)
+	}
+}
+
 func prepareHugoTestOutput(t *testing.T) string {
 	t.Helper()
 	outputDir := t.TempDir()
@@ -231,7 +248,10 @@ package api
 
 type New struct{}
 `
-	ex := parseTxtarFile("test.txtar", content)
+	ex, err := parseTxtarFile("test.txtar", content)
+	if err != nil {
+		t.Fatalf("parse txtar example: %v", err)
+	}
 	if ex == nil {
 		t.Fatal("expected non-nil TxtarExample")
 	}

@@ -355,7 +355,7 @@ func initializeBenchmarkComparisonMetrics(row map[string]json.RawMessage, metric
 }
 
 func addBenchmarkComparisonArm(pairs map[string]*benchmarkComparisonPair, dimensions []string, row map[string]json.RawMessage, index int) error {
-	arm, recognized := benchmarkComparisonArm(row)
+	arm, recognized := recognizedBenchmarkComparisonArm(row)
 	if !recognized {
 		return nil
 	}
@@ -379,7 +379,7 @@ func addBenchmarkComparisonArm(pairs map[string]*benchmarkComparisonPair, dimens
 	return nil
 }
 
-func benchmarkComparisonArm(row map[string]json.RawMessage) (string, bool) {
+func recognizedBenchmarkComparisonArm(row map[string]json.RawMessage) (string, bool) {
 	var arm string
 	if json.Unmarshal(row["arm"], &arm) != nil {
 		return "", false
@@ -423,11 +423,13 @@ func isBenchmarkNumber(raw json.RawMessage, value *float64) bool {
 	return json.Unmarshal(raw, value) == nil
 }
 
-var benchmarkComparisonArms = []struct {
+type benchmarkComparisonArm struct {
 	field   string
 	context string
 	arm     string
-}{
+}
+
+var benchmarkComparisonArms = []benchmarkComparisonArm{
 	{field: "small_baseline", context: "small", arm: "baseline"},
 	{field: "small_semedit", context: "small", arm: "semedit"},
 	{field: "small_verified_baseline", context: "small_verified", arm: "baseline"},
@@ -469,11 +471,7 @@ func flattenBenchmarkComparisonBase(comparison map[string]json.RawMessage) (map[
 	return base, nil
 }
 
-func splitBenchmarkComparisonArm(comparison, base map[string]json.RawMessage, arm struct {
-	field   string
-	context string
-	arm     string
-}, legacyDurations bool) (map[string]json.RawMessage, bool, error) {
+func splitBenchmarkComparisonArm(comparison, base map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) (map[string]json.RawMessage, bool, error) {
 	raw, exists := comparison[arm.field]
 	if !exists || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
 		return nil, false, nil
@@ -508,11 +506,7 @@ func flattenBenchmarkRunFields(run map[string]json.RawMessage, arm string, row m
 	return nil
 }
 
-func normalizeBenchmarkComparisonArm(raw, target json.RawMessage, row map[string]json.RawMessage, arm struct {
-	field   string
-	context string
-	arm     string
-}, legacyDurations bool) error {
+func normalizeBenchmarkComparisonArm(raw, target json.RawMessage, row map[string]json.RawMessage, arm benchmarkComparisonArm, legacyDurations bool) error {
 	if err := addBenchmarkBrowserCost(raw, target, row); err != nil {
 		return fmt.Errorf("calculate %s result cost: %w", arm.field, err)
 	}
@@ -964,6 +958,11 @@ type browserMetricGroup struct {
 	boolN  map[string]int
 }
 
+type browserMetricGroupKeyResult struct {
+	key []byte
+	row map[string]json.RawMessage
+}
+
 func summarizeBenchmarkBrowserRows(rows []map[string]json.RawMessage) ([]map[string]json.RawMessage, error) {
 	dimensions := benchmarkBrowserSummaryDimensions(rows)
 	metrics := benchmarkBrowserNumericMetrics()
@@ -1013,21 +1012,21 @@ func benchmarkBrowserNumericMetrics() []string {
 func collectBrowserMetricGroups(rows []map[string]json.RawMessage, dimensions, metrics, booleanMetrics []string) (map[string]*browserMetricGroup, error) {
 	groups := make(map[string]*browserMetricGroup)
 	for _, row := range rows {
-		key, groupRow, err := browserMetricGroupKey(row, dimensions, metrics)
+		keyResult, err := browserMetricGroupKey(row, dimensions, metrics)
 		if err != nil {
 			return nil, err
 		}
-		group := groups[string(key)]
+		group := groups[string(keyResult.key)]
 		if group == nil {
-			group = &browserMetricGroup{row: groupRow, values: make(map[string][]float64), passes: make(map[string]int), boolN: make(map[string]int)}
-			groups[string(key)] = group
+			group = &browserMetricGroup{row: keyResult.row, values: make(map[string][]float64), passes: make(map[string]int), boolN: make(map[string]int)}
+			groups[string(keyResult.key)] = group
 		}
 		accumulateBrowserMetricValues(group, row, metrics, booleanMetrics)
 	}
 	return groups, nil
 }
 
-func browserMetricGroupKey(row map[string]json.RawMessage, dimensions, metrics []string) ([]byte, map[string]json.RawMessage, error) {
+func browserMetricGroupKey(row map[string]json.RawMessage, dimensions, metrics []string) (browserMetricGroupKeyResult, error) {
 	keyValues := make([]json.RawMessage, 0, len(dimensions))
 	groupRow := make(map[string]json.RawMessage, len(dimensions)+len(metrics)*5)
 	for _, dimension := range dimensions {
@@ -1040,9 +1039,9 @@ func browserMetricGroupKey(row map[string]json.RawMessage, dimensions, metrics [
 	}
 	key, err := json.Marshal(keyValues)
 	if err != nil {
-		return nil, nil, fmt.Errorf("encode benchmark summary group: %w", err)
+		return browserMetricGroupKeyResult{}, fmt.Errorf("encode benchmark summary group: %w", err)
 	}
-	return key, groupRow, nil
+	return browserMetricGroupKeyResult{key: key, row: groupRow}, nil
 }
 
 func accumulateBrowserMetricValues(group *browserMetricGroup, row map[string]json.RawMessage, metrics, booleanMetrics []string) {

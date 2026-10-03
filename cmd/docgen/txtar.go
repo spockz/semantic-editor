@@ -33,7 +33,10 @@ func extractTxtarExamples(rootDir string) ([]TxtarExample, error) {
 			continue
 		}
 
-		ex := parseTxtarFile(file.Name(), string(content))
+		ex, parseErr := parseTxtarFile(file.Name(), string(content))
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse txtar example %s: %w", file.Name(), parseErr)
+		}
 		if ex != nil {
 			examples = append(examples, *ex)
 		}
@@ -47,13 +50,13 @@ func extractTxtarExamples(rootDir string) ([]TxtarExample, error) {
 	return examples, nil
 }
 
-func parseTxtarFile(filename string, content string) *TxtarExample {
+func parseTxtarFile(filename string, content string) (*TxtarExample, error) {
 	parts := strings.Split(content, "\n-- ")
-	if len(parts) == 0 {
-		return nil
-	}
 	fileMap := parseTxtarFiles(parts[1:])
-	header := parseTxtarHeader(parts[0])
+	header, err := parseTxtarHeader(parts[0])
+	if err != nil {
+		return nil, err
+	}
 	if header.title == "" {
 		header.title = strings.TrimSuffix(filename, ".txtar")
 	}
@@ -71,7 +74,7 @@ func parseTxtarFile(filename string, content string) *TxtarExample {
 		OutputCode:  first.outputContent,
 		DiffLines:   first.diff,
 		Outputs:     outputs,
-	}
+	}, nil
 }
 
 type parsedTxtarHeader struct {
@@ -90,6 +93,11 @@ type txtarFirstFiles struct {
 	diff          []DiffLine
 }
 
+type txtarOutputInput struct {
+	path    string
+	content string
+}
+
 func parseTxtarFiles(parts []string) map[string]string {
 	files := make(map[string]string)
 	for _, section := range parts {
@@ -106,7 +114,7 @@ func parseTxtarFiles(parts []string) map[string]string {
 	return files
 }
 
-func parseTxtarHeader(source string) parsedTxtarHeader {
+func parseTxtarHeader(source string) (parsedTxtarHeader, error) {
 	header := parsedTxtarHeader{comparisons: make(map[string]string)}
 	for rawLine := range strings.SplitSeq(source, "\n") {
 		line := strings.TrimSpace(rawLine)
@@ -117,12 +125,16 @@ func parseTxtarHeader(source string) parsedTxtarHeader {
 			appendTxtarComment(&header, strings.TrimSpace(comment))
 			continue
 		}
-		if appendTxtarCommand(&header, line) || appendTxtarComparison(header.comparisons, line) {
+		isCommand, err := appendTxtarCommand(&header, line)
+		if err != nil {
+			return parsedTxtarHeader{}, err
+		}
+		if isCommand || appendTxtarComparison(header.comparisons, line) {
 			continue
 		}
 		appendTxtarExpectedOutput(&header, line)
 	}
-	return header
+	return header, nil
 }
 
 func appendTxtarComment(header *parsedTxtarHeader, comment string) {
@@ -145,15 +157,18 @@ func isTxtarStepComment(comment string) bool {
 	return false
 }
 
-func appendTxtarCommand(header *parsedTxtarHeader, line string) bool {
+func appendTxtarCommand(header *parsedTxtarHeader, line string) (bool, error) {
 	if !strings.HasPrefix(line, "exec semedit") && !strings.HasPrefix(line, "! exec semedit") {
-		return false
+		return false, nil
 	}
 	negative := strings.HasPrefix(line, "!")
 	command := strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(line, "!"), "exec"))
 	command = strings.TrimSpace(command)
 	toolName, toolArgs := mapCLIToMCP(command)
-	argsJSON, _ := json.MarshalIndent(toolArgs, "", "  ")
+	argsJSON, err := json.MarshalIndent(toolArgs, "", "  ")
+	if err != nil {
+		return false, fmt.Errorf("encode MCP arguments for %q: %w", command, err)
+	}
 	description := header.currentStep
 	if description == "" {
 		description = fmt.Sprintf("Execute: %s", command)
@@ -167,7 +182,7 @@ func appendTxtarCommand(header *parsedTxtarHeader, line string) bool {
 		MCPArgsJSON: string(argsJSON),
 	})
 	header.currentStep = ""
-	return true
+	return true, nil
 }
 
 func appendTxtarComparison(comparisons map[string]string, line string) bool {
@@ -211,29 +226,29 @@ func buildTxtarOutputs(files, comparisons map[string]string) []TxtarFileOutput {
 	slices.Sort(wantKeys)
 	outputs := make([]TxtarFileOutput, 0, len(wantKeys))
 	for _, wantKey := range wantKeys {
-		targetPath, inputContent := resolveTxtarOutputInput(wantKey, files, comparisons)
+		input := resolveTxtarOutputInput(wantKey, files, comparisons)
 		outputs = append(outputs, TxtarFileOutput{
-			Path: targetPath, Content: files[wantKey], DiffLines: generateDiff(inputContent, files[wantKey]),
+			Path: input.path, Content: files[wantKey], DiffLines: generateDiff(input.content, files[wantKey]),
 		})
 	}
 	return outputs
 }
 
-func resolveTxtarOutputInput(wantKey string, files, comparisons map[string]string) (string, string) {
+func resolveTxtarOutputInput(wantKey string, files, comparisons map[string]string) txtarOutputInput {
 	if actual, ok := comparisons[wantKey]; ok {
-		return actual, files[actual]
+		return txtarOutputInput{path: actual, content: files[actual]}
 	}
 	if after, ok := strings.CutPrefix(wantKey, "want/"); ok {
-		return after, files[after]
+		return txtarOutputInput{path: after, content: files[after]}
 	}
 	if extension := filepath.Ext(wantKey); extension != "" {
 		for name, content := range files {
 			if strings.HasSuffix(name, extension) && !strings.HasPrefix(name, "want") {
-				return name, content
+				return txtarOutputInput{path: name, content: content}
 			}
 		}
 	}
-	return wantKey, ""
+	return txtarOutputInput{path: wantKey}
 }
 
 func firstTxtarExampleFiles(files map[string]string, outputs []TxtarFileOutput) txtarFirstFiles {
