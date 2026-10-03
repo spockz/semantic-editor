@@ -220,19 +220,19 @@ func symbolInsertionOffset(fset *token.FileSet, file *ast.File, opts Options) (i
 }
 
 func groupedDeclarationOffset(fset *token.FileSet, file *ast.File, content []byte, placement Placement) (int, error) {
-	public, private := partitionDeclarationSections(file.Decls)
+	sections := partitionDeclarationSections(file.Decls)
 	switch placement {
 	case PlacementPublicStart:
-		return publicSectionStart(fset, file, public, private), nil
+		return publicSectionStart(fset, file, sections), nil
 	case PlacementPublicEnd:
-		return publicSectionEnd(fset, file, public, private), nil
+		return publicSectionEnd(fset, file, sections), nil
 	case PlacementPrivateStart:
-		if len(private) > 0 {
-			return fset.Position(private[0].Pos()).Offset, nil
+		if len(sections.private) > 0 {
+			return fset.Position(sections.private[0].Pos()).Offset, nil
 		}
 	case PlacementPrivateEnd:
-		if len(private) > 0 {
-			return fset.Position(private[len(private)-1].End()).Offset, nil
+		if len(sections.private) > 0 {
+			return fset.Position(sections.private[len(sections.private)-1].End()).Offset, nil
 		}
 	default:
 		return 0, fmt.Errorf("invalid grouped placement %q", placement)
@@ -240,37 +240,42 @@ func groupedDeclarationOffset(fset *token.FileSet, file *ast.File, content []byt
 	return len(content), nil
 }
 
-func partitionDeclarationSections(declarations []ast.Decl) ([]ast.Decl, []ast.Decl) {
-	var public, private []ast.Decl
+type declarationSections struct {
+	public  []ast.Decl
+	private []ast.Decl
+}
+
+func partitionDeclarationSections(declarations []ast.Decl) declarationSections {
+	sections := declarationSections{}
 	for _, declaration := range declarations {
 		if group, ok := declaration.(*ast.GenDecl); ok && group.Tok == token.IMPORT {
 			continue
 		}
 		if isDeclExported(declaration) {
-			public = append(public, declaration)
+			sections.public = append(sections.public, declaration)
 		} else {
-			private = append(private, declaration)
+			sections.private = append(sections.private, declaration)
 		}
 	}
-	return public, private
+	return sections
 }
 
-func publicSectionStart(fset *token.FileSet, file *ast.File, public, private []ast.Decl) int {
-	if len(public) > 0 {
-		return fset.Position(public[0].Pos()).Offset
+func publicSectionStart(fset *token.FileSet, file *ast.File, sections declarationSections) int {
+	if len(sections.public) > 0 {
+		return fset.Position(sections.public[0].Pos()).Offset
 	}
-	if len(private) > 0 {
-		return fset.Position(private[0].Pos()).Offset
+	if len(sections.private) > 0 {
+		return fset.Position(sections.private[0].Pos()).Offset
 	}
 	return offsetAfterImports(fset, file)
 }
 
-func publicSectionEnd(fset *token.FileSet, file *ast.File, public, private []ast.Decl) int {
-	if len(public) > 0 {
-		return fset.Position(public[len(public)-1].End()).Offset
+func publicSectionEnd(fset *token.FileSet, file *ast.File, sections declarationSections) int {
+	if len(sections.public) > 0 {
+		return fset.Position(sections.public[len(sections.public)-1].End()).Offset
 	}
-	if len(private) > 0 {
-		return fset.Position(private[0].Pos()).Offset
+	if len(sections.private) > 0 {
+		return fset.Position(sections.private[0].Pos()).Offset
 	}
 	return offsetAfterImports(fset, file)
 }
