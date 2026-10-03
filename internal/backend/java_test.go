@@ -629,15 +629,7 @@ func TestJavaVerifyDiagnosticsTimeoutIsDistinct(t *testing.T) {
 }
 
 func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
-	tests := []struct {
-		name       string
-		project    func(root, file string) backend.ProjectContext
-		formatting json.RawMessage
-		codeAction json.RawMessage
-		format     bool
-		organize   bool
-		wantError  bool
-	}{
+	tests := []javaVerifyUnsafeRequestCase{
 		{name: "diagnostics only", project: trustedJavaProject},
 		{name: "untrusted", project: func(root, file string) backend.ProjectContext {
 			return backend.ProjectContext{RootDir: root, File: file, Language: backend.LanguageJava}
@@ -651,41 +643,62 @@ func TestJavaVerifyRejectsUnsafeRequestsWithoutWriting(t *testing.T) {
 		{name: "organize command", project: trustedJavaProject, codeAction: json.RawMessage(`[{"kind":"source.organizeImports","command":{"title":"run"}}]`), organize: true, wantError: true},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			root, file := javaFixture(t, "class Thing {}\n")
-			original, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			started := false
-			session := &fakeJavaSession{formatting: tc.formatting, codeAction: tc.codeAction}
-			underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
-				started = true
-				return session, nil
-			})
-			_, err = underTest.Verify(context.Background(), backend.VerifyRequest{Project: tc.project(root, file), FormatSelectedFile: tc.format, OrganizeImports: tc.organize})
-			if err == nil && tc.wantError {
-				t.Fatal("Verify unexpectedly succeeded")
-			}
-			if err != nil && !tc.wantError {
-				t.Fatalf("diagnostics-only verify failed: %v", err)
-			}
-			contents, readErr := os.ReadFile(file)
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if !bytes.Equal(contents, original) {
-				t.Fatalf("unsafe request changed file to %q", contents)
-			}
-			if tc.name == "untrusted" || tc.name == "non java" {
-				if started {
-					t.Fatal("unsafe request started a Java session")
-				}
-			}
-			if tc.name == "diagnostics only" && (!started || session.waitDiagnosticsCalls != 1) {
-				t.Fatalf("diagnostics-only verify started=%v waits=%d, want a diagnostics session", started, session.waitDiagnosticsCalls)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { assertJavaVerifyUnsafeRequest(t, tc) })
+	}
+}
+
+type javaVerifyUnsafeRequestCase struct {
+	name       string
+	project    func(root, file string) backend.ProjectContext
+	formatting json.RawMessage
+	codeAction json.RawMessage
+	format     bool
+	organize   bool
+	wantError  bool
+}
+
+func assertJavaVerifyUnsafeRequest(t *testing.T, tc javaVerifyUnsafeRequestCase) {
+	t.Helper()
+	root, file := javaFixture(t, "class Thing {}\n")
+	original, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := false
+	session := &fakeJavaSession{formatting: tc.formatting, codeAction: tc.codeAction}
+	underTest := javabackend.NewJavaBackendWithFactory(func(context.Context, string, backend.JavaConfig) (javabackend.JavaSession, error) {
+		started = true
+		return session, nil
+	})
+	_, err = underTest.Verify(context.Background(), backend.VerifyRequest{Project: tc.project(root, file), FormatSelectedFile: tc.format, OrganizeImports: tc.organize})
+	if err == nil && tc.wantError {
+		t.Fatal("Verify unexpectedly succeeded")
+	}
+	if err != nil && !tc.wantError {
+		t.Fatalf("diagnostics-only verify failed: %v", err)
+	}
+	assertJavaVerifySourceUnchanged(t, file, original)
+	assertJavaVerifySessionState(t, tc.name, started, session)
+}
+
+func assertJavaVerifySourceUnchanged(t *testing.T, file string, original []byte) {
+	t.Helper()
+	contents, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(contents, original) {
+		t.Fatalf("unsafe request changed file to %q", contents)
+	}
+}
+
+func assertJavaVerifySessionState(t *testing.T, name string, started bool, session *fakeJavaSession) {
+	t.Helper()
+	if (name == "untrusted" || name == "non java") && started {
+		t.Fatal("unsafe request started a Java session")
+	}
+	if name == "diagnostics only" && (!started || session.waitDiagnosticsCalls != 1) {
+		t.Fatalf("diagnostics-only verify started=%v waits=%d, want a diagnostics session", started, session.waitDiagnosticsCalls)
 	}
 }
 

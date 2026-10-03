@@ -534,6 +534,10 @@ func decodeScalaDocumentSymbol(raw json.RawMessage, root string, source []byte) 
 	if _, flat := object["location"]; flat {
 		return scalaDocumentSymbol{}, fmt.Errorf("%w: flat SymbolInformation is not supported", ErrScalaUnsupportedResponse)
 	}
+	return decodeScalaSymbolFields(object, root, source)
+}
+
+func decodeScalaSymbolFields(object map[string]json.RawMessage, root string, source []byte) (scalaDocumentSymbol, error) {
 	var symbol scalaDocumentSymbol
 	if err := json.Unmarshal(object["name"], &symbol.Name); err != nil || symbol.Name == "" {
 		return scalaDocumentSymbol{}, fmt.Errorf("%w: missing name", ErrScalaMalformedResponse)
@@ -552,31 +556,52 @@ func decodeScalaDocumentSymbol(raw json.RawMessage, root string, source []byte) 
 	if err := json.Unmarshal(object["selectionRange"], &symbol.SelectionRange); err != nil || !validScalaRange(symbol.SelectionRange, source) {
 		return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range", ErrScalaMalformedResponse)
 	}
-	if uriRaw, ok := object["uri"]; ok {
-		if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
-			return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrScalaMalformedResponse)
-		}
-		if symbol.URI != "" {
-			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
-			if err != nil || !pathutil.PathWithin(root, uriPath) {
-				return scalaDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside workspace", ErrScalaMalformedResponse)
-			}
-		}
+	if err := decodeScalaSymbolURI(object, root, &symbol); err != nil {
+		return scalaDocumentSymbol{}, err
 	}
+	children, err := decodeScalaSymbolChildren(object, root, source)
+	if err != nil {
+		return scalaDocumentSymbol{}, err
+	}
+	symbol.Children = children
+	return symbol, nil
+}
+
+func decodeScalaSymbolURI(object map[string]json.RawMessage, root string, symbol *scalaDocumentSymbol) error {
+	uriRaw, ok := object["uri"]
+	if !ok {
+		return nil
+	}
+	if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
+		return fmt.Errorf("%w: invalid uri", ErrScalaMalformedResponse)
+	}
+	if symbol.URI == "" {
+		return nil
+	}
+	uriPath, err := pathutil.FilePathFromURI(symbol.URI)
+	if err != nil || !pathutil.PathWithin(root, uriPath) {
+		return fmt.Errorf("%w: symbol uri is outside workspace", ErrScalaMalformedResponse)
+	}
+	return nil
+}
+
+func decodeScalaSymbolChildren(object map[string]json.RawMessage, root string, source []byte) ([]scalaDocumentSymbol, error) {
 	if childrenRaw, ok := object["children"]; ok {
 		var children []json.RawMessage
 		if err := json.Unmarshal(childrenRaw, &children); err != nil {
-			return scalaDocumentSymbol{}, fmt.Errorf("%w: invalid children", ErrScalaMalformedResponse)
+			return nil, fmt.Errorf("%w: invalid children", ErrScalaMalformedResponse)
 		}
+		result := make([]scalaDocumentSymbol, 0, len(children))
 		for _, childRaw := range children {
 			child, err := decodeScalaDocumentSymbol(childRaw, root, source)
 			if err != nil {
-				return scalaDocumentSymbol{}, err
+				return nil, err
 			}
-			symbol.Children = append(symbol.Children, child)
+			result = append(result, child)
 		}
+		return result, nil
 	}
-	return symbol, nil
+	return nil, nil
 }
 
 func validScalaRange(r scalaRange, source []byte) bool {
@@ -807,41 +832,13 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	selected := request.Path
-	if selected == "" {
-		selected = request.Project.File
-	}
-	if strings.TrimSpace(selected) == "" {
-		return nil, fmt.Errorf("outline path is required")
-	}
-	base := request.Project.RootDir
-	if base == "" {
-		var err error
-		base, err = os.Getwd()
-		if err != nil {
-			return nil, fmt.Errorf("resolve outline path: %w", err)
-		}
-	}
-	if !filepath.IsAbs(selected) {
-		selected = filepath.Join(base, selected)
-	}
-	selected, err := filepath.Abs(selected)
+	target, err := resolveScalaOutlineTarget(request)
 	if err != nil {
-		return nil, fmt.Errorf("resolve outline path: %w", err)
+		return nil, err
 	}
-	info, err := os.Stat(selected)
-	if err != nil {
-		return nil, fmt.Errorf("inspect outline path: %w", err)
-	}
-	request.Path = selected
-	if requestErr := readlsp.ValidateOutlineRequest(request, info.IsDir()); requestErr != nil {
-		return nil, requestErr
-	}
-	if !info.Mode().IsRegular() {
-		return nil, fmt.Errorf("scala outline requires a regular source file")
-	}
+	request.Path = target.path
 	project := request.Project
-	project.File = selected
+	project.File = target.path
 	root, file, source, err := resolveScalaProject(project)
 	if err != nil {
 		return nil, err
@@ -849,6 +846,63 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 	if !project.WorkspaceTrust.Allows(root) {
 		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageScala, Workspace: root}
 	}
+	config := scalaOutlineConfig(project)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	rawSymbols, err := b.readScalaDocumentSymbolsLocked(ctx, root, file, source, config, "", "outline")
+	if err != nil {
+		return nil, err
+	}
+	symbols, err := mapScalaReadSymbols(rawSymbols, file, "")
+	if err != nil {
+		return nil, err
+	}
+	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageScala, Source: source, Symbols: symbols, Complete: true}
+	return readlsp.Outline(document, request)
+}
+
+type scalaOutlineTarget struct {
+	path string
+}
+
+func resolveScalaOutlineTarget(request neutralbackend.OutlineRequest) (scalaOutlineTarget, error) {
+	selected := request.Path
+	if selected == "" {
+		selected = request.Project.File
+	}
+	if strings.TrimSpace(selected) == "" {
+		return scalaOutlineTarget{}, fmt.Errorf("outline path is required")
+	}
+	base := request.Project.RootDir
+	if base == "" {
+		var err error
+		base, err = os.Getwd()
+		if err != nil {
+			return scalaOutlineTarget{}, fmt.Errorf("resolve outline path: %w", err)
+		}
+	}
+	if !filepath.IsAbs(selected) {
+		selected = filepath.Join(base, selected)
+	}
+	selected, err := filepath.Abs(selected)
+	if err != nil {
+		return scalaOutlineTarget{}, fmt.Errorf("resolve outline path: %w", err)
+	}
+	info, err := os.Stat(selected)
+	if err != nil {
+		return scalaOutlineTarget{}, fmt.Errorf("inspect outline path: %w", err)
+	}
+	request.Path = selected
+	if requestErr := readlsp.ValidateOutlineRequest(request, info.IsDir()); requestErr != nil {
+		return scalaOutlineTarget{}, requestErr
+	}
+	if !info.Mode().IsRegular() {
+		return scalaOutlineTarget{}, fmt.Errorf("scala outline requires a regular source file")
+	}
+	return scalaOutlineTarget{path: selected}, nil
+}
+
+func scalaOutlineConfig(project neutralbackend.ProjectContext) neutralbackend.ScalaConfig {
 	config := project.Scala
 	if config.MetalsHome == "" {
 		config.MetalsHome = project.MetalsHome
@@ -862,16 +916,5 @@ func (b *ScalaBackend) Outline(ctx context.Context, request neutralbackend.Outli
 	if config.JavaVersion == "" {
 		config.JavaVersion = project.JavaVersion
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	rawSymbols, err := b.readScalaDocumentSymbolsLocked(ctx, root, file, source, config, "", "outline")
-	if err != nil {
-		return nil, err
-	}
-	symbols, err := mapScalaReadSymbols(rawSymbols, file, "")
-	if err != nil {
-		return nil, err
-	}
-	document := readlsp.Document{Root: root, File: file, Language: neutralbackend.LanguageScala, Source: source, Symbols: symbols, Complete: true}
-	return readlsp.Outline(document, request)
+	return config
 }

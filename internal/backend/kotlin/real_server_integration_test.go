@@ -80,6 +80,11 @@ func TestRealKotlinLanguageServerIntegration(t *testing.T) {
 	if diagnostics == nil || len(diagnostics) != 0 {
 		t.Fatalf("real Kotlin diagnostics = %#v, want an explicit empty report", diagnostics)
 	}
+	assertKotlinIntegrationWorkspaceUnchanged(t, root, file, source)
+}
+
+func assertKotlinIntegrationWorkspaceUnchanged(t *testing.T, root, file string, source []byte) {
+	t.Helper()
 	after, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)

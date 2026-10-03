@@ -386,49 +386,62 @@ func (b *JavaBackend) Rename(ctx context.Context, request backend.RenameRequest)
 		}
 		retErr = errors.Join(retErr, b.invalidateJavaSessionLocked(session))
 	}()
+	edit, err := prepareJavaRenameEdit(ctx, session, root, file, source, request.Symbol, request.To)
+	if err != nil {
+		return nil, err
+	}
+	if writeErr := pipeline.WriteAtomic(file, edit.source); writeErr != nil {
+		return nil, &JavaError{Op: "write", File: file, Err: writeErr}
+	}
+	// Preserve the committed rename result if only session cleanup fails.
+	_ = b.invalidateJavaSessionLocked(session)
+	return &backend.RenameResult{Lookup: edit.lookup}, nil
+}
+
+type javaRenameEdit struct {
+	lookup *backend.LookupResult
+	source []byte
+}
+
+func prepareJavaRenameEdit(ctx context.Context, session JavaSession, root, file string, source []byte, symbol, newName string) (javaRenameEdit, error) {
 	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); openErr != nil {
-		return nil, &JavaError{Op: "didOpen", File: file, Err: openErr}
+		return javaRenameEdit{}, &JavaError{Op: "didOpen", File: file, Err: openErr}
 	}
 	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+		return javaRenameEdit{}, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
 	symbols, err := decodeJavaDocumentSymbols(raw, root, source)
 	if err != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
+		return javaRenameEdit{}, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: err}
 	}
 	if uriErr := validateJavaDocumentSymbolURI(symbols, pathutil.FileURI(file)); uriErr != nil {
-		return nil, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: uriErr}
+		return javaRenameEdit{}, &JavaError{Op: lspDocumentSymbolKey, File: file, Err: uriErr}
 	}
-	lookup, err := selectJavaSymbol(request.Symbol, root, file, source, symbols)
+	lookup, err := selectJavaSymbol(symbol, root, file, source, symbols)
 	if err != nil {
-		return nil, err
+		return javaRenameEdit{}, err
 	}
 	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start})
 	if err != nil || !validJavaPrepareRename(prepRaw) {
 		if err == nil {
 			err = ErrJavaRenameInvalidEdit
 		}
-		return nil, &JavaError{Op: "prepareRename", File: file, Err: err}
+		return javaRenameEdit{}, &JavaError{Op: "prepareRename", File: file, Err: err}
 	}
-	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": request.To})
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "position": lookup.Location.Range.Start, "newName": newName})
 	if err != nil {
-		return nil, &JavaError{Op: "rename", File: file, Err: err}
+		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Err: err}
 	}
-	oldName := request.Symbol
+	oldName := symbol
 	if parts := strings.Split(oldName, "."); len(parts) > 0 {
 		oldName = strings.TrimSpace(parts[len(parts)-1])
 	}
 	updated, err := applyJavaWorkspaceEdit(file, source, editRaw, oldName)
 	if err != nil {
-		return nil, &JavaError{Op: "rename", File: file, Err: err}
+		return javaRenameEdit{}, &JavaError{Op: "rename", File: file, Err: err}
 	}
-	if writeErr := pipeline.WriteAtomic(file, updated); writeErr != nil {
-		return nil, &JavaError{Op: "write", File: file, Err: writeErr}
-	}
-	// Preserve the committed rename result if only session cleanup fails.
-	_ = b.invalidateJavaSessionLocked(session)
-	return &backend.RenameResult{Lookup: lookup}, nil
+	return javaRenameEdit{lookup: lookup, source: updated}, nil
 }
 
 type javaTextEdit struct {
@@ -482,6 +495,18 @@ func decodeJavaTextEdits(raw json.RawMessage) ([]javaTextEdit, error) {
 }
 
 func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, oldName string) ([]byte, error) {
+	edits, err := decodeJavaWorkspaceEdits(file, raw)
+	if err != nil {
+		return nil, err
+	}
+	spans, err := validateJavaRenameSpans(source, edits, oldName)
+	if err != nil {
+		return nil, err
+	}
+	return applyJavaEditSpans(source, spans), nil
+}
+
+func decodeJavaWorkspaceEdits(file string, raw json.RawMessage) ([]javaTextEdit, error) {
 	var object map[string]json.RawMessage
 	if json.Unmarshal(raw, &object) != nil || object == nil {
 		return nil, ErrJavaRenameInvalidEdit
@@ -497,58 +522,61 @@ func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 	if _, ok := object["resourceOperations"]; ok {
 		return nil, ErrJavaRenameInvalidEdit
 	}
-	var edits []javaTextEdit
 	if hasChanges {
-		var changes map[string]json.RawMessage
-		if json.Unmarshal(object["changes"], &changes) != nil || len(changes) != 1 {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		for uri, encoded := range changes {
-			path, err := pathutil.FilePathFromURI(uri)
-			if err != nil || path != backend.CanonicalWorkspaceRoot(file) {
-				return nil, ErrJavaRenameInvalidEdit
-			}
-			edits, err = decodeJavaTextEdits(encoded)
-			if err != nil {
-				return nil, err
-			}
-		}
-	} else {
-		var docs []json.RawMessage
-		if json.Unmarshal(object["documentChanges"], &docs) != nil || len(docs) != 1 {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		var doc struct {
-			TextDocument struct {
-				URI     string `json:"uri"`
-				Version *int   `json:"version"`
-			} `json:"textDocument"`
-			Edits              json.RawMessage `json:"edits"`
-			ResourceOperations json.RawMessage `json:"resourceOperations"`
-			AnnotationID       json.RawMessage `json:"annotationId"`
-		}
-		var docObject map[string]json.RawMessage
-		if json.Unmarshal(docs[0], &docObject) != nil || docObject == nil {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		for key := range docObject {
-			if key != lspTextDocumentKey && key != "edits" {
-				return nil, ErrJavaRenameInvalidEdit
-			}
-		}
-		if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		path, err := pathutil.FilePathFromURI(doc.TextDocument.URI)
+		return decodeJavaWorkspaceChanges(file, object["changes"])
+	}
+	return decodeJavaWorkspaceDocumentChanges(file, object["documentChanges"])
+}
+
+func decodeJavaWorkspaceChanges(file string, raw json.RawMessage) ([]javaTextEdit, error) {
+	var changes map[string]json.RawMessage
+	if json.Unmarshal(raw, &changes) != nil || len(changes) != 1 {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	for uri, encoded := range changes {
+		path, err := pathutil.FilePathFromURI(uri)
 		if err != nil || path != backend.CanonicalWorkspaceRoot(file) {
 			return nil, ErrJavaRenameInvalidEdit
 		}
-		var decodeErr error
-		edits, decodeErr = decodeJavaTextEdits(doc.Edits)
-		if decodeErr != nil {
-			return nil, decodeErr
+		return decodeJavaTextEdits(encoded)
+	}
+	return nil, ErrJavaRenameInvalidEdit
+}
+
+func decodeJavaWorkspaceDocumentChanges(file string, raw json.RawMessage) ([]javaTextEdit, error) {
+	var docs []json.RawMessage
+	if json.Unmarshal(raw, &docs) != nil || len(docs) != 1 {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	var doc struct {
+		TextDocument struct {
+			URI     string `json:"uri"`
+			Version *int   `json:"version"`
+		} `json:"textDocument"`
+		Edits              json.RawMessage `json:"edits"`
+		ResourceOperations json.RawMessage `json:"resourceOperations"`
+		AnnotationID       json.RawMessage `json:"annotationId"`
+	}
+	var docObject map[string]json.RawMessage
+	if json.Unmarshal(docs[0], &docObject) != nil || docObject == nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	for key := range docObject {
+		if key != lspTextDocumentKey && key != "edits" {
+			return nil, ErrJavaRenameInvalidEdit
 		}
 	}
+	if json.Unmarshal(docs[0], &doc) != nil || doc.TextDocument.URI == "" || doc.TextDocument.Version == nil || *doc.TextDocument.Version != 1 || doc.ResourceOperations != nil || doc.AnnotationID != nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	path, err := pathutil.FilePathFromURI(doc.TextDocument.URI)
+	if err != nil || path != backend.CanonicalWorkspaceRoot(file) {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	return decodeJavaTextEdits(doc.Edits)
+}
+
+func validateJavaRenameSpans(source []byte, edits []javaTextEdit, oldName string) ([]javaEditSpan, error) {
 	spans := make([]javaEditSpan, 0, len(edits))
 	seen := map[string]bool{}
 	for _, edit := range edits {
@@ -576,11 +604,15 @@ func applyJavaWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			return nil, ErrJavaRenameInvalidEdit
 		}
 	}
+	return spans, nil
+}
+
+func applyJavaEditSpans(source []byte, spans []javaEditSpan) []byte {
 	updated := append([]byte(nil), source...)
 	for _, span := range spans {
 		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
 	}
-	return updated, nil
+	return updated
 }
 
 const javaDiagnosticsTimeout = 5 * time.Second
@@ -640,64 +672,27 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 	if initializeErr := initializeJavaSession(ctx, session, root, config); initializeErr != nil {
 		return nil, initializeErr
 	}
-	if selector, ok := session.(javaDiagnosticsSelector); ok {
-		selector.SelectDiagnosticsURI(pathutil.FileURI(file))
+	verified, err := applyJavaVerifyEdits(ctx, session, request, file, source)
+	if err != nil {
+		return nil, err
 	}
-	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); openErr != nil {
-		return nil, openErr
+	diagnosticsVersion, err := publishJavaVerifyEdits(ctx, session, file, source, verified)
+	if err != nil {
+		return nil, err
 	}
-	updated := source
-	version := 1
-	formattingChanged := false
-	if request.FormatSelectedFile {
-		raw, requestErr := session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
-		if requestErr != nil {
-			return nil, requestErr
-		}
-		updated, requestErr = applyJavaFormattingEdits(updated, raw)
-		if requestErr != nil {
-			return nil, requestErr
-		}
-		formattingChanged = !bytes.Equal(updated, source)
-	}
-	if request.OrganizeImports {
-		if formattingChanged {
-			version = 2
-			if changeErr := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); changeErr != nil {
-				return nil, changeErr
-			}
-		}
-		raw, requestErr := session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
-		if requestErr != nil {
-			return nil, requestErr
-		}
-		updated, requestErr = applyJavaOrganizeImportsEditVersion(file, updated, raw, version)
-		if requestErr != nil {
-			return nil, requestErr
-		}
-	}
-	diagnosticsVersion := 1
-	if !bytes.Equal(updated, source) {
-		if writeErr := pipeline.WriteAtomic(file, updated); writeErr != nil {
-			return nil, writeErr
-		}
-		version++
-		if changeErr := session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": version}, "contentChanges": []map[string]string{{"text": string(updated)}}}); changeErr != nil {
-			return nil, changeErr
-		}
-		if saveErr := session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); saveErr != nil {
-			return nil, saveErr
-		}
-		diagnosticsVersion = version
-	}
+	diagnostics, retErr = waitJavaVerifyDiagnostics(ctx, session, file, diagnosticsVersion)
+	b.session, b.root, b.fingerprint = nil, "", ""
+	return diagnostics, retErr
+}
+
+func waitJavaVerifyDiagnostics(ctx context.Context, session JavaSession, file string, diagnosticsVersion int) ([]backend.Diagnostic, error) {
 	diagnosticCtx, cancelDiagnostics := context.WithTimeout(ctx, javaDiagnosticsTimeout)
-	diagnostics, err = session.WaitDiagnostics(diagnosticCtx, pathutil.FileURI(file), diagnosticsVersion)
+	diagnostics, err := session.WaitDiagnostics(diagnosticCtx, pathutil.FileURI(file), diagnosticsVersion)
 	cancelDiagnostics()
 	if errors.Is(err, context.DeadlineExceeded) {
 		err = fmt.Errorf("%w: %w", ErrJavaDiagnosticsTimeout, err)
 	}
 	closeErr := session.Close()
-	b.session, b.root, b.fingerprint = nil, "", ""
 	if err != nil {
 		if closeErr != nil {
 			err = errors.Join(err, fmt.Errorf("close Java session: %w", closeErr))
@@ -708,6 +703,79 @@ func (b *JavaBackend) Verify(ctx context.Context, request backend.VerifyRequest)
 		return diagnostics, fmt.Errorf("close Java session: %w", closeErr)
 	}
 	return diagnostics, nil
+}
+
+type javaVerifiedSource struct {
+	content []byte
+	version int
+}
+
+func applyJavaVerifyEdits(ctx context.Context, session JavaSession, request backend.VerifyRequest, file string, source []byte) (javaVerifiedSource, error) {
+	if selector, ok := session.(javaDiagnosticsSelector); ok {
+		selector.SelectDiagnosticsURI(pathutil.FileURI(file))
+	}
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "languageId": "java", "version": 1, "text": string(source)}}); err != nil {
+		return javaVerifiedSource{}, err
+	}
+	verified := javaVerifiedSource{content: source, version: 1}
+	if request.FormatSelectedFile {
+		if err := applyJavaFormattingRequest(ctx, session, file, source, &verified); err != nil {
+			return javaVerifiedSource{}, err
+		}
+	}
+	if request.OrganizeImports {
+		if err := applyJavaOrganizeRequest(ctx, session, file, source, &verified); err != nil {
+			return javaVerifiedSource{}, err
+		}
+	}
+	return verified, nil
+}
+
+func applyJavaFormattingRequest(ctx context.Context, session JavaSession, file string, source []byte, verified *javaVerifiedSource) error {
+	raw, err := session.Request(ctx, "textDocument/formatting", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}, "options": map[string]any{"tabSize": 4, "insertSpaces": true}})
+	if err != nil {
+		return err
+	}
+	verified.content, err = applyJavaFormattingEdits(source, raw)
+	return err
+}
+
+func applyJavaOrganizeRequest(ctx context.Context, session JavaSession, file string, source []byte, verified *javaVerifiedSource) error {
+	if !bytes.Equal(verified.content, source) {
+		verified.version = 2
+		if err := notifyJavaVerifyChange(ctx, session, file, verified); err != nil {
+			return err
+		}
+	}
+	raw, err := session.Request(ctx, "textDocument/codeAction", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": verified.version}, "range": javaRange{}, "context": map[string]any{"only": []string{"source.organizeImports"}, "diagnostics": []any{}}})
+	if err != nil {
+		return err
+	}
+	verified.content, err = applyJavaOrganizeImportsEditVersion(file, verified.content, raw, verified.version)
+	return err
+}
+
+func notifyJavaVerifyChange(ctx context.Context, session JavaSession, file string, verified *javaVerifiedSource) error {
+	return session.Notify(ctx, "textDocument/didChange", map[string]any{lspTextDocumentKey: map[string]any{"uri": pathutil.FileURI(file), "version": verified.version}, "contentChanges": []map[string]string{{"text": string(verified.content)}}})
+}
+
+func publishJavaVerifyEdits(ctx context.Context, session JavaSession, file string, source []byte, verified javaVerifiedSource) (int, error) {
+	diagnosticsVersion := 1
+	if bytes.Equal(verified.content, source) {
+		return diagnosticsVersion, nil
+	}
+	if err := pipeline.WriteAtomic(file, verified.content); err != nil {
+		return 0, err
+	}
+	version := verified.version + 1
+	next := javaVerifiedSource{content: verified.content, version: version}
+	if err := notifyJavaVerifyChange(ctx, session, file, &next); err != nil {
+		return 0, err
+	}
+	if err := session.Notify(ctx, "textDocument/didSave", map[string]any{lspTextDocumentKey: map[string]string{"uri": pathutil.FileURI(file)}}); err != nil {
+		return 0, err
+	}
+	return version, nil
 }
 
 func applyJavaFormattingEdits(source []byte, raw json.RawMessage) ([]byte, error) {
@@ -751,97 +819,127 @@ func applyJavaOrganizeImportsEdit(file string, source []byte, raw json.RawMessag
 }
 
 func applyJavaOrganizeImportsEditVersion(file string, source []byte, raw json.RawMessage, expectedVersion int) ([]byte, error) {
+	action, err := decodeJavaOrganizeAction(raw)
+	if err != nil {
+		return nil, err
+	}
+	if action.empty {
+		return append([]byte(nil), source...), nil
+	}
+	textEdits, err := decodeJavaOrganizeTextEdits(file, action.edit, expectedVersion)
+	if err != nil {
+		return nil, err
+	}
+	spans, err := javaFormattingSpans(source, textEdits)
+	if err != nil {
+		return nil, err
+	}
+	return applyJavaEditSpans(source, spans), nil
+}
+
+type javaOrganizeAction struct {
+	edit  map[string]json.RawMessage
+	empty bool
+}
+
+func decodeJavaOrganizeAction(raw json.RawMessage) (javaOrganizeAction, error) {
 	var actions []json.RawMessage
 	if json.Unmarshal(raw, &actions) != nil || len(actions) > 1 {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	if len(actions) == 0 {
-		return append([]byte(nil), source...), nil
+		return javaOrganizeAction{empty: true}, nil
 	}
 	var action map[string]json.RawMessage
 	if json.Unmarshal(actions[0], &action) != nil || action == nil {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	var kind string
 	if json.Unmarshal(action["kind"], &kind) != nil || kind != "source.organizeImports" {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	if _, ok := action["command"]; ok {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	if disabled, ok := action["disabled"]; ok && string(disabled) != "null" {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	editRaw, ok := action["edit"]
 	if !ok {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	var edit map[string]json.RawMessage
 	if json.Unmarshal(editRaw, &edit) != nil || edit == nil {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	if _, ok := edit["changeAnnotations"]; ok {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
 	if _, ok := edit["resourceOperations"]; ok {
-		return nil, ErrJavaRenameInvalidEdit
+		return javaOrganizeAction{}, ErrJavaRenameInvalidEdit
 	}
+	return javaOrganizeAction{edit: edit}, nil
+}
+
+func decodeJavaOrganizeTextEdits(file string, edit map[string]json.RawMessage, expectedVersion int) ([]javaTextEdit, error) {
 	_, hasChanges := edit["changes"]
 	_, hasDocuments := edit["documentChanges"]
 	if hasChanges == hasDocuments {
 		return nil, ErrJavaRenameInvalidEdit
 	}
-	var textEdits []javaTextEdit
-	if changes, ok := edit["changes"]; ok {
-		var files map[string]json.RawMessage
-		if json.Unmarshal(changes, &files) != nil || len(files) != 1 {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		for uri, encoded := range files {
-			path, err := pathutil.FilePathFromURI(uri)
-			if err != nil || canonicalJavaFilePath(path) != canonicalJavaFilePath(file) {
-				return nil, ErrJavaRenameInvalidEdit
-			}
-			textEdits, err = decodeJavaTextEdits(encoded)
-			if err != nil {
-				return nil, err
-			}
-		}
-	} else if docs, ok := edit["documentChanges"]; ok {
-		var values []json.RawMessage
-		if json.Unmarshal(docs, &values) != nil || len(values) != 1 {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		var valueObject map[string]json.RawMessage
-		if json.Unmarshal(values[0], &valueObject) != nil || valueObject == nil {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		for key := range valueObject {
-			if key != lspTextDocumentKey && key != "edits" {
-				return nil, ErrJavaRenameInvalidEdit
-			}
-		}
-		var doc struct {
-			TextDocument struct {
-				URI     string `json:"uri"`
-				Version *int   `json:"version"`
-			} `json:"textDocument"`
-			Edits json.RawMessage `json:"edits"`
-		}
-		if json.Unmarshal(values[0], &doc) != nil || doc.TextDocument.Version == nil || *doc.TextDocument.Version != expectedVersion {
-			return nil, ErrJavaRenameInvalidEdit
-		}
-		path, err := pathutil.FilePathFromURI(doc.TextDocument.URI)
+	if raw, ok := edit["changes"]; ok {
+		return decodeJavaOrganizeChanges(file, raw)
+	}
+	return decodeJavaOrganizeDocumentChanges(file, edit["documentChanges"], expectedVersion)
+}
+
+func decodeJavaOrganizeChanges(file string, raw json.RawMessage) ([]javaTextEdit, error) {
+	var files map[string]json.RawMessage
+	if json.Unmarshal(raw, &files) != nil || len(files) != 1 {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	for uri, encoded := range files {
+		path, err := pathutil.FilePathFromURI(uri)
 		if err != nil || canonicalJavaFilePath(path) != canonicalJavaFilePath(file) {
 			return nil, ErrJavaRenameInvalidEdit
 		}
-		textEdits, err = decodeJavaTextEdits(doc.Edits)
-		if err != nil {
-			return nil, err
-		}
-	} else {
+		return decodeJavaTextEdits(encoded)
+	}
+	return nil, ErrJavaRenameInvalidEdit
+}
+
+func decodeJavaOrganizeDocumentChanges(file string, raw json.RawMessage, expectedVersion int) ([]javaTextEdit, error) {
+	var values []json.RawMessage
+	if json.Unmarshal(raw, &values) != nil || len(values) != 1 {
 		return nil, ErrJavaRenameInvalidEdit
 	}
+	var valueObject map[string]json.RawMessage
+	if json.Unmarshal(values[0], &valueObject) != nil || valueObject == nil {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	for key := range valueObject {
+		if key != lspTextDocumentKey && key != "edits" {
+			return nil, ErrJavaRenameInvalidEdit
+		}
+	}
+	var doc struct {
+		TextDocument struct {
+			URI     string `json:"uri"`
+			Version *int   `json:"version"`
+		} `json:"textDocument"`
+		Edits json.RawMessage `json:"edits"`
+	}
+	if json.Unmarshal(values[0], &doc) != nil || doc.TextDocument.Version == nil || *doc.TextDocument.Version != expectedVersion {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	path, err := pathutil.FilePathFromURI(doc.TextDocument.URI)
+	if err != nil || canonicalJavaFilePath(path) != canonicalJavaFilePath(file) {
+		return nil, ErrJavaRenameInvalidEdit
+	}
+	return decodeJavaTextEdits(doc.Edits)
+}
+
+func javaFormattingSpans(source []byte, textEdits []javaTextEdit) ([]javaEditSpan, error) {
 	spans := make([]javaEditSpan, 0, len(textEdits))
 	for _, item := range textEdits {
 		start, err := javaByteOffset(source, item.Range.Start)
@@ -860,11 +958,7 @@ func applyJavaOrganizeImportsEditVersion(file string, source []byte, raw json.Ra
 			return nil, ErrJavaRenameInvalidEdit
 		}
 	}
-	updated := append([]byte(nil), source...)
-	for _, span := range spans {
-		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
-	}
-	return updated, nil
+	return spans, nil
 }
 
 func canonicalJavaFilePath(path string) string {
@@ -1295,48 +1389,69 @@ func decodeJavaDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range: %w", ErrJavaMalformedResponse, err)
 	}
 	var symbol javaDocumentSymbol
+	if err := decodeJavaDocumentSymbolFields(object, source, &symbol); err != nil {
+		return javaDocumentSymbol{}, err
+	}
+	if err := decodeJavaDocumentSymbolMetadata(object, root, &symbol); err != nil {
+		return javaDocumentSymbol{}, err
+	}
+	if err := decodeJavaDocumentSymbolChildren(object, root, source, &symbol); err != nil {
+		return javaDocumentSymbol{}, err
+	}
+	return symbol, nil
+}
+
+func decodeJavaDocumentSymbolFields(object map[string]json.RawMessage, source []byte, symbol *javaDocumentSymbol) error {
 	if err := json.Unmarshal(object["name"], &symbol.Name); err != nil || symbol.Name == "" {
-		return javaDocumentSymbol{}, fmt.Errorf("%w: missing name", ErrJavaMalformedResponse)
+		return fmt.Errorf("%w: missing name", ErrJavaMalformedResponse)
 	}
 	if err := json.Unmarshal(object["kind"], &symbol.Kind); err != nil {
-		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid kind", ErrJavaMalformedResponse)
+		return fmt.Errorf("%w: invalid kind", ErrJavaMalformedResponse)
 	}
 	if err := json.Unmarshal(object["range"], &symbol.Range); err != nil || !validJavaRange(symbol.Range, source) {
-		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid range", ErrJavaMalformedResponse)
+		return fmt.Errorf("%w: invalid range", ErrJavaMalformedResponse)
 	}
 	if err := json.Unmarshal(object["selectionRange"], &symbol.SelectionRange); err != nil || !validJavaRange(symbol.SelectionRange, source) {
-		return javaDocumentSymbol{}, fmt.Errorf("%w: invalid selection range", ErrJavaMalformedResponse)
+		return fmt.Errorf("%w: invalid selection range", ErrJavaMalformedResponse)
 	}
+	return nil
+}
+
+func decodeJavaDocumentSymbolMetadata(object map[string]json.RawMessage, root string, symbol *javaDocumentSymbol) error {
 	if detailRaw, ok := object["detail"]; ok && string(detailRaw) != "null" {
 		if err := json.Unmarshal(detailRaw, &symbol.Detail); err != nil {
-			return javaDocumentSymbol{}, fmt.Errorf("%w: invalid detail", ErrJavaMalformedResponse)
+			return fmt.Errorf("%w: invalid detail", ErrJavaMalformedResponse)
 		}
 	}
 	if uriRaw, ok := object["uri"]; ok {
 		if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
-			return javaDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrJavaMalformedResponse)
+			return fmt.Errorf("%w: invalid uri", ErrJavaMalformedResponse)
 		}
 		if symbol.URI != "" {
 			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
 			if err != nil || !pathutil.PathWithin(root, uriPath) {
-				return javaDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside workspace", ErrJavaMalformedResponse)
+				return fmt.Errorf("%w: symbol uri is outside workspace", ErrJavaMalformedResponse)
 			}
 		}
 	}
+	return nil
+}
+
+func decodeJavaDocumentSymbolChildren(object map[string]json.RawMessage, root string, source []byte, symbol *javaDocumentSymbol) error {
 	if childrenRaw, ok := object["children"]; ok {
 		var children []json.RawMessage
 		if err := json.Unmarshal(childrenRaw, &children); err != nil {
-			return javaDocumentSymbol{}, fmt.Errorf("%w: invalid children", ErrJavaMalformedResponse)
+			return fmt.Errorf("%w: invalid children", ErrJavaMalformedResponse)
 		}
 		for _, childRaw := range children {
 			child, err := decodeJavaDocumentSymbol(childRaw, root, source)
 			if err != nil {
-				return javaDocumentSymbol{}, err
+				return err
 			}
 			symbol.Children = append(symbol.Children, child)
 		}
 	}
-	return symbol, nil
+	return nil
 }
 
 func validJavaRange(r javaRange, source []byte) bool {
