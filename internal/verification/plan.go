@@ -159,15 +159,17 @@ func verifyGoModule(ctx context.Context, service *backend.Service, project backe
 
 func successfulGoModuleResult(projectRoot, language, moduleRoot string, diagnostics []backend.Diagnostic) languageVerificationResult {
 	relative := relativeModuleRoot(projectRoot, moduleRoot)
-	for index := range diagnostics {
-		diagnostics[index].Message = "[" + relative + "] " + diagnostics[index].Message
+	prefixedDiagnostics := make([]backend.Diagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		diagnostic.Message = "[" + relative + "] " + diagnostic.Message
+		prefixedDiagnostics = append(prefixedDiagnostics, diagnostic)
 	}
 	coverage := LanguageCoverage{
 		Language: language, Status: "verified", ModuleRoot: relative, PackagePattern: "./...",
 		BuildExclusions: goBuildExclusions,
 		Detail:          "gopls checked the effective module package pattern; active build tags, build constraints, and listed excluded directories govern selected files.",
 	}
-	return languageVerificationResult{Diagnostics: diagnostics, Coverage: []LanguageCoverage{coverage}, Verified: true}
+	return languageVerificationResult{Diagnostics: prefixedDiagnostics, Coverage: []LanguageCoverage{coverage}, Verified: true}
 }
 
 func verifySelectedLanguageFiles(ctx context.Context, service *backend.Service, project backend.ProjectContext, language string, paths []string) (languageVerificationResult, error) {

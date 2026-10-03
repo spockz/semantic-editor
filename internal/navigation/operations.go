@@ -137,7 +137,10 @@ func resolvePostRenameRevision(ctx context.Context, service *backend.Service, pr
 	}
 	match := matchingRevision(project.RootDir, symbol, resolved.Definition.File, inspection.Matches)
 	result.Revision = match.Revision
-	if match.Count != 1 || match.Revision == "" {
+	if match.Count > 1 {
+		result.Revision = ""
+		result.ContinuationUnavailable = "post-rename inspection matched multiple declarations"
+	} else if match.Count != 1 || match.Revision == "" {
 		result.ContinuationUnavailable = "post-rename inspection did not prove a matching file revision"
 	}
 	return result
