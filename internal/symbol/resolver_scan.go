@@ -162,52 +162,66 @@ func appendExpressionIdentifiers(results *[]*Symbol, fset *token.FileSet, filePa
 }
 
 func findInterfaceMethods(index *packageTypeIndex, root indexedTypeDeclaration, targetName string) ([]*Symbol, error) {
-	var results []*Symbol
-	seenDeclarations := make(map[string]struct{})
-	// Persistent identity memoization breaks cycles and bounds diamond traversal.
-	visited := make(map[string]bool)
-	var visit func(indexedTypeDeclaration, string)
-	visit = func(current indexedTypeDeclaration, queriedName string) {
-		declarationID := fmt.Sprintf("%s:%d", current.source.path, current.source.fset.Position(current.spec.Pos()).Offset)
-		if visited[declarationID] {
-			return
-		}
-		visited[declarationID] = true
-		interfaceType, isInterface := current.spec.Type.(*ast.InterfaceType)
-		if !isInterface {
-			underlyingName := embeddedInterfaceName(current.spec.Type)
-			for _, target := range index.types[underlyingName] {
-				visit(target, queriedName)
-			}
-			return
-		}
-		for _, field := range interfaceType.Methods.List {
-			if len(field.Names) > 0 {
-				for _, method := range field.Names {
-					if method.Name != targetName {
-						continue
-					}
-					position := current.source.fset.Position(method.Pos())
-					methodID := fmt.Sprintf("%s:%d", current.source.path, position.Offset)
-					if _, exists := seenDeclarations[methodID]; exists {
-						continue
-					}
-					seenDeclarations[methodID] = struct{}{}
-					results = append(results, &Symbol{Name: method.Name, Receiver: queriedName, Kind: "method", File: current.source.path, Line: position.Line, Column: position.Column, Offset: position.Offset})
-				}
-				continue
-			}
-			embeddedName := embeddedInterfaceName(field.Type)
-			if embeddedName == "" {
-				continue
-			}
-			for _, embedded := range index.types[embeddedName] {
-				visit(embedded, queriedName)
-			}
-		}
+	scanner := interfaceMethodScanner{
+		index: index, targetName: targetName,
+		seenDeclarations: make(map[string]struct{}), visited: make(map[string]bool),
 	}
-	visit(root, root.spec.Name.Name)
-	return results, nil
+	scanner.visit(root, root.spec.Name.Name)
+	return scanner.results, nil
+}
+
+type interfaceMethodScanner struct {
+	index            *packageTypeIndex
+	targetName       string
+	seenDeclarations map[string]struct{}
+	visited          map[string]bool
+	results          []*Symbol
+}
+
+func (scanner *interfaceMethodScanner) visit(current indexedTypeDeclaration, queriedName string) {
+	declarationID := fmt.Sprintf("%s:%d", current.source.path, current.source.fset.Position(current.spec.Pos()).Offset)
+	if scanner.visited[declarationID] {
+		return
+	}
+	scanner.visited[declarationID] = true
+	interfaceType, isInterface := current.spec.Type.(*ast.InterfaceType)
+	if !isInterface {
+		scanner.visitEmbeddedType(current.spec.Type, queriedName)
+		return
+	}
+	for _, field := range interfaceType.Methods.List {
+		scanner.visitField(current, field, queriedName)
+	}
+}
+
+func (scanner *interfaceMethodScanner) visitEmbeddedType(expression ast.Expr, queriedName string) {
+	name := embeddedInterfaceName(expression)
+	for _, target := range scanner.index.types[name] {
+		scanner.visit(target, queriedName)
+	}
+}
+
+func (scanner *interfaceMethodScanner) visitField(current indexedTypeDeclaration, field *ast.Field, queriedName string) {
+	if len(field.Names) > 0 {
+		scanner.visitNamedMethods(current, field.Names, queriedName)
+		return
+	}
+	scanner.visitEmbeddedType(field.Type, queriedName)
+}
+
+func (scanner *interfaceMethodScanner) visitNamedMethods(current indexedTypeDeclaration, methods []*ast.Ident, queriedName string) {
+	for _, method := range methods {
+		if method.Name != scanner.targetName {
+			continue
+		}
+		position := current.source.fset.Position(method.Pos())
+		methodID := fmt.Sprintf("%s:%d", current.source.path, position.Offset)
+		if _, exists := scanner.seenDeclarations[methodID]; exists {
+			continue
+		}
+		scanner.seenDeclarations[methodID] = struct{}{}
+		scanner.results = append(scanner.results, &Symbol{Name: method.Name, Receiver: queriedName, Kind: "method", File: current.source.path, Line: position.Line, Column: position.Column, Offset: position.Offset})
+	}
 }
 
 func embeddedInterfaceName(expression ast.Expr) string {

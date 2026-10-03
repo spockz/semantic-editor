@@ -113,41 +113,11 @@ func scanFile(filePath string, targetRecv string, targetName string, packageInde
 		return nil, &SymbolError{Op: "parse", File: filePath, Symbol: targetName, Pos: pos, Err: err}
 	}
 
-	var index *packageTypeIndex
-	if targetRecv != "" {
-		for _, declaration := range node.Decls {
-			general, ok := declaration.(*ast.GenDecl)
-			if !ok {
-				continue
-			}
-			for _, raw := range general.Specs {
-				spec, ok := raw.(*ast.TypeSpec)
-				if !ok || spec.Name.Name != targetRecv {
-					continue
-				}
-				_, isInterface := spec.Type.(*ast.InterfaceType)
-				if !isInterface && embeddedInterfaceName(spec.Type) == "" {
-					continue
-				}
-				key := filepath.Clean(filepath.Dir(filePath)) + "\x00" + node.Name.Name
-				if strings.HasSuffix(filePath, "_test.go") {
-					key += "\x00tests"
-				}
-				index = packageIndexes[key]
-				if index == nil {
-					index, err = loadPackageTypeIndex(filePath, node.Name.Name, reader)
-					if err != nil {
-						return nil, fmt.Errorf("index interface declarations for %s: %w", filePath, err)
-					}
-					packageIndexes[key] = index
-				}
-				break
-			}
-			if index != nil {
-				break
-			}
-		}
+	indexedReceiver, err := receiverTypeIndex(filePath, targetRecv, node, packageIndexes, reader)
+	if err != nil {
+		return nil, fmt.Errorf("index interface declarations for %s: %w", filePath, err)
 	}
+	index := indexedReceiver.index
 
 	results, err := scanTopLevelDeclarations(fset, node, filePath, targetRecv, targetName, index)
 	if err != nil {
@@ -157,6 +127,67 @@ func scanFile(filePath string, targetRecv string, targetName string, packageInde
 		results = append(results, scanFunctionVariables(fset, node, filePath, targetName)...)
 	}
 	return results, nil
+}
+
+type receiverIndexResult struct {
+	index *packageTypeIndex
+	found bool
+}
+
+func receiverTypeIndex(filePath, targetRecv string, file *ast.File, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) (receiverIndexResult, error) {
+	if targetRecv == "" {
+		return receiverIndexResult{}, nil
+	}
+	for _, declaration := range file.Decls {
+		general, ok := declaration.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		result, err := receiverIndexInDeclaration(filePath, targetRecv, file.Name.Name, general, packageIndexes, reader)
+		if err != nil {
+			return receiverIndexResult{}, err
+		}
+		if result.found {
+			return result, nil
+		}
+	}
+	return receiverIndexResult{}, nil
+}
+
+func receiverIndexInDeclaration(filePath, targetRecv, packageName string, declaration *ast.GenDecl, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) (receiverIndexResult, error) {
+	for _, raw := range declaration.Specs {
+		spec, ok := raw.(*ast.TypeSpec)
+		if !ok || spec.Name.Name != targetRecv || !supportsIndexedReceiver(spec.Type) {
+			continue
+		}
+		key := receiverIndexKey(filePath, packageName)
+		index := packageIndexes[key]
+		if index != nil {
+			return receiverIndexResult{index: index, found: true}, nil
+		}
+		index, err := loadPackageTypeIndex(filePath, packageName, reader)
+		if err != nil {
+			return receiverIndexResult{}, err
+		}
+		packageIndexes[key] = index
+		return receiverIndexResult{index: index, found: true}, nil
+	}
+	return receiverIndexResult{}, nil
+}
+
+func supportsIndexedReceiver(expression ast.Expr) bool {
+	if _, isInterface := expression.(*ast.InterfaceType); isInterface {
+		return true
+	}
+	return embeddedInterfaceName(expression) != ""
+}
+
+func receiverIndexKey(filePath, packageName string) string {
+	key := filepath.Clean(filepath.Dir(filePath)) + "\x00" + packageName
+	if strings.HasSuffix(filePath, "_test.go") {
+		key += "\x00tests"
+	}
+	return key
 }
 
 func appendLocalVariable(results *[]*Symbol, fset *token.FileSet, filePath string, ident *ast.Ident, targetName string, kind string) {

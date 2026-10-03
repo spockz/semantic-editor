@@ -186,8 +186,8 @@ func TestResolveInterfaceMethods(t *testing.T) {
 		"cycle.go": "package api\ntype Cyclic interface { Loop }\ntype Loop interface { Cyclic; Ping() }\n",
 	}
 	for name, content := range cycleFiles {
-		if err := os.WriteFile(filepath.Join(cycleDir, name), []byte(content), 0o600); err != nil {
-			t.Fatalf("write cycle %s: %v", name, err)
+		if writeErr := os.WriteFile(filepath.Join(cycleDir, name), []byte(content), 0o600); writeErr != nil {
+			t.Fatalf("write cycle %s: %v", name, writeErr)
 		}
 	}
 	cycleResult, err := symbol.Resolve(cycleDir, "cycle.go", "Cyclic.Ping")
