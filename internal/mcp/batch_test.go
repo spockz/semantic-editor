@@ -283,7 +283,7 @@ func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 	var out bytes.Buffer
 	server := mcp.NewServer("full", tmpDir, &out)
 	response, err := server.ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-		Tool: "semantic_rename",
+		Tool: "semantic_replace_body",
 	}}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +292,7 @@ func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 		t.Fatalf("response = %#v", response)
 	}
 	message := response.Results[0].Error
-	if !strings.Contains(message, "edit 0 params") || !strings.Contains(message, `"params"`) || !strings.Contains(message, `"symbol":"Old"`) {
+	if !strings.Contains(message, "edit 0 params for semantic_replace_body") || !strings.Contains(message, `"params"`) || !strings.Contains(message, `"symbol":"Old"`) {
 		t.Fatalf("error = %q, want indexed params-shape guidance and example", message)
 	}
 }
