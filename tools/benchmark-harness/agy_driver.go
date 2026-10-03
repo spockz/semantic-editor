@@ -222,11 +222,11 @@ func parseAgyTranscript(data []byte, res *RunResult) error {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	state := agyTranscriptState{}
 	for scanner.Scan() {
+		state.lineNumber++
 		line := append([]byte(nil), scanner.Bytes()...)
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		state.lineNumber++
 		if err := processAgyTranscriptLine(line, res, &state); err != nil {
 			return err
 		}
@@ -273,25 +273,31 @@ func processAgyTranscriptLine(line []byte, result *RunResult, state *agyTranscri
 
 func appendAgyTranscriptCalls(toolCalls []agyTranscriptToolCall, result *RunResult, state *agyTranscriptState) error {
 	for _, toolCall := range toolCalls {
-		name, server, isMCPCall := resolveAgyToolCall(toolCall)
+		identity := resolveAgyToolCall(toolCall)
 		arguments, err := json.Marshal(toolCall.Args)
 		if err != nil {
 			return fmt.Errorf("encode arguments on transcript line %d: %w", state.lineNumber, err)
 		}
-		index := appendToolCall(result, ToolCall{Name: name, Server: server, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
+		index := appendToolCall(result, ToolCall{Name: identity.name, Server: identity.server, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
 		state.pending = append(state.pending, index)
-		observeAgyToolCall(name, server, isMCPCall, state)
+		observeAgyToolCall(identity.name, identity.server, identity.isMCPCall, state)
 	}
 	return nil
 }
 
-func resolveAgyToolCall(toolCall agyTranscriptToolCall) (string, string, bool) {
+type agyToolCallIdentity struct {
+	name      string
+	server    string
+	isMCPCall bool
+}
+
+func resolveAgyToolCall(toolCall agyTranscriptToolCall) agyToolCallIdentity {
 	name := strings.Trim(strings.TrimSpace(toolCall.Name), "\"")
 	server := ""
 	isMCPCall := name == "call_mcp_tool"
 	argsMap, ok := toolCall.Args.(map[string]any)
 	if !isMCPCall || !ok {
-		return name, server, isMCPCall
+		return agyToolCallIdentity{name: name, server: server, isMCPCall: isMCPCall}
 	}
 	if toolName, ok := argsMap["ToolName"].(string); ok {
 		name = strings.Trim(strings.TrimSpace(toolName), "\"")
@@ -299,7 +305,7 @@ func resolveAgyToolCall(toolCall agyTranscriptToolCall) (string, string, bool) {
 	if serverName, ok := argsMap["ServerName"].(string); ok {
 		server = strings.Trim(strings.TrimSpace(serverName), "\"")
 	}
-	return strings.Trim(name, "\""), server, isMCPCall
+	return agyToolCallIdentity{name: strings.Trim(name, "\""), server: server, isMCPCall: isMCPCall}
 }
 
 func observeAgyToolCall(name, server string, isMCPCall bool, state *agyTranscriptState) {

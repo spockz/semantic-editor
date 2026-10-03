@@ -95,17 +95,20 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if target.Harness == string(HarnessCodex) || target.Harness == string(HarnessOpenCode) {
 		mcpInstructions = r.mcpServerInstructionsMode
 	}
-	res := newAgentRunResult(r, task, target, arm, variant, execution, session, workspace.prewarmApplied, workspace.prewarmDuration, mcpInstructions)
+	res := newAgentRunResult(r, task, agentRunResultInput{
+		target: target, arm: arm, variant: variant, execution: execution,
+		session: session, workspace: workspace, mcpInstructions: mcpInstructions,
+	})
 	session.result = res
 	prompt, err := prepareAgentRunMetadata(execution, session, res, r.semeditPrewarmVerify)
 	if err != nil {
 		return nil, err
 	}
-	started, stopEarly := runInitialAgentTask(ctx, session, target, task, prompt, res)
-	if stopEarly {
+	initialTask := runInitialAgentTask(ctx, session, target, task, prompt, res)
+	if initialTask.stopEarly {
 		return res, nil
 	}
-	r.runAgentFollowups(ctx, session, target, arm, started, res)
+	r.runAgentFollowups(ctx, session, target, arm, initialTask.started, res)
 	return res, nil
 }
 
@@ -138,33 +141,51 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 		return agentWorkspaceSetup{}, fmt.Errorf("snapshot benchmark workspace: %w", err)
 	}
 	session.beforeFiles = beforeFiles
-	setAgentInitialFile(session, task, workDir)
+	if err := setAgentInitialFile(session, task, workDir); err != nil {
+		return agentWorkspaceSetup{}, err
+	}
 	return setup, nil
 }
 
-func setAgentInitialFile(session *agentSession, task *Task, workDir string) {
+func setAgentInitialFile(session *agentSession, task *Task, workDir string) error {
 	targetFile := task.Metadata.Oracle.AST.File
 	if targetFile == "" {
 		targetFile = "api/server.go"
 	}
 	session.initialPath = filepath.Join(workDir, filepath.FromSlash(targetFile))
 	// #nosec G304,G703 -- initialPath is derived from the selected fixture oracle path.
-	if data, err := os.ReadFile(session.initialPath); err == nil {
-		session.beforeContent = strings.TrimSpace(string(data))
+	data, err := os.ReadFile(session.initialPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
 	}
+	if err != nil {
+		return fmt.Errorf("read initial benchmark file: %w", err)
+	}
+	session.beforeContent = strings.TrimSpace(string(data))
+	return nil
 }
 
-func newAgentRunResult(r *Runner, task *Task, target Target, arm ArmType, variant string, execution AgentExecution, session *agentSession, prewarmApplied bool, prewarmDuration time.Duration, mcpInstructions MCPServerInstructionMode) *RunResult {
+type agentRunResultInput struct {
+	target          Target
+	arm             ArmType
+	variant         string
+	execution       AgentExecution
+	session         *agentSession
+	workspace       agentWorkspaceSetup
+	mcpInstructions MCPServerInstructionMode
+}
+
+func newAgentRunResult(r *Runner, task *Task, input agentRunResultInput) *RunResult {
 	return &RunResult{
-		TaskID: task.Metadata.TaskID, Variant: variant,
+		TaskID: task.Metadata.TaskID, Variant: input.variant,
 		InteractiveMode:              task.Metadata.InteractiveMode,
-		PromptVariant:                promptVariantFromExecution(execution),
-		SemeditArmRestrict:           execution.Policy,
-		SemeditArmRestrictionApplied: arm == ArmSemedit,
-		SemeditPrewarmVerify:         prewarmApplied,
-		SemeditPrewarmDurationMS:     prewarmDuration.Milliseconds(),
-		MCPServerInstructions:        mcpInstructions,
-		Provenance:                   r.provenanceFor(), Target: target, Arm: arm, BeforeState: session.beforeContent,
+		PromptVariant:                promptVariantFromExecution(input.execution),
+		SemeditArmRestrict:           input.execution.Policy,
+		SemeditArmRestrictionApplied: input.arm == ArmSemedit,
+		SemeditPrewarmVerify:         input.workspace.prewarmApplied,
+		SemeditPrewarmDurationMS:     input.workspace.prewarmDuration.Milliseconds(),
+		MCPServerInstructions:        input.mcpInstructions,
+		Provenance:                   r.provenanceFor(), Target: input.target, Arm: input.arm, BeforeState: input.session.beforeContent,
 	}
 }
 
@@ -198,7 +219,12 @@ func ensureProvenance(result *RunResult) {
 	}
 }
 
-func runInitialAgentTask(ctx context.Context, session *agentSession, target Target, task *Task, prompt string, result *RunResult) (time.Time, bool) {
+type initialAgentTaskResult struct {
+	started   time.Time
+	stopEarly bool
+}
+
+func runInitialAgentTask(ctx context.Context, session *agentSession, target Target, task *Task, prompt string, result *RunResult) initialAgentTaskResult {
 	started := time.Now()
 	session.started = started
 	runErr := session.runTurn(ctx, target, prompt, "task", result)
@@ -213,7 +239,7 @@ func runInitialAgentTask(ctx context.Context, session *agentSession, target Targ
 		session.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
 		result.Error = fmt.Sprintf("%s execution: %v", target.Harness, runErr)
 		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
-		return started, true
+		return initialAgentTaskResult{started: started, stopEarly: true}
 	}
 	result.WallClock = elapsedTaskTime(started)
 	if err := session.evaluate(ctx, result); err != nil {
@@ -221,13 +247,13 @@ func runInitialAgentTask(ctx context.Context, session *agentSession, target Targ
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
 		result.Error = err.Error()
 		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
-		return started, true
+		return initialAgentTaskResult{started: started, stopEarly: true}
 	}
 	if task.Metadata.InteractiveMode == "staged" {
 		result.WallClock = elapsedTaskTime(started)
 	}
 	result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
-	return started, false
+	return initialAgentTaskResult{started: started}
 }
 
 func (r *Runner) runAgentFollowups(ctx context.Context, session *agentSession, target Target, arm ArmType, started time.Time, result *RunResult) {

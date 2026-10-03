@@ -126,6 +126,21 @@ func TestParseAgyTranscriptRejectsMalformedEvent(t *testing.T) {
 	if err := parseAgyTranscript([]byte("{not-json}\n"), result); err == nil {
 		t.Fatal("malformed transcript unexpectedly succeeded")
 	}
+	if err := parseAgyTranscript([]byte("\n{not-json}\n"), result); err == nil || !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("malformed event after blank line error = %v, want physical line 2", err)
+	}
+}
+
+func TestPrepareAgentWorkspaceReportsInitialFileReadErrors(t *testing.T) {
+	workDir := filepath.Join(t.TempDir(), "workspace")
+	task := &Task{
+		Metadata: TaskMetadata{TaskID: "initial-file-read", Oracle: OracleConfig{AST: ASTConfig{File: "nested"}}},
+		Archive:  ParseArchive([]byte("-- nested/child.txt --\ncontent\n")),
+	}
+	_, err := prepareAgentWorkspace(context.Background(), &Runner{}, task, Target{Harness: "fake"}, ArmBaseline, "small", workDir, &agentSession{})
+	if err == nil || !strings.Contains(err.Error(), "read initial benchmark file") {
+		t.Fatalf("prepare workspace error = %v, want initial file read failure", err)
+	}
 }
 
 func TestExecuteAgentUsesOneProcessSessionAndExcludesReflectionMetrics(t *testing.T) {

@@ -418,7 +418,9 @@ func renameControlSymbol(ctx context.Context, workDir, file, symbolName, replace
 	if err := golang.Rename(ctx, workDir, resolved.File, resolved.Line, resolved.Column, replacement); err != nil {
 		return nil, fmt.Errorf("rename %s: %w", symbolName, err)
 	}
-	_ = pipeline.Format(ctx, workDir, formatPath)
+	if err := pipeline.Format(ctx, workDir, formatPath); err != nil {
+		return changedFiles, fmt.Errorf("format renamed files: %w", err)
+	}
 	return changedFiles, nil
 }
 
