@@ -122,8 +122,16 @@ func TestUndo_CleanRestore(t *testing.T) {
 }
 
 func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
-	t.Parallel()
 	dir := t.TempDir()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goplsPath := filepath.Join(binDir, "gopls")
+	if err := os.WriteFile(goplsPath, []byte("#!/bin/sh\nexit 23\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir)
 	file := filepath.Join(dir, "main.go")
 	preimage := []byte("package main\n\nfunc Value() int { return 1 }\n")
 	if err := os.WriteFile(file, preimage, 0o600); err != nil {
@@ -136,15 +144,15 @@ func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
 	if writeErr := os.WriteFile(file, []byte("package main\n\nfunc Value() int { return 2 }\n"), 0o600); writeErr != nil {
 		t.Fatal(writeErr)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	result, undoErr := snapshot.Undo(ctx, dir, snapshotResult.SnapshotID)
+	result, undoErr := snapshot.Undo(context.Background(), dir, snapshotResult.SnapshotID)
 	if undoErr != nil {
 		t.Fatalf("Undo failed: %v", undoErr)
 	}
 	if result.DiagnosticStatus != "unavailable" || result.DiagnosticError == "" || result.Delta != nil {
 		t.Fatalf("diagnostics outcome = status %q, error %q, delta %#v", result.DiagnosticStatus, result.DiagnosticError, result.Delta)
+	}
+	if !strings.Contains(result.DiagnosticError, "gopls") {
+		t.Fatalf("diagnostic error = %q, want gopls failure", result.DiagnosticError)
 	}
 	if len(result.RestoredFiles) != 1 || result.RestoredFiles[0] != "main.go" {
 		t.Fatalf("restored files = %v", result.RestoredFiles)
