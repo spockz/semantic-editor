@@ -35,6 +35,7 @@ type InsertConstructOptions struct {
 	Anchor              string
 	Discriminator       string
 	ConstructPath       string
+	ExpectedRevision    string
 	CasePlacement       CasePlacement
 	AnchorCase          string
 	Visibility          string
@@ -243,7 +244,8 @@ func insertStatementConstruct(ctx context.Context, filePath, source string, opts
 	}
 	plan, err := PlanInsertStatement(content, InsertStatementIntent{
 		Function: opts.Function, Anchor: opts.Anchor, Discriminator: opts.Discriminator, ConstructPath: OptionalString{Present: opts.ConstructPath != "", Value: opts.ConstructPath},
-		Source: source, Placement: placement,
+		ExpectedRevision: OptionalString{Present: opts.ExpectedRevision != "", Value: opts.ExpectedRevision},
+		Source:           source, Placement: placement,
 	})
 	if err != nil {
 		return fmt.Errorf("plan statement insertion: %w", err)
