@@ -20,7 +20,7 @@ const diagnosticStatusUnavailable = "unavailable"
 var (
 	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
 	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
-	accessEnum             = []string{"infer", "public", "private", "protected", "package-private"}
+	accessEnum             = goModifiers()
 	visibilityEnum         = []string{"public", "private"}
 	groupEnum              = []string{"append", "standalone"}
 	caseEnum               = []string{"first", "last", "before_default", "before", "after"}

@@ -121,15 +121,16 @@ const (
 
 // ParameterContract declares one operation parameter in ingress-neutral form.
 type ParameterContract struct {
-	Name         string
-	CLIName      string
-	JSONName     string
-	Type         string
-	Description  string
-	Required     bool
-	Default      any
-	Enums        []string
-	DynamicEnums func(backend.Backend) []string
+	Name             string
+	CLIName          string
+	JSONName         string
+	Type             string
+	Description      string
+	Required         bool
+	Default          any
+	Enums            []string
+	DynamicEnums     func(backend.Backend) []string
+	LanguageSelector bool
 	// SourceFields names top-level structured output fields that can feed this parameter.
 	SourceFields []string
 	Schema       *ValueSchema
@@ -371,16 +372,34 @@ func (r *Registry) All() []Entry {
 // the registered backend instances that can handle the operation.
 func ParametersForBackends(entry Entry, backends []backend.Backend) []ParameterContract {
 	params := append([]ParameterContract(nil), entry.Params...)
+	eligible := make([]backend.Backend, 0, len(backends))
+	for _, candidate := range backends {
+		if slices.Contains(entry.Languages, candidate.Language()) {
+			eligible = append(eligible, candidate)
+		}
+	}
 	for i := range params {
+		if params[i].LanguageSelector {
+			seen := map[string]bool{}
+			var values []string
+			for _, candidate := range eligible {
+				value := string(candidate.Language())
+				if !seen[value] {
+					seen[value] = true
+					values = append(values, value)
+				}
+			}
+			if slices.Contains(params[i].Enums, string(backend.LanguageAuto)) {
+				values = append([]string{string(backend.LanguageAuto)}, values...)
+			}
+			params[i].Enums = values
+		}
 		if params[i].DynamicEnums == nil {
 			continue
 		}
 		seen := map[string]bool{}
 		var values []string
-		for _, candidate := range backends {
-			if !slices.Contains(entry.Languages, candidate.Language()) {
-				continue
-			}
+		for _, candidate := range eligible {
 			for _, value := range params[i].DynamicEnums(candidate) {
 				if !seen[value] {
 					seen[value] = true

@@ -86,6 +86,8 @@ const semanticVerifyToolName = "semantic_verify"
 
 const finalDiffToolName = "final_diff"
 
+var errNoRegisteredParameterChoices = errors.New("no parameter choices for registered backends")
+
 // Option configures a Server instance.
 type Option func(*Server)
 
@@ -419,15 +421,22 @@ func (s *Server) listTools() ([]map[string]any, error) {
 		return nil, err
 	}
 	activeBackends := s.backendsForLanguages(languages)
+	activeLanguages := make([]backend.LanguageID, 0, len(activeBackends))
+	for _, candidate := range activeBackends {
+		activeLanguages = append(activeLanguages, candidate.Language())
+	}
 	for _, entry := range s.registry.All() {
 		if entry.MCPName == "" || (s.profile == "mutations-only" && entry.ReadOnly) {
 			continue
 		}
-		if !entrySupportsAny(entry, languages) {
+		if !entrySupportsAny(entry, activeLanguages) {
 			continue
 		}
 		tool, err := toolSchemaForLanguages(entry, activeBackends)
 		if err != nil {
+			if errors.Is(err, errNoRegisteredParameterChoices) {
+				continue
+			}
 			return nil, fmt.Errorf("build schema for %q: %w", entry.MCPName, err)
 		}
 		tools = append(tools, tool)
@@ -435,11 +444,14 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			batchable = append(batchable, entry)
 		}
 	}
-	batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends)
-	if err != nil {
-		return nil, err
+	if len(batchable) > 0 {
+		batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends)
+		if err != nil {
+			return nil, err
+		}
+		tools = append(tools, batchTool)
 	}
-	tools = append(tools, batchTool, metricsToolSchema())
+	tools = append(tools, metricsToolSchema())
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", toolFieldDescription: "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
@@ -1109,6 +1121,11 @@ func operationInputSchema(entry operation.Entry) (map[string]any, error) {
 
 func operationInputSchemaForBackends(entry operation.Entry, backends []backend.Backend) (map[string]any, error) {
 	params := operation.ParametersForBackends(entry, backends)
+	for _, param := range params {
+		if (param.DynamicEnums != nil || param.LanguageSelector) && len(param.Enums) == 0 {
+			return nil, fmt.Errorf("%w: parameter %q", errNoRegisteredParameterChoices, param.JSONName)
+		}
+	}
 	schema, err := operationInputSchemaForParams(params)
 	if err != nil {
 		return nil, err
@@ -1122,16 +1139,24 @@ func addOperationExample(schema map[string]any, example map[string]any, params [
 		return
 	}
 
-	supported := make(map[string]struct{}, len(params))
+	supported := make(map[string]operation.ParameterContract, len(params))
 	for _, param := range params {
-		supported[param.JSONName] = struct{}{}
+		supported[param.JSONName] = param
 	}
 
 	filtered := make(map[string]any, len(example))
 	for key, value := range example {
-		if _, ok := supported[key]; ok {
-			filtered[key] = value
+		param, ok := supported[key]
+		if !ok {
+			continue
 		}
+		if len(param.Enums) > 0 {
+			choice, ok := value.(string)
+			if !ok || !slices.Contains(param.Enums, choice) {
+				return
+			}
+		}
+		filtered[key] = value
 	}
 	schema["examples"] = []map[string]any{filtered}
 }

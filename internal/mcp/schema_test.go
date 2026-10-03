@@ -16,6 +16,7 @@ import (
 
 	"semedit/internal/backend"
 	gobackend "semedit/internal/backend/golang"
+	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
 	"semedit/internal/operation"
 	"semedit/internal/sourcebuf"
@@ -800,6 +801,7 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)))
+	replaceFound := false
 	for _, tool := range tools {
 		if tool["name"] != "semantic_replace_construct" {
 			continue
@@ -809,9 +811,37 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		if got, want := kind["enum"], toAnySlice([]string{"custom_kind", "loop"}); !reflect.DeepEqual(got, want) {
 			t.Fatalf("construct kind enum = %#v, want registered backend values %#v", got, want)
 		}
+		replaceFound = true
+	}
+	if !replaceFound {
+		t.Fatal("tools/list omitted semantic_replace_construct")
+	}
+	if hasTool(tools, "semantic_insert_structure") {
+		t.Fatal("tools/list advertised insertion without a structure capability provider")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_batch" {
+			continue
+		}
+		branches := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+		for _, raw := range branches {
+			branch := raw.(map[string]any)["properties"].(map[string]any)
+			if branch["tool"].(map[string]any)["const"] == "semantic_insert_structure" {
+				t.Fatal("semantic_batch advertised insertion without a structure capability provider")
+			}
+		}
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_insert_function" {
+			continue
+		}
+		access := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+		if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Go insertion access enum = %#v, want %#v", got, want)
+		}
 		return
 	}
-	t.Fatal("tools/list omitted semantic_replace_construct")
+	t.Fatal("tools/list omitted Go insertion despite the registered Go backend")
 }
 
 func hasTool(tools []map[string]any, name string) bool {
@@ -1818,5 +1848,151 @@ func TestTypedContinuationRegistrationRejectsIncompatibleConsumers(t *testing.T)
 				t.Fatal("incompatible typed consumer registration was accepted")
 			}
 		})
+	}
+}
+
+func TestToolsListScopesLanguageAndAccessEnums(t *testing.T) {
+	javaOnly := t.TempDir()
+	if err := os.WriteFile(filepath.Join(javaOnly, "Main.java"), []byte("class Main {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name      string
+		root      string
+		options   []mcp.Option
+		languages []string
+	}{
+		{name: "go only", root: func() string {
+			root := t.TempDir()
+			writeTestGoModule(t, root)
+			if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package sample\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			return root
+		}(), languages: []string{"auto", "go"}},
+		{name: "mixed", root: schemaWorkspace(t), languages: []string{"auto", "go", "java"}},
+		{name: "java only", root: javaOnly, languages: []string{"auto", "java"}},
+		{name: "mixed with Java enabled", root: schemaWorkspace(t), options: []mcp.Option{mcp.WithEnabledLanguages("java")}, languages: []string{"auto", "java"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tools := listToolsAt(t, tc.root, tc.options...)
+			byName := make(map[string]map[string]any, len(tools))
+			for _, tool := range tools {
+				byName[tool["name"].(string)] = tool
+			}
+			languageEnums := func(toolName string) []any {
+				t.Helper()
+				tool := byName[toolName]
+				if tool == nil {
+					t.Fatalf("tools/list omitted %s", toolName)
+				}
+				properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+				return properties["language"].(map[string]any)["enum"].([]any)
+			}
+			if got := languageEnums("semantic_lookup"); !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+				t.Errorf("lookup language enum = %#v, want %#v", got, tc.languages)
+			}
+			if got := languageEnums("semantic_inspect_symbol"); !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+				t.Errorf("inspect language enum = %#v, want %#v", got, tc.languages)
+			}
+			if tc.name == "java only" {
+				if _, ok := byName["semantic_insert_structure"]; ok {
+					t.Error("Java-only tools/list included the Go-only insertion tool")
+				}
+				if _, ok := byName["semantic_verify"]["inputSchema"].(map[string]any)["examples"]; ok {
+					t.Error("Java-only verify schema retained an example with an unsupported language")
+				}
+			}
+			if tc.name == "go only" || tc.name == "mixed" {
+				access := byName["semantic_insert_structure"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+				if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
+					t.Errorf("Go access enum = %#v, want %#v", got, want)
+				}
+			}
+			batch := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
+			for _, raw := range batch {
+				branch := raw.(map[string]any)["properties"].(map[string]any)
+				if branch["tool"].(map[string]any)["const"] != "semantic_rename" {
+					continue
+				}
+				params := branch["params"].(map[string]any)
+				property := params["properties"].(map[string]any)["language"].(map[string]any)
+				if got := property["enum"]; !reflect.DeepEqual(got, toAnySlice(tc.languages)) {
+					t.Errorf("batch rename language enum = %#v, want %#v", got, tc.languages)
+				}
+				return
+			}
+			t.Error("batch schema omitted semantic_rename")
+		})
+	}
+}
+
+func TestToolsListScopesVerifyAndOmitsBatchForMakeOnlyWorkspace(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("all:\n\t@true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tools := listToolsAt(t, root)
+	if !hasTool(tools, "semantic_verify") {
+		t.Fatal("Auto verify tool was omitted from Make-only tools/list")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_verify" {
+			continue
+		}
+		language := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+		if got, want := language["enum"], toAnySlice([]string{"auto"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("Make-only verify language enum = %#v, want %#v", got, want)
+		}
+	}
+	if hasTool(tools, "semantic_batch") {
+		t.Fatal("tools/list included semantic_batch without any eligible batch children")
+	}
+	for _, tool := range tools {
+		input, ok := tool["inputSchema"].(map[string]any)
+		if !ok {
+			continue
+		}
+		properties, ok := input["properties"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for name, raw := range properties {
+			property, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if enum, hasEnum := property["enum"]; hasEnum && len(enum.([]any)) == 0 {
+				t.Errorf("%s.%s exposes an empty enum", tool["name"], name)
+			}
+		}
+	}
+}
+
+func TestToolsListUsesRegisteredBackendsForOperationInventory(t *testing.T) {
+	root := schemaWorkspace(t)
+	registry, err := backend.NewRegistry(javabackend.NewJavaBackend())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := backend.NewService(registry)
+	tools := listToolsAt(t, root, mcp.WithService(service))
+	if hasTool(tools, "semantic_insert_structure") {
+		t.Fatal("Go-only insertion tool was listed without a registered Go backend")
+	}
+	if !hasTool(tools, "semantic_lookup") || !hasTool(tools, "semantic_metrics") {
+		t.Fatal("tools/list omitted language-compatible lookup or backend-independent metrics")
+	}
+	for _, tool := range tools {
+		if tool["name"] != "semantic_lookup" {
+			continue
+		}
+		language := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+		if got, want := language["enum"], toAnySlice([]string{"auto", "java"}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("lookup language enum = %#v, want %#v", got, want)
+		}
 	}
 }

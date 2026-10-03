@@ -3285,3 +3285,21 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: the replacement referenced EditUnknown, which is not declared; diagnostics reported three undefined-name errors.
 - Workaround: use the explicit EditStatus("unknown") value while retaining declared status constants for known states.
 - Root cause: EditStatus defines known persisted/no-op/working states but no unknown constant.
+
+## Registry workspace choices: patch applied to coordinator checkout
+
+- Date: 2026-10-03
+- Tool: `apply_patch`.
+- Target: `internal/operation/profiles.go`, `internal/operation/wire_engine.go`, `internal/operation/wire_engine_declarations.go`, `internal/operation/wire_engine_structures.go`, and `internal/mcp/server.go` in the coordinator checkout.
+- Observed failure: patches intended for the assigned `.scratch/worktrees/registry-workspace-choices` checkout were applied to its parent checkout because `apply_patch` paths were anchored at the parent workspace root.
+- Workaround: stop edits, identify all changed paths in both checkouts, and make subsequent patches only with verified absolute paths under the assigned worktree.
+- Root cause: selected absolute paths under the coordinator checkout instead of the assigned private worktree. The shell command's `workdir` does not affect the path chosen for `apply_patch`.
+
+## Registry workspace choices: test inserted before import organization
+
+- Date: 2026-10-03
+- Tool: worktree-local `insert-func` semantic CLI operation.
+- Target: `internal/mcp/schema_test.go`, `TestToolsListUsesRegisteredBackendsForOperationInventory`.
+- Observed failure: insertion diagnostics reported `undefined: javabackend` because the test import had not been added yet.
+- Workaround: immediately run worktree-local semantic import organization with the Java backend package alias; diagnostics then resolved.
+- Root cause: the inserted test referenced a new package alias before adding its import.

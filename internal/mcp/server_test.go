@@ -817,14 +817,44 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 }
 
 func TestSemanticRenameAdvertisesRust(t *testing.T) {
-	var out bytes.Buffer
-	srv := mcp.NewServer("full", ".", &out)
-	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
-		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	for name, source := range map[string]string{
+		"go.mod":     "module example.com/mixed\n\ngo 1.24\n",
+		"main.go":    "package main\n",
+		"Cargo.toml": "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+		"src/lib.rs": "pub fn run() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
+	tools := listToolsAt(t, root)
+	for _, tool := range tools {
+		if tool["name"] != "semantic_rename" {
+			continue
+		}
+		input := tool["inputSchema"].(map[string]any)
+		language := input["properties"].(map[string]any)["language"].(map[string]any)
+		want := []any{"auto", "go", "rust"}
+		got := language["enum"].([]any)
+		if len(got) != len(want) {
+			t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+			}
+		}
+		description, _ := language["description"].(string)
+		if !strings.Contains(description, "Rust requires a selected .rs file") {
+			t.Fatalf("semantic_rename.language description does not explain Rust file selection: %q", description)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_rename for a Go+Rust workspace")
 }
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
