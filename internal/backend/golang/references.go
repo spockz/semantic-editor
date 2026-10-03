@@ -136,9 +136,9 @@ func referencesModuleRoot(project backend.ProjectContext) (string, error) {
 		if !pathWithin(workspaceRoot, selected) {
 			return "", fmt.Errorf("selected file %s is outside the project root %s", selected, workspaceRoot)
 		}
-		moduleRoot, found, err := enclosingGoModule(filepath.Dir(selected))
-		if err != nil {
-			return "", err
+		moduleRoot, found, moduleErr := enclosingGoModule(filepath.Dir(selected))
+		if moduleErr != nil {
+			return "", moduleErr
 		}
 		if found && pathWithin(moduleRoot, selected) {
 			return moduleRoot, nil
@@ -323,8 +323,8 @@ func (GoBackend) FindReferences(ctx context.Context, request backend.ReferencesR
 	if err != nil {
 		return nil, fmt.Errorf("find references: %w", err)
 	}
-	if err := rejectActiveGoWorkspace(ctx, root); err != nil {
-		return nil, fmt.Errorf("find references: %w", err)
+	if workspaceErr := rejectActiveGoWorkspace(ctx, root); workspaceErr != nil {
+		return nil, fmt.Errorf("find references: %w", workspaceErr)
 	}
 	selectedFile, err := selectedReferenceFile(request.Project, root)
 	if err != nil {
@@ -352,8 +352,8 @@ func (GoBackend) FindReferences(ctx context.Context, request backend.ReferencesR
 	if err != nil {
 		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: err}
 	}
-	if err := sources.verifyUnchanged(); err != nil {
-		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: err}
+	if verifyErr := sources.verifyUnchanged(); verifyErr != nil {
+		return nil, &backend.Error{Operation: backend.OperationFindReferences, Language: backend.LanguageGo, Err: verifyErr}
 	}
 	scopePath, err := referenceScopePath(workspaceRoot, root)
 	if err != nil {
@@ -1050,7 +1050,7 @@ func methodDeclaredOnReceiver(method *types.Func, receiver *types.TypeName, fset
 		return false, nil
 	}
 	receiverType := types.Unalias(signature.Recv().Type())
-	if pointer, ok := receiverType.(*types.Pointer); ok {
+	if pointer, isPointer := receiverType.(*types.Pointer); isPointer {
 		receiverType = types.Unalias(pointer.Elem())
 	}
 	named, ok := receiverType.(*types.Named)

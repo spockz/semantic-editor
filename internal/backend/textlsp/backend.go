@@ -167,8 +167,8 @@ func (a *Adapter) Verify(ctx context.Context, request backend.VerifyRequest) (re
 			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
 		}
 	}()
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
-		return nil, fmt.Errorf("open selected file for diagnostics: %w", err)
+	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); openErr != nil {
+		return nil, fmt.Errorf("open selected file for diagnostics: %w", openErr)
 	}
 	waitCtx, waitCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer waitCancel()
@@ -214,8 +214,8 @@ func (a *Adapter) Lookup(ctx context.Context, project backend.ProjectContext, qu
 			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
 		}
 	}()
-	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
-		return nil, fmt.Errorf("open selected file: %w", err)
+	if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); openErr != nil {
+		return nil, fmt.Errorf("open selected file: %w", openErr)
 	}
 	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{textDocumentKey: map[string]string{"uri": uri}})
 	if err != nil {
@@ -233,8 +233,8 @@ func (a *Adapter) Outline(ctx context.Context, request backend.OutlineRequest) (
 	if a.Language() != backend.LanguageBash && a.Language() != backend.LanguageMake {
 		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: backend.ErrUnsupportedOperation}
 	}
-	if err := readlsp.ValidateOutlineRequest(request, false); err != nil {
-		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: err}
+	if requestErr := readlsp.ValidateOutlineRequest(request, false); requestErr != nil {
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: requestErr}
 	}
 	root := request.Project.RootDir
 	if root == "" {
@@ -257,8 +257,8 @@ func (a *Adapter) Outline(ctx context.Context, request backend.OutlineRequest) (
 		return nil, fmt.Errorf("stat outline path %q: %w", selected, err)
 	}
 	if info.IsDir() {
-		err := readlsp.ValidateOutlineRequest(request, true)
-		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: err}
+		directoryErr := readlsp.ValidateOutlineRequest(request, true)
+		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: directoryErr}
 	}
 	if !info.Mode().IsRegular() {
 		return nil, &backend.Error{Operation: backend.OperationOutline, Language: a.Language(), Err: fmt.Errorf("outline path %q is not a regular source file", request.Path)}
@@ -386,8 +386,8 @@ func (a *Adapter) open(ctx context.Context, root, file string, source []byte, pr
 	}
 	name := filepath.Base(file)
 	target := filepath.Join(scratch, name)
-	if err := pipeline.WriteAtomic(target, source); err != nil {
-		return nil, "", "", errors.Join(fmt.Errorf("write isolated selected source: %w", err), removeScratch(scratch))
+	if writeErr := pipeline.WriteAtomic(target, source); writeErr != nil {
+		return nil, "", "", errors.Join(fmt.Errorf("write isolated selected source: %w", writeErr), removeScratch(scratch))
 	}
 	factory := a.Factory
 	if factory == nil {
@@ -445,8 +445,8 @@ func (a *Adapter) readSymbols(ctx context.Context, project backend.ProjectContex
 			retErr = errors.Join(retErr, fmt.Errorf("remove isolated LSP workspace: %w", cleanupErr))
 		}
 	}()
-	if err := session.Notify(requestCtx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); err != nil {
-		return "", "", nil, nil, nil, fmt.Errorf("open selected file for read: %w", err)
+	if openErr := session.Notify(requestCtx, "textDocument/didOpen", map[string]any{textDocumentKey: map[string]any{"uri": uri, "languageId": a.Config.LanguageID, "version": 1, "text": string(source)}}); openErr != nil {
+		return "", "", nil, nil, nil, fmt.Errorf("open selected file for read: %w", openErr)
 	}
 	raw, err := session.Request(requestCtx, "textDocument/documentSymbol", map[string]any{textDocumentKey: map[string]string{"uri": uri}})
 	if err != nil {
@@ -510,8 +510,8 @@ func processFactory(ctx context.Context, root, binary string, args []string) (Se
 	config := filepath.Join(root, ".config")
 	cache := filepath.Join(root, ".cache")
 	for _, dir := range []string{home, config, cache} {
-		if err := os.MkdirAll(dir, 0700); err != nil {
-			return nil, err
+		if directoryErr := os.MkdirAll(dir, 0700); directoryErr != nil {
+			return nil, directoryErr
 		}
 	}
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + home, "XDG_CONFIG_HOME=" + config, "XDG_CACHE_HOME=" + cache, "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}
