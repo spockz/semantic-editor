@@ -55,7 +55,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	return publishInsertStatement(source, fset, owner, intent, selection)
+	return buildInsertStatementPlan(source, fset, owner, intent, selection)
 }
 
 func validateInsertStatementIntent(source []byte, intent InsertStatementIntent) (string, error) {
@@ -199,7 +199,7 @@ func missingDirectStatementAnchorError(intent InsertStatementIntent) error {
 	return fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
 }
 
-func publishInsertStatement(source []byte, fset *token.FileSet, owner *ast.FuncDecl, intent InsertStatementIntent, selection insertStatementAnchor) (SourcePlan, error) {
+func buildInsertStatementPlan(source []byte, fset *token.FileSet, owner *ast.FuncDecl, intent InsertStatementIntent, selection insertStatementAnchor) (SourcePlan, error) {
 	if selection.statement == nil && (selection.mode == "start" || selection.mode == "end") {
 		offset, indent := emptyBlockInsertionOffset(source, fset, owner.Body)
 		newline := sourceNewline(source)

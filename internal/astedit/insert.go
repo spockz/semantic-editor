@@ -147,9 +147,29 @@ func insertDeclarationImpl(ctx context.Context, filePath string, source string, 
 }
 
 func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, error) {
+	snippet, err := parseDeclarationSnippet(source)
+	if err != nil {
+		return nil, err
+	}
+	if len(snippet.file.Decls) == 0 {
+		return nil, ErrNoDeclarations
+	}
+	if err := validateSnippetVisibility(snippet, expectedVisibility); err != nil {
+		return nil, err
+	}
+	return snippet.file.Decls, nil
+}
+
+type parsedDeclarationSnippet struct {
+	fset      *token.FileSet
+	file      *ast.File
+	prepended bool
+}
+
+func parseDeclarationSnippet(source string) (parsedDeclarationSnippet, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return nil, ErrEmptySnippet
+		return parsedDeclarationSnippet{}, ErrEmptySnippet
 	}
 
 	toParse := trimmed
@@ -162,66 +182,58 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet", toParse, parser.ParseComments)
 	if err != nil {
-		pos := extractSyntaxPosition(fset, err)
-		if prepended && pos.Line > 2 {
-			pos.Line -= 2
-			pos.Offset -= len("package dummy\n\n")
-			if pos.Offset < 0 {
-				pos.Offset = 0
-			}
-		}
-		pos.Filename = "snippet"
-		return nil, &SyntaxError{
-			Snippet: source,
-			Pos:     pos,
-			Cause:   err,
-			Err:     ErrSyntax,
+		return parsedDeclarationSnippet{}, declarationSnippetSyntaxError(source, fset, prepended, err)
+	}
+	return parsedDeclarationSnippet{fset: fset, file: node, prepended: prepended}, nil
+}
+
+func declarationSnippetSyntaxError(source string, fset *token.FileSet, prepended bool, cause error) error {
+	position := extractSyntaxPosition(fset, cause)
+	position = snippetSourcePosition(position, prepended)
+	return &SyntaxError{Snippet: source, Pos: position, Cause: cause, Err: ErrSyntax}
+}
+
+func snippetSourcePosition(position token.Position, prepended bool) token.Position {
+	if prepended && position.Line > 2 {
+		position.Line -= 2
+		position.Offset -= len("package dummy\n\n")
+		if position.Offset < 0 {
+			position.Offset = 0
 		}
 	}
+	position.Filename = "snippet"
+	return position
+}
 
-	if len(node.Decls) == 0 {
-		return nil, ErrNoDeclarations
+func validateSnippetVisibility(snippet parsedDeclarationSnippet, expected string) error {
+	if expected != "public" && expected != "private" {
+		return nil
 	}
-
-	if expectedVisibility != "" {
-		for _, decl := range node.Decls {
-			names := extractDeclNames(decl)
-			for _, name := range names {
-				exported := ast.IsExported(name)
-				pos := fset.Position(decl.Pos())
-				if prepended && pos.Line > 2 {
-					pos.Line -= 2
-					pos.Offset -= len("package dummy\n\n")
-					if pos.Offset < 0 {
-						pos.Offset = 0
-					}
-				}
-				pos.Filename = "snippet"
-				if expectedVisibility == "public" && !exported {
-					return nil, &VisibilityMismatchError{
-						File:       "snippet",
-						Pos:        pos,
-						Identifier: name,
-						Requested:  AccessModifierPublic,
-						Effective:  AccessModifierPrivate,
-						Err:        ErrVisibilityMismatch,
-					}
-				}
-				if expectedVisibility == "private" && exported {
-					return nil, &VisibilityMismatchError{
-						File:       "snippet",
-						Pos:        pos,
-						Identifier: name,
-						Requested:  AccessModifierPrivate,
-						Effective:  AccessModifierPublic,
-						Err:        ErrVisibilityMismatch,
-					}
-				}
+	for _, declaration := range snippet.file.Decls {
+		for _, name := range extractDeclNames(declaration) {
+			mismatch := snippetVisibilityMismatch(snippet, declaration, name, expected)
+			if mismatch != nil {
+				return mismatch
 			}
 		}
 	}
+	return nil
+}
 
-	return node.Decls, nil
+func snippetVisibilityMismatch(snippet parsedDeclarationSnippet, declaration ast.Decl, name, expected string) error {
+	exported := ast.IsExported(name)
+	if (expected == "public" && exported) || (expected == "private" && !exported) {
+		return nil
+	}
+	requested, effective := AccessModifierPublic, AccessModifierPrivate
+	if expected == "private" {
+		requested, effective = AccessModifierPrivate, AccessModifierPublic
+	}
+	position := snippetSourcePosition(snippet.fset.Position(declaration.Pos()), snippet.prepended)
+	return &VisibilityMismatchError{
+		File: "snippet", Pos: position, Identifier: name,
+		Requested: requested, Effective: effective, Err: ErrVisibilityMismatch,
+	}
 }
 
 func extractDeclNames(decl ast.Decl) []string {
