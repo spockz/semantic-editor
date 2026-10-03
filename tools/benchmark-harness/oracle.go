@@ -145,131 +145,172 @@ type stagedFollowupYAML struct {
 
 // parseYAMLFrontmatter provides zero-dependency YAML parsing for benchmark task specs.
 func parseYAMLFrontmatter(comment []byte) (TaskMetadata, error) {
-	var meta TaskMetadata
+	parser := taskFrontmatterParser{}
 	scanner := bufio.NewScanner(bytes.NewReader(comment))
-
-	var currentPath []string
-	var cleanCompileSeen, passTestsSeen bool
-
 	for scanner.Scan() {
-		rawLine := scanner.Text()
-		trimmed := strings.TrimSpace(rawLine)
-		if trimmed == "" {
-			continue
-		}
-
-		if after, ok := strings.CutPrefix(trimmed, "#"); ok {
-			trimmed = strings.TrimSpace(after)
-			if trimmed == "" || strings.HasPrefix(trimmed, "exec ") || strings.HasPrefix(trimmed, "cmp ") {
-				continue
-			}
-			if hashIdx := strings.Index(rawLine, "#"); hashIdx >= 0 {
-				rawLine = strings.TrimPrefix(rawLine[hashIdx+1:], " ")
-			}
-		}
-
-		indent := len(rawLine) - len(strings.TrimLeft(rawLine, " "))
-		level := indent / 2
-
-		if after, ok := strings.CutPrefix(trimmed, "- "); ok {
-			itemVal := strings.Trim(after, `"'`)
-			targetSlice := strings.Join(currentPath, ".")
-			switch targetSlice {
-			case "contexts":
-				meta.Contexts = append(meta.Contexts, itemVal)
-			case "interactive_followups":
-				meta.InteractiveFollowups = append(meta.InteractiveFollowups, itemVal)
-			case "oracle.diagnostic_expected_tools":
-				meta.Oracle.DiagnosticExpectedTools = append(meta.Oracle.DiagnosticExpectedTools, itemVal)
-			case "oracle.level_1_mutation_policy.disallowed_files":
-				meta.Oracle.MutationPolicy.DisallowedFiles = append(meta.Oracle.MutationPolicy.DisallowedFiles, itemVal)
-			case "oracle.level_2_ast.must_contain_symbols":
-				meta.Oracle.AST.MustContainSymbols = append(meta.Oracle.AST.MustContainSymbols, itemVal)
-			case "oracle.level_2_ast.must_not_contain_symbols":
-				meta.Oracle.AST.MustNotContainSymbols = append(meta.Oracle.AST.MustNotContainSymbols, itemVal)
-			case "oracle.level_2_ast.must_call_functions":
-				meta.Oracle.AST.MustCallFunctions = append(meta.Oracle.AST.MustCallFunctions, itemVal)
-			case "oracle.level_2_ast.must_contain_imports":
-				meta.Oracle.AST.MustContainImports = append(meta.Oracle.AST.MustContainImports, itemVal)
-			case "oracle.level_2_ast.must_not_contain_imports":
-				meta.Oracle.AST.MustNotContainImports = append(meta.Oracle.AST.MustNotContainImports, itemVal)
-			}
-			continue
-		}
-
-		parts := strings.SplitN(trimmed, ":", 2)
-		key := strings.TrimSpace(parts[0])
-		val := ""
-		if len(parts) > 1 {
-			val = strings.Trim(strings.TrimSpace(parts[1]), `"'`)
-		}
-
-		if level < len(currentPath) {
-			currentPath = currentPath[:level]
-		}
-		currentPath = append(currentPath, key)
-
-		fullPath := strings.Join(currentPath, ".")
-		if strings.HasPrefix(fullPath, "prompt_variants.") && val != "" {
-			varName := strings.TrimPrefix(fullPath, "prompt_variants.")
-			if meta.PromptVariants == nil {
-				meta.PromptVariants = make(map[string]string)
-			}
-			meta.PromptVariants[varName] = val
-		}
-
-		switch fullPath {
-		case "task_id":
-			meta.TaskID = val
-		case "category":
-			meta.Category = val
-		case "instruction":
-			meta.Instruction = val
-		case "verification_constraint":
-			meta.VerificationConstraint = val
-		case "interactive_mode":
-			meta.InteractiveMode = val
-		case "staged_initial_total_edits":
-			count, err := strconv.Atoi(val)
-			if err != nil {
-				return TaskMetadata{}, fmt.Errorf("staged_initial_total_edits: %w", err)
-			}
-			meta.StagedInitialTotalEdits = count
-		case "oracle.level_2_ast.file":
-			meta.Oracle.AST.File = val
-		case "oracle.level_2_ast.symbol_before.first":
-			meta.Oracle.AST.SymbolBefore.First = val
-		case "oracle.level_2_ast.symbol_before.second":
-			meta.Oracle.AST.SymbolBefore.Second = val
-		case "oracle.level_3_build.clean_compile":
-			b, err := strconv.ParseBool(val)
-			if err != nil {
-				return TaskMetadata{}, fmt.Errorf("oracle.level_3_build.clean_compile: %w", err)
-			}
-			cleanCompileSeen = true
-			meta.Oracle.Build.CleanCompile = b
-		case "oracle.level_4_test.pass_tests":
-			b, err := strconv.ParseBool(val)
-			if err != nil {
-				return TaskMetadata{}, fmt.Errorf("oracle.level_4_test.pass_tests: %w", err)
-			}
-			passTestsSeen = true
-			meta.Oracle.Test.PassTests = b
-		case "oracle.level_4_test.hidden_test_dir":
-			meta.Oracle.Test.HiddenTestDir = val
+		if err := parser.parseLine(scanner.Text()); err != nil {
+			return TaskMetadata{}, err
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return TaskMetadata{}, err
 	}
-	if !cleanCompileSeen {
+	if !parser.cleanCompileSeen {
 		return TaskMetadata{}, errors.New("missing required oracle.level_3_build.clean_compile")
 	}
-	if !passTestsSeen {
+	if !parser.passTestsSeen {
 		return TaskMetadata{}, errors.New("missing required oracle.level_4_test.pass_tests")
 	}
-	return parseStagedFollowups(comment, meta)
+	return parseStagedFollowups(comment, parser.metadata)
+}
+
+type taskFrontmatterParser struct {
+	metadata         TaskMetadata
+	currentPath      []string
+	cleanCompileSeen bool
+	passTestsSeen    bool
+}
+
+func (parser *taskFrontmatterParser) parseLine(rawLine string) error {
+	trimmed := strings.TrimSpace(rawLine)
+	if trimmed == "" || parser.isIgnoredComment(&rawLine, &trimmed) {
+		return nil
+	}
+	level := frontmatterIndentLevel(rawLine)
+	if item, ok := strings.CutPrefix(trimmed, "- "); ok {
+		parser.appendListItem(strings.Trim(item, `"'`))
+		return nil
+	}
+	key, value := parseFrontmatterKeyValue(trimmed)
+	parser.replacePathAtLevel(level, key)
+	return parser.setScalar(strings.Join(parser.currentPath, "."), value)
+}
+
+func (parser *taskFrontmatterParser) isIgnoredComment(rawLine, trimmed *string) bool {
+	after, isComment := strings.CutPrefix(*trimmed, "#")
+	if !isComment {
+		return false
+	}
+	*trimmed = strings.TrimSpace(after)
+	if *trimmed == "" || strings.HasPrefix(*trimmed, "exec ") || strings.HasPrefix(*trimmed, "cmp ") {
+		return true
+	}
+	if index := strings.Index(*rawLine, "#"); index >= 0 {
+		*rawLine = strings.TrimPrefix((*rawLine)[index+1:], " ")
+	}
+	return false
+}
+
+func frontmatterIndentLevel(rawLine string) int {
+	indent := len(rawLine) - len(strings.TrimLeft(rawLine, " "))
+	return indent / 2
+}
+
+func parseFrontmatterKeyValue(line string) (string, string) {
+	parts := strings.SplitN(line, ":", 2)
+	key := strings.TrimSpace(parts[0])
+	if len(parts) == 1 {
+		return key, ""
+	}
+	value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+	return key, value
+}
+
+func (parser *taskFrontmatterParser) replacePathAtLevel(level int, key string) {
+	if level < len(parser.currentPath) {
+		parser.currentPath = parser.currentPath[:level]
+	}
+	parser.currentPath = append(parser.currentPath, key)
+}
+
+func (parser *taskFrontmatterParser) appendListItem(item string) {
+	metadata := &parser.metadata
+	switch strings.Join(parser.currentPath, ".") {
+	case "contexts":
+		metadata.Contexts = append(metadata.Contexts, item)
+	case "interactive_followups":
+		metadata.InteractiveFollowups = append(metadata.InteractiveFollowups, item)
+	case "oracle.diagnostic_expected_tools":
+		metadata.Oracle.DiagnosticExpectedTools = append(metadata.Oracle.DiagnosticExpectedTools, item)
+	case "oracle.level_1_mutation_policy.disallowed_files":
+		metadata.Oracle.MutationPolicy.DisallowedFiles = append(metadata.Oracle.MutationPolicy.DisallowedFiles, item)
+	case "oracle.level_2_ast.must_contain_symbols":
+		metadata.Oracle.AST.MustContainSymbols = append(metadata.Oracle.AST.MustContainSymbols, item)
+	case "oracle.level_2_ast.must_not_contain_symbols":
+		metadata.Oracle.AST.MustNotContainSymbols = append(metadata.Oracle.AST.MustNotContainSymbols, item)
+	case "oracle.level_2_ast.must_call_functions":
+		metadata.Oracle.AST.MustCallFunctions = append(metadata.Oracle.AST.MustCallFunctions, item)
+	case "oracle.level_2_ast.must_contain_imports":
+		metadata.Oracle.AST.MustContainImports = append(metadata.Oracle.AST.MustContainImports, item)
+	case "oracle.level_2_ast.must_not_contain_imports":
+		metadata.Oracle.AST.MustNotContainImports = append(metadata.Oracle.AST.MustNotContainImports, item)
+	}
+}
+
+func (parser *taskFrontmatterParser) setScalar(path, value string) error {
+	if strings.HasPrefix(path, "prompt_variants.") && value != "" {
+		name := strings.TrimPrefix(path, "prompt_variants.")
+		if parser.metadata.PromptVariants == nil {
+			parser.metadata.PromptVariants = make(map[string]string)
+		}
+		parser.metadata.PromptVariants[name] = value
+	}
+	return parser.setKnownScalar(path, value)
+}
+
+func (parser *taskFrontmatterParser) setKnownScalar(path, value string) error {
+	metadata := &parser.metadata
+	switch path {
+	case "task_id":
+		metadata.TaskID = value
+	case "category":
+		metadata.Category = value
+	case "instruction":
+		metadata.Instruction = value
+	case "verification_constraint":
+		metadata.VerificationConstraint = value
+	case "interactive_mode":
+		metadata.InteractiveMode = value
+	case "staged_initial_total_edits":
+		count, err := strconv.Atoi(value)
+		if err != nil {
+			return fmt.Errorf("staged_initial_total_edits: %w", err)
+		}
+		metadata.StagedInitialTotalEdits = count
+	case "oracle.level_2_ast.file":
+		metadata.Oracle.AST.File = value
+	case "oracle.level_2_ast.symbol_before.first":
+		metadata.Oracle.AST.SymbolBefore.First = value
+	case "oracle.level_2_ast.symbol_before.second":
+		metadata.Oracle.AST.SymbolBefore.Second = value
+	case "oracle.level_3_build.clean_compile":
+		return parser.setCleanCompile(value)
+	case "oracle.level_4_test.pass_tests":
+		return parser.setPassTests(value)
+	case "oracle.level_4_test.hidden_test_dir":
+		metadata.Oracle.Test.HiddenTestDir = value
+	}
+	return nil
+}
+
+func (parser *taskFrontmatterParser) setCleanCompile(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("oracle.level_3_build.clean_compile: %w", err)
+	}
+	parser.cleanCompileSeen = true
+	parser.metadata.Oracle.Build.CleanCompile = parsed
+	return nil
+}
+
+func (parser *taskFrontmatterParser) setPassTests(value string) error {
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("oracle.level_4_test.pass_tests: %w", err)
+	}
+	parser.passTestsSeen = true
+	parser.metadata.Oracle.Test.PassTests = parsed
+	return nil
 }
 
 func parseStagedFollowups(comment []byte, meta TaskMetadata) (TaskMetadata, error) {
@@ -388,30 +429,12 @@ func (t *Task) ExtractVariantTo(targetDir, variant string) error {
 // Evaluate runs the multi-level correctness oracle against the target workspace directory.
 func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []string) (result *OracleResult, retErr error) {
 	start := time.Now()
-	res := &OracleResult{
-		Passed: false,
-	}
-
-	// Level 1: Mutation Policy
-	if slices.Contains(task.Metadata.Oracle.MutationPolicy.DisallowedFiles, "*") && len(modifiedFiles) > 0 {
-		res.FailureStage = "level_1_mutation_policy"
-		res.ErrorMessage = fmt.Sprintf("workspace must remain unchanged; modified: %s", strings.Join(modifiedFiles, ", "))
-		res.Duration = time.Since(start)
+	res := &OracleResult{}
+	if failure := checkMutationPolicy(task.Metadata.Oracle.MutationPolicy, modifiedFiles); failure.failed {
+		applyOracleFailure(res, failure, start)
 		return res, nil
 	}
-	if len(task.Metadata.Oracle.MutationPolicy.DisallowedFiles) > 0 {
-		for _, mod := range modifiedFiles {
-			relMod := filepath.ToSlash(mod)
-			if slices.Contains(task.Metadata.Oracle.MutationPolicy.DisallowedFiles, relMod) {
-				res.FailureStage = "level_1_mutation_policy"
-				res.ErrorMessage = fmt.Sprintf("unauthorized modification of protected file: %s", relMod)
-				res.Duration = time.Since(start)
-				return res, nil
-			}
-		}
-	}
 	res.Level1Policy = true
-
 	evalDir, cleanup, err := copyWorkspaceForOracle(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("prepare private oracle workspace: %w", err)
@@ -421,52 +444,87 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 			retErr = errors.Join(retErr, fmt.Errorf("cleanup private oracle workspace: %w", err))
 		}
 	}()
-
-	// Level 2: AST Invariants
 	if err := evaluateAST(task.Metadata.Oracle.AST, evalDir); err != nil {
-		res.FailureStage = "level_2_ast"
-		res.ErrorMessage = err.Error()
-		res.Duration = time.Since(start)
+		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_2_ast", message: err.Error()}, start)
 		return res, nil
 	}
 	res.Level2AST = true
-
-	// Level 3: Isolated Compilation
-	if task.Metadata.Oracle.Build.CleanCompile {
-		cmd := exec.CommandContext(ctx, "go", "build", "./...")
-		cmd.Dir = evalDir
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			res.FailureStage = "level_3_build"
-			res.ErrorMessage = fmt.Sprintf("go build failed: %v\n%s", err, string(out))
-			res.Duration = time.Since(start)
-			return res, nil
-		}
+	if err := evaluateOracleBuild(ctx, task, evalDir); err != nil {
+		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_3_build", message: err.Error()}, start)
+		return res, nil
 	}
 	res.Level3Build = true
-
-	// Level 4: Hidden Tests
-	if task.Metadata.Oracle.Test.PassTests {
-		if err := installHiddenTests(evalDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
-			res.FailureStage = "level_4_test"
-			res.ErrorMessage = fmt.Sprintf("install hidden tests: %v", err)
-			res.Duration = time.Since(start)
-			return res, nil
-		}
-		cmd := exec.CommandContext(ctx, "go", "test", "./...")
-		cmd.Dir = evalDir
-		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			res.FailureStage = "level_4_test"
-			res.ErrorMessage = fmt.Sprintf("go test failed: %v\n%s", err, string(out))
-			res.Duration = time.Since(start)
-			return res, nil
-		}
+	if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
+		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_4_test", message: err.Error()}, start)
+		return res, nil
 	}
 	res.Level4Test = true
 	res.Passed = true
 	res.Duration = time.Since(start)
 	return res, nil
+}
+
+type oracleFailure struct {
+	failed  bool
+	stage   string
+	message string
+}
+
+func checkMutationPolicy(policy MutationPolicyConfig, modifiedFiles []string) oracleFailure {
+	if slices.Contains(policy.DisallowedFiles, "*") && len(modifiedFiles) > 0 {
+		return oracleFailure{failed: true, stage: "level_1_mutation_policy", message: fmt.Sprintf("workspace must remain unchanged; modified: %s", strings.Join(modifiedFiles, ", "))}
+	}
+	for _, modified := range modifiedFiles {
+		relative := filepath.ToSlash(modified)
+		if slices.Contains(policy.DisallowedFiles, relative) {
+			return oracleFailure{failed: true, stage: "level_1_mutation_policy", message: fmt.Sprintf("unauthorized modification of protected file: %s", relative)}
+		}
+	}
+	return oracleFailure{}
+}
+
+func applyOracleFailure(result *OracleResult, failure oracleFailure, started time.Time) {
+	result.FailureStage = failure.stage
+	result.ErrorMessage = failure.message
+	result.Duration = time.Since(started)
+}
+
+func evaluateOracleBuild(ctx context.Context, task *Task, workDir string) error {
+	if !task.Metadata.Oracle.Build.CleanCompile {
+		return nil
+	}
+	if output, err := runOracleGoCommand(ctx, workDir, "build"); err != nil {
+		return fmt.Errorf("go build failed: %w\n%s", err, output)
+	}
+	return nil
+}
+
+func evaluateOracleTests(ctx context.Context, task *Task, workDir string) error {
+	if !task.Metadata.Oracle.Test.PassTests {
+		return nil
+	}
+	if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
+		return fmt.Errorf("install hidden tests: %w", err)
+	}
+	if output, err := runOracleGoCommand(ctx, workDir, "test"); err != nil {
+		return fmt.Errorf("go test failed: %w\n%s", err, output)
+	}
+	return nil
+}
+
+func runOracleGoCommand(ctx context.Context, workDir, operation string) ([]byte, error) {
+	var command *exec.Cmd
+	switch operation {
+	case "build":
+		command = exec.CommandContext(ctx, "go", "build", "./...")
+	case "test":
+		command = exec.CommandContext(ctx, "go", "test", "./...")
+	default:
+		return nil, fmt.Errorf("unsupported oracle Go command %q", operation)
+	}
+	command.Dir = workDir
+	command.Env = append(os.Environ(), "CGO_ENABLED=0")
+	return command.CombinedOutput()
 }
 
 func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
@@ -690,39 +748,51 @@ func evaluateAST(cfg ASTConfig, workDir string) error {
 
 func collectDeclaredSymbols(fileNode *ast.File) map[string]int {
 	declaredSymbols := make(map[string]int)
-	for idx, decl := range fileNode.Decls {
-		switch d := decl.(type) {
+	for index, declaration := range fileNode.Decls {
+		switch typed := declaration.(type) {
 		case *ast.FuncDecl:
-			symName := d.Name.Name
-			if d.Recv != nil && len(d.Recv.List) > 0 {
-				recvType := receiverTypeName(d.Recv.List[0].Type)
-				if recvType != "" {
-					symName = recvType + "." + d.Name.Name
-				}
-			}
-			declaredSymbols[symName] = idx
+			collectFunctionSymbol(declaredSymbols, typed, index)
 		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					declaredSymbols[s.Name.Name] = idx
-					if iface, ok := s.Type.(*ast.InterfaceType); ok && iface.Methods != nil {
-						for _, m := range iface.Methods.List {
-							for _, id := range m.Names {
-								interfaceMethod := s.Name.Name + "." + id.Name
-								declaredSymbols[interfaceMethod] = idx
-							}
-						}
-					}
-				case *ast.ValueSpec:
-					for _, id := range s.Names {
-						declaredSymbols[id.Name] = idx
-					}
-				}
-			}
+			collectGeneratedSymbols(declaredSymbols, typed, index)
 		}
 	}
 	return declaredSymbols
+}
+
+func collectFunctionSymbol(symbols map[string]int, function *ast.FuncDecl, declarationIndex int) {
+	symbol := function.Name.Name
+	if function.Recv != nil && len(function.Recv.List) > 0 {
+		if receiver := receiverTypeName(function.Recv.List[0].Type); receiver != "" {
+			symbol = receiver + "." + function.Name.Name
+		}
+	}
+	symbols[symbol] = declarationIndex
+}
+
+func collectGeneratedSymbols(symbols map[string]int, declaration *ast.GenDecl, declarationIndex int) {
+	for _, specification := range declaration.Specs {
+		switch typed := specification.(type) {
+		case *ast.TypeSpec:
+			collectTypeSymbols(symbols, typed, declarationIndex)
+		case *ast.ValueSpec:
+			for _, name := range typed.Names {
+				symbols[name.Name] = declarationIndex
+			}
+		}
+	}
+}
+
+func collectTypeSymbols(symbols map[string]int, specification *ast.TypeSpec, declarationIndex int) {
+	symbols[specification.Name.Name] = declarationIndex
+	interfaceType, ok := specification.Type.(*ast.InterfaceType)
+	if !ok || interfaceType.Methods == nil {
+		return
+	}
+	for _, method := range interfaceType.Methods.List {
+		for _, name := range method.Names {
+			symbols[specification.Name.Name+"."+name.Name] = declarationIndex
+		}
+	}
 }
 
 func validateRequiredCalls(cfg ASTConfig, fileNode *ast.File) error {

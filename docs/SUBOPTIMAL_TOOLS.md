@@ -3640,3 +3640,19 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: package name resolution for `golang.org/x/tools/go/packages` exited with status 1. After linking the cached tools module into the worktree-local cache, the CLI itself could not build because its local module cache lacked Cobra, TOML, YAML, `x/sync`, and `x/mod`; network resolution failed with DNS errors.
 - Workaround: use a targeted structural patch to split the operation files after verifying the affected tests.
 - Root cause: CLI semantic operations use the selected worktree's `.scratch/go/mod`, while the configured shared module cache contains the required dependencies. The worktree-local cache was incomplete and network access was unavailable.
+
+## 2026-10-03: replace-body payload was altered by shell quoting
+
+- Tool: local `semedit replace-body` CLI.
+- Target: `tools/benchmark-harness/report_test.go`, `TestBuildComparisonsAndRenderMarkdown`.
+- Observed failure: backticks in the shell argument were interpreted as command substitutions, so the CLI received invalid Go source and refused the replacement.
+- Workaround: send the body on standard input through a single-quoted heredoc.
+- Root cause: the payload was interpolated into a command string without preserving shell argument boundaries.
+
+## 2026-10-03: replace-body could not resolve cached YAML package name
+
+- Tool: local `semedit replace-body` CLI.
+- Target: `tools/benchmark-harness/oracle.go`, `collectDeclaredSymbols`.
+- Observed failure: import cleanup could not resolve the package name for `gopkg.in/yaml.v3` and refused the mutation.
+- Workaround: use a targeted structural patch after recording the failure.
+- Root cause: the operation's package-name lookup did not find this dependency in the worktree's selected module-cache environment.

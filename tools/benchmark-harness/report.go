@@ -55,46 +55,14 @@ func (rep BenchmarkReport) MarshalJSON() ([]byte, error) {
 }
 
 func convertBenchmarkDurationsToMilliseconds(value any) error {
-	switch value := value.(type) {
+	switch typed := value.(type) {
 	case []any:
-		for _, item := range value {
-			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
-				return err
-			}
-		}
+		return convertDurationChildren(typed)
 	case map[string]any:
-		for _, item := range value {
-			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
-				return err
-			}
-		}
-
-		for _, key := range []string{
-			"wall_clock_ms",
-			"process_start_to_first_event_ms",
-			"first_event_to_first_tool_call_ms",
-			"mcp_initialize_to_first_semantic_call_ms",
-			"mcp_server_start_to_initialize_ms",
-		} {
-			if raw, ok := value[key]; ok {
-				milliseconds, err := durationNanosecondsToMilliseconds(raw)
-				if err != nil {
-					return fmt.Errorf("convert %s: %w", key, err)
-				}
-				value[key] = milliseconds
-			}
-		}
-		if _, isOracle := value["level_1_policy"]; isOracle {
-			if raw, ok := value["duration_ms"]; ok {
-				milliseconds, err := durationNanosecondsToMilliseconds(raw)
-				if err != nil {
-					return fmt.Errorf("convert oracle duration_ms: %w", err)
-				}
-				value["duration_ms"] = milliseconds
-			}
-		}
+		return convertDurationFields(typed)
+	default:
+		return nil
 	}
-	return nil
 }
 
 func durationNanosecondsToMilliseconds(raw any) (int64, error) {
@@ -103,6 +71,62 @@ func durationNanosecondsToMilliseconds(raw any) (int64, error) {
 		return 0, fmt.Errorf("expected integral duration, got %T (%v)", raw, raw)
 	}
 	return int64(nanoseconds) / int64(time.Millisecond), nil
+}
+
+func convertDurationChildren(items []any) error {
+	for _, item := range items {
+		if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func convertDurationFields(fields map[string]any) error {
+	for _, value := range fields {
+		if err := convertBenchmarkDurationsToMilliseconds(value); err != nil {
+			return err
+		}
+	}
+	if err := convertDurationMetricFields(fields); err != nil {
+		return err
+	}
+	if _, isOracle := fields["level_1_policy"]; isOracle {
+		return convertOracleDuration(fields)
+	}
+	return nil
+}
+
+func convertDurationMetricFields(fields map[string]any) error {
+	for _, key := range []string{
+		"wall_clock_ms",
+		"process_start_to_first_event_ms",
+		"first_event_to_first_tool_call_ms",
+		"mcp_initialize_to_first_semantic_call_ms",
+		"mcp_server_start_to_initialize_ms",
+	} {
+		if raw, exists := fields[key]; exists {
+			milliseconds, err := durationNanosecondsToMilliseconds(raw)
+			if err != nil {
+				return fmt.Errorf("convert %s: %w", key, err)
+			}
+			fields[key] = milliseconds
+		}
+	}
+	return nil
+}
+
+func convertOracleDuration(fields map[string]any) error {
+	raw, exists := fields["duration_ms"]
+	if !exists {
+		return nil
+	}
+	milliseconds, err := durationNanosecondsToMilliseconds(raw)
+	if err != nil {
+		return fmt.Errorf("convert oracle duration_ms: %w", err)
+	}
+	fields["duration_ms"] = milliseconds
+	return nil
 }
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
@@ -981,63 +1005,69 @@ func formatDelta(pct, diff float64, direction deltaDirection, mcpVerified bool) 
 }
 
 func assignComparisonRun(comp *ComparisonSummary, r *RunResult) {
-	variant := strings.ToLower(r.Variant)
-	if idx := strings.Index(variant, ":"); idx >= 0 {
-		variant = variant[:idx]
-	}
-	if variant == "" {
-		if strings.Contains(r.TaskID, "large") {
-			variant = "large"
-		} else {
-			variant = "small"
-		}
-	}
-
-	isLarge := strings.Contains(variant, "large")
-	isVerified := strings.Contains(variant, "verified")
-
+	variant := comparisonRunVariantFor(r)
 	switch r.Arm {
 	case ArmBaseline:
-		if isVerified {
-			if comp.VanillaVerifiedPrompt == "" && r.Prompt != "" {
-				comp.VanillaVerifiedPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeVerifiedBaseline = r
-			} else {
-				comp.SmallVerifiedBaseline = r
-			}
-		} else {
-			if comp.VanillaPrompt == "" && r.Prompt != "" {
-				comp.VanillaPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeBaseline = r
-			} else {
-				comp.SmallBaseline = r
-			}
-		}
+		assignBaselineComparisonRun(comp, r, variant)
 	case ArmSemedit, ArmControl:
-		if isVerified {
-			if comp.MCPVerifiedPrompt == "" && r.Prompt != "" {
-				comp.MCPVerifiedPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeVerifiedSemedit = r
-			} else {
-				comp.SmallVerifiedSemedit = r
-			}
-		} else {
-			if comp.MCPPrompt == "" && r.Prompt != "" {
-				comp.MCPPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeSemedit = r
-			} else {
-				comp.SmallSemedit = r
-			}
+		assignSemeditComparisonRun(comp, r, variant)
+	}
+}
+
+type comparisonRunVariant struct {
+	large    bool
+	verified bool
+}
+
+func comparisonRunVariantFor(run *RunResult) comparisonRunVariant {
+	variant := strings.ToLower(run.Variant)
+	if index := strings.Index(variant, ":"); index >= 0 {
+		variant = variant[:index]
+	}
+	if variant == "" {
+		variant = "small"
+		if strings.Contains(run.TaskID, "large") {
+			variant = "large"
 		}
 	}
+	return comparisonRunVariant{
+		large:    strings.Contains(variant, "large"),
+		verified: strings.Contains(variant, "verified"),
+	}
+}
+
+func assignBaselineComparisonRun(comparison *ComparisonSummary, run *RunResult, variant comparisonRunVariant) {
+	if variant.verified {
+		assignComparisonPrompt(&comparison.VanillaVerifiedPrompt, run.Prompt)
+		assignComparisonRunSlot(&comparison.SmallVerifiedBaseline, &comparison.LargeVerifiedBaseline, run, variant.large)
+		return
+	}
+	assignComparisonPrompt(&comparison.VanillaPrompt, run.Prompt)
+	assignComparisonRunSlot(&comparison.SmallBaseline, &comparison.LargeBaseline, run, variant.large)
+}
+
+func assignSemeditComparisonRun(comparison *ComparisonSummary, run *RunResult, variant comparisonRunVariant) {
+	if variant.verified {
+		assignComparisonPrompt(&comparison.MCPVerifiedPrompt, run.Prompt)
+		assignComparisonRunSlot(&comparison.SmallVerifiedSemedit, &comparison.LargeVerifiedSemedit, run, variant.large)
+		return
+	}
+	assignComparisonPrompt(&comparison.MCPPrompt, run.Prompt)
+	assignComparisonRunSlot(&comparison.SmallSemedit, &comparison.LargeSemedit, run, variant.large)
+}
+
+func assignComparisonPrompt(current *string, prompt string) {
+	if *current == "" && prompt != "" {
+		*current = prompt
+	}
+}
+
+func assignComparisonRunSlot(small, large **RunResult, run *RunResult, isLarge bool) {
+	if isLarge {
+		*large = run
+		return
+	}
+	*small = run
 }
 
 func comparisonTaskIdentity(run *RunResult) string {
