@@ -28,24 +28,55 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 	if strings.TrimSpace(discriminator) == "" {
 		return "", fmt.Errorf("discriminator is required for statement/expression replacement")
 	}
+	target, err := readStatementExpressionTarget(ctx, filePath, ownerName)
+	if err != nil {
+		return "", err
+	}
+	selected, err := selectStatementExpressionCandidate(target, discriminator, opts.ConstructPath)
+	if err != nil {
+		return "", err
+	}
+	replacement, err := parseSpanReplacement(selected.class, source)
+	if err != nil {
+		return "", err
+	}
+	return publishStatementExpressionReplacement(ctx, target, ownerName, source, selected, replacement, opts.AutoOrganizeImports)
+}
+
+type statementExpressionTarget struct {
+	cleanPath  string
+	ownerName  string
+	content    []byte
+	fset       *token.FileSet
+	candidates []constructCandidate
+	typeFacts  constructTypeFacts
+}
+
+func readStatementExpressionTarget(ctx context.Context, filePath, ownerName string) (*statementExpressionTarget, error) {
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("read target file: %w", err)
+		return nil, fmt.Errorf("read target file: %w", err)
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+		return nil, &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
 	}
 	owner, err := findConstructOwner(file, ownerName)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	candidates, typeFacts := collectStatementExpressionCandidates(fset, content, file, owner)
+	return &statementExpressionTarget{cleanPath: cleanPath, ownerName: ownerName, content: content, fset: fset, candidates: candidates, typeFacts: typeFacts}, nil
+}
+
+func selectStatementExpressionCandidate(target *statementExpressionTarget, discriminator, constructPath string) (constructCandidate, error) {
+	fset := target.fset
+	ownerName := target.ownerName
 	matches := make([]constructCandidate, 0, 1)
 	unresolved := make([]constructCandidate, 0)
-	for _, candidate := range candidates {
+	for _, candidate := range target.candidates {
 		if candidate.key == normalizeConstructSelector(discriminator) {
 			if candidate.class == unresolvedExpressionClass {
 				unresolved = append(unresolved, candidate)
@@ -54,44 +85,46 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 			}
 		}
 	}
-	if opts.ConstructPath != "" {
+	if constructPath != "" {
 		selected := make([]constructCandidate, 0, 1)
 		for _, candidate := range matches {
-			if candidate.path == opts.ConstructPath {
+			if candidate.path == constructPath {
 				selected = append(selected, candidate)
 			}
 		}
 		if len(selected) == 0 {
 			for _, candidate := range unresolved {
-				if candidate.path == opts.ConstructPath {
-					return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, []constructCandidate{candidate})
+				if candidate.path == constructPath {
+					return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, []constructCandidate{candidate})
 				}
 			}
-			return "", fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", opts.ConstructPath, discriminator, ownerName, formatSpanCandidates(fset, matches))
+			return constructCandidate{}, fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", constructPath, discriminator, ownerName, formatSpanCandidates(fset, matches))
 		}
 		matches = selected
 		unresolved = nil
 	}
 	if len(matches) == 0 {
 		if len(unresolved) > 0 {
-			return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, unresolved)
+			return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, unresolved)
 		}
-		return "", fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", discriminator, ownerName, formatSpanCandidates(fset, candidates))
+		return constructCandidate{}, fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", discriminator, ownerName, formatSpanCandidates(fset, target.candidates))
 	}
 	if len(unresolved) > 0 {
-		return "", unresolvedExpressionError(fset, discriminator, ownerName, typeFacts, unresolved)
+		return constructCandidate{}, unresolvedExpressionError(fset, discriminator, ownerName, target.typeFacts, unresolved)
 	}
 	if len(matches) > 1 {
-		return "", fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", discriminator, ownerName, formatSpanCandidates(fset, matches))
+		return constructCandidate{}, fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", discriminator, ownerName, formatSpanCandidates(fset, matches))
 	}
-	selected := matches[0]
+	return matches[0], nil
+}
+
+func publishStatementExpressionReplacement(ctx context.Context, target *statementExpressionTarget, ownerName, source string, selected constructCandidate, replacement string, organizeImports bool) (string, error) {
+	cleanPath := target.cleanPath
+	content := target.content
+	fset := target.fset
 	start, end := fset.Position(selected.node.Pos()).Offset, fset.Position(selected.node.End()).Offset
 	if start < 0 || end > len(content) || start >= end {
 		return "", fmt.Errorf("selected source span is invalid")
-	}
-	replacement, err := parseSpanReplacement(selected.class, source)
-	if err != nil {
-		return "", err
 	}
 	updated := replaceBytes(content, start, end, []byte(replacement))
 	formatted, err := format.Source(updated)
@@ -112,7 +145,7 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if opts.AutoOrganizeImports {
+	if organizeImports {
 		if err := pipeline.OrganizeImports(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)

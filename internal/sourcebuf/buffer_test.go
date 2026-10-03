@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"semedit/internal/atomicfile"
@@ -18,6 +19,22 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	first := filepath.Join(root, "a.go")
 	second := filepath.Join(root, "b.go")
 	original := []byte("package sample\nfunc Value()int{return 1}\n")
+	before := createBufferedSources(t, first, second, original)
+	buffer, createErr := sourcebuf.New(root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	final := stageBufferedFinalRevision(ctx, t, first, second)
+	assertBufferedRevision(ctx, t, first, final, original, before)
+	if err := buffer.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	assertPublishedRevision(t, root, first, final, before)
+}
+
+func createBufferedSources(t *testing.T, first, second string, original []byte) os.FileInfo {
+	t.Helper()
 	for _, path := range []string{first, second} {
 		if err := atomicfile.WriteAtomic(path, original); err != nil {
 			t.Fatal(err)
@@ -26,15 +43,15 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	before, err := os.Stat(first)
+	info, err := os.Stat(first)
 	if err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	return info
+}
+
+func stageBufferedFinalRevision(ctx context.Context, t *testing.T, first, second string) []byte {
+	t.Helper()
 	for _, path := range []string{first, second} {
 		if err := sourcebuf.WriteFile(ctx, path, []byte("package sample\nfunc Value()int{return 2}\n")); err != nil {
 			t.Fatal(err)
@@ -44,6 +61,11 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	if err := sourcebuf.WriteFile(ctx, first, final); err != nil {
 		t.Fatal(err)
 	}
+	return final
+}
+
+func assertBufferedRevision(ctx context.Context, t *testing.T, first string, final, original []byte, before os.FileInfo) {
+	t.Helper()
 	visible, err := sourcebuf.ReadFile(ctx, first)
 	if err != nil {
 		t.Fatal(err)
@@ -51,8 +73,7 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	if !bytes.Equal(visible, final) {
 		t.Fatalf("buffer=%q", visible)
 	}
-	snapshot := sourcebuf.Overlay(ctx)
-	snapshot[first][0] = '!'
+	sourcebuf.Overlay(ctx)[first][0] = '!'
 	visible, err = sourcebuf.ReadFile(ctx, first)
 	if err != nil {
 		t.Fatal(err)
@@ -74,10 +95,11 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 	if !os.SameFile(before, during) {
 		t.Fatal("buffered edit replaced source inode")
 	}
-	if err := buffer.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	disk, err = os.ReadFile(first)
+}
+
+func assertPublishedRevision(t *testing.T, root, first string, final []byte, before os.FileInfo) {
+	t.Helper()
+	disk, err := os.ReadFile(first)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,63 +125,83 @@ func TestBufferedEditsPublishFinalRevision(t *testing.T) {
 func TestBufferedPublicationRejectsConflicts(t *testing.T) {
 	for _, scenario := range []string{"changed_sibling", "added_source", "replaced_identity", "changed_mode", "missing_input_appeared", "symlink_target"} {
 		t.Run(scenario, func(t *testing.T) {
-			root := t.TempDir()
-			target := filepath.Join(root, "a.go")
-			sibling := filepath.Join(root, "b.go")
-			original := []byte("package sample\nfunc Value()int{return 1}\n")
-			for _, path := range []string{target, sibling} {
-				if err := atomicfile.WriteAtomic(path, original); err != nil {
-					t.Fatal(err)
-				}
-			}
-			buffer, err := sourcebuf.New(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ctx := sourcebuf.WithBuffer(t.Context(), buffer)
-			if _, err := sourcebuf.ReadFile(ctx, sibling); err != nil {
-				t.Fatal(err)
-			}
-			missing := filepath.Join(root, "go.sum")
-			if _, err := sourcebuf.ReadFile(ctx, missing); !errors.Is(err, os.ErrNotExist) {
-				t.Fatalf("missing=%v", err)
-			}
-			if err := sourcebuf.WriteFile(ctx, target, []byte("package sample\nfunc Value()int{return 2}\n")); err != nil {
-				t.Fatal(err)
-			}
-			switch scenario {
-			case "changed_sibling":
-				err = atomicfile.WriteAtomic(sibling, []byte("package sample\nfunc Other(){}\n"))
-			case "added_source":
-				err = atomicfile.WriteAtomic(filepath.Join(root, "c.go"), []byte("package sample\n"))
-			case "replaced_identity":
-				err = atomicfile.WriteAtomic(sibling, original)
-			case "changed_mode":
-				err = os.Chmod(sibling, 0o640)
-			case "missing_input_appeared":
-				err = atomicfile.WriteAtomic(missing, []byte("new input\n"))
-			case "symlink_target":
-				if err = os.Remove(sibling); err == nil {
-					err = os.Symlink(target, sibling)
-				}
-			}
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := buffer.Flush(t.Context()); !errors.Is(err, sourcebuf.ErrConflict) {
-				t.Fatalf("flush=%v", err)
-			}
-			disk, err := os.ReadFile(target)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !bytes.Equal(disk, original) {
-				t.Fatalf("conflict published source: %q", disk)
-			}
-			if len(sourcebuf.Overlay(ctx)) != 0 {
-				t.Fatal("failed publication retained unpublished bytes")
-			}
+			testPublicationConflict(t, scenario)
 		})
+	}
+}
+
+func testPublicationConflict(t *testing.T, scenario string) {
+	t.Helper()
+	root := t.TempDir()
+	target, sibling := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
+	original := []byte("package sample\nfunc Value()int{return 1}\n")
+	writeFiles(t, []string{target, sibling}, original)
+	buffer, createErr := sourcebuf.New(root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	if _, err := sourcebuf.ReadFile(ctx, sibling); err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(root, "go.sum")
+	if _, err := sourcebuf.ReadFile(ctx, missing); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("missing=%v", err)
+	}
+	if err := sourcebuf.WriteFile(ctx, target, []byte("package sample\nfunc Value()int{return 2}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := alterPublicationInput(scenario, root, target, sibling, missing, original); err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Flush(t.Context()); !errors.Is(err, sourcebuf.ErrConflict) {
+		t.Fatalf("flush=%v", err)
+	}
+	assertUnpublishedConflict(ctx, t, target, original)
+}
+
+func writeFiles(t *testing.T, paths []string, data []byte) {
+	t.Helper()
+	for _, path := range paths {
+		if err := atomicfile.WriteAtomic(path, data); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func alterPublicationInput(scenario, root, target, sibling, missing string, original []byte) error {
+	switch scenario {
+	case "changed_sibling":
+		return atomicfile.WriteAtomic(sibling, []byte("package sample\nfunc Other(){}\n"))
+	case "added_source":
+		return atomicfile.WriteAtomic(filepath.Join(root, "c.go"), []byte("package sample\n"))
+	case "replaced_identity":
+		return atomicfile.WriteAtomic(sibling, original)
+	case "changed_mode":
+		return os.Chmod(sibling, 0o640)
+	case "missing_input_appeared":
+		return atomicfile.WriteAtomic(missing, []byte("new input\n"))
+	case "symlink_target":
+		if err := os.Remove(sibling); err != nil {
+			return err
+		}
+		return os.Symlink(target, sibling)
+	default:
+		return fmt.Errorf("unknown conflict scenario %q", scenario)
+	}
+}
+
+func assertUnpublishedConflict(ctx context.Context, t *testing.T, target string, original []byte) {
+	t.Helper()
+	disk, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(disk, original) {
+		t.Fatalf("conflict published source: %q", disk)
+	}
+	if len(sourcebuf.Overlay(ctx)) != 0 {
+		t.Fatal("failed publication retained unpublished bytes")
 	}
 }
 
@@ -177,9 +219,9 @@ func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	buffer, err := sourcebuf.New(root)
-	if err != nil {
-		t.Fatal(err)
+	buffer, createErr := sourcebuf.New(root)
+	if createErr != nil {
+		t.Fatal(createErr)
 	}
 	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	for _, path := range []string{first, second} {
@@ -211,76 +253,88 @@ func TestBufferedStagingFailurePublishesNoFiles(t *testing.T) {
 func TestBufferedApplyRejectsEntireOperation(t *testing.T) {
 	for _, scenario := range []string{"stale", "duplicate", "outside", "cancelled", "disk_changed"} {
 		t.Run(scenario, func(t *testing.T) {
-			root, err := filepath.EvalSymlinks(t.TempDir())
-			if err != nil {
-				t.Fatal(err)
-			}
-			first, second := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
-			original := []byte("package sample\n")
-			for _, path := range []string{first, second} {
-				if err := atomicfile.WriteAtomic(path, original); err != nil {
-					t.Fatal(err)
-				}
-			}
-			buffer, err := sourcebuf.New(root)
-			if err != nil {
-				t.Fatal(err)
-			}
-			ctx := sourcebuf.WithBuffer(t.Context(), buffer)
-			prior := []byte("package sample\nfunc Prior(){}\n")
-			if err := sourcebuf.WriteFile(ctx, first, prior); err != nil {
-				t.Fatal(err)
-			}
-			changes := []sourcebuf.Change{{Path: first, Before: prior, After: []byte("package sample\nfunc Changed(){}\n")}, {Path: second, Before: original, After: []byte("package sample\nfunc Added(){}\n")}}
-			switch scenario {
-			case "stale":
-				changes[1].Before = []byte("stale")
-			case "duplicate":
-				changes[1] = changes[0]
-			case "outside":
-				changes[1].Path = filepath.Join(t.TempDir(), "outside.go")
-				if err := atomicfile.WriteAtomic(changes[1].Path, original); err != nil {
-					t.Fatal(err)
-				}
-			case "cancelled":
-				cancelled, cancel := context.WithCancel(ctx)
-				cancel()
-				ctx = cancelled
-			case "disk_changed":
-				if err := atomicfile.WriteAtomic(second, original); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := buffer.Apply(ctx, changes); err == nil {
-				t.Fatal("invalid operation succeeded")
-			}
-			for path, want := range map[string][]byte{first: prior, second: original} {
-				got, err := sourcebuf.ReadFile(ctx, path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !bytes.Equal(got, want) {
-					t.Fatalf("failed operation changed %s: %s", path, got)
-				}
-			}
+			testBufferedApplyRejectsScenario(t, scenario)
 		})
+	}
+}
+
+func testBufferedApplyRejectsScenario(t *testing.T, scenario string) {
+	t.Helper()
+	root, resolveErr := filepath.EvalSymlinks(t.TempDir())
+	if resolveErr != nil {
+		t.Fatal(resolveErr)
+	}
+	first, second := filepath.Join(root, "a.go"), filepath.Join(root, "b.go")
+	original := []byte("package sample\n")
+	writeFiles(t, []string{first, second}, original)
+	buffer, createErr := sourcebuf.New(root)
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
+	prior := []byte("package sample\nfunc Prior(){}\n")
+	if err := sourcebuf.WriteFile(ctx, first, prior); err != nil {
+		t.Fatal(err)
+	}
+	changes := []sourcebuf.Change{{Path: first, Before: prior, After: []byte("package sample\nfunc Changed(){}\n")}, {Path: second, Before: original, After: []byte("package sample\nfunc Added(){}\n")}}
+	ctx, err := alterApplyScenario(ctx, t, scenario, changes, second, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := buffer.Apply(ctx, changes); err == nil {
+		t.Fatal("invalid operation succeeded")
+	}
+	assertApplyUnchanged(ctx, t, first, second, prior, original)
+}
+
+func alterApplyScenario(ctx context.Context, t *testing.T, scenario string, changes []sourcebuf.Change, second string, original []byte) (context.Context, error) {
+	switch scenario {
+	case "stale":
+		changes[1].Before = []byte("stale")
+	case "duplicate":
+		changes[1] = changes[0]
+	case "outside":
+		changes[1].Path = filepath.Join(t.TempDir(), "outside.go")
+		return ctx, atomicfile.WriteAtomic(changes[1].Path, original)
+	case "cancelled":
+		cancelled, cancel := context.WithCancel(ctx)
+		cancel()
+		return cancelled, nil
+	case "disk_changed":
+		return ctx, atomicfile.WriteAtomic(second, original)
+	default:
+		return ctx, fmt.Errorf("unknown apply scenario %q", scenario)
+	}
+	return ctx, nil
+}
+
+func assertApplyUnchanged(ctx context.Context, t *testing.T, first, second string, prior, original []byte) {
+	t.Helper()
+	for path, want := range map[string][]byte{first: prior, second: original} {
+		got, err := sourcebuf.ReadFile(ctx, path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("failed operation changed %s: %s", path, got)
+		}
 	}
 }
 
 func TestObservedReplacementRemainsReadOnly(t *testing.T) {
 	root := t.TempDir()
-	replacement, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
+	replacement, resolveErr := filepath.EvalSymlinks(t.TempDir())
+	if resolveErr != nil {
+		t.Fatal(resolveErr)
 	}
 	file := filepath.Join(replacement, "external.go")
 	original := []byte("package sample\n")
 	if err := atomicfile.WriteAtomic(file, original); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(root)
-	if err != nil {
-		t.Fatal(err)
+	buffer, createErr := sourcebuf.New(root)
+	if createErr != nil {
+		t.Fatal(createErr)
 	}
 	ctx := sourcebuf.WithBuffer(t.Context(), buffer)
 	if err := sourcebuf.ObserveTree(ctx, replacement); err != nil {

@@ -2,49 +2,36 @@
 package assertmode_test
 
 import (
+	"go/format"
 	"strings"
 	"testing"
 
 	"semedit/internal/assertmode"
 )
 
-func TestApply(t *testing.T) {
+type applyCase struct {
+	mode      assertmode.Mode
+	source    string
+	wantSwaps int
+	wantSkips int
+	wantFrag  string
+}
+
+func TestApplyRelaxationCases(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name      string
-		mode      assertmode.Mode
-		src       string
-		wantSwaps int
-		wantSkips int
-		wantFrag  string
-	}{
-		{
-			name: "relax swaps value assertion",
-			mode: assertmode.ModeRelax,
-			src: `package x
-
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import "testing"
-
 func TestA(t *testing.T) {
 	if err := fail(); err != nil {
 		t.Fatalf("failed: %v", err)
 	}
 }
-`,
-			wantSwaps: 1,
-			wantFrag:  `t.Errorf("failed: %v", err)`,
-		},
-		{
-			name: "relax keeps fatal precondition",
-			mode: assertmode.ModeRelax,
-			src: `package x
-
+`, wantSwaps: 1, wantFrag: `t.Errorf("failed: %v", err)`})
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import (
 	"os"
 	"testing"
 )
-
 func TestA(t *testing.T) {
 	data, err := os.ReadFile("fixture.txt")
 	if err != nil {
@@ -54,41 +41,27 @@ func TestA(t *testing.T) {
 		t.Errorf("empty fixture")
 	}
 }
-`,
-			wantSwaps: 0,
-			wantSkips: 1,
-		},
-		{
-			name: "relax skips non-testing receiver",
-			mode: assertmode.ModeRelax,
-			src: `package x
-
+`, wantSkips: 1})
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 type Logger struct{}
-
 func (l *Logger) Fatalf(format string, args ...any) {}
-
 func TestA(t *testing.T) {
 	log := &Logger{}
 	if true {
 		log.Fatalf("nope")
 	}
 }
-`,
-			wantSwaps: 0,
-			wantSkips: 1,
-		},
-		{
-			name: "relax tolerates errors.Is below",
-			mode: assertmode.ModeRelax,
-			src: `package x
+`, wantSkips: 1})
+}
 
+func TestApplyRelaxationErrorAndElseCases(t *testing.T) {
+	t.Parallel()
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import (
 	"errors"
 	"testing"
 )
-
 var ErrGone = errors.New("gone")
-
 func TestA(t *testing.T) {
 	err := fail()
 	if err == nil {
@@ -98,17 +71,9 @@ func TestA(t *testing.T) {
 		t.Errorf("wrong error: %v", err)
 	}
 }
-`,
-			wantSwaps: 1,
-			wantFrag:  `t.Errorf("expected error, got nil")`,
-		},
-		{
-			name: "relax skips else branch",
-			mode: assertmode.ModeRelax,
-			src: `package x
-
+`, wantSwaps: 1, wantFrag: `t.Errorf("expected error, got nil")`})
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import "testing"
-
 func TestA(t *testing.T) {
 	if ok {
 		t.Log("fine")
@@ -116,43 +81,39 @@ func TestA(t *testing.T) {
 		t.Fatalf("bad")
 	}
 }
-`,
-			wantSwaps: 0,
-			wantSkips: 1,
-		},
-		{
-			name: "restrict converts continuing assertion",
-			mode: assertmode.ModeRestrict,
-			src: `package x
+`, wantSkips: 1})
+}
 
+func TestApplyRestrictionCase(t *testing.T) {
+	t.Parallel()
+	assertApplyCase(t, applyCase{mode: assertmode.ModeRestrict, source: `package x
 import "testing"
-
 func TestA(t *testing.T) {
 	if err := fail(); err != nil {
 		t.Errorf("failed: %v", err)
 	}
 }
-`,
-			wantSwaps: 1,
-			wantFrag:  `t.Fatalf("failed: %v", err)`,
-		},
-	}
+`, wantSwaps: 1, wantFrag: `t.Fatalf("failed: %v", err)`})
+}
 
-	for _, tt := range tests {
-		out, res, err := assertmode.Apply("case_test.go", []byte(tt.src), tt.mode)
-		if err != nil {
-			t.Errorf("%s: Apply failed: %v", tt.name, err)
-		}
-		if res.Swapped != tt.wantSwaps {
-			t.Errorf("%s: swapped = %d, want %d (%v)", tt.name, res.Swapped, tt.wantSwaps, res.Sites)
-		}
-		skips := len(res.Sites) - res.Swapped
-		if skips != tt.wantSkips {
-			t.Errorf("%s: skipped = %d, want %d (%v)", tt.name, skips, tt.wantSkips, res.Sites)
-		}
-		if tt.wantFrag != "" && !strings.Contains(string(out), tt.wantFrag) {
-			t.Errorf("%s: output missing %q:\n%s", tt.name, tt.wantFrag, out)
-		}
+func assertApplyCase(t *testing.T, test applyCase) {
+	t.Helper()
+	source, err := format.Source([]byte(test.source))
+	if err != nil {
+		t.Fatalf("format test source: %v", err)
+	}
+	out, result, err := assertmode.Apply("case_test.go", source, test.mode)
+	if err != nil {
+		t.Fatalf("Apply failed: %v", err)
+	}
+	if result.Swapped != test.wantSwaps {
+		t.Errorf("swapped = %d, want %d (%v)", result.Swapped, test.wantSwaps, result.Sites)
+	}
+	if skipped := len(result.Sites) - result.Swapped; skipped != test.wantSkips {
+		t.Errorf("skipped = %d, want %d (%v)", skipped, test.wantSkips, result.Sites)
+	}
+	if test.wantFrag != "" && !strings.Contains(string(out), test.wantFrag) {
+		t.Errorf("output missing %q:\n%s", test.wantFrag, out)
 	}
 }
 

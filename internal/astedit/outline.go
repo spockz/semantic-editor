@@ -289,134 +289,192 @@ func makeOutlineSymbol(parsed *goReadSource, name, qualifiedName, kind string, n
 	return readSymbol, nil
 }
 
-//nolint:gocognit // Struct and interface children have distinct source and visibility rules.
 func outlineTypeChildren(parsed *goReadSource, spec *ast.TypeSpec, kinds map[string]bool, includeUnexported bool) ([]backend.ReadSymbol, bool, error) {
-	children := make([]backend.ReadSymbol, 0)
-	matches := func(kind string) bool { return len(kinds) == 0 || kinds[kind] }
-	var typeNode ast.Node
 	switch node := spec.Type.(type) {
 	case *ast.StructType:
-		typeNode = node
-		for _, field := range node.Fields.List {
-			if !matches("field") {
-				continue
-			}
-			typeValue, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
-			if err != nil {
-				return nil, false, err
-			}
-			var tag *string
-			if field.Tag != nil {
-				value, err := goReadNodeText(parsed.source, parsed.fset, field.Tag)
-				if err != nil {
-					return nil, false, err
-				}
-				tag = &value
-			}
-			doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
-			if err != nil {
-				return nil, false, err
-			}
-			start := field.Type.Pos()
-			if len(field.Names) > 0 {
-				start = field.Names[0].Pos()
-			}
-			signature, err := goReadSpan(parsed.source, parsed.fset, start, field.End())
-			if err != nil {
-				return nil, false, err
-			}
-			if len(field.Names) == 0 {
-				name := typeValue
-				selection := ast.Node(field.Type)
-				if base := goEmbeddedBaseIdent(field.Type); base != nil {
-					name = base.Name
-					selection = base
-				}
-				visible := embeddedGoNameExported(field.Type)
-				if includeUnexported || visible {
-					readSymbol, err := makeOutlineSymbol(parsed, name, spec.Name.Name+"."+name, "field", field, selection, &signature, doc, &typeValue, tag, nil)
-					if err != nil {
-						return nil, false, err
-					}
-					children = append(children, readSymbol)
-				}
-				continue
-			}
-			for _, ident := range field.Names {
-				if !includeUnexported && !ast.IsExported(ident.Name) {
-					continue
-				}
-				nameSignature := ident.Name + " " + typeValue
-				if tag != nil {
-					nameSignature += " " + *tag
-				}
-				readSymbol, err := makeOutlineSymbol(parsed, ident.Name, spec.Name.Name+"."+ident.Name, "field", field, ident, &nameSignature, doc, &typeValue, tag, nil)
-				if err != nil {
-					return nil, false, err
-				}
-				children = append(children, readSymbol)
-			}
-		}
+		children, err := outlineStructChildren(parsed, spec, node, kinds, includeUnexported)
+		return children, len(children) > 0, err
 	case *ast.InterfaceType:
-		typeNode = node
-		for _, field := range node.Methods.List {
-			if len(field.Names) > 0 {
-				if !matches("method") {
-					continue
-				}
-				doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
-				if err != nil {
-					return nil, false, err
-				}
-				typeText, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
-				if err != nil {
-					return nil, false, err
-				}
-				for _, ident := range field.Names {
-					if !includeUnexported && !ast.IsExported(ident.Name) {
-						continue
-					}
-					signature := ident.Name + " " + typeText
-					readSymbol, err := makeOutlineSymbol(parsed, ident.Name, spec.Name.Name+"."+ident.Name, "method", field, ident, &signature, doc, nil, nil, nil)
-					if err != nil {
-						return nil, false, err
-					}
-					children = append(children, readSymbol)
-				}
-				continue
-			}
-			if !matches("type") {
-				continue
-			}
-			typeValue, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
-			if err != nil {
-				return nil, false, err
-			}
-			if !includeUnexported && !embeddedGoNameExported(field.Type) {
-				continue
-			}
-			doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
-			if err != nil {
-				return nil, false, err
-			}
-			signature := typeValue
-			name := typeValue
-			selection := ast.Node(field.Type)
-			if base := goEmbeddedBaseIdent(field.Type); base != nil {
-				name = base.Name
-				selection = base
-			}
-			readSymbol, err := makeOutlineSymbol(parsed, name, spec.Name.Name+"."+name, "type", field, selection, &signature, doc, &typeValue, nil, nil)
-			if err != nil {
-				return nil, false, err
-			}
-			children = append(children, readSymbol)
+		children, err := outlineInterfaceChildren(parsed, spec, node, kinds, includeUnexported)
+		return children, len(children) > 0, err
+	default:
+		return make([]backend.ReadSymbol, 0), false, nil
+	}
+}
+
+func outlineStructChildren(parsed *goReadSource, spec *ast.TypeSpec, structure *ast.StructType, kinds map[string]bool, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	if !outlineKindMatches(kinds, "field") {
+		return make([]backend.ReadSymbol, 0), nil
+	}
+	children := make([]backend.ReadSymbol, 0)
+	for _, field := range structure.Fields.List {
+		items, err := outlineStructField(parsed, spec.Name.Name, field, includeUnexported)
+		if err != nil {
+			return nil, err
 		}
+		children = append(children, items...)
 	}
-	if typeNode == nil {
-		return children, false, nil
+	return children, nil
+}
+
+func outlineStructField(parsed *goReadSource, owner string, field *ast.Field, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	typeValue, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
+	if err != nil {
+		return nil, err
 	}
-	return children, len(children) > 0, nil
+	tag, err := outlineFieldTag(parsed, field.Tag)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := outlineFieldSignature(parsed, field)
+	if err != nil {
+		return nil, err
+	}
+	if len(field.Names) == 0 {
+		return outlineEmbeddedStructField(parsed, owner, field, typeValue, signature, doc, tag.text, includeUnexported)
+	}
+	return outlineNamedStructFields(parsed, owner, field, typeValue, doc, tag.text, includeUnexported)
+}
+
+type outlineFieldTagValue struct {
+	text *string
+}
+
+func outlineFieldTag(parsed *goReadSource, tagNode *ast.BasicLit) (outlineFieldTagValue, error) {
+	if tagNode == nil {
+		return outlineFieldTagValue{}, nil
+	}
+	tag, err := goReadNodeText(parsed.source, parsed.fset, tagNode)
+	if err != nil {
+		return outlineFieldTagValue{}, err
+	}
+	return outlineFieldTagValue{text: &tag}, nil
+}
+
+func outlineFieldSignature(parsed *goReadSource, field *ast.Field) (string, error) {
+	start := field.Type.Pos()
+	if len(field.Names) > 0 {
+		start = field.Names[0].Pos()
+	}
+	return goReadSpan(parsed.source, parsed.fset, start, field.End())
+}
+
+func outlineEmbeddedStructField(parsed *goReadSource, owner string, field *ast.Field, typeValue, signature string, doc *string, tag *string, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	name := typeValue
+	selection := ast.Node(field.Type)
+	if base := goEmbeddedBaseIdent(field.Type); base != nil {
+		name = base.Name
+		selection = base
+	}
+	if !includeUnexported && !embeddedGoNameExported(field.Type) {
+		return make([]backend.ReadSymbol, 0), nil
+	}
+	readSymbol, err := makeOutlineSymbol(parsed, name, owner+"."+name, "field", field, selection, &signature, doc, &typeValue, tag, nil)
+	if err != nil {
+		return nil, err
+	}
+	return []backend.ReadSymbol{readSymbol}, nil
+}
+
+func outlineNamedStructFields(parsed *goReadSource, owner string, field *ast.Field, typeValue string, doc *string, tag *string, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	children := make([]backend.ReadSymbol, 0, len(field.Names))
+	for _, ident := range field.Names {
+		if !includeUnexported && !ast.IsExported(ident.Name) {
+			continue
+		}
+		signature := ident.Name + " " + typeValue
+		if tag != nil {
+			signature += " " + *tag
+		}
+		readSymbol, err := makeOutlineSymbol(parsed, ident.Name, owner+"."+ident.Name, "field", field, ident, &signature, doc, &typeValue, tag, nil)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, readSymbol)
+	}
+	return children, nil
+}
+
+func outlineInterfaceChildren(parsed *goReadSource, spec *ast.TypeSpec, interfaceType *ast.InterfaceType, kinds map[string]bool, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	children := make([]backend.ReadSymbol, 0)
+	for _, field := range interfaceType.Methods.List {
+		var items []backend.ReadSymbol
+		var err error
+		if len(field.Names) > 0 {
+			if !outlineKindMatches(kinds, "method") {
+				continue
+			}
+			items, err = outlineInterfaceMethods(parsed, spec.Name.Name, field, includeUnexported)
+		} else {
+			if !outlineKindMatches(kinds, "type") {
+				continue
+			}
+			items, err = outlineEmbeddedInterfaceType(parsed, spec.Name.Name, field, includeUnexported)
+		}
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, items...)
+	}
+	return children, nil
+}
+
+func outlineInterfaceMethods(parsed *goReadSource, owner string, field *ast.Field, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
+	if err != nil {
+		return nil, err
+	}
+	typeText, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
+	if err != nil {
+		return nil, err
+	}
+	children := make([]backend.ReadSymbol, 0, len(field.Names))
+	for _, ident := range field.Names {
+		if !includeUnexported && !ast.IsExported(ident.Name) {
+			continue
+		}
+		signature := ident.Name + " " + typeText
+		readSymbol, err := makeOutlineSymbol(parsed, ident.Name, owner+"."+ident.Name, "method", field, ident, &signature, doc, nil, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+		children = append(children, readSymbol)
+	}
+	return children, nil
+}
+
+func outlineEmbeddedInterfaceType(parsed *goReadSource, owner string, field *ast.Field, includeUnexported bool) ([]backend.ReadSymbol, error) {
+	typeValue, err := goReadNodeText(parsed.source, parsed.fset, field.Type)
+	if err != nil {
+		return nil, err
+	}
+	if !includeUnexported && !embeddedGoNameExported(field.Type) {
+		return make([]backend.ReadSymbol, 0), nil
+	}
+	doc, err := goReadComment(parsed.source, parsed.fset, field.Doc)
+	if err != nil {
+		return nil, err
+	}
+	name := typeValue
+	selection := ast.Node(field.Type)
+	if base := goEmbeddedBaseIdent(field.Type); base != nil {
+		name = base.Name
+		selection = base
+	}
+	signature := typeValue
+	readSymbol, err := makeOutlineSymbol(parsed, name, owner+"."+name, "type", field, selection, &signature, doc, &typeValue, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return []backend.ReadSymbol{readSymbol}, nil
+}
+
+func outlineKindMatches(kinds map[string]bool, kind string) bool {
+	return len(kinds) == 0 || kinds[kind]
 }
 
 func embeddedGoNameExported(expression ast.Expr) bool {
@@ -449,67 +507,79 @@ func goReceiverName(receiver *ast.FieldList) string {
 
 func outlineFilteredTypeSignature(parsed *goReadSource, declaration *ast.GenDecl, spec *ast.TypeSpec, kinds map[string]bool, includeUnexported bool) (string, error) {
 	filtered := *spec
-	switch node := spec.Type.(type) {
-	case *ast.StructType:
-		copyType := *node
-		copyFields := *node.Fields
-		copyFields.List = make([]*ast.Field, 0, len(node.Fields.List))
-		if len(kinds) == 0 || kinds["field"] {
-			for _, field := range node.Fields.List {
-				copyField := *field
-				if len(field.Names) > 0 {
-					copyField.Names = make([]*ast.Ident, 0, len(field.Names))
-					for _, name := range field.Names {
-						if includeUnexported || ast.IsExported(name.Name) {
-							copyField.Names = append(copyField.Names, name)
-						}
-					}
-					if len(copyField.Names) == 0 {
-						continue
-					}
-				} else if !includeUnexported && !embeddedGoNameExported(field.Type) {
-					continue
-				}
-				copyFields.List = append(copyFields.List, &copyField)
-			}
-		}
-		copyType.Fields = &copyFields
-		filtered.Type = &copyType
-	case *ast.InterfaceType:
-		copyType := *node
-		copyMethods := *node.Methods
-		copyMethods.List = make([]*ast.Field, 0, len(node.Methods.List))
-		for _, field := range node.Methods.List {
-			copyField := *field
-			if len(field.Names) > 0 {
-				if len(kinds) > 0 && !kinds["method"] {
-					continue
-				}
-				copyField.Names = make([]*ast.Ident, 0, len(field.Names))
-				for _, name := range field.Names {
-					if includeUnexported || ast.IsExported(name.Name) {
-						copyField.Names = append(copyField.Names, name)
-					}
-				}
-				if len(copyField.Names) == 0 {
-					continue
-				}
-			} else {
-				if len(kinds) > 0 && !kinds["type"] {
-					continue
-				}
-				if !includeUnexported && !embeddedGoNameExported(field.Type) {
-					continue
-				}
-			}
-			copyMethods.List = append(copyMethods.List, &copyField)
-		}
-		copyType.Methods = &copyMethods
-		filtered.Type = &copyType
-	}
+	filtered.Type = filteredOutlineType(spec.Type, kinds, includeUnexported)
 	copyDecl := *declaration
 	copyDecl.Doc = nil
 	copyDecl.Specs = []ast.Spec{&filtered}
 	copyDecl.Lparen = token.NoPos
 	return goReadFormattedNode(parsed.fset, &copyDecl)
+}
+
+func filteredOutlineType(node ast.Expr, kinds map[string]bool, includeUnexported bool) ast.Expr {
+	switch value := node.(type) {
+	case *ast.StructType:
+		copyType := *value
+		copyFields := *value.Fields
+		copyFields.List = filteredStructFields(value.Fields.List, kinds, includeUnexported)
+		copyType.Fields = &copyFields
+		return &copyType
+	case *ast.InterfaceType:
+		copyType := *value
+		copyMethods := *value.Methods
+		copyMethods.List = filteredInterfaceMethods(value.Methods.List, kinds, includeUnexported)
+		copyType.Methods = &copyMethods
+		return &copyType
+	default:
+		return node
+	}
+}
+
+func filteredStructFields(fields []*ast.Field, kinds map[string]bool, includeUnexported bool) []*ast.Field {
+	filtered := make([]*ast.Field, 0, len(fields))
+	if !outlineKindMatches(kinds, "field") {
+		return filtered
+	}
+	for _, field := range fields {
+		copyField := *field
+		if len(field.Names) > 0 {
+			copyField.Names = filteredOutlineNames(field.Names, includeUnexported)
+			if len(copyField.Names) == 0 {
+				continue
+			}
+		} else if !includeUnexported && !embeddedGoNameExported(field.Type) {
+			continue
+		}
+		filtered = append(filtered, &copyField)
+	}
+	return filtered
+}
+
+func filteredInterfaceMethods(fields []*ast.Field, kinds map[string]bool, includeUnexported bool) []*ast.Field {
+	filtered := make([]*ast.Field, 0, len(fields))
+	for _, field := range fields {
+		copyField := *field
+		if len(field.Names) > 0 {
+			if !outlineKindMatches(kinds, "method") {
+				continue
+			}
+			copyField.Names = filteredOutlineNames(field.Names, includeUnexported)
+			if len(copyField.Names) == 0 {
+				continue
+			}
+		} else if !outlineKindMatches(kinds, "type") || !includeUnexported && !embeddedGoNameExported(field.Type) {
+			continue
+		}
+		filtered = append(filtered, &copyField)
+	}
+	return filtered
+}
+
+func filteredOutlineNames(names []*ast.Ident, includeUnexported bool) []*ast.Ident {
+	filtered := make([]*ast.Ident, 0, len(names))
+	for _, name := range names {
+		if includeUnexported || ast.IsExported(name.Name) {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }

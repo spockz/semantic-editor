@@ -223,9 +223,9 @@ func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string)
 		return nil, fmt.Errorf("request Go diagnostics: %w", err)
 	}
 	// #nosec G304 -- packages.Load selected this source from the project root.
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read Go source %q: %w", path, err)
+	content, readErr := os.ReadFile(path)
+	if readErr != nil {
+		return nil, fmt.Errorf("read Go source %q: %w", path, readErr)
 	}
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
 	if err := client.Notify(ctx, "textDocument/didOpen", map[string]any{
@@ -245,11 +245,11 @@ func pullDiagnostics(ctx context.Context, client *lsp.Client, root, path string)
 
 func requestDiagnostics(ctx context.Context, client *lsp.Client, root, path string) ([]Diagnostic, error) {
 	uri := (&url.URL{Scheme: "file", Path: filepath.ToSlash(path)}).String()
-	raw, err := client.Request(ctx, "textDocument/diagnostic", map[string]any{
+	raw, requestErr := client.Request(ctx, "textDocument/diagnostic", map[string]any{
 		textDocumentKey: map[string]any{"uri": uri},
 	})
-	if err != nil {
-		return nil, fmt.Errorf("request diagnostics for %q: %w", path, err)
+	if requestErr != nil {
+		return nil, fmt.Errorf("request diagnostics for %q: %w", path, requestErr)
 	}
 	var result struct {
 		Kind  *string         `json:"kind"`
