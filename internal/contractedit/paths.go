@@ -1,6 +1,6 @@
-// WHY: This file keeps contract module discovery and workspace containment separate from type analysis and wire dispatch.
-
-package operation
+// Package contractedit owns execution-time source capture, validation, and publication for Go contract edits.
+// WHY: This file resolves source and module paths before analysis so workspace containment stays feature-owned.
+package contractedit
 
 import (
 	"context"
@@ -13,11 +13,12 @@ import (
 	"semedit/internal/sourcebuf"
 )
 
-func findContractModuleRoot(ctx context.Context, workspaceRoot string, selectedPaths []string) (string, error) {
+// FindModuleRoot finds the module containing the first selected source file.
+func FindModuleRoot(ctx context.Context, workspaceRoot string, selectedPaths []string) (string, error) {
 	if len(selectedPaths) == 0 {
 		return "", fmt.Errorf("at least one contract source file is required")
 	}
-	selected, err := canonicalContractPath(workspaceRoot, selectedPaths[0])
+	selected, err := CanonicalPath(workspaceRoot, selectedPaths[0])
 	if err != nil {
 		return "", err
 	}
@@ -40,7 +41,8 @@ func findContractModuleRoot(ctx context.Context, workspaceRoot string, selectedP
 	return "", fmt.Errorf("selected contract source %q is not inside a Go module", selectedPaths[0])
 }
 
-func canonicalContractPath(root, selected string) (string, error) {
+// CanonicalPath resolves one existing Go file within the selected workspace root.
+func CanonicalPath(root, selected string) (string, error) {
 	if strings.TrimSpace(selected) == "" {
 		return "", fmt.Errorf("contract file path is required")
 	}
