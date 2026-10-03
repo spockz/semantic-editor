@@ -361,18 +361,35 @@ func validateRefactorPackages(pkgs []*packages.Package, operation string) error 
 }
 
 func completeRefactorReadSet(ctx context.Context, root string, original map[string][]byte, pkgs []*packages.Package) (map[string][]byte, error) {
+	readSet := cloneRefactorSources(original)
+	applyRefactorOverlay(ctx, root, readSet)
+	moduleRoots := map[string]bool{filepath.Clean(root): true}
+	if err := collectRefactorPackageInputs(ctx, readSet, moduleRoots, pkgs); err != nil {
+		return nil, err
+	}
+	if err := captureRefactorManifests(ctx, readSet, moduleRoots); err != nil {
+		return nil, err
+	}
+	return readSet, nil
+}
+
+func cloneRefactorSources(original map[string][]byte) map[string][]byte {
 	readSet := make(map[string][]byte, len(original))
 	for path, content := range original {
 		readSet[path] = bytes.Clone(content)
 	}
-	if overlay := sourcebuf.Overlay(ctx); overlay != nil {
-		for path, content := range overlay {
-			if moveWithin(root, path) {
-				readSet[filepath.Clean(path)] = bytes.Clone(content)
-			}
+	return readSet
+}
+
+func applyRefactorOverlay(ctx context.Context, root string, readSet map[string][]byte) {
+	for path, content := range sourcebuf.Overlay(ctx) {
+		if moveWithin(root, path) {
+			readSet[filepath.Clean(path)] = bytes.Clone(content)
 		}
 	}
-	moduleRoots := map[string]bool{filepath.Clean(root): true}
+}
+
+func collectRefactorPackageInputs(ctx context.Context, readSet map[string][]byte, moduleRoots map[string]bool, pkgs []*packages.Package) error {
 	var readSetErr error
 	packages.Visit(pkgs, func(pkg *packages.Package) bool {
 		module := pkg.Module
@@ -394,7 +411,9 @@ func completeRefactorReadSet(ctx context.Context, root string, original map[stri
 				}
 				content, err := sourcebuf.ReadFile(ctx, clean)
 				if err != nil {
-					readSetErr = fmt.Errorf("capture local Go package input %s: %w", clean, err)
+					if readSetErr == nil {
+						readSetErr = fmt.Errorf("capture local Go package input %s: %w", clean, err)
+					}
 					return false
 				}
 				readSet[clean] = content
@@ -402,9 +421,10 @@ func completeRefactorReadSet(ctx context.Context, root string, original map[stri
 		}
 		return true
 	}, nil)
-	if readSetErr != nil {
-		return nil, readSetErr
-	}
+	return readSetErr
+}
+
+func captureRefactorManifests(ctx context.Context, readSet map[string][]byte, moduleRoots map[string]bool) error {
 	for _, moduleRoot := range slices.Sorted(maps.Keys(moduleRoots)) {
 		for _, name := range []string{"go.mod", "go.sum"} {
 			path := filepath.Join(moduleRoot, name)
@@ -413,16 +433,16 @@ func completeRefactorReadSet(ctx context.Context, root string, original map[stri
 				if errors.Is(err, os.ErrNotExist) && name == "go.sum" {
 					continue
 				}
-				return nil, fmt.Errorf("capture refactor manifest %s: %w", path, err)
+				return fmt.Errorf("capture refactor manifest %s: %w", path, err)
 			}
 			clean := filepath.Clean(path)
 			if captured, exists := readSet[clean]; exists && !bytes.Equal(captured, content) {
-				return nil, fmt.Errorf("semantic input changed while capturing refactor manifest %s", clean)
+				return fmt.Errorf("semantic input changed while capturing refactor manifest %s", clean)
 			}
 			readSet[clean] = bytes.Clone(content)
 		}
 	}
-	return readSet, nil
+	return nil
 }
 
 func assertRefactorReadSet(ctx context.Context, readSet map[string][]byte) error {
