@@ -3656,3 +3656,11 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: import cleanup could not resolve the package name for `gopkg.in/yaml.v3` and refused the mutation.
 - Workaround: use a targeted structural patch after recording the failure.
 - Root cause: the operation's package-name lookup did not find this dependency in the worktree's selected module-cache environment.
+
+## 2026-10-03: review inspection selected the wrong declaration file
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/operation/wire_contracts.go`, `adaptContractResult` during the contract feature-package review.
+- Observed failure: symbol resolution returned a plain error because the requested helper is declared in `wire_contract_snapshot_adapter.go`.
+- Workaround: inspect the declaration outline and use its actual file in the assigned review worktree.
+- Root cause: the review request used an outdated declaration location after the adapter was split from the contract wire file. Read-only navigation must also select the current worktree rather than relying on the installed server's primary checkout.
