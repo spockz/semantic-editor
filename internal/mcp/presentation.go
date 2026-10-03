@@ -1,0 +1,349 @@
+// Package mcp presents validated results before potentially large formatter output.
+package mcp
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"sort"
+	"strings"
+
+	"semedit/internal/operation"
+)
+
+const applicationStateField = "application_state"
+
+const (
+	diagnosticStatusField = "diagnostic_status"
+	diagnosticDeltaField  = "diagnostic_delta"
+	introducedField       = "introduced"
+	resolvedField         = "resolved"
+	suggestionsField      = "suggestions"
+)
+
+func criticalText(structured map[string]any, body string) (string, error) {
+	presentation := make(map[string]any, len(structured))
+	for key, value := range structured {
+		if key == "tool_request" {
+			continue
+		}
+		if key == "result" {
+			if _, legacyText := value.(string); legacyText {
+				continue
+			}
+			essential, err := essentialPresentationValue(value)
+			if err != nil {
+				return "", fmt.Errorf("project critical text result: %w", err)
+			}
+			presentation[key] = essential
+			continue
+		}
+		presentation[key] = value
+	}
+	ordered := orderedPresentationValue(presentation, "")
+	encoded, err := json.Marshal(ordered)
+	if err != nil {
+		return "", fmt.Errorf("encode critical text projection: %w", err)
+	}
+	if len(presentation) == 0 {
+		return body, nil
+	}
+	text := "Critical result (JSON): " + string(encoded)
+	if body != "" {
+		text += "\n\n" + body
+	}
+	return text, nil
+}
+
+func essentialPresentationValue(value any) (any, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("encode structured result: %w", err)
+	}
+	var projected any
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.UseNumber()
+	if err := decoder.Decode(&projected); err != nil {
+		return nil, fmt.Errorf("decode structured result: %w", err)
+	}
+	result, ok := projected.(map[string]any)
+	if !ok {
+		return projected, nil
+	}
+	if results, batch := result["results"].([]any); batch {
+		if _, isBatchResponse := result["final_diff"]; isBatchResponse {
+			delete(result, "final_diff")
+			for _, item := range results {
+				child, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				delete(child, "diff")
+				if working, ok := child["result"].(map[string]any); ok {
+					deleteBatchWorkingContinuations(working)
+					essential, err := essentialPresentationValue(working)
+					if err != nil {
+						return nil, fmt.Errorf("project batch child result: %w", err)
+					}
+					child["result"] = essential
+				}
+			}
+			if verification, ok := result["verification"].(map[string]any); ok {
+				delete(verification, "diagnostics")
+				for _, reportName := range []string{"normalize", "checks"} {
+					report, ok := verification[reportName].(map[string]any)
+					if !ok {
+						continue
+					}
+					hooks, ok := report["Results"].([]any)
+					if !ok {
+						continue
+					}
+					for _, hookValue := range hooks {
+						hook, ok := hookValue.(map[string]any)
+						if !ok {
+							continue
+						}
+						delete(hook, "Stdout")
+						delete(hook, "Stderr")
+						delete(hook, "Diagnostics")
+					}
+				}
+			}
+		}
+	}
+	if _, bulkDiff := result["diff"].(string); bulkDiff {
+		delete(result, "diff")
+	}
+	if _, completeInspection := result["inspection"].(string); completeInspection {
+		delete(result, "inspection")
+	}
+	for _, key := range []string{"source", "body", "log", "logs"} {
+		if value, ok := result[key].(string); ok && isLargeTextPayload(value) {
+			delete(result, key)
+		}
+	}
+	delete(result, "read_set")
+	for _, key := range []string{"edit_receipt", "receipt"} {
+		if receipt, ok := result[key].(map[string]any); ok {
+			delete(receipt, "read_set")
+			if _, bulkText := receipt["diff"].(string); bulkText {
+				delete(receipt, "diff")
+			}
+		}
+	}
+	return result, nil
+}
+
+func isLargeTextPayload(value string) bool {
+	return len(value) >= 256 || strings.ContainsAny(value, "\r\n")
+}
+
+type orderedJSONField struct {
+	name  string
+	value any
+}
+
+type orderedJSONObject []orderedJSONField
+
+func orderedPresentationValue(value any, path string) any {
+	switch current := value.(type) {
+	case map[string]any:
+		keys := make([]string, 0, len(current))
+		for key := range current {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool {
+			left, leftOK := presentationFieldPriority(keys[i])
+			right, rightOK := presentationFieldPriority(keys[j])
+			if leftOK != rightOK {
+				return leftOK
+			}
+			if leftOK && left != right {
+				return left < right
+			}
+			return keys[i] < keys[j]
+		})
+		fields := make(orderedJSONObject, 0, len(keys))
+		for _, key := range keys {
+			childPath := key
+			if path != "" {
+				childPath = path + "." + key
+			}
+			fields = append(fields, orderedJSONField{name: key, value: orderedPresentationValue(current[key], childPath)})
+		}
+		return fields
+	case []any:
+		items := make([]any, len(current))
+		for i := range current {
+			items[i] = orderedPresentationValue(current[i], path)
+		}
+		return items
+	default:
+		return value
+	}
+}
+
+func presentationFieldPriority(key string) (int, bool) {
+	priority := map[string]int{
+		"status":                      0,
+		applicationStateField:         1,
+		"error":                       2,
+		"error_projection_failure":    3,
+		"presentation_error":          4,
+		"native_metadata_unavailable": 5,
+		"safe_delete":                 6,
+		"refusal":                     7,
+		"limitation":                  8,
+		"continuation_unavailable":    9,
+		diagnosticStatusField:         10,
+		"failure":                     11,
+		"formatted":                   12,
+		"scope":                       13,
+		"result":                      14,
+		"receipt":                     15,
+		"edit_receipt":                16,
+		"continuations":               17,
+		"file":                        18,
+		"symbol":                      19,
+		"in_function":                 20,
+		"verification":                21,
+		"Completed":                   22,
+		"Partial":                     23,
+		"Failure":                     24,
+		"Results":                     25,
+		"Status":                      26,
+		"Error":                       27,
+		"results":                     28,
+		"checks_run":                  29,
+		"changes":                     30,
+		"changed_files":               31,
+		diagnosticDeltaField:          32,
+	}
+	value, ok := priority[key]
+	return value, ok
+}
+
+func deleteBatchWorkingContinuations(result map[string]any) {
+	delete(result, "continuations")
+	for _, key := range []string{"receipt", "edit_receipt"} {
+		if receipt, ok := result[key].(map[string]any); ok {
+			delete(receipt, "continuations")
+		}
+	}
+}
+
+func criticalTextFallback(structured map[string]any, body string, cause error) string {
+	fallback := map[string]any{
+		applicationStateField: "unknown",
+		"presentation_error":  cause.Error(),
+	}
+	if operationErr, ok := structured["error"]; ok {
+		fallback["error"] = operationErr
+	}
+	if location, ok := structured["location"]; ok {
+		fallback["location"] = location
+	}
+	if text, err := criticalText(fallback, body); err == nil {
+		return text
+	}
+	return fmt.Sprintf("Critical result projection unavailable: %v\n\n%s", cause, body)
+}
+
+func criticalTextWithNative(structured map[string]any, body string, native any) (string, error) {
+	fields, err := criticalNativeFields(native)
+	if err != nil {
+		return "", err
+	}
+	if len(fields) > 0 {
+		for key, value := range fields {
+			if _, exists := structured[key]; !exists {
+				structured[key] = value
+			}
+		}
+	}
+	return criticalText(structured, body)
+}
+
+func (fields orderedJSONObject) MarshalJSON() ([]byte, error) {
+	var result bytes.Buffer
+	result.WriteByte('{')
+	for i, field := range fields {
+		if i > 0 {
+			result.WriteByte(',')
+		}
+		name, err := json.Marshal(field.name)
+		if err != nil {
+			return nil, fmt.Errorf("encode critical field name: %w", err)
+		}
+		value, err := json.Marshal(field.value)
+		if err != nil {
+			return nil, fmt.Errorf("encode critical field %q: %w", field.name, err)
+		}
+		result.Write(name)
+		result.WriteByte(':')
+		result.Write(value)
+	}
+	result.WriteByte('}')
+	return result.Bytes(), nil
+}
+
+func criticalNativeFields(value any) (map[string]any, error) {
+	switch result := value.(type) {
+	case operation.FileEditRes:
+		fields := map[string]any{}
+		if result.DiagnosticStatus != "" {
+			fields[diagnosticStatusField] = result.DiagnosticStatus
+		}
+		if result.HasDelta {
+			fields[diagnosticDeltaField] = result.Delta
+		}
+		if len(fields) == 0 {
+			return fields, nil
+		}
+		encoded, err := json.Marshal(fields)
+		if err != nil {
+			return nil, fmt.Errorf("encode native diagnostic metadata: %w", err)
+		}
+		var normalized map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(encoded))
+		decoder.UseNumber()
+		if err := decoder.Decode(&normalized); err != nil {
+			return nil, fmt.Errorf("decode native diagnostic metadata: %w", err)
+		}
+		if delta, ok := normalized[diagnosticDeltaField].(map[string]any); ok {
+			for _, key := range []string{introducedField, resolvedField, suggestionsField} {
+				if value, exists := delta[key]; exists && value == nil {
+					delta[key] = []any{}
+				}
+			}
+		}
+		if err := operation.ValidateObject(nativeDiagnosticFieldsSchema(), normalized); err != nil {
+			return nil, fmt.Errorf("validate native diagnostic metadata: %w", err)
+		}
+		return normalized, nil
+	default:
+		return map[string]any{}, nil
+	}
+}
+
+func nativeDiagnosticFieldsSchema() operation.ValueSchema {
+	stringArray := operation.ValueSchema{Kind: operation.SchemaArray, Items: &operation.ValueSchema{Kind: operation.SchemaString}}
+	delta := operation.ValueSchema{
+		Kind: operation.SchemaObject,
+		Properties: map[string]operation.ValueSchema{
+			"net_delta":      {Kind: operation.SchemaInteger},
+			introducedField:  stringArray,
+			resolvedField:    stringArray,
+			suggestionsField: stringArray,
+		},
+		Required: []string{"net_delta", introducedField, resolvedField},
+	}
+	return operation.ValueSchema{
+		Kind: operation.SchemaObject,
+		Properties: map[string]operation.ValueSchema{
+			diagnosticStatusField: {Kind: operation.SchemaString},
+			diagnosticDeltaField:  delta,
+		},
+	}
+}

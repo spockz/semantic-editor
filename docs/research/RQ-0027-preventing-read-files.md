@@ -718,7 +718,7 @@ Accept description/provenance fixes with the shared foundation worker, then oper
 
 ### Scope and evidence
 
-The initial discovery capture used main `32e2184`, the full Go profile, and live reload: 26 registered operations plus batch, metrics, reload, and feedback. The reviewed foundation subsequently merged into main at `c74dede`. Public statement and documentation-comment tools then merged at `930893f` after combined verification. A fresh `tools/list` capture at `930893f`, with an explicit Go/Java allowlist in an empty discovery workspace, advertises 30 registered operations plus those four server tools. Java contributes the two Maven operations. These counts describe these discovery configurations; language detection and profiles can hide operations. The ignored local evidence files are `.scratch/parallel-tools/catalog-audit-main.json` and `catalog-current.json`.
+The initial discovery capture used main `32e2184`, the full Go profile, and live reload: 26 registered operations plus batch, metrics, reload, and feedback. The reviewed foundation subsequently merged into main at `c74dede`. Public statement and documentation-comment tools then merged at `930893f` after combined verification. Five further tools and the batched move receipt correction merged at `6718968` after a passing combined `make check`. A fresh `tools/list` capture at `6718968`, with an explicit Go/Java allowlist in an empty discovery workspace, advertises 35 registered operations plus those four server tools. Java contributes the two Maven operations. These counts describe these discovery configurations; language detection and profiles can hide operations. The ignored local evidence files are `.scratch/parallel-tools/catalog-audit-main.json` and `catalog-current.json`.
 
 The audit uses accepted ADR-0007 for intent routing, ADR-0009 for discovery scoping, ADR-0019 for insertion tiers, ADR-0034 for registry ownership, ADR-0046 for current construct replacement, ADR-0051 for inspection, and ADR-0055 for parameter and continuation contracts. ADR-0053 remains Proposed: its future body-tool rename and broader whole-construct support are design options, not current promises. ADR-0052 supersedes ADR-0042's ordinary timing payload requirement.
 
@@ -732,8 +732,11 @@ Tool names in this table omit the `semantic_` prefix, except `report_feedback`.
 | `insert_function`, `insert_type`, `insert_decl` | Create a complete function/method, named type/alias, or package constant/variable respectively. Choose the specialized declaration tool when its kind matches. `insert_decl.overwrite` overlaps `replace_decl`; the latter is the direct replacement intent. |
 | `insert_declaration`, `insert_structure`, `insert_case` | Generic top-level declaration placement; a broader multi-kind insertion interface; or switch-case insertion. The generic declaration description already prefers specialized tools. `insert_structure` needs equally explicit routing and kind-dependent requirements to explain its remaining use. |
 | `insert_statement`, `set_doc_comment` | Add one direct call/assignment adjacent to an exact statement anchor, or edit owned top-level declaration documentation. These preserve the callable body outside the insertion and declaration source outside the comment respectively. Statement insertion currently refuses control flow anywhere in the owner; its description should explicitly disclose that scope. Comment editing distinguishes absent/null from an explicit empty string that removes the comment. |
+| `insert_field` | Add one caller-named field to an existing typed Go struct. This differs from `insert_type`, which creates a complete named declaration, and `insert_structure`, which inserts declarations/cases. Empty structs and safe multiline field layouts are supported; collisions and unkeyed literals are refused. |
 | `replace_body`, `replace_construct`, `replace_decl` | Replace callable statements while retaining its signature; replace a supported nested control-flow construct; or replace a package constant/variable/type alias. Current construct replacement does not imply whole-function, struct, or method replacement. |
 | `extract_function`, `extract_variable`, `inline_variable` | Create a helper from selected statements; name an expression; replace a local binding's uses and remove it. New names are caller choices. The extracted live declaration can feed later existing-target edits; removed bindings and replaced expressions cannot. |
+| `extract_interface`, `implement_contract` | Derive a new interface from selected existing direct methods, or generate missing methods required by an existing interface. Extraction chooses a fresh interface name; implementation targets an existing concrete type and explicitly selects receiver kind and panic-stub body policy. These differ from inserting arbitrary caller-written types/functions. |
+| `inline_function`, `migrate_type` | Inline one zero-argument literal-return free-function call while retaining the callee declaration; change one private field's type spelling to an alias with identical compiler type identity. These bounded operations are narrower than general body replacement or conversion-based type migration, and their descriptions disclose those limits. |
 | `rename`, `move_construct`, `remove_construct` | Change binding identity through the language service; relocate the selected node; or delete it. Moving a declaration is distinct from renaming it. A safe-delete policy is a mode of removal; its execution boundary must be distinguished from ordinary buffered removal. |
 | `scaffold_file`, `organize_imports`, `add_build_dependency` | Create a source file, rewrite source imports, or change module dependencies. Import organization does not install modules. Scaffolding's package name and dependency's module path/version are different values despite their current shared parameter spelling. |
 | `assertion_mode` | Convert supported Go test assertions between fail-fast and continue-on-failure modes. Dry-run previews differ from trusted writes. This is a focused test-policy transformation, not general body replacement or verification. |
@@ -744,8 +747,8 @@ Tool names in this table omit the `semantic_` prefix, except `report_feedback`.
 
 ### Findings and repair order
 
-1. **Incorrect copy guidance can produce invalid edits.** Main extraction creation-name inputs still list existing qualified-symbol producers, although they require fresh simple identifiers. Inline/delete results advertise deleted targets, and expression extraction echoes old expression text as if it were an eligible current discriminator for other construct kinds. Remove those producer edges; preserve historical evidence separately. Validate role, value format, companion selectors, node kind, and liveness in addition to field existence.
-2. **Moved targets have an incorrect live source-file pairing.** The current move operation records a destination, but the advertised copyable pair uses `symbol` with the original `file`. A subsequent existing-target request needs a live `{file, symbol}` record whose `file` is the destination. Keep origin and requested destination as explicit operation evidence. Requiring the model to rename `destination_file` into `file` violates the intended automatic flow.
+1. **Creation-name copy guidance can produce invalid edits.** Main extraction creation-name inputs still list existing qualified-symbol producers, although they require fresh simple identifiers. Remove those producer edges; preserve historical evidence separately. Main already omits the deleted binding from inline-variable output and removed selectors from removal output, with `TestMCPStaleContinuationsAreNotAdvertised` protecting those exclusions. The discovery evidence does not support a claim that those deleted targets or an old extraction discriminator are currently advertised. Validate role, value format, companion selectors, node kind, and liveness in addition to field existence.
+2. **Batched move pairing is corrected.** Standalone move results already used the destination as their copyable `file`. The batch projection at `930893f` instead paired the moved `symbol` with the original `file`. Main `6718968` includes the reviewed correction: both paths return the destination `file`, with `origin_file` retained as explicit operation evidence. The cross-package batch fixture proves the copyable destination pairing.
 3. **Insertion routing is insufficiently distinct.** Explain why `insert_structure` should be selected when specialized declaration/case tools exist, and encode conditional selector/placement requirements in its schema. Preserve meaningful differences between complete `source`, callable `body`, and case-clause input. A general-purpose schema should not imply every kind accepts every placement or anchor.
 4. **Shared concepts have inconsistent names or vocabularies.** Generic declaration `visibility` and specialized `access_modifier` represent the same concept. Structure insertion uses `target_symbol` for some case anchors whereas the dedicated case tool uses `target_case`. Const/var kind spellings also differ between insertion and removal. Select one vocabulary through an accepted contract change, updating every ingress, output, example, and producer edge together. Rename dependency's module path/version concept separately from a source package name.
 5. **Discovery schemas retain unsupported choices.** Go-only reference discovery exposes other language enum values and unrelated backend configuration. Go-only structure insertion exposes access values unavailable to Go. Apply ADR-0009's supported-language intersection to parameter branches, not only tool visibility. The Go discovery capture proves these advertised choices; it does not establish behavior of every other backend/profile configuration.
@@ -755,8 +758,541 @@ Tool names in this table omit the `semantic_` prefix, except `report_feedback`.
 
 ### Pending public tools and overlap
 
-Statement/comment tools are delivered on main at `930893f`. Contract extraction/implementation, field insertion, signatures, relocation, and extraction expansions remain in parallel implementation or review. They are not all merged public features. RQ-0060 records implementation status and semantic gates.
+Statement/comment tools are delivered on main at `930893f`; interface extraction, contract implementation, field insertion, bounded function inlining, and alias-preserving type migration are delivered at `6718968`. Signatures, composite insertion, type/delegate extraction, encapsulation, safe-delete expansion, and extraction expansions remain in parallel implementation or review. RQ-0060 records implementation status and semantic gates.
 
-The intended additional routes are: `extract_interface` derives signatures from selected existing direct methods; `implement_contract` creates missing method implementations; `set_doc_comment` changes owned documentation; and `insert_statement` adds one supported statement adjacent to a selected statement. Their descriptions must distinguish these intents from `insert_type`, `insert_function`, `replace_body`, and `insert_structure`, and disclose bounded support. Review already found and corrected contract aliases that bypassed live receipt checks, same-file generated-method revision evidence, structural manifest capture after analysis, and no-op read-set drift. Passing worker checks is followed by combined integration checks before main delivery.
+The delivered routes above distinguish interface derivation, missing-method generation, field insertion, and bounded inline/type-spelling edits from caller-written insertion and whole-body replacement. Review found and corrected contract aliases that bypassed live receipt checks, same-file generated-method revision evidence, structural manifest capture after analysis, and no-op read-set drift. Public CLI/MCP and batch proofs accompany the passing combined integration check. The remaining general routing and creation-name guidance findings still require repair.
+
+## Server instructions, completeness, and description size audit
+
+### Captured behavior
+
+Audit baseline: main `b99f558`, with the same production source as the `6718968` discovery build. Five fresh initialize/discovery captures cover server instruction modes `none`, `descriptive`, and `prescriptive`, plus Go-only full and mutations-only profiles. The captures are in `.scratch/parallel-tools/instruction-catalog-audit.json`. The three instruction modes return identical tool catalogs. Default CLI instructions are empty; descriptive instructions are a nine-word availability statement; prescriptive instructions are a 65-word discovery, semantic-edit priority, and fallback policy. The instruction mode controls server-level guidance only: even `none` and `descriptive` retain prescriptive per-tool descriptions.
+
+### Overlap and completeness
+
+| Guidance | Current owner and assessment |
+| :--- | :--- |
+| Discover callable tools, including deferred tools; prefer semantic mutation; permit bounded fallback | Prescriptive server instructions. This is global policy, not tool selection or parameter syntax. The complete-inventory requirement can itself cause extra discovery work; narrowing it is a policy experiment, not a harmless wording edit. |
+| Prefer a specific operation over text editing | Every captured tool has priority guidance. This deliberately overlaps server policy: ADR-0007 requires it, and server instructions are optional. Keep a short priority phrase in each mutation description. |
+| Choose between overlapping operations and understand bounds | Tool summaries. The generic insertion wrappers still lack a distinct capability rationale. Zero-argument literal-only inlining, alias-only migration, and generated panic stubs must remain explicit. Outline should state that callable bodies are elided. |
+| Exact value format and producer path | Parameter descriptions, with generated `SourceFields` clauses. Many long producer lists repeat in the batch schema. Correct invalid creation-name producer edges before compressing them. |
+| Live output selectors and compatible consumers | Generated output continuation suffixes, often duplicated by hand-written summary text. Remove the manual duplicate, or group fields with identical consumers while retaining exact paths and same-record semantics. Do not move these guarantees exclusively into optional server instructions. |
+| Current overlays, static batch inputs, and failure state | Batch description states ordered requests and retained earlier edits, but omits explicit static-parameter/no-interpolation and current-overlay guidance. Add those rules compactly. A failed operation can already have applied changes; inspect outcome and workspace state before retrying with a fallback editor. |
+| Trust, network, and writes | Operation/backend-specific summaries and parameters. These cannot become unconditional server guarantees: Maven trust/offline policy differs from Go, and `verify` may normalize files unless `check_only=true`. |
+
+The combined surface is useful but not complete. Existing creation-name provenance and language-scoping findings remain correctness gaps; generic insertion distinctions and batch execution guidance need clarification. Server instructions do not need to enumerate every tool or restate each parameter.
+
+### Measured footprint and candidate reductions
+
+Counts below are exact whitespace-separated words and UTF-8 bytes, including repeated schema descriptions. They are **not tokenizer counts**, client prompt sizes, latency measurements, or billing estimates. Actual harnesses may omit output schemas, load tools lazily, wrap definitions differently, or cache prefixes.
+
+| Component | Current | Reviewed candidate |
+| :--- | ---: | ---: |
+| Prescriptive server instruction | 65 words / 438 bytes | 38 words / 262 bytes |
+| Base tool summaries, excluding generated output suffixes | 2,442 words | 1,965 words |
+| Generated input copy clauses, including batch duplicates | 2,992 words | 2,686 words |
+| Entire Go/Java full catalog, compact JSON | 189,211 bytes | 184,524 bytes |
+
+All description text totals 11,956 words: 2,955 in tool descriptions, 7,591 in input schemas, and 1,410 in output schemas. `semantic_batch` contributes 4,333 words and 81,800 serialized bytes, **43.2% of the full catalog**. One 498-byte workspace-file description appears 22 times. The 65-word server policy is a small share of the footprint; shortening descriptions and repeated schemas has greater potential.
+
+The 39 summary candidates and measurement provenance are saved in [the candidate artifact](RQ-0027-description-candidates.json). Candidates preserve generated output suffixes and schemas; they also add missing scope guidance, so some individual summaries grow. Combined summary and copy-clause changes reduce serialized bytes by **2.5%**, not an asserted token percentage. Output-field grouping could save more, but is not included in this measurement. A shorter initial copy-clause candidate was rejected by independent review because it omitted the preceding-result-record cue; the measured candidate retains that cue.
+
+Compact server-policy candidate:
+
+> Discover the complete tool inventory, including deferred/lazy tools, before editing. Confirm applicable semantic tools are callable and use them for mutations. Use file edits only when none is callable or an operation fails, is unsupported, or remains ambiguous.
+
+Compact copy-clause candidate:
+
+> Copy result.continuations[].symbol from a preceding semantic_inspect_symbol or semantic_inline_function result record.
+
+Keep full source paths and tool names. Preserve companion file/owner/revision rules and live branches; never shorten a producer list by claiming compatibility that the implementation has not proven. Do not collapse these rules into a generic “copy previous results” instruction.
+
+### Repair order and proof
+
+1. Fix invalid producer edges and missing routing/scope guidance first. Fresh creation names remain caller choices.
+2. Compact generated copy clauses and remove duplicated manual output lists. Group output fields only for identical consumer sets; preserve complete paths and same-record selection.
+3. Apply the reviewed summaries without dropping mutation, refusal, trust, or partial-publication distinctions. Validate public producer-to-consumer calls and negative stale/wrong-kind cases.
+4. Evaluate language/backend parameter scoping and repeated batch schemas. Go-only full discovery is 186,412 bytes; mutations-only is 169,517 bytes and removes four navigation tools. That profile is a tradeoff, not a free default reduction. Schema factoring requires client compatibility proof and must retain operation-specific validation; removing descriptions can force extra child-tool discovery.
+5. Version any change to controlled benchmark server instructions and record the text/hash with the experiment. Do not silently redefine existing `none`/`descriptive`/`prescriptive` evidence or claim routing quality from shorter text alone.
+
+No production instructions, descriptions, or schemas were changed by this audit. The first independent Terra review timed out and supplied no approval. A narrower second review identified the required preceding-result-record cue and supplied the compact wording shape adopted above. It did not review all 39 summaries or establish model-routing performance.
 
 This audit verifies visible tool selection guidance and argument/result continuity. It does not measure internal model reasoning or demonstrate lower token use. Producer-to-consumer execution and negative liveness cases are the acceptance evidence; any model-routing comparison belongs to the existing benchmark methodology and requires separately authorized runs.
+
+## Existing-declaration selector copying and enforcement, 2026-10-02
+
+### Accepted agent rule
+
+For an existing declaration, copy the complete suitable selector from a
+discovery result or the latest valid mutation receipt. Keep companion values
+such as `file`, owner/target, and `expected_revision` from the same
+continuation object. Reuse a suitable existing record; discover only when no
+suitable record is available. Never reconstruct a qualified symbol, owner,
+path, or revision from prose. Creation-name parameters have no mandatory
+discovered-name producer; callers choose their intent in the required input
+format. This rule does not
+require an extra caller lookup: guarded operations may internally re-inspect
+and validate the copied revision.
+
+The initial baseline for this audit is `92476ae`. The discovery example
+`verifyRun` → requested `runVerify` was a caller error after the symbol had
+already been discovered, not a lookup failure; the agent reconstructed the
+target spelling instead of copying the discovered name.
+
+### Current implementation boundary
+
+`semantic_inspect_symbol` projects
+`result.continuations[] = {file, symbol, expected_revision, ...}`, one object
+per captured match. The required file, qualified symbol, and opaque revision
+digest stay together; applicable Go owner selectors such as `in_function`,
+`in_type`, and `in_declaration` are optional fields on that same object.
+Copy the consumer input `expected_revision` exactly from the typed projection.
+The legacy inspection text contains backend matches with a `revision` field;
+that value is not a parameter name and must not be manually renamed.
+
+The contract currently declares only consumer edges that have been validated.
+The projection can contain `in_declaration`, but that alone does not make it a
+declared reusable edge. Lookup exposes normalized top-level selector fields;
+rename exposes only the final renamed target's selector fields. Mutation
+continuations depend on operation-specific finalization and may omit buffered,
+refused, removed, or no-longer-live targets. A `partially_published` operation
+does not imply overall success merely because an individual target can be
+resolved. Current internal validation and finalization are stronger than the
+historical field-existence/top-level-only audit above; that earlier finding
+describes the then-current boundary, not the implementation at this revision.
+
+### Open enforcement and recovery choices
+
+ADR-0055 fixes the agent-facing copy rule and exact value contract. It does not
+select a universal runtime strict-selector gate. Evaluate the following
+alternatives without treating any as accepted yet:
+
+A strict-gate prototype should match the complete provenance record and
+consumer contract before dispatch, not just membership of a symbol string.
+Unknown or mismatched provenance should reject before operation execution.
+Whether discovery, creation, external clients, and explicit recovery use
+declared modes or bypasses remains open; keep those paths auditable.
+
+| Candidate | Benefit | Unresolved cost or risk |
+| :--- | :--- | :--- |
+| Steering plus warning/telemetry | Supports existing clients and caller-chosen flows | Cannot prevent reconstructed or stale selectors |
+| Orchestrator-enforced provenance | Makes declared producer records enforceable | Needs client integration and an explicit exception path |
+| Opaque/session-bound handles | Avoids exposing reconstruction-prone selectors | Adds lifecycle, persistence, batch, and recovery complexity |
+| Explicit policy for discovery, creation, external clients, and recovery | Preserves legitimate independent callers | Requires policy surface and auditable provenance |
+
+Do not require every disk-backed record to come from the current MCP session
+without evidence; reuse may be suitable when workspace, view, consumer, and
+captured evidence match and there is no known invalidation. Runtime guarded
+checks remain authoritative, so callers need not repeat discovery solely to
+prove that source has not changed. Buffered overlay evidence, however, is
+view/session scoped and must not be reused as a standalone disk selector.
+Untyped legacy lookup/rename records without `expected_revision` may remain
+suitable for declared unguarded consumers, but must not be treated as
+revision-bound. A new receipt that omits a target supplies no new liveness
+proof. Omission alone does not invalidate prior evidence; if earlier evidence
+is known invalidated by a delete, source change, or view mismatch, do not
+resurrect it.
+
+An identical-byte delete/recreate is an ABA case: the current digest cannot
+prove historic identity or caller intent. A content digest or set membership
+alone cannot close that gap. Keep the enforcement choice open until a prototype
+compares warning/telemetry, orchestrator checks, and opaque handles against
+legitimate discovery, creation, external-client, and recovery flows.
+
+### Required evaluation evidence
+
+Any strict-gate prototype must show public observable behavior, not only an
+internal registry check:
+
+* Accept exact same-record continuations; reject mixed file/owner/revision
+  records and stale revisions before mutation.
+* After rename or move, accept only the destination identity and final
+  revision; after deletion, advertise no continuation for the deleted target.
+* Refuse standalone use of buffered working-overlay receipts and distinguish
+  one surviving target from whole-operation success after partial publication.
+* Cover multi-file edits with separate file/revision companion records.
+* Preserve status, failure/limitations, ambiguity, and live continuations in
+  text-only and truncated-client presentations before large bodies or diffs.
+* Make stale similar-name recovery fail closed rather than mutating a guessed
+  declaration; exercise the identical-byte delete/recreate limitation.
+* Measure extra selector, revision, and handle token cost alongside rejection
+  rates and legitimate escape-path success.
+
+Existing focused coverage includes guarded inspection-to-replace/insert flows,
+final-disk identity/revision, incompatible continuation registration,
+stale-continuation suppression, inspection owner aliases, ambiguous language
+neutral matches, and candidate-digest requirements. See
+`internal/mcp/schema_test.go` and
+`internal/operation/value_schema_test.go`; this list identifies current
+coverage and does not resolve the gate policy or client presentation behavior.
+
+### Concrete wire evidence and selector formats
+
+The following are current values and paths. Their presence does not make every
+value a declared continuation for every consumer.
+
+| Value | Current format |
+| :--- | :--- |
+| `symbol`, `in_function`, `in_type`, `in_declaration` | Qualified identifier string copied verbatim |
+| `file` | Project-relative slash path |
+| `expected_revision` | Opaque digest string; for example, `54cb2d1b9979a5ec763dac737599efe76fa14aeabc19cbcac5bde13c2cb3acb7` |
+| `construct_path` | Operation-specific string such as `0` or `0.1`, dot-separated zero-based traversal indexes |
+| `discriminator`, `target_case` | Exact operation-specific source selector string; not a normalized or reconstructed name |
+
+For example, current inspection structured output has this shape:
+
+```json
+{
+  "result": {
+    "inspection": "{...legacy inspection JSON...}",
+    "continuations": [
+      {
+        "file": "internal/mcp/server.go",
+        "symbol": "Server.handleToolCall",
+        "expected_revision": "54cb2d1b9979a5ec763dac737599efe76fa14aeabc19cbcac5bde13c2cb3acb7",
+        "in_function": "Server.handleToolCall",
+        "in_declaration": "Server.handleToolCall"
+      }
+    ]
+  }
+}
+```
+
+When the declared consumer is `semantic_replace_body`, copy that record's
+`file`, `symbol`, and `expected_revision` to those exact input fields. Do not
+combine the `file` from another candidate with the owner or revision from this
+one. The projection may include `in_declaration`, but current consumer
+registration remains the source of allowed edges.
+
+An outline-driven same-name candidate record containing
+`{file, symbol, kind, expected_revision}` would let the caller copy a
+qualified name exposed as `qualified_name` plus `file`; the same-named
+`symbol` continuation record is a proposal to avoid receiver reconstruction,
+not a current outline field. A separate construct record containing
+`{file, in_function, kind, discriminator, construct_path, expected_revision}`
+is also a design candidate, not a current `semantic_outline` continuation.
+Membership proves discovery, not that the selected declaration is intended.
+
+Current formatter behavior has presentation gaps. `formatLookup` and
+`formatInspectRead` produce JSON strings for text content. Structured
+inspection places the `inspection` string before its typed continuation
+array, with legacy inspection JSON encoded inside that string. `formatRename`
+returns a sentence,
+while its separate structured continuation exposes the post-rename symbol and
+file. For example, source formatting with `symbol=verifyRun` and `to=checkRevision`
+can render “Successfully renamed verifyRun.” while structured continuation
+generation uses `checkRevision`. A client that truncates or forwards only
+text can lose structured continuations or inspectable details;
+structuredContent availability alone
+does not establish model visibility. The obligation to preserve essentials
+is accepted; exact prefix encoding, presentation limits, and byte/token
+truncation budgets remain open.
+
+### Discovery and liveness policy still open
+
+Do not select same-spelling declarations by similarity or ordering. A
+not-found recovery candidate must be bounded by selected file and kind, and
+inspection must report whether the requested scope was complete or truncated.
+Deterministic ordering, candidate caps, and response-budget limits remain
+open. If the caller has no selected file and no suitable record, request
+scoped discovery rather than mutate a guessed similar name.
+
+Candidate validity needs an explicit matrix over workspace root,
+backend/language, source revision, and view identity. Evaluate same-session
+and cross-session disk records separately; buffered overlay candidates remain
+bound to their originating view/session. Rename and move replace the old
+identity with the destination and final revision; delete leaves no live
+continuation. Multi-file results require separate file/revision companions.
+Restart, external edits, partial publication, and explicit recovery need
+defined treatment. Omission from a new receipt is not proof of deletion and
+supplies no new liveness proof; if earlier evidence is known invalidated by a
+delete, source change, or view mismatch, do not resurrect it. Identical-byte
+delete/recreate remains indistinguishable by content digest alone.
+
+### Evaluation cases
+
+Compare warning/telemetry, orchestrator enforcement, and opaque/session-bound
+handles against these observable cases:
+
+* Correct same-record copies versus a reconstructed name, including a wrong
+  name that happens to resolve to an existing declaration.
+* Mixed file/owner/revision records, same-record wrong-intent selectors,
+  stale revisions, and old rename/move/delete targets.
+* Not-found recovery with similar names, selected file/kind constraints,
+  incomplete scopes, deterministic caps, and explicit recovery.
+* Text-only and structured clients truncated at several byte/token
+  boundaries, especially before continuations, failures, ambiguity, and
+  limitations.
+* Cross-session disk receipts, restarts, overlay receipts, multi-file
+  companions, partial publication, and the identical-byte ABA case.
+
+Measure actual token/context overhead, unnecessary discovery calls, retries,
+rejection rates, and end-to-end task outcomes. A strict-gate prototype must
+demonstrate its rejection expectations itself; current legacy calls are not
+claimed to reject every mixed-record or invented-name input at runtime.
+
+## MCP text/structured output audit, 2026-10-02
+
+### Scope and evidence
+
+This read-only audit compares every MCP tool in the operation registry and
+the four server-only tools. The source baseline is commit
+`92476ae60220277f5378902aaa9b23f42e035321`; this document's baseline is
+`897e44f0b6d5164fc58b0f66abdbb0c8d8d798a6`. The registry inventory is derived
+from `DefaultRegistry` and its registration functions, including the Java
+Maven operations. Language-specific handlers are represented by their single
+registered MCP tool rather than duplicated rows; registry language IDs cover
+Go, Rust, Java, Scala, Haskell, Kotlin, Bash, and Make, while some workspace
+tools dispatch through `auto`. The Maven compile/test tools are Java-only.
+This is a source inventory and formatter/schema review, not runtime execution
+of every language branch or error path; no tests were run for this audit.
+
+A served-instance sample is separate evidence: an existing MCP call to
+`semantic_inspect_symbol` for `internal/operation/wire_backend.go` and
+`verifyRun` succeeded, but returned `structuredContent.result` as a string
+containing legacy `scope`/`matches` JSON and no typed `continuations[]`. The
+sample's match carried `revision`. The audited source at `92476ae` defines a
+typed `ProjectOutput` for inspection. The binary provenance and cause of this
+source/runtime discrepancy are unknown; the sample does not establish which
+source revision the serving process used.
+
+A fresh build from the audited source was also exercised through MCP stdio
+with Go and Java enabled and live reload on. Its workspace-specific catalog
+advertised 37 tools, omitting the two Maven tools from the full source
+inventory. A successful inspection of that same `verifyRun` declaration
+returned a typed structured result with a complete `file`, `symbol`, and
+`expected_revision` record; its text still contained only legacy
+`scope`/`matches` JSON. A successful `semantic_metrics` call returned one
+structured timing record while text contained only the count. These two
+read-only samples confirm the corresponding source findings; they do not
+exercise mutation, error, or other language branches. Full raw evidence is
+retained in `.scratch/text-response-review/fresh-server.jsonl` for this run;
+that scratch path is not a durable research artifact.
+
+For continuation-aware text, the critical record is the same-result-record
+set of `file`, `symbol`, and `expected_revision`, with applicable companion
+selectors such as `in_function`, `in_type`, `discriminator`, or
+`construct_path`. Inspection's revision belongs to its selected view; there
+is no current wire `view` field. Preserve view identity when the transport
+exposes it. Claim
+final-disk liveness only where publication and the relevant final view are
+confirmed. Do not infer liveness from a historical target, a planned edit, or
+omission. Batch child results describe intermediate edits and do not establish
+final continuation liveness. Preserve outcome, tool failure/refusal,
+limitations, ambiguity, and known applied state, distinguishing tool-call
+errors from protocol-level JSON-RPC errors. An error alone does not prove zero
+writes. Compare exact values, nesting, and record order, not substring
+presence. These are review criteria, not claims that every tool has or needs
+every field. Where a contract concept is unresolved, keep its encoding open
+instead of inventing new field names.
+
+The table labels **gap** for confirmed critical information present only in
+structured output; **order** for critical detail placed after a potentially
+large body or diff; **clear** for no material text/structured loss found in
+this source audit; and **schema** for a successful-result/output-schema
+mismatch. “Clear” is scoped to this text comparison and does not establish
+universal correctness or full ADR-0055 §10 conformance; critical-first order
+is not universal in current source. ADR-0055 requires semedit's textual output
+to preserve critical information. MCP SHOULD expose the full serialized
+structured JSON in text content; a compact essential projection is a deliberate
+bounded-compatibility trade-off and does not satisfy full-serialization
+SHOULD guidance. Measure that trade-off and retain the essential information in
+text-only output. Even correctly ordered server text cannot prevent a client
+from truncating its response.
+
+### Complete tool audit
+
+| MCP tool | Text content | Structured-only essentials / finding |
+| :--- | :--- | :--- |
+| `semantic_lookup` | Indented lookup JSON. | **Clear:** selected symbol/file/kind/coordinates are also exposed as structured companions; no material value loss found. |
+| `semantic_find_references` | Indented reference-result JSON. | **Clear:** no projector or text-only omission found. |
+| `semantic_rename` | Success sentence names `result.Lookup.Symbol`. | **Gap:** prose names the old symbol; structured companions carry the renamed symbol and file. |
+| `semantic_verify` | Summary, then serialized verification report. | **Clear:** diagnostics, coverage, and failure are included in the report; failures also set `isError`. |
+| `semantic_inspect_symbol` | Indented native inspection JSON. | **Gap/order:** typed structured result adds `continuations[]` with copy-ready `file`, `symbol`, `expected_revision`, and declared `in_function`/`in_type` consumer paths; text lacks that same-record envelope. Presence alone does not authorize a copy edge: `in_declaration` is present but has no declared consumer. The projected `inspection` field precedes continuations, so source text can also precede these essentials. |
+| `semantic_outline` | Indented outline JSON. | **Clear:** same native result is text; no material omission found. |
+| `semantic_assertion_mode` | Swap count; says dry run or names written file. | **Clear:** no structured projection or critical detail loss found; no diff is shown. |
+| `semantic_insert_structure` | Summary, coordinates, diff, then diagnostic status/delta. | **Order:** mutation summary is early, but diagnostics/status follow diff. No additional structured-only companion fields found; exact value parity of display and continuation paths remains unverified. |
+| `semantic_insert_declaration` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_function` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_type` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_insert_decl` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_replace_decl` | Shared file-edit formatter: summary, coordinates, diff, diagnostics. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_remove_construct` | Removal/refusal prose; diff and safety checks as applicable; diagnostics after diff. | **Schema:** normal success sends text as `result`, but advertised schema requires an object with `status`, `safe_delete`, and `checks_run`. Refusal path supplies an object. Prose states removal/refusal, but does not provide the success status fields. Safety checks can follow a large diff. |
+| `semantic_organize_imports` | “Successfully organized imports” and diagnostic delta; no path or diff. | **Gap:** selected-file `file` continuation is structured-only. Workspace-wide calls can change multiple files, but text reports neither changed paths nor diffs; this source does not collect a changed-file list here. |
+| `semantic_add_build_dependency` | Names dependency and says `go.mod` was tidied. | **Clear:** structured result is the same text; no material value loss found. No diff is shown. |
+| `semantic_replace_body` | Success sentence and diff; diagnostic delta follows. | **Order:** diagnostics follow potentially large diff; target and applied-state summary are early. |
+| `semantic_replace_construct` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_move_construct` | Shared file-edit formatter with source/destination, symbol, and diff. | **Order:** diagnostics/status follow diff; no additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_extract_function` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_extract_variable` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_inline_variable` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_migrate_type` | Success sentence and diff; diagnostic delta follows. | **Gap:** structured result is an edit receipt with status and continuation/revision records; text omits the receipt. Diagnostics also follow diff. |
+| `semantic_inline_function` | Success sentence and diff; diagnostic delta follows. | **Gap:** structured result is an edit receipt with status and continuation/revision records; text omits the receipt. Diagnostics also follow diff. |
+| `semantic_scaffold_file` | Names created file and resolved package. | **Clear:** structured file/package companions duplicate the values in text. |
+| `semantic_insert_case` | Shared file-edit formatter. | **Order:** diagnostic status/delta follow diff. No additional structured-only companion fields found; exact display/continuation path parity remains unverified. |
+| `semantic_set_doc_comment` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds `edit_receipt`, status, and any live continuation/revision; text formats only the edit. Diagnostics follow diff. |
+| `semantic_insert_statement` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds the edit receipt/status; text formats only the edit. Diagnostics follow diff. |
+| `semantic_insert_field` | Shared file-edit formatter through structural-plan wrapper. | **Gap:** structured projection adds receipt/status and declared target continuations; text formats only the edit. Diagnostics follow diff. |
+| `semantic_snapshot` | Indented snapshot-result JSON. | **Clear:** same result is exposed as structured text. |
+| `semantic_undo` | Indented undo-result JSON. | **Clear:** same result is exposed as structured text. |
+| `semantic_maven_compile` | JSON `MavenRes`. | **Clear:** success result is the same serialized value. Maven error results add structured details; whether all those details are present in error prose is unproven in this formatter audit. |
+| `semantic_maven_test` | JSON `MavenRes`. | Same assessment as `semantic_maven_compile`. |
+| `semantic_extract_interface` | Indented JSON of the contract projection. | **Clear/order:** formatter and structured projector use the same projection, including receipt and signatures; receipt continuations follow potentially large change/read-set arrays. |
+| `semantic_implement_contract` | Indented JSON of the contract projection. | **Clear/order:** formatter and structured projector use the same projection, including receipt and generated-method targets; receipt continuations follow potentially large change/read-set arrays. |
+| `semantic_batch` | Indented complete `BatchResponse` JSON. | **Clear:** text and structured result are the same response. Per-edit diffs can put final diagnostic details later in a large response. |
+| `semantic_reload` | `{"status":"reloading"}`. | **Clear:** structured result carries the same status. |
+| `semantic_metrics` | Record count and “newest first.” | **Gap:** all timing records, phase measurements, timestamps, and optional session metrics are structured-only; text cannot show the measurements the tool retrieves. |
+| `report_feedback` | Full Markdown report draft. | **Clear:** human-review content is present in text; structured status/date are not repeated as machine fields, but draft-only status and date are stated in the draft. |
+
+### Evidence map and follow-up
+
+The inventory comes from `internal/operation/wire_backend.go:686–716`,
+`internal/operation/wire_engine.go:191–249`,
+`internal/operation/wire_read_inspect.go:143–192`,
+`internal/operation/wire_workspace.go:169–175`,
+`internal/operation/wire_maven.go:91–109`,
+`internal/operation/wire_contracts.go:1472–1519`,
+`internal/operation/wire_extract.go:99–105`, and
+`internal/operation/wire_structural_plan.go:297–301`. The common text/structured
+dispatch is in `internal/mcp/server.go:1320–1342`; file-edit field ordering is
+in `internal/operation/wire_engine.go:127–159`.
+
+Formatter definitions behind the remaining rows are in
+`internal/operation/wire_backend.go:554–595`,
+`internal/operation/wire_read_references.go:67–72`,
+`internal/operation/wire_read_inspect.go:127–140`,
+`internal/operation/wire_assertmode.go:66–83`,
+`internal/operation/wire_engine_structures.go:170–183`,
+`internal/operation/wire_engine_declarations.go:107–120,165–178,223–236,338–351,430–443`,
+`internal/operation/wire_remove.go:178–211`,
+`internal/operation/wire_engine_imports.go:78–95,142–159`,
+`internal/operation/wire_engine_mutations.go:168–169,265–285,351–380,451–464,516–529`,
+`internal/operation/wire_extract.go:87–98,178–189`,
+`internal/operation/wire_engine_inline.go:65–83`,
+`internal/operation/wire_migrate_type.go:84–105`,
+`internal/operation/wire_inline_function.go:172–193`,
+`internal/operation/wire_workspace.go:73–91,142–167`, and
+`internal/operation/wire_maven.go:91–102`. The server-only handlers are in
+`internal/mcp/batch.go:298–349` and `internal/mcp/server.go:1619–1683,1867–1894`;
+reload is hand-wired in `internal/mcp/server.go:1384–1395`.
+
+Confirmed omission evidence: rename formatter and structured continuation
+generation are in `internal/operation/wire_backend.go:562–566` and
+`internal/mcp/server.go:821–830`; inspection projection is in
+`internal/operation/inspect_projection.go:29–91` and
+`internal/operation/wire_read_inspect.go:161–171`; receipt projections are in
+`internal/operation/wire_structural_plan.go:127–149,273–295`,
+`internal/operation/wire_migrate_type.go:92–103`, and
+`internal/operation/wire_inline_function.go:180–191`. Import formatting and
+workspace scope are in `internal/operation/wire_engine_imports.go:55–95`.
+The remove result schema and refusal response are in
+`internal/mcp/server.go:528–533,602–616,1446–1462`; metrics summary and result
+are in `internal/mcp/server.go:1867–1889`. Receipt field order is declared in
+`internal/operation/typed_descriptors.go:57–65`.
+
+Next evidence should check successful and refused outcomes, ambiguity,
+partial publication, and receipt liveness through observable text-only and
+structured clients. Compare exact deep equality of intended values, nesting,
+and ordered continuation records; do not accept substring presence as proof.
+No new wire-field names are mandated by this audit.
+
+### Prioritized repair and proof order
+
+1. **Shared response presentation:** project the essential outcome, failure or
+   refusal, limitation/ambiguity, and known applied state consistently from
+   the response used for structured output. Put those essentials and applicable
+   captured continuations ahead of source bodies and diffs. Move diagnostic
+   status/delta ahead of large diffs. Preserve the distinction between
+   protocol-level errors and tool-call errors, and report uncertainty about
+   applied state where the error path cannot establish it.
+2. **Typed continuation gaps:** fix inspection's structured-only
+   `expected_revision` continuation, receipt-bearing edit outputs, and the
+   post-rename symbol. In contract outputs the format matches the structured
+   projection, but `EditReceipt` serializes `changes` and `read_set` before
+   `continuations`; continuation position after those arrays is an ordering
+   risk, not a projection mismatch.
+3. **Other confirmed omissions:** make timing records available in text for
+   `semantic_metrics`, and expose actual affected paths for workspace-wide
+   import organization when the runner can establish them.
+4. **Schema correctness:** make normal `semantic_remove_construct` success
+   conform to its advertised successful result schema, keeping refusal and
+   partial/applied-state semantics explicit.
+
+Proof should cover the complete 39-tool inventory and each supported language
+operation pair, including Java Maven, with direct and batch success, refusal,
+failure, and partial-publication cases where applicable. Assert exact deep
+equality between the essential text projection and structured fields,
+same-record companion values and order, and final/captured liveness only where
+the implementation has evidence. Exercise text prefixes truncated before and
+after bodies/diffs, and verify that intermediate batch children are not
+presented as final live continuations. Client-side truncation remains an
+external limit.
+
+### Repair contracts, 2026-10-02
+
+The audit above describes the source at `3f141c1`, before these repairs. Keep
+it as the baseline rather than reading its findings as permanent limitations.
+The implementation separates transport presentation from operation-owned
+outcome evidence, with isolated workers and coordinator review.
+
+* ADR-0042 specifies the `Critical result (JSON):` prefix. Essential values
+  retain their existing names, nesting, record order, and numeric precision.
+  Bulk source, diffs, and logs follow once in the existing formatted body.
+* Known operation errors have an explicit three-result projector: value,
+  whether the error is recognized, and projection error. Its paired private
+  schema is validated separately from successful results. Reserved live
+  continuation fields are rejected in both schema and runtime values.
+  Unrecognized errors leave application state unknown; projector failures
+  preserve the original operation failure.
+* An optional top-level continuation remains a declared potential source for
+  compatible consumers. Absence means no copyable value was established;
+  presence still requires schema validation. Imports can retain its selected
+  regular-file scope without presenting a workspace directory as a file
+  target. Rename companions require one proven final record or joint omission.
+* Batch summaries keep the original `results[]` paths. Child outcomes and
+  known changes precede bulk diffs; child selectors are intermediate evidence,
+  with no new promise that they remain live after final publication.
+
+The confirmed omissions are implemented. `internal/mcp/presentation.go` projects
+validated essentials into the shared text prefix, preserving integer precision
+and continuation record order. Direct typed operations replace legacy guessed
+aliases. Ambiguous lookups suppress query-derived aliases and retain their
+candidate list in the leading text. Operation-owned outcomes report actual import writes and known partial
+errors; removal success now uses its advertised object schema. Rename resolves
+the post-edit qualified identity and captures its revision before exposing its
+file, symbol, and guard together. Unsupported, ambiguous, or intermediate rename
+targets instead report `continuation_unavailable`.
+
+Public CLI coverage includes inspection-to-guarded-edit, metrics, batch receipts,
+partial batches, rename identity with a same-leaf peer method, removal success
+and refusal, and actual partial import publication. Java and Rust rename cases
+assert explicit continuation unavailability where final inspection is not
+supported. Projection tests compare exact values and ordered records, preserve
+integers above the exact floating-point range, and retain original errors and
+locations when error projections fail.
+
+A fresh built MCP process also passed 13 calls across three isolated Go
+workspaces. The coordinator parsed the text prefix and compared its essential
+values with the actual structured response. This proved:
+
+* inspection companions survive text presentation;
+* `Server.Start` becomes `Server.Serve` while `Other.Serve` remains unchanged;
+  the returned revision equals a fresh inspection and permits a guarded edit;
+* no-op imports report no changed files, while a later parse failure reports
+  only the earlier file actually written and marks diagnostics unavailable;
+* removal exposes real checks and refusal state without a deleted symbol alias;
+* metrics text contains the actual records;
+* a batch retains its first edit after a stale guard stops the second, and
+  captured child receipts are labeled intermediate without final continuations.
+
+The proof run validated output-schema presence for all 36 tools advertised in
+those Go workspaces. The original 39-tool audit includes language-specific
+tools filtered out of this fixture; this run does not claim to execute every
+language backend. Raw coordinator evidence is in the ignored
+`.scratch/text-response-fixes/wire-proof.json`; the checked-in tests retain the
+reproducible cases. The integration gate is `make check`.
+
+Provenance enforcement and presentation budget experiments remain open
+independently of these repairs. The server cannot ensure that a client forwards
+or retains the text prefix, and batch child selectors are not final live
+continuations.

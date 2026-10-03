@@ -276,6 +276,41 @@ func main() {
 	}
 }
 
+func TestOrganizeImportsReportKeepsOnlyWrittenPathsAndPartialWrites(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "a.go")
+	second := filepath.Join(dir, "b.go")
+	if err := os.WriteFile(first, []byte("package sample\nfunc A() { fmt.Println(1) }\n"), 0o600); err != nil {
+		t.Fatalf("write first file: %v", err)
+	}
+	if err := os.WriteFile(second, []byte("package sample {\n"), 0o600); err != nil {
+		t.Fatalf("write second file: %v", err)
+	}
+
+	report, err := pipeline.OrganizeImportsWithOptionsReport(context.Background(), dir, pipeline.ImportOptions{}, dir)
+	if err == nil {
+		t.Fatal("organize imports succeeded with an invalid later file")
+	}
+	if len(report.ChangedFiles) != 1 || report.ChangedFiles[0] != first {
+		t.Fatalf("partial changed paths = %v, want only %q", report.ChangedFiles, first)
+	}
+	updated, readErr := os.ReadFile(first)
+	if readErr != nil {
+		t.Fatalf("read first file: %v", readErr)
+	}
+	if !strings.Contains(string(updated), `"fmt"`) {
+		t.Fatalf("first path was reported but its import write is missing:\n%s", updated)
+	}
+
+	noop, err := pipeline.OrganizeImportsWithOptionsReport(context.Background(), dir, pipeline.ImportOptions{}, first)
+	if err != nil {
+		t.Fatalf("organize already organized file: %v", err)
+	}
+	if len(noop.ChangedFiles) != 0 {
+		t.Fatalf("no-op changed paths = %v, want empty", noop.ChangedFiles)
+	}
+}
+
 func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("GOTMPDIR", filepath.Dir(root))

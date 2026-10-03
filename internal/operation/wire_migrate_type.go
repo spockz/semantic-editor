@@ -27,10 +27,10 @@ func (r MigrateTypeReq) GetProjectContext() backend.ProjectContext { return r.Pr
 func (r *MigrateTypeReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var migrateTypeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file declaring the selected private struct field", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticMigrateTypeToolName + ".result.continuations[].file"}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified field name in Owner.field form; only unexported struct fields are supported", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticMigrateTypeToolName + ".result.continuations[].symbol"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file declaring the selected private struct field", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticMigrateTypeToolName + ".result.continuations[].file"}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified field name in Owner.field form; only unexported struct fields are supported", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticMigrateTypeToolName + ".result.continuations[].symbol"}},
 	{Name: "type", CLIName: "type", JSONName: "type", Type: ParamString, Description: "Value: unqualified Go type name in the same package or predeclared scope whose exact identity after alias resolution matches the field's current type", Required: true, Role: RoleValue},
-	{Name: wireExpectedRevision, CLIName: "expected-revision", JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol or a type-migration continuation for this target file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticMigrateTypeToolName + ".result.continuations[].expected_revision"}},
+	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol, a resolved rename continuation, or a type-migration continuation for this target file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticMigrateTypeToolName + ".result.continuations[].expected_revision", sourceRenameExpectedRevision}},
 }
 
 func parseMigrateType(raw map[string]any) (MigrateTypeReq, error) {
@@ -77,8 +77,8 @@ func runMigrateType(ctx context.Context, cc CallContext, req MigrateTypeReq) (Se
 	if err := astedit.ApplySemanticEdit(ctx, plan); err != nil {
 		return SemanticEditRes{}, err
 	}
-	delta, _ := finishDelta()
-	return SemanticEditRes{Diff: plan.Diff, Delta: delta, Draft: draft}, nil
+	delta, diagnosticStatus := finishDelta()
+	return SemanticEditRes{Diff: plan.Diff, Delta: delta, DiagnosticStatus: diagnosticStatus, Draft: draft}, nil
 }
 
 func migrateTypeDef() Def[MigrateTypeReq, SemanticEditRes] {
@@ -90,7 +90,11 @@ func migrateTypeDef() Def[MigrateTypeReq, SemanticEditRes] {
 		Parse:    parseMigrateType,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, MigrateTypeReq) (SemanticEditRes, error){backend.LanguageGo: runMigrateType},
 		Format: func(res SemanticEditRes) (string, error) {
-			return AppendDiagnosticDelta(fmt.Sprintf("Successfully migrated the field type spelling.\n%s", res.Diff), res.Delta), nil
+			text := "Successfully migrated the field type spelling. diagnostic_status: " + res.DiagnosticStatus + "."
+			if res.DiagnosticStatus == "changed" {
+				text = AppendDiagnosticDelta(text, res.Delta)
+			}
+			return text + "\n" + res.Diff, nil
 		},
 		ExampleRaw: map[string]any{"file": "config.go", "symbol": "settings.timeout", "type": "int64"},
 		Output: &OperationOutputContract{ResultSchema: &receiptSchema, Continuations: []OutputContinuation{

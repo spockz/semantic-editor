@@ -2,10 +2,13 @@
 package cli_test
 
 import (
+	"strings"
 	"testing"
 
 	"semedit/internal/cli"
 	"semedit/internal/operation"
+
+	"github.com/spf13/cobra"
 )
 
 func TestCommandsCoverRegistryVerbs(t *testing.T) {
@@ -47,5 +50,37 @@ func TestCommandsCoverRegistryVerbs(t *testing.T) {
 		if !commandsByVerb[entry.CLIName] {
 			t.Errorf("registry CLI name %q has no generated command", entry.CLIName)
 		}
+	}
+}
+
+func TestRegisteredPayloadFlagsAdvertiseStdin(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	commands := cli.Commands(t.TempDir())
+	commandsByVerb := make(map[string]*cobra.Command, len(commands))
+	for _, cmd := range commands {
+		commandsByVerb[cmd.Name()] = cmd
+	}
+	found := 0
+	for _, entry := range registry.All() {
+		if entry.CLIName == "" {
+			continue
+		}
+		cmd := commandsByVerb[entry.CLIName]
+		if cmd == nil {
+			t.Fatalf("registry CLI command %q is missing", entry.CLIName)
+		}
+		for _, param := range entry.Params {
+			if param.Type != operation.ParamString || (param.JSONName != "source" && param.JSONName != "body" && param.JSONName != "case") {
+				continue
+			}
+			found++
+			flag := cmd.Flags().Lookup(param.CLIName)
+			if flag == nil || !strings.Contains(flag.Usage, "stdin") {
+				t.Errorf("%s --%s does not advertise stdin payload input", entry.CLIName, param.CLIName)
+			}
+		}
+	}
+	if found == 0 {
+		t.Fatal("registry has no source, body, or case payload parameters")
 	}
 }

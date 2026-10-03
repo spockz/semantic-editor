@@ -38,7 +38,7 @@ func (s *Server) executeBufferedBatchEdits(ctx context.Context, edits []BatchEnt
 		if err := decodeArgumentObject(batchEntry.Params, &raw); err != nil {
 			return buffer, fmt.Errorf("parse buffered batch parameters: %w", err)
 		}
-		buffered, err := entry.SupportsBufferedBatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Project: backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust}, Registry: s.registry, Service: s.service}, raw)
+		buffered, err := entry.SupportsBufferedBatch(operation.CallContext{Ctx: ctx, WorkDir: s.workDir, Project: backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust}, Registry: s.registry, Service: s.service, AllowedLanguages: s.enabledLanguages}, raw)
 		if err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, batchEntryResult(batchEntry.Tool, BatchResult{}, err))
@@ -86,10 +86,12 @@ func (s *Server) finishBufferedBatch(ctx context.Context, buffer *sourcebuf.Buff
 		}
 		return false
 	}
-	if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(publicationCtx)); err != nil {
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
-		return false
+	if s.goEnabled() {
+		if err := godiagnostics.SynchronizeWithContext(sourcebuf.WithoutBuffer(publicationCtx)); err != nil {
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
+			return false
+		}
 	}
 	return true
 }
@@ -142,7 +144,7 @@ func (s *Server) normalizeBufferedBatch(ctx context.Context, buffer *sourcebuf.B
 	}
 	slices.Sort(paths)
 	slices.Sort(goPaths)
-	if len(goPaths) == 0 {
+	if len(goPaths) == 0 || !s.goEnabled() {
 		return paths, nil
 	}
 	bufferedCtx := sourcebuf.WithBuffer(ctx, buffer)

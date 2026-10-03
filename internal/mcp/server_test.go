@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -265,6 +266,49 @@ func TestMCPStructuredContinuationFields(t *testing.T) {
 	}
 	if lookup.Result.Structured["line"] == nil || lookup.Result.Structured["column"] == nil || lookup.Result.Structured["kind"] != "function" {
 		t.Errorf("lookup navigation fields = %#v", lookup.Result.Structured)
+	}
+}
+
+func TestMCPAmbiguousLookupDoesNotPublishSelectedScopeAsContinuation(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"go.mod":  "module example.com/ambiguouslookup\n\ngo 1.24\n",
+		"main.go": "package ambiguouslookup\n\ntype Server struct{}\nfunc (*Server) Serve() {}\n\ntype Other struct{}\nfunc (*Other) Serve() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"symbol":"Serve","file":"main.go"}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode ambiguous lookup: %v\n%s", err, out.String())
+	}
+	if response.Result.IsError || len(response.Result.Content) != 1 {
+		t.Fatalf("ambiguous lookup failed: %s", out.String())
+	}
+	text := response.Result.Content[0].Text
+	for _, evidence := range []string{`"ambiguous": true`, "Server.Serve", "Other.Serve"} {
+		if !strings.Contains(text, evidence) {
+			t.Errorf("lookup text omitted ambiguity evidence %q: %s", evidence, text)
+		}
+	}
+	for _, alias := range []string{"file", "symbol", "kind", "line", "column"} {
+		if _, exists := response.Result.Structured[alias]; exists {
+			t.Errorf("ambiguous lookup advertised unproven continuation alias %q: %#v", alias, response.Result.Structured)
+		}
 	}
 }
 
@@ -577,21 +621,28 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	var metricsResponse struct {
 		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			StructuredContent struct {
-				Result struct {
-					Records []struct {
-						Tool           string              `json:"tool"`
-						Metrics        map[string]any      `json:"metrics"`
-						SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
-					} `json:"records"`
-				} `json:"result"`
+				Result json.RawMessage `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(lines[2]), &metricsResponse); err != nil {
 		t.Fatal(err)
 	}
-	records := metricsResponse.Result.StructuredContent.Result.Records
+	var metricsData struct {
+		Records []struct {
+			Tool           string              `json:"tool"`
+			Metrics        map[string]any      `json:"metrics"`
+			SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(metricsResponse.Result.StructuredContent.Result, &metricsData); err != nil {
+		t.Fatalf("decode structured metrics records: %v", err)
+	}
+	records := metricsData.Records
 	if len(records) != 1 || records[0].Tool != "semantic_verify" {
 		t.Fatalf("metrics records = %#v, want latest semantic_verify call", records)
 	}
@@ -600,6 +651,27 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
+	}
+	const prefixLabel = "Critical result (JSON): "
+	text := metricsResponse.Result.Content[0].Text
+	prefix, _, found := strings.Cut(text, "\n\n")
+	if !found || !strings.HasPrefix(prefix, prefixLabel) {
+		t.Fatalf("metrics text omitted the critical JSON prefix: %q", text)
+	}
+	var presented map[string]any
+	decoder := json.NewDecoder(strings.NewReader(strings.TrimPrefix(prefix, prefixLabel)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&presented); err != nil {
+		t.Fatalf("decode metrics text prefix: %v", err)
+	}
+	var structured any
+	decoder = json.NewDecoder(bytes.NewReader(metricsResponse.Result.StructuredContent.Result))
+	decoder.UseNumber()
+	if err := decoder.Decode(&structured); err != nil {
+		t.Fatalf("decode structured metrics result: %v", err)
+	}
+	if !reflect.DeepEqual(presented["result"], structured) {
+		t.Fatalf("metrics text records differ from structured result: text=%#v structured=%#v", presented["result"], structured)
 	}
 }
 
@@ -745,14 +817,44 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 }
 
 func TestSemanticRenameAdvertisesRust(t *testing.T) {
-	var out bytes.Buffer
-	srv := mcp.NewServer("full", ".", &out)
-	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
-		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	for name, source := range map[string]string{
+		"go.mod":     "module example.com/mixed\n\ngo 1.24\n",
+		"main.go":    "package main\n",
+		"Cargo.toml": "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+		"src/lib.rs": "pub fn run() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
+	tools := listToolsAt(t, root)
+	for _, tool := range tools {
+		if tool["name"] != "semantic_rename" {
+			continue
+		}
+		input := tool["inputSchema"].(map[string]any)
+		language := input["properties"].(map[string]any)["language"].(map[string]any)
+		want := []any{"auto", "go", "rust"}
+		got := language["enum"].([]any)
+		if len(got) != len(want) {
+			t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+			}
+		}
+		description, _ := language["description"].(string)
+		if !strings.Contains(description, "Rust requires a selected .rs file") {
+			t.Fatalf("semantic_rename.language description does not explain Rust file selection: %q", description)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_rename for a Go+Rust workspace")
 }
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
@@ -1646,9 +1748,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	var response struct {
 		Result struct {
-			IsError    bool `json:"isError"`
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			Structured struct {
-				Result struct {
+				ApplicationState string `json:"application_state"`
+				Result           struct {
 					Status  string   `json:"status"`
 					Checks  []string `json:"checks_run"`
 					Refusal string   `json:"refusal"`
@@ -1661,6 +1767,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	if !response.Result.IsError || response.Result.Structured.Result.Status != "refused" || response.Result.Structured.Result.Refusal == "" {
 		t.Fatalf("safe delete response did not expose an explicit refusal: %+v", response.Result)
+	}
+	if response.Result.Structured.ApplicationState != "not_applied" {
+		t.Fatalf("safe delete application_state = %q, want not_applied", response.Result.Structured.ApplicationState)
+	}
+	text := response.Result.Content[0].Text
+	if !strings.HasPrefix(text, "Critical result (JSON): ") || !strings.Contains(text, response.Result.Structured.Result.Refusal) {
+		t.Fatalf("safe delete text omitted refusal details: %q", text)
 	}
 	if len(response.Result.Structured.Result.Checks) != 3 || response.Result.Structured.Result.Checks[0] != "go_syntax_parse" || response.Result.Structured.Result.Checks[1] != "target_resolution" || response.Result.Structured.Result.Checks[2] != "safe_delete_scope_check" {
 		t.Fatalf("checks_run = %v", response.Result.Structured.Result.Checks)

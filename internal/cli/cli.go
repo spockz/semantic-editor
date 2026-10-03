@@ -50,17 +50,21 @@ func registerFlags(cmd *cobra.Command, params []operation.ParameterContract, val
 		if param.CLIName == "" {
 			continue
 		}
+		description := param.Description
+		if isStdinPayloadParameter(param) {
+			description += " Use - to read this payload from stdin."
+		}
 		switch param.Type {
 		case operation.ParamObject, operation.ParamArray:
-			values.json[param.CLIName] = cmd.Flags().String(param.CLIName, "", param.Description+" (JSON value)")
+			values.json[param.CLIName] = cmd.Flags().String(param.CLIName, "", description+" (JSON value)")
 		case operation.ParamBoolean:
-			values.bools[param.CLIName] = cmd.Flags().Bool(param.CLIName, boolDefault(param.Default), param.Description)
+			values.bools[param.CLIName] = cmd.Flags().Bool(param.CLIName, boolDefault(param.Default), description)
 		case operation.ParamStringSlice:
-			values.slices[param.CLIName] = cmd.Flags().StringArray(param.CLIName, nil, param.Description)
+			values.slices[param.CLIName] = cmd.Flags().StringArray(param.CLIName, nil, description)
 		case operation.ParamInteger:
-			values.ints[param.CLIName] = cmd.Flags().Int(param.CLIName, 0, param.Description)
+			values.ints[param.CLIName] = cmd.Flags().Int(param.CLIName, 0, description)
 		default:
-			values.strings[param.CLIName] = cmd.Flags().String(param.CLIName, stringDefault(param.Default), param.Description)
+			values.strings[param.CLIName] = cmd.Flags().String(param.CLIName, stringDefault(param.Default), description)
 		}
 	}
 }
@@ -293,6 +297,9 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 			if err != nil {
 				return err
 			}
+			if err := expandStdinPayloads(entry, raw, cmd.InOrStdin()); err != nil {
+				return err
+			}
 			result, err := registry.Dispatch(cc, entry.Key, raw)
 			if err != nil {
 				written, writeErr := writeMavenFailure(cmd.ErrOrStderr(), err)
@@ -330,4 +337,35 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 	}
 	registerFlags(cmd, entry.Params, values)
 	return cmd
+}
+
+func isStdinPayloadParameter(param operation.ParameterContract) bool {
+	return param.Type == operation.ParamString && (param.JSONName == "source" || param.JSONName == "body" || param.JSONName == "case")
+}
+
+func expandStdinPayloads(entry operation.Entry, raw map[string]any, input io.Reader) error {
+	flagNames := make([]string, 0, 2)
+	var consumer operation.ParameterContract
+	for _, param := range entry.Params {
+		if !isStdinPayloadParameter(param) {
+			continue
+		}
+		value, ok := raw[param.JSONName].(string)
+		if ok && value == "-" {
+			flagNames = append(flagNames, "--"+param.CLIName)
+			consumer = param
+		}
+	}
+	if len(flagNames) > 1 {
+		return fmt.Errorf("multiple stdin payload flags %s are ambiguous", strings.Join(flagNames, " and "))
+	}
+	if len(flagNames) == 0 {
+		return nil
+	}
+	payload, err := io.ReadAll(input)
+	if err != nil {
+		return fmt.Errorf("read --%s from stdin: %w", consumer.CLIName, err)
+	}
+	raw[consumer.JSONName] = string(payload)
+	return nil
 }

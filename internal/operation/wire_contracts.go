@@ -54,7 +54,7 @@ var extractInterfaceParams = []ParameterContract{
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: new simple interface identifier chosen by the caller", Required: true, Role: RoleTarget},
 	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: select the pointer or value method set of in_type", Required: true, Enums: []string{"pointer", "value"}, Role: RolePolicy},
 	{Name: "members", CLIName: "members", JSONName: "members", Type: ParamArray, Description: "Selector: nonempty closed array of exact direct method targets {file, symbol}", Required: true, Role: RoleSelector, Schema: new(contractMemberArraySchema())},
-	{Name: contractExpectedRevisionField, CLIName: "expected-revision", JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
+	{Name: contractExpectedRevisionField, CLIName: wireCLIExpectedRevision, JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
 }
 
 var implementContractParams = []ParameterContract{
@@ -65,7 +65,7 @@ var implementContractParams = []ParameterContract{
 	{Name: contractDestinationFileField, CLIName: "destination-file", JSONName: contractDestinationFileField, Type: ParamString, Description: "Target: existing same-package Go file receiving generated methods; defaults to file", Role: RoleTarget},
 	{Name: contractReceiverKindField, CLIName: "receiver-kind", JSONName: contractReceiverKindField, Type: ParamString, Description: "Policy: exact receiver method set for generated methods", Required: true, Enums: []string{"pointer", "value"}, Role: RolePolicy},
 	{Name: "body_policy", CLIName: "body-policy", JSONName: "body_policy", Type: ParamString, Description: "Policy: generated missing methods use explicit panic_stub bodies", Required: true, Enums: []string{"panic_stub"}, Role: RolePolicy},
-	{Name: contractExpectedRevisionField, CLIName: "expected-revision", JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
+	{Name: contractExpectedRevisionField, CLIName: wireCLIExpectedRevision, JSONName: contractExpectedRevisionField, Type: ParamString, Description: "Selector precondition: optional full-source digest for file", Role: RoleSelector, Schema: new(nonEmptyStringSchema())},
 }
 
 const contractReceiverKindField = "receiver_kind"

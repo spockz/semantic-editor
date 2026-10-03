@@ -3,6 +3,7 @@ package operation
 
 import (
 	"context"
+	"slices"
 
 	"semedit/internal/backend"
 )
@@ -19,6 +20,13 @@ type CallContext struct {
 	DeferVerification bool
 	// GoFormattingPaths scopes batch built-in Go formatting; nil preserves standalone scope and empty skips formatting.
 	GoFormattingPaths []string
+	// AllowedLanguages applies an ingress language policy to verification; nil leaves CLI calls unrestricted.
+	AllowedLanguages []backend.LanguageID
+}
+
+// AllowsLanguage reports whether the ingress policy permits one language.
+func (cc CallContext) AllowsLanguage(language backend.LanguageID) bool {
+	return cc.AllowedLanguages == nil || slices.Contains(cc.AllowedLanguages, language)
 }
 
 // NewCallContext builds the shared call context for one ingress request.

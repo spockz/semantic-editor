@@ -50,10 +50,11 @@ func (r *InlineFunctionReq) SetProjectContext(project backend.ProjectContext) { 
 
 // SemanticEditRes keeps the human-readable diff and typed receipt draft through finalization.
 type SemanticEditRes struct {
-	Diff    string
-	Delta   pipeline.DiagnosticDelta
-	Draft   EditReceiptDraft
-	Receipt EditReceipt
+	Diff             string
+	Delta            pipeline.DiagnosticDelta
+	DiagnosticStatus string
+	Draft            EditReceiptDraft
+	Receipt          EditReceipt
 }
 
 var inlineFunctionCallSiteSchema = ValueSchema{
@@ -68,9 +69,9 @@ var inlineFunctionCallSiteSchema = ValueSchema{
 }
 
 var inlineFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file that declares the free function being inlined", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticInlineFunctionToolName + ".result.continuations[].file"}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: unqualified free-function name to inline; the declaration is preserved", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticInlineFunctionToolName + ".result.continuations[].symbol"}},
-	{Name: wireExpectedRevision, CLIName: "expected-revision", JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol or an inline-function continuation for the callee file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticInlineFunctionToolName + ".result.continuations[].expected_revision"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: existing Go file that declares the free function being inlined", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, semanticInspectSymbolToolName + ".result.continuations[].file", semanticInlineFunctionToolName + ".result.continuations[].file"}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: unqualified free-function name to inline; the declaration is preserved", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticInspectSymbolToolName + ".result.continuations[].symbol", semanticInlineFunctionToolName + ".result.continuations[].symbol"}},
+	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol, a resolved rename continuation, or an inline-function continuation for the callee file", Role: RoleTarget, SourceFields: []string{semanticInspectSymbolToolName + ".result.continuations[].expected_revision", semanticInlineFunctionToolName + ".result.continuations[].expected_revision", sourceRenameExpectedRevision}},
 	{Name: "call_site", CLIName: "call-site", JSONName: "call_site", Type: ParamObject, Description: "Selector: closed caller-selected current call site with file, in_function, and exact discriminator. Copy file, in_function, and optional expected_revision from same-named semantic_inspect_symbol continuation fields. The discriminator is the exact direct call expression visible in the inspected owner body.", Required: true, Role: RoleSelector, Schema: &inlineFunctionCallSiteSchema},
 }
 
@@ -165,8 +166,8 @@ func runInlineFunction(ctx context.Context, cc CallContext, req InlineFunctionRe
 	if err := astedit.ApplySemanticEdit(ctx, plan); err != nil {
 		return SemanticEditRes{}, err
 	}
-	delta, _ := finishDelta()
-	return SemanticEditRes{Diff: plan.Diff, Delta: delta, Draft: draft}, nil
+	delta, diagnosticStatus := finishDelta()
+	return SemanticEditRes{Diff: plan.Diff, Delta: delta, DiagnosticStatus: diagnosticStatus, Draft: draft}, nil
 }
 
 func inlineFunctionDef() Def[InlineFunctionReq, SemanticEditRes] {
@@ -178,7 +179,11 @@ func inlineFunctionDef() Def[InlineFunctionReq, SemanticEditRes] {
 		Parse:    parseInlineFunction,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineFunctionReq) (SemanticEditRes, error){backend.LanguageGo: runInlineFunction},
 		Format: func(res SemanticEditRes) (string, error) {
-			return AppendDiagnosticDelta(fmt.Sprintf("Successfully inlined one call.\n%s", res.Diff), res.Delta), nil
+			text := "Successfully inlined one call. diagnostic_status: " + res.DiagnosticStatus + "."
+			if res.DiagnosticStatus == "changed" {
+				text = AppendDiagnosticDelta(text, res.Delta)
+			}
+			return text + "\n" + res.Diff, nil
 		},
 		ExampleRaw: map[string]any{"file": "helper.go", "symbol": "adjust", "call_site": map[string]any{"file": "caller.go", "in_function": "Run", wireDiscriminator: "adjust()"}},
 		Output: &OperationOutputContract{ResultSchema: &receiptSchema, Continuations: []OutputContinuation{
