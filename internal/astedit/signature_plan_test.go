@@ -160,6 +160,25 @@ func TestPlanIntroduceParameterObjectPreservesArgumentOrder(t *testing.T) {
 	}
 }
 
+func TestPlanIntroduceParameterObjectRefusesMethodNameCollision(t *testing.T) {
+	target := "package p\nfunc save(path string) string { return path }\n"
+	method := "package p\nfunc (s Store) saveOptions() {}\n"
+	request := ParameterObjectRequest{
+		File: "save.go", Symbol: "save", ParameterName: "options", TypeName: "saveOptions",
+		Fields: []ParameterObjectField{{SourceIndex: 0, Name: "path", Type: "string"}},
+	}
+	_, err := PlanIntroduceParameterObject(request, ParameterObjectProof{
+		Complete: true,
+		Files: []SignatureSourceFile{
+			{File: "save.go", Source: []byte(target)},
+			{File: "store.go", Source: []byte(method)},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "package name \"saveOptions\" already exists") {
+		t.Fatalf("method-name collision error = %v", err)
+	}
+}
+
 func TestSignaturePlannersRequireExplicitCompleteReadSets(t *testing.T) {
 	if _, err := PlanChangeSignature(SignatureChangeRequest{}, SignatureCallSetProof{}); err == nil {
 		t.Fatal("incomplete caller-set proof was accepted")

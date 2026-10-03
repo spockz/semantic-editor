@@ -18,44 +18,44 @@ func TestRealKotlinLanguageServerIntegration(t *testing.T) {
 	if server == "" || javaHome == "" {
 		t.Skip("set SEMEDIT_REAL_KOTLIN_LS and SEMEDIT_REAL_KOTLIN_JAVA_HOME to run the real server integration test")
 	}
-	server, err := filepath.Abs(server)
-	if err != nil {
-		t.Fatal(err)
+	server, serverPathErr := filepath.Abs(server)
+	if serverPathErr != nil {
+		t.Fatal(serverPathErr)
 	}
-	if _, err := os.Stat(server); err != nil {
-		t.Fatalf("Kotlin language server: %v", err)
+	if _, statErr := os.Stat(server); statErr != nil {
+		t.Fatalf("Kotlin language server: %v", statErr)
 	}
-	javaHome, err = filepath.Abs(javaHome)
-	if err != nil {
-		t.Fatal(err)
+	javaHome, javaHomeErr := filepath.Abs(javaHome)
+	if javaHomeErr != nil {
+		t.Fatal(javaHomeErr)
 	}
-	if _, err := os.Stat(filepath.Join(javaHome, "bin", "java")); err != nil {
-		t.Fatalf("Java runtime: %v", err)
+	if _, runtimeErr := os.Stat(filepath.Join(javaHome, "bin", "java")); runtimeErr != nil {
+		t.Fatalf("Java runtime: %v", runtimeErr)
 	}
 	t.Setenv("JAVA_HOME", javaHome)
 
-	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
-	if err != nil {
-		t.Fatal(err)
+	repoRoot, rootPathErr := filepath.Abs(filepath.Join("..", "..", ".."))
+	if rootPathErr != nil {
+		t.Fatal(rootPathErr)
 	}
 	scratch := filepath.Join(repoRoot, ".scratch")
 	if err := os.MkdirAll(scratch, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	root, err := os.MkdirTemp(scratch, "kotlin-real-integration-")
-	if err != nil {
-		t.Fatal(err)
+	root, fixtureErr := os.MkdirTemp(scratch, "kotlin-real-integration-")
+	if fixtureErr != nil {
+		t.Fatal(fixtureErr)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(root); err != nil {
-			t.Errorf("remove Kotlin integration fixture: %v", err)
+		if cleanupErr := os.RemoveAll(root); cleanupErr != nil {
+			t.Errorf("remove Kotlin integration fixture: %v", cleanupErr)
 		}
 	})
 
 	file := filepath.Join(root, "Widget.kt")
 	source := []byte("package sample\nclass Widget { fun launch() {} }\n")
-	if err := pipeline.WriteAtomic(file, source); err != nil {
-		t.Fatal(err)
+	if writeErr := pipeline.WriteAtomic(file, source); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	project := neutralbackend.ProjectContext{
 		RootDir:        root,
@@ -80,6 +80,11 @@ func TestRealKotlinLanguageServerIntegration(t *testing.T) {
 	if diagnostics == nil || len(diagnostics) != 0 {
 		t.Fatalf("real Kotlin diagnostics = %#v, want an explicit empty report", diagnostics)
 	}
+	assertKotlinIntegrationWorkspaceUnchanged(t, root, file, source)
+}
+
+func assertKotlinIntegrationWorkspaceUnchanged(t *testing.T, root, file string, source []byte) {
+	t.Helper()
 	after, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)

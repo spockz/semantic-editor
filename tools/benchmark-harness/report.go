@@ -55,46 +55,14 @@ func (rep BenchmarkReport) MarshalJSON() ([]byte, error) {
 }
 
 func convertBenchmarkDurationsToMilliseconds(value any) error {
-	switch value := value.(type) {
+	switch typed := value.(type) {
 	case []any:
-		for _, item := range value {
-			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
-				return err
-			}
-		}
+		return convertDurationChildren(typed)
 	case map[string]any:
-		for _, item := range value {
-			if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
-				return err
-			}
-		}
-
-		for _, key := range []string{
-			"wall_clock_ms",
-			"process_start_to_first_event_ms",
-			"first_event_to_first_tool_call_ms",
-			"mcp_initialize_to_first_semantic_call_ms",
-			"mcp_server_start_to_initialize_ms",
-		} {
-			if raw, ok := value[key]; ok {
-				milliseconds, err := durationNanosecondsToMilliseconds(raw)
-				if err != nil {
-					return fmt.Errorf("convert %s: %w", key, err)
-				}
-				value[key] = milliseconds
-			}
-		}
-		if _, isOracle := value["level_1_policy"]; isOracle {
-			if raw, ok := value["duration_ms"]; ok {
-				milliseconds, err := durationNanosecondsToMilliseconds(raw)
-				if err != nil {
-					return fmt.Errorf("convert oracle duration_ms: %w", err)
-				}
-				value["duration_ms"] = milliseconds
-			}
-		}
+		return convertDurationFields(typed)
+	default:
+		return nil
 	}
-	return nil
 }
 
 func durationNanosecondsToMilliseconds(raw any) (int64, error) {
@@ -103,6 +71,62 @@ func durationNanosecondsToMilliseconds(raw any) (int64, error) {
 		return 0, fmt.Errorf("expected integral duration, got %T (%v)", raw, raw)
 	}
 	return int64(nanoseconds) / int64(time.Millisecond), nil
+}
+
+func convertDurationChildren(items []any) error {
+	for _, item := range items {
+		if err := convertBenchmarkDurationsToMilliseconds(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func convertDurationFields(fields map[string]any) error {
+	for _, value := range fields {
+		if err := convertBenchmarkDurationsToMilliseconds(value); err != nil {
+			return err
+		}
+	}
+	if err := convertDurationMetricFields(fields); err != nil {
+		return err
+	}
+	if _, isOracle := fields["level_1_policy"]; isOracle {
+		return convertOracleDuration(fields)
+	}
+	return nil
+}
+
+func convertDurationMetricFields(fields map[string]any) error {
+	for _, key := range []string{
+		"wall_clock_ms",
+		"process_start_to_first_event_ms",
+		"first_event_to_first_tool_call_ms",
+		"mcp_initialize_to_first_semantic_call_ms",
+		"mcp_server_start_to_initialize_ms",
+	} {
+		if raw, exists := fields[key]; exists {
+			milliseconds, err := durationNanosecondsToMilliseconds(raw)
+			if err != nil {
+				return fmt.Errorf("convert %s: %w", key, err)
+			}
+			fields[key] = milliseconds
+		}
+	}
+	return nil
+}
+
+func convertOracleDuration(fields map[string]any) error {
+	raw, exists := fields["duration_ms"]
+	if !exists {
+		return nil
+	}
+	milliseconds, err := durationNanosecondsToMilliseconds(raw)
+	if err != nil {
+		return fmt.Errorf("convert oracle duration_ms: %w", err)
+	}
+	fields["duration_ms"] = milliseconds
+	return nil
 }
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
@@ -327,90 +351,113 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 			currentTaskID = comp.TaskID
 			currentTarget = ""
 		}
-
-		targetStr := comp.Target.String()
-		if comp.Repeat > 0 {
-			targetStr = fmt.Sprintf("%s (repeat %d)", targetStr, comp.Repeat)
-		}
+		targetStr := comparisonTargetLabel(comp)
 		if targetStr != currentTarget {
 			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
 			currentTarget = targetStr
 		}
-		fmt.Fprintf(&sb, "#### Configuration: %s\n\n", formatConfiguration(comp))
-		if provenance := comp.Provenance.String(); provenance != "" {
-			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
-		}
-
-		switch {
-		case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
-			fmt.Fprintf(&sb, "* **Fixture**: [%s](%s)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarProvenance != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s` (`%s`)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarPath != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s`\n\n", comp.TxtarPath)
-		}
-
-		if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
-			writePrompt(&sb, "LLM Prompt", comp.VanillaPrompt)
-		} else {
-			if comp.VanillaPrompt != "" {
-				writePrompt(&sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
-			}
-			if comp.MCPPrompt != "" {
-				writePrompt(&sb, "Semedit MCP Prompt", comp.MCPPrompt)
-			}
-		}
-
-		hasVerified := comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
-			comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
-
-		if hasVerified {
-			if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
-				writePrompt(&sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
-			} else {
-				if comp.VanillaVerifiedPrompt != "" {
-					writePrompt(&sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
-				}
-				if comp.MCPVerifiedPrompt != "" {
-					writePrompt(&sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
-				}
-			}
-		}
-
-		if comp.BeforeState != "" {
-			sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
-			sb.WriteString(comp.BeforeState)
-			sb.WriteString("\n```\n</details>\n\n")
-		}
-
-		// 1. Standard Comparison Table (Unverified)
-		hasStandard := comp.SmallBaseline != nil || comp.SmallSemedit != nil ||
-			comp.LargeBaseline != nil || comp.LargeSemedit != nil
-
-		if hasStandard {
-			renderComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDiffSection(&sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
-			renderDiffSection(&sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
-			renderSemanticToolReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
-			renderSemanticToolReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
-			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
-			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
-		}
-
-		// 2. Verified Directive Comparison Table
-		if hasVerified {
-			sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
-			renderComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDiffSection(&sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDiffSection(&sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderSemanticToolReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
-			renderSemanticToolReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
-			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
-			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
-		}
+		renderComparisonMarkdown(&sb, comp)
 	}
 
 	return sb.String()
+}
+
+func comparisonTargetLabel(comp *ComparisonSummary) string {
+	target := comp.Target.String()
+	if comp.Repeat > 0 {
+		return fmt.Sprintf("%s (repeat %d)", target, comp.Repeat)
+	}
+	return target
+}
+
+func renderComparisonMarkdown(sb *strings.Builder, comp *ComparisonSummary) {
+	renderComparisonIdentity(sb, comp)
+	renderComparisonPrompts(sb, comp)
+	renderComparisonState(sb, comp)
+	renderStandardSections(sb, comp)
+	renderVerifiedSections(sb, comp)
+}
+
+func renderComparisonIdentity(sb *strings.Builder, comp *ComparisonSummary) {
+	fmt.Fprintf(sb, "#### Configuration: %s\n\n", formatConfiguration(comp))
+	if provenance := comp.Provenance.String(); provenance != "" {
+		fmt.Fprintf(sb, "* **Run Provenance**: `%s`\n\n", provenance)
+	}
+	switch {
+	case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
+		fmt.Fprintf(sb, "* **Fixture**: [%s](%s)\n\n", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarProvenance != "":
+		fmt.Fprintf(sb, "* **Fixture**: `%s` (`%s`)\n\n", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarPath != "":
+		fmt.Fprintf(sb, "* **Fixture**: `%s`\n\n", comp.TxtarPath)
+	}
+}
+
+func renderComparisonPrompts(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
+		writePrompt(sb, "LLM Prompt", comp.VanillaPrompt)
+	} else {
+		if comp.VanillaPrompt != "" {
+			writePrompt(sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
+		}
+		if comp.MCPPrompt != "" {
+			writePrompt(sb, "Semedit MCP Prompt", comp.MCPPrompt)
+		}
+	}
+	if !hasVerifiedComparisons(comp) {
+		return
+	}
+	if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
+		writePrompt(sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
+		return
+	}
+	if comp.VanillaVerifiedPrompt != "" {
+		writePrompt(sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
+	}
+	if comp.MCPVerifiedPrompt != "" {
+		writePrompt(sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
+	}
+}
+
+func renderComparisonState(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.BeforeState == "" {
+		return
+	}
+	sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
+	sb.WriteString(comp.BeforeState)
+	sb.WriteString("\n```\n</details>\n\n")
+}
+
+func hasVerifiedComparisons(comp *ComparisonSummary) bool {
+	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
+		comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
+}
+
+func renderStandardSections(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.SmallBaseline == nil && comp.SmallSemedit == nil && comp.LargeBaseline == nil && comp.LargeSemedit == nil {
+		return
+	}
+	renderComparisonTable(sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+	renderDiffSection(sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
+	renderDiffSection(sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+	renderSemanticToolReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderSemanticToolReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+	renderSemanticBatchReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderSemanticBatchReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+}
+
+func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
+	if !hasVerifiedComparisons(comp) {
+		return
+	}
+	sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
+	renderComparisonTable(sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	renderDiffSection(sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+	renderDiffSection(sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	renderSemanticToolReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderSemanticToolReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
+	renderSemanticBatchReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderSemanticBatchReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 }
 
 func writePrompt(sb *strings.Builder, label, prompt string) {
@@ -492,101 +539,91 @@ func renderSemanticBatchCallout(sb *strings.Builder, response string) {
 func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunResult) {
 	fmt.Fprintf(sb, "| Metric | Vanilla (Small) | %s | Δ (Small) | Vanilla (Large) | %s | Δ (Large) |\n", mcpColumnHeader("Small", smRun), mcpColumnHeader("Large", lmRun))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
-
-	// 1. Wall-Clock Latency
-	sb.WriteString(formatMetricRowDuration("Wall-Clock Latency",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) time.Duration { return r.WallClock }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("Process Start → First Event",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("First Event → First Tool Call",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("MCP Server Start → Initialize",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.MCPServerStartToInitialize }))
-
-	// 2. Interaction Turns & Cycles Breakdown
-	sb.WriteString(formatMetricRowInt("Top-Level User Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.Turns }))
-
-	sb.WriteString(formatMetricRowInt("Internal Tool Cycles",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.InternalTurns }))
-
-	sb.WriteString(formatMetricRowInt("Initial Load / Discovery Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.InitialLoadTurns }))
-
-	sb.WriteString(formatMetricRowInt("MCP Discovery / Schema Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.MCPLoadTurns }))
-
-	sb.WriteString(formatMetricRowInt("Total Tool Invocations",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.ToolCount }))
-
-	// 3. Output Tokens
-	sb.WriteString(formatMetricRowInt("Output Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.OutputTokens }))
-
-	// 4. Reasoning / Thinking Tokens
-	sb.WriteString(formatMetricRowInt("Reasoning / Thinking Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.ReasoningTokens }))
-
-	// 5. Total Input Tokens
-	sb.WriteString(formatMetricRowInt("Total Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.PromptTokens }))
-
-	// 6. Cached Input Tokens
-	sb.WriteString(formatMetricRowIntWithDirection("Cached Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.CachedPromptTokens }, deltaHigherIsBetter))
-
-	// 7. Uncached Input Tokens
-	sb.WriteString(formatMetricRowInt("Uncached Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.UncachedPromptTokens }))
-
-	sb.WriteString(formatCachedToUncachedRatioRow(sbRun, smRun, lbRun, lmRun))
-
-	// 8. Oracle L1: Mutation Policy
-	sb.WriteString(formatOracleRow("Oracle L1: Mutation Policy",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level1Policy }))
-
-	// 9. Oracle L2: AST Invariants
-	sb.WriteString(formatOracleRow("Oracle L2: AST Invariants",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level2AST }))
-
-	// 10. Oracle L3: Clean Build
-	sb.WriteString(formatOracleRow("Oracle L3: Clean Build",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level3Build }))
-
-	// 11. Oracle L4: Verification Test
-	sb.WriteString(formatOracleRow("Oracle L4: Verification Test",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level4Test }))
-
-	// 12. MCP Tool Invocation Verified
-	sb.WriteString(formatMCPVerifiedRow("MCP Tools Invocation Verified",
-		sbRun, smRun, lbRun, lmRun))
-
+	runs := benchmarkComparisonRuns{smallBaseline: sbRun, smallSemedit: smRun, largeBaseline: lbRun, largeSemedit: lmRun}
+	renderTimingComparisonRows(sb, runs)
+	renderInteractionComparisonRows(sb, runs)
+	renderTokenComparisonRows(sb, runs)
+	renderOracleComparisonRows(sb, runs)
 	sb.WriteString("\n")
+}
+
+type benchmarkComparisonRuns struct {
+	smallBaseline *RunResult
+	smallSemedit  *RunResult
+	largeBaseline *RunResult
+	largeSemedit  *RunResult
+}
+
+func renderTimingComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowDuration("Wall-Clock Latency",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) time.Duration { return r.WallClock }))
+	sb.WriteString(formatMetricRowOptionalDuration("Process Start → First Event",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
+	sb.WriteString(formatMetricRowOptionalDuration("First Event → First Tool Call",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Server Start → Initialize",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.MCPServerStartToInitialize }))
+}
+
+func renderInteractionComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowInt("Top-Level User Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.Turns }))
+	sb.WriteString(formatMetricRowInt("Internal Tool Cycles",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.InternalTurns }))
+	sb.WriteString(formatMetricRowInt("Initial Load / Discovery Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.InitialLoadTurns }))
+	sb.WriteString(formatMetricRowInt("MCP Discovery / Schema Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.MCPLoadTurns }))
+	sb.WriteString(formatMetricRowInt("Total Tool Invocations",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.ToolCount }))
+}
+
+func renderTokenComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowInt("Output Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.OutputTokens }))
+	sb.WriteString(formatMetricRowInt("Reasoning / Thinking Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.ReasoningTokens }))
+	sb.WriteString(formatMetricRowInt("Total Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.PromptTokens }))
+	sb.WriteString(formatMetricRowIntWithDirection("Cached Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.CachedPromptTokens }, deltaHigherIsBetter))
+	sb.WriteString(formatMetricRowInt("Uncached Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.UncachedPromptTokens }))
+	sb.WriteString(formatCachedToUncachedRatioRow(runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
+}
+
+func renderOracleComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatOracleRow("Oracle L1: Mutation Policy",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level1Policy }))
+	sb.WriteString(formatOracleRow("Oracle L2: AST Invariants",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level2AST }))
+	sb.WriteString(formatOracleRow("Oracle L3: Clean Build",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level3Build }))
+	sb.WriteString(formatOracleRow("Oracle L4: Verification Test",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level4Test }))
+	sb.WriteString(formatMCPVerifiedRow("MCP Tools Invocation Verified",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
 }
 
 func mcpColumnHeader(context string, run *RunResult) string {
@@ -991,63 +1028,69 @@ func formatDelta(pct, diff float64, direction deltaDirection, mcpVerified bool) 
 }
 
 func assignComparisonRun(comp *ComparisonSummary, r *RunResult) {
-	variant := strings.ToLower(r.Variant)
-	if idx := strings.Index(variant, ":"); idx >= 0 {
-		variant = variant[:idx]
-	}
-	if variant == "" {
-		if strings.Contains(r.TaskID, "large") {
-			variant = "large"
-		} else {
-			variant = "small"
-		}
-	}
-
-	isLarge := strings.Contains(variant, "large")
-	isVerified := strings.Contains(variant, "verified")
-
+	variant := comparisonRunVariantFor(r)
 	switch r.Arm {
 	case ArmBaseline:
-		if isVerified {
-			if comp.VanillaVerifiedPrompt == "" && r.Prompt != "" {
-				comp.VanillaVerifiedPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeVerifiedBaseline = r
-			} else {
-				comp.SmallVerifiedBaseline = r
-			}
-		} else {
-			if comp.VanillaPrompt == "" && r.Prompt != "" {
-				comp.VanillaPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeBaseline = r
-			} else {
-				comp.SmallBaseline = r
-			}
-		}
+		assignBaselineComparisonRun(comp, r, variant)
 	case ArmSemedit, ArmControl:
-		if isVerified {
-			if comp.MCPVerifiedPrompt == "" && r.Prompt != "" {
-				comp.MCPVerifiedPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeVerifiedSemedit = r
-			} else {
-				comp.SmallVerifiedSemedit = r
-			}
-		} else {
-			if comp.MCPPrompt == "" && r.Prompt != "" {
-				comp.MCPPrompt = r.Prompt
-			}
-			if isLarge {
-				comp.LargeSemedit = r
-			} else {
-				comp.SmallSemedit = r
-			}
+		assignSemeditComparisonRun(comp, r, variant)
+	}
+}
+
+type comparisonRunVariant struct {
+	large    bool
+	verified bool
+}
+
+func comparisonRunVariantFor(run *RunResult) comparisonRunVariant {
+	variant := strings.ToLower(run.Variant)
+	if index := strings.Index(variant, ":"); index >= 0 {
+		variant = variant[:index]
+	}
+	if variant == "" {
+		variant = "small"
+		if strings.Contains(run.TaskID, "large") {
+			variant = "large"
 		}
 	}
+	return comparisonRunVariant{
+		large:    strings.Contains(variant, "large"),
+		verified: strings.Contains(variant, "verified"),
+	}
+}
+
+func assignBaselineComparisonRun(comparison *ComparisonSummary, run *RunResult, variant comparisonRunVariant) {
+	if variant.verified {
+		assignComparisonPrompt(&comparison.VanillaVerifiedPrompt, run.Prompt)
+		assignComparisonRunSlot(&comparison.SmallVerifiedBaseline, &comparison.LargeVerifiedBaseline, run, variant.large)
+		return
+	}
+	assignComparisonPrompt(&comparison.VanillaPrompt, run.Prompt)
+	assignComparisonRunSlot(&comparison.SmallBaseline, &comparison.LargeBaseline, run, variant.large)
+}
+
+func assignSemeditComparisonRun(comparison *ComparisonSummary, run *RunResult, variant comparisonRunVariant) {
+	if variant.verified {
+		assignComparisonPrompt(&comparison.MCPVerifiedPrompt, run.Prompt)
+		assignComparisonRunSlot(&comparison.SmallVerifiedSemedit, &comparison.LargeVerifiedSemedit, run, variant.large)
+		return
+	}
+	assignComparisonPrompt(&comparison.MCPPrompt, run.Prompt)
+	assignComparisonRunSlot(&comparison.SmallSemedit, &comparison.LargeSemedit, run, variant.large)
+}
+
+func assignComparisonPrompt(current *string, prompt string) {
+	if *current == "" && prompt != "" {
+		*current = prompt
+	}
+}
+
+func assignComparisonRunSlot(small, large **RunResult, run *RunResult, isLarge bool) {
+	if isLarge {
+		*large = run
+		return
+	}
+	*small = run
 }
 
 func comparisonTaskIdentity(run *RunResult) string {

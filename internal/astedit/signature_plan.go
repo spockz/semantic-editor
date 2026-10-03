@@ -97,149 +97,219 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 	if request.File == "" || request.Symbol == "" {
 		return SignaturePlan{}, fmt.Errorf("change signature: file and symbol are required")
 	}
-	files, err := signatureSourceMap(proof.Files)
+	target, err := captureSignatureTarget(request, proof)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
-	target, ok := files[request.File]
-	if !ok {
-		return SignaturePlan{}, fmt.Errorf("change signature: target file %q is absent from the read set", request.File)
-	}
-	if request.ExpectedRevision != "" && request.ExpectedRevision != signatureRevision(target) {
-		return SignaturePlan{}, fmt.Errorf("change signature: selected file revision is stale")
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, request.File, target, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: parse target file: %w", err)
-	}
-	fn, err := signatureTarget(file, request.Symbol)
+	added, err := validateSignatureMappings(request, target.parameters)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
-	oldParameters, err := signatureParameters(fset, fn.Type.Params)
-	if err != nil {
-		return SignaturePlan{}, err
-	}
-	if len(request.Parameters) == len(oldParameters) {
-		for index, old := range oldParameters {
-			mapping := request.Parameters[index]
-			if mapping.SourceIndex == nil || *mapping.SourceIndex != index || mapping.Name != old.Name || mapping.Type != old.Type || mapping.Variadic != old.Variadic || mapping.Argument != "" {
-				return SignaturePlan{}, fmt.Errorf("change signature: same-signature mappings must preserve every original parameter without arguments")
-			}
-		}
+	if added.unchanged {
 		return SignaturePlan{}, nil
 	}
-	if len(request.Parameters) != len(oldParameters)+1 {
-		return SignaturePlan{}, fmt.Errorf("change signature: release one requires every existing parameter and exactly one appended parameter, or the unchanged signature")
-	}
-	for _, parameter := range oldParameters {
-		if parameter.Variadic {
-			return SignaturePlan{}, fmt.Errorf("change signature: appending after a variadic parameter is unsupported")
-		}
-	}
-	for index, old := range oldParameters {
-		mapping := request.Parameters[index]
-		if mapping.SourceIndex == nil || *mapping.SourceIndex != index || mapping.Name != old.Name || mapping.Type != old.Type || mapping.Variadic != old.Variadic || mapping.Argument != "" {
-			return SignaturePlan{}, fmt.Errorf("change signature: parameter %d must preserve its original index, name, type, and variadic status", index)
-		}
-	}
-	added := request.Parameters[len(oldParameters)]
-	if added.SourceIndex != nil || !signatureIdentifier(added.Name) || added.Name == "_" || added.Type == "" || added.Variadic {
-		return SignaturePlan{}, fmt.Errorf("change signature: one valid non-variadic appended parameter is required")
-	}
-	if err := signatureParseType(added.Type); err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: invalid appended parameter type: %w", err)
-	}
-	if err := signatureClosedArgument(added.Argument); err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: appended argument is unsupported: %w", err)
-	}
-	for _, parameter := range oldParameters {
-		if parameter.Name == added.Name {
-			return SignaturePlan{}, fmt.Errorf("change signature: appended parameter %q duplicates an existing name", added.Name)
-		}
-	}
-	targetTokenFile := fset.File(file.Pos())
-	if targetTokenFile == nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: target token positions are unavailable")
-	}
-	paramClose := targetTokenFile.Offset(fn.Type.Params.Closing)
-	paramOpen := targetTokenFile.Offset(fn.Type.Params.Opening)
-	parameterInsertion, parameterText, err := signatureAppendInsertion(target, paramOpen+1, paramClose, added.Name+" "+added.Type, fn.Type.Params.NumFields() > 0)
+	edits, err := buildSignatureEdits(request, proof, target, added.parameter)
 	if err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: append parameter: %w", err)
-	}
-	edits := map[string][]signatureSourceEdit{request.File: {{Start: parameterInsertion, End: parameterInsertion, Replacement: parameterText}}}
-	for _, callSite := range proof.Calls {
-		source, exists := files[callSite.File]
-		if !exists {
-			return SignaturePlan{}, fmt.Errorf("change signature: caller %q is absent from the explicit read set", callSite.File)
-		}
-		if callSite.Start < 0 || callSite.End <= callSite.Start || callSite.End > len(source) {
-			return SignaturePlan{}, fmt.Errorf("change signature: caller range in %q is invalid", callSite.File)
-		}
-		callSource := source[callSite.Start:callSite.End]
-		callSet := token.NewFileSet()
-		call, err := parser.ParseExprFrom(callSet, callSite.File, callSource, parser.ParseComments)
-		if err != nil {
-			return SignaturePlan{}, fmt.Errorf("change signature: parse proven caller in %q: %w", callSite.File, err)
-		}
-		callExpr, ok := call.(*ast.CallExpr)
-		if !ok || !callExpr.Rparen.IsValid() || !signatureCallsTarget(callExpr.Fun, fn.Name.Name) {
-			return SignaturePlan{}, fmt.Errorf("change signature: proof contains a non-direct call to %q in %q", request.Symbol, callSite.File)
-		}
-		if len(callExpr.Args) != len(oldParameters) {
-			return SignaturePlan{}, fmt.Errorf("change signature: call in %q has %d arguments; expected %d", callSite.File, len(callExpr.Args), len(oldParameters))
-		}
-		if bytes.Contains(callSource, []byte("//")) || bytes.Contains(callSource, []byte("/*")) {
-			return SignaturePlan{}, fmt.Errorf("change signature: calls containing comments are outside the supported scope")
-		}
-		end := callSite.End - 1
-		if source[end] != ')' {
-			return SignaturePlan{}, fmt.Errorf("change signature: caller range in %q must end at the call's closing parenthesis", callSite.File)
-		}
-		callTokenFile := callSet.File(call.Pos())
-		if callTokenFile == nil {
-			return SignaturePlan{}, fmt.Errorf("change signature: caller token positions are unavailable")
-		}
-		callOpen := callSite.Start + callTokenFile.Offset(callExpr.Lparen)
-		insertion, insertionText, err := signatureAppendInsertion(source, callOpen+1, end, added.Argument, len(callExpr.Args) > 0)
-		if err != nil {
-			return SignaturePlan{}, fmt.Errorf("change signature: append caller argument in %q: %w", callSite.File, err)
-		}
-		edits[callSite.File] = append(edits[callSite.File], signatureSourceEdit{Start: insertion, End: insertion, Replacement: insertionText})
+		return SignaturePlan{}, err
 	}
 	return signatureBuildPlan(proof.Files, edits)
 }
 
-// PlanIntroduceParameter plans a typed constant move and its caller updates.
-func PlanIntroduceParameter(request IntroduceParameterRequest, proof SignatureCallSetProof) (SignaturePlan, error) {
-	if request.Expression == "" || request.ParameterName == "" {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: selected expression and parameter name are required")
+type signatureTargetContext struct {
+	files      map[string][]byte
+	source     []byte
+	fset       *token.FileSet
+	file       *ast.File
+	function   *ast.FuncDecl
+	parameters []SignatureParameter
+}
+
+func captureSignatureTarget(request SignatureChangeRequest, proof SignatureCallSetProof) (signatureTargetContext, error) {
+	files, err := signatureSourceMap(proof.Files)
+	if err != nil {
+		return signatureTargetContext{}, err
 	}
-	evidence := request.Constant
-	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
+	target, ok := files[request.File]
+	if !ok {
+		return signatureTargetContext{}, fmt.Errorf("change signature: target file %q is absent from the read set", request.File)
 	}
-	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
+	if request.ExpectedRevision != "" && request.ExpectedRevision != signatureRevision(target) {
+		return signatureTargetContext{}, fmt.Errorf("change signature: selected file revision is stale")
 	}
-	added := false
-	for _, mapping := range request.Signature.Parameters {
-		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
-			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
-				return SignaturePlan{}, fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, request.File, target, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return signatureTargetContext{}, fmt.Errorf("change signature: parse target file: %w", err)
+	}
+	fn, err := signatureTarget(file, request.Symbol)
+	if err != nil {
+		return signatureTargetContext{}, err
+	}
+	parameters, err := signatureParameters(fset, fn.Type.Params)
+	if err != nil {
+		return signatureTargetContext{}, err
+	}
+	return signatureTargetContext{files: files, source: target, fset: fset, file: file, function: fn, parameters: parameters}, nil
+}
+
+type signatureAddedParameter struct {
+	parameter SignatureParameterMapping
+	unchanged bool
+}
+
+func validateSignatureMappings(request SignatureChangeRequest, original []SignatureParameter) (signatureAddedParameter, error) {
+	if len(request.Parameters) == len(original) {
+		for index, parameter := range original {
+			if !signatureMappingPreserves(request.Parameters[index], parameter, index) || request.Parameters[index].Argument != "" {
+				return signatureAddedParameter{}, fmt.Errorf("change signature: same-signature mappings must preserve every original parameter without arguments")
 			}
-			added = true
+		}
+		return signatureAddedParameter{unchanged: true}, nil
+	}
+	if len(request.Parameters) != len(original)+1 {
+		return signatureAddedParameter{}, fmt.Errorf("change signature: release one requires every existing parameter and exactly one appended parameter, or the unchanged signature")
+	}
+	for _, parameter := range original {
+		if parameter.Variadic {
+			return signatureAddedParameter{}, fmt.Errorf("change signature: appending after a variadic parameter is unsupported")
 		}
 	}
-	if !added {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	for index, parameter := range original {
+		mapping := request.Parameters[index]
+		if !signatureMappingPreserves(mapping, parameter, index) || mapping.Argument != "" {
+			return signatureAddedParameter{}, fmt.Errorf("change signature: parameter %d must preserve its original index, name, type, and variadic status", index)
+		}
+	}
+	added := request.Parameters[len(original)]
+	if err := validateAddedSignatureParameter(added, original); err != nil {
+		return signatureAddedParameter{}, err
+	}
+	return signatureAddedParameter{parameter: added}, nil
+}
+
+func signatureMappingPreserves(mapping SignatureParameterMapping, original SignatureParameter, index int) bool {
+	return mapping.SourceIndex != nil && *mapping.SourceIndex == index && mapping.Name == original.Name && mapping.Type == original.Type && mapping.Variadic == original.Variadic
+}
+
+func validateAddedSignatureParameter(added SignatureParameterMapping, original []SignatureParameter) error {
+	if added.SourceIndex != nil || !signatureIdentifier(added.Name) || added.Name == "_" || added.Type == "" || added.Variadic {
+		return fmt.Errorf("change signature: one valid non-variadic appended parameter is required")
+	}
+	if err := signatureParseType(added.Type); err != nil {
+		return fmt.Errorf("change signature: invalid appended parameter type: %w", err)
+	}
+	if err := signatureClosedArgument(added.Argument); err != nil {
+		return fmt.Errorf("change signature: appended argument is unsupported: %w", err)
+	}
+	for _, parameter := range original {
+		if parameter.Name == added.Name {
+			return fmt.Errorf("change signature: appended parameter %q duplicates an existing name", added.Name)
+		}
+	}
+	return nil
+}
+
+func buildSignatureEdits(request SignatureChangeRequest, proof SignatureCallSetProof, target signatureTargetContext, added SignatureParameterMapping) (map[string][]signatureSourceEdit, error) {
+	targetTokenFile := target.fset.File(target.file.Pos())
+	if targetTokenFile == nil {
+		return nil, fmt.Errorf("change signature: target token positions are unavailable")
+	}
+	paramClose := targetTokenFile.Offset(target.function.Type.Params.Closing)
+	paramOpen := targetTokenFile.Offset(target.function.Type.Params.Opening)
+	parameterInsertion, parameterText, err := signatureAppendInsertion(target.source, paramOpen+1, paramClose, added.Name+" "+added.Type, target.function.Type.Params.NumFields() > 0)
+	if err != nil {
+		return nil, fmt.Errorf("change signature: append parameter: %w", err)
+	}
+	edits := map[string][]signatureSourceEdit{request.File: {{Start: parameterInsertion, End: parameterInsertion, Replacement: parameterText}}}
+	for _, callSite := range proof.Calls {
+		source, exists := target.files[callSite.File]
+		if !exists {
+			return nil, fmt.Errorf("change signature: caller %q is absent from the explicit read set", callSite.File)
+		}
+		callEdit, err := buildSignatureCallEdit(callSite, source, target.function.Name.Name, request.Symbol, len(target.parameters), added.Argument)
+		if err != nil {
+			return nil, err
+		}
+		edits[callSite.File] = append(edits[callSite.File], callEdit)
+	}
+	return edits, nil
+}
+
+func buildSignatureCallEdit(callSite SignatureCallSite, source []byte, functionName, symbol string, parameterCount int, addedArgument string) (signatureSourceEdit, error) {
+	if callSite.Start < 0 || callSite.End <= callSite.Start || callSite.End > len(source) {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: caller range in %q is invalid", callSite.File)
+	}
+	callSource := source[callSite.Start:callSite.End]
+	callSet := token.NewFileSet()
+	call, err := parser.ParseExprFrom(callSet, callSite.File, callSource, parser.ParseComments)
+	if err != nil {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: parse proven caller in %q: %w", callSite.File, err)
+	}
+	callExpr, ok := call.(*ast.CallExpr)
+	if !ok || !callExpr.Rparen.IsValid() || !signatureCallsTarget(callExpr.Fun, functionName) {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: proof contains a non-direct call to %q in %q", symbol, callSite.File)
+	}
+	if len(callExpr.Args) != parameterCount {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: call in %q has %d arguments; expected %d", callSite.File, len(callExpr.Args), parameterCount)
+	}
+	if bytes.Contains(callSource, []byte("//")) || bytes.Contains(callSource, []byte("/*")) {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: calls containing comments are outside the supported scope")
+	}
+	end := callSite.End - 1
+	if source[end] != ')' {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: caller range in %q must end at the call's closing parenthesis", callSite.File)
+	}
+	callTokenFile := callSet.File(call.Pos())
+	if callTokenFile == nil {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: caller token positions are unavailable")
+	}
+	callOpen := callSite.Start + callTokenFile.Offset(callExpr.Lparen)
+	insertion, insertionText, err := signatureAppendInsertion(source, callOpen+1, end, addedArgument, len(callExpr.Args) > 0)
+	if err != nil {
+		return signatureSourceEdit{}, fmt.Errorf("change signature: append caller argument in %q: %w", callSite.File, err)
+	}
+	return signatureSourceEdit{Start: insertion, End: insertion, Replacement: insertionText}, nil
+}
+
+// PlanIntroduceParameter plans a typed constant move and its caller updates.
+func PlanIntroduceParameter(request IntroduceParameterRequest, proof SignatureCallSetProof) (SignaturePlan, error) {
+	if err := validateIntroducedParameterEvidence(request); err != nil {
+		return SignaturePlan{}, err
 	}
 	plan, err := PlanChangeSignature(request.Signature, proof)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
+	return replaceIntroducedParameterExpression(plan, request)
+}
+
+func validateIntroducedParameterEvidence(request IntroduceParameterRequest) error {
+	if request.Expression == "" || request.ParameterName == "" {
+		return fmt.Errorf("introduce parameter: selected expression and parameter name are required")
+	}
+	evidence := request.Constant
+	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
+		return fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
+	}
+	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
+		return fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
+	}
+	added := false
+	for _, mapping := range request.Signature.Parameters {
+		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
+			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
+				return fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
+			}
+			added = true
+		}
+	}
+	if !added {
+		return fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	}
+	return nil
+}
+
+func replaceIntroducedParameterExpression(plan SignaturePlan, request IntroduceParameterRequest) (SignaturePlan, error) {
 	var target *SignaturePlannedFile
 	for index := range plan.Files {
 		if plan.Files[index].File == request.Signature.File {
@@ -453,31 +523,21 @@ func signatureNoPackageNameCollision(inputs []SignatureSourceFile, name string) 
 		if err != nil {
 			return fmt.Errorf("introduce parameter object: parse read-set file %q: %w", input.File, err)
 		}
-		for _, decl := range file.Decls {
-			switch value := decl.(type) {
-			case *ast.FuncDecl:
-				if value.Name.Name == name {
-					return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-				}
-			case *ast.GenDecl:
-				for _, spec := range value.Specs {
-					switch item := spec.(type) {
-					case *ast.TypeSpec:
-						if item.Name.Name == name {
-							return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-						}
-					case *ast.ValueSpec:
-						for _, identifier := range item.Names {
-							if identifier.Name == name {
-								return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-							}
-						}
-					}
-				}
-			}
+		if packageDeclaresName(file.Decls, name) || signatureHasMethodName(file, name) {
+			return fmt.Errorf("introduce parameter object: package name %q already exists", name)
 		}
 	}
 	return nil
+}
+
+func signatureHasMethodName(file *ast.File, name string) bool {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv != nil && nodeDeclaresName(function, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func signatureAppendDeclaration(source []byte, declaration string) string {
@@ -549,56 +609,100 @@ type ParameterObjectProof struct {
 
 // PlanIntroduceParameterObject plans an all-parameter conversion and keyed caller literals.
 func PlanIntroduceParameterObject(request ParameterObjectRequest, proof ParameterObjectProof) (SignaturePlan, error) {
-	if !proof.Complete {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: complete caller and body-binding proof is required")
+	if err := validateParameterObjectRequest(request, proof); err != nil {
+		return SignaturePlan{}, err
 	}
-	if request.File == "" || request.Symbol == "" || !signatureIdentifier(request.ParameterName) || !signatureIdentifier(request.TypeName) {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: file, symbol, and valid object names are required")
-	}
-	if request.ParameterName == "_" || request.TypeName == "_" || ast.IsExported(request.ParameterName) || ast.IsExported(request.TypeName) {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: the callable parameter and object type must be private identifiers")
-	}
-	files, err := signatureSourceMap(proof.Files)
+	target, err := captureParameterObjectTarget(request, proof)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
+	fields, err := buildParameterObjectFields(request, target.parameters)
+	if err != nil {
+		return SignaturePlan{}, err
+	}
+	if collisionErr := signatureNoPackageNameCollision(proof.Files, request.TypeName); collisionErr != nil {
+		return SignaturePlan{}, collisionErr
+	}
+	edits, err := buildParameterObjectEdits(request, proof, target, fields)
+	if err != nil {
+		return SignaturePlan{}, err
+	}
+	return signatureBuildPlan(proof.Files, edits)
+}
+
+func validateParameterObjectRequest(request ParameterObjectRequest, proof ParameterObjectProof) error {
+	if !proof.Complete {
+		return fmt.Errorf("introduce parameter object: complete caller and body-binding proof is required")
+	}
+	if request.File == "" || request.Symbol == "" || !signatureIdentifier(request.ParameterName) || !signatureIdentifier(request.TypeName) {
+		return fmt.Errorf("introduce parameter object: file, symbol, and valid object names are required")
+	}
+	if request.ParameterName == "_" || request.TypeName == "_" || ast.IsExported(request.ParameterName) || ast.IsExported(request.TypeName) {
+		return fmt.Errorf("introduce parameter object: the callable parameter and object type must be private identifiers")
+	}
+	return nil
+}
+
+type parameterObjectTarget struct {
+	files      map[string][]byte
+	source     []byte
+	fset       *token.FileSet
+	file       *ast.File
+	function   *ast.FuncDecl
+	parameters []SignatureParameter
+}
+
+func captureParameterObjectTarget(request ParameterObjectRequest, proof ParameterObjectProof) (parameterObjectTarget, error) {
+	files, err := signatureSourceMap(proof.Files)
+	if err != nil {
+		return parameterObjectTarget{}, err
+	}
 	source, ok := files[request.File]
 	if !ok {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: target file is absent from the explicit read set")
+		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: target file is absent from the explicit read set")
 	}
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, request.File, source, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: parse target file: %w", err)
+		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: parse target file: %w", err)
 	}
 	fn, err := signatureTarget(file, request.Symbol)
 	if err != nil {
-		return SignaturePlan{}, err
+		return parameterObjectTarget{}, err
 	}
 	parameters, err := signatureParameters(fset, fn.Type.Params)
 	if err != nil {
-		return SignaturePlan{}, err
+		return parameterObjectTarget{}, err
 	}
 	if len(parameters) == 0 || len(parameters) != len(request.Fields) {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: every original parameter must map to one field")
+		return parameterObjectTarget{}, fmt.Errorf("introduce parameter object: every original parameter must map to one field")
 	}
+	return parameterObjectTarget{files: files, source: source, fset: fset, file: file, function: fn, parameters: parameters}, nil
+}
+
+type parameterObjectFields struct {
+	byIndex     map[int]ParameterObjectField
+	declaration string
+}
+
+func buildParameterObjectFields(request ParameterObjectRequest, parameters []SignatureParameter) (parameterObjectFields, error) {
 	fieldByIndex := make(map[int]ParameterObjectField, len(request.Fields))
 	fieldNames := make(map[string]bool, len(request.Fields))
 	var structSource strings.Builder
 	fmt.Fprintf(&structSource, "type %s struct {\n", request.TypeName)
 	for _, field := range request.Fields {
 		if field.SourceIndex < 0 || field.SourceIndex >= len(parameters) || field.SourceIndex != len(fieldByIndex) {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: fields must map every source index exactly once in original order")
+			return parameterObjectFields{}, fmt.Errorf("introduce parameter object: fields must map every source index exactly once in original order")
 		}
 		if !signatureIdentifier(field.Name) || field.Name == "_" || ast.IsExported(field.Name) || fieldNames[field.Name] {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: field names must be unique private identifiers")
+			return parameterObjectFields{}, fmt.Errorf("introduce parameter object: field names must be unique private identifiers")
 		}
 		original := parameters[field.SourceIndex]
 		if original.Variadic || field.Type != original.Type {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: field %d must preserve the original non-variadic type", field.SourceIndex)
+			return parameterObjectFields{}, fmt.Errorf("introduce parameter object: field %d must preserve the original non-variadic type", field.SourceIndex)
 		}
 		if err := signatureParseType(field.Type); err != nil {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: invalid field type: %w", err)
+			return parameterObjectFields{}, fmt.Errorf("introduce parameter object: invalid field type: %w", err)
 		}
 		fieldByIndex[field.SourceIndex] = field
 		fieldNames[field.Name] = true
@@ -610,73 +714,116 @@ func PlanIntroduceParameterObject(request ParameterObjectRequest, proof Paramete
 	}
 	structSource.WriteString("}\n")
 	if len(fieldByIndex) != len(parameters) {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: one or more original parameters are unmapped")
+		return parameterObjectFields{}, fmt.Errorf("introduce parameter object: one or more original parameters are unmapped")
 	}
-	if err := signatureNoPackageNameCollision(proof.Files, request.TypeName); err != nil {
-		return SignaturePlan{}, err
-	}
-	targetTokenFile := fset.File(file.Pos())
+	return parameterObjectFields{byIndex: fieldByIndex, declaration: structSource.String()}, nil
+}
+
+func buildParameterObjectEdits(request ParameterObjectRequest, proof ParameterObjectProof, target parameterObjectTarget, fields parameterObjectFields) (map[string][]signatureSourceEdit, error) {
+	targetTokenFile := target.fset.File(target.file.Pos())
 	if targetTokenFile == nil {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter object: target token positions are unavailable")
+		return nil, fmt.Errorf("introduce parameter object: target token positions are unavailable")
 	}
-	parameterEdits := []signatureSourceEdit{{Start: targetTokenFile.Offset(fn.Type.Params.Opening) + 1, End: targetTokenFile.Offset(fn.Type.Params.Closing), Replacement: request.ParameterName + " " + request.TypeName}}
+	parameterEdits := []signatureSourceEdit{{Start: targetTokenFile.Offset(target.function.Type.Params.Opening) + 1, End: targetTokenFile.Offset(target.function.Type.Params.Closing), Replacement: request.ParameterName + " " + request.TypeName}}
 	edits := map[string][]signatureSourceEdit{request.File: parameterEdits}
-	bodyStart := targetTokenFile.Offset(fn.Body.Pos())
-	bodyEnd := targetTokenFile.Offset(fn.Body.End())
-	for _, binding := range proof.BodyBindings {
-		if binding.File != request.File || binding.SourceIndex < 0 || binding.SourceIndex >= len(parameters) || binding.Start < bodyStart || binding.End > bodyEnd || binding.End <= binding.Start {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: body binding is outside the target body or has an invalid source index")
-		}
-		original := parameters[binding.SourceIndex].Name
-		if binding.End-binding.Start != len(original) || string(source[binding.Start:binding.End]) != original {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: body binding preimage does not match its original parameter")
-		}
-		field := fieldByIndex[binding.SourceIndex]
-		edits[request.File] = append(edits[request.File], signatureSourceEdit{Start: binding.Start, End: binding.End, Replacement: request.ParameterName + "." + field.Name})
+	bodyEdits, err := parameterObjectBodyEdits(request, proof.BodyBindings, target, fields, targetTokenFile)
+	if err != nil {
+		return nil, err
 	}
-	edits[request.File] = append(edits[request.File], signatureSourceEdit{Start: len(source), End: len(source), Replacement: signatureAppendDeclaration(source, structSource.String())})
-	for _, callSite := range proof.Calls {
-		callSource, exists := files[callSite.File]
+	edits[request.File] = append(edits[request.File], bodyEdits...)
+	edits[request.File] = append(edits[request.File], signatureSourceEdit{Start: len(target.source), End: len(target.source), Replacement: signatureAppendDeclaration(target.source, fields.declaration)})
+	callEdits, err := parameterObjectCallEdits(request, proof.Calls, target, fields)
+	if err != nil {
+		return nil, err
+	}
+	for file, fileEdits := range callEdits {
+		edits[file] = append(edits[file], fileEdits...)
+	}
+	return edits, nil
+}
+
+func parameterObjectBodyEdits(request ParameterObjectRequest, bindings []SignatureBodyBinding, target parameterObjectTarget, fields parameterObjectFields, tokenFile *token.File) ([]signatureSourceEdit, error) {
+	bodyStart := tokenFile.Offset(target.function.Body.Pos())
+	bodyEnd := tokenFile.Offset(target.function.Body.End())
+	var edits []signatureSourceEdit
+	for _, binding := range bindings {
+		if binding.File != request.File || binding.SourceIndex < 0 || binding.SourceIndex >= len(target.parameters) || binding.Start < bodyStart || binding.End > bodyEnd || binding.End <= binding.Start {
+			return nil, fmt.Errorf("introduce parameter object: body binding is outside the target body or has an invalid source index")
+		}
+		original := target.parameters[binding.SourceIndex].Name
+		if binding.End-binding.Start != len(original) || string(target.source[binding.Start:binding.End]) != original {
+			return nil, fmt.Errorf("introduce parameter object: body binding preimage does not match its original parameter")
+		}
+		field := fields.byIndex[binding.SourceIndex]
+		edits = append(edits, signatureSourceEdit{Start: binding.Start, End: binding.End, Replacement: request.ParameterName + "." + field.Name})
+	}
+	return edits, nil
+}
+
+func parameterObjectCallEdits(request ParameterObjectRequest, calls []SignatureCallSite, target parameterObjectTarget, fields parameterObjectFields) (map[string][]signatureSourceEdit, error) {
+	edits := make(map[string][]signatureSourceEdit)
+	for _, callSite := range calls {
+		callSource, exists := target.files[callSite.File]
 		if !exists {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: caller is absent from the explicit read set")
+			return nil, fmt.Errorf("introduce parameter object: caller is absent from the explicit read set")
 		}
-		if callSite.Start < 0 || callSite.End <= callSite.Start || callSite.End > len(callSource) {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: caller range is invalid")
-		}
-		callSet := token.NewFileSet()
-		call, err := parser.ParseExprFrom(callSet, callSite.File, callSource[callSite.Start:callSite.End], parser.ParseComments)
+		edit, err := parameterObjectCallEdit(request, callSite, callSource, target, fields)
 		if err != nil {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: parse caller: %w", err)
+			return nil, err
 		}
-		callExpr, ok := call.(*ast.CallExpr)
-		if !ok || !signatureCallsTarget(callExpr.Fun, fn.Name.Name) || len(callExpr.Args) != len(parameters) {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: caller is not a direct call with the original argument count")
-		}
-		if bytes.Contains(callSource[callSite.Start:callSite.End], []byte("//")) || bytes.Contains(callSource[callSite.Start:callSite.End], []byte("/*")) {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: calls containing comments are outside the supported scope")
-		}
-		callTokenFile := callSet.File(call.Pos())
-		if callTokenFile == nil {
-			return SignaturePlan{}, fmt.Errorf("introduce parameter object: caller token positions are unavailable")
-		}
-		var literal strings.Builder
-		fmt.Fprintf(&literal, "%s{", request.TypeName)
-		for index, field := range request.Fields {
-			if index > 0 {
-				literal.WriteString(", ")
-			}
-			arg := callExpr.Args[field.SourceIndex]
-			start := callSite.Start + callTokenFile.Offset(arg.Pos())
-			end := callSite.Start + callTokenFile.Offset(arg.End())
-			if start < callSite.Start || end > callSite.End || end <= start {
-				return SignaturePlan{}, fmt.Errorf("introduce parameter object: caller argument range is invalid")
-			}
-			fmt.Fprintf(&literal, "%s: %s", field.Name, string(callSource[start:end]))
-		}
-		literal.WriteByte('}')
-		lparen := callTokenFile.Offset(callExpr.Lparen)
-		rparen := callTokenFile.Offset(callExpr.Rparen)
-		edits[callSite.File] = append(edits[callSite.File], signatureSourceEdit{Start: callSite.Start + lparen + 1, End: callSite.Start + rparen, Replacement: literal.String()})
+		edits[callSite.File] = append(edits[callSite.File], edit)
 	}
-	return signatureBuildPlan(proof.Files, edits)
+	return edits, nil
+}
+
+func parameterObjectCallEdit(request ParameterObjectRequest, callSite SignatureCallSite, source []byte, target parameterObjectTarget, fields parameterObjectFields) (signatureSourceEdit, error) {
+	if callSite.Start < 0 || callSite.End <= callSite.Start || callSite.End > len(source) {
+		return signatureSourceEdit{}, fmt.Errorf("introduce parameter object: caller range is invalid")
+	}
+	callSource := source[callSite.Start:callSite.End]
+	callSet := token.NewFileSet()
+	call, err := parser.ParseExprFrom(callSet, callSite.File, callSource, parser.ParseComments)
+	if err != nil {
+		return signatureSourceEdit{}, fmt.Errorf("introduce parameter object: parse caller: %w", err)
+	}
+	callExpr, ok := call.(*ast.CallExpr)
+	if !ok || !signatureCallsTarget(callExpr.Fun, target.function.Name.Name) || len(callExpr.Args) != len(target.parameters) {
+		return signatureSourceEdit{}, fmt.Errorf("introduce parameter object: caller is not a direct call with the original argument count")
+	}
+	if bytes.Contains(callSource, []byte("//")) || bytes.Contains(callSource, []byte("/*")) {
+		return signatureSourceEdit{}, fmt.Errorf("introduce parameter object: calls containing comments are outside the supported scope")
+	}
+	callTokenFile := callSet.File(call.Pos())
+	if callTokenFile == nil {
+		return signatureSourceEdit{}, fmt.Errorf("introduce parameter object: caller token positions are unavailable")
+	}
+	literal, err := parameterObjectLiteral(request, callSite, source, callExpr, callTokenFile, fields)
+	if err != nil {
+		return signatureSourceEdit{}, err
+	}
+	return signatureSourceEdit{
+		Start:       callSite.Start + callTokenFile.Offset(callExpr.Lparen) + 1,
+		End:         callSite.Start + callTokenFile.Offset(callExpr.Rparen),
+		Replacement: literal,
+	}, nil
+}
+
+func parameterObjectLiteral(request ParameterObjectRequest, callSite SignatureCallSite, source []byte, call *ast.CallExpr, tokenFile *token.File, fields parameterObjectFields) (string, error) {
+	var literal strings.Builder
+	fmt.Fprintf(&literal, "%s{", request.TypeName)
+	for index, field := range request.Fields {
+		if index > 0 {
+			literal.WriteString(", ")
+		}
+		argument := call.Args[field.SourceIndex]
+		start := callSite.Start + tokenFile.Offset(argument.Pos())
+		end := callSite.Start + tokenFile.Offset(argument.End())
+		if start < callSite.Start || end > callSite.End || end <= start {
+			return "", fmt.Errorf("introduce parameter object: caller argument range is invalid")
+		}
+		fieldName := fields.byIndex[field.SourceIndex].Name
+		fmt.Fprintf(&literal, "%s: %s", fieldName, string(source[start:end]))
+	}
+	literal.WriteByte('}')
+	return literal.String(), nil
 }

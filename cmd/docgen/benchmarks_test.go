@@ -94,9 +94,9 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
 		t.Fatalf("write benchmark browser assets: %v", err)
 	}
-	data, err := os.ReadFile(filepath.Join(outputDir, "static", "data", "benchmarks.json"))
-	if err != nil {
-		t.Fatalf("read benchmark browser data: %v", err)
+	data, readErr := os.ReadFile(filepath.Join(outputDir, "static", "data", "benchmarks.json"))
+	if readErr != nil {
+		t.Fatalf("read benchmark browser data: %v", readErr)
 	}
 	var summaryRows []map[string]json.RawMessage
 	if err := json.Unmarshal(data, &summaryRows); err != nil {
@@ -109,108 +109,76 @@ func TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAs
 	if len(rows) != 4 {
 		t.Fatalf("individual benchmark rows = %d, want 4", len(rows))
 	}
+	assertBenchmarkBrowserRows(t, rows)
+	if _, err := os.Stat(filepath.Join(outputDir, "static", "vendor", "perspective", "css", "pro-dark.css")); err != nil {
+		t.Errorf("Perspective asset was not copied: %v", err)
+	}
+	shortcode, shortcodeErr := os.ReadFile(filepath.Join(outputDir, "layouts", "shortcodes", "benchmark-browser.html"))
+	if shortcodeErr != nil {
+		t.Fatalf("read benchmark browser shortcode: %v", shortcodeErr)
+	}
+	assertBenchmarkBrowserShortcode(t, string(shortcode))
+	if _, err := os.Stat(filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")); err != nil {
+		t.Errorf("benchmark browser page was not generated: %v", err)
+	}
+}
+
+func assertBenchmarkBrowserRows(t *testing.T, rows []map[string]json.RawMessage) {
+	t.Helper()
 	for key, want := range map[string]string{
 		"task_id": "task-a", "_run_id": "run-a", "_source_file": "run-a/report.json", "_record_type": "result", "context_variant": "small", "arm": "baseline",
 	} {
-		var got string
-		if err := json.Unmarshal(rows[0][key], &got); err != nil {
-			t.Fatalf("decode %s metadata: %v", key, err)
-		}
-		if got != want {
-			t.Errorf("%s = %q, want %q", key, got, want)
-		}
+		assertJSONFieldValue(t, rows[0], key, want)
 	}
-	var dynamicVariant string
-	if err := json.Unmarshal(rows[0]["dynamic_dimension__variant"], &dynamicVariant); err != nil {
-		t.Fatalf("decode flattened dynamic field: %v", err)
-	}
-	if dynamicVariant != "new-schema" {
-		t.Errorf("flattened dynamic dimension = %q, want %q", dynamicVariant, "new-schema")
-	}
-	var oraclePass bool
-	if err := json.Unmarshal(rows[0]["oracle_pass"], &oraclePass); err != nil || !oraclePass {
-		t.Errorf("oracle pass = %t, err = %v; want true", oraclePass, err)
-	}
+	assertJSONFieldValue(t, rows[0], "dynamic_dimension__variant", "new-schema")
+	assertJSONFieldValue(t, rows[0], "oracle_pass", true)
+	assertJSONFieldValue(t, rows[1], "expected_semantic_tools_used", true)
+	assertJSONFieldValue(t, rows[0], "turns", 4)
+	assertJSONFieldValue(t, rows[0], "input_tokens", 1000)
+	assertJSONFieldValue(t, rows[0], "cached_input_tokens", 0)
+	assertJSONFieldValue(t, rows[0], "output_tokens", 500)
+	assertJSONFieldValue(t, rows[0], "wall_clock_ms", int64(1200))
+	assertJSONFieldValue(t, rows[0], "wall_clock_seconds", 1.2)
+	assertJSONFieldValue(t, rows[0], "oracle__duration_ms", int64(30))
+	assertJSONFieldValue(t, rows[0], "cost", 0.02)
+	assertJSONFieldValue(t, rows[0], "dynamic_run_field__source", "trial")
+	assertJSONFieldValue(t, rows[1], "context_variant", "small")
 	if len(rows[0]["expected_semantic_tools_used"]) != 0 && string(rows[0]["expected_semantic_tools_used"]) != "null" {
 		t.Errorf("baseline expected semantic tools used = %s, want null", rows[0]["expected_semantic_tools_used"])
-	}
-	var semanticToolPass bool
-	if err := json.Unmarshal(rows[1]["expected_semantic_tools_used"], &semanticToolPass); err != nil || !semanticToolPass {
-		t.Errorf("semedit expected semantic tools used = %t, err = %v; want true", semanticToolPass, err)
-	}
-	var turns int
-	if err := json.Unmarshal(rows[0]["turns"], &turns); err != nil || turns != 4 {
-		t.Errorf("unprefixed turns = %d, err = %v; want 4", turns, err)
-	}
-	var inputTokens int
-	if err := json.Unmarshal(rows[0]["input_tokens"], &inputTokens); err != nil || inputTokens != 1000 {
-		t.Errorf("uncached input tokens = %d, err = %v; want 1000", inputTokens, err)
-	}
-	var cachedInputTokens int
-	if err := json.Unmarshal(rows[0]["cached_input_tokens"], &cachedInputTokens); err != nil || cachedInputTokens != 0 {
-		t.Errorf("cached input tokens = %d, err = %v; want 0", cachedInputTokens, err)
-	}
-	var outputTokens int
-	if err := json.Unmarshal(rows[0]["output_tokens"], &outputTokens); err != nil || outputTokens != 500 {
-		t.Errorf("output tokens = %d, err = %v; want 500", outputTokens, err)
-	}
-	var wallClockMS int64
-	if err := json.Unmarshal(rows[0]["wall_clock_ms"], &wallClockMS); err != nil || wallClockMS != 1200 {
-		t.Errorf("normalized wall clock = %d ms, err = %v; want 1200 ms", wallClockMS, err)
-	}
-	var wallClockSeconds float64
-	if err := json.Unmarshal(rows[0]["wall_clock_seconds"], &wallClockSeconds); err != nil || wallClockSeconds != 1.2 {
-		t.Errorf("wall clock = %v seconds, err = %v; want 1.2 seconds", wallClockSeconds, err)
-	}
-	var oracleDurationMS int64
-	if err := json.Unmarshal(rows[0]["oracle__duration_ms"], &oracleDurationMS); err != nil || oracleDurationMS != 30 {
-		t.Errorf("normalized oracle duration = %d ms, err = %v; want 30 ms", oracleDurationMS, err)
-	}
-	var cost float64
-	if err := json.Unmarshal(rows[0]["cost"], &cost); err != nil || cost != 0.02 {
-		t.Errorf("model cost = %v, err = %v; want 0.02", cost, err)
-	}
-	var dynamicSource string
-	if err := json.Unmarshal(rows[0]["dynamic_run_field__source"], &dynamicSource); err != nil || dynamicSource != "trial" {
-		t.Errorf("flattened dynamic run field = %q, err = %v; want trial", dynamicSource, err)
 	}
 	if _, exists := rows[0]["small_baseline__turns"]; exists {
 		t.Error("split result must not retain the paired benchmark prefix")
 	}
-	var secondContext string
-	if err := json.Unmarshal(rows[1]["context_variant"], &secondContext); err != nil || secondContext != "small" {
-		t.Errorf("second result context = %q, err = %v; want small", secondContext, err)
-	}
 	assertBenchmarkBrowserPairValues(t, rows[0], rows[1])
-	var arrayText string
-	if err := json.Unmarshal(rows[0]["new_array"], &arrayText); err != nil {
-		t.Fatalf("decode serialized array field: %v", err)
-	}
-	if arrayText != `["a",{"b":2}]` {
-		t.Errorf("serialized array = %q, want JSON text", arrayText)
-	}
+	assertJSONFieldValue(t, rows[0], "new_array", `["a",{"b":2}]`)
 	if rows[0]["another_dimension"] != nil || rows[3]["dynamic_dimension__variant"] != nil {
 		t.Error("individual results unexpectedly contain dimensions from another task")
 	}
-	if _, err := os.Stat(filepath.Join(outputDir, "static", "vendor", "perspective", "css", "pro-dark.css")); err != nil {
-		t.Errorf("Perspective asset was not copied: %v", err)
+}
+
+func assertJSONFieldValue[T comparable](t *testing.T, row map[string]json.RawMessage, field string, want T) {
+	t.Helper()
+	var got T
+	if err := json.Unmarshal(row[field], &got); err != nil {
+		t.Fatalf("decode %s: %v", field, err)
 	}
-	shortcode, err := os.ReadFile(filepath.Join(outputDir, "layouts", "shortcodes", "benchmark-browser.html"))
-	if err != nil {
-		t.Fatalf("read benchmark browser shortcode: %v", err)
+	if got != want {
+		t.Errorf("%s = %v, want %v", field, got, want)
 	}
+}
+
+func assertBenchmarkBrowserShortcode(t *testing.T, shortcode string) {
+	t.Helper()
 	for _, want := range []string{"Rows are pre-aggregated by task, target, prompt variant", `group_by: []`, `columns: [...new Set(rows.flatMap(Object.keys))]`, `await viewer.restore({ filter: filters });`, "MutationObserver", `classList.contains("dark")`, `theme", dark ? "Pro Dark" : "Pro Light"`, `id="benchmark-browser-fullscreen"`, `browserPanel.requestFullscreen()`, `document.exitFullscreen()`, `browserPanel.scrollTop += event.deltaY;`, `view.num_rows()`, `currentViewer.style.height = Math.max(160, rowCount * rowHeight + viewerChromeHeight) + "px"`, `id="benchmark-browser-comparison-viewer"`, `Comparison evaluates baseline and semedit values within each restriction policy, target, and context group`, `<div class="benchmark-browser-filters" role="group" aria-label="Baseline versus semedit filters">`, `id="benchmark-browser-comparison-oracle-filter"`, `id="benchmark-browser-comparison-expected-tools-filter"`, `id="benchmark-browser-comparison-prompt-filter"`, `id="benchmark-browser-comparison-instructions-filter"`, `control.value = sourceControl.value`, `Negative changes mark improvements`, `cost_delta: "avg"`, `number_bg_mode: "color"`, `neg_bg_color: "#b7e4c7"`, `pos_bg_color: "#f7b6b2"`, `<label>Requirement met`, `<label>Expected semantic tools used`, `id="benchmark-browser-oracle-filter"`, `id="benchmark-browser-expected-tools-filter"`, `id="benchmark-browser-prompt-filter"`, `id="benchmark-browser-instructions-filter"`, `for (const control of [promptFilter, comparisonPromptFilter]) populateDimensionFilter(control, "prompt_variant")`, `for (const control of [instructionsFilter, comparisonInstructionsFilter]) populateDimensionFilter(control, "mcp_server_instructions")`, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `href="{{ "vendor/perspective/css/pro.css" | relURL }}"`, `import perspective from '{{ "vendor/perspective/cdn/perspective.js" | relURL }}'`, `aggregates: { cost: "avg", turns: "avg", wall_clock_seconds: "avg", input_tokens: "avg", cached_input_tokens: "avg", output_tokens: "avg", reasoning_tokens: "avg" }`} {
-		if expected := strings.Replace(want, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1); !strings.Contains(string(shortcode), expected) {
+		expected := strings.Replace(want, `fetch('{{ "data/benchmarks.json" | relURL }}')`, `fetch(document.querySelector(".benchmark-browser").dataset.dataUrl)`, 1)
+		if !strings.Contains(shortcode, expected) {
 			t.Errorf("benchmark browser shortcode missing %q", expected)
 		}
 	}
 	for _, want := range []string{`id="benchmark-browser-model-filter"`, `id="benchmark-browser-comparison-model-filter"`, `for (const control of [modelFilter, comparisonModelFilter]) populateDimensionFilter(control, "target__model")`} {
-		if !strings.Contains(string(shortcode), want) {
+		if !strings.Contains(shortcode, want) {
 			t.Errorf("benchmark browser model filter missing %q", want)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(outputDir, "content", "docs", "benchmarks", "browser", "index.md")); err != nil {
-		t.Errorf("benchmark browser page was not generated: %v", err)
 	}
 }
 
@@ -271,9 +239,9 @@ func TestREQ008LoadAllBenchmarkComparisonsExcludesIncompleteRuns(t *testing.T) {
 		},
 	}}
 
-	data, err := json.Marshal(report)
-	if err != nil {
-		t.Fatalf("marshal benchmark report: %v", err)
+	data, marshalErr := json.Marshal(report)
+	if marshalErr != nil {
+		t.Fatalf("marshal benchmark report: %v", marshalErr)
 	}
 	if err := os.WriteFile(filepath.Join(resultsDir, "report.json"), data, 0o600); err != nil {
 		t.Fatalf("write benchmark report: %v", err)
@@ -850,19 +818,11 @@ func TestPolicyConditionsSurvivePublicationAndBrowserAggregation(t *testing.T) {
 	if legacy.Runs[0].SemeditArmRestrictionApplied != nil {
 		t.Error("missing legacy applicability became a known value")
 	}
-	policies := []string{"", "read", "write", "readwrite"}
-	comparisons := make([]*BenchComparisonSummary, 0, len(policies))
-	for i, policy := range policies {
-		run := func(arm string, turns int) *BenchRunResult {
-			applied := arm == "semedit" && policy != ""
-			return &BenchRunResult{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, Arm: arm, Variant: "small:default", PromptVariant: "default", SemeditArmRestrict: policy, SemeditArmRestrictionApplied: &applied, Success: true, Turns: turns, Oracle: &BenchOracleResult{Passed: true}}
-		}
-		comparisons = append(comparisons, &BenchComparisonSummary{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, PromptVariant: "default", SemeditArmRestrict: policy, SmallBaseline: run("baseline", 10+i), SmallSemedit: run("semedit", 1+i)})
-	}
+	comparisons := policyTestComparisons()
 	report := BenchReport{FormatVersion: 2, DurationUnit: "milliseconds", Comparisons: comparisons}
-	data, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
+	data, marshalErr := json.Marshal(report)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
 	}
 	var decoded BenchReport
 	if err := unmarshalBenchmarkReport(data, &decoded); err != nil {
@@ -871,21 +831,7 @@ func TestPolicyConditionsSurvivePublicationAndBrowserAggregation(t *testing.T) {
 	if decoded.Comparisons[0].SemeditArmRestrict != "" {
 		t.Error("legacy policy defaulted during decode")
 	}
-	selected := selectBestBenchmarkComparisons([]benchmarkDocumentationRun{{ID: "policy-run", Comparisons: decoded.Comparisons}})
-	if len(selected) != 4 {
-		t.Errorf("best-case selection merged policies: %d", len(selected))
-	}
-	groups := aggregateBenchmarkMetrics(decoded.Comparisons)
-	if len(groups) != 8 {
-		t.Errorf("aggregate groups = %d, want four policies and two arms", len(groups))
-	}
-	for _, g := range groups {
-		for name, m := range g.metrics {
-			if m.count != 1 {
-				t.Errorf("policy %s metric %s mixed observations: %d", g.restriction, name, m.count)
-			}
-		}
-	}
+	assertPolicyAggregatePublication(t, decoded.Comparisons)
 	root := t.TempDir()
 	path := filepath.Join(root, "policy-run", "result.json")
 	rows, err := loadBenchmarkBrowserResult(root, path, "policy-run/result.json", data)
@@ -895,24 +841,53 @@ func TestPolicyConditionsSurvivePublicationAndBrowserAggregation(t *testing.T) {
 	if err := addBenchmarkBrowserComparisonDeltas(rows); err != nil {
 		t.Fatal(err)
 	}
+	assertPolicyBrowserPublication(t, rows, decoded.Comparisons)
+}
+
+func policyTestComparisons() []*BenchComparisonSummary {
+	policies := []string{"", "read", "write", "readwrite"}
+	comparisons := make([]*BenchComparisonSummary, 0, len(policies))
+	for i, policy := range policies {
+		comparisonRun := func(arm string, turns int) *BenchRunResult {
+			applied := arm == "semedit" && policy != ""
+			return &BenchRunResult{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, Arm: arm, Variant: "small:default", PromptVariant: "default", SemeditArmRestrict: policy, SemeditArmRestrictionApplied: &applied, Success: true, Turns: turns, Oracle: &BenchOracleResult{Passed: true}}
+		}
+		comparisons = append(comparisons, &BenchComparisonSummary{TaskID: "policy-task", Target: BenchTarget{Harness: "codex"}, PromptVariant: "default", SemeditArmRestrict: policy, SmallBaseline: comparisonRun("baseline", 10+i), SmallSemedit: comparisonRun("semedit", 1+i)})
+	}
+	return comparisons
+}
+
+func assertPolicyAggregatePublication(t *testing.T, comparisons []*BenchComparisonSummary) {
+	t.Helper()
+	selected := selectBestBenchmarkComparisons([]benchmarkDocumentationRun{{ID: "policy-run", Comparisons: comparisons}})
+	if len(selected) != 4 {
+		t.Errorf("best-case selection merged policies: %d", len(selected))
+	}
+	groups := aggregateBenchmarkMetrics(comparisons)
+	if len(groups) != 8 {
+		t.Errorf("aggregate groups = %d, want four policies and two arms", len(groups))
+	}
+	for _, group := range groups {
+		for name, metric := range group.metrics {
+			if metric.count != 1 {
+				t.Errorf("policy %s metric %s mixed observations: %d", group.restriction, name, metric.count)
+			}
+		}
+	}
+}
+
+func assertPolicyBrowserPublication(t *testing.T, rows []map[string]json.RawMessage, comparisons []*BenchComparisonSummary) {
+	t.Helper()
 	if len(rows) != 8 {
 		t.Fatalf("browser rows = %d, want 8", len(rows))
 	}
 	seen := make(map[string]int)
 	for _, row := range rows {
-		var policy, arm string
-		if err := json.Unmarshal(row["semedit_arm_restrict"], &policy); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(row["arm"], &arm); err != nil {
-			t.Fatal(err)
-		}
+		policy := decodeJSONField[string](t, row, "semedit_arm_restrict")
+		arm := decodeJSONField[string](t, row, "arm")
 		seen[policy]++
 		if arm == "semedit" {
-			var delta float64
-			if err := json.Unmarshal(row["turns_delta"], &delta); err != nil {
-				t.Fatal(err)
-			}
+			delta := decodeJSONField[float64](t, row, "turns_delta")
 			if delta != -9 {
 				t.Errorf("policy %s paired incorrectly: delta %v", policy, delta)
 			}
@@ -922,12 +897,19 @@ func TestPolicyConditionsSurvivePublicationAndBrowserAggregation(t *testing.T) {
 		if seen[policy] != 2 {
 			t.Errorf("policy %s rows = %d, want 2", policy, seen[policy])
 		}
-	}
-	for _, policy := range []string{"unspecified", "read", "write", "readwrite"} {
-		if !strings.Contains(renderBenchmarkAggregatesDoc(decoded.Comparisons), "Semedit restriction: "+policy) {
+		if !strings.Contains(renderBenchmarkAggregatesDoc(comparisons), "Semedit restriction: "+policy) {
 			t.Errorf("policy %s not labeled", policy)
 		}
 	}
+}
+
+func decodeJSONField[T any](t *testing.T, row map[string]json.RawMessage, field string) T {
+	t.Helper()
+	var value T
+	if err := json.Unmarshal(row[field], &value); err != nil {
+		t.Fatalf("decode %s: %v", field, err)
+	}
+	return value
 }
 
 func TestDiagnosticQuestioningIsNotBrowserTelemetry(t *testing.T) {

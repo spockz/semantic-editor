@@ -44,37 +44,69 @@ func configureRapidChecks(t *testing.T, shortChecks int, defaultChecks int) {
 // TestProperty_RoundTripInvertibility asserts R^-1(R(P)) == P across generated AST variations.
 func TestProperty_RoundTripInvertibility(t *testing.T) {
 	configureRapidChecks(t, 5, 5)
+	rapid.Check(t, checkRoundTripProperty)
+}
 
-	rapid.Check(t, func(rt *rapid.T) {
-		typeName := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "typeName")
-		oldMethod := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "oldMethod")
-		newMethod := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "newMethod")
+type roundTripFixture struct {
+	root, file, typeName, oldMethod, newMethod string
+	original                                   []byte
+}
 
-		if oldMethod == newMethod || oldMethod == typeName || newMethod == typeName {
-			return
+func checkRoundTripProperty(rt *rapid.T) {
+	typeName := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "typeName")
+	oldMethod := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "oldMethod")
+	newMethod := rapid.StringMatching(`[A-Z][a-zA-Z]{3,8}`).Draw(rt, "newMethod")
+	if oldMethod == newMethod || oldMethod == typeName || newMethod == typeName {
+		return
+	}
+	fixture := createRoundTripFixture(rt, typeName, oldMethod, newMethod)
+	defer func() {
+		if err := os.RemoveAll(fixture.root); err != nil {
+			rt.Errorf("remove round-trip fixture: %v", err)
 		}
+	}()
+	verifyRoundTripFixture(rt, *fixture)
+}
 
-		callCount := rapid.IntRange(1, 4).Draw(rt, "callCount")
-
-		tmpDir, err := os.MkdirTemp("", "prop-*")
-		if err != nil {
-			rt.Fatalf("create temp dir: %v", err)
+func createRoundTripFixture(rt *rapid.T, typeName, oldMethod, newMethod string) *roundTripFixture {
+	root, createErr := os.MkdirTemp("", "prop-*")
+	if createErr != nil {
+		rt.Fatalf("create temp dir: %v", createErr)
+	}
+	cleanupOnError := true
+	defer func() {
+		if cleanupOnError {
+			if err := os.RemoveAll(root); err != nil {
+				rt.Errorf("remove failed round-trip fixture: %v", err)
+			}
 		}
-		defer func() {
-			_ = os.RemoveAll(tmpDir)
-		}()
+	}()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/prop\n\ngo 1.23\n"), 0o600); err != nil {
+		rt.Fatalf("write mod file: %v", err)
+	}
+	callCount := rapid.IntRange(1, 4).Draw(rt, "callCount")
+	source := roundTripSource(typeName, oldMethod, callCount)
+	file := filepath.Join(root, "prop.go")
+	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
+		rt.Fatalf("write source: %v", err)
+	}
+	if err := pipeline.Format(context.Background(), root, file); err != nil {
+		rt.Fatalf("format initial source: %v", err)
+	}
+	original, err := os.ReadFile(filepath.Clean(file))
+	if err != nil {
+		rt.Fatalf("read initial source: %v", err)
+	}
+	cleanupOnError = false
+	return &roundTripFixture{root: root, file: file, typeName: typeName, oldMethod: oldMethod, newMethod: newMethod, original: original}
+}
 
-		modFile := filepath.Join(tmpDir, "go.mod")
-		if err := os.WriteFile(modFile, []byte("module example.com/prop\n\ngo 1.23\n"), 0o600); err != nil {
-			rt.Fatalf("write mod file: %v", err)
-		}
-
-		var calls strings.Builder
-		for range callCount {
-			fmt.Fprintf(&calls, "\ts.%s()\n", oldMethod)
-		}
-
-		source := fmt.Sprintf(`package prop
+func roundTripSource(typeName, method string, callCount int) string {
+	var calls strings.Builder
+	for range callCount {
+		fmt.Fprintf(&calls, "\ts.%s()\n", method)
+	}
+	return fmt.Sprintf(`package prop
 
 type %s struct{}
 
@@ -85,65 +117,37 @@ func (s *%s) %s() string {
 func Execute() {
 	s := &%s{}
 %s}
-`, typeName, typeName, oldMethod, typeName, calls.String())
+`, typeName, typeName, method, typeName, calls.String())
+}
 
-		targetFile := filepath.Join(tmpDir, "prop.go")
-		if err := os.WriteFile(targetFile, []byte(source), 0o600); err != nil {
-			rt.Fatalf("write source: %v", err)
-		}
+func verifyRoundTripFixture(rt *rapid.T, fixture roundTripFixture) {
+	ctx := context.Background()
+	renamePropertyMethod(rt, fixture, fixture.oldMethod, fixture.newMethod, "forward")
+	diags, err := pipeline.CheckDiagnostics(ctx, fixture.root)
+	if err != nil || len(diags) > 0 {
+		rt.Fatalf("compilation health broken after forward rename: %v (%v)", err, diags)
+	}
+	renamePropertyMethod(rt, fixture, fixture.newMethod, fixture.oldMethod, "inverse")
+	result, err := os.ReadFile(filepath.Clean(fixture.file))
+	if err != nil {
+		rt.Fatalf("read round-trip source: %v", err)
+	}
+	if !bytes.Equal(result, fixture.original) {
+		rt.Fatalf("invertibility invariant violated:\nGot:\n%s\nWant:\n%s", result, fixture.original)
+	}
+}
 
-		ctx := context.Background()
-		if err := pipeline.Format(ctx, tmpDir, targetFile); err != nil {
-			rt.Fatalf("format initial source: %v", err)
-		}
-
-		originalBytes, err := os.ReadFile(filepath.Clean(targetFile))
-		if err != nil {
-			rt.Fatalf("read initial source: %v", err)
-		}
-
-		// Step 1: Forward transformation (A -> B)
-		symQuery := typeName + "." + oldMethod
-		res, err := symbol.Resolve(tmpDir, "prop.go", symQuery)
-		if err != nil {
-			rt.Fatalf("resolve forward symbol %s: %v", symQuery, err)
-		}
-
-		if err := golang.Rename(ctx, tmpDir, res.File, res.Line, res.Column, newMethod); err != nil {
-			rt.Fatalf("forward rename failed: %v", err)
-		}
-		if err := pipeline.Format(ctx, tmpDir, targetFile); err != nil {
-			rt.Fatalf("format forward source: %v", err)
-		}
-
-		// Invariant: Compilation health after transformation
-		diags, err := pipeline.CheckDiagnostics(ctx, tmpDir)
-		if err != nil || len(diags) > 0 {
-			rt.Fatalf("compilation health broken after forward rename: %v (%v)", err, diags)
-		}
-
-		// Step 2: Inverse transformation (B -> A)
-		invQuery := typeName + "." + newMethod
-		resInv, err := symbol.Resolve(tmpDir, "prop.go", invQuery)
-		if err != nil {
-			rt.Fatalf("resolve inverse symbol %s: %v", invQuery, err)
-		}
-
-		if err := golang.Rename(ctx, tmpDir, resInv.File, resInv.Line, resInv.Column, oldMethod); err != nil {
-			rt.Fatalf("inverse rename failed: %v", err)
-		}
-		if err := pipeline.Format(ctx, tmpDir, targetFile); err != nil {
-			rt.Fatalf("format inverse source: %v", err)
-		}
-
-		roundTripBytes, err := os.ReadFile(filepath.Clean(targetFile))
-		if err != nil {
-			rt.Fatalf("read round-trip source: %v", err)
-		}
-
-		// Invariant: Round-trip invertibility R^-1(R(P)) == P
-		if !bytes.Equal(roundTripBytes, originalBytes) {
-			rt.Fatalf("invertibility invariant violated:\nGot:\n%s\nWant:\n%s", roundTripBytes, originalBytes)
-		}
-	})
+func renamePropertyMethod(rt *rapid.T, fixture roundTripFixture, from, to, direction string) {
+	rt.Helper()
+	query := fixture.typeName + "." + from
+	resolved, err := symbol.Resolve(fixture.root, "prop.go", query)
+	if err != nil {
+		rt.Fatalf("resolve %s symbol %s: %v", direction, query, err)
+	}
+	if err := golang.Rename(context.Background(), fixture.root, resolved.File, resolved.Line, resolved.Column, to); err != nil {
+		rt.Fatalf("%s rename failed: %v", direction, err)
+	}
+	if err := pipeline.Format(context.Background(), fixture.root, fixture.file); err != nil {
+		rt.Fatalf("format %s source: %v", direction, err)
+	}
 }

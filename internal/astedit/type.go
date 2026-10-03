@@ -2,18 +2,13 @@
 package astedit
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"strings"
-
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
 )
 
 // TypeOptions configures type declaration insertion behavior.
@@ -31,17 +26,11 @@ func InsertType(ctx context.Context, filePath string, source string, opts TypeOp
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.
 func insertTypeImpl(ctx context.Context, filePath string, source string, opts TypeOptions) error {
-	source = strings.TrimSpace(source)
-	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
-		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
-		source = source[1 : len(source)-1]
-	}
+	source = normalizeDeclarationSnippet(source)
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
-
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	target, err := readDeclarationTarget(ctx, filePath)
 	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
+		return err
 	}
 
 	genDecl, typeName, err := verifyTypeSnippet(source)
@@ -49,88 +38,29 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 		return fmt.Errorf("validate type snippet: %w", err)
 	}
 
-	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, typeName); err != nil {
-		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+	if accessErr := ValidateAccess(DefaultBackend, opts.AccessModifier, typeName); accessErr != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](accessErr); ok {
 			visErr.File = "snippet"
 		}
-		return fmt.Errorf("validate access modifier: %w", err)
+		return fmt.Errorf("validate access modifier: %w", accessErr)
 	}
 
-	effectiveAccess, err := ResolveAccess(DefaultBackend, opts.AccessModifier, typeName)
+	effectiveAccess, err := resolveDeclarationAccess(opts.AccessModifier, typeName)
 	if err != nil {
-		return fmt.Errorf("resolve effective access: %w", err)
+		return err
+	}
+	if collisionErr := checkConstructDeclarationCollision(ctx, target.path, target.file, genDecl); collisionErr != nil {
+		return fmt.Errorf("check declaration collision: %w", collisionErr)
 	}
 
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
+	insertOffset, err := calculateTypeOffset(target.set, target.file, target.content, genDecl, typeName, effectiveAccess, opts)
 	if err != nil {
-		return fmt.Errorf("parse target file before insertion: %w", err)
-	}
-	if err := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, genDecl); err != nil {
-		return fmt.Errorf("check declaration collision: %w", err)
+		return fmt.Errorf("calculate type offset: %w", annotatePlacementError(err, target.path, target.set, target.file))
 	}
 
-	insertOffset, err := calculateTypeOffset(fset, fileNode, content, genDecl, typeName, effectiveAccess, opts)
-	if err != nil {
-		if pErr, ok := errors.AsType[*PlacementError](err); ok {
-			if pErr.File == "" {
-				pErr.File = cleanPath
-			}
-			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
-				pErr.Pos = fset.Position(fileNode.Package)
-			}
-		}
-		return fmt.Errorf("calculate type offset: %w", err)
-	}
-
-	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
-
-	var newContent bytes.Buffer
-	newContent.Write(content[:insertOffset])
-
-	snippetText := strings.TrimSpace(source)
-	if strings.HasPrefix(snippetText, "package ") {
-		lines := strings.SplitN(snippetText, "\n", 2)
-		if len(lines) > 1 {
-			snippetText = strings.TrimSpace(lines[1])
-		}
-	}
-
-	if insertOffset > 0 {
-		prev := content[:insertOffset]
-		if !bytes.HasSuffix(prev, []byte("\n\n")) {
-			if bytes.HasSuffix(prev, []byte("\n")) {
-				newContent.WriteString("\n")
-			} else {
-				newContent.WriteString("\n\n")
-			}
-		}
-	}
-
-	newContent.WriteString(snippetText)
-	newContent.WriteString("\n\n")
-
-	rest := content[insertOffset:]
-	restTrimmed := bytes.TrimLeft(rest, "\r\n")
-	newContent.Write(restTrimmed)
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
-		return fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return fmt.Errorf("organize imports: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return fmt.Errorf("format file: %w", err)
-		}
-	}
-
-	return nil
+	insertOffset = normalizeInsertionOffset(target.set, target.file, target.content, insertOffset)
+	updated := insertDeclarationText(target.content, source, insertOffset)
+	return publishInsertedDeclaration(ctx, target.path, updated, opts.AutoOrganizeImports)
 }
 
 func verifyTypeSnippet(source string) (*ast.GenDecl, string, error) {

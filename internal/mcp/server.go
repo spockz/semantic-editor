@@ -366,55 +366,13 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 	if s.initializationFailed {
 		return nil, errors.New("MCP initialization previously failed")
 	}
-
-	var initParams struct {
-		RootURI          string `json:"rootUri"`
-		RootPath         string `json:"rootPath"`
-		WorkspaceFolders []struct {
-			URI string `json:"uri"`
-		} `json:"workspaceFolders"`
-		InitializationOptions struct {
-			WorkspaceRoot  string `json:"workspace_root"`
-			RootURI        string `json:"rootUri"`
-			TrustWorkspace bool   `json:"trust_workspace"`
-		} `json:"initializationOptions"`
+	initParams, err := parseInitializeParams(rawParams)
+	if err != nil {
+		return nil, err
 	}
-	if len(rawParams) > 0 && string(rawParams) != "null" {
-		if err := json.Unmarshal(rawParams, &initParams); err != nil {
-			return nil, fmt.Errorf("parse initialize params: %w", err)
-		}
-	}
-	selectedRoot := s.workDir
-	switch {
-	case initParams.RootURI != "":
-		root, err := workspaceRootFromURI(initParams.RootURI)
-		if err != nil {
-			return nil, err
-		}
-		selectedRoot = root
-	case initParams.RootPath != "":
-		selectedRoot = initParams.RootPath
-	case len(initParams.WorkspaceFolders) > 0 && initParams.WorkspaceFolders[0].URI != "":
-		root, err := workspaceRootFromURI(initParams.WorkspaceFolders[0].URI)
-		if err != nil {
-			return nil, err
-		}
-		selectedRoot = root
-	case initParams.InitializationOptions.RootURI != "":
-		root, err := workspaceRootFromURI(initParams.InitializationOptions.RootURI)
-		if err != nil {
-			return nil, err
-		}
-		selectedRoot = root
-	case initParams.InitializationOptions.WorkspaceRoot != "":
-		selectedRoot = initParams.InitializationOptions.WorkspaceRoot
-	}
-	if selectedRoot == "" {
-		if wd, err := os.Getwd(); err == nil {
-			selectedRoot = wd
-		} else {
-			selectedRoot = "."
-		}
+	selectedRoot, err := initializeWorkspaceRoot(s.workDir, initParams)
+	if err != nil {
+		return nil, err
 	}
 	actualRoot := backend.CanonicalWorkspaceRoot(selectedRoot)
 	if s.expectedRoot != "" && actualRoot != s.expectedRoot {
@@ -426,8 +384,8 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		s.goBaseDir = filepath.Join(s.workDir, ".scratch", "go")
 	}
 	initCtx := gocache.WithBaseDir(ctx, s.goBaseDir)
-	if _, err := gocache.Environment(initCtx, s.workDir); err != nil {
-		return nil, fmt.Errorf("prepare MCP Go base directory: %w", err)
+	if _, cacheErr := gocache.Environment(initCtx, s.workDir); cacheErr != nil {
+		return nil, fmt.Errorf("prepare MCP Go base directory: %w", cacheErr)
 	}
 	s.workspaceTrust = backend.NewWorkspaceTrust(s.workDir, initParams.InitializationOptions.TrustWorkspace)
 	plan, err := projectverify.Discover(s.workDir)
@@ -461,6 +419,61 @@ func (s *Server) Initialize(ctx context.Context, rawParams json.RawMessage) (map
 		result["instructions"] = s.instructions
 	}
 	return result, nil
+}
+
+type initializeParams struct {
+	RootURI          string `json:"rootUri"`
+	RootPath         string `json:"rootPath"`
+	WorkspaceFolders []struct {
+		URI string `json:"uri"`
+	} `json:"workspaceFolders"`
+	InitializationOptions struct {
+		WorkspaceRoot  string `json:"workspace_root"`
+		RootURI        string `json:"rootUri"`
+		TrustWorkspace bool   `json:"trust_workspace"`
+	} `json:"initializationOptions"`
+}
+
+func parseInitializeParams(raw json.RawMessage) (initializeParams, error) {
+	var params initializeParams
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &params); err != nil {
+			return initializeParams{}, fmt.Errorf("parse initialize params: %w", err)
+		}
+	}
+	return params, nil
+}
+
+func initializeWorkspaceRoot(defaultRoot string, params initializeParams) (string, error) {
+	selectedRoot := defaultRoot
+	uri := ""
+	switch {
+	case params.RootURI != "":
+		uri = params.RootURI
+	case params.RootPath != "":
+		selectedRoot = params.RootPath
+	case len(params.WorkspaceFolders) > 0 && params.WorkspaceFolders[0].URI != "":
+		uri = params.WorkspaceFolders[0].URI
+	case params.InitializationOptions.RootURI != "":
+		uri = params.InitializationOptions.RootURI
+	case params.InitializationOptions.WorkspaceRoot != "":
+		selectedRoot = params.InitializationOptions.WorkspaceRoot
+	}
+	if uri != "" {
+		root, err := workspaceRootFromURI(uri)
+		if err != nil {
+			return "", err
+		}
+		selectedRoot = root
+	}
+	if selectedRoot == "" {
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("resolve default MCP workspace root: %w", err)
+		}
+		return workingDirectory, nil
+	}
+	return selectedRoot, nil
 }
 
 func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
@@ -664,7 +677,29 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) (
 }
 
 func toolSchema(entry operation.Entry) (map[string]any, error) {
-	description := entry.Summary
+	toolOutput, err := toolOutputAndContinuations(entry)
+	if err != nil {
+		return nil, err
+	}
+	description := toolSchemaDescription(entry, toolOutput.continuations)
+	inputSchema, err := operationInputSchema(entry)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"name":                entry.MCPName,
+		toolFieldDescription:  description,
+		toolFieldInputSchema:  inputSchema,
+		toolFieldOutputSchema: toolOutput.schema,
+	}, nil
+}
+
+type toolOutputAndContinuationsResult struct {
+	schema        map[string]any
+	continuations map[string]any
+}
+
+func toolOutputAndContinuations(entry operation.Entry) (toolOutputAndContinuationsResult, error) {
 	output := standardOutputSchema(map[string]any{"type": "string"})
 	if entry.MCPName == "semantic_remove_construct" {
 		output = standardOutputSchema(removeConstructResultSchema())
@@ -675,7 +710,7 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		if entry.Output.ResultSchema != nil {
 			resultSchema, err := entry.Output.ResultSchema.JSONSchema()
 			if err != nil {
-				return nil, fmt.Errorf("operation %q result schema: %w", entry.MCPName, err)
+				return toolOutputAndContinuationsResult{}, fmt.Errorf("operation %q result schema: %w", entry.MCPName, err)
 			}
 			output = standardOutputSchema(resultSchema)
 			properties = output[schemaPropertiesKey].(map[string]any)
@@ -687,12 +722,17 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 			}
 			fieldSchema, err := continuation.Schema.JSONSchema()
 			if err != nil {
-				return nil, fmt.Errorf("operation %q continuation %q schema: %w", entry.MCPName, continuation.Field, err)
+				return toolOutputAndContinuationsResult{}, fmt.Errorf("operation %q continuation %q schema: %w", entry.MCPName, continuation.Field, err)
 			}
 			continuations[continuation.Field] = fieldSchema
 		}
 	}
 	maps.Copy(properties, continuations)
+	return toolOutputAndContinuationsResult{schema: output, continuations: continuations}, nil
+}
+
+func toolSchemaDescription(entry operation.Entry, continuations map[string]any) string {
+	description := entry.Summary
 	if entry.Output != nil && len(entry.Output.Continuations) > 0 {
 		fieldNames := make([]string, 0, len(entry.Output.Continuations))
 		for _, continuation := range entry.Output.Continuations {
@@ -725,16 +765,7 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		slices.Sort(fieldNames)
 		description += " Successful structured results may include: " + strings.Join(fieldNames, ", ") + "."
 	}
-	inputSchema, err := operationInputSchema(entry)
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{
-		"name":                entry.MCPName,
-		toolFieldDescription:  description,
-		toolFieldInputSchema:  inputSchema,
-		toolFieldOutputSchema: output,
-	}, nil
+	return description
 }
 
 func removeConstructResultSchema() map[string]any {
@@ -931,42 +962,13 @@ func moveConstructContinuationFields(result any, root string) map[string]any {
 
 func structuredContinuationFields(toolName string, result any, root string, arguments map[string]any) map[string]any {
 	fields := map[string]any{}
-	addLookup := func(lookup *backend.LookupResult) {
-		if lookup == nil || lookup.Ambiguous {
-			return
-		}
-		if lookup.Symbol != "" {
-			fields["symbol"] = lookup.Symbol
-		}
-		if file := continuationPath(root, lookup.File); file != "" {
-			fields["file"] = file
-		}
-		if lookup.Kind != "" {
-			fields["kind"] = lookup.Kind
-		}
-		if lookup.Line > 0 {
-			fields["line"] = lookup.Line
-		}
-		if lookup.Column > 0 {
-			fields["column"] = lookup.Column
-		}
-	}
 	switch toolName {
 	case "semantic_lookup":
 		if lookup, ok := result.(*backend.LookupResult); ok {
-			addLookup(lookup)
+			addLookupContinuation(fields, lookup, root)
 		}
 	case "semantic_rename":
-		if rename, ok := result.(*backend.RenameResult); ok && rename != nil {
-			if rename.Lookup != nil {
-				if symbol := renamedQualifiedSymbol(rename.Lookup.Symbol, rawString(arguments, "to")); symbol != "" {
-					fields["symbol"] = symbol
-				}
-				if file := continuationPath(root, rename.Lookup.File); file != "" {
-					fields["file"] = file
-				}
-			}
-		}
+		addRenameContinuation(fields, result, root, arguments)
 	case "semantic_replace_body", "semantic_replace_decl", "semantic_insert_function",
 		"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
 		"semantic_organize_imports", "semantic_extract_function", semanticExtractVariableTool:
@@ -974,36 +976,82 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 	case "semantic_remove_construct":
 		addRemoveContinuationFields(fields, result, root)
 	case "semantic_replace_construct", "semantic_insert_case", semanticInsertConstructTool, "semantic_inline_variable":
-		if edit, ok := result.(operation.FileEditRes); ok {
-			if toolName == semanticInsertConstructTool && edit.Symbol != "" {
-				fields["symbol"] = edit.Symbol
-			}
-			if file := continuationPath(root, edit.File); file != "" {
-				fields["file"] = file
-			}
-			if toolName == semanticInsertConstructTool && edit.Line > 0 {
-				fields["line"] = edit.Line
-			}
-			if edit.InFunction != "" {
-				fields["in_function"] = edit.InFunction
-			}
-			if (toolName == "semantic_insert_case" || toolName == semanticInsertConstructTool) && edit.Discriminator != "" {
-				fields["discriminator"] = edit.Discriminator
-			}
-		}
+		addConstructContinuation(fields, toolName, result, root)
 	case semanticMoveConstructTool:
 		maps.Copy(fields, moveConstructContinuationFields(result, root))
 	case "semantic_scaffold_file":
-		if file, ok := result.(operation.ScaffoldFileRes); ok {
-			if resolved := continuationPath(root, file.File); resolved != "" {
-				fields["file"] = resolved
-			}
-			if file.Package != "" {
-				fields["package"] = file.Package
-			}
-		}
+		addScaffoldContinuation(fields, result, root)
 	}
 	return fields
+}
+
+func addLookupContinuation(fields map[string]any, lookup *backend.LookupResult, root string) {
+	if lookup == nil || lookup.Ambiguous {
+		return
+	}
+	if lookup.Symbol != "" {
+		fields["symbol"] = lookup.Symbol
+	}
+	if file := continuationPath(root, lookup.File); file != "" {
+		fields["file"] = file
+	}
+	if lookup.Kind != "" {
+		fields["kind"] = lookup.Kind
+	}
+	if lookup.Line > 0 {
+		fields["line"] = lookup.Line
+	}
+	if lookup.Column > 0 {
+		fields["column"] = lookup.Column
+	}
+}
+
+func addRenameContinuation(fields map[string]any, result any, root string, arguments map[string]any) {
+	rename, ok := result.(*backend.RenameResult)
+	if !ok || rename == nil || rename.Lookup == nil {
+		return
+	}
+	if symbol := renamedQualifiedSymbol(rename.Lookup.Symbol, rawString(arguments, "to")); symbol != "" {
+		fields["symbol"] = symbol
+	}
+	if file := continuationPath(root, rename.Lookup.File); file != "" {
+		fields["file"] = file
+	}
+}
+
+func addConstructContinuation(fields map[string]any, toolName string, result any, root string) {
+	edit, ok := result.(operation.FileEditRes)
+	if !ok {
+		return
+	}
+	if toolName == semanticInsertConstructTool && edit.Symbol != "" {
+		fields["symbol"] = edit.Symbol
+	}
+	if file := continuationPath(root, edit.File); file != "" {
+		fields["file"] = file
+	}
+	if toolName == semanticInsertConstructTool && edit.Line > 0 {
+		fields["line"] = edit.Line
+	}
+	if edit.InFunction != "" {
+		fields["in_function"] = edit.InFunction
+	}
+	if (toolName == "semantic_insert_case" || toolName == semanticInsertConstructTool) && edit.Discriminator != "" {
+		fields["discriminator"] = edit.Discriminator
+	}
+}
+
+func addScaffoldContinuation(fields map[string]any, result any, root string) {
+	file, ok := result.(operation.ScaffoldFileRes)
+	if !ok {
+		return
+	}
+	if resolved := continuationPath(root, file.File); resolved != "" {
+		fields["file"] = resolved
+	}
+	if file.Package != "" {
+		fields["package"] = file.Package
+	}
 }
 
 func addFileEditContinuationFields(fields map[string]any, toolName string, result any, root string) {
@@ -1451,30 +1499,11 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendError(id, -32603, fmt.Sprintf("validate MCP continuation registry: %v", s.registryValidationErr))
 		return
 	}
-	if params.Name == "semantic_reload" {
-		s.handleReload(id)
+	if s.handleSpecialToolCall(ctx, id, params) {
 		return
 	}
-	if params.Name == "semantic_metrics" {
-		s.handleMetricsCall(id, params.Arguments)
+	if !s.ensureInitialized(ctx, id) {
 		return
-	}
-	if params.Name == "report_feedback" {
-		s.handleFeedbackReport(ctx, id, params.Arguments)
-		return
-	}
-	if params.Name == "semantic_batch" {
-		s.handleBatch(ctx, id, params.Arguments)
-		return
-	}
-	s.sessionMu.Lock()
-	uninitialized := s.initializedAt.IsZero()
-	s.sessionMu.Unlock()
-	if uninitialized {
-		if _, err := s.Initialize(ctx, nil); err != nil {
-			s.sendError(id, -32603, fmt.Sprintf("initialize server: %v", err))
-			return
-		}
 	}
 	entry, ok := s.registry.LookupMCP(params.Name)
 	if !ok || (s.profile == "mutations-only" && entry.ReadOnly) {
@@ -1501,11 +1530,8 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	}
 	requestTrust := requestTrustedRoot(requestRoot, s.workspaceTrust, raw)
 	projectTrust := canonicalTrust(requestRoot, requestTrust)
-	observer := godiagnostics.SynchronizeWithContext
 	requestServer := s.requestView(requestRoot, requestTrust)
-	if !requestServer.goEnabled() {
-		observer = func(context.Context) error { return nil }
-	}
+	observer := requestMutationObserver(requestServer)
 	ctx = operation.WithMutationObserver(ctx, observer)
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(requestRoot))
 	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(requestRoot))
@@ -1528,6 +1554,17 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		s.sendOperationToolErrorWithTiming(id, dispatchErr.Error(), timing, entry, dispatchErr)
 		return
 	}
+	s.sendToolDispatchResponse(ctx, id, timing, params.Name, entry, result, requestRoot, raw)
+}
+
+func requestMutationObserver(requestServer *Server) func(context.Context) error {
+	if requestServer.goEnabled() {
+		return godiagnostics.SynchronizeWithContext
+	}
+	return func(context.Context) error { return nil }
+}
+
+func (s *Server) sendToolDispatchResponse(ctx context.Context, id json.RawMessage, timing *toolRequestTiming, toolName string, entry operation.Entry, result any, requestRoot string, raw map[string]any) {
 	if verify, ok := result.(operation.VerifyRes); ok && verify.Failure != "" {
 		finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 		body, formatErr := entry.Format(result)
@@ -1550,7 +1587,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		})
 		return
 	}
-	fields := structuredContinuationFields(params.Name, result, requestRoot, raw)
+	fields := structuredContinuationFields(toolName, result, requestRoot, raw)
 	if entry.ProjectOutput != nil {
 		projected, projectErr := entry.ProjectOutput(result)
 		if projectErr != nil {
@@ -1574,6 +1611,36 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		return
 	}
 	s.sendToolSuccessWithNative(id, text, timing, result, fields)
+}
+
+func (s *Server) ensureInitialized(ctx context.Context, id json.RawMessage) bool {
+	s.sessionMu.Lock()
+	uninitialized := s.initializedAt.IsZero()
+	s.sessionMu.Unlock()
+	if !uninitialized {
+		return true
+	}
+	if _, err := s.Initialize(ctx, nil); err != nil {
+		s.sendError(id, -32603, fmt.Sprintf("initialize server: %v", err))
+		return false
+	}
+	return true
+}
+
+func (s *Server) handleSpecialToolCall(ctx context.Context, id json.RawMessage, params toolCallParams) bool {
+	switch params.Name {
+	case "semantic_reload":
+		s.handleReload(id)
+	case "semantic_metrics":
+		s.handleMetricsCall(id, params.Arguments)
+	case "report_feedback":
+		s.handleFeedbackReport(ctx, id, params.Arguments)
+	case "semantic_batch":
+		s.handleBatch(ctx, id, params.Arguments)
+	default:
+		return false
+	}
+	return true
 }
 
 func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {

@@ -97,42 +97,55 @@ func TestMoveConstructAcrossPackagesRefusesUnresolvedCasesBeforeWriting(t *testi
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			writeMoveFixture(t, root, "go.mod", "module example.com/cross\n\ngo 1.23\n")
-			writeMoveFixture(t, root, "legacy/move.go", test.source)
-			destination := test.destination
-			if destination == "" {
-				destination = "package api\n"
-			}
-			writeMoveFixture(t, root, "api/api.go", destination)
-			if test.extraFile != "" {
-				writeMoveFixture(t, root, test.extraFilePath, test.extraFile)
-			}
-			beforeSource, err := os.ReadFile(filepath.Join(root, "legacy/move.go"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			beforeDestination, err := os.ReadFile(filepath.Join(root, "api/api.go"))
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			_, err = MoveConstruct(context.Background(), filepath.Join(root, "legacy/move.go"), test.symbol, MoveConstructOptions{DestinationFile: filepath.Join(root, "api/api.go"), Placement: PlacementFileEnd})
-			if err == nil || !strings.Contains(err.Error(), test.wantError) {
-				t.Fatalf("MoveConstruct() error = %v, want substring %q", err, test.wantError)
-			}
-			afterSource, err := os.ReadFile(filepath.Join(root, "legacy/move.go"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			afterDestination, err := os.ReadFile(filepath.Join(root, "api/api.go"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if string(afterSource) != string(beforeSource) || string(afterDestination) != string(beforeDestination) {
-				t.Fatal("refused move changed a source or destination file")
-			}
+			assertUnresolvedMoveIsAtomic(t, test)
 		})
+	}
+}
+
+func assertUnresolvedMoveIsAtomic(t *testing.T, test struct {
+	name, symbol, source, extraFilePath, extraFile, destination, wantError string
+}) {
+	t.Helper()
+	root := t.TempDir()
+	writeMoveFixture(t, root, "go.mod", "module example.com/cross\n\ngo 1.23\n")
+	writeMoveFixture(t, root, "legacy/move.go", test.source)
+	destination := test.destination
+	if destination == "" {
+		destination = "package api\n"
+	}
+	writeMoveFixture(t, root, "api/api.go", destination)
+	if test.extraFile != "" {
+		writeMoveFixture(t, root, test.extraFilePath, test.extraFile)
+	}
+	sourcePath := filepath.Join(root, "legacy/move.go")
+	destinationPath := filepath.Join(root, "api/api.go")
+	beforeSource, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeDestination, err := os.ReadFile(destinationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = MoveConstruct(context.Background(), sourcePath, test.symbol, MoveConstructOptions{DestinationFile: destinationPath, Placement: PlacementFileEnd})
+	if err == nil || !strings.Contains(err.Error(), test.wantError) {
+		t.Fatalf("MoveConstruct() error = %v, want substring %q", err, test.wantError)
+	}
+	assertMoveSourceFilesUnchanged(t, sourcePath, destinationPath, beforeSource, beforeDestination)
+}
+
+func assertMoveSourceFilesUnchanged(t *testing.T, sourcePath, destinationPath string, beforeSource, beforeDestination []byte) {
+	t.Helper()
+	afterSource, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterDestination, err := os.ReadFile(destinationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterSource) != string(beforeSource) || string(afterDestination) != string(beforeDestination) {
+		t.Fatal("refused move changed a source or destination file")
 	}
 }
 

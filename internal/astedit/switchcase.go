@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"semedit/internal/backend"
-	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 	"semedit/internal/telemetry"
@@ -123,69 +122,61 @@ func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSourc
 		return "", fmt.Errorf("locate switch %q in %s: %w", switchOn, funcName, err)
 	}
 
-	caseTrimmed := strings.TrimSpace(caseSource)
-	synthetic := "package dummy\n\nfunc _() {\nswitch {\n" + caseTrimmed + "\n}\n}\n"
-	synthFset := token.NewFileSet()
-	if _, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); err != nil {
-		pos := extractSyntaxPosition(synthFset, err)
-		if pos.Line > 4 {
-			pos.Line -= 4
-		}
-		return "", &SyntaxError{
-			File:    "snippet",
-			Snippet: caseSource,
-			Pos:     pos,
-			Cause:   err,
-			Err:     ErrSyntax,
-		}
-	}
-
-	offset, err := calculateCaseOffset(fset, content, switchBody, opts)
+	caseTrimmed, err := validateCaseSource(caseSource)
 	if err != nil {
 		return "", err
 	}
-
-	offset = normalizeInsertionOffset(fset, fileNode, content, offset)
-
-	var newContent bytes.Buffer
-	newContent.Write(content[:offset])
-	if offset == 0 || content[offset-1] != '\n' {
-		newContent.WriteByte('\n')
-	}
-	newContent.WriteString(caseTrimmed)
-	newContent.WriteString("\n")
-	newContent.Write(content[offset:])
-
-	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
-	formatted, err := format.Source(newContent.Bytes())
-	finishFormatting()
+	formatted, err := planCaseInsertion(ctx, cleanPath, caseSource, caseTrimmed, content, fset, fileNode, switchBody, opts)
 	if err != nil {
-		return "", &SyntaxError{
-			File:    cleanPath,
-			Snippet: caseSource,
-			Cause:   err,
-			Err:     ErrSyntax,
-		}
+		return "", err
 	}
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return "", fmt.Errorf("organize imports: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return "", fmt.Errorf("format file: %w", err)
-		}
+	if err := publishCaseInsertion(ctx, cleanPath, formatted, opts.AutoOrganizeImports); err != nil {
+		return "", err
 	}
 
 	diff := UnifiedDiff(funcName, "", caseTrimmed)
 	return diff, nil
+}
+
+func validateCaseSource(source string) (string, error) {
+	trimmed := strings.TrimSpace(source)
+	synthetic := "package dummy\n\nfunc _() {\nswitch {\n" + trimmed + "\n}\n}\n"
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "snippet", synthetic, parser.ParseComments); err != nil {
+		position := extractSyntaxPosition(fset, err)
+		if position.Line > 4 {
+			position.Line -= 4
+		}
+		return "", &SyntaxError{File: "snippet", Snippet: source, Pos: position, Cause: err, Err: ErrSyntax}
+	}
+	return trimmed, nil
+}
+
+func planCaseInsertion(ctx context.Context, path, source, caseText string, content []byte, fset *token.FileSet, file *ast.File, switchBody *ast.BlockStmt, opts CaseOptions) ([]byte, error) {
+	offset, err := calculateCaseOffset(fset, content, switchBody, opts)
+	if err != nil {
+		return nil, err
+	}
+	offset = normalizeInsertionOffset(fset, file, content, offset)
+	var updated bytes.Buffer
+	updated.Write(content[:offset])
+	if offset == 0 || content[offset-1] != '\n' {
+		updated.WriteByte('\n')
+	}
+	updated.WriteString(caseText)
+	updated.WriteString("\n")
+	updated.Write(content[offset:])
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
+	formatted, err := format.Source(updated.Bytes())
+	finishFormatting()
+	if err != nil {
+		return nil, &SyntaxError{File: path, Snippet: source, Cause: err, Err: ErrSyntax}
+	}
+	return formatted, nil
+}
+
+func publishCaseInsertion(ctx context.Context, path string, content []byte, organizeImports bool) error {
+	return publishInsertedDeclaration(ctx, path, content, organizeImports)
 }
 
 func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, switchPath string) (*ast.BlockStmt, error) {
@@ -202,7 +193,10 @@ func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, swit
 		}
 	}
 
-	matches := collectSwitchMatches(fset, body, targetSwitchOn, canonicalTarget)
+	matches, err := collectSwitchMatches(fset, body, targetSwitchOn, canonicalTarget)
+	if err != nil {
+		return nil, err
+	}
 	if len(matches) == 0 {
 		return nil, ErrSwitchNotFound
 	}
@@ -246,46 +240,100 @@ type switchMatch struct {
 	children []switchMatch
 }
 
-func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) []switchMatch {
+func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) ([]switchMatch, error) {
 	var matches []switchMatch
+	var visitErr error
 	ast.Inspect(body, func(n ast.Node) bool {
-		switch s := n.(type) {
-		case *ast.SwitchStmt:
-			matched := false
-			if targetSwitchOn == "" {
-				matched = s.Tag == nil
-			} else if s.Tag != nil {
-				var buf bytes.Buffer
-				if err := format.Node(&buf, fset, s.Tag); err == nil {
-					matched = buf.String() == canonicalTarget || strings.TrimSpace(buf.String()) == canonicalTarget
-				}
-			}
-			if matched {
-				matches = append(matches, switchMatch{body: s.Body})
-				return false
-			}
-		case *ast.TypeSwitchStmt:
-			if targetSwitchOn != "" && s.Assign != nil {
-				var selector ast.Expr
-				if assign, ok := s.Assign.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 {
-					if assertion, ok := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
-						selector = assertion.X
-					}
-				}
-				var buf bytes.Buffer
-				if selector != nil && format.Node(&buf, fset, selector) == nil && buf.String() == canonicalTarget {
-					matches = append(matches, switchMatch{body: s.Body})
-					return false
-				}
-			}
+		result, err := matchingSwitchBody(fset, n, targetSwitchOn, canonicalTarget)
+		if err != nil {
+			visitErr = err
+			return false
+		}
+		if result.matched {
+			matches = append(matches, switchMatch{body: result.body})
+			return false
 		}
 		return true
 	})
+	if visitErr != nil {
+		return nil, visitErr
+	}
 	for i := range matches {
-		matches[i].children = collectSwitchMatches(fset, matches[i].body, targetSwitchOn, canonicalTarget)
+		children, err := collectSwitchMatches(fset, matches[i].body, targetSwitchOn, canonicalTarget)
+		if err != nil {
+			return nil, err
+		}
+		matches[i].children = children
 	}
 	assignSwitchPaths(matches, "")
-	return matches
+	return matches, nil
+}
+
+type switchMatchResult struct {
+	body    *ast.BlockStmt
+	matched bool
+}
+
+func matchingSwitchBody(fset *token.FileSet, node ast.Node, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
+	switch statement := node.(type) {
+	case *ast.SwitchStmt:
+		return matchingExpressionSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
+	case *ast.TypeSwitchStmt:
+		return matchingTypeSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
+	default:
+		return switchMatchResult{}, nil
+	}
+}
+
+func matchingExpressionSwitchBody(fset *token.FileSet, statement *ast.SwitchStmt, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
+	if targetSwitchOn == "" {
+		if statement.Tag == nil {
+			return switchMatchResult{body: statement.Body, matched: true}, nil
+		}
+		return switchMatchResult{}, nil
+	}
+	if statement.Tag == nil {
+		return switchMatchResult{}, nil
+	}
+	var formatted bytes.Buffer
+	if err := format.Node(&formatted, fset, statement.Tag); err != nil {
+		return switchMatchResult{}, fmt.Errorf("format expression switch selector: %w", err)
+	}
+	text := formatted.String()
+	if text == canonicalTarget || strings.TrimSpace(text) == canonicalTarget {
+		return switchMatchResult{body: statement.Body, matched: true}, nil
+	}
+	return switchMatchResult{}, nil
+}
+
+func matchingTypeSwitchBody(fset *token.FileSet, statement *ast.TypeSwitchStmt, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
+	if targetSwitchOn == "" || statement.Assign == nil {
+		return switchMatchResult{}, nil
+	}
+	selector := typeSwitchSelector(statement.Assign)
+	if selector == nil {
+		return switchMatchResult{}, nil
+	}
+	var formatted bytes.Buffer
+	if err := format.Node(&formatted, fset, selector); err != nil {
+		return switchMatchResult{}, fmt.Errorf("format type switch selector: %w", err)
+	}
+	if formatted.String() != canonicalTarget {
+		return switchMatchResult{}, nil
+	}
+	return switchMatchResult{body: statement.Body, matched: true}, nil
+}
+
+func typeSwitchSelector(assign ast.Stmt) ast.Expr {
+	assignment, ok := assign.(*ast.AssignStmt)
+	if !ok || len(assignment.Rhs) != 1 {
+		return nil
+	}
+	assertion, ok := assignment.Rhs[0].(*ast.TypeAssertExpr)
+	if !ok {
+		return nil
+	}
+	return assertion.X
 }
 
 func assignSwitchPaths(matches []switchMatch, prefix string) {

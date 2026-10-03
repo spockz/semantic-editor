@@ -140,18 +140,18 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 	if err != nil {
 		return nil, checks, "cannot establish a complete Go module source set: " + err.Error()
 	}
-	files, referenceFound, directiveFound, err := scanModuleSources(ctx, root, cleanPath, fset.Position(target.pos).Offset, target.name, content)
+	scan, err := scanModuleSources(ctx, root, cleanPath, fset.Position(target.pos).Offset, target.name, content)
 	checks = append(checks, "module_go_source_scan")
 	if err != nil {
 		return nil, checks, "cannot complete module source scan: " + err.Error()
 	}
 	checks = append(checks, "module_reference_scan_complete")
-	if directiveFound {
+	if scan.directiveFound {
 		checks = append(checks, "special_directive_scan")
 		return nil, checks, "safe_delete refuses modules containing Go generation or link-name directives"
 	}
 	checks = append(checks, "special_directive_scan")
-	if referenceFound {
+	if scan.referenceFound {
 		return nil, checks, fmt.Sprintf("safe_delete found another Go identifier named %q in the module source set", target.name)
 	}
 	if refusal, err := verifySafeDeleteTarget(ctx, root, cleanPath, target); err != nil {
@@ -159,7 +159,7 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 	} else if refusal != "" {
 		return nil, checks, refusal
 	}
-	return &safeDeleteSnapshot{root: root, files: files}, checks, ""
+	return &safeDeleteSnapshot{root: root, files: scan.revisions}, checks, ""
 }
 
 func standaloneConstant(file *ast.File, selected ast.Node) (*ast.GenDecl, *ast.ValueSpec, *ast.Ident) {
@@ -196,105 +196,171 @@ func nearestModuleRoot(directory string) (string, error) {
 	}
 }
 
-func scanModuleSources(ctx context.Context, root, target string, targetOffset int, targetName string, targetContent []byte) (map[string][32]byte, bool, bool, error) {
-	files := make(map[string][32]byte)
-	referenceFound, directiveFound := false, false
+type moduleSourceScan struct {
+	revisions      map[string][32]byte
+	referenceFound bool
+	directiveFound bool
+}
+
+type moduleSourcePath struct {
+	absolute string
+	relative string
+}
+
+func scanModuleSources(ctx context.Context, root, target string, targetOffset int, targetName string, targetContent []byte) (moduleSourceScan, error) {
+	scan := moduleSourceScan{revisions: make(map[string][32]byte)}
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
-		return nil, false, false, fmt.Errorf("open module root %s: %w", root, err)
+		return moduleSourceScan{}, fmt.Errorf("open module root %s: %w", root, err)
 	}
 	// The selected file has already been resolved under the active workspace; root is its nearest module.
 	// #nosec G703
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return fmt.Errorf("walk %s: %w", path, walkErr)
-		}
-		if entry.IsDir() && path != root {
-			name := entry.Name()
-			if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "vendor" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("symlink in module source set: %s", path)
-		}
-		if filepath.Base(path) == "go.mod" && filepath.Dir(path) != root {
-			return fmt.Errorf("nested Go module in source set: %s", path)
-		}
-		extension := filepath.Ext(path)
-		if extension == ".s" || extension == ".S" || extension == ".syso" || extension == ".c" || extension == ".h" || extension == ".cpp" || extension == ".cc" || extension == ".cxx" || extension == ".m" || extension == ".mm" {
-			return fmt.Errorf("non-Go source in module prevents complete reference proof: %s", path)
-		}
-		if entry.IsDir() || extension != ".go" {
-			return nil
-		}
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("non-regular Go source in module source set: %s", path)
-		}
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("resolve source path %s: %w", path, err)
-		}
-		relative, err := filepath.Rel(root, absolute)
-		if err != nil {
-			return fmt.Errorf("resolve source path relative to module root: %w", err)
-		}
-		var data []byte
-		if sourcebuf.FromContext(ctx) != nil {
-			data, err = sourcebuf.ReadFile(ctx, absolute)
-			if err != nil {
-				return fmt.Errorf("read %s from current source revision: %w", absolute, err)
-			}
-		} else {
-			dataFile, openErr := rootFS.Open(relative)
-			if openErr != nil {
-				return fmt.Errorf("open %s beneath module root: %w", absolute, openErr)
-			}
-			data, err = io.ReadAll(dataFile)
-			closeErr := dataFile.Close()
-			if err != nil {
-				return fmt.Errorf("read %s: %w", absolute, err)
-			}
-			if closeErr != nil {
-				return fmt.Errorf("close %s: %w", absolute, closeErr)
-			}
-		}
-		if absolute == target && !bytes.Equal(data, targetContent) {
-			return fmt.Errorf("selected file changed while scanning: %s", absolute)
-		}
-		files[absolute] = sha256.Sum256(data)
-		scanSet := token.NewFileSet()
-		parsed, err := parser.ParseFile(scanSet, absolute, data, parser.ParseComments|parser.AllErrors)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", absolute, err)
-		}
-		for _, group := range parsed.Comments {
-			for _, comment := range group.List {
-				text := strings.TrimSpace(comment.Text)
-				if strings.HasPrefix(text, "//go:") && !strings.HasPrefix(text, "//go:build ") {
-					directiveFound = true
-				}
-			}
-		}
-		ast.Inspect(parsed, func(node ast.Node) bool {
-			ident, ok := node.(*ast.Ident)
-			if !ok || ident.Name != targetName {
-				return true
-			}
-			if absolute == target && scanSet.Position(ident.Pos()).Offset == targetOffset {
-				return true
-			}
-			referenceFound = true
-			return true
-		})
-		return nil
+		return scanModuleSourceEntry(ctx, root, rootFS, target, targetOffset, targetName, targetContent, &scan, path, entry, walkErr)
 	})
 	closeErr := rootFS.Close()
-	if err == nil && closeErr != nil {
-		err = fmt.Errorf("close module root %s: %w", root, closeErr)
+	if closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close module root %s: %w", root, closeErr))
 	}
-	return files, referenceFound, directiveFound, err
+	return scan, err
+}
+
+func scanModuleSourceEntry(ctx context.Context, root string, rootFS *os.Root, target string, targetOffset int, targetName string, targetContent []byte, scan *moduleSourceScan, path string, entry fs.DirEntry, walkErr error) error {
+	if walkErr != nil {
+		return fmt.Errorf("walk %s: %w", path, walkErr)
+	}
+	if entry.IsDir() {
+		return moduleDirectoryAction(root, path, entry.Name())
+	}
+	if err := validateModuleSourceEntry(root, path, entry); err != nil {
+		return err
+	}
+	if filepath.Ext(path) != ".go" {
+		return nil
+	}
+	sourcePath, err := resolveModuleSourcePath(root, path)
+	if err != nil {
+		return err
+	}
+	data, err := readModuleSource(ctx, rootFS, sourcePath)
+	if err != nil {
+		return err
+	}
+	if sourcePath.absolute == target && !bytes.Equal(data, targetContent) {
+		return fmt.Errorf("selected file changed while scanning: %s", sourcePath.absolute)
+	}
+	scan.revisions[sourcePath.absolute] = sha256.Sum256(data)
+	return inspectModuleSource(data, sourcePath.absolute, target, targetOffset, targetName, scan)
+}
+
+func moduleDirectoryAction(root, path, name string) error {
+	if path == root {
+		return nil
+	}
+	if strings.HasPrefix(name, ".") || strings.HasPrefix(name, "_") || name == "vendor" {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func validateModuleSourceEntry(root, path string, entry fs.DirEntry) error {
+	if entry.Type()&os.ModeSymlink != 0 {
+		return fmt.Errorf("symlink in module source set: %s", path)
+	}
+	if filepath.Base(path) == "go.mod" && filepath.Dir(path) != root {
+		return fmt.Errorf("nested Go module in source set: %s", path)
+	}
+	if isUnsupportedModuleSource(path) {
+		return fmt.Errorf("non-Go source in module prevents complete reference proof: %s", path)
+	}
+	if filepath.Ext(path) == ".go" && !entry.Type().IsRegular() {
+		return fmt.Errorf("non-regular Go source in module source set: %s", path)
+	}
+	return nil
+}
+
+func isUnsupportedModuleSource(path string) bool {
+	switch filepath.Ext(path) {
+	case ".s", ".S", ".syso", ".c", ".h", ".cpp", ".cc", ".cxx", ".m", ".mm":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveModuleSourcePath(root, path string) (moduleSourcePath, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return moduleSourcePath{}, fmt.Errorf("resolve source path %s: %w", path, err)
+	}
+	relative, err := filepath.Rel(root, absolute)
+	if err != nil {
+		return moduleSourcePath{}, fmt.Errorf("resolve source path relative to module root: %w", err)
+	}
+	return moduleSourcePath{absolute: absolute, relative: relative}, nil
+}
+
+func readModuleSource(ctx context.Context, rootFS *os.Root, path moduleSourcePath) ([]byte, error) {
+	if sourcebuf.FromContext(ctx) != nil {
+		data, err := sourcebuf.ReadFile(ctx, path.absolute)
+		if err != nil {
+			return nil, fmt.Errorf("read %s from current source revision: %w", path.absolute, err)
+		}
+		return data, nil
+	}
+	file, err := rootFS.Open(path.relative)
+	if err != nil {
+		return nil, fmt.Errorf("open %s beneath module root: %w", path.absolute, err)
+	}
+	data, readErr := io.ReadAll(file)
+	closeErr := file.Close()
+	var resultErr error
+	if readErr != nil {
+		resultErr = fmt.Errorf("read %s: %w", path.absolute, readErr)
+	}
+	if closeErr != nil {
+		resultErr = errors.Join(resultErr, fmt.Errorf("close %s: %w", path.absolute, closeErr))
+	}
+	if resultErr != nil {
+		return nil, resultErr
+	}
+	return data, nil
+}
+
+func inspectModuleSource(data []byte, path, target string, targetOffset int, targetName string, scan *moduleSourceScan) error {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, data, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", path, err)
+	}
+	collectModuleDirectives(file, scan)
+	collectModuleReferences(file, fset, path, target, targetOffset, targetName, scan)
+	return nil
+}
+
+func collectModuleDirectives(file *ast.File, scan *moduleSourceScan) {
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			text := strings.TrimSpace(comment.Text)
+			if strings.HasPrefix(text, "//go:") && !strings.HasPrefix(text, "//go:build ") {
+				scan.directiveFound = true
+			}
+		}
+	}
+}
+
+func collectModuleReferences(file *ast.File, fset *token.FileSet, path, target string, targetOffset int, targetName string, scan *moduleSourceScan) {
+	ast.Inspect(file, func(node ast.Node) bool {
+		identifier, ok := node.(*ast.Ident)
+		if !ok || identifier.Name != targetName {
+			return true
+		}
+		if path == target && fset.Position(identifier.Pos()).Offset == targetOffset {
+			return true
+		}
+		scan.referenceFound = true
+		return true
+	})
 }
 
 func validateSafeDeleteSnapshot(ctx context.Context, snapshot *safeDeleteSnapshot) error {
@@ -303,10 +369,11 @@ func validateSafeDeleteSnapshot(ctx context.Context, snapshot *safeDeleteSnapsho
 			return fmt.Errorf("disk preimage changed: %w", err)
 		}
 	}
-	current, _, _, err := scanModuleSources(ctx, snapshot.root, "", -1, "", nil)
+	currentScan, err := scanModuleSources(ctx, snapshot.root, "", -1, "", nil)
 	if err != nil {
 		return err
 	}
+	current := currentScan.revisions
 	if len(current) != len(snapshot.files) {
 		return fmt.Errorf("go source file set changed")
 	}
@@ -546,8 +613,8 @@ func removalRange(fset *token.FileSet, file *ast.File, selected ast.Node, conten
 	startNode, endNode := selected.Pos(), selected.End()
 	for _, decl := range file.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok {
-			if startNode, endNode, found := declarationRemovalRange(gen, selected); found {
-				return validateRemovalRange(fset, startNode, endNode, contentLength)
+			if declarationStart, declarationEnd, found := declarationRemovalRange(gen, selected); found {
+				return validateRemovalRange(fset, declarationStart, declarationEnd, contentLength)
 			}
 		}
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn == selected && fn.Doc != nil {

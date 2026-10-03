@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -65,73 +66,111 @@ func TestCodexToolCallOutcomes(t *testing.T) {
 
 func TestRunCodexCapturesBoundedDiagnostics(t *testing.T) {
 	const threadStarted = "{\"type\":\"thread.started\",\"thread_id\":\"thread-123\"}\\n"
-	cases := []struct {
-		name, stderr, stdout string
-		exit, wantStatus     int
-		wantErr              bool
-	}{
+	cases := []codexDiagnosticCase{
 		{name: "success with stderr", stderr: "MCP startup warning\n", stdout: threadStarted},
 		{name: "success empty stderr", stdout: threadStarted},
 		{name: "oversized stderr", stderr: strings.Repeat("x", maxCodexStderrBytes+100), stdout: threadStarted},
 		{name: "failure retains stderr", stderr: "server failed to start", stdout: threadStarted, exit: 7, wantErr: true, wantStatus: 7},
 		{name: "malformed stdout", stderr: "diagnostic", stdout: "not-json\n" + threadStarted, wantErr: true},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			binDir := t.TempDir()
-			script := filepath.Join(binDir, "codex")
-			content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q >&2\nprintf '%%b' %q\nexit %d\n", tc.stderr, tc.stdout, tc.exit)
-			if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			// #nosec G302 -- the temporary test command must be executable.
-			if err := os.Chmod(script, 0o700); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			res := &RunResult{Arm: ArmBaseline}
-			_, err := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", res, "")
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("runCodex error = %v, want error=%t", err, tc.wantErr)
-			}
-			if res.CodexExitCode == nil || *res.CodexExitCode != tc.wantStatus {
-				t.Fatalf("exit status = %v, want %d", res.CodexExitCode, tc.wantStatus)
-			}
-			if tc.stderr != "" && !strings.Contains(res.CodexStderr, strings.TrimSpace(tc.stderr)[:min(len(strings.TrimSpace(tc.stderr)), 20)]) {
-				t.Fatalf("stderr = %q, missing diagnostic", res.CodexStderr)
-			}
-			if len(res.CodexStderr) > maxCodexStderrBytes+64 {
-				t.Fatalf("stderr retained %d bytes, expected bounded output", len(res.CodexStderr))
-			}
-			if tc.name == "oversized stderr" {
-				if !strings.Contains(res.CodexStderr, "[stderr truncated; retained first 65536 bytes]") {
-					t.Fatal("oversized stderr missing truncation marker")
-				}
-				if !strings.HasPrefix(res.CodexStderr, strings.Repeat("x", maxCodexStderrBytes)) {
-					t.Fatal("oversized stderr payload was not retained up to the boundary")
-				}
-			}
-			if tc.name == "malformed stdout" && res.Turns != 0 {
-				t.Fatalf("malformed event stream manufactured task turns: %d", res.Turns)
-			}
-			if tc.name == "malformed stdout" && (res.ToolCount != 0 || res.OutputTokens != 0 || res.ReasoningTokens != 0 || res.PromptTokens != 0 || res.agentResponse != "") {
-				t.Fatalf("malformed stdout contaminated metrics: %#v", res)
-			}
-			if tc.name == "success with stderr" {
-				data, marshalErr := json.Marshal(res)
-				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":0`) {
-					t.Fatalf("successful exit status was not serialized: %s (%v)", data, marshalErr)
-				}
-			}
-			if tc.name == "failure retains stderr" {
-				data, marshalErr := json.Marshal(res)
-				if marshalErr != nil || !strings.Contains(string(data), `"codex_exit_code":7`) {
-					t.Fatalf("failed exit status was not serialized: %s (%v)", data, marshalErr)
-				}
-			}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			runCodexDiagnosticCase(t, testCase)
 		})
 	}
+}
 
+type codexDiagnosticCase struct {
+	name       string
+	stderr     string
+	stdout     string
+	exit       int
+	wantStatus int
+	wantErr    bool
+}
+
+func runCodexDiagnosticCase(t *testing.T, testCase codexDiagnosticCase) {
+	t.Helper()
+	binDir := t.TempDir()
+	script := filepath.Join(binDir, "codex")
+	content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q >&2\nprintf '%%b' %q\nexit %d\n", testCase.stderr, testCase.stdout, testCase.exit)
+	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// #nosec G302 -- the temporary test command must be executable.
+	if err := os.Chmod(script, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	result := &RunResult{Arm: ArmBaseline}
+	_, runErr := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", result, "")
+	assertCodexRunStatus(t, testCase, result, runErr)
+	assertCodexStderr(t, testCase, result)
+	assertCodexMalformedOutput(t, testCase, result)
+	assertCodexExitCodeSerialization(t, testCase, result)
+}
+
+func assertCodexRunStatus(t *testing.T, testCase codexDiagnosticCase, result *RunResult, runErr error) {
+	t.Helper()
+	if (runErr != nil) != testCase.wantErr {
+		t.Fatalf("runCodex error = %v, want error=%t", runErr, testCase.wantErr)
+	}
+	if result.CodexExitCode == nil || *result.CodexExitCode != testCase.wantStatus {
+		t.Fatalf("exit status = %v, want %d", result.CodexExitCode, testCase.wantStatus)
+	}
+}
+
+func assertCodexStderr(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	if testCase.stderr != "" && !strings.Contains(result.CodexStderr, strings.TrimSpace(testCase.stderr)[:min(len(strings.TrimSpace(testCase.stderr)), 20)]) {
+		t.Fatalf("stderr = %q, missing diagnostic", result.CodexStderr)
+	}
+	if len(result.CodexStderr) > maxCodexStderrBytes+64 {
+		t.Fatalf("stderr retained %d bytes, expected bounded output", len(result.CodexStderr))
+	}
+	if testCase.name == "oversized stderr" {
+		assertCodexStderrTruncation(t, result.CodexStderr)
+	}
+}
+
+func assertCodexStderrTruncation(t *testing.T, stderr string) {
+	t.Helper()
+	if !strings.Contains(stderr, "[stderr truncated; retained first 65536 bytes]") {
+		t.Fatal("oversized stderr missing truncation marker")
+	}
+	if !strings.HasPrefix(stderr, strings.Repeat("x", maxCodexStderrBytes)) {
+		t.Fatal("oversized stderr payload was not retained up to the boundary")
+	}
+}
+
+func assertCodexMalformedOutput(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	if testCase.name != "malformed stdout" {
+		return
+	}
+	if result.Turns != 0 {
+		t.Fatalf("malformed event stream manufactured task turns: %d", result.Turns)
+	}
+	if result.ToolCount != 0 || result.OutputTokens != 0 || result.ReasoningTokens != 0 || result.PromptTokens != 0 || result.agentResponse != "" {
+		t.Fatalf("malformed stdout contaminated metrics: %#v", result)
+	}
+}
+
+func assertCodexExitCodeSerialization(t *testing.T, testCase codexDiagnosticCase, result *RunResult) {
+	t.Helper()
+	var wantCode string
+	switch testCase.name {
+	case "success with stderr":
+		wantCode = `"codex_exit_code":0`
+	case "failure retains stderr":
+		wantCode = `"codex_exit_code":7`
+	default:
+		return
+	}
+	data, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(data), wantCode) {
+		t.Fatalf("exit status %s was not serialized: %s (%v)", wantCode, data, err)
+	}
 }
 
 func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
@@ -191,14 +230,14 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	t.Setenv(openRouterAPIKeyEnv, "secret-test-key")
 	workDir := t.TempDir()
 	runner := NewRunner(filepath.Join(t.TempDir(), "benchmarks"), WithMCPServerInstructions(MCPServerInstructionsPrescriptive))
-	configPath, env, err := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
-	if err != nil {
-		t.Fatal(err)
+	configPath, env, configErr := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
+	if configErr != nil {
+		t.Fatal(configErr)
 	}
 	// #nosec G304 -- config path is constructed by the harness inside the temporary fixture.
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	var config struct {
 		Provider map[string]map[string]any `json:"provider"`
@@ -211,24 +250,24 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 			} `json:"servers"`
 		} `json:"mcp"`
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
-	openRouterProvider, found := config.Provider["openrouter"]
-	if !found {
+	openRouterProvider, providerFound := config.Provider["openrouter"]
+	if !providerFound {
 		t.Fatal("OpenRouter provider is absent")
 	}
-	if _, found := openRouterProvider["npm"]; found {
+	if _, foundNPM := openRouterProvider["npm"]; foundNPM {
 		t.Error("OpenRouter config overrides the native runtime with npm")
 	}
-	if _, found := openRouterProvider["options"]; found {
+	if _, foundOptions := openRouterProvider["options"]; foundOptions {
 		t.Error("OpenRouter config overrides native endpoint or credentials")
 	}
-	models, found := openRouterProvider["models"].(map[string]any)
-	if !found {
+	models, modelsFound := openRouterProvider["models"].(map[string]any)
+	if !modelsFound {
 		t.Fatal("OpenRouter model registration is absent")
 	}
-	if _, found := models["free"]; !found {
+	if _, freeModelFound := models["free"]; !freeModelFound {
 		t.Errorf("OpenRouter model registration = %#v, want free", models)
 	}
 	if strings.Contains(string(data), "secret-test-key") {
@@ -267,6 +306,12 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 		t.Errorf("OPENCODE_CONFIG = %q, want %q", got, configPath)
 	}
 
+	assertOpenCodeBaselineConfiguration(t, runner)
+	assertLegacyOpenCodeConfiguration(t, runner)
+}
+
+func assertOpenCodeBaselineConfiguration(t *testing.T, runner *Runner) {
+	t.Helper()
 	baselinePath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +324,10 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	if strings.Contains(string(baseline), `"mcp"`) {
 		t.Errorf("baseline config unexpectedly enables MCP: %s", baseline)
 	}
+}
 
+func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
+	t.Helper()
 	legacyPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/qwen36-coder"})
 	if err != nil {
 		t.Fatal(err)
@@ -660,13 +708,13 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 }
 
 func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_00_hi_overhead.txtar"))
-	if err != nil {
-		t.Fatalf("read no-op fixture: %v", err)
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_00_hi_overhead.txtar"))
+	if readErr != nil {
+		t.Fatalf("read no-op fixture: %v", readErr)
 	}
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse no-op fixture: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse no-op fixture: %v", parseErr)
 	}
 	if len(task.Archive.Files) != 0 {
 		t.Fatalf("empty fixture contains %d files", len(task.Archive.Files))
@@ -675,16 +723,16 @@ func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
 	if err := task.ExtractTo(workDir); err != nil {
 		t.Fatalf("extract no-op fixture: %v", err)
 	}
-	passed, err := Evaluate(context.Background(), task, workDir, nil)
-	if err != nil {
-		t.Fatalf("evaluate unchanged workspace: %v", err)
+	passed, evaluateErr := Evaluate(context.Background(), task, workDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate unchanged workspace: %v", evaluateErr)
 	}
 	if !passed.Passed {
 		t.Fatalf("unchanged workspace failed: %s", passed.ErrorMessage)
 	}
-	changed, err := Evaluate(context.Background(), task, workDir, []string{"unexpected.txt"})
-	if err != nil {
-		t.Fatalf("evaluate changed workspace: %v", err)
+	changed, changedErr := Evaluate(context.Background(), task, workDir, []string{"unexpected.txt"})
+	if changedErr != nil {
+		t.Fatalf("evaluate changed workspace: %v", changedErr)
 	}
 	if changed.Passed || changed.FailureStage != "level_1_mutation_policy" {
 		t.Fatalf("changed workspace result = %+v", changed)
@@ -693,14 +741,14 @@ func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
 
 func TestOracleMutationPolicyEnforcement(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
-	data, err := os.ReadFile(fixturePath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
+	data, readErr := os.ReadFile(fixturePath)
+	if readErr != nil {
+		t.Fatalf("read fixture: %v", readErr)
 	}
 
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse task: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse task: %v", parseErr)
 	}
 
 	tmpDir := t.TempDir()
@@ -709,9 +757,9 @@ func TestOracleMutationPolicyEnforcement(t *testing.T) {
 	}
 
 	// Case 1: Unauthorized change to go.mod
-	res, err := Evaluate(context.Background(), task, tmpDir, []string{"go.mod"})
-	if err != nil {
-		t.Fatalf("evaluate: %v", err)
+	res, evaluateErr := Evaluate(context.Background(), task, tmpDir, []string{"go.mod"})
+	if evaluateErr != nil {
+		t.Fatalf("evaluate: %v", evaluateErr)
 	}
 	if res.Passed {
 		t.Errorf("expected failure on disallowed go.mod change")
@@ -723,14 +771,14 @@ func TestOracleMutationPolicyEnforcement(t *testing.T) {
 
 func TestOracleAdversarialCheating(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
-	data, err := os.ReadFile(fixturePath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
+	data, readErr := os.ReadFile(fixturePath)
+	if readErr != nil {
+		t.Fatalf("read fixture: %v", readErr)
 	}
 
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse task: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse task: %v", parseErr)
 	}
 
 	tmpDir := t.TempDir()
@@ -739,9 +787,9 @@ func TestOracleAdversarialCheating(t *testing.T) {
 	}
 
 	// Unmodified initial fixture fails Level 2 AST (newName missing and oldName present)
-	res, err := Evaluate(context.Background(), task, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("evaluate: %v", err)
+	res, evaluateErr := Evaluate(context.Background(), task, tmpDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate: %v", evaluateErr)
 	}
 	if res.Passed {
 		t.Errorf("expected unmodified fixture to fail oracle")
@@ -760,9 +808,9 @@ func TestWorkspaceSnapshotTracksAllChangedFiles(t *testing.T) {
 		t.Fatalf("write deleted file: %v", err)
 	}
 
-	before, err := snapshotWorkspaceFiles(root)
-	if err != nil {
-		t.Fatalf("snapshot workspace: %v", err)
+	before, snapshotErr := snapshotWorkspaceFiles(root)
+	if snapshotErr != nil {
+		t.Fatalf("snapshot workspace: %v", snapshotErr)
 	}
 	if err := os.WriteFile(filepath.Join(root, "changed.go"), []byte("after"), 0o600); err != nil {
 		t.Fatalf("modify changed file: %v", err)
@@ -774,9 +822,9 @@ func TestWorkspaceSnapshotTracksAllChangedFiles(t *testing.T) {
 		t.Fatalf("write created file: %v", err)
 	}
 
-	got, err := changedWorkspaceFiles(root, before)
-	if err != nil {
-		t.Fatalf("collect workspace changes: %v", err)
+	got, changedErr := changedWorkspaceFiles(root, before)
+	if changedErr != nil {
+		t.Fatalf("collect workspace changes: %v", changedErr)
 	}
 	if want := []string{"changed.go", "created.go", "deleted.go"}; !slices.Equal(got, want) {
 		t.Errorf("changed files = %v, want %v", got, want)
@@ -1136,6 +1184,177 @@ func TestParseTaskRejectsMalformedAndMissingOracleSettings(t *testing.T) {
 	}
 }
 
+func TestEvaluateUsesProjectLocalGoEnvironment(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	binDir := filepath.Join(root, "bin")
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(binDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	capture := filepath.Join(root, "go-environment")
+	fakeGo := filepath.Join(binDir, "go")
+	script := `#!/bin/sh
+set -eu
+test "$GOENV" = "$PWD/.scratch/go/env"
+test "$GOCACHE" = "$PWD/.scratch/go/build"
+test "$GOMODCACHE" = "$PWD/.scratch/go/mod"
+test "$GOTMPDIR" = "$PWD/.scratch/go/tmp"
+test "$GOPATH" = "$PWD/.scratch/go"
+test "$GOFLAGS" = ""
+test "$GOWORK" = "off"
+printf ok > "$SEMEDIT_TEST_CAPTURE"
+`
+	if err := os.WriteFile(fakeGo, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_TEST_CAPTURE", capture)
+	for _, key := range []string{"GOENV", "GOCACHE", "GOMODCACHE", "GOTMPDIR", "GOPATH", "GOFLAGS", "GOWORK"} {
+		t.Setenv(key, filepath.Join(root, "inherited", key))
+	}
+	task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{Build: BuildConfig{CleanCompile: true}}}}
+	result, err := Evaluate(t.Context(), task, workDir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Passed || !result.Level3Build {
+		t.Fatalf("oracle result = %+v, want passing isolated build", result)
+	}
+	data, err := os.ReadFile(capture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "ok" {
+		t.Fatalf("fake Go environment validation = %q, want ok", data)
+	}
+}
+
+type oracleCleanupCase struct {
+	name           string
+	failOperation  string
+	wantPassed     bool
+	wantStage      string
+	wantOperations []string
+}
+
+type oracleCleanupFixture struct {
+	workDir       string
+	originalCache string
+	commandLog    string
+	task          *Task
+}
+
+func TestEvaluateCleansReadOnlyPrivateGoCaches(t *testing.T) {
+	cases := []oracleCleanupCase{
+		{name: "build and test pass", wantPassed: true, wantOperations: []string{"build", "test"}},
+		{name: "build fails", failOperation: "build", wantStage: "level_3_build", wantOperations: []string{"build"}},
+		{name: "test fails", failOperation: "test", wantStage: "level_4_test", wantOperations: []string{"build", "test"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			fixture := createOracleCleanupFixture(t, testCase.failOperation)
+			result, err := Evaluate(t.Context(), fixture.task, fixture.workDir, nil)
+			if err != nil {
+				t.Fatalf("Evaluate returned cleanup or execution error: %v", err)
+			}
+			assertOracleCleanupResult(t, testCase, result)
+			assertOracleCleanupArtifacts(t, testCase, fixture)
+		})
+	}
+}
+
+func createOracleCleanupFixture(t *testing.T, failOperation string) oracleCleanupFixture {
+	t.Helper()
+	root := t.TempDir()
+	workDir := filepath.Join(root, "workspace")
+	hiddenTests := filepath.Join(root, "hidden")
+	binDir := filepath.Join(root, "bin")
+	for _, dir := range []string{workDir, hiddenTests, binDir, filepath.Join(workDir, ".scratch")} {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatal(err)
+		}
+	}
+	originalCache := filepath.Join(workDir, ".scratch", "owner-cache")
+	if err := os.WriteFile(originalCache, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hiddenTests, "acceptance_test.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	commandLog := filepath.Join(root, "commands")
+	program := oracleCleanupFakeGoProgram()
+	if err := os.WriteFile(filepath.Join(binDir, "go"), []byte(program), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_ORACLE_COMMAND_LOG", commandLog)
+	t.Setenv("SEMEDIT_ORACLE_FAIL_OPERATION", failOperation)
+	task := &Task{Metadata: TaskMetadata{Oracle: OracleConfig{
+		Build: BuildConfig{CleanCompile: true},
+		Test:  TestConfig{PassTests: true, HiddenTestDir: hiddenTests},
+	}}}
+	return oracleCleanupFixture{workDir: workDir, originalCache: originalCache, commandLog: commandLog, task: task}
+}
+
+func oracleCleanupFakeGoProgram() string {
+	return `#!/bin/sh
+set -eu
+operation="$1"
+test "$GOENV" = "$PWD/.scratch/go/env"
+test "$GOCACHE" = "$PWD/.scratch/go/build"
+test "$GOMODCACHE" = "$PWD/.scratch/go/mod"
+test "$GOTMPDIR" = "$PWD/.scratch/go/tmp"
+cache="$GOMODCACHE/$operation/nested"
+mkdir -p "$cache"
+printf module > "$cache/module.zip"
+chmod 0444 "$cache/module.zip"
+chmod 0555 "$cache"
+printf '%s\t%s\n' "$operation" "$PWD" >> "$SEMEDIT_ORACLE_COMMAND_LOG"
+if [ "$operation" = build ]; then test ! -f acceptance_test.go; else test -f acceptance_test.go; fi
+if [ "$SEMEDIT_ORACLE_FAIL_OPERATION" = "$operation" ]; then exit 9; fi
+`
+}
+
+func assertOracleCleanupResult(t *testing.T, testCase oracleCleanupCase, result *OracleResult) {
+	t.Helper()
+	if result.Passed != testCase.wantPassed || result.FailureStage != testCase.wantStage {
+		t.Fatalf("oracle result = %+v, want passed=%t stage=%q", result, testCase.wantPassed, testCase.wantStage)
+	}
+	if testCase.wantPassed && (!result.Level3Build || !result.Level4Test) {
+		t.Fatalf("successful build and test levels were not retained: %+v", result)
+	}
+}
+
+func assertOracleCleanupArtifacts(t *testing.T, testCase oracleCleanupCase, fixture oracleCleanupFixture) {
+	t.Helper()
+	if data, err := os.ReadFile(fixture.originalCache); err != nil || string(data) != "keep" {
+		t.Fatalf("preexisting workspace scratch changed: data=%q err=%v", data, err)
+	}
+	if _, err := os.Stat(filepath.Join(fixture.workDir, "acceptance_test.go")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("hidden tests reached original workspace: %v", err)
+	}
+	data, err := os.ReadFile(fixture.commandLog)
+	if err != nil {
+		t.Fatalf("read fake Go command log: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != len(testCase.wantOperations) {
+		t.Fatalf("fake Go operations = %q, want %v", lines, testCase.wantOperations)
+	}
+	for index, line := range lines {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 2 || fields[0] != testCase.wantOperations[index] {
+			t.Fatalf("fake Go command %d = %q, want operation %q and private path", index, line, testCase.wantOperations[index])
+		}
+		if _, err := os.Stat(fields[1]); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("private oracle workspace remains after cleanup: %s (%v)", fields[1], err)
+		}
+	}
+}
+
 func TestEvaluateKeepsHiddenTestsOutOfAgentWorkspace(t *testing.T) {
 	for _, pass := range []bool{true, false} {
 		t.Run(fmt.Sprintf("oracle_passes_%v", pass), func(t *testing.T) {
@@ -1282,32 +1501,32 @@ func TestCodexTerminationOrigin(t *testing.T) {
 func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
 	workDir := t.TempDir()
 	repositoryRoot := t.TempDir()
-	env, err := fixtureGoEnvironment(t.Context(), workDir)
-	if err != nil {
-		t.Fatal(err)
+	env, envErr := fixtureGoEnvironment(t.Context(), workDir)
+	if envErr != nil {
+		t.Fatal(envErr)
 	}
-	if err := writeAgyMCPConfig(workDir, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); err != nil {
-		t.Fatal(err)
+	if configErr := writeAgyMCPConfig(workDir, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); configErr != nil {
+		t.Fatal(configErr)
 	}
-	data, err := os.ReadFile(filepath.Join(workDir, ".agents", "mcp_config.json"))
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(filepath.Join(workDir, ".agents", "mcp_config.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	var config struct {
 		Servers map[string]struct {
 			Args []string `json:"args"`
 		} `json:"mcpServers"`
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	server, ok := config.Servers["semedit"]
 	if !ok {
 		t.Fatalf("Agy MCP config missing semedit: %s", data)
 	}
-	expectedRoot, err := canonicalFixtureRoot(workDir)
-	if err != nil {
-		t.Fatal(err)
+	expectedRoot, rootErr := canonicalFixtureRoot(workDir)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if !slices.Contains(server.Args, "--metrics-file") || !slices.Contains(server.Args, benchmarkMCPMetricsPath(workDir)) {
 		t.Errorf("Agy MCP args = %#v, want fixture-local metrics file", server.Args)
@@ -1369,13 +1588,13 @@ func TestCodexFileChangeCapturedAsToolCall(t *testing.T) {
 }
 
 func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
-	if err != nil {
-		t.Fatalf("read staged fixture: %v", err)
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
+	if readErr != nil {
+		t.Fatalf("read staged fixture: %v", readErr)
 	}
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse staged fixture: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse staged fixture: %v", parseErr)
 	}
 	if task.Metadata.InteractiveMode != "staged" || task.Metadata.StagedInitialTotalEdits != 1 || len(task.Metadata.StagedFollowups) != 4 {
 		t.Fatalf("staged metadata = %+v", task.Metadata)
@@ -1384,9 +1603,9 @@ func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
 	if err := task.ExtractTo(workDir); err != nil {
 		t.Fatalf("extract staged fixture: %v", err)
 	}
-	plan, err := os.ReadFile(filepath.Join(workDir, "rename-plan.md"))
-	if err != nil {
-		t.Fatalf("read rename plan: %v", err)
+	plan, planReadErr := os.ReadFile(filepath.Join(workDir, "rename-plan.md"))
+	if planReadErr != nil {
+		t.Fatalf("read rename plan: %v", planReadErr)
 	}
 	var oldNames, newNames []string
 	for line := range strings.SplitSeq(string(plan), "\n") {
@@ -1403,9 +1622,9 @@ func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
 		t.Fatalf("rename plan has %d mappings, want 16", len(oldNames))
 	}
 	sourcePath := filepath.Join(workDir, "pipeline", "workflow.go")
-	source, err := os.ReadFile(sourcePath)
-	if err != nil {
-		t.Fatalf("read workflow: %v", err)
+	source, sourceReadErr := os.ReadFile(sourcePath)
+	if sourceReadErr != nil {
+		t.Fatalf("read workflow: %v", sourceReadErr)
 	}
 	current := string(source)
 	previous := 0

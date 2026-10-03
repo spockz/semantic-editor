@@ -73,27 +73,19 @@ func TestRenderGettingStartedTargetsSupportedPlatforms(t *testing.T) {
 func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	t.Parallel()
 
-	outputDir := t.TempDir()
-	for _, directory := range []string{
-		filepath.Join(outputDir, "content", "docs"),
-		filepath.Join(outputDir, "data"),
-	} {
-		if err := os.MkdirAll(directory, 0o750); err != nil {
-			t.Fatalf("create Hugo source directory: %v", err)
-		}
-	}
+	outputDir := prepareHugoTestOutput(t)
 	if err := writeHugoConfig(outputDir); err != nil {
 		t.Fatalf("write Hugo config: %v", err)
 	}
 	if err := writeLandingAssets(outputDir); err != nil {
 		t.Fatalf("write landing assets: %v", err)
 	}
-	config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml"))
-	if err != nil {
-		t.Fatalf("read Hugo config: %v", err)
+	config, configReadErr := os.ReadFile(filepath.Join(outputDir, "hugo.toml"))
+	if configReadErr != nil {
+		t.Fatalf("read Hugo config: %v", configReadErr)
 	}
 	configText := string(config)
-	for _, want := range []string{
+	assertContainsAll(t, configText, []string{
 		`baseURL = "/"`,
 		`endLevel = 4`,
 		`path = "github.com/imfing/hextra"`,
@@ -108,16 +100,8 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		`type = "theme-toggle"`,
 		`default = "system"`,
 		`displayToggle = true`,
-	} {
-		if !strings.Contains(configText, want) {
-			t.Errorf("Hugo config does not contain %q", want)
-		}
-	}
-	for _, obsolete := range []string{"lotusdocs", "bootstrap", "menu.primary", "prismTheme"} {
-		if strings.Contains(strings.ToLower(configText), strings.ToLower(obsolete)) {
-			t.Errorf("Hugo config contains obsolete Lotus/Bootstrap setting %q", obsolete)
-		}
-	}
+	}, "Hugo config")
+	assertContainsNoneFolded(t, configText, []string{"lotusdocs", "bootstrap", "menu.primary", "prismTheme"}, "Hugo config")
 	if strings.Contains(configText, "spockz.github.io/semantic-editor") {
 		t.Fatal("Hugo config must not hardcode the GitHub Pages deployment URL")
 	}
@@ -130,18 +114,14 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	if !strings.Contains(moduleText, "github.com/imfing/hextra v0.12.3") {
 		t.Errorf("Hugo module does not pin Hextra v0.12.3")
 	}
-	for _, obsolete := range []string{"lotusdocs", "bootstrap"} {
-		if strings.Contains(strings.ToLower(moduleText), obsolete) {
-			t.Errorf("Hugo module contains obsolete dependency %q", obsolete)
-		}
-	}
+	assertContainsNoneFolded(t, moduleText, []string{"lotusdocs", "bootstrap"}, "Hugo module")
 
 	landing, err := os.ReadFile(filepath.Join(outputDir, "content", "_index.md"))
 	if err != nil {
 		t.Fatalf("read Hugo landing page: %v", err)
 	}
 	landingText := string(landing)
-	for _, want := range []string{
+	assertContainsAll(t, landingText, []string{
 		`hextra/hero-badge`,
 		`hextra/hero-button`,
 		`hextra/feature-grid`,
@@ -152,11 +132,85 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		`symbol-intent.png`,
 		`structured-feedback.png`,
 		`agent-contract.png`,
-	} {
-		if !strings.Contains(landingText, want) {
-			t.Errorf("Hugo landing page does not contain %q", want)
+	}, "Hugo landing page")
+	assertLandingAssetsPresent(t, outputDir)
+	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md"))
+	if err != nil {
+		t.Fatalf("read Hugo documentation section: %v", err)
+	}
+	assertContainsAll(t, string(docsSection), []string{
+		`hextra/feature-grid`,
+		`title="Get started"`,
+		`link="getting-started/"`,
+		`title="Reference"`,
+		`link="reference/"`,
+		`title="Benchmarks"`,
+		`link="benchmarks/"`,
+	}, "Hugo documentation section")
+}
+
+func TestExtractCodeCapabilitiesReportsMalformedPlacementSource(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	insertDir := filepath.Join(rootDir, "internal", "astedit")
+	if err := os.MkdirAll(insertDir, 0o750); err != nil {
+		t.Fatalf("create placement source directory: %v", err)
+	}
+	insertPath := filepath.Join(insertDir, "insert.go")
+	if err := os.WriteFile(insertPath, []byte("package astedit\nconst Placement = \"file_start\"\nfunc broken( {"), 0o600); err != nil {
+		t.Fatalf("write malformed placement source: %v", err)
+	}
+	_, _, err := extractCodeCapabilities(rootDir)
+	if err == nil || !strings.Contains(err.Error(), "parse placement constants") || !strings.Contains(err.Error(), insertPath) {
+		t.Fatalf("extractCodeCapabilities() error = %v, want malformed source path", err)
+	}
+}
+
+func TestExtractTxtarExamplesReportsUnreadableEntry(t *testing.T) {
+	t.Parallel()
+	rootDir := t.TempDir()
+	scriptsDir := filepath.Join(rootDir, "testdata", "scripts")
+	if err := os.MkdirAll(filepath.Join(scriptsDir, "unreadable.txtar"), 0o750); err != nil {
+		t.Fatalf("create unreadable txtar entry: %v", err)
+	}
+	_, err := extractTxtarExamples(rootDir)
+	if err == nil || !strings.Contains(err.Error(), "read txtar example") || !strings.Contains(err.Error(), "unreadable.txtar") {
+		t.Fatalf("extractTxtarExamples() error = %v, want txtar read failure", err)
+	}
+}
+
+func prepareHugoTestOutput(t *testing.T) string {
+	t.Helper()
+	outputDir := t.TempDir()
+	for _, directory := range []string{filepath.Join(outputDir, "content", "docs"), filepath.Join(outputDir, "data")} {
+		if err := os.MkdirAll(directory, 0o750); err != nil {
+			t.Fatalf("create Hugo source directory: %v", err)
 		}
 	}
+	return outputDir
+}
+
+func assertContainsAll(t *testing.T, text string, fragments []string, context string) {
+	t.Helper()
+	for _, fragment := range fragments {
+		if !strings.Contains(text, fragment) {
+			t.Errorf("%s does not contain %q", context, fragment)
+		}
+	}
+}
+
+func assertContainsNoneFolded(t *testing.T, text string, fragments []string, context string) {
+	t.Helper()
+	text = strings.ToLower(text)
+	for _, fragment := range fragments {
+		if strings.Contains(text, strings.ToLower(fragment)) {
+			t.Errorf("%s contains obsolete value %q", context, fragment)
+		}
+	}
+}
+
+func assertLandingAssetsPresent(t *testing.T, outputDir string) {
+	t.Helper()
 	for _, name := range landingAssetNames {
 		info, err := os.Stat(filepath.Join(outputDir, "static", "images", "landing", name))
 		if err != nil {
@@ -165,23 +219,6 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		}
 		if info.Size() == 0 {
 			t.Errorf("generated landing asset %q is empty", name)
-		}
-	}
-	docsSection, err := os.ReadFile(filepath.Join(outputDir, "content", "docs", "_index.md"))
-	if err != nil {
-		t.Fatalf("read Hugo documentation section: %v", err)
-	}
-	for _, want := range []string{
-		`hextra/feature-grid`,
-		`title="Get started"`,
-		`link="getting-started/"`,
-		`title="Reference"`,
-		`link="reference/"`,
-		`title="Benchmarks"`,
-		`link="benchmarks/"`,
-	} {
-		if !strings.Contains(string(docsSection), want) {
-			t.Errorf("Hugo documentation section does not contain %q", want)
 		}
 	}
 }
@@ -224,7 +261,10 @@ package api
 
 type New struct{}
 `
-	ex := parseTxtarFile("test.txtar", content)
+	ex, err := parseTxtarFile("test.txtar", content)
+	if err != nil {
+		t.Fatalf("parse txtar example: %v", err)
+	}
 	if ex == nil {
 		t.Fatal("expected non-nil TxtarExample")
 	}

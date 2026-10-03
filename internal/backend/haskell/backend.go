@@ -237,16 +237,16 @@ func (b *HaskellBackend) Lookup(ctx context.Context, project neutralbackend.Proj
 			return nil, &HaskellError{Op: "start", Workspace: root, Err: ErrHaskellToolchainUnavailable}
 		}
 		b.session, b.root = session, root
-		if err := initializeHaskellSession(ctx, session, root); err != nil {
+		if initializeErr := initializeHaskellSession(ctx, session, root); initializeErr != nil {
 			_ = session.Close()
 			b.session, b.root = nil, ""
-			return nil, &HaskellError{Op: "initialize", Workspace: root, Err: err}
+			return nil, &HaskellError{Op: "initialize", Workspace: root, Err: initializeErr}
 		}
 	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+	if openErr := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
 		"uri": pathutil.FileURI(file), "languageId": "haskell", "version": 1, "text": string(source),
-	}}); err != nil {
-		return nil, &HaskellError{Op: "didOpen", File: file, Err: err}
+	}}); openErr != nil {
+		return nil, &HaskellError{Op: "didOpen", File: file, Err: openErr}
 	}
 	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": pathutil.FileURI(file)}})
 	if err != nil {

@@ -33,7 +33,16 @@ var landingAssets embed.FS
 
 func renderMarkdown(caps []CodeCapability, placements []string, examples []TxtarExample) string {
 	var buf bytes.Buffer
+	writeReferencePreamble(&buf)
+	writeCapabilityMatrix(&buf, caps)
+	writeLanguageConstraints(&buf, caps)
+	writePlacementQualifiers(&buf, placements)
+	writeExecutableWorkflows(&buf, examples)
+	buf.WriteString("## CI Drift Invariant\n\nContinuous integration regenerates documentation from compiler capabilities and regression test archives before publication.\n")
+	return buf.String()
+}
 
+func writeReferencePreamble(buf *bytes.Buffer) {
 	buf.WriteString(`---
 title: "Automated Capability Documentation"
 description: "Deterministic, zero-token refactoring capabilities and executable examples."
@@ -50,6 +59,9 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 
 | Language | Maturity | Supported Access Modifiers | Supported Edit / Refactoring Capabilities |
 | :--- | :--- | :--- | :--- |` + "\n")
+}
+
+func writeCapabilityMatrix(buf *bytes.Buffer, caps []CodeCapability) {
 	for _, c := range caps {
 		modifiers := make([]string, 0, len(c.SupportedModifiers))
 		for _, modifier := range c.SupportedModifiers {
@@ -62,23 +74,27 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 			}
 		}
 		slices.Sort(operations)
-		fmt.Fprintf(&buf, "| %s | %s | %s | %s |\n",
+		fmt.Fprintf(buf, "| %s | %s | %s | %s |\n",
 			markdownCell(c.DisplayName),
 			markdownCell(c.Maturity),
 			markdownCell(strings.Join(modifiers, ", ")),
 			markdownCell(strings.Join(operations, ", ")),
 		)
 	}
+}
 
+func writeLanguageConstraints(buf *bytes.Buffer, caps []CodeCapability) {
 	buf.WriteString("\n## Language Constraints & Capability Rules\n\n")
 	for _, c := range caps {
-		fmt.Fprintf(&buf, "### %s Engine Constraints\n\n", markdownCell(c.DisplayName))
+		fmt.Fprintf(buf, "### %s Engine Constraints\n\n", markdownCell(c.DisplayName))
 		for _, rule := range c.Limitations {
-			fmt.Fprintf(&buf, "- **%s**: %s\n", markdownCell(rule.Title), markdownCell(rule.Description))
+			fmt.Fprintf(buf, "- **%s**: %s\n", markdownCell(rule.Title), markdownCell(rule.Description))
 		}
 		buf.WriteString("\n")
 	}
+}
 
+func writePlacementQualifiers(buf *bytes.Buffer, placements []string) {
 	buf.WriteString("## Placement Qualifiers\n\n")
 	buf.WriteString("| Placement Mode | Target Identifier Required | Semantic Behavior |\n| :--- | :--- | :--- |\n")
 	placementDescriptions := map[string]struct {
@@ -100,82 +116,91 @@ Deterministic, zero-token refactoring capabilities extracted directly from compi
 		if info.targetRequired {
 			required = "Yes"
 		}
-		fmt.Fprintf(&buf, "| `%s` | %s | %s |\n", placement, required, markdownCell(info.description))
+		fmt.Fprintf(buf, "| `%s` | %s | %s |\n", placement, required, markdownCell(info.description))
 	}
+}
 
+func writeExecutableWorkflows(buf *bytes.Buffer, examples []TxtarExample) {
 	buf.WriteString("\n## Executable Test Workflows\n\n")
 	buf.WriteString("Active, compiler-verified regression tests in `testdata/scripts/*.txtar` provide every scenario below.\n\n")
 	for _, ex := range examples {
-		fmt.Fprintf(&buf, "### %s\n\n", markdownCell(ex.Title))
-		sourcePath := "/testdata/scripts/" + ex.Filename
-		fmt.Fprintf(&buf, "Source: [%s](%s) · [Download raw file](%s)\n\n", ex.Filename, githubSourceBaseURL+sourcePath, githubRawSourceBaseURL+sourcePath)
-		if ex.Description != "" {
-			fmt.Fprintf(&buf, "%s\n\n", markdownCell(ex.Description))
-		}
-		for _, step := range ex.Steps {
-			fmt.Fprintf(&buf, "#### %s\n\n", markdownCell(step.Description))
-			buf.WriteString("**CLI invocation**\n\n")
-			writeMarkdownCodeBlock(&buf, "console", "$ "+step.Command)
-			fmt.Fprintf(&buf, "**Equivalent MCP tool call (`%s`)**\n\n", step.MCPTool)
-			writeMarkdownCodeBlock(&buf, "json", step.MCPArgsJSON)
-			if step.ExpectedOut != "" {
-				for assertLine := range strings.SplitSeq(step.ExpectedOut, "\n") {
-					if assertLine != "" {
-						fmt.Fprintf(&buf, "> Assert: %s\n\n", markdownCell(assertLine))
-					}
-				}
-			}
-			if step.ExpectedErr != "" {
-				for errLine := range strings.SplitSeq(step.ExpectedErr, "\n") {
-					if errLine != "" {
-						fmt.Fprintf(&buf, "> Expected error: %s\n\n", markdownCell(errLine))
-					}
-				}
-			}
-		}
+		writeTxtarExample(buf, ex)
+	}
+}
 
-		outputs := ex.Outputs
-		if len(outputs) == 0 && (ex.OutputCode != "" || len(ex.DiffLines) > 0) {
-			outputs = []TxtarFileOutput{{
-				Path:      ex.OutputFile,
-				Content:   ex.OutputCode,
-				DiffLines: ex.DiffLines,
-			}}
-		}
+func writeTxtarExample(buf *bytes.Buffer, example TxtarExample) {
+	fmt.Fprintf(buf, "### %s\n\n", markdownCell(example.Title))
+	sourcePath := "/testdata/scripts/" + example.Filename
+	fmt.Fprintf(buf, "Source: [%s](%s) · [Download raw file](%s)\n\n", example.Filename, githubSourceBaseURL+sourcePath, githubRawSourceBaseURL+sourcePath)
+	if example.Description != "" {
+		fmt.Fprintf(buf, "%s\n\n", markdownCell(example.Description))
+	}
+	for _, step := range example.Steps {
+		writeTxtarStep(buf, step)
+	}
+	writeTxtarOutputs(buf, example)
+}
 
-		for _, out := range outputs {
-			if len(out.DiffLines) > 0 {
-				if len(outputs) == 1 {
-					buf.WriteString("**Unified AST transformation diff**\n\n")
-				} else {
-					fmt.Fprintf(&buf, "**Unified AST transformation diff (`%s`)**\n\n", out.Path)
-				}
-				var diff strings.Builder
-				for _, line := range out.DiffLines {
-					diff.WriteString(line.Content)
-					diff.WriteByte('\n')
-				}
-				writeMarkdownCodeBlock(&buf, "diff", strings.TrimSuffix(diff.String(), "\n"))
-			}
+func writeTxtarStep(buf *bytes.Buffer, step TxtarStep) {
+	fmt.Fprintf(buf, "#### %s\n\n", markdownCell(step.Description))
+	buf.WriteString("**CLI invocation**\n\n")
+	writeMarkdownCodeBlock(buf, "console", "$ "+step.Command)
+	fmt.Fprintf(buf, "**Equivalent MCP tool call (`%s`)**\n\n", step.MCPTool)
+	writeMarkdownCodeBlock(buf, "json", step.MCPArgsJSON)
+	writeExpectedLines(buf, step.ExpectedOut, "> Assert: ")
+	writeExpectedLines(buf, step.ExpectedErr, "> Expected error: ")
+}
 
-			if out.Content != "" {
-				if len(outputs) == 1 {
-					if out.Path != "" {
-						fmt.Fprintf(&buf, "**Expected output state (`%s`)**\n\n", out.Path)
-					} else {
-						buf.WriteString("**Expected output state**\n\n")
-					}
-				} else {
-					fmt.Fprintf(&buf, "**Expected output state (`%s`)**\n\n", out.Path)
-				}
-				lang := detectCodeBlockLanguage(out.Path)
-				writeMarkdownCodeBlock(&buf, lang, out.Content)
-			}
+func writeExpectedLines(buf *bytes.Buffer, patterns, prefix string) {
+	for line := range strings.SplitSeq(patterns, "\n") {
+		if line != "" {
+			fmt.Fprintf(buf, "%s%s\n\n", prefix, markdownCell(line))
 		}
 	}
+}
 
-	buf.WriteString("## CI Drift Invariant\n\nContinuous integration regenerates documentation from compiler capabilities and regression test archives before publication.\n")
-	return buf.String()
+func writeTxtarOutputs(buf *bytes.Buffer, example TxtarExample) {
+	outputs := example.Outputs
+	if len(outputs) == 0 && (example.OutputCode != "" || len(example.DiffLines) > 0) {
+		outputs = []TxtarFileOutput{{Path: example.OutputFile, Content: example.OutputCode, DiffLines: example.DiffLines}}
+	}
+	for _, output := range outputs {
+		writeTxtarOutput(buf, output, len(outputs) == 1)
+	}
+}
+
+func writeTxtarOutput(buf *bytes.Buffer, output TxtarFileOutput, singleOutput bool) {
+	writeTxtarDiff(buf, output, singleOutput)
+	writeTxtarOutputState(buf, output, singleOutput)
+}
+
+func writeTxtarDiff(buf *bytes.Buffer, output TxtarFileOutput, singleOutput bool) {
+	if len(output.DiffLines) == 0 {
+		return
+	}
+	if singleOutput {
+		buf.WriteString("**Unified AST transformation diff**\n\n")
+	} else {
+		fmt.Fprintf(buf, "**Unified AST transformation diff (`%s`)**\n\n", output.Path)
+	}
+	var diff strings.Builder
+	for _, line := range output.DiffLines {
+		diff.WriteString(line.Content)
+		diff.WriteByte('\n')
+	}
+	writeMarkdownCodeBlock(buf, "diff", strings.TrimSuffix(diff.String(), "\n"))
+}
+
+func writeTxtarOutputState(buf *bytes.Buffer, output TxtarFileOutput, singleOutput bool) {
+	if output.Content == "" {
+		return
+	}
+	if !singleOutput || output.Path != "" {
+		fmt.Fprintf(buf, "**Expected output state (`%s`)**\n\n", output.Path)
+	} else {
+		buf.WriteString("**Expected output state**\n\n")
+	}
+	writeMarkdownCodeBlock(buf, detectCodeBlockLanguage(output.Path), output.Content)
 }
 
 func detectCodeBlockLanguage(filePath string) string {
@@ -298,8 +323,7 @@ The generated [capability reference](../reference/) contains the available seman
 `
 }
 
-func writeHugoConfig(outputDir string) error {
-	config := `baseURL = "/"
+const hugoConfig = `baseURL = "/"
 languageCode = "en-us"
 title = "semedit"
 contentDir = "content"
@@ -371,14 +395,8 @@ enableRobotsTXT = true
       type = "theme-toggle"
       label = true
 `
-	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(config)); err != nil {
-		return fmt.Errorf("write hugo.toml: %w", err)
-	}
-	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire github.com/imfing/hextra %s\n", hextraModuleVersion)
-	if err := writeGeneratedFile(filepath.Join(outputDir, "go.mod"), []byte(module)); err != nil {
-		return fmt.Errorf("write Hugo module go.mod: %w", err)
-	}
-	landing := `---
+
+const hugoLandingPage = `---
 title: "semedit"
 description: "Intent-driven code editing for AI agents."
 draft: false
@@ -442,10 +460,8 @@ semedit separates semantic intent from syntax transformation, so agents can ask 
 
 [Read the capability reference](docs/reference/) to see the available operations and executable examples, or [view empirical benchmarks](docs/benchmarks/) for measured results.
 `
-	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(landing)); err != nil {
-		return fmt.Errorf("write Hugo landing page: %w", err)
-	}
-	docsSection := `---
+
+const hugoDocsSection = `---
 title: "Documentation"
 description: "semedit installation and compiler-backed capability reference."
 draft: false
@@ -460,8 +476,27 @@ Start with the installation guide, then use the reference when you need a specif
 {{< hextra/feature-card title="Benchmarks" icon="chart-bar" link="benchmarks/" subtitle="Review empirical latency, token, and correctness results." >}}
 {{< /hextra/feature-grid >}}
 `
-	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(docsSection)); err != nil {
+
+func writeHugoConfig(outputDir string) error {
+	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(hugoConfig)); err != nil {
+		return fmt.Errorf("write hugo.toml: %w", err)
+	}
+	if err := writeHugoModule(outputDir); err != nil {
+		return err
+	}
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "_index.md"), []byte(hugoLandingPage)); err != nil {
+		return fmt.Errorf("write Hugo landing page: %w", err)
+	}
+	if err := writeGeneratedFile(filepath.Join(outputDir, "content", "docs", "_index.md"), []byte(hugoDocsSection)); err != nil {
 		return fmt.Errorf("write Hugo docs section: %w", err)
+	}
+	return nil
+}
+
+func writeHugoModule(outputDir string) error {
+	module := fmt.Sprintf("module semedit-docs\n\ngo 1.23\n\nrequire github.com/imfing/hextra %s\n", hextraModuleVersion)
+	if err := writeGeneratedFile(filepath.Join(outputDir, "go.mod"), []byte(module)); err != nil {
+		return fmt.Errorf("write Hugo module go.mod: %w", err)
 	}
 	return nil
 }

@@ -61,6 +61,25 @@ func TestInlineVariableRejectsUnsafeCasesWithoutWriting(t *testing.T) {
 	}
 }
 
+func TestInlineVariableRejectsLocalConversionTypeShadowWithoutWriting(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inline.go")
+	before := "package p\nfunc f() {\n\ttype int = string\n\tvalue := 42\n\tprintln(value)\n}\n"
+	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := InlineVariable(context.Background(), path, "f", "value")
+	if err == nil || !strings.Contains(err.Error(), "default type name int is shadowed") {
+		t.Fatalf("expected local conversion type shadow refusal, got %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != before {
+		t.Fatalf("refusal changed source\nwant:\n%s\ngot:\n%s", before, got)
+	}
+}
+
 func TestInlineVariableRejectsUncertainConversionBindings(t *testing.T) {
 	cases := map[string]struct {
 		file    string

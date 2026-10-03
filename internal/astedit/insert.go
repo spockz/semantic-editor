@@ -2,20 +2,16 @@
 package astedit
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"semedit/internal/backend"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -56,100 +52,48 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 // InsertDeclaration parses and injects one or more top-level declarations into filePath.
 func insertDeclarationImpl(ctx context.Context, filePath string, source string, opts Options) error {
-	source = strings.TrimSpace(source)
-	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
-		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
-		source = source[1 : len(source)-1]
-	}
+	source = normalizeDeclarationSnippet(source)
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
-
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	target, err := readDeclarationTarget(ctx, filePath)
 	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
+		return err
 	}
-
-	snippetDecls, err := verifySnippetSyntax(source, opts.Visibility)
+	if _, syntaxErr := verifySnippetSyntax(source, opts.Visibility); syntaxErr != nil {
+		return fmt.Errorf("validate snippet: %w", syntaxErr)
+	}
+	insertOffset, err := calculateInsertionOffset(target.set, target.file, target.content, opts)
 	if err != nil {
-		return fmt.Errorf("validate snippet: %w", err)
+		return fmt.Errorf("calculate insertion offset: %w", annotatePlacementError(err, target.path, target.set, target.file))
 	}
-
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return fmt.Errorf("parse target file before insertion: %w", err)
-	}
-
-	insertOffset, err := calculateInsertionOffset(fset, fileNode, content, opts)
-	if err != nil {
-		if pErr, ok := errors.AsType[*PlacementError](err); ok {
-			if pErr.File == "" {
-				pErr.File = cleanPath
-			}
-			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
-				pErr.Pos = fset.Position(fileNode.Package)
-			}
-		}
-		return fmt.Errorf("calculate insertion offset: %w", err)
-	}
-
-	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
-
-	var newContent bytes.Buffer
-	newContent.Write(content[:insertOffset])
-
-	snippetText := strings.TrimSpace(source)
-
-	if strings.HasPrefix(snippetText, "package ") {
-		lines := strings.SplitN(snippetText, "\n", 2)
-		if len(lines) > 1 {
-			snippetText = strings.TrimSpace(lines[1])
-		}
-	}
-
-	if insertOffset > 0 {
-		prev := content[:insertOffset]
-		if !bytes.HasSuffix(prev, []byte("\n\n")) {
-			if bytes.HasSuffix(prev, []byte("\n")) {
-				newContent.WriteString("\n")
-			} else {
-				newContent.WriteString("\n\n")
-			}
-		}
-	}
-
-	newContent.WriteString(snippetText)
-	newContent.WriteString("\n\n")
-
-	rest := content[insertOffset:]
-
-	restTrimmed := bytes.TrimLeft(rest, "\r\n")
-	newContent.Write(restTrimmed)
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
-		return fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return fmt.Errorf("organize imports: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return fmt.Errorf("format file: %w", err)
-		}
-	}
-
-	_ = snippetDecls
-	return nil
+	insertOffset = normalizeInsertionOffset(target.set, target.file, target.content, insertOffset)
+	updated := insertDeclarationText(target.content, source, insertOffset)
+	return publishInsertedDeclaration(ctx, target.path, updated, opts.AutoOrganizeImports)
 }
 
 func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, error) {
+	snippet, err := parseDeclarationSnippet(source)
+	if err != nil {
+		return nil, err
+	}
+	if len(snippet.file.Decls) == 0 {
+		return nil, ErrNoDeclarations
+	}
+	if err := validateSnippetVisibility(snippet, expectedVisibility); err != nil {
+		return nil, err
+	}
+	return snippet.file.Decls, nil
+}
+
+type parsedDeclarationSnippet struct {
+	fset      *token.FileSet
+	file      *ast.File
+	prepended bool
+}
+
+func parseDeclarationSnippet(source string) (parsedDeclarationSnippet, error) {
 	trimmed := strings.TrimSpace(source)
 	if trimmed == "" {
-		return nil, ErrEmptySnippet
+		return parsedDeclarationSnippet{}, ErrEmptySnippet
 	}
 
 	toParse := trimmed
@@ -162,66 +106,58 @@ func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, 
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, "snippet", toParse, parser.ParseComments)
 	if err != nil {
-		pos := extractSyntaxPosition(fset, err)
-		if prepended && pos.Line > 2 {
-			pos.Line -= 2
-			pos.Offset -= len("package dummy\n\n")
-			if pos.Offset < 0 {
-				pos.Offset = 0
-			}
-		}
-		pos.Filename = "snippet"
-		return nil, &SyntaxError{
-			Snippet: source,
-			Pos:     pos,
-			Cause:   err,
-			Err:     ErrSyntax,
+		return parsedDeclarationSnippet{}, declarationSnippetSyntaxError(source, fset, prepended, err)
+	}
+	return parsedDeclarationSnippet{fset: fset, file: node, prepended: prepended}, nil
+}
+
+func declarationSnippetSyntaxError(source string, fset *token.FileSet, prepended bool, cause error) error {
+	position := extractSyntaxPosition(fset, cause)
+	position = snippetSourcePosition(position, prepended)
+	return &SyntaxError{Snippet: source, Pos: position, Cause: cause, Err: ErrSyntax}
+}
+
+func snippetSourcePosition(position token.Position, prepended bool) token.Position {
+	if prepended && position.Line > 2 {
+		position.Line -= 2
+		position.Offset -= len("package dummy\n\n")
+		if position.Offset < 0 {
+			position.Offset = 0
 		}
 	}
+	position.Filename = "snippet"
+	return position
+}
 
-	if len(node.Decls) == 0 {
-		return nil, ErrNoDeclarations
+func validateSnippetVisibility(snippet parsedDeclarationSnippet, expected string) error {
+	if expected != "public" && expected != "private" {
+		return nil
 	}
-
-	if expectedVisibility != "" {
-		for _, decl := range node.Decls {
-			names := extractDeclNames(decl)
-			for _, name := range names {
-				exported := ast.IsExported(name)
-				pos := fset.Position(decl.Pos())
-				if prepended && pos.Line > 2 {
-					pos.Line -= 2
-					pos.Offset -= len("package dummy\n\n")
-					if pos.Offset < 0 {
-						pos.Offset = 0
-					}
-				}
-				pos.Filename = "snippet"
-				if expectedVisibility == "public" && !exported {
-					return nil, &VisibilityMismatchError{
-						File:       "snippet",
-						Pos:        pos,
-						Identifier: name,
-						Requested:  AccessModifierPublic,
-						Effective:  AccessModifierPrivate,
-						Err:        ErrVisibilityMismatch,
-					}
-				}
-				if expectedVisibility == "private" && exported {
-					return nil, &VisibilityMismatchError{
-						File:       "snippet",
-						Pos:        pos,
-						Identifier: name,
-						Requested:  AccessModifierPrivate,
-						Effective:  AccessModifierPublic,
-						Err:        ErrVisibilityMismatch,
-					}
-				}
+	for _, declaration := range snippet.file.Decls {
+		for _, name := range extractDeclNames(declaration) {
+			mismatch := snippetVisibilityMismatch(snippet, declaration, name, expected)
+			if mismatch != nil {
+				return mismatch
 			}
 		}
 	}
+	return nil
+}
 
-	return node.Decls, nil
+func snippetVisibilityMismatch(snippet parsedDeclarationSnippet, declaration ast.Decl, name, expected string) error {
+	exported := ast.IsExported(name)
+	if (expected == "public" && exported) || (expected == "private" && !exported) {
+		return nil
+	}
+	requested, effective := AccessModifierPublic, AccessModifierPrivate
+	if expected == "private" {
+		requested, effective = AccessModifierPrivate, AccessModifierPublic
+	}
+	position := snippetSourcePosition(snippet.fset.Position(declaration.Pos()), snippet.prepended)
+	return &VisibilityMismatchError{
+		File: "snippet", Pos: position, Identifier: name,
+		Requested: requested, Effective: effective, Err: ErrVisibilityMismatch,
+	}
 }
 
 func extractDeclNames(decl ast.Decl) []string {
@@ -258,81 +194,90 @@ func calculateInsertionOffset(fset *token.FileSet, fileNode *ast.File, content [
 		return len(content), nil
 
 	case PlacementBeforeSymbol, PlacementAfterSymbol:
-		if opts.TargetSymbol == "" {
-			return 0, &PlacementError{
-				Strategy: opts.Placement,
-				Err:      ErrSymbolNotFound,
-			}
-		}
-		targetDecl, err := findTargetDecl(fileNode, opts.TargetSymbol)
-		if err != nil {
-			if pErr, ok := errors.AsType[*PlacementError](err); ok {
-				pErr.Strategy = opts.Placement
-			}
-			return 0, err
-		}
-		if opts.Placement == PlacementBeforeSymbol {
-			return fset.Position(targetDecl.Pos()).Offset, nil
-		}
-		return fset.Position(targetDecl.End()).Offset, nil
-
+		return symbolInsertionOffset(fset, fileNode, opts)
 	case PlacementPublicStart, PlacementPublicEnd, PlacementPrivateStart, PlacementPrivateEnd:
-		var codeDecls []ast.Decl
-		for _, decl := range fileNode.Decls {
-			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-				continue
-			}
-			codeDecls = append(codeDecls, decl)
-		}
-
-		var publicDecls []ast.Decl
-		var privateDecls []ast.Decl
-		for _, decl := range codeDecls {
-			if isDeclExported(decl) {
-				publicDecls = append(publicDecls, decl)
-			} else {
-				privateDecls = append(privateDecls, decl)
-			}
-		}
-
-		switch opts.Placement {
-		case PlacementPublicStart:
-			if len(publicDecls) > 0 {
-				return fset.Position(publicDecls[0].Pos()).Offset, nil
-			}
-			if len(privateDecls) > 0 {
-				// Public precedes private invariant: land before first private
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return offsetAfterImports(fset, fileNode), nil
-
-		case PlacementPublicEnd:
-			if len(publicDecls) > 0 {
-				return fset.Position(publicDecls[len(publicDecls)-1].End()).Offset, nil
-			}
-			if len(privateDecls) > 0 {
-				// Public precedes private invariant: land before first private (identical to PublicStart)
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return offsetAfterImports(fset, fileNode), nil
-
-		case PlacementPrivateStart:
-			if len(privateDecls) > 0 {
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return len(content), nil
-
-		case PlacementPrivateEnd:
-			if len(privateDecls) > 0 {
-				return fset.Position(privateDecls[len(privateDecls)-1].End()).Offset, nil
-			}
-			return len(content), nil
-		default:
-			return 0, fmt.Errorf("invalid grouped placement %q", opts.Placement)
-		}
+		return groupedDeclarationOffset(fset, fileNode, content, opts.Placement)
 	}
 
 	return len(content), nil
+}
+
+func symbolInsertionOffset(fset *token.FileSet, file *ast.File, opts Options) (int, error) {
+	if opts.TargetSymbol == "" {
+		return 0, &PlacementError{Strategy: opts.Placement, Err: ErrSymbolNotFound}
+	}
+	declaration, err := findTargetDecl(file, opts.TargetSymbol)
+	if err != nil {
+		if placementErr, ok := errors.AsType[*PlacementError](err); ok {
+			placementErr.Strategy = opts.Placement
+		}
+		return 0, err
+	}
+	if opts.Placement == PlacementBeforeSymbol {
+		return fset.Position(declaration.Pos()).Offset, nil
+	}
+	return fset.Position(declaration.End()).Offset, nil
+}
+
+func groupedDeclarationOffset(fset *token.FileSet, file *ast.File, content []byte, placement Placement) (int, error) {
+	sections := partitionDeclarationSections(file.Decls)
+	switch placement {
+	case PlacementPublicStart:
+		return publicSectionStart(fset, file, sections), nil
+	case PlacementPublicEnd:
+		return publicSectionEnd(fset, file, sections), nil
+	case PlacementPrivateStart:
+		if len(sections.private) > 0 {
+			return fset.Position(sections.private[0].Pos()).Offset, nil
+		}
+	case PlacementPrivateEnd:
+		if len(sections.private) > 0 {
+			return fset.Position(sections.private[len(sections.private)-1].End()).Offset, nil
+		}
+	default:
+		return 0, fmt.Errorf("invalid grouped placement %q", placement)
+	}
+	return len(content), nil
+}
+
+type declarationSections struct {
+	public  []ast.Decl
+	private []ast.Decl
+}
+
+func partitionDeclarationSections(declarations []ast.Decl) declarationSections {
+	sections := declarationSections{}
+	for _, declaration := range declarations {
+		if group, ok := declaration.(*ast.GenDecl); ok && group.Tok == token.IMPORT {
+			continue
+		}
+		if isDeclExported(declaration) {
+			sections.public = append(sections.public, declaration)
+		} else {
+			sections.private = append(sections.private, declaration)
+		}
+	}
+	return sections
+}
+
+func publicSectionStart(fset *token.FileSet, file *ast.File, sections declarationSections) int {
+	if len(sections.public) > 0 {
+		return fset.Position(sections.public[0].Pos()).Offset
+	}
+	if len(sections.private) > 0 {
+		return fset.Position(sections.private[0].Pos()).Offset
+	}
+	return offsetAfterImports(fset, file)
+}
+
+func publicSectionEnd(fset *token.FileSet, file *ast.File, sections declarationSections) int {
+	if len(sections.public) > 0 {
+		return fset.Position(sections.public[len(sections.public)-1].End()).Offset
+	}
+	if len(sections.private) > 0 {
+		return fset.Position(sections.private[0].Pos()).Offset
+	}
+	return offsetAfterImports(fset, file)
 }
 
 func offsetAfterImports(fset *token.FileSet, fileNode *ast.File) int {
@@ -365,43 +310,9 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		}
 	}
 
-	for _, decl := range fileNode.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			var rec string
-			if d.Recv != nil && len(d.Recv.List) > 0 {
-				switch r := d.Recv.List[0].Type.(type) {
-				case *ast.Ident:
-					rec = r.Name
-				case *ast.StarExpr:
-					if id, ok := r.X.(*ast.Ident); ok {
-						rec = id.Name
-					}
-				}
-			}
-			if targetReceiver != "" {
-				if rec == targetReceiver && d.Name.Name == targetName {
-					return decl, nil
-				}
-			} else if d.Name.Name == targetName {
-				return decl, nil
-			}
-
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == targetName {
-						return decl, nil
-					}
-				case *ast.ValueSpec:
-					for _, name := range s.Names {
-						if name.Name == targetName {
-							return decl, nil
-						}
-					}
-				}
-			}
+	for _, declaration := range fileNode.Decls {
+		if declarationMatchesTarget(declaration, targetReceiver, targetName) {
+			return declaration, nil
 		}
 	}
 
@@ -409,4 +320,54 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		TargetSymbol: targetSymbol,
 		Err:          ErrSymbolNotFound,
 	}
+}
+
+func declarationMatchesTarget(declaration ast.Decl, targetReceiver, targetName string) bool {
+	switch candidate := declaration.(type) {
+	case *ast.FuncDecl:
+		return candidate.Name.Name == targetName &&
+			(targetReceiver == "" || functionReceiverName(candidate) == targetReceiver)
+	case *ast.GenDecl:
+		return genericDeclarationHasName(candidate, targetName)
+	default:
+		return false
+	}
+}
+
+func functionReceiverName(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) == 0 {
+		return ""
+	}
+	switch receiver := function.Recv.List[0].Type.(type) {
+	case *ast.Ident:
+		return receiver.Name
+	case *ast.StarExpr:
+		if name, ok := receiver.X.(*ast.Ident); ok {
+			return name.Name
+		}
+	}
+	return ""
+}
+
+func genericDeclarationHasName(declaration *ast.GenDecl, targetName string) bool {
+	for _, spec := range declaration.Specs {
+		if specificationHasName(spec, targetName) {
+			return true
+		}
+	}
+	return false
+}
+
+func specificationHasName(spec ast.Spec, targetName string) bool {
+	switch candidate := spec.(type) {
+	case *ast.TypeSpec:
+		return candidate.Name.Name == targetName
+	case *ast.ValueSpec:
+		for _, name := range candidate.Names {
+			if name.Name == targetName {
+				return true
+			}
+		}
+	}
+	return false
 }

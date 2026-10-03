@@ -13,13 +13,13 @@ import (
 )
 
 func TestFiveLocationRenameFixtureRequiresAllFiveRenames(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_12_rename_scale_05_multifile.txtar"))
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_12_rename_scale_05_multifile.txtar"))
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatal(err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatal(parseErr)
 	}
 	if task.Metadata.TaskID != "task-12-rename-scale-05-multifile" || task.Metadata.InteractiveMode != "" || !strings.Contains(task.Metadata.Instruction, "Perform these 5 renames consecutively, possibly batched if you know how") {
 		t.Fatalf("unexpected one-turn rename task metadata: %+v", task.Metadata)

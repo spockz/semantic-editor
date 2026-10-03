@@ -193,9 +193,9 @@ func OutlineGo(root, path string, kinds []string, includeUnexported, includeTest
 						}
 						var typeText *string
 						if spec.Type != nil {
-							text, err := goReadNodeText(source, parsed.fset, spec.Type)
-							if err != nil {
-								return nil, err
+							text, typeErr := goReadNodeText(source, parsed.fset, spec.Type)
+							if typeErr != nil {
+								return nil, typeErr
 							}
 							typeText = &text
 						}

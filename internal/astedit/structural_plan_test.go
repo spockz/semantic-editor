@@ -89,6 +89,9 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			})
 		}
 	})
+}
+
+func TestStructuralStatementPlannerAnchors(t *testing.T) {
 	t.Run("statement insertion uses exact direct anchors in control flow owners", func(t *testing.T) {
 		source := []byte("package p\nfunc Handle() {\n\tfirst()\n\tsecond()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{
@@ -120,6 +123,9 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestStructuralMethodSelectorPlanner(t *testing.T) {
 	t.Run("qualified method selectors preserve receiver identity", func(t *testing.T) {
 		source := []byte("package p\ntype A struct{}\ntype B struct{}\nfunc (A) Run() {\n\twork()\n}\nfunc (B) Run() {\n\twork()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{
@@ -160,6 +166,9 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			t.Fatal("missing qualified receiver unexpectedly selected another method")
 		}
 	})
+}
+
+func TestStructuralTypedMapPlanner(t *testing.T) {
 	t.Run("typed map insertion detects semantic duplicate keys", func(t *testing.T) {
 		source := []byte("package p\nvar handlers = map[string]int{\"a\": 1}\n")
 		intent := InsertElementIntent{
@@ -193,65 +202,80 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestStructuralDocCommentPlanner(t *testing.T) {
 	t.Run("declaration doc comments preserve text and distinguish removal from missing", func(t *testing.T) {
-		source := []byte("package p\ntype Settings struct{}\n")
-		comment := "Service settings.\nLoaded once."
-		plan, err := PlanSetDocComment(source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: comment}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.Contains(string(plan.Source), "// Service settings.\n// Loaded once.\ntype Settings") {
-			t.Fatalf("comment was not set: %s", plan.Source)
-		}
-		empty := ""
-		removed, err := PlanSetDocComment(plan.Source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: empty}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(string(removed.Source), "Service settings") {
-			t.Fatalf("comment was not removed: %s", removed.Source)
-		}
-		parsed, err := parser.ParseFile(token.NewFileSet(), "out.go", plan.Source, parser.ParseComments|parser.AllErrors)
-		if err != nil {
-			t.Fatalf("comment replacement did not parse: %v", err)
-		}
-		decl := parsed.Decls[0].(*ast.GenDecl)
-		if decl.Doc == nil || decl.Doc.Text() != "Service settings.\nLoaded once.\n" {
-			t.Fatalf("replacement comment is not attached to declaration: %#v", decl.Doc)
-		}
-		parsed, err = parser.ParseFile(token.NewFileSet(), "removed.go", removed.Source, parser.ParseComments|parser.AllErrors)
-		if err != nil || parsed.Decls[0].(*ast.GenDecl).Doc != nil {
-			t.Fatalf("comment removal did not leave declaration doc-free: err=%v", err)
-		}
-		_, err = PlanSetDocComment(source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{}})
-		if err == nil {
-			t.Fatal("missing comment was treated as removal")
-		}
-		directive := []byte("package p\n//go:generate tool\ntype Settings struct{}\n")
-		_, err = PlanSetDocComment(directive, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: comment}})
-		if err == nil {
-			t.Fatal("directive-bearing doc comment was accepted")
-		}
-		for _, directiveSource := range []string{
-			"package p\n//go:generate tool\ntype Settings struct{}\n",
-			"package p\n//go:generate tool\ntype Settings struct{}\n",
-		} {
-			for _, replacement := range []string{"new comment", ""} {
-				before := []byte(directiveSource)
-				_, err := PlanSetDocComment(before, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: replacement}})
-				if err == nil {
-					t.Fatalf("directive doc was editable with replacement %q", replacement)
-				}
-				if string(before) != directiveSource {
-					t.Fatal("planner mutated directive source on refusal")
-				}
-			}
-		}
-		_, err = PlanSetDocComment([]byte("package p\nvar a, b int\n"), SetDocCommentIntent{Symbol: "a", Comment: OptionalString{Present: true, Value: "owned?"}})
-		if err == nil {
-			t.Fatal("shared ValueSpec comment ownership was accepted")
-		}
+		assertDocCommentPlanBehavior(t)
 	})
+}
+
+func assertDocCommentPlanBehavior(t *testing.T) {
+	t.Helper()
+	source := []byte("package p\ntype Settings struct{}\n")
+	comment := "Service settings.\nLoaded once."
+	plan, err := PlanSetDocComment(source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: comment}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(plan.Source), "// Service settings.\n// Loaded once.\ntype Settings") {
+		t.Fatalf("comment was not set: %s", plan.Source)
+	}
+	assertDocCommentSet(t, plan.Source)
+	removed, err := PlanSetDocComment(plan.Source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: ""}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertDocCommentRemoved(t, removed.Source)
+	assertDocCommentRemovalAndDirectiveRefusals(t, source, comment)
+}
+
+func assertDocCommentSet(t *testing.T, source []byte) {
+	t.Helper()
+	parsed, err := parser.ParseFile(token.NewFileSet(), "out.go", source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("comment replacement did not parse: %v", err)
+	}
+	doc := parsed.Decls[0].(*ast.GenDecl).Doc
+	if doc == nil || doc.Text() != "Service settings.\nLoaded once.\n" {
+		t.Fatalf("replacement comment is not attached to declaration: %#v", doc)
+	}
+}
+
+func assertDocCommentRemoved(t *testing.T, source []byte) {
+	t.Helper()
+	if strings.Contains(string(source), "Service settings") {
+		t.Fatalf("comment was not removed: %s", source)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "removed.go", source, parser.ParseComments|parser.AllErrors)
+	if err != nil || parsed.Decls[0].(*ast.GenDecl).Doc != nil {
+		t.Fatalf("comment removal did not leave declaration doc-free: err=%v", err)
+	}
+}
+
+func assertDocCommentRemovalAndDirectiveRefusals(t *testing.T, source []byte, comment string) {
+	t.Helper()
+	_, err := PlanSetDocComment(source, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{}})
+	if err == nil {
+		t.Fatal("missing comment was treated as removal")
+	}
+	assertDirectiveDocCommentRefusal(t, comment)
+	_, err = PlanSetDocComment([]byte("package p\nvar a, b int\n"), SetDocCommentIntent{Symbol: "a", Comment: OptionalString{Present: true, Value: "owned?"}})
+	if err == nil {
+		t.Fatal("shared ValueSpec comment ownership was accepted")
+	}
+}
+
+func assertDirectiveDocCommentRefusal(t *testing.T, comment string) {
+	t.Helper()
+	directive := "package p\n//go:generate tool\ntype Settings struct{}\n"
+	for _, replacement := range []string{comment, "new comment", ""} {
+		before := []byte(directive)
+		_, err := PlanSetDocComment(before, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: replacement}})
+		if err == nil || string(before) != directive {
+			t.Fatalf("directive doc accepted replacement %q or mutated input: err=%v", replacement, err)
+		}
+	}
 }
 
 func astNodeName(call *ast.CallExpr, ok bool) (string, bool) {
@@ -375,8 +399,8 @@ func TestDocCommentBlockCRLFRawRange(t *testing.T) {
 	if fn.Doc == nil || fn.Doc.Text() != "New documentation.\n" || strings.Contains(string(set.Source), "*/") {
 		t.Fatalf("replacement comment was not attached or old raw terminator remains:\n%s", set.Source)
 	}
-	if err := typeCheckPlannedSource(t, set.Source); err != nil {
-		t.Fatalf("updated CRLF comment source did not type-check: %v", err)
+	if typeCheckErr := typeCheckPlannedSource(t, set.Source); typeCheckErr != nil {
+		t.Fatalf("updated CRLF comment source did not type-check: %v", typeCheckErr)
 	}
 	empty := OptionalString{Present: true, Value: ""}
 	removed, err := PlanSetDocComment(set.Source, SetDocCommentIntent{Symbol: "f", Comment: empty})

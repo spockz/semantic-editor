@@ -77,8 +77,8 @@ func PlanInsertCompositeElement(source []byte, intent InsertElementIntent) (Sour
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	if err := validateTypedElement(source, fset, literal, keyed, keySource, intent.TypeContext); err != nil {
-		return SourcePlan{}, err
+	if validationErr := validateTypedElement(source, fset, literal, keyed, keySource, intent.TypeContext); validationErr != nil {
+		return SourcePlan{}, validationErr
 	}
 	updated, err := appendCompositeElement(source, fset, literal, strings.TrimSpace(intent.Source))
 	if err != nil {
@@ -95,39 +95,29 @@ func PlanInsertCompositeElement(source []byte, intent InsertElementIntent) (Sour
 func findCompositeOwner(file *ast.File, name string) (ast.Node, error) {
 	var owner ast.Node
 	for _, decl := range file.Decls {
+		var candidate ast.Node
 		switch value := decl.(type) {
 		case *ast.FuncDecl:
 			if value.Name.Name == name {
-				if owner != nil {
-					return nil, fmt.Errorf("declaration selector %q is ambiguous", name)
-				}
-				owner = value
+				candidate = value
 			}
 		case *ast.GenDecl:
 			for _, spec := range value.Specs {
-				matches := false
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					matches = item.Name.Name == name
-				case *ast.ValueSpec:
-					if len(item.Names) > 1 {
-						for _, ident := range item.Names {
-							if ident.Name == name {
-								return nil, fmt.Errorf("declaration %q shares a ValueSpec; composite ownership is unsupported", name)
-							}
-						}
-					}
-					for _, ident := range item.Names {
-						matches = matches || ident.Name == name
-					}
+				matches, err := compositeSpecMatches(spec, name)
+				if err != nil {
+					return nil, err
 				}
 				if !matches {
 					continue
 				}
-				if owner != nil {
-					return nil, fmt.Errorf("declaration selector %q is ambiguous", name)
+				if err := setCompositeOwner(&owner, spec, name); err != nil {
+					return nil, err
 				}
-				owner = spec
+			}
+		}
+		if candidate != nil {
+			if err := setCompositeOwner(&owner, candidate, name); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -135,6 +125,34 @@ func findCompositeOwner(file *ast.File, name string) (ast.Node, error) {
 		return nil, fmt.Errorf("declaration %q not found", name)
 	}
 	return owner, nil
+}
+
+func compositeSpecMatches(spec ast.Spec, name string) (bool, error) {
+	switch item := spec.(type) {
+	case *ast.TypeSpec:
+		return item.Name.Name == name, nil
+	case *ast.ValueSpec:
+		matches := false
+		for _, ident := range item.Names {
+			if ident.Name == name {
+				if len(item.Names) > 1 {
+					return false, fmt.Errorf("declaration %q shares a ValueSpec; composite ownership is unsupported", name)
+				}
+				matches = true
+			}
+		}
+		return matches, nil
+	default:
+		return false, nil
+	}
+}
+
+func setCompositeOwner(owner *ast.Node, candidate ast.Node, name string) error {
+	if *owner != nil {
+		return fmt.Errorf("declaration selector %q is ambiguous", name)
+	}
+	*owner = candidate
+	return nil
 }
 
 func selectCompositeTarget(source []byte, fset *token.FileSet, file *ast.File, owner ast.Node, intent InsertElementIntent) (*ast.CompositeLit, error) {

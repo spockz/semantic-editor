@@ -342,41 +342,7 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 	groups := make(map[string]*benchmarkAggregateGroup)
 	for _, comparison := range comparisons {
 		for _, context := range []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge} {
-			baseline, semedit := benchmarkPairRuns(comparison, context)
-			for _, observation := range []struct {
-				arm string
-				run *BenchRunResult
-			}{{arm: "Vanilla", run: baseline}, {arm: "Semedit MCP", run: semedit}} {
-				if observation.run == nil {
-					continue
-				}
-				prompt := strings.TrimSpace(comparison.PromptVariant)
-				if prompt == "" {
-					prompt = "default"
-				}
-				instructions := displayMCPServerInstructions(comparison.MCPServerInstructions, comparison.LegacyMCPInstructions)
-				key := strings.Join([]string{benchmarkAggregateIdentity(comparison), context.label(), observation.arm}, "\x00")
-				group := groups[key]
-				if group == nil {
-					group = &benchmarkAggregateGroup{
-						task: comparison.TaskID, target: comparison.Target.String(), prompt: prompt, instructions: instructions,
-						context: context.label(), arm: observation.arm, metrics: make(map[string]*benchmarkMetricSummary), restriction: displaySemeditArmRestriction(comparison.SemeditArmRestrict),
-					}
-					groups[key] = group
-				}
-				for _, metric := range benchmarkMetrics() {
-					value, present := metric.value(observation.run)
-					if !present {
-						continue
-					}
-					summary := group.metrics[metric.name]
-					if summary == nil {
-						summary = &benchmarkMetricSummary{}
-						group.metrics[metric.name] = summary
-					}
-					summary.add(value)
-				}
-			}
+			addBenchmarkComparisonMetrics(groups, comparison, context)
 		}
 	}
 
@@ -390,6 +356,44 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 			strings.Join([]string{right.task, right.target, right.prompt, right.instructions, right.restriction, right.context, right.arm}, "\x00")
 	})
 	return result
+}
+
+func addBenchmarkComparisonMetrics(groups map[string]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext) {
+	baseline, semedit := benchmarkPairRuns(comparison, context)
+	addBenchmarkMetricRun(groups, comparison, context, "Vanilla", baseline)
+	addBenchmarkMetricRun(groups, comparison, context, "Semedit MCP", semedit)
+}
+
+func addBenchmarkMetricRun(groups map[string]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext, arm string, run *BenchRunResult) {
+	if run == nil {
+		return
+	}
+	prompt := strings.TrimSpace(comparison.PromptVariant)
+	if prompt == "" {
+		prompt = "default"
+	}
+	instructions := displayMCPServerInstructions(comparison.MCPServerInstructions, comparison.LegacyMCPInstructions)
+	key := strings.Join([]string{benchmarkAggregateIdentity(comparison), context.label(), arm}, "\x00")
+	group := groups[key]
+	if group == nil {
+		group = &benchmarkAggregateGroup{
+			task: comparison.TaskID, target: comparison.Target.String(), prompt: prompt, instructions: instructions,
+			context: context.label(), arm: arm, metrics: make(map[string]*benchmarkMetricSummary), restriction: displaySemeditArmRestriction(comparison.SemeditArmRestrict),
+		}
+		groups[key] = group
+	}
+	for _, metric := range benchmarkMetrics() {
+		value, present := metric.value(run)
+		if !present {
+			continue
+		}
+		summary := group.metrics[metric.name]
+		if summary == nil {
+			summary = &benchmarkMetricSummary{}
+			group.metrics[metric.name] = summary
+		}
+		summary.add(value)
+	}
 }
 
 func benchmarkMetrics() []benchmarkMetric {
