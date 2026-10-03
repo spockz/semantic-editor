@@ -21,92 +21,12 @@ func TestDiagnosticsLifecycleAndFailures(t *testing.T) {
 	if goplsErr != nil {
 		t.Fatalf("FindGopls() error = %v", goplsErr)
 	}
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module diagnostics.test\n\ngo 1.24\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	first := filepath.Join(root, "first.go")
-	second := filepath.Join(root, "second.go")
-	if err := os.WriteFile(first, []byte("package sample\n\nfunc First() int { return 1 }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	secondSource := "package sample\n\nfunc Second() int { return 2 }\n"
-	if err := os.WriteFile(second, []byte(secondSource), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "unit_test.go"), []byte("package sample\n\nimport \"testing\"\n\nfunc TestFirst(t *testing.T) { if First() != 1 { t.Fatal(\"bad result\") } }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "testdata"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "testdata", "oracle.go"), []byte("package ignored\nfunc Broken() int { return \"ignored\" }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "build"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "build", "generated.go"), []byte("package ignored\nfunc Broken() int { return \"ignored\" }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(root, "tagged.go"), []byte("//go:build never\n\npackage sample\n\nfunc Broken() int { return \"ignored\" }\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	root, _, secondSource := createDiagnosticsFixture(t)
 	check := func(ctx context.Context, executable string) ([]string, error) {
 		return godiagnostics.Check(ctx, root, executable, os.Environ())
 	}
-
 	t.Run("real gopls lifecycle and diagnostics", func(t *testing.T) {
-		got, err := check(context.Background(), gopls)
-		if err != nil || len(got) != 0 {
-			t.Fatalf("clean diagnostics = %v, error = %v", got, err)
-		}
-		broken := "package sample\n\nfunc Second() int { return \"broken\" }\n"
-		if err := os.WriteFile(second, []byte(broken), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err = check(context.Background(), gopls)
-		if err != nil {
-			t.Fatalf("broken diagnostics: %v", err)
-		}
-		if len(got) != 1 || !strings.Contains(got[0], "second.go:") || !strings.Contains(got[0], "[error]") {
-			t.Fatalf("broken diagnostics = %v, want only second.go error", got)
-		}
-		if err := os.WriteFile(second, []byte(secondSource), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err = check(context.Background(), gopls)
-		if err != nil || len(got) != 0 {
-			t.Fatalf("fixed diagnostics = %v, error = %v", got, err)
-		}
-
-		warning := "package sample\n\nimport \"fmt\"\n\nfunc Warning() { fmt.Printf(\"%d\", \"text\") }\n"
-		if err := os.WriteFile(filepath.Join(root, "warning.go"), []byte(warning), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		typed, err := godiagnostics.CheckDetailed(context.Background(), root, gopls, os.Environ())
-		if err != nil {
-			t.Fatalf("warning diagnostics: %v", err)
-		}
-		if len(typed) != 1 || typed[0].Severity != 2 || !strings.Contains(typed[0].String(), "warning.go:") || !strings.Contains(typed[0].String(), "[warning]") {
-			t.Fatalf("typed diagnostics = %+v, want printf analyzer warning severity 2", typed)
-		}
-
-		missingImport := "package sample\n\nimport missing \"diagnostics.invalid/not-installed\"\n\nfunc Missing() { missing.Call() }\n"
-		if err := os.WriteFile(filepath.Join(root, "missing.go"), []byte(missingImport), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		got, err = check(context.Background(), gopls)
-		if err != nil {
-			t.Fatalf("missing import diagnostics: %v", err)
-		}
-		foundMissingImport := false
-		for _, finding := range got {
-			foundMissingImport = foundMissingImport || strings.Contains(finding, "diagnostics.invalid/not-installed")
-		}
-		if !foundMissingImport {
-			t.Fatalf("diagnostics = %v, want missing import diagnostic", got)
-		}
+		assertRealDiagnosticsLifecycle(t, check, gopls, root, secondSource)
 	})
 
 	t.Run("cancellation", func(t *testing.T) {
@@ -126,6 +46,89 @@ func TestDiagnosticsLifecycleAndFailures(t *testing.T) {
 	})
 }
 
+func createDiagnosticsFixture(t *testing.T) (string, string, string) {
+	t.Helper()
+	root := t.TempDir()
+	second := filepath.Join(root, "second.go")
+	secondSource := "package sample\n\nfunc Second() int { return 2 }\n"
+	files := map[string]string{
+		"go.mod":             "module diagnostics.test\n\ngo 1.24\n",
+		"first.go":           "package sample\n\nfunc First() int { return 1 }\n",
+		"second.go":          secondSource,
+		"unit_test.go":       "package sample\n\nimport \"testing\"\n\nfunc TestFirst(t *testing.T) { if First() != 1 { t.Fatal(\"bad result\") } }\n",
+		"testdata/oracle.go": "package ignored\nfunc Broken() int { return \"ignored\" }\n",
+		"build/generated.go": "package ignored\nfunc Broken() int { return \"ignored\" }\n",
+		"tagged.go":          "//go:build never\n\npackage sample\n\nfunc Broken() int { return \"ignored\" }\n",
+	}
+	for relative, content := range files {
+		writeDiagnosticsFixture(t, root, relative, content)
+	}
+	return root, second, secondSource
+}
+
+func writeDiagnosticsFixture(t *testing.T, root, relative, content string) {
+	t.Helper()
+	path := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertRealDiagnosticsLifecycle(t *testing.T, check func(context.Context, string) ([]string, error), gopls, root, secondSource string) {
+	t.Helper()
+	got, diagnosticErr := check(context.Background(), gopls)
+	if diagnosticErr != nil || len(got) != 0 {
+		t.Fatalf("clean diagnostics = %v, error = %v", got, diagnosticErr)
+	}
+	writeDiagnosticsFixture(t, root, "second.go", "package sample\n\nfunc Second() int { return \"broken\" }\n")
+	got, diagnosticErr = check(context.Background(), gopls)
+	if diagnosticErr != nil {
+		t.Fatalf("broken diagnostics: %v", diagnosticErr)
+	}
+	if len(got) != 1 || !strings.Contains(got[0], "second.go:") || !strings.Contains(got[0], "[error]") {
+		t.Fatalf("broken diagnostics = %v, want only second.go error", got)
+	}
+	writeDiagnosticsFixture(t, root, "second.go", secondSource)
+	got, diagnosticErr = check(context.Background(), gopls)
+	if diagnosticErr != nil || len(got) != 0 {
+		t.Fatalf("fixed diagnostics = %v, error = %v", got, diagnosticErr)
+	}
+	assertTypedWarningDiagnostic(t, gopls, root)
+	assertMissingImportDiagnostic(t, check, gopls, root)
+}
+
+func assertTypedWarningDiagnostic(t *testing.T, gopls, root string) {
+	t.Helper()
+	warning := "package sample\n\nimport \"fmt\"\n\nfunc Warning() { fmt.Printf(\"%d\", \"text\") }\n"
+	writeDiagnosticsFixture(t, root, "warning.go", warning)
+	typed, err := godiagnostics.CheckDetailed(context.Background(), root, gopls, os.Environ())
+	if err != nil {
+		t.Fatalf("warning diagnostics: %v", err)
+	}
+	if len(typed) != 1 || typed[0].Severity != 2 || !strings.Contains(typed[0].String(), "warning.go:") || !strings.Contains(typed[0].String(), "[warning]") {
+		t.Fatalf("typed diagnostics = %+v, want printf analyzer warning severity 2", typed)
+	}
+}
+
+func assertMissingImportDiagnostic(t *testing.T, check func(context.Context, string) ([]string, error), gopls, root string) {
+	t.Helper()
+	missingImport := "package sample\n\nimport missing \"diagnostics.invalid/not-installed\"\n\nfunc Missing() { missing.Call() }\n"
+	writeDiagnosticsFixture(t, root, "missing.go", missingImport)
+	got, err := check(context.Background(), gopls)
+	if err != nil {
+		t.Fatalf("missing import diagnostics: %v", err)
+	}
+	for _, finding := range got {
+		if strings.Contains(finding, "diagnostics.invalid/not-installed") {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %v, want missing import diagnostic", got)
+}
+
 func TestNoGoFilesIsIncompleteCoverage(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module empty.test\n\ngo 1.24\n"), 0o600); err != nil {
@@ -138,19 +141,13 @@ func TestNoGoFilesIsIncompleteCoverage(t *testing.T) {
 }
 
 func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
-	gopls, err := godiagnostics.FindGopls()
-	if err != nil {
-		t.Fatal(err)
+	gopls, goplsErr := godiagnostics.FindGopls()
+	if goplsErr != nil {
+		t.Fatal(goplsErr)
 	}
 	root := filepath.Join(t.TempDir(), "consumer")
 	write := func(name, source string) {
-		t.Helper()
-		if err := os.MkdirAll(filepath.Dir(filepath.Join(root, name)), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := pipeline.WriteAtomic(filepath.Join(root, name), []byte(source)); err != nil {
-			t.Fatal(err)
-		}
+		writeManagedFixture(t, root, name, source)
 	}
 	module := "module example.com/manageddiagnostics\n\ngo 1.24\n"
 	clean := "package sample\n\nfunc Value() int { return 1 }\n"
@@ -164,45 +161,26 @@ func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	environment, err := gocache.Environment(ctx, root)
-	if err != nil {
-		t.Fatal(err)
+	environment, environmentErr := gocache.Environment(ctx, root)
+	if environmentErr != nil {
+		t.Fatal(environmentErr)
 	}
 	environment = append(environment, "SEMEDIT_GOPLS_COUNT="+counter, "SEMEDIT_REAL_GOPLS="+gopls)
 	manager := godiagnostics.NewSessionManager()
 	t.Cleanup(func() {
-		if err := manager.Close(); err != nil {
-			t.Errorf("Close: %v", err)
+		if closeErr := manager.Close(); closeErr != nil {
+			t.Errorf("Close: %v", closeErr)
 		}
 	})
 	scanRoot := root
 	check := func(wantStarts int, wantDiagnostic string) {
-		t.Helper()
-		diagnostics, err := godiagnostics.CheckDetailedWithContext(godiagnostics.WithSessionManager(ctx, manager), scanRoot, wrapper, environment)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if wantDiagnostic == "" {
-			if len(diagnostics) != 0 {
-				t.Fatalf("diagnostics = %+v, want clean", diagnostics)
-			}
-		} else {
-			found := false
-			for _, diagnostic := range diagnostics {
-				found = found || strings.Contains(diagnostic.Message, wantDiagnostic)
-			}
-			if !found {
-				t.Fatalf("diagnostics = %+v, want %q", diagnostics, wantDiagnostic)
-			}
-		}
-		starts, err := os.ReadFile(counter)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := strings.Count(string(starts), "start\n"); got != wantStarts {
-			t.Fatalf("gopls starts = %d, want %d", got, wantStarts)
-		}
+		checkManagedFixtureDiagnostics(ctx, t, manager, scanRoot, wrapper, environment, counter, wantStarts, wantDiagnostic)
 	}
+	runManagedDiagnosticsSequence(ctx, t, root, module, clean, wrapper, manager, environment, write, check, &scanRoot)
+}
+
+func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, root, module, clean, wrapper string, manager *godiagnostics.SessionManager, environment []string, write func(string, string), check func(int, string), scanRoot *string) {
+	t.Helper()
 	check(1, "")
 	check(1, "")
 	write("value.go", "package sample\n\nfunc Value() int { return missingValue }\n")
@@ -219,28 +197,28 @@ func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
 	write("go.mod", module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n")
 	write("a/value.go", "package a\n\nimport \"example.com/dependency\"\n\nvar Value int = dependency.Value()\n")
 	write("b/value.go", "package b\n\nimport \"example.com/manageddiagnostics/a\"\n\nvar Value int = a.Value\n")
-	scanRoot = filepath.Join(root, "a")
+	*scanRoot = filepath.Join(root, "a")
 	check(4, "")
-	scanRoot = filepath.Join(root, "b")
+	*scanRoot = filepath.Join(root, "b")
 	check(4, "")
 	write("../dependency/value.go", "package dependency\n\nfunc Value() string { return \"changed\" }\n")
-	scanRoot = filepath.Join(root, "a")
+	*scanRoot = filepath.Join(root, "a")
 	check(4, "cannot use")
-	scanRoot = filepath.Join(root, "b")
+	*scanRoot = filepath.Join(root, "b")
 	check(4, "")
 	write("../dependency/value.go", dependencySource)
-	scanRoot = filepath.Join(root, "a")
+	*scanRoot = filepath.Join(root, "a")
 	check(4, "")
 	write("go.mod", module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n// parent changed\n")
 	check(5, "")
 	write("gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n# executable replaced\n")
 	check(6, "")
-	validManifest, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
+	validManifest, manifestErr := os.ReadFile(filepath.Join(root, "go.mod"))
+	if manifestErr != nil {
+		t.Fatal(manifestErr)
 	}
 	write("go.mod", "this is not a module manifest\n")
-	if _, err := manager.CheckDetailed(ctx, scanRoot, wrapper, environment); err == nil {
+	if _, err := manager.CheckDetailed(ctx, *scanRoot, wrapper, environment); err == nil {
 		t.Fatal("invalid module configuration did not fail")
 	}
 	write("go.mod", string(validManifest))
@@ -248,8 +226,51 @@ func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
 	if err := manager.Close(); err != nil {
 		t.Fatal(err)
 	}
-	_, err = manager.CheckDetailed(ctx, root, wrapper, environment)
-	if err == nil || !strings.Contains(err.Error(), "manager is closed") {
-		t.Fatalf("closed check error = %v", err)
+	_, closedErr := manager.CheckDetailed(ctx, root, wrapper, environment)
+	if closedErr == nil || !strings.Contains(closedErr.Error(), "manager is closed") {
+		t.Fatalf("closed check error = %v", closedErr)
 	}
+}
+
+func writeManagedFixture(t *testing.T, root, name, source string) {
+	t.Helper()
+	path := filepath.Join(root, name)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(path, []byte(source)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func checkManagedFixtureDiagnostics(ctx context.Context, t *testing.T, manager *godiagnostics.SessionManager, scanRoot, wrapper string, environment []string, counter string, wantStarts int, wantDiagnostic string) {
+	t.Helper()
+	diagnostics, err := godiagnostics.CheckDetailedWithContext(godiagnostics.WithSessionManager(ctx, manager), scanRoot, wrapper, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertManagedDiagnostic(t, diagnostics, wantDiagnostic)
+	starts, err := os.ReadFile(counter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(starts), "start\n"); got != wantStarts {
+		t.Fatalf("gopls starts = %d, want %d", got, wantStarts)
+	}
+}
+
+func assertManagedDiagnostic(t *testing.T, diagnostics []godiagnostics.Diagnostic, want string) {
+	t.Helper()
+	if want == "" {
+		if len(diagnostics) != 0 {
+			t.Fatalf("diagnostics = %+v, want clean", diagnostics)
+		}
+		return
+	}
+	for _, diagnostic := range diagnostics {
+		if strings.Contains(diagnostic.Message, want) {
+			return
+		}
+	}
+	t.Fatalf("diagnostics = %+v, want %q", diagnostics, want)
 }

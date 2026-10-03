@@ -21,29 +21,66 @@ func TestApplyRelaxationCases(t *testing.T) {
 	t.Parallel()
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import "testing"
-func TestA(t *testing.T) { if err := fail(); err != nil { t.Fatalf("failed: %v", err) } }
+func TestA(t *testing.T) {
+	if err := fail(); err != nil {
+		t.Fatalf("failed: %v", err)
+	}
+}
 `, wantSwaps: 1, wantFrag: `t.Errorf("failed: %v", err)`})
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
-import ("os"; "testing")
-func TestA(t *testing.T) { data, err := os.ReadFile("fixture.txt"); if err != nil { t.Fatalf("read fixture: %v", err) }; if len(data) == 0 { t.Errorf("empty fixture") } }
+import (
+	"os"
+	"testing"
+)
+func TestA(t *testing.T) {
+	data, err := os.ReadFile("fixture.txt")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	if len(data) == 0 {
+		t.Errorf("empty fixture")
+	}
+}
 `, wantSkips: 1})
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 type Logger struct{}
 func (l *Logger) Fatalf(format string, args ...any) {}
-func TestA(t *testing.T) { log := &Logger{}; if true { log.Fatalf("nope") } }
+func TestA(t *testing.T) {
+	log := &Logger{}
+	if true {
+		log.Fatalf("nope")
+	}
+}
 `, wantSkips: 1})
 }
 
 func TestApplyRelaxationErrorAndElseCases(t *testing.T) {
 	t.Parallel()
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
-import ("errors"; "testing")
+import (
+	"errors"
+	"testing"
+)
 var ErrGone = errors.New("gone")
-func TestA(t *testing.T) { err := fail(); if err == nil { t.Fatalf("expected error, got nil") }; if !errors.Is(err, ErrGone) { t.Errorf("wrong error: %v", err) } }
+func TestA(t *testing.T) {
+	err := fail()
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	if !errors.Is(err, ErrGone) {
+		t.Errorf("wrong error: %v", err)
+	}
+}
 `, wantSwaps: 1, wantFrag: `t.Errorf("expected error, got nil")`})
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRelax, source: `package x
 import "testing"
-func TestA(t *testing.T) { if ok { t.Log("fine") } else { t.Fatalf("bad") } }
+func TestA(t *testing.T) {
+	if ok {
+		t.Log("fine")
+	} else {
+		t.Fatalf("bad")
+	}
+}
 `, wantSkips: 1})
 }
 
@@ -51,7 +88,11 @@ func TestApplyRestrictionCase(t *testing.T) {
 	t.Parallel()
 	assertApplyCase(t, applyCase{mode: assertmode.ModeRestrict, source: `package x
 import "testing"
-func TestA(t *testing.T) { if err := fail(); err != nil { t.Errorf("failed: %v", err) } }
+func TestA(t *testing.T) {
+	if err := fail(); err != nil {
+		t.Errorf("failed: %v", err)
+	}
+}
 `, wantSwaps: 1, wantFrag: `t.Fatalf("failed: %v", err)`})
 }
 

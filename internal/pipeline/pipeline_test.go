@@ -312,20 +312,33 @@ func TestOrganizeImportsReportKeepsOnlyWrittenPathsAndPartialWrites(t *testing.T
 }
 
 func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
-	root, fixtures, unformatted, outsideFile, emptyDir := createWorkspaceSelectionFixture(t)
-	assertWorkspaceFileSelection(t, root, emptyDir)
-	assertWorkspaceFormatting(t, root, emptyDir)
-	assertWorkspaceFormattedFiles(t, root, fixtures)
-	assertExplicitSymlinkBehavior(t, root, outsideFile, unformatted)
+	fixture := createWorkspaceSelectionFixture(t)
+	assertWorkspaceFileSelection(t, fixture.root, fixture.emptyDir)
+	assertWorkspaceFormatting(t, fixture.root, fixture.emptyDir)
+	assertWorkspaceFormattedFiles(t, fixture.root, fixture.fixtures)
+	assertExplicitSymlinkBehavior(t, fixture.root, fixture.outsideFile, fixture.unformatted)
 }
 
-func createWorkspaceSelectionFixture(t *testing.T) (string, map[string][]byte, []byte, string, string) {
+type workspaceSelectionFixture struct {
+	root, outsideFile, emptyDir string
+	fixtures                    map[string][]byte
+	unformatted                 []byte
+}
+
+func createWorkspaceSelectionFixture(t *testing.T) workspaceSelectionFixture {
 	t.Helper()
 	root := t.TempDir()
 	t.Setenv("GOTMPDIR", filepath.Dir(root))
 	unformatted := []byte("package   main\n\nfunc   main(  )   {}\n")
 	invalid := []byte("package invalid {\n")
-	fixtures := map[string][]byte{"valid.go": unformatted, ".scratch/cache.go": invalid, ".git/generated.go": invalid, "vendor/module/dependency.go": invalid, "module-cache/example/cache.go": invalid, "mod/build/ordinary.go": unformatted}
+	fixtures := map[string][]byte{
+		"valid.go":                      unformatted,
+		".scratch/cache.go":             invalid,
+		".git/generated.go":             invalid,
+		"vendor/module/dependency.go":   invalid,
+		"module-cache/example/cache.go": invalid,
+		"mod/build/ordinary.go":         unformatted,
+	}
 	for name, data := range fixtures {
 		target := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -350,7 +363,7 @@ func createWorkspaceSelectionFixture(t *testing.T) (string, map[string][]byte, [
 	if err := os.Mkdir(emptyDir, 0o700); err != nil {
 		t.Fatalf("create empty directory: %v", err)
 	}
-	return root, fixtures, unformatted, outsideFile, emptyDir
+	return workspaceSelectionFixture{root: root, fixtures: fixtures, unformatted: unformatted, outsideFile: outsideFile, emptyDir: emptyDir}
 }
 
 func assertWorkspaceFileSelection(t *testing.T, root, emptyDir string) {
