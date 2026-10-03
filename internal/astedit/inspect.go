@@ -148,11 +148,21 @@ func buildInspectedGoSymbol(parsed *goReadSource, source []byte, target *goInspe
 		qualifiedName = target.name
 	}
 	return backend.InspectedSymbol{
-		Name: target.name, QualifiedName: qualifiedName, Kind: target.kind,
-		File: parsed.displayPath, Range: rng, SelectionRange: selectionRange,
-		Signature: target.signature, Doc: doc, Type: target.typeValue, Tag: target.tag,
-		Source: sourceText, Revision: goReadRevision(source), SourceExtent: "declaration",
-		Package: parsed.file.Name.Name, Imports: imports,
+		Name:           target.name,
+		QualifiedName:  qualifiedName,
+		Kind:           target.kind,
+		File:           parsed.displayPath,
+		Range:          rng,
+		SelectionRange: selectionRange,
+		Signature:      target.signature,
+		Doc:            doc,
+		Type:           target.typeValue,
+		Tag:            target.tag,
+		Source:         sourceText,
+		Revision:       goReadRevision(source),
+		SourceExtent:   "declaration",
+		Package:        parsed.file.Name.Name,
+		Imports:        imports,
 	}, nil
 }
 
