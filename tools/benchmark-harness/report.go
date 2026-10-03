@@ -351,90 +351,113 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 			currentTaskID = comp.TaskID
 			currentTarget = ""
 		}
-
-		targetStr := comp.Target.String()
-		if comp.Repeat > 0 {
-			targetStr = fmt.Sprintf("%s (repeat %d)", targetStr, comp.Repeat)
-		}
+		targetStr := comparisonTargetLabel(comp)
 		if targetStr != currentTarget {
 			fmt.Fprintf(&sb, "### Target: `%s`\n\n", targetStr)
 			currentTarget = targetStr
 		}
-		fmt.Fprintf(&sb, "#### Configuration: %s\n\n", formatConfiguration(comp))
-		if provenance := comp.Provenance.String(); provenance != "" {
-			fmt.Fprintf(&sb, "* **Run Provenance**: `%s`\n\n", provenance)
-		}
-
-		switch {
-		case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
-			fmt.Fprintf(&sb, "* **Fixture**: [%s](%s)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarProvenance != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s` (`%s`)\n\n", comp.TxtarPath, comp.TxtarProvenance)
-		case comp.TxtarPath != "":
-			fmt.Fprintf(&sb, "* **Fixture**: `%s`\n\n", comp.TxtarPath)
-		}
-
-		if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
-			writePrompt(&sb, "LLM Prompt", comp.VanillaPrompt)
-		} else {
-			if comp.VanillaPrompt != "" {
-				writePrompt(&sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
-			}
-			if comp.MCPPrompt != "" {
-				writePrompt(&sb, "Semedit MCP Prompt", comp.MCPPrompt)
-			}
-		}
-
-		hasVerified := comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
-			comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
-
-		if hasVerified {
-			if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
-				writePrompt(&sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
-			} else {
-				if comp.VanillaVerifiedPrompt != "" {
-					writePrompt(&sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
-				}
-				if comp.MCPVerifiedPrompt != "" {
-					writePrompt(&sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
-				}
-			}
-		}
-
-		if comp.BeforeState != "" {
-			sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
-			sb.WriteString(comp.BeforeState)
-			sb.WriteString("\n```\n</details>\n\n")
-		}
-
-		// 1. Standard Comparison Table (Unverified)
-		hasStandard := comp.SmallBaseline != nil || comp.SmallSemedit != nil ||
-			comp.LargeBaseline != nil || comp.LargeSemedit != nil
-
-		if hasStandard {
-			renderComparisonTable(&sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-			renderDiffSection(&sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
-			renderDiffSection(&sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
-			renderSemanticToolReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
-			renderSemanticToolReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
-			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
-			renderSemanticBatchReflection(&sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
-		}
-
-		// 2. Verified Directive Comparison Table
-		if hasVerified {
-			sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
-			renderComparisonTable(&sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderDiffSection(&sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-			renderDiffSection(&sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-			renderSemanticToolReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
-			renderSemanticToolReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
-			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
-			renderSemanticBatchReflection(&sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
-		}
+		renderComparisonMarkdown(&sb, comp)
 	}
 
 	return sb.String()
+}
+
+func comparisonTargetLabel(comp *ComparisonSummary) string {
+	target := comp.Target.String()
+	if comp.Repeat > 0 {
+		return fmt.Sprintf("%s (repeat %d)", target, comp.Repeat)
+	}
+	return target
+}
+
+func renderComparisonMarkdown(sb *strings.Builder, comp *ComparisonSummary) {
+	renderComparisonIdentity(sb, comp)
+	renderComparisonPrompts(sb, comp)
+	renderComparisonState(sb, comp)
+	renderStandardSections(sb, comp)
+	renderVerifiedSections(sb, comp)
+}
+
+func renderComparisonIdentity(sb *strings.Builder, comp *ComparisonSummary) {
+	fmt.Fprintf(sb, "#### Configuration: %s\n\n", formatConfiguration(comp))
+	if provenance := comp.Provenance.String(); provenance != "" {
+		fmt.Fprintf(sb, "* **Run Provenance**: `%s`\n\n", provenance)
+	}
+	switch {
+	case comp.TxtarProvenance != "" && strings.HasPrefix(comp.TxtarProvenance, "http"):
+		fmt.Fprintf(sb, "* **Fixture**: [%s](%s)\n\n", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarProvenance != "":
+		fmt.Fprintf(sb, "* **Fixture**: `%s` (`%s`)\n\n", comp.TxtarPath, comp.TxtarProvenance)
+	case comp.TxtarPath != "":
+		fmt.Fprintf(sb, "* **Fixture**: `%s`\n\n", comp.TxtarPath)
+	}
+}
+
+func renderComparisonPrompts(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.VanillaPrompt != "" && comp.MCPPrompt != "" && comp.VanillaPrompt == comp.MCPPrompt {
+		writePrompt(sb, "LLM Prompt", comp.VanillaPrompt)
+	} else {
+		if comp.VanillaPrompt != "" {
+			writePrompt(sb, "Vanilla LLM Prompt", comp.VanillaPrompt)
+		}
+		if comp.MCPPrompt != "" {
+			writePrompt(sb, "Semedit MCP Prompt", comp.MCPPrompt)
+		}
+	}
+	if !hasVerifiedComparisons(comp) {
+		return
+	}
+	if comp.VanillaVerifiedPrompt != "" && comp.MCPVerifiedPrompt != "" && comp.VanillaVerifiedPrompt == comp.MCPVerifiedPrompt {
+		writePrompt(sb, "Verified Prompt", comp.VanillaVerifiedPrompt)
+		return
+	}
+	if comp.VanillaVerifiedPrompt != "" {
+		writePrompt(sb, "Vanilla (Verified) Prompt", comp.VanillaVerifiedPrompt)
+	}
+	if comp.MCPVerifiedPrompt != "" {
+		writePrompt(sb, "Semedit MCP (Verified) Prompt", comp.MCPVerifiedPrompt)
+	}
+}
+
+func renderComparisonState(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.BeforeState == "" {
+		return
+	}
+	sb.WriteString("<details><summary><b>Initial Workspace State (Before Edit)</b></summary>\n\n```go\n")
+	sb.WriteString(comp.BeforeState)
+	sb.WriteString("\n```\n</details>\n\n")
+}
+
+func hasVerifiedComparisons(comp *ComparisonSummary) bool {
+	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
+		comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
+}
+
+func renderStandardSections(sb *strings.Builder, comp *ComparisonSummary) {
+	if comp.SmallBaseline == nil && comp.SmallSemedit == nil && comp.LargeBaseline == nil && comp.LargeSemedit == nil {
+		return
+	}
+	renderComparisonTable(sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+	renderDiffSection(sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
+	renderDiffSection(sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+	renderSemanticToolReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderSemanticToolReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+	renderSemanticBatchReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderSemanticBatchReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+}
+
+func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
+	if !hasVerifiedComparisons(comp) {
+		return
+	}
+	sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
+	renderComparisonTable(sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	renderDiffSection(sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+	renderDiffSection(sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	renderSemanticToolReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderSemanticToolReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
+	renderSemanticBatchReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderSemanticBatchReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 }
 
 func writePrompt(sb *strings.Builder, label, prompt string) {

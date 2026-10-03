@@ -522,8 +522,13 @@ func runOracleGoCommand(ctx context.Context, workDir, operation string) ([]byte,
 	default:
 		return nil, fmt.Errorf("unsupported oracle Go command %q", operation)
 	}
+	env, err := fixtureGoEnvironment(ctx, workDir)
+	if err != nil {
+		return nil, fmt.Errorf("prepare oracle Go environment: %w", err)
+	}
 	command.Dir = workDir
-	command.Env = append(os.Environ(), "CGO_ENABLED=0")
+	env = append(env, "CGO_ENABLED=0")
+	command.Env = env
 	return command.CombinedOutput()
 }
 
@@ -536,50 +541,65 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 	if sourceOpenErr != nil {
 		return "", nil, fmt.Errorf("open workspace: %w", sourceOpenErr)
 	}
-	scratchDir := filepath.Join(sourceRoot, ".scratch")
-	scratchCreated := false
-	if info, statErr := os.Lstat(scratchDir); errors.Is(statErr, os.ErrNotExist) {
-		if err := os.Mkdir(scratchDir, 0o700); err != nil {
-			_ = sourceFS.Close()
-			return "", nil, fmt.Errorf("create workspace scratch directory: %w", err)
-		}
-		scratchCreated = true
-	} else if statErr != nil {
-		_ = sourceFS.Close()
-		return "", nil, fmt.Errorf("inspect workspace scratch directory: %w", statErr)
-	} else if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		_ = sourceFS.Close()
-		return "", nil, errors.New("workspace .scratch is not a regular directory")
+	scratch, scratchErr := prepareOracleScratch(sourceRoot)
+	if scratchErr != nil {
+		return "", nil, errors.Join(scratchErr, sourceFS.Close())
 	}
-	removeScratch := func() error {
-		if scratchCreated {
-			if err := os.Remove(scratchDir); !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		return nil
-	}
-	target, createTargetErr := os.MkdirTemp(scratchDir, "oracle-*")
+	target, createTargetErr := os.MkdirTemp(scratch.path, "oracle-*")
 	if createTargetErr != nil {
-		return "", nil, errors.Join(fmt.Errorf("create private workspace: %w", createTargetErr), sourceFS.Close(), removeScratch())
+		return "", nil, errors.Join(fmt.Errorf("create private workspace: %w", createTargetErr), sourceFS.Close(), scratch.cleanup())
 	}
 	targetFS, targetOpenErr := os.OpenRoot(target)
 	if targetOpenErr != nil {
-		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", targetOpenErr), sourceFS.Close(), os.RemoveAll(target), removeScratch())
+		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", targetOpenErr), sourceFS.Close(), os.RemoveAll(target), scratch.cleanup())
 	}
 	cleanup := func() error {
 		closeSourceErr, closeTargetErr := sourceFS.Close(), targetFS.Close()
 		removeErr := os.RemoveAll(target)
-		var scratchErr error
-		if scratchCreated {
-			scratchErr = os.Remove(scratchDir)
-			if errors.Is(scratchErr, os.ErrNotExist) {
-				scratchErr = nil
-			}
-		}
-		return errors.Join(closeSourceErr, closeTargetErr, removeErr, scratchErr)
+		return errors.Join(closeSourceErr, closeTargetErr, removeErr, scratch.cleanup())
 	}
-	walkErr := filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+	if walkErr := copyOracleWorkspaceFiles(sourceRoot, sourceFS, targetFS); walkErr != nil {
+		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", walkErr), cleanup())
+	}
+	return target, cleanup, nil
+}
+
+type oracleScratch struct {
+	path    string
+	created bool
+}
+
+func prepareOracleScratch(sourceRoot string) (oracleScratch, error) {
+	scratchDir := filepath.Join(sourceRoot, ".scratch")
+	info, statErr := os.Lstat(scratchDir)
+	if errors.Is(statErr, os.ErrNotExist) {
+		if err := os.Mkdir(scratchDir, 0o700); err != nil {
+			return oracleScratch{}, fmt.Errorf("create workspace scratch directory: %w", err)
+		}
+		return oracleScratch{path: scratchDir, created: true}, nil
+	}
+	if statErr != nil {
+		return oracleScratch{}, fmt.Errorf("inspect workspace scratch directory: %w", statErr)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return oracleScratch{}, errors.New("workspace .scratch is not a regular directory")
+	}
+	return oracleScratch{path: scratchDir}, nil
+}
+
+func (scratch oracleScratch) cleanup() error {
+	if !scratch.created {
+		return nil
+	}
+	err := os.Remove(scratch.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+func copyOracleWorkspaceFiles(sourceRoot string, sourceFS, targetFS *os.Root) error {
+	return filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -615,10 +635,6 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		}
 		return nil
 	})
-	if walkErr != nil {
-		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", walkErr), cleanup())
-	}
-	return target, cleanup, nil
 }
 
 // installHiddenTests copies task-owned acceptance tests only after the agent has finished.

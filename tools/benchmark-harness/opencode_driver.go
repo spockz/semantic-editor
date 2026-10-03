@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -66,92 +67,118 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	processStartedAt := time.Now()
 	res.processStartedAt = processStartedAt
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	tracker := openCodeToolTracker{}
-	decodeErrors := 0
-	validEvents := 0
-	var firstEventAt time.Time
-	sessionID := resumeID
-	for scanner.Scan() {
-		rawEvent := append([]byte(nil), scanner.Bytes()...)
-		var event map[string]any
-		if err := json.Unmarshal(rawEvent, &event); err != nil || event == nil || len(event) == 0 || openCodeEventType(event) == "" {
-			decodeErrors++
-			encodedInvalid, _ := json.Marshal(string(rawEvent))
-			res.rawEvents = append(res.rawEvents, json.RawMessage(encodedInvalid))
-			continue
-		}
-		validEvents++
-		res.rawEvents = append(res.rawEvents, json.RawMessage(rawEvent))
-		observedAt := time.Now()
-		if firstEventAt.IsZero() {
-			firstEventAt = observedAt
-		}
-		if candidate := openCodeEventSessionID(event); candidate != "" {
-			sessionID = candidate
-		}
-		appendOpenCodeAgentResponse(res, event)
-		tracker.observe(res, event, observedAt)
-	}
-	scanErr := scanner.Err()
+	stream := readOpenCodeEventStream(stdout, res, resumeID)
 	waitErr := cmd.Wait()
 	if cmd.ProcessState != nil {
 		code := cmd.ProcessState.ExitCode()
 		res.OpenCodeExitCode = &code
 	}
 	res.OpenCodeStderr = sanitizeOpenRouterDiagnostic(boundedDiagnostic(stderr.Bytes(), maxOpenCodeStderrBytes), env)
-	res.Turns = 0
-	if validEvents > 0 {
-		res.Turns = 1
+	applyOpenCodeStreamMetrics(res, stream, processStartedAt)
+	providerErr := openCodeStreamFailure(stream, waitErr, res.OpenCodeStderr)
+	setOpenCodeObservationState(res, providerErr, stream)
+	if providerErr != nil {
+		return stream.sessionID, providerErr
 	}
-	res.InternalTurns = tracker.internalTurns
-	res.InitialLoadTurns = tracker.initialLoadTurns
-	res.MCPLoadTurns = tracker.mcpLoadTurns
-	res.ToolCount = len(res.ToolCalls)
-	if !firstEventAt.IsZero() {
-		value := firstEventAt.Sub(processStartedAt)
-		res.ProcessStartToFirstEvent = &value
+	if stream.sessionID == "" {
+		return "", fmt.Errorf("OpenCode did not emit a session ID")
 	}
-	if !firstEventAt.IsZero() && !tracker.firstToolCallAt.IsZero() {
-		value := tracker.firstToolCallAt.Sub(firstEventAt)
-		res.FirstEventToFirstToolCall = &value
+	if stream.validEvents == 0 {
+		return stream.sessionID, fmt.Errorf("OpenCode emitted no valid task events")
 	}
+	return stream.sessionID, nil
+}
+
+type openCodeEventStream struct {
+	tracker      openCodeToolTracker
+	decodeErrors int
+	validEvents  int
+	firstEventAt time.Time
+	sessionID    string
+	scanErr      error
+}
+
+func readOpenCodeEventStream(stdout io.Reader, result *RunResult, resumeID string) openCodeEventStream {
+	stream := openCodeEventStream{sessionID: resumeID}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	for scanner.Scan() {
+		consumeOpenCodeEvent(&stream, result, append([]byte(nil), scanner.Bytes()...))
+	}
+	stream.scanErr = scanner.Err()
+	return stream
+}
+
+func consumeOpenCodeEvent(stream *openCodeEventStream, result *RunResult, raw []byte) {
+	var event map[string]any
+	if err := json.Unmarshal(raw, &event); err != nil || event == nil || len(event) == 0 || openCodeEventType(event) == "" {
+		stream.decodeErrors++
+		encoded, _ := json.Marshal(string(raw))
+		result.rawEvents = append(result.rawEvents, json.RawMessage(encoded))
+		return
+	}
+	stream.validEvents++
+	result.rawEvents = append(result.rawEvents, json.RawMessage(raw))
+	observedAt := time.Now()
+	if stream.firstEventAt.IsZero() {
+		stream.firstEventAt = observedAt
+	}
+	if candidate := openCodeEventSessionID(event); candidate != "" {
+		stream.sessionID = candidate
+	}
+	appendOpenCodeAgentResponse(result, event)
+	stream.tracker.observe(result, event, observedAt)
+}
+
+func applyOpenCodeStreamMetrics(result *RunResult, stream openCodeEventStream, processStartedAt time.Time) {
+	result.Turns = 0
+	if stream.validEvents > 0 {
+		result.Turns = 1
+	}
+	result.InternalTurns = stream.tracker.internalTurns
+	result.InitialLoadTurns = stream.tracker.initialLoadTurns
+	result.MCPLoadTurns = stream.tracker.mcpLoadTurns
+	result.ToolCount = len(result.ToolCalls)
+	if !stream.firstEventAt.IsZero() {
+		value := stream.firstEventAt.Sub(processStartedAt)
+		result.ProcessStartToFirstEvent = &value
+	}
+	if !stream.firstEventAt.IsZero() && !stream.tracker.firstToolCallAt.IsZero() {
+		value := stream.tracker.firstToolCallAt.Sub(stream.firstEventAt)
+		result.FirstEventToFirstToolCall = &value
+	}
+}
+
+func openCodeStreamFailure(stream openCodeEventStream, waitErr error, stderr string) error {
 	var providerErr error
-	if scanErr != nil {
-		providerErr = fmt.Errorf("scan OpenCode output: %w", scanErr)
+	if stream.scanErr != nil {
+		providerErr = fmt.Errorf("scan OpenCode output: %w", stream.scanErr)
 	}
-	if decodeErrors > 0 {
-		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed OpenCode event records", decodeErrors))
+	if stream.decodeErrors > 0 {
+		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed OpenCode event records", stream.decodeErrors))
 	}
 	if waitErr != nil {
-		if diagnostic := strings.TrimSpace(res.OpenCodeStderr); diagnostic != "" {
+		if diagnostic := strings.TrimSpace(stderr); diagnostic != "" {
 			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w: %s", waitErr, diagnostic))
 		} else {
 			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w", waitErr))
 		}
 	}
+	return providerErr
+}
+
+func setOpenCodeObservationState(result *RunResult, providerErr error, stream openCodeEventStream) {
 	switch {
 	case providerErr != nil:
-		res.toolObservationState = ToolObservationPartial
-		res.toolObservationReason = providerErr.Error()
-	case sessionID == "" || validEvents == 0:
-		res.toolObservationState = ToolObservationPartial
-		res.toolObservationReason = "OpenCode stream lacks a session ID or valid events"
+		result.toolObservationState = ToolObservationPartial
+		result.toolObservationReason = providerErr.Error()
+	case stream.sessionID == "" || stream.validEvents == 0:
+		result.toolObservationState = ToolObservationPartial
+		result.toolObservationReason = "OpenCode stream lacks a session ID or valid events"
 	default:
-		res.toolObservationState = ToolObservationUnknown
-		res.toolObservationReason = "OpenCode adapter has no validated terminal event marker"
+		result.toolObservationState = ToolObservationUnknown
+		result.toolObservationReason = "OpenCode adapter has no validated terminal event marker"
 	}
-	if providerErr != nil {
-		return sessionID, providerErr
-	}
-	if sessionID == "" {
-		return "", fmt.Errorf("OpenCode did not emit a session ID")
-	}
-	if validEvents == 0 {
-		return sessionID, fmt.Errorf("OpenCode emitted no valid task events")
-	}
-	return sessionID, nil
 }
 
 func openCodeEventType(event map[string]any) string {
