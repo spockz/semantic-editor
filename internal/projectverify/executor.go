@@ -72,6 +72,9 @@ func RunPhase(ctx context.Context, plan Plan, phase Phase, scope Scope, lsp LSPR
 			report.Partial = completedCount > 0 || len(result.Changed) > 0
 			return report, runErr
 		}
+		if result.Status == HookSkipped {
+			continue
+		}
 		completedCount++
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -393,43 +396,42 @@ func prepareNormalization(ctx context.Context, root string, hook Hook, selected 
 	if stageErr != nil {
 		return normalizationWorkspace{}, fmt.Errorf("create normalization staging area: %w", stageErr)
 	}
+	keepStage := false
+	defer func() {
+		if !keepStage {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	stageRoot := filepath.Join(stage, "workspace")
 	if err := os.Mkdir(stageRoot, 0o700); err != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, fmt.Errorf("create staged workspace: %w", err)
 	}
 	if err := copyWorkspaceContext(ctx, root, stageRoot); err != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, fmt.Errorf("stage project for normalization: %w", err)
 	}
 	before, beforeErr := snapshotWorkspaceContext(ctx, stageRoot)
 	if beforeErr != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, fmt.Errorf("snapshot staged workspace: %w", beforeErr)
 	}
 	cwd, cwdErr := hookWorkingDirectory(stageRoot, hook)
 	if cwdErr != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, cwdErr
 	}
 	executable, args, invocationErr := invocationForRoot(ctx, stageRoot, hook, selected)
 	if invocationErr != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, invocationErr
 	}
 	if err := runHookCommand(ctx, root, hook, cwd, executable, args, result); err != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, fmt.Errorf("normalization was cancelled after command completion: %w", err)
 	}
 	after, afterErr := snapshotWorkspaceContext(ctx, stageRoot)
 	if afterErr != nil {
-		_ = os.RemoveAll(stage)
 		return normalizationWorkspace{}, fmt.Errorf("inspect staged normalization result: %w", afterErr)
 	}
+	keepStage = true
 	return normalizationWorkspace{stage: stage, stageRoot: stageRoot, before: before, after: after}, nil
 }
 

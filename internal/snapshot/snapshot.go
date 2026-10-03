@@ -64,14 +64,14 @@ type UndoResult struct {
 
 // Create captures pre-edit state of specified files or the workspace root into .scratch/snapshots/<id>/.
 func Create(ctx context.Context, workDir string, opts CreateOptions) (*CreateResult, error) {
-	absWorkDir, err := resolveWorkDir(workDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve workdir: %w", err)
+	absWorkDir, resolveErr := resolveWorkDir(workDir)
+	if resolveErr != nil {
+		return nil, fmt.Errorf("resolve workdir: %w", resolveErr)
 	}
 
-	snapshotID, err := generateSnapshotID()
-	if err != nil {
-		return nil, fmt.Errorf("generate snapshot id: %w", err)
+	snapshotID, idErr := generateSnapshotID()
+	if idErr != nil {
+		return nil, fmt.Errorf("generate snapshot id: %w", idErr)
 	}
 
 	snapDir := filepath.Join(absWorkDir, ".scratch", "snapshots", snapshotID)
@@ -80,9 +80,9 @@ func Create(ctx context.Context, workDir string, opts CreateOptions) (*CreateRes
 		return nil, fmt.Errorf("create snapshot directory: %w", err)
 	}
 
-	filePaths, err := collectFilesToCapture(absWorkDir, opts.Paths)
-	if err != nil {
-		return nil, fmt.Errorf("collect files to capture: %w", err)
+	filePaths, collectErr := collectFilesToCapture(absWorkDir, opts.Paths)
+	if collectErr != nil {
+		return nil, fmt.Errorf("collect files to capture: %w", collectErr)
 	}
 
 	records := make([]FileRecord, 0, len(filePaths))
@@ -90,15 +90,15 @@ func Create(ctx context.Context, workDir string, opts CreateOptions) (*CreateRes
 
 	for _, relPath := range filePaths {
 		absPath := filepath.Join(absWorkDir, filepath.FromSlash(relPath))
-		fi, err := os.Stat(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("stat target file %s: %w", relPath, err)
+		fi, statErr := os.Stat(absPath)
+		if statErr != nil {
+			return nil, fmt.Errorf("stat target file %s: %w", relPath, statErr)
 		}
 
 		// #nosec G304 -- reading workspace file to capture snapshot preimage
-		data, err := os.ReadFile(absPath)
-		if err != nil {
-			return nil, fmt.Errorf("read target file %s: %w", relPath, err)
+		data, readErr := os.ReadFile(absPath)
+		if readErr != nil {
+			return nil, fmt.Errorf("read target file %s: %w", relPath, readErr)
 		}
 
 		sha := computeSHA256(data)
@@ -130,9 +130,9 @@ func Create(ctx context.Context, workDir string, opts CreateOptions) (*CreateRes
 		Files:       records,
 	}
 
-	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("marshal manifest: %w", err)
+	manifestBytes, marshalErr := json.MarshalIndent(manifest, "", "  ")
+	if marshalErr != nil {
+		return nil, fmt.Errorf("marshal manifest: %w", marshalErr)
 	}
 
 	manifestPath := filepath.Join(snapDir, "manifest.json")
@@ -149,32 +149,32 @@ func Create(ctx context.Context, workDir string, opts CreateOptions) (*CreateRes
 
 // RecordPostEdit scans workspace files recorded in the snapshot manifest and updates their PostEditSHA256.
 func RecordPostEdit(_ context.Context, workDir string, snapshotID string) (*Manifest, error) {
-	absWorkDir, err := resolveWorkDir(workDir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve workdir: %w", err)
+	absWorkDir, resolveErr := resolveWorkDir(workDir)
+	if resolveErr != nil {
+		return nil, fmt.Errorf("resolve workdir: %w", resolveErr)
 	}
 
-	resolvedID, err := resolveSnapshotID(absWorkDir, snapshotID)
-	if err != nil {
-		return nil, err
+	resolvedID, idErr := resolveSnapshotID(absWorkDir, snapshotID)
+	if idErr != nil {
+		return nil, idErr
 	}
 
-	manifest, manifestPath, err := loadManifest(absWorkDir, resolvedID)
-	if err != nil {
-		return nil, err
+	manifest, manifestPath, loadErr := loadManifest(absWorkDir, resolvedID)
+	if loadErr != nil {
+		return nil, loadErr
 	}
 
 	for i := range manifest.Files {
 		rec := &manifest.Files[i]
 		absPath := filepath.Join(absWorkDir, filepath.FromSlash(rec.Path))
 		// #nosec G304 -- reading workspace file to record post-edit sha256
-		data, err := os.ReadFile(absPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
+		data, readErr := os.ReadFile(absPath)
+		if readErr != nil {
+			if errors.Is(readErr, os.ErrNotExist) {
 				rec.PostEditSHA256 = "deleted"
 				continue
 			}
-			return nil, fmt.Errorf("read file %s: %w", rec.Path, err)
+			return nil, fmt.Errorf("read file %s: %w", rec.Path, readErr)
 		}
 		rec.PostEditSHA256 = computeSHA256(data)
 	}
@@ -216,120 +216,14 @@ func Undo(ctx context.Context, workDir string, snapshotID string) (*UndoResult, 
 		return nil, err
 	}
 
-	snapDir := filepath.Join(absWorkDir, ".scratch", "snapshots", resolvedID)
-	blobsDir := filepath.Join(snapDir, "blobs")
-
 	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, absWorkDir)
-
-	plans := make([]fileRestorePlan, 0, len(manifest.Files))
-
-	// Preflight validation pass: perform zero writes if any conflict or corrupt blob is detected
-	for _, rec := range manifest.Files {
-		absPath := filepath.Join(absWorkDir, filepath.FromSlash(rec.Path))
-
-		relToRoot, err := filepath.Rel(absWorkDir, absPath)
-		if err != nil || strings.HasPrefix(relToRoot, "..") || filepath.IsAbs(relToRoot) {
-			return nil, fmt.Errorf("%w: %s", ErrPathOutsideWorkspace, rec.Path)
-		}
-
-		blobPath := filepath.Join(blobsDir, rec.PreimageSHA256)
-		// #nosec G304 -- reading snapshot preimage blob
-		blobData, err := os.ReadFile(blobPath)
-		if err != nil {
-			return nil, fmt.Errorf("%w: missing blob %s for %s: %w", ErrCorruptBlob, rec.PreimageSHA256, rec.Path, err)
-		}
-		if actualBlobSHA := computeSHA256(blobData); actualBlobSHA != rec.PreimageSHA256 {
-			return nil, fmt.Errorf("%w: blob checksum mismatch for %s: expected %s, got %s",
-				ErrCorruptBlob, rec.Path, rec.PreimageSHA256, actualBlobSHA)
-		}
-
-		var currentData []byte
-		var currentSHA string
-		fileExists := true
-
-		// #nosec G304 -- reading workspace file to preflight conflict check
-		currentData, err = os.ReadFile(absPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				fileExists = false
-			} else {
-				return nil, fmt.Errorf("read on-disk file %s: %w", rec.Path, err)
-			}
-		} else {
-			currentSHA = computeSHA256(currentData)
-		}
-
-		// Conflict check: if post-edit SHA is recorded, disk must match post-edit SHA or already be restored
-		if rec.PostEditSHA256 != "" {
-			if rec.PostEditSHA256 == "deleted" {
-				if fileExists && currentSHA != rec.PreimageSHA256 {
-					return nil, &ConflictError{
-						Path:           rec.Path,
-						ExpectedSHA256: "deleted",
-						ActualSHA256:   currentSHA,
-						Message:        "file exists on disk but was marked deleted in post-edit manifest",
-					}
-				}
-			} else {
-				if !fileExists {
-					return nil, &ConflictError{
-						Path:           rec.Path,
-						ExpectedSHA256: rec.PostEditSHA256,
-						ActualSHA256:   "missing",
-						Message:        "file missing on disk but recorded in post-edit manifest",
-					}
-				}
-				if currentSHA != rec.PostEditSHA256 && currentSHA != rec.PreimageSHA256 {
-					return nil, &ConflictError{
-						Path:           rec.Path,
-						ExpectedSHA256: rec.PostEditSHA256,
-						ActualSHA256:   currentSHA,
-					}
-				}
-			}
-		}
-
-		needsWrite := !fileExists || currentSHA != rec.PreimageSHA256
-
-		plans = append(plans, fileRestorePlan{
-			record:       rec,
-			absPath:      absPath,
-			currentBytes: currentData,
-			blobBytes:    blobData,
-			needsWrite:   needsWrite,
-		})
+	plans, err := preflightRestorePlans(absWorkDir, resolvedID, manifest)
+	if err != nil {
+		return nil, err
 	}
-
-	// Execution pass: restore blobs atomically (ADR-0010)
-	var restoredFiles []string
-	var diffBuilder strings.Builder
-
-	for _, plan := range plans {
-		if !plan.needsWrite {
-			continue
-		}
-
-		if err := os.MkdirAll(filepath.Dir(plan.absPath), 0o750); err != nil {
-			return nil, fmt.Errorf("create parent directory for %s: %w", plan.record.Path, err)
-		}
-
-		if err := pipeline.WriteAtomic(plan.absPath, plan.blobBytes); err != nil {
-			return nil, fmt.Errorf("atomic write restore for %s: %w", plan.record.Path, err)
-		}
-
-		if plan.record.Mode != 0 {
-			_ = os.Chmod(plan.absPath, plan.record.Mode)
-		}
-
-		restoredFiles = append(restoredFiles, plan.record.Path)
-
-		diff := astedit.UnifiedDiff(plan.record.Path, string(plan.currentBytes), string(plan.blobBytes))
-		if diff != "" {
-			if diffBuilder.Len() > 0 {
-				diffBuilder.WriteString("\n")
-			}
-			diffBuilder.WriteString(diff)
-		}
+	restoredFiles, restoredDiff, err := restorePlans(plans)
+	if err != nil {
+		return nil, err
 	}
 
 	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, absWorkDir)
@@ -337,10 +231,127 @@ func Undo(ctx context.Context, workDir string, snapshotID string) (*UndoResult, 
 
 	return &UndoResult{
 		RestoredFiles: restoredFiles,
-		RestoredDiff:  diffBuilder.String(),
+		RestoredDiff:  restoredDiff,
 		Diagnostics:   diagsAfter,
 		Delta:         &delta,
 	}, nil
+}
+
+func preflightRestorePlans(root, snapshotID string, manifest *Manifest) ([]fileRestorePlan, error) {
+	blobsDir := filepath.Join(root, ".scratch", "snapshots", snapshotID, "blobs")
+	plans := make([]fileRestorePlan, 0, len(manifest.Files))
+	for _, record := range manifest.Files {
+		plan, err := prepareRestorePlan(root, blobsDir, record)
+		if err != nil {
+			return nil, err
+		}
+		plans = append(plans, plan)
+	}
+	return plans, nil
+}
+
+func prepareRestorePlan(root, blobsDir string, record FileRecord) (fileRestorePlan, error) {
+	absPath := filepath.Join(root, filepath.FromSlash(record.Path))
+	relToRoot, err := filepath.Rel(root, absPath)
+	if err != nil || strings.HasPrefix(relToRoot, "..") || filepath.IsAbs(relToRoot) {
+		return fileRestorePlan{}, fmt.Errorf("%w: %s", ErrPathOutsideWorkspace, record.Path)
+	}
+	blobData, err := readVerifiedBlob(blobsDir, record)
+	if err != nil {
+		return fileRestorePlan{}, err
+	}
+	currentData, currentSHA, fileExists, err := readCurrentRestoreFile(absPath, record.Path)
+	if err != nil {
+		return fileRestorePlan{}, err
+	}
+	if err := validateRestoreConflict(record, currentSHA, fileExists); err != nil {
+		return fileRestorePlan{}, err
+	}
+	return fileRestorePlan{record: record, absPath: absPath, currentBytes: currentData, blobBytes: blobData, needsWrite: !fileExists || currentSHA != record.PreimageSHA256}, nil
+}
+
+func readVerifiedBlob(blobsDir string, record FileRecord) ([]byte, error) {
+	blobPath := filepath.Join(blobsDir, record.PreimageSHA256)
+	// #nosec G304 -- reading snapshot preimage blob
+	data, err := os.ReadFile(blobPath)
+	if err != nil {
+		return nil, fmt.Errorf("%w: missing blob %s for %s: %w", ErrCorruptBlob, record.PreimageSHA256, record.Path, err)
+	}
+	if actualSHA := computeSHA256(data); actualSHA != record.PreimageSHA256 {
+		return nil, fmt.Errorf("%w: blob checksum mismatch for %s: expected %s, got %s", ErrCorruptBlob, record.Path, record.PreimageSHA256, actualSHA)
+	}
+	return data, nil
+}
+
+func readCurrentRestoreFile(absPath, relativePath string) ([]byte, string, bool, error) {
+	// #nosec G304 -- reading workspace file to preflight conflict check
+	data, err := os.ReadFile(absPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, "", false, nil
+	}
+	if err != nil {
+		return nil, "", false, fmt.Errorf("read on-disk file %s: %w", relativePath, err)
+	}
+	return data, computeSHA256(data), true, nil
+}
+
+func validateRestoreConflict(record FileRecord, currentSHA string, fileExists bool) error {
+	if record.PostEditSHA256 == "" {
+		return nil
+	}
+	if record.PostEditSHA256 == "deleted" {
+		if fileExists && currentSHA != record.PreimageSHA256 {
+			return &ConflictError{Path: record.Path, ExpectedSHA256: "deleted", ActualSHA256: currentSHA, Message: "file exists on disk but was marked deleted in post-edit manifest"}
+		}
+		return nil
+	}
+	if !fileExists {
+		return &ConflictError{Path: record.Path, ExpectedSHA256: record.PostEditSHA256, ActualSHA256: "missing", Message: "file missing on disk but recorded in post-edit manifest"}
+	}
+	if currentSHA != record.PostEditSHA256 && currentSHA != record.PreimageSHA256 {
+		return &ConflictError{Path: record.Path, ExpectedSHA256: record.PostEditSHA256, ActualSHA256: currentSHA}
+	}
+	return nil
+}
+
+func restorePlans(plans []fileRestorePlan) ([]string, string, error) {
+	var restored []string
+	var diff strings.Builder
+	for _, plan := range plans {
+		if !plan.needsWrite {
+			continue
+		}
+		if err := restorePlan(plan); err != nil {
+			return nil, "", err
+		}
+		restored = append(restored, plan.record.Path)
+		appendRestoreDiff(&diff, plan)
+	}
+	return restored, diff.String(), nil
+}
+
+func restorePlan(plan fileRestorePlan) error {
+	if err := os.MkdirAll(filepath.Dir(plan.absPath), 0o750); err != nil {
+		return fmt.Errorf("create parent directory for %s: %w", plan.record.Path, err)
+	}
+	if err := pipeline.WriteAtomic(plan.absPath, plan.blobBytes); err != nil {
+		return fmt.Errorf("atomic write restore for %s: %w", plan.record.Path, err)
+	}
+	if plan.record.Mode != 0 {
+		_ = os.Chmod(plan.absPath, plan.record.Mode)
+	}
+	return nil
+}
+
+func appendRestoreDiff(builder *strings.Builder, plan fileRestorePlan) {
+	diff := astedit.UnifiedDiff(plan.record.Path, string(plan.currentBytes), string(plan.blobBytes))
+	if diff == "" {
+		return
+	}
+	if builder.Len() > 0 {
+		builder.WriteString("\n")
+	}
+	builder.WriteString(diff)
 }
 
 // GetManifest retrieves the parsed manifest for a given snapshot ID or "latest".

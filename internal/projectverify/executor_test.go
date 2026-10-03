@@ -42,6 +42,28 @@ func TestREQ007RunPhasePreservesHookOrderAndPartialFailure(t *testing.T) {
 	}
 }
 
+func TestSkippedHookDoesNotMarkLaterFailurePartial(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plan := Plan{
+		Root:    root,
+		Sources: []Source{{Path: "main.go", Language: "go"}},
+		Checks: []Hook{
+			{ID: "disabled", Disabled: true, Languages: []string{"go"}},
+			{ID: "failed", Languages: []string{"go"}, Shell: &ShellSpec{Executable: "/bin/sh", Args: []string{"-c"}, Script: "exit 9"}},
+		},
+	}
+	report, err := RunPhase(context.Background(), plan, PhaseCheck, Scope{}, nil)
+	if err == nil || report.Completed || report.Partial || len(report.Results) != 2 {
+		t.Fatalf("report = %#v, error = %v", report, err)
+	}
+	if report.Results[0].Status != HookSkipped || report.Results[1].Status != HookFailed {
+		t.Fatalf("hook statuses = %q, %q", report.Results[0].Status, report.Results[1].Status)
+	}
+}
+
 func TestRunPhasePublishesScopedNormalizationAtomically(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".scratch"), 0o700); err != nil {

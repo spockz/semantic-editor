@@ -85,11 +85,11 @@ func TestUndo_CleanRestore(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{
 		Label: "before-edit",
 	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if createErr != nil {
+		t.Fatalf("Create failed: %v", createErr)
 	}
 
 	// Modify file on disk
@@ -132,11 +132,11 @@ func TestUndo_ConflictDetection(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{
 		Label: "pre-refactor",
 	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if createErr != nil {
+		t.Fatalf("Create failed: %v", createErr)
 	}
 
 	// Apply intentional staged edit
@@ -195,9 +195,9 @@ func TestUndo_CorruptBlob(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "test"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "test"})
+	if createErr != nil {
+		t.Fatalf("Create: %v", createErr)
 	}
 
 	// Mutate on-disk file
@@ -205,9 +205,9 @@ func TestUndo_CorruptBlob(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 
-	manifest, err := snapshot.GetManifest(dir, res.SnapshotID)
-	if err != nil {
-		t.Fatalf("GetManifest: %v", err)
+	manifest, manifestErr := snapshot.GetManifest(dir, res.SnapshotID)
+	if manifestErr != nil {
+		t.Fatalf("GetManifest: %v", manifestErr)
 	}
 	blobPath := filepath.Join(dir, ".scratch", "snapshots", res.SnapshotID, "blobs", manifest.Files[0].PreimageSHA256)
 
@@ -216,12 +216,12 @@ func TestUndo_CorruptBlob(t *testing.T) {
 		t.Fatalf("tamper blob: %v", err)
 	}
 
-	_, err = snapshot.Undo(ctx, dir, res.SnapshotID)
-	if err == nil {
+	_, undoErr := snapshot.Undo(ctx, dir, res.SnapshotID)
+	if undoErr == nil {
 		t.Fatalf("expected ErrCorruptBlob, got nil")
 	}
-	if !errors.Is(err, snapshot.ErrCorruptBlob) {
-		t.Errorf("expected ErrCorruptBlob, got: %v", err)
+	if !errors.Is(undoErr, snapshot.ErrCorruptBlob) {
+		t.Errorf("expected ErrCorruptBlob, got: %v", undoErr)
 	}
 }
 
@@ -235,9 +235,9 @@ func TestUndo_LatestResolution(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap1"})
-	if err != nil {
-		t.Fatalf("snap1: %v", err)
+	_, firstCreateErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap1"})
+	if firstCreateErr != nil {
+		t.Fatalf("snap1: %v", firstCreateErr)
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -245,9 +245,9 @@ func TestUndo_LatestResolution(t *testing.T) {
 	if err := os.WriteFile(file1, []byte("v2"), 0o600); err != nil {
 		t.Fatalf("v2: %v", err)
 	}
-	snap2, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap2"})
-	if err != nil {
-		t.Fatalf("snap2: %v", err)
+	snap2, secondCreateErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap2"})
+	if secondCreateErr != nil {
+		t.Fatalf("snap2: %v", secondCreateErr)
 	}
 
 	// Now modify to v3
