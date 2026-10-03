@@ -476,6 +476,12 @@ type moveReferenceExpectation struct {
 	kind   moveReferenceKind
 }
 
+type moveReferenceEdits struct {
+	alias   string
+	markers []moveReferenceMarker
+	changed bool
+}
+
 //nolint:gocognit // Typed selector and dot-import references need distinct rewrites under the same package-scope plan.
 func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, sourcePath string, targetOffset, declarationStart, declarationEnd int, destinationPath, destinationImport, destinationName string) (map[string][]byte, map[moveReferenceKey][]moveReferenceMarker, error) {
 	changes := map[string][]byte{}
@@ -501,44 +507,9 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 				removeMovedFunction(file, pkg.Fset, targetName, targetOffset, declarationStart, declarationEnd)
 				fileChanged = true
 			}
-			alias := ""
-			var referenceMarkers []moveReferenceMarker
-			astutil.Apply(file, func(cursor *astutil.Cursor) bool {
-				if selector, ok := cursor.Node().(*ast.SelectorExpr); ok && isTargetMoveReference(pkg, selector.Sel, sourceImport, targetName, sourcePath, targetOffset) {
-					if pkg.PkgPath == destinationImport {
-						sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
-						referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: targetName, kind: moveReferenceFunction})
-						cursor.Replace(ast.NewIdent(sentinel))
-					} else {
-						if alias == "" {
-							alias = moveImportAlias(file, destinationImport, destinationName)
-						}
-						sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
-						referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: alias, kind: moveReferenceImport})
-						selector.X = ast.NewIdent(sentinel)
-					}
-					fileChanged = true
-					return false
-				}
-				ident, ok := cursor.Node().(*ast.Ident)
-				if !ok || !isTargetMoveReference(pkg, ident, sourceImport, targetName, sourcePath, targetOffset) {
-					return true
-				}
-				if _, selectorName := cursor.Parent().(*ast.SelectorExpr); selectorName {
-					return true
-				}
-				if pkg.PkgPath == destinationImport {
-					return true
-				}
-				if alias == "" {
-					alias = moveImportAlias(file, destinationImport, destinationName)
-				}
-				sentinel := nextMoveReferenceSentinel(file, &sentinelSequence)
-				referenceMarkers = append(referenceMarkers, moveReferenceMarker{sentinel: sentinel, replacement: alias, kind: moveReferenceImport})
-				cursor.Replace(&ast.SelectorExpr{X: ast.NewIdent(sentinel), Sel: ast.NewIdent(ident.Name)})
-				fileChanged = true
-				return false
-			}, nil)
+			edits := collectMoveReferenceEdits(pkg, file, sourceImport, targetName, sourcePath, targetOffset, destinationImport, destinationName, &sentinelSequence)
+			alias, referenceMarkers := edits.alias, edits.markers
+			fileChanged = fileChanged || edits.changed
 			if !fileChanged {
 				continue
 			}
@@ -569,6 +540,44 @@ func rewriteMoveReferences(pkgs []*packages.Package, sourceImport, targetName, s
 		}
 	}
 	return changes, destinationReferences, nil
+}
+
+func collectMoveReferenceEdits(pkg *packages.Package, file *ast.File, sourceImport, targetName, sourcePath string, targetOffset int, destinationImport, destinationName string, sentinelSequence *int) moveReferenceEdits {
+	var edits moveReferenceEdits
+	astutil.Apply(file, func(cursor *astutil.Cursor) bool {
+		if selector, ok := cursor.Node().(*ast.SelectorExpr); ok && isTargetMoveReference(pkg, selector.Sel, sourceImport, targetName, sourcePath, targetOffset) {
+			if pkg.PkgPath == destinationImport {
+				sentinel := nextMoveReferenceSentinel(file, sentinelSequence)
+				edits.markers = append(edits.markers, moveReferenceMarker{sentinel: sentinel, replacement: targetName, kind: moveReferenceFunction})
+				cursor.Replace(ast.NewIdent(sentinel))
+			} else {
+				if edits.alias == "" {
+					edits.alias = moveImportAlias(file, destinationImport, destinationName)
+				}
+				sentinel := nextMoveReferenceSentinel(file, sentinelSequence)
+				edits.markers = append(edits.markers, moveReferenceMarker{sentinel: sentinel, replacement: edits.alias, kind: moveReferenceImport})
+				selector.X = ast.NewIdent(sentinel)
+			}
+			edits.changed = true
+			return false
+		}
+		ident, ok := cursor.Node().(*ast.Ident)
+		if !ok || !isTargetMoveReference(pkg, ident, sourceImport, targetName, sourcePath, targetOffset) {
+			return true
+		}
+		if _, selectorName := cursor.Parent().(*ast.SelectorExpr); selectorName || pkg.PkgPath == destinationImport {
+			return true
+		}
+		if edits.alias == "" {
+			edits.alias = moveImportAlias(file, destinationImport, destinationName)
+		}
+		sentinel := nextMoveReferenceSentinel(file, sentinelSequence)
+		edits.markers = append(edits.markers, moveReferenceMarker{sentinel: sentinel, replacement: edits.alias, kind: moveReferenceImport})
+		cursor.Replace(&ast.SelectorExpr{X: ast.NewIdent(sentinel), Sel: ast.NewIdent(ident.Name)})
+		edits.changed = true
+		return false
+	}, nil)
+	return edits
 }
 
 func nextMoveReferenceSentinel(file *ast.File, sequence *int) string {
@@ -823,7 +832,6 @@ func packageByID(pkgs []*packages.Package, id string) *packages.Package {
 
 type movedFunctionResolution struct {
 	function *types.Func
-	required bool
 }
 
 func movedFunctionForReferences(pkg *packages.Package, destinationImport, destinationPath, targetName string, key moveReferenceKey, references []moveReferenceExpectation) (movedFunctionResolution, error) {
@@ -838,7 +846,7 @@ func movedFunctionForReferences(pkg *packages.Package, destinationImport, destin
 		if !ok || moved.Pkg() == nil || moved.Pkg().Path() != destinationImport || filepath.Clean(pkg.Fset.Position(moved.Pos()).Filename) != filepath.Clean(destinationPath) {
 			return movedFunctionResolution{}, fmt.Errorf("cross-package move cannot identify moved function %q in destination package", targetName)
 		}
-		return movedFunctionResolution{function: moved, required: true}, nil
+		return movedFunctionResolution{function: moved}, nil
 	}
 	return movedFunctionResolution{}, nil
 }
@@ -1047,6 +1055,8 @@ func moveDirectoryTraversal(path, name string) error {
 	}
 	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
 		return filepath.SkipDir
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("inspect nested module boundary in %s: %w", path, err)
 	}
 	return nil
 }

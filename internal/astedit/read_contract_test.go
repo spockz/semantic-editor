@@ -149,66 +149,14 @@ func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var empty, main backend.OutlineFile
-	for _, file := range outline.Files {
-		switch file.File {
-		case "empty.go":
-			empty = file
-		case "main.go":
-			main = file
-		}
-	}
-	if empty.File != "empty.go" || empty.Doc == nil || *empty.Doc != "// Package empty preserves file documentation." || len(empty.Symbols) != 0 {
-		t.Fatalf("empty file metadata = %#v", empty)
-	}
-	var box *backend.ReadSymbol
-	for index := range main.Symbols {
-		symbol := &main.Symbols[index]
-		if symbol.Name == "Box" {
-			box = symbol
-		}
-		if symbol.Name == "Visible" && symbol.Kind == "function" {
-			continue
-		}
-		if symbol.Name == "hidden" {
-			t.Fatalf("unexported free function survived visibility filter: %#v", symbol)
-		}
-	}
-	if box == nil {
-		t.Fatalf("field filter omitted structural type ancestor: %#v", main.Symbols)
-	}
-	if len(box.Children) != 2 {
-		t.Fatalf("filtered Box children = %#v", box.Children)
-	}
-	embedded := box.Children[0]
-	if embedded.Name != "Box" || embedded.QualifiedName != "Box.Box" || embedded.Type == nil || *embedded.Type != "*pkg.Box[T]" {
-		t.Fatalf("embedded field projection = %#v", embedded)
-	}
-	if embedded.Range.Start.Line != 2 || embedded.Range.Start.Character != 1 || embedded.Range.End.Character != 12 {
-		t.Fatalf("embedded field full type range = %#v", embedded.Range)
-	}
-	if embedded.SelectionRange.Start.Line != 2 || embedded.SelectionRange.Start.Character != 6 || embedded.SelectionRange.End.Character != 9 {
-		t.Fatalf("embedded field base identifier selection = %#v", embedded.SelectionRange)
-	}
+	assertOutlinePreservesEmptyFile(t, outline)
+	assertOutlineContainsStructuralBox(t, outline)
 
 	methodOutline, err := OutlineGo(root, root, []string{"method"}, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var mixed *backend.ReadSymbol
-	for index := range methodOutline.Files[1].Symbols {
-		symbol := &methodOutline.Files[1].Symbols[index]
-		if symbol.Name == "Mixed" {
-			mixed = symbol
-			break
-		}
-	}
-	if mixed == nil || len(mixed.Children) != 1 || mixed.Children[0].Name != "Run" {
-		t.Fatalf("method filter did not retain only its structural interface context: %#v", mixed)
-	}
-	if mixed.Signature == nil || strings.Contains(*mixed.Signature, "io.Reader") {
-		t.Fatalf("filtered interface signature retained unmatched embedding: %#v", mixed.Signature)
-	}
+	assertOutlineFiltersInterfaceMethods(t, methodOutline)
 
 	testPath := filepath.Join(root, "selected_test.go")
 	if writeErr := os.WriteFile(testPath, []byte("package demo\nfunc TestOnly() {}\n"), 0o600); writeErr != nil {
@@ -218,9 +166,89 @@ func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(selected.Files) != 1 || selected.Files[0].File != "selected_test.go" || len(selected.Files[0].Symbols) != 1 {
-		t.Fatalf("explicit test-file outline = %#v", selected)
+	assertOutlineIncludesExplicitTestFile(t, selected)
+}
+
+func assertOutlinePreservesEmptyFile(t *testing.T, outline *backend.OutlineResult) {
+	t.Helper()
+	for _, file := range outline.Files {
+		if file.File == "empty.go" && file.Doc != nil && *file.Doc == "// Package empty preserves file documentation." && len(file.Symbols) == 0 {
+			return
+		}
 	}
+	t.Fatalf("empty file metadata is missing from outline: %#v", outline.Files)
+}
+
+func assertOutlineContainsStructuralBox(t *testing.T, outline *backend.OutlineResult) {
+	t.Helper()
+	main := outlineFileByName(outline, "main.go")
+	if main == nil {
+		t.Fatal("main.go is missing from outline")
+	}
+	var box *backend.ReadSymbol
+	for index := range main.Symbols {
+		symbol := &main.Symbols[index]
+		if symbol.Name == "Box" {
+			box = symbol
+		}
+		if symbol.Name == "hidden" {
+			t.Fatalf("unexported free function survived visibility filter: %#v", symbol)
+		}
+	}
+	if box == nil || len(box.Children) != 2 {
+		t.Fatalf("field filter omitted expected Box structure: %#v", main.Symbols)
+	}
+	assertEmbeddedBoxField(t, box.Children[0])
+}
+
+func assertEmbeddedBoxField(t *testing.T, embedded backend.ReadSymbol) {
+	t.Helper()
+	if embedded.Name != "Box" || embedded.QualifiedName != "Box.Box" || embedded.Type == nil || *embedded.Type != "*pkg.Box[T]" {
+		t.Fatalf("embedded field projection = %#v", embedded)
+	}
+	if embedded.Range.Start.Line != 2 || embedded.Range.Start.Character != 1 || embedded.Range.End.Character != 12 {
+		t.Fatalf("embedded field full type range = %#v", embedded.Range)
+	}
+	if embedded.SelectionRange.Start.Line != 2 || embedded.SelectionRange.Start.Character != 6 || embedded.SelectionRange.End.Character != 9 {
+		t.Fatalf("embedded field base identifier selection = %#v", embedded.SelectionRange)
+	}
+}
+
+func assertOutlineFiltersInterfaceMethods(t *testing.T, outline *backend.OutlineResult) {
+	t.Helper()
+	file := outlineFileByName(outline, "main.go")
+	if file == nil {
+		t.Fatal("main.go is missing from method outline")
+	}
+	var mixed *backend.ReadSymbol
+	for index := range file.Symbols {
+		if file.Symbols[index].Name == "Mixed" {
+			mixed = &file.Symbols[index]
+			break
+		}
+	}
+	if mixed == nil || len(mixed.Children) != 1 || mixed.Children[0].Name != "Run" {
+		t.Fatalf("method filter did not retain only its structural interface context: %#v", mixed)
+	}
+	if mixed.Signature == nil || strings.Contains(*mixed.Signature, "io.Reader") {
+		t.Fatalf("filtered interface signature retained unmatched embedding: %#v", mixed.Signature)
+	}
+}
+
+func assertOutlineIncludesExplicitTestFile(t *testing.T, outline *backend.OutlineResult) {
+	t.Helper()
+	if len(outline.Files) != 1 || outline.Files[0].File != "selected_test.go" || len(outline.Files[0].Symbols) != 1 {
+		t.Fatalf("explicit test-file outline = %#v", outline)
+	}
+}
+
+func outlineFileByName(outline *backend.OutlineResult, name string) *backend.OutlineFile {
+	for index := range outline.Files {
+		if outline.Files[index].File == name {
+			return &outline.Files[index]
+		}
+	}
+	return nil
 }
 
 func TestOutlineGoRetainsExportedFreeFunctionWhenFilteringUnexported(t *testing.T) {
