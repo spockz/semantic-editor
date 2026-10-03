@@ -103,11 +103,11 @@ func TestInspectGoReturnsAllAmbiguitiesAndInheritedDeclaration(t *testing.T) {
 	}
 
 	basePath := filepath.Join(root, "base.go")
-	if err := os.WriteFile(basePath, []byte("package demo\ntype Base interface { Run() error }\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(basePath, []byte("package demo\ntype Base interface { Run() error }\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
-	if err := os.WriteFile(filepath.Join(root, "derived.go"), []byte("package demo\ntype Derived interface { Base }\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(filepath.Join(root, "derived.go"), []byte("package demo\ntype Derived interface { Base }\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	inherited, err := InspectGo(root, "", "Derived.Run")
 	if err != nil {
@@ -122,8 +122,8 @@ func TestInspectGoReturnsAllAmbiguitiesAndInheritedDeclaration(t *testing.T) {
 	}
 
 	testPath := filepath.Join(root, "selected_test.go")
-	if err := os.WriteFile(testPath, []byte("package demo\nimport \"testing\"\nfunc TestOnly(t *testing.T) {}\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(testPath, []byte("package demo\nimport \"testing\"\nfunc TestOnly(t *testing.T) {}\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	selected, err := InspectGo(root, testPath, "TestOnly")
 	if err != nil {
@@ -211,8 +211,8 @@ func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T)
 	}
 
 	testPath := filepath.Join(root, "selected_test.go")
-	if err := os.WriteFile(testPath, []byte("package demo\nfunc TestOnly() {}\n"), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(testPath, []byte("package demo\nfunc TestOnly() {}\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	selected, err := OutlineGo(root, testPath, nil, true, false)
 	if err != nil {
