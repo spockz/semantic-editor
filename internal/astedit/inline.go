@@ -106,6 +106,7 @@ type inlineTarget struct {
 	stmt         ast.Stmt
 	block        *ast.BlockStmt
 	index        int
+	name         string
 	value        ast.Expr
 	constant     bool
 	explicitType bool
@@ -137,58 +138,83 @@ func findInlineFunction(fileNode *ast.File, receiver, name string) (*ast.FuncDec
 }
 
 func findInlineTarget(fn *ast.FuncDecl, name string) (inlineTarget, error) {
-	var targets []inlineTarget
-	var walkBlock func(*ast.BlockStmt)
-	walkBlock = func(block *ast.BlockStmt) {
-		if block == nil {
-			return
-		}
-		for i, stmt := range block.List {
-			var value ast.Expr
-			var names []*ast.Ident
-			var constant, explicitType bool
-			switch node := stmt.(type) {
-			case *ast.AssignStmt:
-				if node.Tok == token.DEFINE && len(node.Lhs) == 1 && len(node.Rhs) == 1 {
-					if id, ok := node.Lhs[0].(*ast.Ident); ok {
-						names, value = []*ast.Ident{id}, node.Rhs[0]
-					}
-				}
-			case *ast.DeclStmt:
-				gen, ok := node.Decl.(*ast.GenDecl)
-				if ok && (gen.Tok == token.VAR || gen.Tok == token.CONST) && len(gen.Specs) == 1 {
-					if spec, ok := gen.Specs[0].(*ast.ValueSpec); ok && len(spec.Names) == 1 && len(spec.Values) == 1 {
-						names, value = spec.Names, spec.Values[0]
-						constant, explicitType = gen.Tok == token.CONST, spec.Type != nil
-					}
-				}
-			}
-			for _, id := range names {
-				if id.Name == name {
-					targets = append(targets, inlineTarget{stmt: stmt, block: block, index: i, value: value, constant: constant, explicitType: explicitType})
-				}
-			}
-			ast.Inspect(stmt, func(node ast.Node) bool {
-				if _, ok := node.(*ast.FuncLit); ok {
-					return false
-				}
-				if nested, ok := node.(*ast.BlockStmt); ok && nested != block {
-					walkBlock(nested)
-					return false
-				}
-				return true
-			})
-		}
-	}
-	walkBlock(fn.Body)
-	switch len(targets) {
+	collector := inlineTargetCollector{name: name}
+	collector.walkBlock(fn.Body)
+	switch len(collector.targets) {
 	case 0:
 		return inlineTarget{}, fmt.Errorf("local variable %q not found in %s", name, fn.Name.Name)
 	case 1:
-		return targets[0], nil
+		return collector.targets[0], nil
 	default:
 		return inlineTarget{}, fmt.Errorf("local variable %q is ambiguous in %s", name, fn.Name.Name)
 	}
+}
+
+type inlineTargetCollector struct {
+	name    string
+	targets []inlineTarget
+}
+
+func (collector *inlineTargetCollector) walkBlock(block *ast.BlockStmt) {
+	if block == nil {
+		return
+	}
+	for index, stmt := range block.List {
+		if target, ok := inlineTargetInStatement(stmt, block, index, collector.name); ok {
+			collector.targets = append(collector.targets, target)
+		}
+		collector.walkNestedStatementBlocks(stmt, block)
+	}
+}
+
+func inlineTargetInStatement(stmt ast.Stmt, block *ast.BlockStmt, index int, name string) (inlineTarget, bool) {
+	var candidate inlineTarget
+	switch node := stmt.(type) {
+	case *ast.AssignStmt:
+		candidate = inlineAssignmentTarget(node, stmt, block, index)
+	case *ast.DeclStmt:
+		candidate = inlineDeclarationTarget(node, stmt, block, index)
+	}
+	if candidate.value == nil || candidate.name != name {
+		return inlineTarget{}, false
+	}
+	return candidate, true
+}
+
+func inlineAssignmentTarget(assignment *ast.AssignStmt, stmt ast.Stmt, block *ast.BlockStmt, index int) inlineTarget {
+	if assignment.Tok != token.DEFINE || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return inlineTarget{}
+	}
+	ident, ok := assignment.Lhs[0].(*ast.Ident)
+	if !ok {
+		return inlineTarget{}
+	}
+	return inlineTarget{stmt: stmt, block: block, index: index, name: ident.Name, value: assignment.Rhs[0]}
+}
+
+func inlineDeclarationTarget(declaration *ast.DeclStmt, stmt ast.Stmt, block *ast.BlockStmt, index int) inlineTarget {
+	gen, ok := declaration.Decl.(*ast.GenDecl)
+	if !ok || (gen.Tok != token.VAR && gen.Tok != token.CONST) || len(gen.Specs) != 1 {
+		return inlineTarget{}
+	}
+	spec, ok := gen.Specs[0].(*ast.ValueSpec)
+	if !ok || len(spec.Names) != 1 || len(spec.Values) != 1 {
+		return inlineTarget{}
+	}
+	return inlineTarget{stmt: stmt, block: block, index: index, name: spec.Names[0].Name, value: spec.Values[0], constant: gen.Tok == token.CONST, explicitType: spec.Type != nil}
+}
+
+func (collector *inlineTargetCollector) walkNestedStatementBlocks(stmt ast.Stmt, containing *ast.BlockStmt) {
+	ast.Inspect(stmt, func(node ast.Node) bool {
+		if _, ok := node.(*ast.FuncLit); ok {
+			return false
+		}
+		if nested, ok := node.(*ast.BlockStmt); ok && nested != containing {
+			collector.walkBlock(nested)
+			return false
+		}
+		return true
+	})
 }
 
 func inlineUsePositions(fn *ast.FuncDecl, target inlineTarget, name string) ([]token.Pos, error) {
