@@ -103,7 +103,7 @@ func scanFunctionVariables(fset *token.FileSet, node *ast.File, filePath, target
 	var results []*Symbol
 	for _, decl := range node.Decls {
 		function, ok := decl.(*ast.FuncDecl)
-		if !ok || function.Body == nil {
+		if !ok {
 			continue
 		}
 		results = appendFunctionVariables(results, fset, filePath, targetName, function)
@@ -115,6 +115,9 @@ func appendFunctionVariables(results []*Symbol, fset *token.FileSet, filePath, t
 	appendFieldVariables(&results, fset, filePath, targetName, function.Recv, "receiver")
 	appendFieldVariables(&results, fset, filePath, targetName, function.Type.Params, "parameter")
 	appendFieldVariables(&results, fset, filePath, targetName, function.Type.Results, "result")
+	if function.Body == nil {
+		return results
+	}
 	ast.Inspect(function.Body, func(node ast.Node) bool {
 		appendDeclaredLocal(&results, fset, filePath, targetName, node)
 		return true
