@@ -564,8 +564,12 @@ func moveDeclOffsets(fset *token.FileSet, decl ast.Decl, file *ast.File, source 
 }
 
 func declarationNameCollision(file *ast.File, moved ast.Decl) bool {
+	return declarationNameCollisionSet(file, movedDeclarationNames(moved))
+}
+
+func movedDeclarationNames(declaration ast.Decl) map[string]bool {
 	names := map[string]bool{}
-	switch decl := moved.(type) {
+	switch decl := declaration.(type) {
 	case *ast.FuncDecl:
 		names[decl.Name.Name] = true
 	case *ast.GenDecl:
@@ -580,27 +584,22 @@ func declarationNameCollision(file *ast.File, moved ast.Decl) bool {
 			}
 		}
 	}
+	return names
+}
+
+func declarationNameCollisionSet(file *ast.File, names map[string]bool) bool {
 	for _, decl := range file.Decls {
-		switch item := decl.(type) {
-		case *ast.FuncDecl:
-			if names[item.Name.Name] {
-				return true
-			}
-		case *ast.GenDecl:
-			for _, spec := range item.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if names[s.Name.Name] {
-						return true
-					}
-				case *ast.ValueSpec:
-					for _, name := range s.Names {
-						if names[name.Name] {
-							return true
-						}
-					}
-				}
-			}
+		if fileDeclarationHasName(decl, names) {
+			return true
+		}
+	}
+	return false
+}
+
+func fileDeclarationHasName(declaration ast.Decl, names map[string]bool) bool {
+	for name := range movedDeclarationNames(declaration) {
+		if names[name] {
+			return true
 		}
 	}
 	return false
