@@ -113,51 +113,66 @@ func PlanInlineFunction(callerSource, calleeSource, calleeName, ownerName, discr
 }
 
 func inlineDeclares(function *ast.FuncDecl, name string) bool {
+	if inlineFieldListsDeclare(function, name) {
+		return true
+	}
+	shadowed := false
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		if inlineNodeDeclares(node, name) {
+			shadowed = true
+			return false
+		}
+		return true
+	})
+	return shadowed
+}
+
+func inlineFieldListsDeclare(function *ast.FuncDecl, name string) bool {
 	for _, list := range []*ast.FieldList{function.Recv, function.Type.Params, function.Type.Results} {
 		if list == nil {
 			continue
 		}
 		for _, field := range list.List {
-			for _, identifier := range field.Names {
-				if identifier.Name == name {
-					return true
-				}
+			if inlineIdentifiersDeclare(field.Names, name) {
+				return true
 			}
 		}
 	}
-	shadowed := false
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		switch declaration := node.(type) {
-		case *ast.AssignStmt:
-			if declaration.Tok == token.DEFINE {
-				for _, left := range declaration.Lhs {
-					if identifier, ok := left.(*ast.Ident); ok && identifier.Name == name {
-						shadowed = true
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, identifier := range declaration.Names {
-				if identifier.Name == name {
-					shadowed = true
-				}
-			}
-		case *ast.TypeSpec:
-			if declaration.Name.Name == name {
-				shadowed = true
-			}
-		case *ast.RangeStmt:
-			if declaration.Tok == token.DEFINE {
-				for _, key := range []ast.Expr{declaration.Key, declaration.Value} {
-					if identifier, ok := key.(*ast.Ident); ok && identifier.Name == name {
-						shadowed = true
-					}
-				}
-			}
+	return false
+}
+
+func inlineNodeDeclares(node ast.Node, name string) bool {
+	switch declaration := node.(type) {
+	case *ast.AssignStmt:
+		return declaration.Tok == token.DEFINE && inlineExpressionNamesDeclare(declaration.Lhs, name)
+	case *ast.ValueSpec:
+		return inlineIdentifiersDeclare(declaration.Names, name)
+	case *ast.TypeSpec:
+		return declaration.Name.Name == name
+	case *ast.RangeStmt:
+		return declaration.Tok == token.DEFINE && inlineExpressionNamesDeclare([]ast.Expr{declaration.Key, declaration.Value}, name)
+	default:
+		return false
+	}
+}
+
+func inlineExpressionNamesDeclare(expressions []ast.Expr, name string) bool {
+	for _, expression := range expressions {
+		identifier, ok := expression.(*ast.Ident)
+		if ok && identifier.Name == name {
+			return true
 		}
-		return true
-	})
-	return shadowed
+	}
+	return false
+}
+
+func inlineIdentifiersDeclare(identifiers []*ast.Ident, name string) bool {
+	for _, identifier := range identifiers {
+		if identifier.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func inlineImportShadows(file *ast.File, name string) bool {
