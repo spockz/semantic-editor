@@ -426,61 +426,54 @@ func expandTaint(tainted map[*types.Var]bool, siblings []siblingGroup) map[*type
 // calls. Range-loop variables are excluded; they rebind every iteration.
 func (a *analyzer) guardVars(call *ast.CallExpr, guard *ifContext, loopVars map[*types.Var]bool) map[*types.Var]bool {
 	vars := map[*types.Var]bool{}
-	add := func(id *ast.Ident) {
-		obj := a.info.Uses[id]
-		if obj == nil {
-			obj = a.info.Defs[id]
-		}
-		if v, ok := obj.(*types.Var); ok && !loopVars[v] {
-			vars[v] = true
-		}
-	}
 	if guard == nil {
 		for _, arg := range call.Args {
-			ast.Inspect(arg, func(node ast.Node) bool {
-				if id, ok := node.(*ast.Ident); ok {
-					add(id)
-				}
-				return true
-			})
+			mergeVariables(vars, a.variablesIn(arg, loopVars))
 		}
 		return vars
 	}
 	// Collect only variables that are actually tested in the condition.
 	// Variables appearing in init expressions but not in the condition are
 	// not tainted by the guard (e.g., a file path argument to os.WriteFile).
-	condVars := map[*types.Var]bool{}
-	ast.Inspect(guard.stmt.Cond, func(node ast.Node) bool {
-		if id, ok := node.(*ast.Ident); ok {
-			obj := a.info.Uses[id]
-			if obj == nil {
-				obj = a.info.Defs[id]
-			}
-			if v, ok := obj.(*types.Var); ok && !loopVars[v] {
-				condVars[v] = true
-			}
+	condVars := a.variablesIn(guard.stmt.Cond, loopVars)
+	initVars := a.variablesIn(guard.stmt.Init, loopVars)
+	for variable := range initVars {
+		if condVars[variable] {
+			vars[variable] = true
 		}
-		return true
-	})
-	if guard.stmt.Init != nil {
-		ast.Inspect(guard.stmt.Init, func(node ast.Node) bool {
-			if id, ok := node.(*ast.Ident); ok {
-				obj := a.info.Uses[id]
-				if obj == nil {
-					obj = a.info.Defs[id]
-				}
-				if v, ok := obj.(*types.Var); ok && !loopVars[v] && condVars[v] {
-					vars[v] = true
-				}
-			}
-			return true
-		})
 	}
-	// Also add any variable directly used in the condition.
 	for v := range condVars {
 		vars[v] = true
 	}
 	return vars
+}
+
+func (a *analyzer) variablesIn(node ast.Node, loopVars map[*types.Var]bool) map[*types.Var]bool {
+	vars := map[*types.Var]bool{}
+	if node == nil {
+		return vars
+	}
+	ast.Inspect(node, func(current ast.Node) bool {
+		id, ok := current.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		obj := a.info.Uses[id]
+		if obj == nil {
+			obj = a.info.Defs[id]
+		}
+		if variable, ok := obj.(*types.Var); ok && !loopVars[variable] {
+			vars[variable] = true
+		}
+		return true
+	})
+	return vars
+}
+
+func mergeVariables(target, source map[*types.Var]bool) {
+	for variable := range source {
+		target[variable] = true
+	}
 }
 
 // usedUnsafely reports whether any tainted variable is referenced below the
@@ -533,67 +526,89 @@ func (a *analyzer) usedUnsafely(tainted map[*types.Var]bool, guard *ifContext, r
 // panic on the failure path; nested expressions (deref, index, method call)
 // stay tracked.
 func (a *analyzer) markSafeUses(node ast.Node, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
-	direct := func(arg ast.Expr) {
-		if id, ok := arg.(*ast.Ident); ok {
-			if obj, ok := a.info.Uses[id].(*types.Var); ok && tainted[obj] {
-				safe[id] = true
-			}
-		}
-	}
 	switch typed := node.(type) {
 	case *ast.CallExpr:
-		sel, ok := typed.Fun.(*ast.SelectorExpr)
-		if !ok || len(typed.Args) == 0 {
-			return
-		}
-		pkg, ok := sel.X.(*ast.Ident)
-		if !ok {
-			return
-		}
-		if pkgName, ok := a.info.Uses[pkg].(*types.PkgName); ok {
-			switch pkgName.Imported().Path() {
-			case "errors":
-				switch sel.Sel.Name {
-				case "Is", "As", "AsType":
-					direct(typed.Args[0])
-				}
-				return
-			case "fmt":
-				switch sel.Sel.Name {
-				case "Sprint", "Sprintf", "Sprintln", "Print", "Printf", "Println",
-					"Fprint", "Fprintf", "Fprintln", "Errorf":
-					for _, arg := range typed.Args {
-						direct(arg)
-					}
-				}
-				return
-			}
-		}
-		if a.qualifies(a.info.Uses[pkg]) {
-			for _, arg := range typed.Args {
-				direct(arg)
-			}
-		}
+		a.markSafeCallArguments(typed, tainted, safe)
 	case *ast.BinaryExpr:
-		if typed.Op != token.EQL && typed.Op != token.NEQ {
-			return
-		}
-		for _, side := range []ast.Expr{typed.X, typed.Y} {
-			id, ok := side.(*ast.Ident)
-			if !ok {
-				continue
-			}
-			other := typed.Y
-			if side == typed.Y {
-				other = typed.X
-			}
-			nilIdent, ok := other.(*ast.Ident)
-			if !ok || nilIdent.Name != "nil" {
-				continue
-			}
-			if obj, ok := a.info.Uses[id].(*types.Var); ok && tainted[obj] {
-				safe[id] = true
-			}
-		}
+		a.markSafeNilComparison(typed, tainted, safe)
 	}
+}
+
+func (a *analyzer) markSafeCallArguments(call *ast.CallExpr, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || len(call.Args) == 0 {
+		return
+	}
+	receiver, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return
+	}
+	object := a.info.Uses[receiver]
+	if packageName, ok := object.(*types.PkgName); ok {
+		a.markSafeImportedCall(call, selector, packageName.Imported().Path(), tainted, safe)
+		return
+	}
+	if a.qualifies(object) {
+		a.markSafeArguments(call.Args, tainted, safe)
+	}
+}
+
+func (a *analyzer) markSafeImportedCall(call *ast.CallExpr, selector *ast.SelectorExpr, importPath string, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	if importPath == "errors" && isSafeErrorPredicate(selector.Sel.Name) {
+		a.markSafeArgument(call.Args[0], tainted, safe)
+		return
+	}
+	if importPath == "fmt" && isSafeFormatFunction(selector.Sel.Name) {
+		a.markSafeArguments(call.Args, tainted, safe)
+	}
+}
+
+func isSafeErrorPredicate(name string) bool {
+	return name == "Is" || name == "As" || name == "AsType"
+}
+
+func isSafeFormatFunction(name string) bool {
+	switch name {
+	case "Sprint", "Sprintf", "Sprintln", "Print", "Printf", "Println", "Fprint", "Fprintf", "Fprintln", "Errorf":
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *analyzer) markSafeArguments(args []ast.Expr, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	for _, arg := range args {
+		a.markSafeArgument(arg, tainted, safe)
+	}
+}
+
+func (a *analyzer) markSafeArgument(arg ast.Expr, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	id, ok := arg.(*ast.Ident)
+	if !ok {
+		return
+	}
+	variable, ok := a.info.Uses[id].(*types.Var)
+	if ok && tainted[variable] {
+		safe[id] = true
+	}
+}
+
+func (a *analyzer) markSafeNilComparison(expression *ast.BinaryExpr, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	if expression.Op != token.EQL && expression.Op != token.NEQ {
+		return
+	}
+	a.markSafeNilSide(expression.X, expression.Y, tainted, safe)
+	a.markSafeNilSide(expression.Y, expression.X, tainted, safe)
+}
+
+func (a *analyzer) markSafeNilSide(side, other ast.Expr, tainted map[*types.Var]bool, safe map[*ast.Ident]bool) {
+	id, ok := side.(*ast.Ident)
+	if !ok {
+		return
+	}
+	nilIdent, ok := other.(*ast.Ident)
+	if !ok || nilIdent.Name != "nil" {
+		return
+	}
+	a.markSafeArgument(id, tainted, safe)
 }

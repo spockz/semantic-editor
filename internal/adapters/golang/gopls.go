@@ -85,47 +85,67 @@ func renameSelected(ctx context.Context, workDir string, selected backend.Symbol
 		if err != nil {
 			return err
 		}
-		for path, source := range expected {
-			canonical, pathErr := filepath.EvalSymlinks(path)
-			if pathErr != nil {
-				return fmt.Errorf("resolve rename lookup input: %w", pathErr)
-			}
-			info, statErr := os.Stat(canonical)
-			if statErr != nil {
-				return fmt.Errorf("stat rename lookup input: %w", statErr)
-			}
-			if !info.Mode().IsRegular() {
-				return errors.New("rename lookup input is not a regular file")
-			}
-			// #nosec G304 -- inputs come from the backend's exact resolver snapshot.
-			input, inputErr := sourcebuf.ReadFile(ctx, canonical)
-			if inputErr != nil {
-				return fmt.Errorf("read rename lookup input: %w", inputErr)
-			}
-			if !bytes.Equal(input, source) {
-				return errors.New("rename analysis input changed since symbol lookup")
-			}
-		}
-		selectedPath, err := filepath.Abs(file)
+		coordinate, err := validateRenameLookupSnapshot(ctx, file, document.Content, selected, expected)
 		if err != nil {
-			return fmt.Errorf("resolve rename lookup file: %w", err)
+			return err
 		}
-		source, ok := expected[filepath.Clean(selectedPath)]
-		if !ok {
-			return errors.New("rename lookup lacks its selected source")
-		}
-		if !bytes.Equal(document.Content, source) {
-			return errors.New("rename source changed since symbol lookup")
-		}
-		if selected.Offset < 0 || selected.Offset+len(selected.Name) > len(source) || string(source[selected.Offset:selected.Offset+len(selected.Name)]) != selected.Name {
-			return errors.New("rename identity does not match the lookup source")
-		}
-		prefix := source[:selected.Offset]
-		line := bytes.Count(prefix, []byte{'\n'}) + 1
-		column := selected.Offset - bytes.LastIndexByte(prefix, '\n')
-		return renameInSessionFiles(ctx, session, file, line, column, newName, record)
+		return renameInSessionFiles(ctx, session, file, coordinate.line, coordinate.column, newName, record)
 	}); err != nil {
 		return fmt.Errorf("%w: %w", ErrRenameFailed, err)
+	}
+	return nil
+}
+
+type renameCoordinate struct {
+	line   int
+	column int
+}
+
+func validateRenameLookupSnapshot(ctx context.Context, file string, current []byte, selected backend.SymbolCandidate, expected map[string][]byte) (renameCoordinate, error) {
+	if err := validateRenameExpectedFiles(ctx, expected); err != nil {
+		return renameCoordinate{}, err
+	}
+	selectedPath, err := filepath.Abs(file)
+	if err != nil {
+		return renameCoordinate{}, fmt.Errorf("resolve rename lookup file: %w", err)
+	}
+	source, ok := expected[filepath.Clean(selectedPath)]
+	if !ok {
+		return renameCoordinate{}, errors.New("rename lookup lacks its selected source")
+	}
+	if !bytes.Equal(current, source) {
+		return renameCoordinate{}, errors.New("rename source changed since symbol lookup")
+	}
+	if selected.Offset < 0 || selected.Offset+len(selected.Name) > len(source) || string(source[selected.Offset:selected.Offset+len(selected.Name)]) != selected.Name {
+		return renameCoordinate{}, errors.New("rename identity does not match the lookup source")
+	}
+	prefix := source[:selected.Offset]
+	line := bytes.Count(prefix, []byte{'\n'}) + 1
+	column := selected.Offset - bytes.LastIndexByte(prefix, '\n')
+	return renameCoordinate{line: line, column: column}, nil
+}
+
+func validateRenameExpectedFiles(ctx context.Context, expected map[string][]byte) error {
+	for path, source := range expected {
+		canonical, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return fmt.Errorf("resolve rename lookup input: %w", err)
+		}
+		info, err := os.Stat(canonical)
+		if err != nil {
+			return fmt.Errorf("stat rename lookup input: %w", err)
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("rename lookup input is not a regular file")
+		}
+		// #nosec G304 -- inputs come from the backend's exact resolver snapshot.
+		input, err := sourcebuf.ReadFile(ctx, canonical)
+		if err != nil {
+			return fmt.Errorf("read rename lookup input: %w", err)
+		}
+		if !bytes.Equal(input, source) {
+			return errors.New("rename analysis input changed since symbol lookup")
+		}
 	}
 	return nil
 }

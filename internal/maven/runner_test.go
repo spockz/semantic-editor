@@ -58,8 +58,8 @@ func TestRunRequiresTrustAndRejectsOutsideWrapper(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 	outside := script(t, t.TempDir(), "mvnw", "exit 0")
-	if err := os.Symlink(outside, filepath.Join(root, "mvnw")); err != nil {
-		t.Fatal(err)
+	if symlinkErr := os.Symlink(outside, filepath.Join(root, "mvnw")); symlinkErr != nil {
+		t.Fatal(symlinkErr)
 	}
 	_, err = maven.Run(context.Background(), maven.Request{Root: root, Trust: backend.NewWorkspaceTrust(root, true), Tool: maven.ToolWrapper, Goal: "test"})
 	if !errors.Is(err, maven.ErrUnsafeWrapper) {

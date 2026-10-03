@@ -319,69 +319,7 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	if b.session != nil && b.root != root {
 		return nil, &RustError{Op: "rename", Workspace: root, Err: ErrRustSessionConflict}
 	}
-	perform := func() (*neutralbackend.RenameResult, error) {
-		if b.session == nil {
-			if b.factory == nil {
-				return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-			}
-			session, factoryErr := b.factory(ctx, root)
-			if factoryErr != nil {
-				return nil, &RustError{Op: "start", Workspace: root, Err: factoryErr}
-			}
-			if session == nil {
-				return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
-			}
-			b.session, b.root = session, root
-			if initErr := initializeRustSession(ctx, session, root); initErr != nil {
-				closeErr := b.closeSessionLocked()
-				return nil, &RustError{Op: "initialize", Workspace: root, Err: errors.Join(initErr, closeErr)}
-			}
-		}
-		session := b.session
-		uri := pathutil.FileURI(file)
-		if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); openErr != nil {
-			return nil, &RustError{Op: "didOpen", File: file, Err: openErr}
-		}
-		raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
-		if err != nil {
-			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
-		}
-		symbols, err := decodeRustDocumentSymbols(raw, root, source)
-		if err != nil {
-			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
-		}
-		if uriErr := validateRustDocumentSymbolURI(symbols, uri); uriErr != nil {
-			return nil, &RustError{Op: "documentSymbol", File: file, Err: uriErr}
-		}
-		lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
-		if err != nil {
-			return nil, err
-		}
-		prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": lookup.Location.Range.Start})
-		if err != nil {
-			return nil, &RustError{Op: "prepareRename", File: file, Err: err}
-		}
-		if !validPrepareRename(prepRaw) {
-			return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
-		}
-		editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": lookup.Location.Range.Start, "newName": request.To})
-		if err != nil {
-			return nil, &RustError{Op: "rename", File: file, Err: err}
-		}
-		oldName := request.Symbol
-		if parts := strings.Split(oldName, "::"); len(parts) > 0 {
-			oldName = strings.TrimSpace(parts[len(parts)-1])
-		}
-		updated, err := applyRustWorkspaceEdit(file, source, editRaw, oldName)
-		if err != nil {
-			return nil, &RustError{Op: "rename", File: file, Err: err}
-		}
-		if err := pipeline.WriteAtomic(file, updated); err != nil {
-			return nil, &RustError{Op: "write", File: file, Err: err}
-		}
-		return &neutralbackend.RenameResult{Lookup: lookup}, nil
-	}
-	result, runErr := perform()
+	result, runErr := b.executeRustRenameLocked(ctx, root, file, source, request)
 	if runErr != nil {
 		closeErr := b.closeSessionLocked()
 		if closeErr != nil {
@@ -392,6 +330,71 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 	// The edit is committed once WriteAtomic succeeds, so cleanup cannot revoke the result.
 	_ = b.closeSessionLocked()
 	return result, nil
+}
+
+func (b *RustBackend) executeRustRenameLocked(ctx context.Context, root, file string, source []byte, request neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
+	if b.session == nil {
+		if b.factory == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		session, err := b.factory(ctx, root)
+		if err != nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: err}
+		}
+		if session == nil {
+			return nil, &RustError{Op: "start", Workspace: root, Err: ErrRustAnalyzerUnavailable}
+		}
+		b.session, b.root = session, root
+		if err := initializeRustSession(ctx, session, root); err != nil {
+			closeErr := b.closeSessionLocked()
+			return nil, &RustError{Op: "initialize", Workspace: root, Err: errors.Join(err, closeErr)}
+		}
+	}
+	return performRustRename(ctx, b.session, root, file, source, request)
+}
+
+func performRustRename(ctx context.Context, session RustSession, root, file string, source []byte, request neutralbackend.RenameRequest) (*neutralbackend.RenameResult, error) {
+	uri := pathutil.FileURI(file)
+	if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
+		return nil, &RustError{Op: "didOpen", File: file, Err: err}
+	}
+	raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
+	if err != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+	}
+	symbols, err := decodeRustDocumentSymbols(raw, root, source)
+	if err != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+	}
+	if validationErr := validateRustDocumentSymbolURI(symbols, uri); validationErr != nil {
+		return nil, &RustError{Op: "documentSymbol", File: file, Err: validationErr}
+	}
+	lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
+	if err != nil {
+		return nil, err
+	}
+	position := lookup.Location.Range.Start
+	prepRaw, err := session.Request(ctx, "textDocument/prepareRename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position})
+	if err != nil {
+		return nil, &RustError{Op: "prepareRename", File: file, Err: err}
+	}
+	if !validPrepareRename(prepRaw) {
+		return nil, &RustError{Op: "prepareRename", File: file, Err: ErrRustRenameInvalidEdit}
+	}
+	editRaw, err := session.Request(ctx, "textDocument/rename", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}, "position": position, "newName": request.To})
+	if err != nil {
+		return nil, &RustError{Op: "rename", File: file, Err: err}
+	}
+	parts := strings.Split(request.Symbol, "::")
+	oldName := strings.TrimSpace(parts[len(parts)-1])
+	updated, err := applyRustWorkspaceEdit(file, source, editRaw, oldName)
+	if err != nil {
+		return nil, &RustError{Op: "rename", File: file, Err: err}
+	}
+	if err := pipeline.WriteAtomic(file, updated); err != nil {
+		return nil, &RustError{Op: "write", File: file, Err: err}
+	}
+	return &neutralbackend.RenameResult{Lookup: lookup}, nil
 }
 
 const lspTextDocumentKey = "textDocument"
@@ -445,6 +448,18 @@ func validPositionRangeShape(r rustRange) bool {
 }
 
 func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, oldName string) ([]byte, error) {
+	edits, err := decodeRustWorkspaceEdits(file, raw)
+	if err != nil {
+		return nil, err
+	}
+	spans, err := validateRustEditSpans(source, edits, oldName)
+	if err != nil {
+		return nil, err
+	}
+	return applyRustEditSpans(source, spans), nil
+}
+
+func decodeRustWorkspaceEdits(file string, raw json.RawMessage) ([]rustTextEdit, error) {
 	var object map[string]json.RawMessage
 	if json.Unmarshal(raw, &object) != nil || object == nil {
 		return nil, ErrRustRenameInvalidEdit
@@ -502,6 +517,10 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			return nil, err
 		}
 	}
+	return edits, nil
+}
+
+func validateRustEditSpans(source []byte, edits []rustTextEdit, oldName string) ([]rustEditSpan, error) {
 	spans := make([]rustEditSpan, 0, len(edits))
 	seen := map[string]bool{}
 	for _, edit := range edits {
@@ -536,11 +555,15 @@ func applyRustWorkspaceEdit(file string, source []byte, raw json.RawMessage, old
 			return nil, ErrRustRenameInvalidEdit
 		}
 	}
+	return spans, nil
+}
+
+func applyRustEditSpans(source []byte, spans []rustEditSpan) []byte {
 	updated := append([]byte(nil), source...)
 	for _, span := range spans {
 		updated = append(updated[:span.start], append([]byte(span.text), updated[span.end:]...)...)
 	}
-	return updated, nil
+	return updated
 }
 
 // Verify is intentionally unavailable for the Rust lookup-only slice.
@@ -709,6 +732,10 @@ func decodeRustDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	if _, flat := object["location"]; flat {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: flat SymbolInformation is not supported", ErrRustUnsupportedResponse)
 	}
+	return decodeRustSymbolFields(object, root, source)
+}
+
+func decodeRustSymbolFields(object map[string]json.RawMessage, root string, source []byte) (rustDocumentSymbol, error) {
 	var symbol rustDocumentSymbol
 	if err := json.Unmarshal(object["name"], &symbol.Name); err != nil || symbol.Name == "" {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: missing name", ErrRustMalformedResponse)
@@ -727,32 +754,52 @@ func decodeRustDocumentSymbol(raw json.RawMessage, root string, source []byte) (
 	if err := json.Unmarshal(object["selectionRange"], &symbol.SelectionRange); err != nil || !validRustRange(symbol.SelectionRange, source) {
 		return rustDocumentSymbol{}, fmt.Errorf("%w: invalid selection range", ErrRustMalformedResponse)
 	}
-	if uriRaw, ok := object["uri"]; ok {
-		if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
-			return rustDocumentSymbol{}, fmt.Errorf("%w: invalid uri", ErrRustMalformedResponse)
-		}
-		if symbol.URI != "" {
-			uriPath, err := pathutil.FilePathFromURI(symbol.URI)
-			if err != nil || !pathutil.PathWithin(root, uriPath) {
-				return rustDocumentSymbol{}, fmt.Errorf("%w: symbol uri is outside workspace", ErrRustMalformedResponse)
-			}
-		}
+	if err := decodeRustSymbolURI(object, root, &symbol); err != nil {
+		return rustDocumentSymbol{}, err
 	}
+	children, err := decodeRustSymbolChildren(object, root, source)
+	if err != nil {
+		return rustDocumentSymbol{}, err
+	}
+	symbol.Children = children
+	return symbol, nil
+}
+
+func decodeRustSymbolURI(object map[string]json.RawMessage, root string, symbol *rustDocumentSymbol) error {
+	uriRaw, ok := object["uri"]
+	if !ok {
+		return nil
+	}
+	if err := json.Unmarshal(uriRaw, &symbol.URI); err != nil {
+		return fmt.Errorf("%w: invalid uri", ErrRustMalformedResponse)
+	}
+	if symbol.URI == "" {
+		return nil
+	}
+	uriPath, err := pathutil.FilePathFromURI(symbol.URI)
+	if err != nil || !pathutil.PathWithin(root, uriPath) {
+		return fmt.Errorf("%w: symbol uri is outside workspace", ErrRustMalformedResponse)
+	}
+	return nil
+}
+
+func decodeRustSymbolChildren(object map[string]json.RawMessage, root string, source []byte) ([]rustDocumentSymbol, error) {
 	if childrenRaw, ok := object["children"]; ok {
 		var children []json.RawMessage
 		if err := json.Unmarshal(childrenRaw, &children); err != nil {
-			return rustDocumentSymbol{}, fmt.Errorf("%w: invalid children", ErrRustMalformedResponse)
+			return nil, fmt.Errorf("%w: invalid children", ErrRustMalformedResponse)
 		}
-		symbol.Children = make([]rustDocumentSymbol, 0, len(children))
+		result := make([]rustDocumentSymbol, 0, len(children))
 		for _, childRaw := range children {
 			child, err := decodeRustDocumentSymbol(childRaw, root, source)
 			if err != nil {
-				return rustDocumentSymbol{}, err
+				return nil, err
 			}
-			symbol.Children = append(symbol.Children, child)
+			result = append(result, child)
 		}
+		return result, nil
 	}
-	return symbol, nil
+	return nil, nil
 }
 
 func validRustRange(r rustRange, source []byte) bool {

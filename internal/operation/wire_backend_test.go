@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -104,83 +105,100 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
 			t.Parallel()
+			assertRegisteredEntryContract(t, entry)
+		})
+	}
+}
 
-			if entry.Key == "" {
-				t.Error("operation key is empty")
-			}
-			if entry.Summary == "" {
-				t.Error("operation summary is empty")
-			}
-			if entry.MCPName == "" {
-				t.Error("operation MCP name is empty")
-			}
-			if len(entry.Params) == 0 {
-				t.Error("operation params are empty")
-			}
-			if _, err := entry.Parse(entry.ExampleRaw); err != nil {
-				t.Errorf("ExampleRaw parse failed: %v", err)
-			}
-			t.Run("cli-string-shapes", func(t *testing.T) {
-				t.Parallel()
+func assertRegisteredEntryContract(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	if entry.Key == "" || entry.Summary == "" || entry.MCPName == "" || len(entry.Params) == 0 {
+		t.Errorf("entry has incomplete public metadata: %+v", entry)
+	}
+	if _, err := entry.Parse(entry.ExampleRaw); err != nil {
+		t.Errorf("ExampleRaw parse failed: %v", err)
+	}
+	t.Run("cli-string-shapes", func(t *testing.T) {
+		t.Parallel()
+		assertBooleanCLIStringsParse(t, entry)
+	})
+	assertRequiredEntryParamsFail(t, entry)
+	assertEnumEntryParamsFail(t, entry)
+}
 
-				shaped := cloneExample(entry.ExampleRaw)
-				converted := false
-				for _, param := range entry.Params {
-					if param.Type != operation.ParamBoolean {
-						continue
-					}
-					value, ok := shaped[param.JSONName]
-					if !ok {
-						continue
-					}
-					if flag, ok := value.(bool); ok {
-						if flag {
-							shaped[param.JSONName] = "true"
-						} else {
-							shaped[param.JSONName] = "false"
-						}
-						converted = true
-					}
-				}
-				if !converted {
-					t.Skip("no boolean parameter in ExampleRaw")
-				}
-				if _, err := entry.Parse(shaped); err != nil {
-					t.Errorf("CLI string boolean parse failed: %v", err)
-				}
-			})
-			for _, param := range entry.Params {
-				if !param.Required {
-					continue
-				}
-				t.Run("missing-required-"+param.JSONName, func(t *testing.T) {
-					t.Parallel()
+func assertBooleanCLIStringsParse(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	example := stringBooleanExample(entry)
+	if !example.Converted {
+		t.Skip("no boolean parameter in ExampleRaw")
+	}
+	if _, err := entry.Parse(example.Raw); err != nil {
+		t.Errorf("CLI string boolean parse failed: %v", err)
+	}
+}
 
-					without := cloneExample(entry.ExampleRaw)
-					delete(without, param.JSONName)
-					delete(without, param.CLIName)
-					if _, err := entry.Parse(without); err == nil {
-						t.Errorf("parse without required param %q succeeded, want error", param.JSONName)
-					} else if !errors.Is(err, operation.ErrInvalidParams) {
-						t.Errorf("missing required param error = %v, want ErrInvalidParams", err)
-					}
-				})
+type booleanCLIExample struct {
+	Raw       map[string]any
+	Converted bool
+}
+
+func stringBooleanExample(entry operation.Entry) booleanCLIExample {
+	shaped := cloneExample(entry.ExampleRaw)
+	example := booleanCLIExample{Raw: shaped}
+	for _, param := range entry.Params {
+		if param.Type != operation.ParamBoolean {
+			continue
+		}
+		value, exists := shaped[param.JSONName]
+		if !exists {
+			continue
+		}
+		flag, isBool := value.(bool)
+		if !isBool {
+			continue
+		}
+		shaped[param.JSONName] = strconv.FormatBool(flag)
+		example.Converted = true
+	}
+	return example
+}
+
+func assertRequiredEntryParamsFail(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	for _, param := range entry.Params {
+		if !param.Required {
+			continue
+		}
+
+		t.Run("missing-required-"+param.JSONName, func(t *testing.T) {
+			t.Parallel()
+			without := cloneExample(entry.ExampleRaw)
+			delete(without, param.JSONName)
+			delete(without, param.CLIName)
+			if _, err := entry.Parse(without); err == nil {
+				t.Errorf("parse without required param %q succeeded, want error", param.JSONName)
+			} else if !errors.Is(err, operation.ErrInvalidParams) {
+				t.Errorf("missing required param error = %v, want ErrInvalidParams", err)
 			}
-			for _, param := range entry.Params {
-				if len(param.Enums) == 0 {
-					continue
-				}
-				t.Run("bad-enum-"+param.JSONName, func(t *testing.T) {
-					t.Parallel()
+		})
+	}
+}
 
-					invalid := cloneExample(entry.ExampleRaw)
-					invalid[param.JSONName] = "___not_a_value___"
-					if _, err := entry.Parse(invalid); err == nil {
-						t.Errorf("parse with bad enum %q succeeded, want error", param.JSONName)
-					} else if !errors.Is(err, operation.ErrInvalidParams) {
-						t.Errorf("bad enum error = %v, want ErrInvalidParams", err)
-					}
-				})
+func assertEnumEntryParamsFail(t *testing.T, entry operation.Entry) {
+	t.Helper()
+	for _, param := range entry.Params {
+		if len(param.Enums) == 0 {
+			continue
+		}
+
+		t.Run("bad-enum-"+param.JSONName, func(t *testing.T) {
+			t.Parallel()
+			invalid := cloneExample(entry.ExampleRaw)
+			invalid[param.JSONName] = "___not_a_value___"
+			if _, err := entry.Parse(invalid); err == nil {
+				t.Errorf("parse with bad enum %q succeeded, want error", param.JSONName)
+			} else if !errors.Is(err, operation.ErrInvalidParams) {
+				t.Errorf("bad enum error = %v, want ErrInvalidParams", err)
 			}
 		})
 	}

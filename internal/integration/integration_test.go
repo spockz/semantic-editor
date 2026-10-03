@@ -31,8 +31,8 @@ func TestCopilotWorkspaceInstallConflictAndOwnedUninstall(t *testing.T) {
 	if !strings.Contains(string(data), `"mcpServers"`) || !strings.Contains(string(data), `"type": "local"`) || !strings.Contains(string(data), `"tools"`) || !strings.Contains(string(data), `"*"`) || !strings.Contains(string(data), `"mutations-only"`) {
 		t.Fatalf("config = %s", data)
 	}
-	if _, err := os.Stat(filepath.Join(workspace, ".codex", "config.toml")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("copilot installation touched Codex configuration: %v", err)
+	if _, statErr := os.Stat(filepath.Join(workspace, ".codex", "config.toml")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("copilot installation touched Codex configuration: %v", statErr)
 	}
 	result, err = integration.Install(req)
 	if err != nil || result.Status != "already-installed" {
@@ -40,11 +40,11 @@ func TestCopilotWorkspaceInstallConflictAndOwnedUninstall(t *testing.T) {
 	}
 	conflict := req
 	conflict.Binary = filepath.Join(workspace, "other-semedit")
-	if err := os.WriteFile(conflict.Binary, []byte("binary"), 0o755); err != nil { // #nosec G306 -- executable fixture.
-		t.Fatal(err)
+	if writeErr := os.WriteFile(conflict.Binary, []byte("binary"), 0o755); writeErr != nil { // #nosec G306 -- executable fixture.
+		t.Fatal(writeErr)
 	}
-	if _, err := integration.Install(conflict); !errors.Is(err, integration.ErrConflict) {
-		t.Fatalf("conflict error = %v", err)
+	if _, installErr := integration.Install(conflict); !errors.Is(installErr, integration.ErrConflict) {
+		t.Fatalf("conflict error = %v", installErr)
 	}
 	result, err = integration.Uninstall(integration.StatusRequest{Target: req.Target, Scope: req.Scope, Workspace: workspace})
 	if err != nil || result.Status != "uninstalled" {
@@ -233,12 +233,12 @@ func TestDryRunParsesExistingState(t *testing.T) {
 	}
 	conflict := req
 	conflict.Binary = filepath.Join(workspace, "other")
-	if err := os.WriteFile(conflict.Binary, []byte("x"), 0o755); err != nil { // #nosec G306 -- executable fixture.
-		t.Fatal(err)
+	if writeErr := os.WriteFile(conflict.Binary, []byte("x"), 0o755); writeErr != nil { // #nosec G306 -- executable fixture.
+		t.Fatal(writeErr)
 	}
 	conflict.DryRun = true
-	if _, err := integration.Install(conflict); !errors.Is(err, integration.ErrConflict) {
-		t.Fatalf("conflicting dry-run = %v", err)
+	if _, installErr := integration.Install(conflict); !errors.Is(installErr, integration.ErrConflict) {
+		t.Fatalf("conflicting dry-run = %v", installErr)
 	}
 	after, err := os.ReadFile(filepath.Join(workspace, ".mcp.json")) // #nosec G304 -- test path is created inside t.TempDir.
 	if err != nil || !bytes.Equal(after, before) {
@@ -284,8 +284,8 @@ func TestCopilotCommentsFailSafelyAndUnrelatedStatusIsNotInstalled(t *testing.T)
 	if err != nil || status.Status != "malformed" {
 		t.Fatalf("commented status = %+v, %v", status, err)
 	}
-	if err := os.WriteFile(configPath, []byte(`{"mcpServers":{"other":{"command":"other"}}}`), 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(configPath, []byte(`{"mcpServers":{"other":{"command":"other"}}}`), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	status, err = integration.Status(integration.StatusRequest{Target: integration.TargetCopilot, Scope: integration.ScopeWorkspace, Workspace: workspace})
 	if err != nil || status.Status != "not-installed" {
@@ -306,8 +306,8 @@ func TestEditedOwnedRegistrationIsNotRemoved(t *testing.T) {
 		t.Fatal(err)
 	}
 	data = []byte(strings.Replace(string(data), `"full"`, `"mutations-only"`, 1))
-	if err := os.WriteFile(configPath, data, 0o600); err != nil { // #nosec G703 -- test path is created inside t.TempDir.
-		t.Fatal(err)
+	if writeErr := os.WriteFile(configPath, data, 0o600); writeErr != nil { // #nosec G703 -- test path is created inside t.TempDir.
+		t.Fatal(writeErr)
 	}
 	_, err = integration.Uninstall(integration.StatusRequest{Target: req.Target, Scope: req.Scope, Workspace: workspace})
 	if !errors.Is(err, integration.ErrNotOwned) {

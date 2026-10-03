@@ -581,13 +581,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		}
 	}
 	if !request.CheckOnly && len(goFormatPaths) > 0 {
-		needsFormatting, err := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
-		if err != nil {
-			return response, fmt.Errorf("check Go formatting before verification: %w", err)
+		needsFormatting, formatCheckErr := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
+		if formatCheckErr != nil {
+			return response, fmt.Errorf("check Go formatting before verification: %w", formatCheckErr)
 		}
 		if needsFormatting {
-			if err := pipeline.Format(ctx, project.RootDir, goFormatPaths...); err != nil {
-				return response, fmt.Errorf("format Go files before verification: %w", err)
+			if formatErr := pipeline.Format(ctx, project.RootDir, goFormatPaths...); formatErr != nil {
+				return response, fmt.Errorf("format Go files before verification: %w", formatErr)
 			}
 			response.Formatted = true
 		}
@@ -1029,17 +1029,14 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 // DefaultRegistry constructs the registry with lookup, rename, and verify operations wired to backend leaves.
 func DefaultRegistry() *Registry {
 	registry := NewRegistry()
-	if err := Register(registry, lookupDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, referencesDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, renameDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, verifyDef()); err != nil {
-		panic(err)
+	for _, register := range []func(*Registry) error{
+		registerNavigationOps,
+		registerRenameOps,
+		registerVerificationOps,
+	} {
+		if err := register(registry); err != nil {
+			panic(err)
+		}
 	}
 	if err := registerReadInspectOps(registry); err != nil {
 		panic(err)
@@ -1057,113 +1054,4 @@ func DefaultRegistry() *Registry {
 		panic(err)
 	}
 	return registry
-}
-
-var readProjectParams = []ParameterContract{
-	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Haskell requires standalone_haskell=true; Bash and Make require a selected source file)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
-	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required by trusted external-tool backends including Bash, Make, Kotlin, Java, Rust, Scala, and Haskell (default false)", Type: ParamBoolean, Default: false},
-	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java lookup", Type: ParamString},
-	{Name: "java_bin", CLIName: "java-bin", JSONName: "java_bin", Description: "Optional Java 21+ executable; defaults to java on PATH", Type: ParamString},
-	{Name: wireImportMaven, CLIName: "import-maven", JSONName: wireImportMaven, Description: "Explicitly enable trusted JDT LS Maven import; never runs Maven", Type: ParamBoolean, Default: false},
-	{Name: "metals_home", CLIName: "metals-home", JSONName: "metals_home", Description: "Explicit preinstalled pinned Metals distribution home required for Scala lookup", Type: ParamString},
-	{Name: "metals_bin", CLIName: "metals-bin", JSONName: "metals_bin", Description: "Direct pinned Metals executable, alternative to metals_home", Type: ParamString},
-	{Name: "java_version", CLIName: "java-version", JSONName: "java_version", Description: "Recorded Java major version required for Scala lookup", Type: ParamString},
-	{Name: "standalone_haskell", CLIName: "haskell-standalone", JSONName: "standalone_haskell", Description: "Explicitly select standalone Haskell .hs lookup; rejects project markers", Type: ParamBoolean, Default: false},
-	{Name: "ghc_bin", CLIName: "ghc-bin", JSONName: "ghc_bin", Description: "Preinstalled GHC executable for standalone Haskell lookup", Type: ParamString},
-	{Name: "hls_bin", CLIName: "hls-bin", JSONName: "hls_bin", Description: "Preinstalled haskell-language-server-wrapper executable", Type: ParamString},
-	{Name: "ghc_version", CLIName: "ghc-version", JSONName: "ghc_version", Description: "Recorded GHC version to require", Type: ParamString},
-	{Name: "hls_version", CLIName: "hls-version", JSONName: "hls_version", Description: "Recorded HLS version to require", Type: ParamString},
-	{Name: "kotlin_bin", CLIName: "kotlin-bin", JSONName: "kotlin_bin", Description: "Path to a preinstalled fwcd/kotlin-language-server executable; defaults to the executable on PATH", Type: ParamString},
-	{Name: "bash_bin", CLIName: "bash-bin", JSONName: "bash_bin", Description: "Path to a preinstalled bash-language-server executable; defaults to PATH", Type: ParamString},
-	{Name: "make_bin", CLIName: "make-bin", JSONName: "make_bin", Description: "Path to a preinstalled make-ls executable; defaults to PATH", Type: ParamString},
-}
-
-func readRequestParams(prefix ...ParameterContract) []ParameterContract {
-	params := make([]ParameterContract, 0, len(prefix)+len(readProjectParams))
-	params = append(params, prefix...)
-	return append(params, readProjectParams...)
-}
-
-func parseReadProject(raw map[string]any, file string) (backend.ProjectContext, error) {
-	language, err := ParseEnum(raw, "language", "language", languageEnums, false, "")
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	metalsHome, err := ParseString(raw, "metals_home", "metals-home", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	metalsBin, err := ParseString(raw, "metals_bin", "metals-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	javaVersion, err := ParseString(raw, "java_version", "java-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	standalone, err := ParseBool(raw, "standalone_haskell", "haskell-standalone", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	ghcBin, err := ParseString(raw, "ghc_bin", "ghc-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	hlsBin, err := ParseString(raw, "hls_bin", "hls-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	ghcVersion, err := ParseString(raw, "ghc_version", "ghc-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	hlsVersion, err := ParseString(raw, "hls_version", "hls-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	kotlinBin, err := ParseString(raw, "kotlin_bin", "kotlin-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	return backend.ProjectContext{
-		File:           file,
-		Language:       backend.LanguageID(language),
-		WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-		Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
-		Scala: backend.ScalaConfig{
-			MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion,
-		},
-		Haskell: backend.HaskellConfig{
-			Standalone: standalone, GHCBin: ghcBin, HLSBin: hlsBin, GHCVersion: ghcVersion, HLSVersion: hlsVersion,
-		},
-		HaskellStandalone: standalone,
-		Kotlin:            backend.KotlinConfig{KotlinBin: kotlinBin},
-		Bash:              backend.BashConfig{BashBin: bashBin},
-		Make:              backend.MakeConfig{MakeBin: makeBin},
-		KotlinBin:         kotlinBin,
-	}, nil
 }

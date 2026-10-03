@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -353,94 +354,116 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	processStartedAt := time.Now()
 	res.processStartedAt = processStartedAt
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	turns := 0
-	sawTerminalTurn := false
-	validEvents := 0
-	tracker := codexToolTracker{}
-	var firstEventAt time.Time
-	threadID := resumeID
-	for scanner.Scan() {
-		rawEvent := append([]byte(nil), scanner.Bytes()...)
-		var ev CodexEvent
-		if err := json.Unmarshal(rawEvent, &ev); err != nil || ev.Type == "" {
-			tracker.eventDecodeErrors++
-			encodedInvalid, _ := json.Marshal(string(rawEvent))
-			res.rawEvents = append(res.rawEvents, json.RawMessage(encodedInvalid))
-			continue
-		}
-		validEvents++
-		res.rawEvents = append(res.rawEvents, json.RawMessage(rawEvent))
-		observedAt := time.Now()
-		if firstEventAt.IsZero() {
-			firstEventAt = observedAt
-		}
-		if ev.Type == "turn.started" {
-			turns++
-			sawTerminalTurn = false
-		}
-		if ev.Type == "turn.completed" {
-			sawTerminalTurn = true
-		}
-		if ev.Type == "thread.started" && ev.ThreadID != "" {
-			threadID = ev.ThreadID
-		}
-		appendCodexAgentResponse(res, ev.Item)
-		tracker.observe(res, ev.Item, observedAt)
-		if ev.Usage != nil {
-			res.PromptTokens = ev.Usage.InputTokens
-			res.CachedPromptTokens = ev.Usage.CachedInputTokens
-			res.UncachedPromptTokens = ev.Usage.InputTokens - ev.Usage.CachedInputTokens
-			res.OutputTokens = ev.Usage.OutputTokens
-			res.ReasoningTokens = ev.Usage.ReasoningOutputTokens
-		}
-	}
-	scanErr := scanner.Err()
+	stream := readCodexEventStream(stdout, res, resumeID)
 	waitErr := cmd.Wait()
 	if cmd.ProcessState != nil {
 		code := cmd.ProcessState.ExitCode()
 		res.CodexExitCode = &code
 	}
 	res.CodexStderr = boundedDiagnostic(stderr.Bytes(), maxCodexStderrBytes)
-	res.Turns = turns
-	res.InternalTurns = tracker.internalTurns
-	res.InitialLoadTurns = tracker.initialLoadTurns
-	res.MCPLoadTurns = tracker.mcpLoadTurns
-	res.ToolCount = len(res.ToolCalls)
-	if !firstEventAt.IsZero() {
-		value := firstEventAt.Sub(processStartedAt)
-		res.ProcessStartToFirstEvent = &value
-	}
-	if !firstEventAt.IsZero() && !tracker.firstToolCallAt.IsZero() {
-		value := tracker.firstToolCallAt.Sub(firstEventAt)
-		res.FirstEventToFirstToolCall = &value
-	}
-	var providerErr error
-	if scanErr != nil {
-		providerErr = fmt.Errorf("scan codex output: %w", scanErr)
-	}
-	if tracker.eventDecodeErrors > 0 {
-		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed Codex event records", tracker.eventDecodeErrors))
-	}
-	if waitErr != nil {
-		providerErr = errors.Join(providerErr, codexWaitFailure(ctx, waitErr, cmd.ProcessState != nil && cmd.ProcessState.ExitCode() == -1, res.CodexStderr))
-	}
-	setCodexObservationState(res, providerErr, sawTerminalTurn)
-	if providerErr == nil && sawTerminalTurn && tracker.observationErrors > 0 {
+	applyCodexStreamMetrics(res, stream, processStartedAt)
+	providerErr := codexStreamFailure(ctx, stream, waitErr, cmd.ProcessState, res.CodexStderr)
+	setCodexObservationState(res, providerErr, stream.sawTerminalTurn)
+	if providerErr == nil && stream.sawTerminalTurn && stream.tracker.observationErrors > 0 {
 		res.toolObservationState = ToolObservationPartial
-		res.toolObservationReason = fmt.Sprintf("Codex observed %d malformed tool call records", tracker.observationErrors)
+		res.toolObservationReason = fmt.Sprintf("Codex observed %d malformed tool call records", stream.tracker.observationErrors)
 	}
 	if providerErr != nil {
-		return threadID, providerErr
+		return stream.threadID, providerErr
 	}
-	if validEvents == 0 {
-		return threadID, fmt.Errorf("codex emitted no valid task events")
+	if stream.validEvents == 0 {
+		return stream.threadID, fmt.Errorf("codex emitted no valid task events")
 	}
-	if threadID == "" {
+	if stream.threadID == "" {
 		return "", fmt.Errorf("codex did not emit a thread ID")
 	}
-	return threadID, nil
+	return stream.threadID, nil
+}
+
+type codexEventStream struct {
+	turns           int
+	sawTerminalTurn bool
+	validEvents     int
+	firstEventAt    time.Time
+	threadID        string
+	scanErr         error
+	tracker         codexToolTracker
+}
+
+func readCodexEventStream(stdout io.Reader, result *RunResult, resumeID string) codexEventStream {
+	stream := codexEventStream{threadID: resumeID}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	for scanner.Scan() {
+		consumeCodexEvent(&stream, result, append([]byte(nil), scanner.Bytes()...))
+	}
+	stream.scanErr = scanner.Err()
+	return stream
+}
+
+func consumeCodexEvent(stream *codexEventStream, result *RunResult, raw []byte) {
+	var event CodexEvent
+	if err := json.Unmarshal(raw, &event); err != nil || event.Type == "" {
+		stream.tracker.eventDecodeErrors++
+		encoded, _ := json.Marshal(string(raw))
+		result.rawEvents = append(result.rawEvents, json.RawMessage(encoded))
+		return
+	}
+	stream.validEvents++
+	result.rawEvents = append(result.rawEvents, json.RawMessage(raw))
+	observedAt := time.Now()
+	if stream.firstEventAt.IsZero() {
+		stream.firstEventAt = observedAt
+	}
+	if event.Type == "turn.started" {
+		stream.turns++
+		stream.sawTerminalTurn = false
+	}
+	if event.Type == "turn.completed" {
+		stream.sawTerminalTurn = true
+	}
+	if event.Type == "thread.started" && event.ThreadID != "" {
+		stream.threadID = event.ThreadID
+	}
+	appendCodexAgentResponse(result, event.Item)
+	stream.tracker.observe(result, event.Item, observedAt)
+	if event.Usage != nil {
+		result.PromptTokens = event.Usage.InputTokens
+		result.CachedPromptTokens = event.Usage.CachedInputTokens
+		result.UncachedPromptTokens = event.Usage.InputTokens - event.Usage.CachedInputTokens
+		result.OutputTokens = event.Usage.OutputTokens
+		result.ReasoningTokens = event.Usage.ReasoningOutputTokens
+	}
+}
+
+func applyCodexStreamMetrics(result *RunResult, stream codexEventStream, processStartedAt time.Time) {
+	result.Turns = stream.turns
+	result.InternalTurns = stream.tracker.internalTurns
+	result.InitialLoadTurns = stream.tracker.initialLoadTurns
+	result.MCPLoadTurns = stream.tracker.mcpLoadTurns
+	result.ToolCount = len(result.ToolCalls)
+	if !stream.firstEventAt.IsZero() {
+		value := stream.firstEventAt.Sub(processStartedAt)
+		result.ProcessStartToFirstEvent = &value
+	}
+	if !stream.firstEventAt.IsZero() && !stream.tracker.firstToolCallAt.IsZero() {
+		value := stream.tracker.firstToolCallAt.Sub(stream.firstEventAt)
+		result.FirstEventToFirstToolCall = &value
+	}
+}
+
+func codexStreamFailure(ctx context.Context, stream codexEventStream, waitErr error, state *os.ProcessState, stderr string) error {
+	var providerErr error
+	if stream.scanErr != nil {
+		providerErr = fmt.Errorf("scan codex output: %w", stream.scanErr)
+	}
+	if stream.tracker.eventDecodeErrors > 0 {
+		providerErr = errors.Join(providerErr, fmt.Errorf("decode %d malformed Codex event records", stream.tracker.eventDecodeErrors))
+	}
+	if waitErr != nil {
+		providerErr = errors.Join(providerErr, codexWaitFailure(ctx, waitErr, state != nil && state.ExitCode() == -1, stderr))
+	}
+	return providerErr
 }
 
 func appendCodexAgentResponse(res *RunResult, item *codexItem) {
@@ -482,9 +505,9 @@ func runSemeditVerifyWarmup(ctx context.Context, workDir, file, binaryPath strin
 	}
 	for _, subdir := range []string{"build", "mod"} {
 		cacheDir := filepath.Join(workDir, ".scratch", "go", subdir)
-		entries, err := os.ReadDir(cacheDir)
-		if err != nil {
-			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, err)
+		entries, readErr := os.ReadDir(cacheDir)
+		if readErr != nil {
+			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, readErr)
 		}
 		if len(entries) != 0 {
 			return 0, fmt.Errorf("prewarm %s cache is not empty in %s", subdir, cacheDir)

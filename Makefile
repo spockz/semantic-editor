@@ -104,7 +104,15 @@ fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 		go fmt ./...; \
 	fi
 	@if command -v goimports >/dev/null 2>&1; then \
-		goimports -w -local $$(go list -m 2>/dev/null || echo "") .; \
+		if ! module_path=$$(go list -m); then \
+			echo "Unable to determine the Go module for goimports." >&2; \
+			exit 1; \
+		fi; \
+		if [ -z "$$module_path" ]; then \
+			echo "Go module lookup returned an empty module path." >&2; \
+			exit 1; \
+		fi; \
+		goimports -w -local "$$module_path" .; \
 	fi
 
 .PHONY: tidy

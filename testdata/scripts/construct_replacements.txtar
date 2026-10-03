@@ -1,4 +1,7 @@
 # Replace selected constructs and declarations; insertion collisions fail closed.
+! exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) == 0' --source 'if condition {}'
+stderr 'replacement must be one complete Go else construct'
+cmp api/messages_test.go want/api/messages_before.go
 ! exec semedit insert-decl --file api/settings.go --source 'var Revision = 2'
 stderr 'Revision.*already exists'
 cmp api/settings.go want/api/settings_before.go
@@ -75,6 +78,25 @@ func TestAmbiguousLoops(t *testing.T) {
 		t.Log(item)
 	}
 }
+-- want/api/messages_before.go --
+package api
+
+import "testing"
+
+func TestMessages(t *testing.T) {
+	original := []string{"old"}
+	if len(original) == 0 {
+		t.Fatal("missing originals")
+	} else {
+		t.Log("fallback")
+	}
+	for _, want := range original {
+		if want == "" {
+			t.Fatal(want)
+		}
+	}
+}
+
 -- want/api/loops_before.go --
 package api
 

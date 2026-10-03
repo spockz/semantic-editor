@@ -8,54 +8,74 @@ import (
 	"go/token"
 	"path/filepath"
 	"semedit/internal/backend"
+	"semedit/internal/capability"
 	"semedit/internal/operation"
 	"strings"
 )
 
 func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error) {
-	// Parse internal/astedit/insert.go for placement qualifier constants.
-	// These are used by the docs template and are not exposed through the backend interface.
-
 	insertFile := filepath.Join(rootDir, "internal", "astedit", "insert.go")
+	placements, err := extractPlacementConstants(insertFile)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(placements) == 0 {
+		placements = defaultPlacementConstants()
+	}
+	capabilities, err := extractOperationCapabilities()
+	if err != nil {
+		return nil, nil, err
+	}
+	return capabilities, placements, nil
+}
+
+func extractPlacementConstants(insertFile string) ([]string, error) {
 	fset := token.NewFileSet()
 	insertNode, err := parser.ParseFile(fset, insertFile, nil, 0)
-
+	if err != nil {
+		return nil, fmt.Errorf("parse placement constants %s: %w", insertFile, err)
+	}
 	var placements []string
-	if err == nil {
-		ast.Inspect(insertNode, func(n ast.Node) bool {
-			gen, ok := n.(*ast.GenDecl)
-			if !ok || gen.Tok != token.CONST {
-				return true
-			}
-			for _, spec := range gen.Specs {
-				valSpec, ok := spec.(*ast.ValueSpec)
-				if !ok {
-					continue
-				}
-				for _, val := range valSpec.Values {
-					if basic, ok := val.(*ast.BasicLit); ok && basic.Kind == token.STRING {
-						valStr := strings.Trim(basic.Value, `"`)
-						if strings.Contains(valStr, "_") || valStr == "file_start" || valStr == "file_end" {
-							placements = append(placements, valStr)
-						}
-					}
-				}
-			}
+	ast.Inspect(insertNode, func(n ast.Node) bool {
+		gen, ok := n.(*ast.GenDecl)
+		if !ok || gen.Tok != token.CONST {
 			return true
-		})
-	}
-
-	if len(placements) == 0 {
-		placements = []string{
-			"file_start", "file_end",
-			"public_start", "public_end",
-			"private_start", "private_end",
-			"before_symbol", "after_symbol",
 		}
-	}
+		for _, spec := range gen.Specs {
+			valSpec, ok := spec.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			for _, val := range valSpec.Values {
+				appendPlacementConstant(&placements, val)
+			}
+		}
+		return true
+	})
+	return placements, nil
+}
 
-	// The operation registry is the documentation source of truth. Language
-	// profiles provide the static limitations that accompany its handlers.
+func appendPlacementConstant(placements *[]string, value ast.Expr) {
+	basic, ok := value.(*ast.BasicLit)
+	if !ok || basic.Kind != token.STRING {
+		return
+	}
+	valueText := strings.Trim(basic.Value, `"`)
+	if strings.Contains(valueText, "_") || valueText == "file_start" || valueText == "file_end" {
+		*placements = append(*placements, valueText)
+	}
+}
+
+func defaultPlacementConstants() []string {
+	return []string{
+		"file_start", "file_end",
+		"public_start", "public_end",
+		"private_start", "private_end",
+		"before_symbol", "after_symbol",
+	}
+}
+
+func extractOperationCapabilities() ([]CodeCapability, error) {
 	registry := operation.DefaultRegistry()
 	langOrder := []backend.LanguageID{
 		backend.LanguageGo,
@@ -68,35 +88,38 @@ func extractCodeCapabilities(rootDir string) ([]CodeCapability, []string, error)
 	for _, lang := range langOrder {
 		m, err := registry.Matrix(lang)
 		if err != nil {
-			return nil, nil, fmt.Errorf("operation capability matrix for %s: %w", lang, err)
+			return nil, fmt.Errorf("operation capability matrix for %s: %w", lang, err)
 		}
-		ops := make(map[string]OpMetadata, len(m.Operations))
-		for name, op := range m.Operations {
-			ops[name] = OpMetadata{
-				Supported:    op.Supported,
-				Description:  op.Description,
-				CLICommand:   op.CLICommand,
-				MCPTool:      op.MCPTool,
-				PlacementKey: op.PlacementKey,
-			}
-		}
-		constraints := make([]Constraint, len(m.Limitations))
-		for i, lim := range m.Limitations {
-			constraints[i] = Constraint{
-				Title:       lim.Title,
-				Description: lim.Description,
-				Severity:    lim.Severity,
-			}
-		}
-		capabilities = append(capabilities, CodeCapability{
-			Language:           m.Language,
-			DisplayName:        m.DisplayName,
-			Maturity:           m.Maturity,
-			SupportedModifiers: m.SupportedModifiers,
-			Operations:         ops,
-			Limitations:        constraints,
-		})
+		capabilities = append(capabilities, capabilityFromMatrix(m))
 	}
+	return capabilities, nil
+}
 
-	return capabilities, placements, nil
+func capabilityFromMatrix(matrix capability.LanguageMatrix) CodeCapability {
+	ops := make(map[string]OpMetadata, len(matrix.Operations))
+	for name, op := range matrix.Operations {
+		ops[name] = OpMetadata{
+			Supported:    op.Supported,
+			Description:  op.Description,
+			CLICommand:   op.CLICommand,
+			MCPTool:      op.MCPTool,
+			PlacementKey: op.PlacementKey,
+		}
+	}
+	constraints := make([]Constraint, len(matrix.Limitations))
+	for i, limitation := range matrix.Limitations {
+		constraints[i] = Constraint{
+			Title:       limitation.Title,
+			Description: limitation.Description,
+			Severity:    limitation.Severity,
+		}
+	}
+	return CodeCapability{
+		Language:           matrix.Language,
+		DisplayName:        matrix.DisplayName,
+		Maturity:           matrix.Maturity,
+		SupportedModifiers: matrix.SupportedModifiers,
+		Operations:         ops,
+		Limitations:        constraints,
+	}
 }

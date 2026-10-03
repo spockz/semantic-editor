@@ -1,0 +1,85 @@
+# A local replacement imported only by destination tests is rejected before contract output or source state changes.
+mkdir -p ../tokenlib
+cp .scratch/local-token.mod ../tokenlib/go.mod
+cp .scratch/local-token.go ../tokenlib/token.go
+exec go test ./...
+! exec semedit implement-contract --file worker.go --symbol Worker --contract Runner --contract-file runner.go --receiver-kind pointer --body-policy panic_stub --destination-file worker.go
+stderr 'contract edits do not support mutable local replacement module "example.com/local/token" outside the captured module'
+cmp go.mod .scratch/want/go.mod
+cmp worker.go .scratch/want/worker.go
+cmp runner.go .scratch/want/runner.go
+cmp worker_test.go .scratch/want/worker_test.go
+cmp ../tokenlib/go.mod .scratch/want/tokenlib/go.mod
+cmp ../tokenlib/token.go .scratch/want/tokenlib/token.go
+-- go.mod --
+module example.com/project
+
+go 1.27.1
+
+require example.com/local/token v0.0.0
+
+replace example.com/local/token => ../tokenlib
+-- worker.go --
+package app
+
+type Worker struct{}
+-- runner.go --
+package app
+
+type Runner interface {
+	Run() error
+}
+-- worker_test.go --
+package app
+
+import (
+	"testing"
+
+	"example.com/local/token"
+)
+
+func TestWorker(t *testing.T) { _ = token.Token(t.Name()) }
+-- .scratch/local-token.mod --
+module example.com/local/token
+
+go 1.27.1
+-- .scratch/local-token.go --
+package token
+
+type Token string
+-- .scratch/want/go.mod --
+module example.com/project
+
+go 1.27.1
+
+require example.com/local/token v0.0.0
+
+replace example.com/local/token => ../tokenlib
+-- .scratch/want/worker.go --
+package app
+
+type Worker struct{}
+-- .scratch/want/runner.go --
+package app
+
+type Runner interface {
+	Run() error
+}
+-- .scratch/want/worker_test.go --
+package app
+
+import (
+	"testing"
+
+	"example.com/local/token"
+)
+
+func TestWorker(t *testing.T) { _ = token.Token(t.Name()) }
+-- .scratch/want/tokenlib/go.mod --
+module example.com/local/token
+
+go 1.27.1
+-- .scratch/want/tokenlib/token.go --
+package token
+
+type Token string

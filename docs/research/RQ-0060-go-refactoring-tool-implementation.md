@@ -2269,6 +2269,10 @@ For every remaining parameter, the shared description templates require its role
 
 Original handover: RQ-0057. Implementation status: Open.
 
+### Current status
+
+ADR-0053 supersedes this proposed standalone tool. Direct statement insertion is implemented as `semantic_insert_construct` with `kind=statement/expression`; `anchor` selects `start`, `end`, `before_return`, `before`, or `after`. `discriminator` selects an adjacent direct statement, and repeated anchors require a matching `construct_path` and `expected_revision`. There is no public `semantic_insert_statement` tool. The proposal below is retained as historical design evidence.
+
 ### Context
 
 Current tools can replace a whole function body, replace a supported whole construct, and insert switch cases. They cannot insert one statement into an existing block. `docs/MANUAL_EDITS.md` ME-0041 and ME-0047 identify guard/call insertion as a repeated gap. A syntactically valid statement can still alter control flow, variable scope, defer timing, or execution count.

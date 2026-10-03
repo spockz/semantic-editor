@@ -187,51 +187,82 @@ func TestGoRenameRejectsUnsafeEditsBeforeWriting(t *testing.T) {
 		"outside range":       map[string]any{"documentChanges": []any{validDocument(uri, 1, []any{map[string]any{"range": map[string]any{"start": map[string]any{"line": 100, "character": 0}, "end": map[string]any{"line": 100, "character": 1}}, "newText": "Renamed"}})}},
 	}
 	for name, edit := range cases {
-		t.Run(name, func(t *testing.T) {
-			data, err := json.Marshal(edit)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("SEMEDIT_GO_RENAME_EDIT", string(data))
-			if renameErr := Rename(t.Context(), root, filepath.Join(root, "value.go"), 3, 6, "Renamed"); !errors.Is(renameErr, ErrRenameFailed) {
-				t.Fatalf("Rename error = %v", renameErr)
-			}
-			actual, readErr := os.ReadFile(filepath.Join(root, "value.go"))
-			if readErr != nil {
-				t.Fatal(readErr)
-			}
-			if !bytes.Equal(actual, source) {
-				t.Fatalf("rejected edit changed source: %s", actual)
-			}
-		})
+		t.Run(name, func(t *testing.T) { assertRenameEditRejected(t, root, source, edit) })
 	}
 
 	t.Run("changed lookup input", func(t *testing.T) {
-		otherPath := filepath.Join(root, "other.go")
-		other, err := os.ReadFile(otherPath)
-		if err != nil {
-			t.Fatal(err)
-		}
-		expected := map[string][]byte{filepath.Join(root, "value.go"): source, otherPath: other}
-		if writeErr := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); writeErr != nil {
-			t.Fatal(writeErr)
-		}
-		selected := backend.SymbolCandidate{Name: "Value", File: "value.go", Offset: bytes.Index(source, []byte("Value"))}
-		err = RenameSelected(t.Context(), root, selected, expected, "Renamed")
-		if !errors.Is(err, ErrRenameFailed) || !strings.Contains(err.Error(), "changed since symbol lookup") {
-			t.Fatalf("RenameSelected error = %v", err)
-		}
-		actual, err := os.ReadFile(filepath.Join(root, "value.go"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.Equal(actual, source) {
-			t.Fatalf("stale lookup changed the selected source: %s", actual)
-		}
+		assertChangedLookupSnapshotRejected(t, root, source)
 	})
 }
 
+func assertRenameEditRejected(t *testing.T, root string, source []byte, edit any) {
+	t.Helper()
+	data, err := json.Marshal(edit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SEMEDIT_GO_RENAME_EDIT", string(data))
+	file := filepath.Join(root, "value.go")
+	if renameErr := Rename(t.Context(), root, file, 3, 6, "Renamed"); !errors.Is(renameErr, ErrRenameFailed) {
+		t.Fatalf("Rename error = %v", renameErr)
+	}
+	actual, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, source) {
+		t.Fatalf("rejected edit changed source: %s", actual)
+	}
+}
+
+func assertChangedLookupSnapshotRejected(t *testing.T, root string, source []byte) {
+	t.Helper()
+	otherPath := filepath.Join(root, "other.go")
+	other, err := os.ReadFile(otherPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := map[string][]byte{filepath.Join(root, "value.go"): source, otherPath: other}
+	if writeErr := atomicfile.WriteAtomic(otherPath, []byte("package sample\n\nfunc Other() int {return 3}\n")); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	selected := backend.SymbolCandidate{Name: "Value", File: "value.go", Offset: bytes.Index(source, []byte("Value"))}
+	err = RenameSelected(t.Context(), root, selected, expected, "Renamed")
+	if !errors.Is(err, ErrRenameFailed) || !strings.Contains(err.Error(), "changed since symbol lookup") {
+		t.Fatalf("RenameSelected error = %v", err)
+	}
+	actual, err := os.ReadFile(filepath.Join(root, "value.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, source) {
+		t.Fatalf("stale lookup changed the selected source: %s", actual)
+	}
+}
+
 func TestBufferedRenameSaveNotifications(t *testing.T) {
+	fixture := createBufferedRenameFixture(t)
+	assertBufferedRenameUnpublished(t, fixture)
+	if err := fixture.buffer.Flush(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := godiagnostics.SynchronizeWithContext(fixture.diskCtx); err != nil {
+		t.Fatal(err)
+	}
+	fixture.barrier(t)
+	assertBufferedRenamePublished(t, fixture)
+}
+
+type bufferedRenameFixture struct {
+	root, target, log, wrapper string
+	source                     []byte
+	ctx, diskCtx               context.Context
+	buffer                     *sourcebuf.Buffer
+	environment                []string
+}
+
+func createBufferedRenameFixture(t *testing.T) bufferedRenameFixture {
+	t.Helper()
 	root, rootErr := filepath.EvalSymlinks(t.TempDir())
 	if rootErr != nil {
 		t.Fatal(rootErr)
@@ -283,51 +314,56 @@ func TestBufferedRenameSaveNotifications(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	barrier := func() {
-		t.Helper()
-		if err := godiagnostics.UseWithContext(ctx, root, wrapper, environment, func(ctx context.Context, session *godiagnostics.Session) error {
-			_, err := session.Request(ctx, "barrier", map[string]any{})
-			return err
-		}); err != nil {
-			t.Fatal(err)
-		}
+	fixture := bufferedRenameFixture{root: root, target: target, log: log, wrapper: wrapper, source: source, ctx: ctx, diskCtx: diskCtx, buffer: buffer, environment: environment}
+	fixture.barrier(t)
+	return fixture
+}
+
+func (fixture bufferedRenameFixture) barrier(t *testing.T) {
+	t.Helper()
+	if err := godiagnostics.UseWithContext(fixture.ctx, fixture.root, fixture.wrapper, fixture.environment, func(ctx context.Context, session *godiagnostics.Session) error {
+		_, err := session.Request(ctx, "barrier", map[string]any{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
 	}
-	barrier()
-	methods := func() []string {
-		t.Helper()
-		data, err := os.ReadFile(log)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var methods []string
-		if err := json.Unmarshal(data, &methods); err != nil {
-			t.Fatal(err)
-		}
-		return methods
+}
+
+func (fixture bufferedRenameFixture) methods(t *testing.T) []string {
+	t.Helper()
+	data, err := os.ReadFile(fixture.log)
+	if err != nil {
+		t.Fatal(err)
 	}
-	unsaved := methods()
+	var methods []string
+	if err := json.Unmarshal(data, &methods); err != nil {
+		t.Fatal(err)
+	}
+	return methods
+}
+
+func assertBufferedRenameUnpublished(t *testing.T, fixture bufferedRenameFixture) {
+	t.Helper()
+	unsaved := fixture.methods(t)
 	if !slices.Contains(unsaved, "textDocument/didChange") || slices.Contains(unsaved, "textDocument/didSave") || slices.Contains(unsaved, "workspace/didChangeWatchedFiles") {
 		t.Fatalf("unsaved notifications=%v", unsaved)
 	}
-	disk, readErr := os.ReadFile(target)
+	disk, readErr := os.ReadFile(fixture.target)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	if !bytes.Equal(disk, source) {
+	if !bytes.Equal(disk, fixture.source) {
 		t.Fatalf("rename published early: %s", disk)
 	}
-	if err := buffer.Flush(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if err := godiagnostics.SynchronizeWithContext(diskCtx); err != nil {
-		t.Fatal(err)
-	}
-	barrier()
-	saved := methods()
+}
+
+func assertBufferedRenamePublished(t *testing.T, fixture bufferedRenameFixture) {
+	t.Helper()
+	saved := fixture.methods(t)
 	if !slices.Contains(saved, "textDocument/didSave") || !slices.Contains(saved, "workspace/didChangeWatchedFiles") {
 		t.Fatalf("published notifications=%v", saved)
 	}
-	disk, readErr = os.ReadFile(target)
+	disk, readErr := os.ReadFile(fixture.target)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}

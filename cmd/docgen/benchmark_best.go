@@ -42,6 +42,12 @@ type benchmarkHeadlineSummary struct {
 
 func summarizeBestBenchmarkPairs(best []bestBenchmarkPair, runs []benchmarkDocumentationRun) benchmarkHeadlineSummary {
 	summary := benchmarkHeadlineSummary{}
+	considerBestHeadlinePairs(&summary, best)
+	countInitialBenchmarkOutcomes(&summary, runs)
+	return summary
+}
+
+func considerBestHeadlinePairs(summary *benchmarkHeadlineSummary, best []bestBenchmarkPair) {
 	for _, pair := range best {
 		if !pair.baseline.Oracle.Passed || !pair.semedit.Oracle.Passed {
 			continue
@@ -55,6 +61,9 @@ func summarizeBestBenchmarkPairs(best []bestBenchmarkPair, runs []benchmarkDocum
 			summary.bestToken = &benchmarkHeadlineMetric{reduction: tokenReduction, pair: pair}
 		}
 	}
+}
+
+func countInitialBenchmarkOutcomes(summary *benchmarkHeadlineSummary, runs []benchmarkDocumentationRun) {
 	for _, run := range runs {
 		for _, comparison := range run.Comparisons {
 			for _, context := range []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge} {
@@ -74,7 +83,6 @@ func summarizeBestBenchmarkPairs(best []bestBenchmarkPair, runs []benchmarkDocum
 			}
 		}
 	}
-	return summary
 }
 
 func initialBenchmarkOracle(run *BenchRunResult) (*BenchOracleResult, bool) {

@@ -268,9 +268,9 @@ func assertSignatureReplaceBodySources(t *testing.T, registry *Registry) {
 
 func TestImplementContractUsesCurrentBufferedSourceAndDoesNotPublish(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if err := os.WriteFile(filepath.Join(canonicalRoot, "go.mod"), []byte("module example.com/contracts\n\ngo 1.27.1\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -280,17 +280,17 @@ func TestImplementContractUsesCurrentBufferedSourceAndDoesNotPublish(t *testing.
 	if err := os.WriteFile(path, diskBefore, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(canonicalRoot)
-	if err != nil {
-		t.Fatal(err)
+	buffer, bufferErr := sourcebuf.New(canonicalRoot)
+	if bufferErr != nil {
+		t.Fatal(bufferErr)
 	}
 	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
-	if err := buffer.AuthorizeWrites(ctx, canonicalRoot); err != nil {
-		t.Fatal(err)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, canonicalRoot); authorizeErr != nil {
+		t.Fatal(authorizeErr)
 	}
 	afterChild := []byte("package demo\ntype Worker struct{}\ntype Contract interface { Read() error }\n")
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: diskBefore, After: afterChild}}); err != nil {
-		t.Fatal(err)
+	if applyErr := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: diskBefore, After: afterChild}}); applyErr != nil {
+		t.Fatal(applyErr)
 	}
 	result, err := runImplementContract(ctx, CallContext{Ctx: ctx, WorkDir: canonicalRoot}, implementContractRequest{
 		File: "types.go", Symbol: "Worker", Contract: "Contract",
@@ -320,9 +320,9 @@ func TestImplementContractUsesCurrentBufferedSourceAndDoesNotPublish(t *testing.
 
 func TestExtractInterfaceUsesBufferedMethodAndDoesNotPublish(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if err := os.WriteFile(filepath.Join(canonicalRoot, "go.mod"), []byte("module example.com/contracts\n\ngo 1.27.1\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -337,17 +337,17 @@ func TestExtractInterfaceUsesBufferedMethodAndDoesNotPublish(t *testing.T) {
 	if err := os.WriteFile(destinationPath, destinationBefore, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	buffer, err := sourcebuf.New(canonicalRoot)
-	if err != nil {
-		t.Fatal(err)
+	buffer, bufferErr := sourcebuf.New(canonicalRoot)
+	if bufferErr != nil {
+		t.Fatal(bufferErr)
 	}
 	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
-	if err := buffer.AuthorizeWrites(ctx, canonicalRoot); err != nil {
-		t.Fatal(err)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, canonicalRoot); authorizeErr != nil {
+		t.Fatal(authorizeErr)
 	}
 	afterChild := []byte("package demo\ntype Store struct{}\nfunc (*Store) Read() error { return nil }\n")
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: diskBefore, After: afterChild}}); err != nil {
-		t.Fatal(err)
+	if applyErr := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: diskBefore, After: afterChild}}); applyErr != nil {
+		t.Fatal(applyErr)
 	}
 	result, err := runExtractInterface(ctx, CallContext{Ctx: ctx, WorkDir: canonicalRoot}, extractInterfaceRequest{
 		File: "store.go", InType: "Store", Symbol: "StoreReader", DestinationFile: "contracts.go", ReceiverKind: contractplan.ReceiverPointer,
@@ -388,17 +388,17 @@ func TestExtractInterfaceUsesBufferedMethodAndDoesNotPublish(t *testing.T) {
 
 func TestImplementContractExactSatisfactionIsNoOpWithoutPublication(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if err := os.WriteFile(filepath.Join(canonicalRoot, "go.mod"), []byte("module example.com/contracts\n\ngo 1.27.1\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	before := []byte("package demo\ntype Worker struct{}\nfunc (*Worker) Read() error { return nil }\ntype Contract interface { Read() error }\n")
 	path := filepath.Join(canonicalRoot, "types.go")
-	if err := os.WriteFile(path, before, 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(path, before, 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	result, err := runImplementContract(context.Background(), CallContext{WorkDir: canonicalRoot}, implementContractRequest{
 		File: "types.go", Symbol: "Worker", Contract: "Contract",
@@ -421,9 +421,9 @@ func TestImplementContractExactSatisfactionIsNoOpWithoutPublication(t *testing.T
 
 func TestContractSnapshotReadSetIncludesModuleAndExistingPackageFiles(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	files := map[string][]byte{
 		"go.mod":       []byte("module example.com/contracts\n\ngo 1.27.1\n"),
@@ -431,8 +431,8 @@ func TestContractSnapshotReadSetIncludesModuleAndExistingPackageFiles(t *testing
 		"contracts.go": []byte("package demo\ntype Contract interface { Read() error }\n"),
 	}
 	for name, data := range files {
-		if err := os.WriteFile(filepath.Join(canonicalRoot, name), data, 0o600); err != nil {
-			t.Fatal(err)
+		if writeErr := os.WriteFile(filepath.Join(canonicalRoot, name), data, 0o600); writeErr != nil {
+			t.Fatal(writeErr)
 		}
 	}
 	snapshot, err := loadContractSnapshot(context.Background(), canonicalRoot, []string{"store.go", "contracts.go"})
@@ -452,9 +452,9 @@ func TestContractSnapshotReadSetIncludesModuleAndExistingPackageFiles(t *testing
 
 func TestImplementContractRejectsStaleSelectedRevisionWithoutPublication(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if err := os.WriteFile(filepath.Join(canonicalRoot, "go.mod"), []byte("module example.com/contracts\n\ngo 1.27.1\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -465,12 +465,12 @@ func TestImplementContractRejectsStaleSelectedRevisionWithoutPublication(t *test
 		t.Fatal(err)
 	}
 	stale := "old-selected-file-digest"
-	_, err = runImplementContract(context.Background(), CallContext{WorkDir: canonicalRoot}, implementContractRequest{
+	_, runErr := runImplementContract(context.Background(), CallContext{WorkDir: canonicalRoot}, implementContractRequest{
 		File: "types.go", Symbol: "Worker", Contract: "Contract", ExpectedRevision: &stale,
 		ReceiverKind: contractplan.ReceiverPointer, BodyPolicy: contractplan.BodyPolicyPanicStub,
 	})
-	if err == nil || !strings.Contains(err.Error(), "selected source revision changed") {
-		t.Fatalf("stale revision error = %v", err)
+	if runErr == nil || !strings.Contains(runErr.Error(), "selected source revision changed") {
+		t.Fatalf("stale revision error = %v", runErr)
 	}
 	after, err := os.ReadFile(path)
 	if err != nil {
@@ -496,7 +496,7 @@ func TestContractParameterParsersPreserveClosedValuesAndRevisionOmission(t *test
 		"wrong object":  []any{map[string]string{"file": "store.go", "symbol": "(*Store).Read"}},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := parseContractMembers(value); err == nil {
+			if _, parseErr := parseContractMembers(value); parseErr == nil {
 				t.Fatalf("parseContractMembers(%#v) accepted invalid input", value)
 			}
 		})
@@ -519,21 +519,21 @@ func TestContractParameterParsersPreserveClosedValuesAndRevisionOmission(t *test
 
 func TestContractParserRetainsAnalyzedBytesAcrossDiskDrift(t *testing.T) {
 	root := t.TempDir()
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		t.Fatal(err)
+	canonicalRoot, rootErr := filepath.EvalSymlinks(root)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	root = canonicalRoot
 	path := filepath.Join(root, "source.go")
 	before := []byte("package sample\ntype Before struct{}\n")
 	after := []byte("package sample\ntype After struct{}\n")
-	if err := os.WriteFile(path, before, 0o600); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(path, before, 0o600); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	captured := make(map[string][]byte)
 	file, err := parseContractSource(context.Background(), root, token.NewFileSet(), path, before, captured, func(canonical string) {
-		if err := os.WriteFile(canonical, after, 0o600); err != nil {
-			t.Fatalf("change source after parser capture: %v", err)
+		if writeErr := os.WriteFile(canonical, after, 0o600); writeErr != nil {
+			t.Fatalf("change source after parser capture: %v", writeErr)
 		}
 	})
 	if err != nil {
