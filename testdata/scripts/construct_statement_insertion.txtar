@@ -1,0 +1,98 @@
+# Insert around unique direct statement anchors with no expression round trip.
+# Repeated anchors bind both the candidate path and exact file revision.
+cp server.go .scratch/original.go
+! exec semedit insert-construct --file server.go --kind statement/expression --in-function Two --discriminator 'flush()' --source 'record()' --anchor after
+stderr 'ambiguous.*expected_revision'
+! exec semedit insert-construct --file server.go --kind statement/expression --in-function Two --discriminator 'flush()' --construct-path 0 --source 'record()' --anchor after
+stderr 'expected_revision'
+cmp server.go .scratch/original.go
+! exec semedit insert-construct --file server.go --kind statement/expression --in-function Two --discriminator 'flush()' --construct-path 0 --expected-revision stale --source 'record()' --anchor after
+stderr 'revision'
+cmp server.go .scratch/original.go
+exec semedit insert-construct --file server.go --kind statement/expression --in-function Two --discriminator 'flush()' --construct-path 0 --expected-revision 90761e0366f5d16fe48024fe40827de492f5eae767e189b59e6829c99dc7ad8d --source 'record()' --anchor after
+
+# Unique direct statement anchors need no candidate path or revision.
+exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --discriminator 'flush()' --source 'record()' --anchor before
+exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --anchor start --source 'firstRecord()'
+exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --anchor end --source 'lastRecord()'
+exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --anchor before_return --source 'returnRecord()'
+exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --discriminator 'flush()' --source 'afterFlush()' --anchor after
+cp server.go .scratch/inserted.go
+cmp server.go .scratch/want/inserted.go
+
+# Repeated direct statement anchors require a candidate path.
+! exec semedit insert-construct --file server.go --kind statement/expression --in-function Two --discriminator 'flush()' --source 'record()' --anchor after
+stderr 'ambiguous|matches 2'
+cmp server.go .scratch/inserted.go
+exec semedit insert-construct --file server.go --kind statement/expression --in-function Shared --discriminator 'first()' --source 'record()' --anchor after
+cp server.go .scratch/with-repeated.go
+! exec semedit insert-construct --file server.go --kind statement/expression --in-function '(*Server).Run' --discriminator 'flush()' --source 'if (' --anchor before
+stderr 'syntax|statement'
+cmp server.go .scratch/with-repeated.go
+
+-- go.mod --
+module example.com/insertstatement
+
+go 1.24
+-- server.go --
+package server
+
+type Server struct{}
+
+func (s *Server) Run() int {
+	flush()
+	return 0
+}
+
+func Two() {
+	flush()
+	flush()
+}
+
+func Shared() {
+	first()
+	second()
+}
+
+func flush()        {}
+func record()       {}
+func first()        {}
+func second()       {}
+func firstRecord()  {}
+func lastRecord()   {}
+func returnRecord() {}
+func afterFlush()   {}
+-- .scratch/want/inserted.go --
+package server
+
+type Server struct{}
+
+func (s *Server) Run() int {
+	firstRecord()
+	record()
+	flush()
+	afterFlush()
+	lastRecord()
+	returnRecord()
+	return 0
+}
+
+func Two() {
+	flush()
+	record()
+	flush()
+}
+
+func Shared() {
+	first()
+	second()
+}
+
+func flush()        {}
+func record()       {}
+func first()        {}
+func second()       {}
+func firstRecord()  {}
+func lastRecord()   {}
+func returnRecord() {}
+func afterFlush()   {}

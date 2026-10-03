@@ -131,7 +131,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	inBuf := bytes.NewBufferString(input)
 	var outBuf bytes.Buffer
 
-	srv := mcp.NewServer("full", ".", &outBuf)
+	srv := mcp.NewServer("full", ".", &outBuf, mcp.WithToolProfile("full"))
 	ctx := t.Context()
 
 	if err := srv.Serve(ctx, inBuf); err != nil {
@@ -181,7 +181,7 @@ func TestMCPServerLifecycle(t *testing.T) {
 	}
 	for _, required := range []string{
 		"semantic_rename",
-		"semantic_insert_structure",
+		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_add_build_dependency",
 		"semantic_verify",
@@ -514,10 +514,10 @@ func TestMCPContinuationOmitsAmbiguousSymbolAndStructureSelectorIsNotTarget(t *t
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package continuationcases\n\nfunc Handle(v string) int { switch v { default: return 0 } }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_structure\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"case\",\"in_function\":\"Handle\",\"discriminator\":\"v\",\"source\":\"case \\\"x\\\": return 1\"}}}\n" +
+	input := "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_construct\",\"arguments\":{\"file\":\"main.go\",\"kind\":\"case\",\"in_function\":\"Handle\",\"discriminator\":\"v\",\"source\":\"case \\\"x\\\": return 1\"}}}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_insert_declaration\",\"arguments\":{\"file\":\"main.go\",\"source\":\"const (Alpha = 1; Beta = 2)\"}}}\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", root, &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -860,7 +860,7 @@ func TestSemanticRenameAdvertisesRust(t *testing.T) {
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
 	var out bytes.Buffer
-	srv := mcp.NewServer("full", ".", &out)
+	srv := mcp.NewServer("full", ".", &out, mcp.WithToolProfile("full"))
 	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatal(err)
 	}
@@ -1041,9 +1041,9 @@ func Existing() {}
 	}
 
 	messages := []string{
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"type","source":"type Item struct { ID string }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
-		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"decl","source":"const DefaultLimit = 50"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"type","source":"type Item struct { ID string }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"function","source":"func ProcessItem(i Item) error { return nil }"}}}`, filePath),
+		fmt.Sprintf(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"const","source":"const DefaultLimit = 50"}}}`, filePath),
 		fmt.Sprintf(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":%q,"add":["crand crypto/rand"]}}}`, filePath),
 	}
 
@@ -1112,7 +1112,7 @@ func TestMCPToolLocationError(t *testing.T) {
 		t.Fatalf("write initial file: %v", err)
 	}
 
-	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_structure","arguments":{"file":%q,"kind":"function","source":"func broken( {"}}}`, filePath) + "\n"
+	callMsg := fmt.Sprintf(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":%q,"kind":"function","source":"func broken( {"}}}`, filePath) + "\n"
 	inBuf := bytes.NewBufferString(callMsg)
 	var outBuf bytes.Buffer
 
@@ -1357,7 +1357,7 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", ".", &output, mcp.WithToolProfile("full")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -1425,7 +1425,7 @@ func TestFeedbackToolAdvertisesStructuredSchemaAndPrivacyGuidance(t *testing.T) 
 	t.Parallel()
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("mutations-only", t.TempDir(), &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("mutations-only", t.TempDir(), &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -1554,7 +1554,7 @@ func TestReportFeedbackRejectsMissingCoreFields(t *testing.T) {
 	arguments := `{"intent":"Fix a tool issue","interface":"mcp","command":"semantic_verify","parameters":{},"observed_result":"Unexpected error","unexpected_reason":"The file is valid.","manual_touchups":""}`
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"report_feedback","arguments":` + arguments + `}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", dir, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", dir, &out, mcp.WithToolProfile("full")).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -1578,7 +1578,7 @@ func TestMCPFullProfileListsFindReferences(t *testing.T) {
 		"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n" +
 		"{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}\n"
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", ".", &output).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcp.NewServer("full", ".", &output, mcp.WithToolProfile("full")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "\"semantic_find_references\"") {

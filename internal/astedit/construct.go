@@ -26,21 +26,36 @@ type ConstructKind = backend.ConstructKind
 
 // Go construct kind constants name syntax forms handled by ReplaceConstruct.
 const (
-	ConstructLoop   = backend.ConstructLoop
-	ConstructIf     = backend.ConstructIf
-	ConstructElse   = backend.ConstructElse
-	ConstructCase   = backend.ConstructCase
-	ConstructSelect = backend.ConstructSelect
-	ConstructDefer  = backend.ConstructDefer
+	ConstructFunction        = backend.ConstructFunction
+	ConstructMethod          = backend.ConstructMethod
+	ConstructType            = backend.ConstructType
+	ConstructField           = backend.ConstructField
+	ConstructConst           = backend.ConstructConst
+	ConstructVar             = backend.ConstructVar
+	ConstructDecl            = backend.ConstructDecl
+	ConstructDeclaration     = backend.ConstructDeclaration
+	ConstructStatementOrExpr = backend.ConstructStatementOrExpr
+	ConstructLoop            = backend.ConstructLoop
+	ConstructIf              = backend.ConstructIf
+	ConstructElse            = backend.ConstructElse
+	ConstructCase            = backend.ConstructCase
+	ConstructSelect          = backend.ConstructSelect
+	ConstructDefer           = backend.ConstructDefer
 )
 
 // GoConstructKinds lists the construct kinds implemented by the Go handler.
 var GoConstructKinds = []ConstructKind{ConstructLoop, ConstructIf, ConstructElse, ConstructCase, ConstructSelect, ConstructDefer}
 
+// GoReplaceConstructKinds lists kinds supported by the whole-construct replacement operation.
+var GoReplaceConstructKinds = []ConstructKind{
+	ConstructLoop, ConstructIf, ConstructElse, ConstructCase, ConstructSelect, ConstructDefer,
+	ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar, ConstructStatementOrExpr,
+}
+
 // GoConstructKindNames returns the kind identifiers executable by the Go handler.
 func GoConstructKindNames() []string {
-	names := make([]string, 0, len(GoConstructKinds))
-	for _, kind := range GoConstructKinds {
+	names := make([]string, 0, len(GoReplaceConstructKinds))
+	for _, kind := range GoReplaceConstructKinds {
 		names = append(names, string(kind))
 	}
 	return names
@@ -50,16 +65,39 @@ func GoConstructKindNames() []string {
 type ConstructOptions struct {
 	AutoOrganizeImports bool
 	ConstructPath       string
+	Symbol              string
+	InFunction          string
+	Discriminator       string
 }
 
 type constructCandidate struct {
-	node ast.Node
-	path string
-	key  string
+	node  ast.Node
+	path  string
+	key   string
+	class string
 }
+
+const replaceConstructOperation = "replace_construct"
 
 // ReplaceConstruct replaces one selected Go construct without rewriting sibling statements.
 func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind ConstructKind, discriminator, source string, opts ConstructOptions) (string, error) {
+	if selector := opts.Discriminator; selector != "" {
+		discriminator = selector
+	}
+	if kind == ConstructStatementOrExpr {
+		owner := opts.InFunction
+		if owner == "" {
+			owner = funcName
+		}
+		return replaceStatementOrExpression(ctx, filePath, owner, discriminator, source, opts)
+	}
+	if kind == ConstructFunction || kind == ConstructMethod || kind == ConstructType || kind == ConstructConst || kind == ConstructVar {
+		symbolQuery := opts.Symbol
+		if symbolQuery == "" {
+			symbolQuery = funcName
+		}
+		return replaceDeclarationConstruct(ctx, filePath, symbolQuery, kind, source, opts)
+	}
 	if !validConstructKind(kind) {
 		return "", fmt.Errorf("unsupported Go construct kind %q", kind)
 	}
@@ -70,7 +108,7 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	}
 	recv, name, err := symbol.ParseIdentifier(funcName)
 	if err != nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Err: err}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: err}
 	}
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments)
@@ -86,10 +124,10 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 		}
 	}
 	if target == nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Err: symbol.ErrNotFound}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: symbol.ErrNotFound}
 	}
 	if target.Body == nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Pos: fset.Position(target.Pos()), Err: ErrNoBody}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Pos: fset.Position(target.Pos()), Err: ErrNoBody}
 	}
 	candidates := collectConstructCandidates(fset, target.Body, kind)
 	var matches []constructCandidate
@@ -128,6 +166,10 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("clean imports after construct replacement: %w", err)
+	}
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
@@ -139,14 +181,12 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)
 		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
 	}
 	return UnifiedDiff(funcName, strings.TrimSpace(oldText), strings.TrimSpace(replacement)), nil
 }
 
 func validConstructKind(kind ConstructKind) bool {
-	return slices.Contains(GoConstructKinds, kind)
+	return slices.Contains(GoReplaceConstructKinds, kind)
 }
 
 func collectConstructCandidates(fset *token.FileSet, body *ast.BlockStmt, kind ConstructKind) []constructCandidate {
@@ -163,7 +203,7 @@ func collectConstructCandidates(fset *token.FileSet, body *ast.BlockStmt, kind C
 	}
 	walkStmt = func(stmt ast.Stmt, path string) {
 		addAt := func(node ast.Node, key, candidatePath string) {
-			out = append(out, constructCandidate{node: node, path: candidatePath, key: key})
+			out = append(out, constructCandidate{node: node, path: candidatePath, key: key, class: "construct"})
 		}
 		add := func(node ast.Node, key string) {
 			addAt(node, key, path)

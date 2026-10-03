@@ -33,6 +33,9 @@ type RemoveOptions struct {
 	SafeDelete    bool
 }
 
+// GoRemoveConstructKinds lists declaration and case kinds supported by Go removal.
+var GoRemoveConstructKinds = []ConstructKind{ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar, ConstructCase, ConstructStatementOrExpr}
+
 type safeDeleteSnapshot struct {
 	root  string
 	files map[string][32]byte
@@ -52,6 +55,7 @@ func (e *SafeDeleteSnapshotError) Unwrap() error { return e.Cause }
 type removeTarget struct {
 	node  ast.Node
 	owner string
+	class string
 }
 
 // Remove deletes one Go declaration or switch case after validating the resulting file syntax.
@@ -69,9 +73,12 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 	if err != nil {
 		return "", nil, "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
 	}
-	target, err := resolveRemoveTarget(fset, fileNode, opts, cleanPath)
+	target, err := resolveRemoveTarget(fset, fileNode, content, opts, cleanPath)
 	if err != nil {
 		return "", nil, "", err
+	}
+	if opts.SafeDelete && target.class == "statement" {
+		return "", nil, "", fmt.Errorf("safe_delete is supported only for eligible top-level declarations")
 	}
 	start, end, err := removalRange(fset, fileNode, target.node, len(content))
 	if err != nil {
@@ -105,7 +112,7 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 		return "", checks, "", err
 	}
 	targetName := opts.Symbol
-	if opts.Kind == "case" {
+	if opts.Kind == "case" || opts.Kind == string(ConstructStatementOrExpr) {
 		targetName = target.owner
 	}
 	return UnifiedDiff(targetName, oldText, ""), checks, "", nil
@@ -311,16 +318,87 @@ func validateSafeDeleteSnapshot(ctx context.Context, snapshot *safeDeleteSnapsho
 	return nil
 }
 
-func resolveRemoveTarget(fset *token.FileSet, file *ast.File, opts RemoveOptions, cleanPath string) (removeTarget, error) {
+func resolveRemoveTarget(fset *token.FileSet, file *ast.File, content []byte, opts RemoveOptions, cleanPath string) (removeTarget, error) {
+	if opts.Kind == string(ConstructConst) {
+		opts.Kind = "constant"
+	}
+	if opts.Kind == string(ConstructVar) {
+		opts.Kind = "variable"
+	}
 	switch opts.Kind {
 	case "function", "method", "type", "constant", "variable":
 		node, err := findTopLevelTarget(file, opts, cleanPath)
 		return removeTarget{node: node}, err
 	case "case":
 		return findCaseTarget(fset, file, opts, cleanPath)
+	case string(ConstructStatementOrExpr):
+		return findStatementOrExpressionRemoveTarget(fset, file, content, opts)
 	default:
 		return removeTarget{}, fmt.Errorf("unsupported removal kind %q", opts.Kind)
 	}
+}
+
+func findStatementOrExpressionRemoveTarget(fset *token.FileSet, file *ast.File, content []byte, opts RemoveOptions) (removeTarget, error) {
+	ownerName := opts.InFunction
+	if ownerName == "" {
+		return removeTarget{}, fmt.Errorf("in_function is required for statement/expression removal")
+	}
+	if strings.TrimSpace(opts.Discriminator) == "" {
+		return removeTarget{}, fmt.Errorf("discriminator is required for statement/expression removal")
+	}
+	owner, err := findConstructOwner(file, ownerName)
+	if err != nil {
+		return removeTarget{}, err
+	}
+	candidates, _ := collectStatementExpressionCandidates(fset, content, file, owner)
+	var directMatches []constructCandidate
+	var expressionMatches []constructCandidate
+	for _, candidate := range candidates {
+		if candidate.key != normalizeConstructSelector(opts.Discriminator) {
+			continue
+		}
+		if isDirectOwnerStatementCandidate(candidate) {
+			directMatches = append(directMatches, candidate)
+		} else if candidate.class == "expression" {
+			expressionMatches = append(expressionMatches, candidate)
+		}
+	}
+	if opts.ConstructPath != "" {
+		var selected *constructCandidate
+		for _, candidate := range candidates {
+			if candidate.key != normalizeConstructSelector(opts.Discriminator) {
+				continue
+			}
+			if candidate.path == opts.ConstructPath {
+				selected = &candidate
+				break
+			}
+		}
+		if selected == nil {
+			return removeTarget{}, fmt.Errorf("construct_path %q does not select %q in %s; candidates:\n%s", opts.ConstructPath, opts.Discriminator, ownerName, formatSpanCandidates(fset, candidates))
+		}
+		if !isDirectOwnerStatementCandidate(*selected) {
+			if selected.class == "expression" {
+				return removeTarget{}, fmt.Errorf("cannot remove expression slot %q; select a direct statement", opts.Discriminator)
+			}
+			return removeTarget{}, fmt.Errorf("construct_path %q selects a nested statement; only direct owner statements can be removed", selected.path)
+		}
+		directMatches = []constructCandidate{*selected}
+	}
+	if len(directMatches) == 0 && len(expressionMatches) > 0 {
+		return removeTarget{}, fmt.Errorf("cannot remove expression slot %q; select a direct statement", opts.Discriminator)
+	}
+	if len(directMatches) == 0 {
+		return removeTarget{}, fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", opts.Discriminator, ownerName, formatSpanCandidates(fset, candidates))
+	}
+	if len(directMatches) > 1 {
+		return removeTarget{}, fmt.Errorf("ambiguous direct statement %q in %s; set construct_path to one of:\n%s", opts.Discriminator, ownerName, formatSpanCandidates(fset, directMatches))
+	}
+	stmt, ok := directMatches[0].node.(ast.Stmt)
+	if !ok {
+		return removeTarget{}, fmt.Errorf("selected target is not a direct statement")
+	}
+	return removeTarget{node: stmt, owner: ownerName, class: "statement"}, nil
 }
 
 func findTopLevelTarget(file *ast.File, opts RemoveOptions, cleanPath string) (ast.Node, error) {

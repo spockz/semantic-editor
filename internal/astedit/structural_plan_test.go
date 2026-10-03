@@ -89,7 +89,7 @@ func TestStructuralSourcePlanners(t *testing.T) {
 			})
 		}
 	})
-	t.Run("statement insertion uses an exact direct anchor and refuses control flow", func(t *testing.T) {
+	t.Run("statement insertion uses exact direct anchors in control flow owners", func(t *testing.T) {
 		source := []byte("package p\nfunc Handle() {\n\tfirst()\n\tsecond()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{
 			Function: "Handle", Discriminator: "second()", Source: "audit()",
@@ -101,19 +101,12 @@ func TestStructuralSourcePlanners(t *testing.T) {
 		if !strings.Contains(string(plan.Source), "\taudit()\n\tsecond()") || plan.Selection.Kind != "statement" || len(plan.RequiredProofs) != 3 {
 			t.Fatalf("unexpected statement plan: %+v\n%s", plan, plan.Source)
 		}
-		_, err = PlanInsertStatement(source, InsertStatementIntent{
-			Function: "Handle", Discriminator: "first()", ConstructPath: OptionalString{Present: true, Value: "0"}, Source: "audit()",
-			Placement: StatementAfter,
+		controlFlow := []byte("package p\nfunc Handle() {\n\tif ready {\n\t\tfirst()\n\t}\n\tsecond()\n}\n")
+		controlPlan, err := PlanInsertStatement(controlFlow, InsertStatementIntent{
+			Function: "Handle", Discriminator: "second()", ConstructPath: OptionalString{Present: true, Value: "1"}, ExpectedRevision: OptionalString{Present: true, Value: goReadRevision(controlFlow)}, Source: "audit()", Placement: StatementBefore,
 		})
-		if err == nil {
-			t.Fatal("construct_path without expected_revision was accepted")
-		}
-		controlFlow := []byte("package p\nfunc Handle() {\n\tif ready {\n\t\tfirst()\n\t}\n}\n")
-		_, err = PlanInsertStatement(controlFlow, InsertStatementIntent{
-			Function: "Handle", Discriminator: "first()", Source: "audit()", Placement: StatementBefore,
-		})
-		if err == nil {
-			t.Fatal("control-flow owner was accepted")
+		if err != nil || !strings.Contains(string(controlPlan.Source), "audit()") {
+			t.Fatalf("control-flow owner direct anchor failed: plan=%+v err=%v", controlPlan, err)
 		}
 		for _, source := range []string{
 			"package p\nfunc Handle() { x(); y() }\n",
@@ -348,8 +341,8 @@ func TestStructuralOptionalSelectorAndCommentInputs(t *testing.T) {
 		Function: "Handle", Discriminator: "run()", ConstructPath: zeroPath, ExpectedRevision: revision,
 		Source: "audit()", Placement: StatementBefore,
 	})
-	if err == nil || !strings.Contains(err.Error(), "no compatible live producer") {
-		t.Fatalf("unproducible path should be refused: err=%v", err)
+	if err != nil {
+		t.Fatalf("explicit exact-anchor path should select a live statement: err=%v", err)
 	}
 	_, err = PlanInsertStatement(source, InsertStatementIntent{
 		Function: "Handle", Discriminator: "run()", ExpectedRevision: OptionalString{Present: true, Value: "stale"},

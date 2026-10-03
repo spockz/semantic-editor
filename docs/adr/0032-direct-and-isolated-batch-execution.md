@@ -69,6 +69,17 @@ deletion and other language backends are publication
 barriers. Publish the preceding segment, execute the disk operation, and start a
 new source buffer. External normalization and checks run after publication.
 
+A batch selects one canonical `workspace_root`; child operations may omit that
+field or repeat the outer root. A different, malformed, or null child root fails
+before dispatch. Top-level `trust_workspace=true` supplies root-scoped trust to
+all child contexts and final verification. A child may still set its own trust
+flag for that operation, but child trust alone never authorizes final hooks.
+Direct `ExecuteBatch` calls create and release a temporary diagnostics manager
+when the caller supplies none. MCP calls share a session manager by module and
+environment; a different worktree module gets its own Go state and does not
+reuse the configured-root gopls session. These scopes do not change direct
+batches' existing fail-fast, partial-application behavior.
+
 Bind all existing Go source bytes, file identities, permissions, source membership,
 and symlink targets in each segment's workspace and local replacement modules.
 Also bind manifest and auxiliary analysis inputs. Stage and sync every changed

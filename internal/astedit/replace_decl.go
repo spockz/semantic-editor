@@ -62,7 +62,7 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 					}
 				}
 			case *ast.TypeSpec:
-				if gen.Tok == token.TYPE && s.Assign.IsValid() && s.Name.Name == symbolQuery {
+				if gen.Tok == token.TYPE && s.Name.Name == symbolQuery {
 					matches = append(matches, declMatch{decl: decl, gen: gen, spec: spec, name: s.Name.Name})
 				}
 			}
@@ -133,6 +133,10 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("clean imports after declaration replacement: %w", err)
+	}
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
@@ -141,8 +145,6 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)
 		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
 	}
 	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[startOffset:endOffset])), strings.TrimSpace(replacementText)), nil
 }
@@ -169,13 +171,9 @@ func parseSingleReplacementDecl(source, symbol string) (replacementDecl, error) 
 	if len(gen.Specs) != 1 {
 		return replacementDecl{}, ErrMultipleDeclarations
 	}
-	spec := gen.Specs[0]
 	declared := extractDeclNames(gen)
 	if len(declared) != 1 || declared[0] != symbol {
 		return replacementDecl{}, fmt.Errorf("replacement must declare only requested symbol %q", symbol)
-	}
-	if typeSpec, ok := spec.(*ast.TypeSpec); ok && !typeSpec.Assign.IsValid() {
-		return replacementDecl{}, fmt.Errorf("replacement of %q requires a type alias", symbol)
 	}
 	parseSource := strings.TrimSpace(source)
 	if !strings.HasPrefix(parseSource, "package ") {
