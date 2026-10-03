@@ -33,66 +33,13 @@ func ScaffoldFile(ctx context.Context, filePath, packageName string, opts Scaffo
 		return "", fmt.Errorf("%w: %s", ErrFileExists, cleanPath)
 	}
 
-	resolvedPkg := strings.TrimSpace(packageName)
-	if resolvedPkg == "" || resolvedPkg == "infer" {
-		dir := filepath.Dir(cleanPath)
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			return "", fmt.Errorf("%w: %s", ErrInferNoSiblings, dir)
-		}
-
-		baseName := filepath.Base(cleanPath)
-		var inferred string
-		for _, entry := range entries {
-			if entry.IsDir() {
-				continue
-			}
-			name := entry.Name()
-			if strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go") && name != baseName {
-				sibPath := filepath.Join(dir, name)
-				fset := token.NewFileSet()
-				node, err := parser.ParseFile(fset, sibPath, nil, parser.PackageClauseOnly)
-				if err == nil && node.Name != nil && node.Name.Name != "" {
-					inferred = node.Name.Name
-					break
-				}
-			}
-		}
-
-		if inferred == "" {
-			return "", fmt.Errorf("%w: in %s", ErrInferNoSiblings, dir)
-		}
-		resolvedPkg = inferred
-	} else {
-		fset := token.NewFileSet()
-		if _, err := parser.ParseFile(fset, "dummy.go", "package "+resolvedPkg+"\n", parser.PackageClauseOnly); err != nil {
-			return "", fmt.Errorf("%w: invalid package name %q", ErrSyntax, resolvedPkg)
-		}
+	resolvedPkg, err := resolveScaffoldPackageName(cleanPath, packageName)
+	if err != nil {
+		return "", err
 	}
-
-	src := fmt.Sprintf("package %s\n", resolvedPkg)
-	if opts.PurposeHeader != "" {
-		src = opts.PurposeHeader
-		if !strings.HasSuffix(src, "\n") {
-			src += "\n"
-		}
-		src += fmt.Sprintf("\npackage %s\n", resolvedPkg)
-		fset := token.NewFileSet()
-		node, err := parser.ParseFile(fset, "scaffold.go", src, parser.ParseComments)
-		if err != nil || len(node.Comments) == 0 || node.Name == nil || node.Name.Name != resolvedPkg || len(node.Decls) != 0 {
-			if err != nil {
-				return "", fmt.Errorf("%w: invalid purpose header: %w", ErrSyntax, err)
-			}
-			return "", fmt.Errorf("%w: purpose header must contain only Go comments", ErrSyntax)
-		}
-	} else {
-		finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
-		formatted, err := format.Source([]byte(src))
-		finishFormatting()
-		if err != nil {
-			return "", fmt.Errorf("format scaffold: %w", err)
-		}
-		src = string(formatted)
+	src, err := formatScaffoldSource(ctx, resolvedPkg, opts.PurposeHeader)
+	if err != nil {
+		return "", err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(cleanPath), 0o750); err != nil {
@@ -104,4 +51,86 @@ func ScaffoldFile(ctx context.Context, filePath, packageName string, opts Scaffo
 	}
 
 	return resolvedPkg, nil
+}
+
+func resolveScaffoldPackageName(path, requested string) (string, error) {
+	name := strings.TrimSpace(requested)
+	if name == "" || name == "infer" {
+		inferred, err := inferScaffoldPackageName(path)
+		if err != nil {
+			return "", err
+		}
+		return inferred, nil
+	}
+	if err := validateScaffoldPackageName(name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+func inferScaffoldPackageName(path string) (string, error) {
+	dir := filepath.Dir(path)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("%w: %s", ErrInferNoSiblings, dir)
+	}
+	baseName := filepath.Base(path)
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") || entry.Name() == baseName {
+			continue
+		}
+		name := parseSiblingPackage(filepath.Join(dir, entry.Name()))
+		if name != "" {
+			return name, nil
+		}
+	}
+	return "", fmt.Errorf("%w: in %s", ErrInferNoSiblings, dir)
+}
+
+func parseSiblingPackage(path string) string {
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly)
+	if err != nil || node.Name == nil {
+		return ""
+	}
+	return node.Name.Name
+}
+
+func validateScaffoldPackageName(name string) error {
+	fset := token.NewFileSet()
+	if _, err := parser.ParseFile(fset, "dummy.go", "package "+name+"\n", parser.PackageClauseOnly); err != nil {
+		return fmt.Errorf("%w: invalid package name %q", ErrSyntax, name)
+	}
+	return nil
+}
+
+func formatScaffoldSource(ctx context.Context, packageName, purposeHeader string) (string, error) {
+	source := fmt.Sprintf("package %s\n", packageName)
+	if purposeHeader != "" {
+		return scaffoldSourceWithPurpose(packageName, purposeHeader)
+	}
+	finishFormatting := telemetry.Start(ctx, telemetry.PhaseFormattingAST)
+	formatted, err := format.Source([]byte(source))
+	finishFormatting()
+	if err != nil {
+		return "", fmt.Errorf("format scaffold: %w", err)
+	}
+	return string(formatted), nil
+}
+
+func scaffoldSourceWithPurpose(packageName, purposeHeader string) (string, error) {
+	source := purposeHeader
+	if !strings.HasSuffix(source, "\n") {
+		source += "\n"
+	}
+	source += fmt.Sprintf("\npackage %s\n", packageName)
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "scaffold.go", source, parser.ParseComments)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid purpose header: %w", ErrSyntax, err)
+	}
+	if len(node.Comments) == 0 || node.Name == nil || node.Name.Name != packageName || len(node.Decls) != 0 {
+		return "", fmt.Errorf("%w: purpose header must contain only Go comments", ErrSyntax)
+	}
+	return source, nil
 }
