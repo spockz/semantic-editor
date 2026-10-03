@@ -4,6 +4,7 @@ package operation_test
 import (
 	"context"
 	"errors"
+	"go/parser"
 	"maps"
 	"os"
 	"path/filepath"
@@ -207,6 +208,28 @@ func TestOperationExamplesUseSupportedJSONParameters(t *testing.T) {
 				t.Errorf("ExampleRaw violates the operation parameter contract: %v", err)
 			}
 		})
+	}
+}
+
+func TestChangeSignatureExampleArgumentParsesAsGoExpression(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("change-signature")
+	if !ok {
+		t.Fatal("change-signature registry entry missing")
+	}
+	parameters, ok := entry.ExampleRaw["parameters"].([]any)
+	if !ok || len(parameters) != 2 {
+		t.Fatalf("change-signature example parameters = %#v", entry.ExampleRaw["parameters"])
+	}
+	added, ok := parameters[1].(map[string]any)
+	if !ok {
+		t.Fatalf("appended example mapping = %#v", parameters[1])
+	}
+	argument, ok := added["argument"].(string)
+	if !ok {
+		t.Fatalf("appended example argument = %#v", added["argument"])
+	}
+	if _, err := parser.ParseExpr(argument); err != nil {
+		t.Fatalf("change-signature example argument %q is not a Go expression: %v", argument, err)
 	}
 }
 

@@ -55,6 +55,30 @@ func TestPlanChangeSignatureUpdatesDeclarationAndEveryProvenCall(t *testing.T) {
 	}
 }
 
+func TestPlanChangeSignatureUsesCallerLocalPositionsForZeroArgumentCall(t *testing.T) {
+	target := "package p\nfunc work() int { return 1 }\n"
+	caller := "package p\nfunc noise() int { return 7 }\nfunc run() int { return work(\n) }\n"
+	call := strings.Index(caller, "work(\n)")
+	request := SignatureChangeRequest{File: "work.go", Symbol: "work", Parameters: []SignatureParameterMapping{{Name: "enabled", Type: "bool", Argument: "true"}}}
+	plan, err := PlanChangeSignature(request, SignatureCallSetProof{
+		Complete: true,
+		Files:    []SignatureSourceFile{{File: "work.go", Source: []byte(target)}, {File: "caller.go", Source: []byte(caller)}},
+		Calls:    []SignatureCallSite{{File: "caller.go", Start: call, End: call + len("work(\n)")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range plan.Files {
+		if file.File == "caller.go" {
+			if got, want := string(file.After), "package p\nfunc noise() int { return 7 }\nfunc run() int { return work(\ntrue) }\n"; got != want {
+				t.Fatalf("caller output = %q, want %q", got, want)
+			}
+			return
+		}
+	}
+	t.Fatal("plan omitted the cross-file caller")
+}
+
 func TestPlanIntroduceParameterReplacesOnlyEquivalentConstant(t *testing.T) {
 	target := "package p\nfunc ready(id int) bool { return true }\n"
 	caller := "package p\nfunc run() bool { return ready(1) }\n"

@@ -179,7 +179,8 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 			return SignaturePlan{}, fmt.Errorf("change signature: caller range in %q is invalid", callSite.File)
 		}
 		callSource := source[callSite.Start:callSite.End]
-		call, err := parser.ParseExpr(string(callSource))
+		callSet := token.NewFileSet()
+		call, err := parser.ParseExprFrom(callSet, callSite.File, callSource, parser.ParseComments)
 		if err != nil {
 			return SignaturePlan{}, fmt.Errorf("change signature: parse proven caller in %q: %w", callSite.File, err)
 		}
@@ -197,7 +198,11 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 		if source[end] != ')' {
 			return SignaturePlan{}, fmt.Errorf("change signature: caller range in %q must end at the call's closing parenthesis", callSite.File)
 		}
-		callOpen := fset.Position(callExpr.Lparen).Offset
+		callTokenFile := callSet.File(call.Pos())
+		if callTokenFile == nil {
+			return SignaturePlan{}, fmt.Errorf("change signature: caller token positions are unavailable")
+		}
+		callOpen := callSite.Start + callTokenFile.Offset(callExpr.Lparen)
 		insertion, insertionText, err := signatureAppendInsertion(source, callOpen+1, end, added.Argument, len(callExpr.Args) > 0)
 		if err != nil {
 			return SignaturePlan{}, fmt.Errorf("change signature: append caller argument in %q: %w", callSite.File, err)

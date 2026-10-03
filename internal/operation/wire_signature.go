@@ -61,7 +61,7 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 		Params: params, Level: LevelWorkspace, CLIName: "change-signature", MCPName: "semantic_change_signature", Batchable: true, BufferedBatch: true,
 		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{
 			map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}},
-			map[string]any{"parameter": map[string]any{"name": "label", "type": "string"}, "argument": "\\\"ready\\\""},
+			map[string]any{"parameter": map[string]any{"name": "label", "type": "string"}, "argument": "\"ready\""},
 		}},
 		Output: func() *OperationOutputContract { output := signatureOutputContract(); return &output }(),
 		Parse: func(raw map[string]any) (map[string]any, error) {

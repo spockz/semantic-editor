@@ -221,8 +221,12 @@ func appendedSignatureMapping(mappings []astedit.SignatureParameterMapping) (ast
 }
 
 func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expression, parameterType, argument string) (astedit.SignatureConstantEvidence, error) {
-	var selected types.TypeAndValue
-	matches := 0
+	type expressionOccurrence struct {
+		file  string
+		start int
+		end   int
+	}
+	selectedByOccurrence := make(map[expressionOccurrence]types.TypeAndValue)
 	for _, pkg := range snapshot.Packages {
 		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
 			continue
@@ -249,16 +253,30 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 					}
 					start, end := pkg.Fset.Position(expr.Pos()).Offset, pkg.Fset.Position(expr.End()).Offset
 					if start >= 0 && end > start && end <= len(source) && string(source[start:end]) == strings.TrimSpace(expression) {
-						matches++
-						selected = pkg.TypesInfo.Types[expr]
+						occurrence := expressionOccurrence{file: snapshot.File, start: start, end: end}
+						evidence := pkg.TypesInfo.Types[expr]
+						if previous, found := selectedByOccurrence[occurrence]; found {
+							if previous.Value == nil || previous.Type == nil || evidence.Value == nil || evidence.Type == nil || previous.Value.Kind() != evidence.Value.Kind() || !constant.Compare(previous.Value, token.EQL, evidence.Value) || !types.Identical(previous.Type, evidence.Type) {
+								selectedByOccurrence[occurrence] = types.TypeAndValue{}
+							}
+						} else {
+							selectedByOccurrence[occurrence] = evidence
+						}
 					}
 					return true
 				})
 			}
 		}
 	}
-	if matches != 1 || selected.Value == nil || selected.Type == nil {
+	if len(selectedByOccurrence) != 1 {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant")
+	}
+	var selected types.TypeAndValue
+	for _, evidence := range selectedByOccurrence {
+		selected = evidence
+	}
+	if selected.Value == nil || selected.Type == nil {
+		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant with consistent evidence across package variants")
 	}
 	if err := validateClosedSignatureArgument(argument); err != nil {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("validate constant caller argument: %w", err)
