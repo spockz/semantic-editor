@@ -8,15 +8,29 @@ import (
 
 func TestAccessModifier_Inference(t *testing.T) {
 	backend := GolangBackend{}
+	for _, testCase := range accessInferenceCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			got, err := backend.ResolveEffectiveAccess(testCase.mod, testCase.identifier)
+			if testCase.wantErr {
+				assertAccessError(t, err, testCase.identifier, testCase.mod, testCase.wantTargetErr)
+				return
+			}
+			assertAccessResult(t, got, err, testCase.want)
+		})
+	}
+}
 
-	tests := []struct {
-		name          string
-		identifier    string
-		mod           AccessModifier
-		want          AccessModifier
-		wantErr       bool
-		wantTargetErr error
-	}{
+type accessInferenceCase struct {
+	name          string
+	identifier    string
+	mod           AccessModifier
+	want          AccessModifier
+	wantErr       bool
+	wantTargetErr error
+}
+
+func accessInferenceCases() []accessInferenceCase {
+	return []accessInferenceCase{
 		{
 			name:       "infer uppercase as public",
 			identifier: "HandleRequest",
@@ -82,37 +96,37 @@ func TestAccessModifier_Inference(t *testing.T) {
 			wantTargetErr: ErrVisibilityMismatch,
 		},
 	}
+}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := backend.ResolveEffectiveAccess(tt.mod, tt.identifier)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("expected error for mod %q and identifier %q, got nil", tt.mod, tt.identifier)
-				}
-				if tt.wantTargetErr != nil && !errors.Is(err, tt.wantTargetErr) {
-					t.Fatalf("expected error wrapping %v, got %v", tt.wantTargetErr, err)
-				}
-				if errors.Is(err, ErrVisibilityMismatch) {
-					var visErr *VisibilityMismatchError
-					if !errors.As(err, &visErr) {
-						t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
-					}
-					if visErr.Identifier != tt.identifier {
-						t.Errorf("expected Identifier %q, got %q", tt.identifier, visErr.Identifier)
-					}
-					if visErr.Requested != tt.mod {
-						t.Errorf("expected Requested %q, got %q", tt.mod, visErr.Requested)
-					}
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Fatalf("ResolveEffectiveAccess() = %q, want %q", got, tt.want)
-			}
-		})
+func assertAccessError(t *testing.T, err error, identifier string, requested AccessModifier, targetErr error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("expected access error for %q", identifier)
+	}
+	if targetErr != nil && !errors.Is(err, targetErr) {
+		t.Fatalf("expected error wrapping %v, got %v", targetErr, err)
+	}
+	if !errors.Is(err, ErrVisibilityMismatch) {
+		return
+	}
+	var visibilityErr *VisibilityMismatchError
+	if !errors.As(err, &visibilityErr) {
+		t.Fatalf("expected *VisibilityMismatchError via errors.As, got %T", err)
+	}
+	if visibilityErr.Identifier != identifier {
+		t.Errorf("expected Identifier %q, got %q", identifier, visibilityErr.Identifier)
+	}
+	if visibilityErr.Requested != requested {
+		t.Errorf("expected Requested %q, got %q", requested, visibilityErr.Requested)
+	}
+}
+
+func assertAccessResult(t *testing.T, got AccessModifier, err error, expected AccessModifier) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != expected {
+		t.Fatalf("ResolveEffectiveAccess() = %q, want %q", got, expected)
 	}
 }
