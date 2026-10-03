@@ -87,3 +87,39 @@ func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
 		t.Fatalf("continuation projection changed source bytes: %q", after)
 	}
 }
+
+func TestInsertFieldRegistryRejectsLeadingDotQualifierWithoutWriting(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	files := map[string]string{
+		"go.mod":   "module example.com/fieldselector\n\ngo 1.24\n",
+		"types.go": "package fieldselector\n\ntype T struct { Existing int }\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+	}
+	path := filepath.Join(root, "types.go")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read source before insertion: %v", err)
+	}
+	entry, ok := DefaultRegistry().LookupMCP("semantic_insert_construct")
+	if !ok {
+		t.Fatal("generic construct operation is not registered")
+	}
+	_, err = entry.Invoke(CallContext{Ctx: context.Background(), WorkDir: root}, map[string]any{
+		"file": "types.go", "kind": "field", "source": "Extra int", "in_type": ".T", "placement": "last",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid struct type name") {
+		t.Fatalf("leading-dot in_type error = %v, want invalid struct selector refusal", err)
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read source after refused insertion: %v", readErr)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("source changed after invalid in_type: %q", after)
+	}
+}

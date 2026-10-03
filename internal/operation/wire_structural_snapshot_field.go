@@ -19,13 +19,13 @@ import (
 )
 
 func structuralFieldOwner(snapshot *structuralSnapshot, selector string) (*packages.Package, *types.Named, string, error) {
-	packageName, typeName, err := parseStructuralFieldSelector(selector)
+	parsed, err := parseStructuralFieldSelector(selector)
 	if err != nil {
 		return nil, nil, "", err
 	}
 	var selected structuralFieldSelection
 	for _, pkg := range snapshot.Packages {
-		candidate, found, err := structuralFieldPackageOwner(snapshot, pkg, packageName, typeName, selector)
+		candidate, found, err := structuralFieldPackageOwner(snapshot, pkg, parsed.PackageName, parsed.TypeName, selector)
 		if err != nil {
 			return nil, nil, "", err
 		}
@@ -40,10 +40,10 @@ func structuralFieldOwner(snapshot *structuralSnapshot, selector string) (*packa
 	if selected.Package == nil || selected.Named == nil {
 		return nil, nil, "", fmt.Errorf("in_type %q was not found in the selected Go file", selector)
 	}
-	if ast.IsExported(typeName) {
+	if ast.IsExported(parsed.TypeName) {
 		return nil, nil, "", fmt.Errorf("cannot prove positional-literal compatibility for exported owner type %q", selector)
 	}
-	return selected.Package, selected.Named, typeName, nil
+	return selected.Package, selected.Named, parsed.TypeName, nil
 }
 
 type structuralFieldSelection struct {
@@ -51,20 +51,28 @@ type structuralFieldSelection struct {
 	Named   *types.Named
 }
 
-func parseStructuralFieldSelector(selector string) (string, string, error) {
+type structuralFieldSelector struct {
+	PackageName string
+	TypeName    string
+}
+
+func parseStructuralFieldSelector(selector string) (structuralFieldSelector, error) {
 	parts := strings.Split(selector, ".")
 	if len(parts) != 1 && len(parts) != 2 {
-		return "", "", fmt.Errorf("in_type %q must be a local Go type name, optionally prefixed by its package name", selector)
+		return structuralFieldSelector{}, fmt.Errorf("in_type %q must be a local Go type name, optionally prefixed by its package name", selector)
 	}
 	typeName := parts[len(parts)-1]
 	if !token.IsIdentifier(typeName) || token.Lookup(typeName).IsKeyword() {
-		return "", "", fmt.Errorf("in_type %q has an invalid type name", selector)
+		return structuralFieldSelector{}, fmt.Errorf("in_type %q has an invalid type name", selector)
 	}
 	packageName := ""
 	if len(parts) == 2 {
 		packageName = parts[0]
+		if !token.IsIdentifier(packageName) || token.Lookup(packageName).IsKeyword() {
+			return structuralFieldSelector{}, fmt.Errorf("in_type %q has an invalid package qualifier", selector)
+		}
 	}
-	return packageName, typeName, nil
+	return structuralFieldSelector{PackageName: packageName, TypeName: typeName}, nil
 }
 
 func structuralFieldPackageOwner(snapshot *structuralSnapshot, pkg *packages.Package, packageName, typeName, selector string) (structuralFieldSelection, bool, error) {
@@ -168,14 +176,14 @@ func captureStructuralFieldFiles(snapshot *structuralSnapshot, owner *packages.P
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".go" {
 			continue
 		}
-		file, absolute, err := captureStructuralFieldFile(snapshot, owner, directory, entry.Name(), typeName, newField)
+		captured, err := captureStructuralFieldFile(snapshot, owner, directory, entry.Name(), typeName, newField)
 		if err != nil {
 			return nil, err
 		}
-		if file == nil {
+		if captured.File == nil {
 			continue
 		}
-		files[absolute] = file
+		files[captured.AbsolutePath] = captured.File
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("field owner package %s has no source files", owner.PkgPath)
@@ -183,31 +191,36 @@ func captureStructuralFieldFiles(snapshot *structuralSnapshot, owner *packages.P
 	return files, nil
 }
 
-func captureStructuralFieldFile(snapshot *structuralSnapshot, owner *packages.Package, directory, filename, typeName, newField string) (*ast.File, string, error) {
+type structuralFieldFileCapture struct {
+	File         *ast.File
+	AbsolutePath string
+}
+
+func captureStructuralFieldFile(snapshot *structuralSnapshot, owner *packages.Package, directory, filename, typeName, newField string) (structuralFieldFileCapture, error) {
 	path := filepath.Join(directory, filename)
 	absolute, err := filepath.Abs(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("resolve field owner source %q: %w", path, err)
+		return structuralFieldFileCapture{}, fmt.Errorf("resolve field owner source %q: %w", path, err)
 	}
 	source, err := sourcebuf.ReadFile(snapshot.Ctx, absolute)
 	if err != nil {
-		return nil, "", fmt.Errorf("capture field owner source %q: %w", path, err)
+		return structuralFieldFileCapture{}, fmt.Errorf("capture field owner source %q: %w", path, err)
 	}
 	if previous, ok := snapshot.Sources[absolute]; ok && !bytes.Equal(previous, source) {
-		return nil, "", fmt.Errorf("field owner source %q differs from the analyzed snapshot", path)
+		return structuralFieldFileCapture{}, fmt.Errorf("field owner source %q differs from the analyzed snapshot", path)
 	}
 	snapshot.Sources[absolute] = bytes.Clone(source)
 	file, err := parser.ParseFile(token.NewFileSet(), absolute, source, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return nil, "", fmt.Errorf("parse field owner source %q: %w", path, err)
+		return structuralFieldFileCapture{}, fmt.Errorf("parse field owner source %q: %w", path, err)
 	}
 	if file.Name.Name != owner.Name {
-		return nil, absolute, nil
+		return structuralFieldFileCapture{AbsolutePath: absolute}, nil
 	}
 	if err := rejectStructuralFieldMethod(file, typeName, newField); err != nil {
-		return nil, "", err
+		return structuralFieldFileCapture{}, err
 	}
-	return file, absolute, nil
+	return structuralFieldFileCapture{File: file, AbsolutePath: absolute}, nil
 }
 
 func rejectStructuralFieldMethod(file *ast.File, typeName, newField string) error {
