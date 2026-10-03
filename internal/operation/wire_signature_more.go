@@ -97,8 +97,8 @@ func runIntroduceParameter(ctx context.Context, cc CallContext, raw map[string]a
 		return structuralPlanResult{}, err
 	}
 	before := snapshot.Sources[snapshot.File]
-	if err := validateSignatureExpectedRevision(raw, before); err != nil {
-		return structuralPlanResult{}, err
+	if revisionErr := validateSignatureExpectedRevision(raw, before); revisionErr != nil {
+		return structuralPlanResult{}, revisionErr
 	}
 	mappings, err := decodeSignatureMappings(raw[signatureParameters])
 	if err != nil {
@@ -141,8 +141,8 @@ func runIntroduceParameterObject(ctx context.Context, cc CallContext, raw map[st
 		return structuralPlanResult{}, err
 	}
 	before := snapshot.Sources[snapshot.File]
-	if err := validateSignatureExpectedRevision(raw, before); err != nil {
-		return structuralPlanResult{}, err
+	if revisionErr := validateSignatureExpectedRevision(raw, before); revisionErr != nil {
+		return structuralPlanResult{}, revisionErr
 	}
 	parameter, err := decodeParameterSpec(raw["parameter"])
 	if err != nil {

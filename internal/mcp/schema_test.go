@@ -632,7 +632,7 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 			t.Fatalf("batch result branch is not closed: %#v", branch)
 		}
 	}
-	if diff, ok := properties["final_diff"].(map[string]any); !ok || diff["type"] != "string" {
+	if diff, diffOK := properties["final_diff"].(map[string]any); !diffOK || diff["type"] != "string" {
 		t.Fatalf("batch final_diff schema = %#v", properties["final_diff"])
 	}
 	delta, ok := properties["diagnostic_delta"].(map[string]any)
@@ -1709,8 +1709,8 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	}
 	var guardedOutput bytes.Buffer
 	guardedServer := mcp.NewServer("full", root, &guardedOutput)
-	if err := guardedServer.Serve(context.Background(), bytes.NewReader(append(guardedRequest, '\n'))); err != nil {
-		t.Fatalf("serve guarded edit: %v", err)
+	if serveErr := guardedServer.Serve(context.Background(), bytes.NewReader(append(guardedRequest, '\n'))); serveErr != nil {
+		t.Fatalf("serve guarded edit: %v", serveErr)
 	}
 	if strings.Contains(guardedOutput.String(), "isError\":true") {
 		t.Fatalf("guarded edit rejected matching captured evidence: %s", guardedOutput.String())
@@ -1721,8 +1721,8 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 	}
 	var staleOutput bytes.Buffer
 	staleServer := mcp.NewServer("full", root, &staleOutput)
-	if err := staleServer.Serve(context.Background(), bytes.NewReader(append(staleRequest, '\n'))); err != nil {
-		t.Fatalf("serve stale guarded edit: %v", err)
+	if serveErr := staleServer.Serve(context.Background(), bytes.NewReader(append(staleRequest, '\n'))); serveErr != nil {
+		t.Fatalf("serve stale guarded edit: %v", serveErr)
 	}
 	if !strings.Contains(staleOutput.String(), "expected_revision does not match captured source") || !strings.Contains(staleOutput.String(), "isError\":true") {
 		t.Fatalf("stale guarded edit did not refuse explicitly: %s", staleOutput.String())
@@ -1770,15 +1770,15 @@ func TestInspectProjectionFeedsInsertField(t *testing.T) {
 		t.Fatalf("encode field insertion: %v", err)
 	}
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
-		t.Fatalf("serve field insertion: %v", err)
+	if serveErr := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); serveErr != nil {
+		t.Fatalf("serve field insertion: %v", serveErr)
 	}
 	if strings.Contains(output.String(), `"isError":true`) {
 		t.Fatalf("field insertion rejected matching inspect record: %s", output.String())
 	}
 	var inserted map[string]any
-	if err := json.Unmarshal(output.Bytes(), &inserted); err != nil {
-		t.Fatalf("decode field insertion: %v", err)
+	if decodeErr := json.Unmarshal(output.Bytes(), &inserted); decodeErr != nil {
+		t.Fatalf("decode field insertion: %v", decodeErr)
 	}
 	result := inserted["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
 	receipt := result["edit_receipt"].(map[string]any)

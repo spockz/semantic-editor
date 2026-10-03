@@ -113,8 +113,8 @@ func runStructuralPlan(ctx context.Context, cc CallContext, raw map[string]any, 
 		return structuralPlanResult{}, err
 	}
 	if plan.Changed {
-		if err := snapshot.validateOutput(plan.Source); err != nil {
-			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", err)
+		if outputErr := snapshot.validateOutput(plan.Source); outputErr != nil {
+			return structuralPlanResult{}, fmt.Errorf("validate structural plan output: %w", outputErr)
 		}
 	}
 	changed, err := snapshot.applyOutput(plan.Source)

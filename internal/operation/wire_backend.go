@@ -581,13 +581,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		}
 	}
 	if !request.CheckOnly && len(goFormatPaths) > 0 {
-		needsFormatting, err := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
-		if err != nil {
-			return response, fmt.Errorf("check Go formatting before verification: %w", err)
+		needsFormatting, formatCheckErr := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
+		if formatCheckErr != nil {
+			return response, fmt.Errorf("check Go formatting before verification: %w", formatCheckErr)
 		}
 		if needsFormatting {
-			if err := pipeline.Format(ctx, project.RootDir, goFormatPaths...); err != nil {
-				return response, fmt.Errorf("format Go files before verification: %w", err)
+			if formatErr := pipeline.Format(ctx, project.RootDir, goFormatPaths...); formatErr != nil {
+				return response, fmt.Errorf("format Go files before verification: %w", formatErr)
 			}
 			response.Formatted = true
 		}

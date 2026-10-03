@@ -60,8 +60,8 @@ func insertFieldStructuralDef() Def[map[string]any, structuralPlanResult] {
 					return astedit.SourcePlan{}, fmt.Errorf("in_type %q has embedded fields outside this insertion's proof scope", inType)
 				}
 			}
-			if err := structuralFieldSourceSet(snapshot, owner, named, typeName, fieldName); err != nil {
-				return astedit.SourcePlan{}, err
+			if sourceErr := structuralFieldSourceSet(snapshot, owner, named, typeName, fieldName); sourceErr != nil {
+				return astedit.SourcePlan{}, sourceErr
 			}
 			targetField := ""
 			if rawTarget, ok := raw["target_symbol"]; ok {

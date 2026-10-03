@@ -1670,11 +1670,11 @@ func TestMCPExpectedRootGuard(t *testing.T) {
 			t.Errorf("Initialize error %q does not include %q", err, want)
 		}
 	}
-	if got, err := os.ReadFile(marker); err != nil || string(got) != "unchanged" {
-		t.Errorf("mismatch changed fixture marker: contents=%q error=%v", got, err)
+	if got, readErr := os.ReadFile(marker); readErr != nil || string(got) != "unchanged" {
+		t.Errorf("mismatch changed fixture marker: contents=%q error=%v", got, readErr)
 	}
-	if _, err := os.Stat(filepath.Join(actualRoot, ".scratch")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("mismatch initialized fixture Go state: %v", err)
+	if _, statErr := os.Stat(filepath.Join(actualRoot, ".scratch")); !errors.Is(statErr, os.ErrNotExist) {
+		t.Errorf("mismatch initialized fixture Go state: %v", statErr)
 	}
 
 	matchingRoot := t.TempDir()

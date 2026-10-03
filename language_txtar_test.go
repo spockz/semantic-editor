@@ -231,7 +231,7 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			}
 			_ = json.Unmarshal(request.Params, &params)
 			uri := params.TextDocument.URI
-			if parsed, err := url.Parse(uri); err == nil {
+			if parsed, parseErr := url.Parse(uri); parseErr == nil {
 				uri = parsed.String()
 			}
 			edit := map[string]any{"changes": map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}}

@@ -177,8 +177,8 @@ func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string)
 		ctx = sourcebuf.WithBuffer(ctx, buffer)
 		owned = true
 	}
-	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
-		return nil, fmt.Errorf("authorize structural module: %w", err)
+	if authorizeErr := buffer.AuthorizeWrites(ctx, root); authorizeErr != nil {
+		return nil, fmt.Errorf("authorize structural module: %w", authorizeErr)
 	}
 	selectedSource, err := sourcebuf.ReadFile(ctx, absolute)
 	if err != nil {
