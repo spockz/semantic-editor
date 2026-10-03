@@ -28,14 +28,22 @@ func NewGoBackend() *GoBackend { return &GoBackend{} }
 // Language returns the adapter language ID.
 func (GoBackend) Language() backend.LanguageID { return backend.LanguageGo }
 
-// SupportedConstructs reports the Go construct handlers actually implemented by this adapter.
-func (GoBackend) SupportedConstructs() []backend.ConstructKind {
-	return append([]backend.ConstructKind(nil), astedit.GoConstructKinds...)
-}
-
-// SupportedStructures reports the Go structural insertion kinds implemented by this adapter.
-func (GoBackend) SupportedStructures() []backend.StructureKind {
-	return append([]backend.StructureKind(nil), astedit.GoStructureKinds...)
+// SupportedConstructs reports executable Go construct kinds for one operation.
+func (GoBackend) SupportedConstructs(operation backend.Operation) []backend.ConstructKind {
+	var kinds []backend.ConstructKind
+	switch operation {
+	case backend.OperationInsertConstruct:
+		kinds = astedit.GoInsertConstructKinds
+	case backend.OperationReplaceConstruct:
+		kinds = astedit.GoReplaceConstructKinds
+	case backend.OperationRemoveConstruct:
+		kinds = astedit.GoRemoveConstructKinds
+	case backend.OperationMoveConstruct:
+		kinds = astedit.GoMoveConstructKinds
+	default:
+		return nil
+	}
+	return append([]backend.ConstructKind(nil), kinds...)
 }
 
 // Capabilities returns operations supported by the Go adapter.

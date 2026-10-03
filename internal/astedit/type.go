@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -26,8 +27,8 @@ type TypeOptions struct {
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.
 func InsertType(ctx context.Context, filePath string, source string, opts TypeOptions) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindType,
+	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
+		Kind:                backend.ConstructType,
 		AccessModifier:      opts.AccessModifier,
 		Placement:           opts.Placement,
 		TargetSymbol:        opts.TargetSymbol,
@@ -70,10 +71,10 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil && fileNode == nil {
-		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
+	if err != nil {
+		return fmt.Errorf("parse target file before insertion: %w", err)
 	}
-	if err := checkStructureDeclarationCollision(ctx, cleanPath, fileNode, genDecl); err != nil {
+	if err := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, genDecl); err != nil {
 		return fmt.Errorf("check declaration collision: %w", err)
 	}
 

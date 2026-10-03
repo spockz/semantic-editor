@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
@@ -44,8 +45,8 @@ type CaseOptions struct {
 
 // InsertCase injects a case clause into an existing switch statement.
 func InsertCase(ctx context.Context, filePath, funcName, switchOn, caseSource string, opts CaseOptions) (string, error) {
-	res, err := InsertStructure(ctx, filePath, caseSource, StructureOptions{
-		Kind:                StructureKindCase,
+	res, err := InsertConstruct(ctx, filePath, caseSource, InsertConstructOptions{
+		Kind:                backend.ConstructCase,
 		Function:            funcName,
 		SwitchOn:            switchOn,
 		SwitchPath:          opts.SwitchPath,

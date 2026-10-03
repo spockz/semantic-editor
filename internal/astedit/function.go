@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -26,8 +27,8 @@ type FunctionOptions struct {
 
 // InsertFunction injects a function or method declaration into filePath.
 func InsertFunction(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindFunction,
+	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
+		Kind:                backend.ConstructFunction,
 		AccessModifier:      opts.AccessModifier,
 		Placement:           opts.Placement,
 		TargetSymbol:        opts.TargetSymbol,
@@ -71,10 +72,10 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil && fileNode == nil {
-		return appendToEOF(ctx, cleanPath, content, source, opts.AutoOrganizeImports)
+	if err != nil {
+		return fmt.Errorf("parse target file before insertion: %w", err)
 	}
-	if err := checkStructureDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); err != nil {
+	if err := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); err != nil {
 		return fmt.Errorf("check declaration collision: %w", err)
 	}
 

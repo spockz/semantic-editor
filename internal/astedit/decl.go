@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -23,19 +24,17 @@ type DeclOptions struct {
 	Group               string // "append" (default for const/var) or "standalone"
 	Placement           Placement
 	TargetSymbol        string
-	Overwrite           bool
 	AutoOrganizeImports bool
 }
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
-	_, err := InsertStructure(ctx, filePath, source, StructureOptions{
-		Kind:                StructureKindDecl,
+	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
+		Kind:                backend.ConstructDecl,
 		AccessModifier:      opts.AccessModifier,
 		Group:               opts.Group,
 		Placement:           opts.Placement,
 		TargetSymbol:        opts.TargetSymbol,
-		Overwrite:           opts.Overwrite,
 		AutoOrganizeImports: opts.AutoOrganizeImports,
 	})
 	return err
@@ -88,12 +87,8 @@ func insertDeclImpl(ctx context.Context, filePath string, source string, opts De
 	if err != nil {
 		return fmt.Errorf("cannot check package declaration collisions in unparseable target file: %w", err)
 	}
-	handled, err := handleInsertDeclCollisions(ctx, cleanPath, source, snippetDecls, fileNode, opts)
-	if err != nil {
+	if err := checkInsertDeclCollisions(ctx, cleanPath, snippetDecls, fileNode); err != nil {
 		return err
-	}
-	if handled {
-		return nil
 	}
 
 	if (opts.Group == "" || opts.Group == "append") && opts.Placement == "" && len(snippetDecls) == 1 {

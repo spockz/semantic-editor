@@ -248,14 +248,14 @@ func TestInsertFunction_DuplicateReceiverMethodFailsUnchanged(t *testing.T) {
 	}
 }
 
-func TestInsertStructure_RejectsUnsupportedOverwriteUnchanged(t *testing.T) {
+func TestInsertConstructRejectsDeclarationCollisionUnchanged(t *testing.T) {
 	tests := []struct {
 		name   string
-		kind   StructureKind
+		kind   ConstructKind
 		source string
 	}{
-		{name: "type", kind: StructureKindType, source: "type Config struct { Port int }"},
-		{name: "function", kind: StructureKindFunction, source: "func Load() string { return \"new\" }"},
+		{name: "type", kind: ConstructType, source: "type Config struct { Port int }"},
+		{name: "function", kind: ConstructFunction, source: "func Load() string { return \"new\" }"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -266,12 +266,9 @@ func TestInsertStructure_RejectsUnsupportedOverwriteUnchanged(t *testing.T) {
 				t.Fatalf("write initial file: %v", err)
 			}
 
-			_, err := InsertStructure(context.Background(), file, test.source, StructureOptions{
-				Kind:      test.kind,
-				Overwrite: true,
-			})
-			if err == nil || !strings.Contains(err.Error(), "overwrite is unsupported") {
-				t.Fatalf("InsertStructure error = %v, want unsupported overwrite error", err)
+			_, err := InsertConstruct(context.Background(), file, test.source, InsertConstructOptions{Kind: test.kind})
+			if !errors.Is(err, ErrDeclCollision) {
+				t.Fatalf("InsertConstruct error = %v, want declaration collision", err)
 			}
 			got, readErr := os.ReadFile(file)
 			if readErr != nil {
