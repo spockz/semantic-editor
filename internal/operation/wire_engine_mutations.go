@@ -26,8 +26,9 @@ type ReplaceBodyReq struct {
 type ReplaceConstructReq struct {
 	Project             backend.ProjectContext
 	File                string
-	Function            string
-	Kind                astedit.ConstructKind
+	Symbol              string
+	InFunction          string
+	Kind                backend.ConstructKind
 	Discriminator       string
 	ConstructPath       string
 	Source              string
@@ -53,8 +54,8 @@ func (r *MoveConstructReq) SetProjectContext(project backend.ProjectContext) { r
 
 var moveConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{"semantic_move_construct.file"}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, "semantic_move_construct.symbol"}},
+	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{semanticMoveConstructToolName + ".file"}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticMoveConstructToolName + ".symbol"}},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Destination placement: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Organize imports after relocation (default true)", Default: true},
@@ -166,7 +167,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves validate complete edit plans over current unsaved sources. Cross-package moves typecheck those plans and update module-wide references. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of text replacement to relocate one supported declaration to an explicit destination and placement. Use semantic_insert_construct to add a declaration or semantic_replace_construct to update one in place.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -183,25 +184,13 @@ func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.P
 
 var replaceConstructParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, Role: RoleSelector, SourceFields: append(sourceInFunctionContinuations, "semantic_inspect_symbol.result.continuations[].in_function")},
-	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableConstructKinds},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: optional condition or short initializer for if constructs, or expression, case label, or defer call identifying the construct.", SourceFields: sourceDiscriminatorContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Selector: existing function, method, type, constant, or variable declaration; declaration replacement does not require an enclosing function", Role: RoleSelector, SourceFields: []string{sourceLookupSymbol, sourceReplaceBodySymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol}},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: enclosing function or method for nested control-flow and statement/expression constructs", Role: RoleSelector, SourceFields: append(sourceInFunctionContinuations, "semantic_inspect_symbol.result.continuations[].in_function")},
+	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableReplaceConstructKinds},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: existing condition, statement, expression, or construct source; required to identify nested targets", SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
-	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement Go construct source", Required: true},
+	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement construct source; expression kinds require an expression and statement/declaration kinds require the matching syntax", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
-}
-
-func executableConstructKinds(candidate backend.Backend) []string {
-	provider, ok := candidate.(backend.ConstructCapabilityProvider)
-	if !ok {
-		return nil
-	}
-	kinds := provider.SupportedConstructs()
-	names := make([]string, 0, len(kinds))
-	for _, kind := range kinds {
-		names = append(names, string(kind))
-	}
-	return names
 }
 
 var replaceBodyParams = []ParameterContract{
@@ -264,7 +253,7 @@ func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (Fi
 
 func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 	return Def[ReplaceBodyReq, FileEditRes]{
-		Key:     "replace_body",
+		Key: "replace_body", VariantVerb: "replace", VariantKind: "function",
 		Summary: "Use this tool instead of text editing or replacing the entire declaration when changing the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
@@ -459,7 +448,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
-		Key:     "insert_case",
+		Key: "insert_case", VariantVerb: "insert", VariantKind: "case",
 		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Supply the existing in_function selector and, for tagged switches, the exact discriminator expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy construct_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
@@ -485,14 +474,17 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
 	}
-	if req.Function, err = ParseString(raw, wireInFunction, wireCLIInFunction, true); err != nil {
+	if req.Symbol, err = ParseString(raw, "symbol", "symbol", false); err != nil {
+		return req, err
+	}
+	if req.InFunction, err = ParseString(raw, wireInFunction, wireCLIInFunction, false); err != nil {
 		return req, err
 	}
 	kind, err := ParseString(raw, "kind", "kind", true)
 	if err != nil {
 		return req, err
 	}
-	req.Kind = astedit.ConstructKind(kind)
+	req.Kind = backend.ConstructKind(kind)
 	if req.Discriminator, err = ParseString(raw, wireDiscriminator, wireDiscriminator, false); err != nil {
 		return req, err
 	}
@@ -505,13 +497,32 @@ func parseReplaceConstruct(raw map[string]any) (ReplaceConstructReq, error) {
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
 		return req, err
 	}
+	switch req.Kind {
+	case backend.ConstructFunction, backend.ConstructMethod, backend.ConstructType, backend.ConstructConst, backend.ConstructVar:
+		if req.Symbol == "" {
+			return req, fmt.Errorf("symbol is required for kind=%s", req.Kind)
+		}
+		if req.InFunction != "" {
+			return req, fmt.Errorf("in_function cannot be combined with declaration kind=%s", req.Kind)
+		}
+	default:
+		if req.InFunction == "" {
+			return req, fmt.Errorf("in_function is required for nested kind=%s", req.Kind)
+		}
+		if req.Symbol != "" {
+			return req, fmt.Errorf("symbol cannot be combined with nested kind=%s", req.Kind)
+		}
+	}
 	return req, nil
 }
 
 func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstructReq) (FileEditRes, error) {
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
-	diff, err := astedit.ReplaceConstruct(ctx, targetPath, req.Function, req.Kind, req.Discriminator, req.Source, astedit.ConstructOptions{
+	diff, err := astedit.ReplaceConstruct(ctx, targetPath, req.InFunction, req.Kind, req.Discriminator, req.Source, astedit.ConstructOptions{
+		Symbol:              req.Symbol,
+		InFunction:          req.InFunction,
+		Discriminator:       req.Discriminator,
 		ConstructPath:       req.ConstructPath,
 		AutoOrganizeImports: effectiveAutoOrganize(cc, req.AutoOrganizeImports),
 	})
@@ -519,13 +530,13 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 		return FileEditRes{}, err
 	}
 	delta, diagnosticStatus := finishDelta()
-	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), InFunction: req.Function, Discriminator: req.Discriminator, Diff: diff, Detail: "Replaced " + string(req.Kind) + " construct.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
+	return FileEditRes{File: targetPath, Display: displayWorkPath(cc.WorkDir, req.File), Symbol: req.Symbol, InFunction: req.InFunction, Discriminator: req.Discriminator, Diff: diff, Detail: "Replaced " + string(req.Kind) + " construct.", Delta: delta, DiagnosticStatus: diagnosticStatus, HasDelta: true}, nil
 }
 
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 	return Def[ReplaceConstructReq, FileEditRes]{
 		Key:     "replace_construct",
-		Summary: "Use this tool instead of replace_body or text editing when replacing one existing Go loop, conditional, else block, switch or select branch, or defer statement. Select with kind and an optional discriminator; for if statements the discriminator may be the condition or short initializer. Errors list candidate paths and selectors; use construct_path to choose one. The in_function selector accepts a function name or receiver-qualified method (for example, (*Server).Serve).",
+		Summary: "Use this tool instead of replacing a whole function body to update one selected construct by kind. Use symbol for named declarations or in_function plus discriminator for nested targets. semantic_replace_body preserves a function signature when only its body changes.",
 		Params:  replaceConstructParams,
 		Level:   LevelFile,
 		CLIName: "replace-construct",

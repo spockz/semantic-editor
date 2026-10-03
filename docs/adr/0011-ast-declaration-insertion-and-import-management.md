@@ -31,13 +31,17 @@ Without semantic AST insertion tools, agents fall back to line-based text diff t
 3. **Visibility Validation**:
    Callers may optionally specify `visibility: "public" | "private"`. `semedit` validates that the declared top-level identifier complies with Go capitalization rules (`ast.IsExported`), preventing accidental scope mismatches.
 
-4. **Automated Import Chaining (`auto_organize_imports`)**:
-   `semantic_insert_declaration` and `semantic_rename` support `auto_organize_imports: bool` (default `true`). Following AST mutation, the engine executes in-process import resolution via `golang.org/x/tools/imports`.
+4. **Unified Construct Insertion and Explicit Replacement**:
+   `semantic_insert_construct` is the generic insertion interface for supported declarations, fields, switch cases, and anchored statements. `kind` and placement constraints come from the selected backend's per-operation capability metadata. Specialized insertion operations remain available through the CLI and batch registry and can be exposed in MCP catalog profiles. Existing declarations fail closed on insertion; use `semantic_replace_construct` with the declaration `symbol` and kind to replace one whole named declaration. Neither insertion interface accepts `overwrite`.
+   `semantic_insert_declaration` remains a distinct role-driven top-level declaration convenience operation. `semantic_scaffold_file` retains its separate `overwrite` option for replacing an existing file; this file lifecycle behavior is unrelated to construct insertion.
 
-5. **Actionable Unresolved Dependency Guidance**:
+5. **Automated Import Chaining (`auto_organize_imports`)**:
+   `semantic_insert_construct` and `semantic_rename` support `auto_organize_imports: bool` (default `true`). Following AST mutation, the engine executes in-process import resolution via `golang.org/x/tools/imports`.
+
+6. **Actionable Unresolved Dependency Guidance**:
    If an imported package cannot be resolved because it is missing from `go.mod`, `semedit` does not silently discard the import or roll back changes. Instead, it emits an actionable diagnostic suggestion (`Run 'go get <pkg>' or invoke semantic_add_dependency`).
 
-6. **Manifest Safety Invariant (ADR-0005)**:
+7. **Manifest Safety Invariant (ADR-0005)**:
    Adding dependencies requires an explicit tool invocation (`semantic_add_dependency` / `semedit get`). `semedit` will never initiate unprompted external network requests or background dependency mutations.
 
 ## Invariants

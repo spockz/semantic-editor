@@ -16,6 +16,8 @@ import (
 // Entry is the type-erased view of an operation stored in the registry.
 type Entry struct {
 	Key                string
+	VariantVerb        string
+	VariantKind        string
 	Summary            string
 	Params             []ParameterContract
 	Level              Level
@@ -63,6 +65,8 @@ func (e Entry) SupportsBufferedBatch(cc CallContext, raw map[string]any) (bool, 
 // Def declares one semantic operation with typed parse, handlers, and formatting.
 type Def[Req any, Res any] struct {
 	Key           string
+	VariantVerb   string
+	VariantKind   string
 	Summary       string
 	Params        []ParameterContract
 	Level         Level
@@ -195,6 +199,8 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 	slices.Sort(languages)
 	entry := Entry{
 		Key:           def.Key,
+		VariantVerb:   def.VariantVerb,
+		VariantKind:   def.VariantKind,
 		Summary:       def.Summary,
 		Params:        append([]ParameterContract(nil), def.Params...),
 		Level:         def.Level,

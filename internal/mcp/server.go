@@ -36,6 +36,10 @@ import (
 // Server handles MCP JSON-RPC requests over stdio streams.
 type Server struct {
 	profile               string
+	toolProfile           string
+	toolVariantKeys       map[string]struct{}
+	toolVariantPatterns   []string
+	toolVariantErr        error
 	workDir               string
 	expectedRoot          string
 	service               *backend.Service
@@ -77,8 +81,9 @@ const (
 	toolFieldDescription        = "description"
 	toolFieldInputSchema        = "inputSchema"
 	toolFieldOutputSchema       = "outputSchema"
-	semanticInsertStructureTool = "semantic_insert_structure"
+	semanticInsertConstructTool = "semantic_insert_construct"
 	semanticExtractVariableTool = "semantic_extract_" + "variable"
+	semanticMoveConstructTool   = "semantic_move_construct"
 	additionalPropertiesKey     = "additionalProperties"
 )
 
@@ -104,6 +109,19 @@ func WithInstructions(instructions string) Option {
 // WithMetricsFile preserves every timed call in a file for benchmark evidence.
 func WithMetricsFile(path string) Option {
 	return func(s *Server) { s.metricsFile = strings.TrimSpace(path) }
+}
+
+// WithToolProfile selects the MCP catalog profile: base exposes generic tools,
+// while full exposes every registered operation.
+func WithToolProfile(profile string) Option {
+	return func(s *Server) { s.toolProfile = profile }
+}
+
+// WithToolVariants enables specialized verb-kind variants in the MCP catalog.
+func WithToolVariants(values []string) Option {
+	return func(s *Server) {
+		s.toolVariantPatterns = append([]string(nil), values...)
+	}
 }
 
 // WithGoBaseDir configures the directory used for Go subprocess state.
@@ -158,6 +176,7 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	}
 	s := &Server{
 		profile:     profile,
+		toolProfile: "base",
 		workDir:     workDir,
 		service:     backends.NewDefaultService(),
 		diagnostics: godiagnostics.NewSessionManager(),
@@ -167,6 +186,23 @@ func NewServer(profile string, workDir string, out io.Writer, opts ...Option) *S
 	}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.toolProfile == "" {
+		s.toolProfile = "base"
+	}
+	if s.toolVariantErr == nil {
+		s.toolVariantKeys, s.toolVariantErr = operation.ParseToolVariants(s.toolVariantPatterns, s.registry.All())
+	}
+	if s.toolVariantErr == nil && s.toolProfile != "base" && s.toolProfile != "full" {
+		s.toolVariantErr = fmt.Errorf("invalid MCP tool profile %q; expected base or full", s.toolProfile)
+	}
+	if s.toolVariantErr == nil && s.toolProfile == "full" {
+		s.toolVariantKeys = map[string]struct{}{}
+		for _, entry := range s.registry.All() {
+			if entry.VariantVerb != "" {
+				s.toolVariantKeys[entry.Key] = struct{}{}
+			}
+		}
 	}
 	s.registryValidationErr = ValidateSourceFields(s.registry.All())
 	return s
@@ -282,6 +318,9 @@ func (s *Server) goBaseDirForRoot(root string) string {
 }
 
 func (s *Server) serveRequests(ctx context.Context, in io.Reader) error {
+	if s.toolVariantErr != nil {
+		return fmt.Errorf("configure MCP tool catalog: %w", s.toolVariantErr)
+	}
 	if s.enabledLanguageErr != nil {
 		return fmt.Errorf("parse --enabled-languages: %w", s.enabledLanguageErr)
 	}
@@ -488,10 +527,13 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			return nil, fmt.Errorf("build schema for %q: %w", entry.MCPName, err)
 		}
 		addWorkspaceRootInput(tool[toolFieldInputSchema].(map[string]any))
-		tools = append(tools, tool)
 		if entry.Batchable {
 			batchable = append(batchable, entry)
 		}
+		if !s.exposesEntry(entry) {
+			continue
+		}
+		tools = append(tools, tool)
 	}
 	if len(batchable) > 0 {
 		batchTool, err := batchToolSchemaForLanguages(batchable, activeBackends)
@@ -504,7 +546,9 @@ func (s *Server) listTools() ([]map[string]any, error) {
 		properties["trust_workspace"] = map[string]any{"type": "boolean", "default": false, "description": "Explicitly trust this selected workspace for configured verification hooks; applies only to this batch request."}
 		tools = append(tools, batchTool)
 	}
-	tools = append(tools, metricsToolSchema())
+	if s.toolProfile == "full" {
+		tools = append(tools, metricsToolSchema(), feedbackToolSchema())
+	}
 	if s.liveReload {
 		tools = append(tools, map[string]any{
 			"name": "semantic_reload", toolFieldDescription: "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled; re-execute the server and announce updated tools.",
@@ -512,8 +556,33 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			toolFieldOutputSchema: reloadOutputSchema(),
 		})
 	}
-	tools = append(tools, feedbackToolSchema())
 	return tools, nil
+}
+
+func (s *Server) exposesEntry(entry operation.Entry) bool {
+	if s.toolProfile == "full" {
+		return true
+	}
+	if entry.VariantVerb != "" || entry.VariantKind != "" {
+		_, ok := s.toolVariantKeys[entry.Key]
+		return ok
+	}
+	return baseToolKeys[entry.MCPName]
+}
+
+var baseToolKeys = map[string]bool{
+	"semantic_insert_construct":  true,
+	"semantic_replace_construct": true,
+	"semantic_remove_construct":  true,
+	semanticMoveConstructTool:    true,
+	"semantic_rename":            true,
+	"semantic_lookup":            true,
+	"semantic_inspect_symbol":    true,
+	"semantic_outline":           true,
+	"semantic_find_references":   true,
+	"semantic_verify":            true,
+	"semantic_snapshot":          true,
+	"semantic_undo":              true,
 }
 
 func (s *Server) backendsForLanguages(languages []backend.LanguageID) []backend.Backend {
@@ -820,16 +889,16 @@ func continuationOutputFieldSchemas(toolName string) map[string]any {
 		}
 	case "semantic_remove_construct":
 		fields["file"] = map[string]any{"type": "string"}
-	case "semantic_move_construct":
+	case semanticMoveConstructTool:
 		fields["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Live destination file after a successful move; the source file on an error is only the attempted target."}
 		fields["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before the move; evidence only, not a continuation target."}
 		fields["symbol"] = map[string]any{"type": "string"}
 	case "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_insert_declaration", semanticInsertStructureTool, "semantic_replace_decl":
+		"semantic_insert_declaration", semanticInsertConstructTool, "semantic_replace_decl":
 		fields["symbol"] = map[string]any{"type": "string"}
 		fields["file"] = map[string]any{"type": "string"}
 		fields["line"] = map[string]any{"type": "integer", schemaDescriptionKey: "Navigation hint; not an operation parameter."}
-		if toolName == semanticInsertStructureTool {
+		if toolName == semanticInsertConstructTool {
 			fields["in_function"] = map[string]any{"type": "string"}
 			fields["discriminator"] = map[string]any{"type": "string"}
 		}
@@ -904,25 +973,25 @@ func structuredContinuationFields(toolName string, result any, root string, argu
 		addFileEditContinuationFields(fields, toolName, result, root)
 	case "semantic_remove_construct":
 		addRemoveContinuationFields(fields, result, root)
-	case "semantic_replace_construct", "semantic_insert_case", semanticInsertStructureTool, "semantic_inline_variable":
+	case "semantic_replace_construct", "semantic_insert_case", semanticInsertConstructTool, "semantic_inline_variable":
 		if edit, ok := result.(operation.FileEditRes); ok {
-			if toolName == semanticInsertStructureTool && edit.Symbol != "" {
+			if toolName == semanticInsertConstructTool && edit.Symbol != "" {
 				fields["symbol"] = edit.Symbol
 			}
 			if file := continuationPath(root, edit.File); file != "" {
 				fields["file"] = file
 			}
-			if toolName == semanticInsertStructureTool && edit.Line > 0 {
+			if toolName == semanticInsertConstructTool && edit.Line > 0 {
 				fields["line"] = edit.Line
 			}
 			if edit.InFunction != "" {
 				fields["in_function"] = edit.InFunction
 			}
-			if (toolName == "semantic_insert_case" || toolName == semanticInsertStructureTool) && edit.Discriminator != "" {
+			if (toolName == "semantic_insert_case" || toolName == semanticInsertConstructTool) && edit.Discriminator != "" {
 				fields["discriminator"] = edit.Discriminator
 			}
 		}
-	case "semantic_move_construct":
+	case semanticMoveConstructTool:
 		maps.Copy(fields, moveConstructContinuationFields(result, root))
 	case "semantic_scaffold_file":
 		if file, ok := result.(operation.ScaffoldFileRes); ok {
@@ -1102,7 +1171,7 @@ func batchResultSchemaForEntries(entries []operation.Entry) (map[string]any, err
 	}
 	for _, entry := range entries {
 		properties := baseProperties(entry.MCPName)
-		if entry.MCPName == "semantic_move_construct" {
+		if entry.MCPName == semanticMoveConstructTool {
 			properties["file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path on success; attempted source path on error. In a batch this may describe an intermediate path rather than the final workspace target."}
 			properties["origin_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Historical source location before a successful move; evidence only, not a continuation target."}
 			properties["destination_file"] = map[string]any{"type": "string", schemaDescriptionKey: "Captured destination path for this move; in a batch it may describe an intermediate result rather than the final workspace target."}

@@ -58,7 +58,7 @@ func TestAutomaticMutationDescriptionsDiscourageRedundantVerification(t *testing
 		"semantic_insert_function",
 		"semantic_insert_type",
 		"semantic_insert_decl",
-		"semantic_insert_structure",
+		"semantic_insert_construct",
 		"semantic_organize_imports",
 		"semantic_replace_body",
 		"semantic_extract_function",
@@ -98,8 +98,8 @@ func TestRegisteredDefsHonorContracts(t *testing.T) {
 
 	registry := operation.DefaultRegistry()
 	entries := registry.All()
-	if len(entries) != 41 {
-		t.Errorf("registered operations = %d, want 41", len(entries))
+	if len(entries) != 40 {
+		t.Errorf("registered operations = %d, want 40", len(entries))
 	}
 	for _, entry := range entries {
 		t.Run(entry.Key, func(t *testing.T) {
@@ -454,12 +454,12 @@ func TestRemoveConstructSelectorContract(t *testing.T) {
 	if !ok {
 		t.Fatal("remove-construct registry entry missing")
 	}
-	request, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "in_function": "Route", "discriminator": "route", "target_case": `"old"`, "safe_delete": true})
+	request, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "in_function": "Route", "discriminator": "route", "target_case": `"old"`})
 	if err != nil {
 		t.Fatal(err)
 	}
 	remove, ok := request.(operation.RemoveReq)
-	if !ok || remove.Symbol != "" || remove.InFunction != "Route" || remove.TargetCase != `"old"` || !remove.SafeDelete {
+	if !ok || remove.Symbol != "" || remove.InFunction != "Route" || remove.TargetCase != `"old"` || remove.SafeDelete {
 		t.Fatalf("parsed remove request = %#v", request)
 	}
 	if _, err := entry.Parse(map[string]any{"file": "api/routes.go", "kind": "case", "symbol": "Route", "in_function": "Route"}); err == nil || !strings.Contains(err.Error(), "symbol is a declaration target") {

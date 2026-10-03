@@ -1,5 +1,7 @@
 # Manual Edits Tracking Log
 
+Historical development record: operation names and capability gaps below reflect the project state when each edit was logged, not the current public catalog.
+
 This document tracks all code edits performed manually (e.g. via text-based `replace_file_content` or `write_to_file`) during the development of `semedit`.
 
 The objective is to categorize the underlying intent of each manual edit, identify which editing capabilities are absent from `semedit`, and prioritize future semantic tools.

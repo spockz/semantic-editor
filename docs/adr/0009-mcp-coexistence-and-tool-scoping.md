@@ -17,9 +17,8 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
 2. **Distinct Intent-Based Naming**: Navigation tools in `semedit` use explicit intent names that never collide with raw LSP methods:
    * Use `resolve_symbol_location` (takes qualified identifier string) instead of `goToDefinition`.
    * Use `query_symbol_references` instead of `findReferences`.
-3. **Configurable MCP Profiles**: Support a `--profile` flag on `semedit mcp`:
-   * `--profile=mutations-only`: Exposes only mutating and verification tools; relies on the environment's existing LSP-MCP for navigation.
-   * `--profile=full` (Default): Exposes both intent-based symbol location and mutation tools.
+3. **Separate Execution and Catalog Profiles**: `--profile=mutations-only` remains an orthogonal execution filter for read-only tools. `--tool-profile=base` is the default MCP catalog and exposes generic construct insertion, replacement, removal, and movement; rename; lookup, inspect, outline, references; verify; batch; snapshot; and undo. `--tool-profile=full` exposes every registered operation and support utility. Live reload remains opt-in.
+   Specialized operations stay registered, executable through the CLI, and eligible for batch dispatch regardless of catalog discovery. The repeatable `--expose-tool-variant verb:kind` flag selectively adds specialized variants to the base catalog. Values accept comma-separated patterns and `*` wildcards, such as `insert:*`, `*:function`, or `insert:function,insert:type`. Invalid patterns and patterns matching no registered variant fail before the server starts. Variant metadata is explicit on each operation and discovery filters only the top-level catalog; it does not change backend capabilities or batch schemas.
 4. **Dynamic Language Scoping at Initialization**:
    During the `initialize` handshake, the server extracts workspace context (`rootUri`, `workspaceFolders`, or client `initializationOptions`) and identifies the active language backend. The tool schemas returned to the client (in `tools/list` and capability responses) are dynamically scoped:
    * **Language-Specific Tool Availability**: Tools with handlers only for a specific language (e.g. build dependency management, framework-specific actions) are omitted when that language is absent.
@@ -54,7 +53,8 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
 ## Invariants
 
 * `semedit` tool names must never collide with standard LSP method names.
-* Mutating operations (`semantic_rename`, `organize_imports`, `verify_diagnostics`) are always exposed across all profiles.
+* The base catalog exposes the generic editing lifecycle and core navigation and workspace tools. Full adds specialized operations and support utilities. Variant filters add only tagged specialized operations.
+* Catalog filtering never deletes registry operations or changes CLI or batch dispatch.
 * Tool schemas and parameter enums presented after `initialize` must reflect the capabilities of supported enabled workspace backends without including choices from unrelated backends.
 * An operation's choices are the union of its supported enabled workspace backends; execution validates the selected backend. Broad mixed-language unions are valid, while choices from backends with no implementation of that operation are not.
 

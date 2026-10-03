@@ -1,17 +1,17 @@
 # Exact declaration and case removals preserve siblings; safe deletion refuses incomplete preflights.
-exec semedit remove-construct --file api/decls.go --kind variable --symbol Remove
+exec semedit remove-construct --file api/decls.go --kind var --symbol Remove
 stdout 'Removed selected node'
 stdout 'diagnostic_status:'
 exec semedit remove-construct --file api/routes.go --kind case --in-function Route --discriminator route --target-case '"old"'
 stdout 'Removed selected node'
-exec semedit remove-construct --file api/decls.go --kind constant --symbol safeMagic --safe-delete
+exec semedit remove-construct --file api/decls.go --kind const --symbol safeMagic --safe-delete
 stdout 'Safe deletion checks run'
-! exec semedit remove-construct --file api/decls.go --kind constant --symbol blockedConstant --safe-delete
+! exec semedit remove-construct --file api/decls.go --kind const --symbol blockedConstant --safe-delete
 stderr 'safe_delete refused'
 stderr 'module_reference_scan_complete'
 cmp api/decls.go want/api/decls.go
 cmp api/routes.go want/api/routes.go
-! exec semedit remove-construct --file api/decls.go --kind variable --symbol left
+! exec semedit remove-construct --file api/decls.go --kind var --symbol left
 stderr 'shared value spec'
 cmp api/decls.go want/api/decls.go
 stdin remove-refusal.json
@@ -88,4 +88,4 @@ func Route(route string) {
 }
 -- remove-refusal.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_remove_construct","arguments":{"file":"api/decls.go","kind":"constant","symbol":"blockedConstant","safe_delete":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_remove_construct","arguments":{"file":"api/decls.go","kind":"const","symbol":"blockedConstant","safe_delete":true}}}
