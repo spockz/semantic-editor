@@ -157,12 +157,18 @@ func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, exe
 		output = io.Discard
 	}
 	concurrency := min(max(plan.Options.Concurrency, 1), len(plan.Jobs))
-	type indexedOutcome struct {
-		index   int
-		outcome JobOutcome
-	}
+	completed := runPlanWorkers(ctx, plan, concurrency, execute)
+	return collectPlanOutcomes(output, plan, completed)
+}
+
+type indexedPlanOutcome struct {
+	index   int
+	outcome JobOutcome
+}
+
+func runPlanWorkers(ctx context.Context, plan *BenchmarkPlan, concurrency int, execute JobExecutor) <-chan indexedPlanOutcome {
 	jobs := make(chan int, len(plan.Jobs))
-	completed := make(chan indexedOutcome, len(plan.Jobs))
+	completed := make(chan indexedPlanOutcome, len(plan.Jobs))
 	for index := range plan.Jobs {
 		jobs <- index
 	}
@@ -172,91 +178,107 @@ func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, exe
 		workers.Go(func() {
 			for index := range jobs {
 				job := plan.Jobs[index]
-				var result *RunResult
-				var err error
-				switch {
-				case ctx.Err() != nil:
-					err = ctx.Err()
-				case execute == nil:
-					err = fmt.Errorf("job executor is nil")
-				default:
-					jobCtx, cancel := context.WithTimeout(ctx, plan.Options.Timeout)
-					result, err = execute(jobCtx, job)
-					cancel()
-					if result == nil && err == nil {
-						err = fmt.Errorf("job executor returned nil result without an error")
-					}
-				}
-				if result == nil {
-					result = &RunResult{}
-				}
-				result.TaskID = job.TaskID
-				result.JobID = job.ID
-				result.ComparisonPairID = job.PairID
-				result.Variant = job.Context
-				if job.PromptVariant != "" {
-					result.Variant += ":" + job.PromptVariant
-				}
-				result.Repeat = job.Repeat
-				result.PromptVariant = job.PromptVariant
-				result.Target = job.Target
-				result.Arm = job.Arm
-				result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
-				result.SemeditArmRestrictionApplied = job.Arm == ArmSemedit
-				result.Prompt = job.Execution.Prompt
-				result.MCPServerInstructions = job.MCPServerInstructions
-				if job.Arm == ArmControl {
-					result.SemeditArmRestrict = ""
-					result.SemeditArmRestrictionApplied = false
-					result.Prompt = ""
-				}
-				if result.Provenance == nil {
-					result.Provenance = make(ProvenanceSet)
-				}
-				for key, value := range plan.Options.Provenance {
-					if _, exists := result.Provenance[key]; !exists {
-						result.Provenance[key] = value
-					}
-				}
-				if err != nil {
-					result.Success = false
-					result.Error = err.Error()
-				} else if result.Error != "" {
-					result.Success = false
-				}
-				completed <- indexedOutcome{index: index, outcome: JobOutcome{Job: job, Result: result, Err: err}}
+				completed <- indexedPlanOutcome{index: index, outcome: executePlanJob(ctx, plan, job, execute)}
 			}
 		})
 	}
 	go func() { workers.Wait(); close(completed) }()
+	return completed
+}
+
+func executePlanJob(ctx context.Context, plan *BenchmarkPlan, job Job, execute JobExecutor) JobOutcome {
+	var result *RunResult
+	var err error
+	switch {
+	case ctx.Err() != nil:
+		err = ctx.Err()
+	case execute == nil:
+		err = fmt.Errorf("job executor is nil")
+	default:
+		jobCtx, cancel := context.WithTimeout(ctx, plan.Options.Timeout)
+		result, err = execute(jobCtx, job)
+		cancel()
+		if result == nil && err == nil {
+			err = fmt.Errorf("job executor returned nil result without an error")
+		}
+	}
+	if result == nil {
+		result = &RunResult{}
+	}
+	populatePlanResult(plan, job, result, err)
+	return JobOutcome{Job: job, Result: result, Err: err}
+}
+
+func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err error) {
+	result.TaskID = job.TaskID
+	result.JobID = job.ID
+	result.ComparisonPairID = job.PairID
+	result.Variant = job.Context
+	if job.PromptVariant != "" {
+		result.Variant += ":" + job.PromptVariant
+	}
+	result.Repeat = job.Repeat
+	result.PromptVariant = job.PromptVariant
+	result.Target = job.Target
+	result.Arm = job.Arm
+	result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
+	result.SemeditArmRestrictionApplied = job.Arm == ArmSemedit
+	result.Prompt = job.Execution.Prompt
+	result.MCPServerInstructions = job.MCPServerInstructions
+	if job.Arm == ArmControl {
+		result.SemeditArmRestrict = ""
+		result.SemeditArmRestrictionApplied = false
+		result.Prompt = ""
+	}
+	if result.Provenance == nil {
+		result.Provenance = make(ProvenanceSet)
+	}
+	for key, value := range plan.Options.Provenance {
+		if _, exists := result.Provenance[key]; !exists {
+			result.Provenance[key] = value
+		}
+	}
+	if err != nil {
+		result.Success = false
+		result.Error = err.Error()
+	} else if result.Error != "" {
+		result.Success = false
+	}
+}
+
+func collectPlanOutcomes(output io.Writer, plan *BenchmarkPlan, completed <-chan indexedPlanOutcome) ([]JobOutcome, error) {
 	ordered := make([]JobOutcome, len(plan.Jobs))
 	var progressErr error
 	done := 0
 	for item := range completed {
 		done++
 		ordered[item.index] = item.outcome
-		remaining := len(plan.Jobs) - done
-		status := "PASS"
-		if item.outcome.Err != nil {
-			if errors.Is(item.outcome.Err, context.Canceled) || errors.Is(item.outcome.Err, context.DeadlineExceeded) {
-				status = "CANCELLED"
-			} else {
-				status = "ERROR"
-			}
-		} else if !item.outcome.Result.Success {
-			status = "FAIL"
-		}
-		line := fmt.Sprintf("[%d/%d completed · %d remaining] %s run_id=%s job=%s pair=%s task=%s target=%s arm=%s", done, len(plan.Jobs), remaining, status, emptyAsDash(plan.Options.RunID), item.outcome.Job.ID, emptyAsDash(item.outcome.Job.PairID), item.outcome.Job.TaskID, item.outcome.Job.Target.String(), item.outcome.Job.Arm)
-		if item.outcome.Err != nil {
-			line += " error=" + compactBenchmarkProgressError(item.outcome.Err.Error())
-		} else if item.outcome.Result.Error != "" {
-			line += " error=" + compactBenchmarkProgressError(item.outcome.Result.Error)
-		}
-		if _, err := fmt.Fprintln(output, line); err != nil {
+		if err := writePlanProgress(output, plan, done, item.outcome); err != nil {
 			progressErr = errors.Join(progressErr, fmt.Errorf("write job progress: %w", err))
 		}
 	}
 	return ordered, progressErr
+}
+
+func writePlanProgress(output io.Writer, plan *BenchmarkPlan, done int, outcome JobOutcome) error {
+	status := "PASS"
+	if outcome.Err != nil {
+		if errors.Is(outcome.Err, context.Canceled) || errors.Is(outcome.Err, context.DeadlineExceeded) {
+			status = "CANCELLED"
+		} else {
+			status = "ERROR"
+		}
+	} else if !outcome.Result.Success {
+		status = "FAIL"
+	}
+	line := fmt.Sprintf("[%d/%d completed · %d remaining] %s run_id=%s job=%s pair=%s task=%s target=%s arm=%s", done, len(plan.Jobs), len(plan.Jobs)-done, status, emptyAsDash(plan.Options.RunID), outcome.Job.ID, emptyAsDash(outcome.Job.PairID), outcome.Job.TaskID, outcome.Job.Target.String(), outcome.Job.Arm)
+	if outcome.Err != nil {
+		line += " error=" + compactBenchmarkProgressError(outcome.Err.Error())
+	} else if outcome.Result.Error != "" {
+		line += " error=" + compactBenchmarkProgressError(outcome.Result.Error)
+	}
+	_, err := fmt.Fprintln(output, line)
+	return err
 }
 
 type variantSelection struct {
@@ -358,42 +380,70 @@ func supportedTaskContexts(task *Task) []string {
 }
 
 func discoverPlanFixtures(benchDir string, taskIDs []string) ([]fixtureSpec, error) {
-	dirs := []string{benchDir}
+	byID := make(map[string]fixtureSpec)
+	for _, source := range fixtureDirectories(benchDir) {
+		if err := addFixtureDirectory(byID, source); err != nil {
+			return nil, err
+		}
+	}
+	return selectPlanFixtures(byID, taskIDs)
+}
+
+type fixtureDirectory struct {
+	path       string
+	optional   bool
+	skipBadTxt bool
+}
+
+func fixtureDirectories(benchDir string) []fixtureDirectory {
+	directories := []fixtureDirectory{{path: benchDir}}
 	scriptsDir := filepath.Join(filepath.Dir(benchDir), "scripts")
 	if filepath.Clean(scriptsDir) != filepath.Clean(benchDir) {
-		dirs = append(dirs, scriptsDir)
+		directories = append(directories, fixtureDirectory{path: scriptsDir, optional: true, skipBadTxt: true})
 	}
-	byID := make(map[string]fixtureSpec)
-	for dirIndex, dir := range dirs {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			if dirIndex > 0 && os.IsNotExist(err) {
-				continue
-			}
-			return nil, fmt.Errorf("read fixture directory %s: %w", dir, err)
+	return directories
+}
+
+func addFixtureDirectory(byID map[string]fixtureSpec, source fixtureDirectory) error {
+	entries, err := os.ReadDir(source.path)
+	if err != nil {
+		if source.optional && os.IsNotExist(err) {
+			return nil
 		}
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txtar") {
-				continue
-			}
-			path := filepath.Join(dir, entry.Name())
-			// #nosec G304 -- path is selected from the configured benchmark directories by os.ReadDir.
-			data, err := os.ReadFile(path)
-			if err != nil {
-				return nil, fmt.Errorf("read fixture %s: %w", path, err)
-			}
-			task, err := ParseTask(data)
-			if err != nil {
-				if dirIndex > 0 {
-					continue
-				}
-				return nil, fmt.Errorf("parse fixture %s: %w", path, err)
-			}
-			if _, exists := byID[task.Metadata.TaskID]; !exists {
-				byID[task.Metadata.TaskID] = fixtureSpec{Path: path, Task: task}
-			}
+		return fmt.Errorf("read fixture directory %s: %w", source.path, err)
+	}
+	for _, entry := range entries {
+		if err := addFixtureEntry(byID, source, entry); err != nil {
+			return err
 		}
 	}
+	return nil
+}
+
+func addFixtureEntry(byID map[string]fixtureSpec, source fixtureDirectory, entry os.DirEntry) error {
+	if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".txtar") {
+		return nil
+	}
+	path := filepath.Join(source.path, entry.Name())
+	// #nosec G304 -- path is selected from the configured benchmark directories by os.ReadDir.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read fixture %s: %w", path, err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		if source.skipBadTxt {
+			return nil
+		}
+		return fmt.Errorf("parse fixture %s: %w", path, err)
+	}
+	if _, exists := byID[task.Metadata.TaskID]; !exists {
+		byID[task.Metadata.TaskID] = fixtureSpec{Path: path, Task: task}
+	}
+	return nil
+}
+
+func selectPlanFixtures(byID map[string]fixtureSpec, taskIDs []string) ([]fixtureSpec, error) {
 	ids := taskIDs
 	if len(ids) == 0 || slices.Contains(ids, "all") || slices.Contains(ids, "*") {
 		ids = slices.Sorted(maps.Keys(byID))

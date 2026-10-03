@@ -72,60 +72,84 @@ func TestBenchmarkProcessHelper(t *testing.T) {
 
 func TestCLIPlansBeforeExecutionAndIsolatesRestrictionPolicies(t *testing.T) {
 	var baselinePrompt string
-	readRestriction := "Do not inspect Go implementation files (non-test *.go)"
 	for _, policy := range []string{"read", "write", "readwrite", "default"} {
 		t.Run(policy, func(t *testing.T) {
-			flags := []string{}
-			resolved := policy
-			if policy == "default" {
-				resolved = "write"
-			} else {
-				flags = append(flags, "--semedit-arm-restrict="+policy)
-			}
-			trial := runCLITrial(t, flags, false)
-			if trial.Err != nil {
-				t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
-			}
-			if len(trial.Invocations) != 2 || len(trial.Report.Runs) != 2 {
-				t.Fatalf("invocations=%d results=%d, want paired jobs\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
-			}
-			for _, invocation := range trial.Invocations {
-				if !strings.Contains(invocation.Plan, "Resolved benchmark plan: 2 jobs") || !strings.Contains(invocation.Plan, "arm=baseline-diff") || !strings.Contains(invocation.Plan, "arm=semedit") {
-					t.Errorf("provider started before complete plan:\n%s", invocation.Plan)
-				}
-				baseline := slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=false")
-				if baseline {
-					if baselinePrompt == "" {
-						baselinePrompt = invocation.Prompt
-					}
-					if invocation.Prompt != baselinePrompt {
-						t.Errorf("policy %s altered baseline prompt", policy)
-					}
-					if strings.Contains(invocation.Prompt, readRestriction) || strings.Contains(invocation.Prompt, "Shell commands for builds") {
-						t.Errorf("baseline received policy steering: %s", invocation.Prompt)
-					}
-				} else {
-					if !slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=true") {
-						t.Error("semedit MCP not enabled")
-					}
-					read := strings.Contains(invocation.Prompt, readRestriction)
-					write := strings.Contains(invocation.Prompt, "supported source code modifications")
-					if read != (resolved != "write") || write != (resolved != "read") {
-						t.Errorf("policy %s wrong steering: %s", policy, invocation.Prompt)
-					}
-					if !strings.Contains(invocation.Prompt, "Shell commands for builds and tests are allowed") {
-						t.Error("shell build/test permission missing")
-					}
-				}
-			}
-			assertCLIResultConditions(t, trial, resolved)
-			if trial.Report.Runs[0].ComparisonPairID != trial.Report.Runs[1].ComparisonPairID {
-				t.Error("agent arms not paired")
-			}
-			if !strings.Contains(trial.Output, "[2/2 completed · 0 remaining]") {
-				t.Error("completion accounting missing")
-			}
+			assertCLIRestrictionPolicy(t, policy, &baselinePrompt)
 		})
+	}
+}
+
+func assertCLIRestrictionPolicy(t *testing.T, policy string, baselinePrompt *string) {
+	t.Helper()
+	flags, resolved := cliRestrictionFlags(policy)
+	trial := runCLITrial(t, flags, false)
+	if trial.Err != nil {
+		t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
+	}
+	assertCLIPairedResults(t, trial)
+	for _, invocation := range trial.Invocations {
+		assertCLIPlanWasResolved(t, invocation)
+		if slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=false") {
+			assertCLIBaselinePolicyIsolation(t, policy, baselinePrompt, invocation.Prompt)
+			continue
+		}
+		assertCLISemeditPolicy(t, policy, resolved, invocation.Prompt, invocation.Args)
+	}
+	assertCLIResultConditions(t, trial, resolved)
+	if trial.Report.Runs[0].ComparisonPairID != trial.Report.Runs[1].ComparisonPairID {
+		t.Error("agent arms not paired")
+	}
+	if !strings.Contains(trial.Output, "[2/2 completed · 0 remaining]") {
+		t.Error("completion accounting missing")
+	}
+}
+
+func cliRestrictionFlags(policy string) ([]string, string) {
+	if policy == "default" {
+		return nil, "write"
+	}
+	return []string{"--semedit-arm-restrict=" + policy}, policy
+}
+
+func assertCLIPairedResults(t *testing.T, trial cliTrial) {
+	t.Helper()
+	if len(trial.Invocations) != 2 || len(trial.Report.Runs) != 2 {
+		t.Fatalf("invocations=%d results=%d, want paired jobs\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	}
+}
+
+func assertCLIPlanWasResolved(t *testing.T, invocation cliProviderInvocation) {
+	t.Helper()
+	if !strings.Contains(invocation.Plan, "Resolved benchmark plan: 2 jobs") || !strings.Contains(invocation.Plan, "arm=baseline-diff") || !strings.Contains(invocation.Plan, "arm=semedit") {
+		t.Errorf("provider started before complete plan:\n%s", invocation.Plan)
+	}
+}
+
+func assertCLIBaselinePolicyIsolation(t *testing.T, policy string, baselinePrompt *string, prompt string) {
+	t.Helper()
+	if *baselinePrompt == "" {
+		*baselinePrompt = prompt
+	}
+	if prompt != *baselinePrompt {
+		t.Errorf("policy %s altered baseline prompt", policy)
+	}
+	if strings.Contains(prompt, "Do not inspect Go implementation files (non-test *.go)") || strings.Contains(prompt, "Shell commands for builds") {
+		t.Errorf("baseline received policy steering: %s", prompt)
+	}
+}
+
+func assertCLISemeditPolicy(t *testing.T, policy, resolved, prompt string, args []string) {
+	t.Helper()
+	if !slices.Contains(args, "mcp_servers.semedit.enabled=true") {
+		t.Error("semedit MCP not enabled")
+	}
+	read := strings.Contains(prompt, "Do not inspect Go implementation files (non-test *.go)")
+	write := strings.Contains(prompt, "supported source code modifications")
+	if read != (resolved != "write") || write != (resolved != "read") {
+		t.Errorf("policy %s wrong steering: %s", policy, prompt)
+	}
+	if !strings.Contains(prompt, "Shell commands for builds and tests are allowed") {
+		t.Error("shell build/test permission missing")
 	}
 }
 
@@ -299,7 +323,29 @@ type cliProviderInvocation struct {
 	Directory string
 }
 
+type cliTrialWorkspace struct {
+	root       string
+	bin        string
+	fixtures   string
+	evidence   string
+	outputPath string
+	resultPath string
+	executable string
+}
+
+type cliProcessOutput struct {
+	output string
+	err    error
+}
+
 func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
+	t.Helper()
+	workspace := prepareCLITrialWorkspace(t, malformed)
+	process := runCLITrialProcess(t, workspace, extra)
+	return readCLITrialResult(t, workspace, process)
+}
+
+func prepareCLITrialWorkspace(t *testing.T, malformed bool) cliTrialWorkspace {
 	t.Helper()
 	root := t.TempDir()
 	bin := filepath.Join(root, "bin")
@@ -318,11 +364,11 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 			t.Fatal(err)
 		}
 	}
-	exe, executableErr := os.Executable()
+	executable, executableErr := os.Executable()
 	if executableErr != nil {
 		t.Fatal(executableErr)
 	}
-	script := "#!/bin/sh\nSEMEDIT_TEST_PROCESS=provider exec '" + strings.ReplaceAll(exe, "'", "'\\''") + "' -test.run=^TestBenchmarkProcessHelper$ -- \"$@\"\n"
+	script := "#!/bin/sh\nSEMEDIT_TEST_PROCESS=provider exec '" + strings.ReplaceAll(executable, "'", "'\\''") + "' -test.run=^TestBenchmarkProcessHelper$ -- \"$@\"\n"
 	provider := filepath.Join(bin, "codex")
 	if err := pipeline.WriteAtomic(provider, []byte(script)); err != nil {
 		t.Fatal(err)
@@ -331,36 +377,67 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 	if err := os.Chmod(provider, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	outputPath := filepath.Join(root, "output.log")
-	output, outputErr := os.Create(outputPath)
+	return cliTrialWorkspace{
+		root:       root,
+		bin:        bin,
+		fixtures:   fixtures,
+		evidence:   evidence,
+		outputPath: filepath.Join(root, "output.log"),
+		resultPath: filepath.Join(root, "result.json"),
+		executable: executable,
+	}
+}
+
+func runCLITrialProcess(t *testing.T, workspace cliTrialWorkspace, extra []string) cliProcessOutput {
+	t.Helper()
+	output, outputErr := os.Create(workspace.outputPath)
 	if outputErr != nil {
 		t.Fatal(outputErr)
 	}
-	resultPath := filepath.Join(root, "result.json")
 	args := make([]string, 0, 13+len(extra))
-	args = append(args, "-test.run=^TestBenchmarkProcessHelper$", "--", "--dir", fixtures, "--target", "codex", "--variants", "small", "--concurrency", "1", "--out-dir=", "--semedit-prewarm-verify=false", "--out-json", resultPath)
+	args = append(args, "-test.run=^TestBenchmarkProcessHelper$", "--", "--dir", workspace.fixtures, "--target", "codex", "--variants", "small", "--concurrency", "1", "--out-dir=", "--semedit-prewarm-verify=false", "--out-json", workspace.resultPath)
 	args = append(args, extra...)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	// #nosec G204 -- execute this test binary with controlled arguments and a fake provider.
-	command := exec.CommandContext(ctx, exe, args...)
-	command.Dir = root
-	command.Env = append(os.Environ(), "SEMEDIT_TEST_PROCESS=cli", "SEMEDIT_TEST_OUTPUT="+outputPath, "SEMEDIT_TEST_EVIDENCE="+evidence, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	command := exec.CommandContext(ctx, workspace.executable, args...)
+	command.Dir = workspace.root
+	command.Env = append(os.Environ(), "SEMEDIT_TEST_PROCESS=cli", "SEMEDIT_TEST_OUTPUT="+workspace.outputPath, "SEMEDIT_TEST_EVIDENCE="+workspace.evidence, "PATH="+workspace.bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	command.Stdout = output
 	command.Stderr = output
 	runErr := command.Run()
 	if closeErr := output.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	out, readErr := os.ReadFile(outputPath)
+	data, readErr := os.ReadFile(workspace.outputPath)
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	trial := cliTrial{Output: string(out), Err: runErr}
+	return cliProcessOutput{output: string(data), err: runErr}
+}
+
+func readCLITrialResult(t *testing.T, workspace cliTrialWorkspace, process cliProcessOutput) cliTrial {
+	t.Helper()
+	trial := cliTrial{Output: process.output, Err: process.err}
+	trial.Invocations = readCLIProviderInvocations(t, workspace.evidence)
+	data, readErr := os.ReadFile(workspace.resultPath)
+	if readErr == nil {
+		if err := json.Unmarshal(data, &trial.Report); err != nil {
+			t.Fatal(err)
+		}
+	} else if !os.IsNotExist(readErr) {
+		t.Fatal(readErr)
+	}
+	return trial
+}
+
+func readCLIProviderInvocations(t *testing.T, evidence string) []cliProviderInvocation {
+	t.Helper()
 	logs, globErr := filepath.Glob(filepath.Join(evidence, "*.json"))
 	if globErr != nil {
 		t.Fatal(globErr)
 	}
+	invocations := make([]cliProviderInvocation, 0, len(logs))
 	for _, log := range logs {
 		data, err := os.ReadFile(log)
 		if err != nil {
@@ -370,17 +447,9 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 		if err := json.Unmarshal(data, &invocation); err != nil {
 			t.Fatal(err)
 		}
-		trial.Invocations = append(trial.Invocations, invocation)
+		invocations = append(invocations, invocation)
 	}
-	data, readErr := os.ReadFile(resultPath)
-	if readErr == nil {
-		if err := json.Unmarshal(data, &trial.Report); err != nil {
-			t.Fatal(err)
-		}
-	} else if !os.IsNotExist(readErr) {
-		t.Fatal(readErr)
-	}
-	return trial
+	return invocations
 }
 
 func assertCLIResultConditions(t *testing.T, trial cliTrial, resolved string) {

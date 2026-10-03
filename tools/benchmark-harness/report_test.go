@@ -91,217 +91,178 @@ func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
 	}
 }
 
+type comparisonFixtureSpec struct {
+	variant              string
+	arm                  ArmType
+	turns                int
+	wallClock            time.Duration
+	promptTokens         int
+	cachedPromptTokens   int
+	uncachedPromptTokens int
+	outputTokens         int
+	reasoningTokens      int
+	reflections          bool
+}
+
+func comparisonFixtureRuns(target Target) []*RunResult {
+	specs := []comparisonFixtureSpec{
+		{
+			variant:              "small",
+			arm:                  ArmBaseline,
+			turns:                3,
+			wallClock:            12 * time.Second,
+			promptTokens:         15000,
+			cachedPromptTokens:   10000,
+			uncachedPromptTokens: 5000,
+			outputTokens:         800,
+			reasoningTokens:      200,
+		},
+		{
+			variant:              "small",
+			arm:                  ArmSemedit,
+			turns:                1,
+			wallClock:            2 * time.Second,
+			promptTokens:         12000,
+			cachedPromptTokens:   10000,
+			uncachedPromptTokens: 2000,
+			outputTokens:         150,
+			reasoningTokens:      50,
+			reflections:          true,
+		},
+		{
+			variant:              "large",
+			arm:                  ArmBaseline,
+			turns:                5,
+			wallClock:            25 * time.Second,
+			promptTokens:         30000,
+			cachedPromptTokens:   25000,
+			uncachedPromptTokens: 5000,
+			outputTokens:         1200,
+			reasoningTokens:      300,
+		},
+		{
+			variant:              "large",
+			arm:                  ArmSemedit,
+			turns:                1,
+			wallClock:            2 * time.Second,
+			promptTokens:         27000,
+			cachedPromptTokens:   25000,
+			uncachedPromptTokens: 2000,
+			outputTokens:         160,
+			reasoningTokens:      50,
+		},
+	}
+	runs := make([]*RunResult, 0, len(specs))
+	for _, spec := range specs {
+		runs = append(runs, comparisonFixtureRun(target, spec))
+	}
+	return runs
+}
+
+func comparisonFixtureRun(target Target, spec comparisonFixtureSpec) *RunResult {
+	run := &RunResult{
+		TaskID:               "task-01-rename-local",
+		Variant:              spec.variant,
+		Target:               target,
+		Arm:                  spec.arm,
+		Success:              true,
+		Turns:                spec.turns,
+		WallClock:            spec.wallClock,
+		PromptTokens:         spec.promptTokens,
+		CachedPromptTokens:   spec.cachedPromptTokens,
+		UncachedPromptTokens: spec.uncachedPromptTokens,
+		OutputTokens:         spec.outputTokens,
+		ReasoningTokens:      spec.reasoningTokens,
+		Oracle:               &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
+	}
+	if spec.reflections {
+		run.SemanticToolReflection = &SemanticToolReflection{Prompt: "Why did you not use semantic_* tools?", Response: "Ordinary editing seemed simpler.", WallClock: time.Second, Turns: 1}
+		run.SemanticBatchReflection = &SemanticToolReflection{Prompt: "Why did you not use semantic_batch?", Response: "The operations were planned separately.", WallClock: time.Second, Turns: 1}
+	}
+	return run
+}
+
+func verifiedComparisonRuns(target Target) []*RunResult {
+	baseline := &RunResult{
+		TaskID:    "task-01-rename-local",
+		Variant:   "small+verified",
+		Target:    target,
+		Arm:       ArmBaseline,
+		Success:   true,
+		Turns:     4,
+		WallClock: 18 * time.Second,
+		Prompt:    "Rename Server.oldName to newName. Verify with go test.",
+		Diff:      "api/server.go: rename Server.oldName to Server.newName",
+		ToolsUsed: []string{"run_command", "replace_file_content"},
+		Oracle:    &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
+	}
+	semedit := &RunResult{
+		TaskID:    "task-01-rename-local",
+		Variant:   "small+verified",
+		Target:    target,
+		Arm:       ArmSemedit,
+		Success:   true,
+		Turns:     1,
+		WallClock: 2 * time.Second,
+		Prompt:    "Rename Server.oldName to newName. Verify with go test.",
+		Diff:      "api/server.go: semantic_rename Server.oldName -> newName",
+		ToolsUsed: []string{"semantic_rename"},
+		ToolCalls: []ToolCall{{Name: "semantic_rename", Server: "semedit", TransportStatus: ToolCallStatusSucceeded, FunctionalStatus: ToolCallStatusFailed, Failure: "symbol not found"}},
+		Oracle:    &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
+	}
+	return []*RunResult{baseline, semedit}
+}
+
+func assertMarkdownContains(t *testing.T, markdown string, expected []string) {
+	t.Helper()
+	for _, text := range expected {
+		if !strings.Contains(markdown, text) {
+			t.Errorf("markdown missing %q", text)
+		}
+	}
+}
+
 func TestBuildComparisonsAndRenderMarkdown(t *testing.T) {
 	target := Target{Harness: "agy", Model: "gemini-3.8-flash-low"}
+	runs := comparisonFixtureRuns(target)
+	comparisons := BuildComparisons(runs)
+	if len(comparisons) != 1 {
+		t.Fatalf("expected 1 comparison set, got %d", len(comparisons))
+	}
+	comparison := comparisons[0]
+	if comparison.SmallBaseline == nil || comparison.SmallSemedit == nil || comparison.LargeBaseline == nil || comparison.LargeSemedit == nil {
+		t.Fatal("expected all four runs in the comparison set")
+	}
+	markdown := (&BenchmarkReport{Timestamp: time.Now(), Runs: runs, Comparisons: comparisons}).RenderMarkdown()
+	assertMarkdownContains(t, markdown, []string{
+		"## Test case: `task-01-rename-local`",
+		"### Target: `agy/gemini-3.8-flash-low`",
+		"#### Configuration: default prompt · none MCP instructions",
+		"Top-Level User Turns",
+		"Internal Tool Cycles",
+		"Initial Load / Discovery Turns",
+		"MCP Discovery / Schema Turns",
+		"Total Tool Invocations",
+		"Oracle L1: Mutation Policy",
+		"Oracle L4: Verification Test",
+		"Semedit Tool-Use Reflection",
+		"Ordinary editing seemed simpler.",
+		"Semedit Batch-Use Reflection",
+		"The operations were planned separately.",
+	})
+}
 
-	runs := []*RunResult{ //nolint:prealloc // test data slice
-		{
-			TaskID:               "task-01-rename-local",
-			Variant:              "small",
-			Target:               target,
-			Arm:                  ArmBaseline,
-			Success:              true,
-			Turns:                3,
-			WallClock:            12 * time.Second,
-			PromptTokens:         15000,
-			CachedPromptTokens:   10000,
-			UncachedPromptTokens: 5000,
-			OutputTokens:         800,
-			ReasoningTokens:      200,
-			Oracle: &OracleResult{
-				Passed:       true,
-				Level1Policy: true,
-				Level2AST:    true,
-				Level3Build:  true,
-				Level4Test:   true,
-			},
-		},
-		{
-			TaskID:               "task-01-rename-local",
-			Variant:              "small",
-			Target:               target,
-			Arm:                  ArmSemedit,
-			Success:              true,
-			Turns:                1,
-			WallClock:            2 * time.Second,
-			PromptTokens:         12000,
-			CachedPromptTokens:   10000,
-			UncachedPromptTokens: 2000,
-			OutputTokens:         150,
-			ReasoningTokens:      50,
-			Oracle: &OracleResult{
-				Passed:       true,
-				Level1Policy: true,
-				Level2AST:    true,
-				Level3Build:  true,
-				Level4Test:   true,
-			},
-			SemanticToolReflection: &SemanticToolReflection{
-				Prompt:    "Why did you not use semantic_* tools?",
-				Response:  "Ordinary editing seemed simpler.",
-				WallClock: time.Second,
-				Turns:     1,
-			},
-			SemanticBatchReflection: &SemanticToolReflection{
-				Prompt:    "Why did you not use semantic_batch?",
-				Response:  "The operations were planned separately.",
-				WallClock: time.Second,
-				Turns:     1,
-			},
-		},
-		{
-			TaskID:               "task-01-rename-local",
-			Variant:              "large",
-			Target:               target,
-			Arm:                  ArmBaseline,
-			Success:              true,
-			Turns:                5,
-			WallClock:            25 * time.Second,
-			PromptTokens:         30000,
-			CachedPromptTokens:   25000,
-			UncachedPromptTokens: 5000,
-			OutputTokens:         1200,
-			ReasoningTokens:      300,
-			Oracle: &OracleResult{
-				Passed:       true,
-				Level1Policy: true,
-				Level2AST:    true,
-				Level3Build:  true,
-				Level4Test:   true,
-			},
-		},
-		{
-			TaskID:               "task-01-rename-local",
-			Variant:              "large",
-			Target:               target,
-			Arm:                  ArmSemedit,
-			Success:              true,
-			Turns:                1,
-			WallClock:            2 * time.Second,
-			PromptTokens:         27000,
-			CachedPromptTokens:   25000,
-			UncachedPromptTokens: 2000,
-			OutputTokens:         160,
-			ReasoningTokens:      50,
-			Oracle: &OracleResult{
-				Passed:       true,
-				Level1Policy: true,
-				Level2AST:    true,
-				Level3Build:  true,
-				Level4Test:   true,
-			},
-		},
-	}
-
-	comps := BuildComparisons(runs)
-	if len(comps) != 1 {
-		t.Fatalf("expected 1 comparison set, got %d", len(comps))
-	}
-
-	comp := comps[0]
-	if comp.SmallBaseline == nil || comp.SmallSemedit == nil || comp.LargeBaseline == nil || comp.LargeSemedit == nil {
-		t.Fatalf("expected all 4 runs populated in comparison set")
-	}
-
-	report := &BenchmarkReport{
-		Timestamp:   time.Now(),
-		Runs:        runs,
-		Comparisons: comps,
-	}
-
-	md := report.RenderMarkdown()
-	if !strings.Contains(md, "## Test case: `task-01-rename-local`") {
-		t.Errorf("markdown missing testcase heading")
-	}
-	if !strings.Contains(md, "### Target: `agy/gemini-3.8-flash-low`") {
-		t.Errorf("markdown missing target heading")
-	}
-	if !strings.Contains(md, "#### Configuration: default prompt · none MCP instructions") {
-		t.Errorf("markdown missing configuration heading")
-	}
-	if !strings.Contains(md, "Top-Level User Turns") {
-		t.Errorf("markdown missing Top-Level User Turns row")
-	}
-	if !strings.Contains(md, "Internal Tool Cycles") {
-		t.Errorf("markdown missing Internal Tool Cycles row")
-	}
-	if !strings.Contains(md, "Initial Load / Discovery Turns") {
-		t.Errorf("markdown missing Initial Load / Discovery Turns row")
-	}
-	if !strings.Contains(md, "MCP Discovery / Schema Turns") {
-		t.Errorf("markdown missing MCP Discovery / Schema Turns row")
-	}
-	if !strings.Contains(md, "Total Tool Invocations") {
-		t.Errorf("markdown missing Total Tool Invocations row")
-	}
-	if !strings.Contains(md, "Oracle L1: Mutation Policy") {
-		t.Errorf("markdown missing Oracle L1 row")
-	}
-	if !strings.Contains(md, "Oracle L4: Verification Test") {
-		t.Errorf("markdown missing Oracle L4 row")
-	}
-	if !strings.Contains(md, "Semedit Tool-Use Reflection") || !strings.Contains(md, "Ordinary editing seemed simpler.") {
-		t.Errorf("markdown missing semantic tool-use reflection: %s", md)
-	}
-	if !strings.Contains(md, "Semedit Batch-Use Reflection") || !strings.Contains(md, "The operations were planned separately.") {
-		t.Errorf("markdown missing semantic batch-use reflection: %s", md)
-	}
-
-	// Add verified runs to assert verified rendering
-	runs = append(runs,
-		&RunResult{
-			TaskID:    "task-01-rename-local",
-			Variant:   "small+verified",
-			Target:    target,
-			Arm:       ArmBaseline,
-			Success:   true,
-			Turns:     4,
-			WallClock: 18 * time.Second,
-			Prompt:    "Rename Server.oldName to newName. Verify with go test.",
-			Diff:      "api/server.go: rename Server.oldName to Server.newName",
-			ToolsUsed: []string{"run_command", "replace_file_content"},
-			Oracle:    &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
-		},
-		&RunResult{
-			TaskID:    "task-01-rename-local",
-			Variant:   "small+verified",
-			Target:    target,
-			Arm:       ArmSemedit,
-			Success:   true,
-			Turns:     1,
-			WallClock: 2 * time.Second,
-			Prompt:    "Rename Server.oldName to newName. Verify with go test.",
-			Diff:      "api/server.go: semantic_rename Server.oldName -> newName",
-			ToolsUsed: []string{"semantic_rename"},
-			ToolCalls: []ToolCall{{
-				Name:             "semantic_rename",
-				Server:           "semedit",
-				TransportStatus:  ToolCallStatusSucceeded,
-				FunctionalStatus: ToolCallStatusFailed,
-				Failure:          "symbol not found",
-			}},
-			Oracle: &OracleResult{Passed: true, Level1Policy: true, Level2AST: true, Level3Build: true, Level4Test: true},
-		},
-	)
-
-	reportVerified := &BenchmarkReport{
-		Timestamp:   time.Now(),
-		Runs:        runs,
-		Comparisons: BuildComparisons(runs),
-	}
-	mdVerified := reportVerified.RenderMarkdown()
-	if !strings.Contains(mdVerified, "##### Verified Directive Comparison (+Self-Correction Loop)") {
-		t.Errorf("markdown missing Verified Directive Comparison table")
-	}
-	if !strings.Contains(mdVerified, "###### Verified vs Semedit in Small Context") {
-		t.Errorf("markdown missing verified small-context variant")
-	}
-	if !strings.Contains(mdVerified, "<div class=\"callout callout-warning\"><div class=\"callout-title\"><span>⚠</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">Ordinary editing seemed simpler.</div></div>") {
-		t.Errorf("markdown missing semantic tool-use diagnostic reason: %s", mdVerified)
-	}
-	if !strings.Contains(mdVerified, "| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (<span role=\"img\" aria-label=\"Transport succeeded\" title=\"Transport succeeded\">✓</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span>): symbol not found |") {
-		t.Errorf("markdown missing tool call outcome: %s", mdVerified)
-	}
+func TestRenderMarkdownIncludesVerifiedDirectiveAndToolOutcome(t *testing.T) {
+	target := Target{Harness: "agy", Model: "gemini-3.8-flash-low"}
+	runs := append(comparisonFixtureRuns(target), verifiedComparisonRuns(target)...)
+	report := &BenchmarkReport{Timestamp: time.Now(), Runs: runs, Comparisons: BuildComparisons(runs)}
+	markdown := report.RenderMarkdown()
+	assertMarkdownContains(t, markdown, []string{
+		"##### Verified Directive Comparison (+Self-Correction Loop)",
+		"###### Verified vs Semedit in Small Context",
+		"<div class=\"callout callout-warning\"><div class=\"callout-title\"><span>⚠</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">Ordinary editing seemed simpler.</div></div>",
+		"| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (<span role=\"img\" aria-label=\"Transport succeeded\" title=\"Transport succeeded\">✓</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span>): symbol not found |",
+	})
 }
 
 func TestBuildComparisonsPreservesIndependentRepeats(t *testing.T) {

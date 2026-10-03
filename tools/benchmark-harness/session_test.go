@@ -198,6 +198,13 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertSessionProcessTaskResult(t, result)
+	assertSessionProcessWorkspace(t, countPath, workLog)
+	assertSessionProcessTranscript(t, result)
+}
+
+func assertSessionProcessTaskResult(t *testing.T, result *RunResult) {
+	t.Helper()
 	if !result.Success || result.Turns != 2 || result.PromptTokens != 12 || result.OutputTokens != 4 || result.ToolCount != 2 || result.DiagnosticToolCoverage == nil || result.DiagnosticToolCoverage.Complete || result.DiagnosticToolCoverage.ObservationState != ToolObservationPartial || result.DiagnosticToolCoverage.ExpectedSatisfied || result.DiagnosticToolCoverage.Missing != nil || !slices.Equal(result.DiagnosticToolCoverage.Observed, []string{"semantic_lookup", "semantic_replace_body"}) {
 		t.Fatalf("task aggregates include non-task telemetry or missed correction: %+v", result)
 	}
@@ -207,6 +214,10 @@ esac
 	if result.ToolCalls[1].FunctionalStatus != ToolCallStatusFailed {
 		t.Fatalf("failed-call outcome was lost: coverage=%#v call=%#v", result.DiagnosticToolCoverage, result.ToolCalls[1])
 	}
+}
+
+func assertSessionProcessWorkspace(t *testing.T, countPath, workLog string) {
+	t.Helper()
 	count, err := os.ReadFile(countPath)
 	if err != nil || string(count) != "3" {
 		t.Fatalf("expected initial, followup, and reflection process calls; count=%q err=%v", count, err)
@@ -219,6 +230,10 @@ esac
 	if len(lines) != 3 || lines[0] != lines[1] || lines[1] != lines[2] {
 		t.Fatalf("provider process changed work directory across turns: %q", workdirs)
 	}
+}
+
+func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
+	t.Helper()
 	transcriptPath := result.Provenance["session_transcript"]
 	transcript, err := os.ReadFile(transcriptPath)
 	if err != nil {
@@ -490,7 +505,7 @@ exit 0
 	for _, mode := range []string{"empty", "malformed", "null", "object"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("SEMEDIT_OPENCODE_STREAM", mode)
-			result := &RunResult{Arm: ArmBaseline}
+			result := &RunResult{Arm: ArmBaseline, Turns: 17}
 			_, err := runner.runOpenCode(context.Background(), root, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/fake"}, "followup", result, "resumed-session")
 			if err == nil {
 				t.Fatal("empty or malformed resumed event stream unexpectedly succeeded")
@@ -500,6 +515,9 @@ exit 0
 			}
 			if mode == "empty" && !strings.Contains(err.Error(), "no valid task events") {
 				t.Fatalf("empty stream diagnostic missing: %v", err)
+			}
+			if mode == "empty" && result.Turns != 0 {
+				t.Fatalf("empty stream retained prior turn count: %d", result.Turns)
 			}
 		})
 	}
@@ -570,20 +588,30 @@ func TestDiagnosticToolCoverageUsesAllTaskToolSelectionsAndKeepsBatchExplicit(t 
 }
 
 func TestExecuteAgentSkipsDiagnosticReflectionAfterFailedFinalOracle(t *testing.T) {
-	for _, followups := range [][]string{nil, {"retry once"}} {
-		name := "zero-followups"
-		if len(followups) > 0 {
-			name = "exhausted-followups"
-		}
-		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
-			bin := filepath.Join(root, "bin")
-			if err := os.Mkdir(bin, 0o750); err != nil {
-				t.Fatal(err)
-			}
-			countPath := filepath.Join(root, "count")
-			script := filepath.Join(bin, "codex")
-			program := `#!/bin/sh
+	cases := []struct {
+		name      string
+		followups []string
+	}{
+		{name: "zero-followups"},
+		{name: "exhausted-followups", followups: []string{"retry once"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			runFailedFinalOracleScenario(t, testCase.followups)
+		})
+	}
+}
+
+func runFailedFinalOracleScenario(t *testing.T, followups []string) {
+	t.Helper()
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	countPath := filepath.Join(root, "count")
+	script := filepath.Join(bin, "codex")
+	program := `#!/bin/sh
 count=0
 if [ -f "$SEMEDIT_REFLECTION_COUNT" ]; then count=$(cat "$SEMEDIT_REFLECTION_COUNT"); fi
 count=$((count + 1))
@@ -594,47 +622,45 @@ printf '{"type":"turn.started"}\n'
 printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
 printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n'
 `
-			if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-			t.Setenv("SEMEDIT_REFLECTION_COUNT", countPath)
-			t.Setenv("SEMEDIT_EXPECTED_TASK_ATTEMPTS", strconv.Itoa(1+len(followups)))
-			task := &Task{
-				Metadata: TaskMetadata{
-					TaskID:      "failed-final-oracle",
-					Instruction: "Add Missing.",
-					Oracle:      OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"Missing"}}},
-				},
-				Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Existing() {}\n")),
-			}
-			execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: followups, Policy: SemeditArmRestrictWrite}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(ctx, execution)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if ctx.Err() != nil {
-				t.Fatalf("task returned only after its context ended: %v", ctx.Err())
-			}
-			if result.Oracle == nil || result.Oracle.Passed || result.Oracle.FailureStage != "level_2_ast" {
-				t.Fatalf("final failed oracle was not preserved: %#v", result.Oracle)
-			}
-			if result.DiagnosticReflectionSkipped != "final task oracle did not pass" {
-				t.Fatalf("diagnostic skip reason = %q", result.DiagnosticReflectionSkipped)
-			}
-			if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil {
-				t.Fatalf("failed final oracle triggered diagnostic reflection: %#v", result)
-			}
-			count, err := os.ReadFile(countPath)
-			if err != nil || string(count) != strconv.Itoa(1+len(followups)) {
-				t.Fatalf("provider attempts = %q, err=%v; want %d task attempts and no reflection", count, err, 1+len(followups))
-			}
-			if len(result.InteractionSteps) != 1+len(followups) {
-				t.Fatalf("interaction steps = %d, want %d task attempts", len(result.InteractionSteps), 1+len(followups))
-			}
-		})
+	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_REFLECTION_COUNT", countPath)
+	t.Setenv("SEMEDIT_EXPECTED_TASK_ATTEMPTS", strconv.Itoa(1+len(followups)))
+	task := &Task{
+		Metadata: TaskMetadata{
+			TaskID:      "failed-final-oracle",
+			Instruction: "Add Missing.",
+			Oracle:      OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"Missing"}}},
+		},
+		Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Existing() {}\n")),
+	}
+	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: followups, Policy: SemeditArmRestrictWrite}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(ctx, execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ctx.Err() != nil {
+		t.Fatalf("task returned only after its context ended: %v", ctx.Err())
+	}
+	if result.Oracle == nil || result.Oracle.Passed || result.Oracle.FailureStage != "level_2_ast" {
+		t.Fatalf("final failed oracle was not preserved: %#v", result.Oracle)
+	}
+	if result.DiagnosticReflectionSkipped != "final task oracle did not pass" {
+		t.Fatalf("diagnostic skip reason = %q", result.DiagnosticReflectionSkipped)
+	}
+	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil {
+		t.Fatalf("failed final oracle triggered diagnostic reflection: %#v", result)
+	}
+	count, err := os.ReadFile(countPath)
+	if err != nil || string(count) != strconv.Itoa(1+len(followups)) {
+		t.Fatalf("provider attempts = %q, err=%v; want %d task attempts and no reflection", count, err, 1+len(followups))
+	}
+	if len(result.InteractionSteps) != 1+len(followups) {
+		t.Fatalf("interaction steps = %d, want %d task attempts", len(result.InteractionSteps), 1+len(followups))
 	}
 }
 

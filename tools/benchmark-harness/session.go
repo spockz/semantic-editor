@@ -146,50 +146,72 @@ func (s *agentSession) retainTaskMCPMetrics() error {
 }
 
 func (s *agentSession) close() (retErr error) {
-	var closeErr error
 	defer func() {
-		if s.workspaceRoot != nil {
-			if err := s.workspaceRoot.Close(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("close session workspace root: %w", err))
-			}
-			s.workspaceRoot = nil
-		}
-		if s.scratchRoot != nil {
-			if err := s.scratchRoot.Close(); err != nil {
-				closeErr = errors.Join(closeErr, fmt.Errorf("close benchmark scratch root: %w", err))
-			}
-			s.scratchRoot = nil
-		}
-		retErr = errors.Join(retErr, closeErr)
+		retErr = errors.Join(retErr, s.closeRoots())
 	}()
 	if err := s.retainTaskMCPMetrics(); err != nil {
 		return err
 	}
-	if s.result != nil {
-		state := s.toolObservationState
-		reason := strings.Join(s.toolObservationReasons, "; ")
-		if s.taskObservationTurns == 0 {
-			state = ToolObservationUnknown
-			reason = "no task turn produced tool observation evidence"
-		}
-		s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
-		if s.execution.Arm == ArmSemedit && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls)) {
-			if s.result.Error != "" {
-				s.result.DiagnosticReflectionSkipped = "task execution or oracle evaluation failed"
-			} else {
-				s.result.DiagnosticReflectionSkipped = "final task oracle did not pass"
-			}
-		}
-	}
+	s.finalizeResult()
 	if s.retainWorkDir {
-		if s.result != nil {
-			if s.result.Provenance == nil {
-				s.result.Provenance = make(ProvenanceSet)
-			}
-			s.result.Provenance["retained_working_directory"] = s.workDir
-		}
+		s.recordRetainedWorkDir()
 		return nil
 	}
+	return s.removeWorkspace()
+}
+
+func (s *agentSession) closeRoots() error {
+	var closeErr error
+	if s.workspaceRoot != nil {
+		if err := s.workspaceRoot.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close session workspace root: %w", err))
+		}
+		s.workspaceRoot = nil
+	}
+	if s.scratchRoot != nil {
+		if err := s.scratchRoot.Close(); err != nil {
+			closeErr = errors.Join(closeErr, fmt.Errorf("close benchmark scratch root: %w", err))
+		}
+		s.scratchRoot = nil
+	}
+	return closeErr
+}
+
+func (s *agentSession) finalizeResult() {
+	if s.result == nil {
+		return
+	}
+	state := s.toolObservationState
+	reason := strings.Join(s.toolObservationReasons, "; ")
+	if s.taskObservationTurns == 0 {
+		state = ToolObservationUnknown
+		reason = "no task turn produced tool observation evidence"
+	}
+	s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
+	shouldSkipReflection := s.execution.Arm == ArmSemedit && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls))
+	if shouldSkipReflection {
+		s.result.DiagnosticReflectionSkipped = diagnosticReflectionSkipReason(s.result.Error)
+	}
+}
+
+func diagnosticReflectionSkipReason(resultError string) string {
+	if resultError != "" {
+		return "task execution or oracle evaluation failed"
+	}
+	return "final task oracle did not pass"
+}
+
+func (s *agentSession) recordRetainedWorkDir() {
+	if s.result == nil {
+		return
+	}
+	if s.result.Provenance == nil {
+		s.result.Provenance = make(ProvenanceSet)
+	}
+	s.result.Provenance["retained_working_directory"] = s.workDir
+}
+
+func (s *agentSession) removeWorkspace() error {
 	if err := makeSessionWorkspaceRemovable(s.workspaceRoot); err != nil {
 		return fmt.Errorf("make session workspace removable: %w", err)
 	}
