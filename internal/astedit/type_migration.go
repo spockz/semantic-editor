@@ -155,22 +155,15 @@ func findPrivateStructField(file *ast.File, path, ownerName, fieldName string, f
 			if !ok {
 				return nil, fmt.Errorf("type migration owner %q is not a struct", ownerName)
 			}
-			for _, field := range structure.Fields.List {
-				if len(field.Names) != 1 && containsFieldName(field.Names, fieldName) {
-					return nil, fmt.Errorf("type migration refuses grouped struct fields")
+			result, err := matchingPrivateStructField(structure, fieldName)
+			if err != nil {
+				return nil, err
+			}
+			if result.found {
+				if found != nil {
+					return nil, fmt.Errorf("type migration field %s.%s is ambiguous", ownerName, fieldName)
 				}
-				for _, name := range field.Names {
-					if name.Name != fieldName {
-						continue
-					}
-					if ast.IsExported(name.Name) {
-						return nil, fmt.Errorf("type migration supports only unexported struct fields")
-					}
-					if found != nil {
-						return nil, fmt.Errorf("type migration field %s.%s is ambiguous", ownerName, fieldName)
-					}
-					found = field
-				}
+				found = result.field
 			}
 		}
 	}
@@ -178,6 +171,29 @@ func findPrivateStructField(file *ast.File, path, ownerName, fieldName string, f
 		return nil, fmt.Errorf("type migration field %s.%s was not found in %s", ownerName, fieldName, path)
 	}
 	return found, nil
+}
+
+type privateStructFieldResult struct {
+	field *ast.Field
+	found bool
+}
+
+func matchingPrivateStructField(structure *ast.StructType, fieldName string) (privateStructFieldResult, error) {
+	for _, field := range structure.Fields.List {
+		if len(field.Names) != 1 && containsFieldName(field.Names, fieldName) {
+			return privateStructFieldResult{}, fmt.Errorf("type migration refuses grouped struct fields")
+		}
+		for _, name := range field.Names {
+			if name.Name != fieldName {
+				continue
+			}
+			if ast.IsExported(name.Name) {
+				return privateStructFieldResult{}, fmt.Errorf("type migration supports only unexported struct fields")
+			}
+			return privateStructFieldResult{field: field, found: true}, nil
+		}
+	}
+	return privateStructFieldResult{}, nil
 }
 
 func containsFieldName(names []*ast.Ident, expected string) bool {
