@@ -168,64 +168,123 @@ func hasConstantTestFiles(files []string) bool {
 }
 
 func bindExtractionPackageInputs(ctx context.Context, loaded []*packages.Package, bound map[string]bool) (bool, error) {
-	roots := make(map[string]bool)
-	directories := make(map[string]bool)
-	auxiliary := make(map[string]bool)
-	files := make(map[string]bool)
-	manifests := make(map[string]bool)
+	inputs, err := collectExtractionPackageInputs(loaded)
+	if err != nil {
+		return false, err
+	}
+	return bindCollectedExtractionInputs(ctx, inputs, bound)
+}
+
+type extractionPackageInputs struct {
+	roots       map[string]bool
+	directories map[string]bool
+	auxiliary   map[string]bool
+	files       map[string]bool
+	manifests   map[string]bool
+}
+
+func newExtractionPackageInputs() extractionPackageInputs {
+	return extractionPackageInputs{
+		roots: make(map[string]bool), directories: make(map[string]bool),
+		auxiliary: make(map[string]bool), files: make(map[string]bool), manifests: make(map[string]bool),
+	}
+}
+
+func collectExtractionPackageInputs(loaded []*packages.Package) (extractionPackageInputs, error) {
+	inputs := newExtractionPackageInputs()
 	var visitErr error
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
-		module := pkg.Module
-		if module != nil {
-			if module.Replace != nil {
-				module = module.Replace
-			}
-			if module.Dir != "" {
-				root, err := filepath.Abs(module.Dir)
-				if err != nil {
-					visitErr = fmt.Errorf("resolve analysis module directory: %w", err)
-					return false
-				}
-				root = filepath.Clean(root)
-				roots[root] = true
-				for _, name := range []string{"go.mod", "go.sum"} {
-					manifests[filepath.Join(root, name)] = true
-				}
-			}
+		if visitErr != nil {
+			return false
 		}
-		for _, path := range append(append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...), pkg.OtherFiles...) {
-			if path == "" {
-				continue
-			}
-			absolute, err := filepath.Abs(path)
-			if err != nil {
-				visitErr = fmt.Errorf("resolve analysis source path %q: %w", path, err)
-				return false
-			}
-			absolute = filepath.Clean(absolute)
-			files[absolute] = true
-			directories[filepath.Dir(absolute)] = true
-		}
-		for _, path := range pkg.EmbedFiles {
-			if path == "" {
-				continue
-			}
-			absolute, err := filepath.Abs(path)
-			if err != nil {
-				visitErr = fmt.Errorf("resolve embed input path %q: %w", path, err)
-				return false
-			}
-			absolute = filepath.Clean(absolute)
-			auxiliary[absolute] = true
-			directories[filepath.Dir(absolute)] = true
+		if collectionErr := collectPackageInputRecord(pkg, &inputs); collectionErr != nil {
+			visitErr = collectionErr
+			return false
 		}
 		return true
 	}, nil)
 	if visitErr != nil {
-		return false, visitErr
+		return extractionPackageInputs{}, visitErr
 	}
+	return inputs, nil
+}
+
+func collectPackageInputRecord(pkg *packages.Package, inputs *extractionPackageInputs) error {
+	if err := collectModuleInput(pkg.Module, inputs); err != nil {
+		return err
+	}
+	goFiles := append(append(append([]string(nil), pkg.GoFiles...), pkg.CompiledGoFiles...), pkg.OtherFiles...)
+	if err := addExtractionInputPaths(goFiles, inputs.files, inputs.directories, "resolve analysis source path"); err != nil {
+		return err
+	}
+	return addExtractionInputPaths(pkg.EmbedFiles, inputs.auxiliary, inputs.directories, "resolve embed input path")
+}
+
+func collectModuleInput(module *packages.Module, inputs *extractionPackageInputs) error {
+	if module == nil {
+		return nil
+	}
+	if module.Replace != nil {
+		module = module.Replace
+	}
+	if module.Dir == "" {
+		return nil
+	}
+	root, err := filepath.Abs(module.Dir)
+	if err != nil {
+		return fmt.Errorf("resolve analysis module directory: %w", err)
+	}
+	root = filepath.Clean(root)
+	inputs.roots[root] = true
+	for _, name := range []string{"go.mod", "go.sum"} {
+		inputs.manifests[filepath.Join(root, name)] = true
+	}
+	return nil
+}
+
+func addExtractionInputPaths(paths []string, files, directories map[string]bool, operation string) error {
+	for _, path := range paths {
+		if path == "" {
+			continue
+		}
+		absolute, err := filepath.Abs(path)
+		if err != nil {
+			return fmt.Errorf("%s %q: %w", operation, path, err)
+		}
+		absolute = filepath.Clean(absolute)
+		files[absolute] = true
+		directories[filepath.Dir(absolute)] = true
+	}
+	return nil
+}
+
+func bindCollectedExtractionInputs(ctx context.Context, inputs extractionPackageInputs, bound map[string]bool) (bool, error) {
+	added, err := bindExtractionModuleRoots(ctx, inputs, bound)
+	if err != nil {
+		return false, err
+	}
+	directoryAdded, err := bindExtractionDirectories(ctx, inputs.directories, bound)
+	if err != nil {
+		return false, err
+	}
+	added = added || directoryAdded
+	manifestAdded, err := bindExtractionManifests(ctx, inputs.manifests, bound)
+	if err != nil {
+		return false, err
+	}
+	added = added || manifestAdded
+	if err := observeExtractionInputs(ctx, inputs.files, "compiled Go input"); err != nil {
+		return false, err
+	}
+	if err := observeExtractionInputs(ctx, inputs.auxiliary, "embedded input"); err != nil {
+		return false, err
+	}
+	return added, nil
+}
+
+func bindExtractionModuleRoots(ctx context.Context, inputs extractionPackageInputs, bound map[string]bool) (bool, error) {
 	added := false
-	for _, root := range sortedExtractionKeys(roots) {
+	for _, root := range sortedExtractionKeys(inputs.roots) {
 		key := "module:" + root
 		if bound[key] {
 			continue
@@ -238,12 +297,17 @@ func bindExtractionPackageInputs(ctx context.Context, loaded []*packages.Package
 		}
 		bound[key] = true
 		added = true
-		for directory := range directories {
+		for directory := range inputs.directories {
 			if moveWithin(root, directory) {
 				bound["dir:"+directory] = true
 			}
 		}
 	}
+	return added, nil
+}
+
+func bindExtractionDirectories(ctx context.Context, directories, bound map[string]bool) (bool, error) {
+	added := false
 	for _, directory := range sortedExtractionKeys(directories) {
 		key := "dir:" + directory
 		if bound[key] {
@@ -258,6 +322,11 @@ func bindExtractionPackageInputs(ctx context.Context, loaded []*packages.Package
 		bound[key] = true
 		added = true
 	}
+	return added, nil
+}
+
+func bindExtractionManifests(ctx context.Context, manifests, bound map[string]bool) (bool, error) {
+	added := false
 	for _, path := range sortedExtractionKeys(manifests) {
 		key := "manifest:" + filepath.Clean(path)
 		if bound[key] {
@@ -269,17 +338,16 @@ func bindExtractionPackageInputs(ctx context.Context, loaded []*packages.Package
 		bound[key] = true
 		added = true
 	}
-	for _, path := range sortedExtractionKeys(files) {
-		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
-			return false, fmt.Errorf("read compiled Go input %q: %w", path, err)
-		}
-	}
-	for _, path := range sortedExtractionKeys(auxiliary) {
-		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
-			return false, fmt.Errorf("read embedded input %q: %w", path, err)
-		}
-	}
 	return added, nil
+}
+
+func observeExtractionInputs(ctx context.Context, inputs map[string]bool, description string) error {
+	for _, path := range sortedExtractionKeys(inputs) {
+		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
+			return fmt.Errorf("read %s %q: %w", description, path, err)
+		}
+	}
+	return nil
 }
 
 func rejectExtractionPackageSymlinks(dir string) error {
