@@ -1162,7 +1162,7 @@ func TestMCPToolLocationError(t *testing.T) {
 func writeMCPFixtureModule(t *testing.T, root string) {
 	t.Helper()
 	module := []byte("module example.com/mcpfixture\n\ngo 1.27.1\n")
-	if err := os.WriteFile(filepath.Join(root, "go.mod"), module, 0o600); err != nil {
+	if err := pipeline.WriteAtomic(filepath.Join(root, "go.mod"), module); err != nil {
 		t.Fatalf("write isolated Go fixture module: %v", err)
 	}
 }
