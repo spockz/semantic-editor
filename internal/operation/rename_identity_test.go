@@ -50,7 +50,11 @@ func TestRenameContinuationMatchesFreshInspection(t *testing.T) {
 	}
 	var freshRevision string
 	for _, match := range inspection.Matches {
-		if match.QualifiedName == "Server.Serve" && sameWorkspacePath(root, match.File, file) {
+		matchFile := match.File
+		if !filepath.IsAbs(matchFile) {
+			matchFile = filepath.Join(root, matchFile)
+		}
+		if match.QualifiedName == "Server.Serve" && filepath.Clean(matchFile) == filepath.Clean(file) {
 			if freshRevision != "" {
 				t.Fatal("fresh inspect returned duplicate target matches")
 			}

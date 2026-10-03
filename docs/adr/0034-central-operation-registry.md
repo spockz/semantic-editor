@@ -26,8 +26,11 @@ capture, validation, or publication lifecycle. `internal/contractedit` owns
 typed contract-edit execution, including source capture, rendering, test
 preflight, read-set checks, and checked publication. `internal/operation`
 retains request parsing, schemas, dispatch, presentation, and receipt
-finalization. Feature packages accept `context.Context` and a workspace root;
-they do not import `internal/operation` or receive its `CallContext`.
+finalization. `internal/navigation` owns backend lookup and rename execution,
+including post-rename identity proof. `internal/verification` owns project-plan
+discovery, trust checks, normalization, language-server verification, and
+coverage results. Feature packages accept typed request DTOs and backend
+services; they do not import `internal/operation` or receive its `CallContext`.
 
 Typing contract: each def pairs typed `Parse` (raw map to request) with typed
 `Run` handlers in `Def[Req,Res]`; type erasure lives only inside the
