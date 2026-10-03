@@ -383,6 +383,9 @@ func extractFieldIdentInFile(file *ast.File, typeName, fieldName string) (*ast.I
 			continue
 		}
 		ident, err := extractFieldIdentInGroup(group, typeName, fieldName)
+		if errors.Is(err, errExtractFieldNotFound) {
+			continue
+		}
 		if err != nil || ident != nil {
 			return ident, err
 		}
