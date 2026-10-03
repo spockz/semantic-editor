@@ -70,6 +70,6 @@ Before creating an RQ, check whether an existing question already covers the inv
 | [RQ-0055](RQ-0055-go-move-construct-expansion.md) | Go Move Construct Expansion | Go Refactoring | **Resolved** | Consolidated into RQ-0060; implementation remains Open there. |
 | [RQ-0056](RQ-0056-go-insert-field.md) | Go Insert Field | Go Refactoring | **Resolved** | Consolidated into RQ-0060; implementation remains Open there. |
 | [RQ-0057](RQ-0057-go-insert-statement.md) | Go Insert Statement | Go Refactoring | **Resolved** | Consolidated into RQ-0060; implementation remains Open there. |
-| [RQ-0058](RQ-0058-go-insert-composite-element.md) | Go Insert Composite Element | Go Refactoring | **Resolved** | Consolidated into RQ-0060; implementation remains Open there. |
+| [RQ-0058](RQ-0058-go-insert-composite-element.md) | Go Insert Composite Element | Go Refactoring | **Resolved** | Consolidated into RQ-0060; bounded keyed struct/map insertion is implemented and reviewed under ADR-0062. |
 | [RQ-0059](RQ-0059-go-set-doc-comment.md) | Go Set Doc Comment | Go Refactoring | **Resolved** | Consolidated into RQ-0060; implementation remains Open there. |
 | [RQ-0060](RQ-0060-go-refactoring-tool-implementation.md) | Go Refactoring Tool Implementation and Batch Support | Go Refactoring | **Open** | Consolidates 19 implementation sections; foundation and seven new public tools delivered through main 6718968 with passing combined checks; remaining checkpoints in parallel implementation and review. |

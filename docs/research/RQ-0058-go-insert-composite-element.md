@@ -9,4 +9,4 @@
 
 This handover was consolidated on 2026-10-01 into [RQ-0060: Go insert composite element](RQ-0060-go-refactoring-tool-implementation.md#go-insert-composite-element). Its contracts, risks, implementation plan, fixture sketches, and description guidance are retained there. The consolidation is resolved; implementation remains Open in RQ-0060.
 
-Continue and update the linked section of RQ-0060. This forwarding record does not claim that the tool is implemented, reviewed, or merged.
+Implementation and review are recorded in the linked RQ-0060 section and ADR-0062. This forwarding record remains the original handover, not the implementation contract.

@@ -93,6 +93,87 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 	}
 }
 
+func TestCompositeContinuationSelectsOuterLiteralWithNestedValue(t *testing.T) {
+	root := t.TempDir()
+	writeTestGoModule(t, root)
+	path := filepath.Join(root, "routes.go")
+	initial := []byte("package routes\nvar routes = map[string]map[string]int{\"health\": map[string]int{\"ready\": 1}}\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write nested composite fixture: %v", err)
+	}
+	first := callCompositeTool(t, root, 1, "semantic_insert_composite_element", map[string]any{
+		"file": "routes.go", "in_declaration": "routes", "discriminator": `map[string]map[string]int{"health": map[string]int{"ready": 1}}`,
+		"source": `"metrics": map[string]int{"count": 2}`, "placement": "append",
+	})
+	firstResult := first["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	records, ok := firstResult["selector_continuations"].([]any)
+	if !ok || len(records) != 1 {
+		t.Fatalf("nested insertion omitted selector continuation: %#v", firstResult)
+	}
+	record := records[0].(map[string]any)
+	discriminator := record["discriminator"].(string)
+	if !strings.HasPrefix(discriminator, "map[string]map[string]int{") || !strings.Contains(discriminator, `"metrics": map[string]int{"count": 2}`) {
+		t.Fatalf("continuation selected nested literal instead of outer literal: %q", discriminator)
+	}
+	second := callCompositeTool(t, root, 2, "semantic_insert_composite_element", map[string]any{
+		"file": record["file"], "in_declaration": record["in_declaration"], "discriminator": discriminator,
+		"expected_revision": record["expected_revision"], "source": `"dashboard": map[string]int{"count": 3}`,
+	})
+	secondResult := second["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	if records, ok := secondResult["selector_continuations"].([]any); !ok || len(records) != 1 {
+		t.Fatalf("nested follow-up insertion omitted selector continuation: %#v", secondResult)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read final nested composite source: %v", err)
+	}
+	if !bytes.Contains(updated, []byte(`"metrics": map[string]int{"count": 2}`)) || !bytes.Contains(updated, []byte(`"dashboard": map[string]int{"count": 3}`)) {
+		t.Fatalf("nested outer appends are missing:\n%s", updated)
+	}
+}
+
+func TestCompositeInsertionUsesLiteralLexicalScopeForMapKeys(t *testing.T) {
+	cases := []struct {
+		name   string
+		source string
+	}{
+		{
+			name:   "local variable shadows package constant",
+			source: "package routes\nconst elementKey = \"metrics\"\nfunc routes() {\n\telementKey := \"other\"\n\t_ = elementKey\n\t_ = map[string]int{\"health\": 1}\n}\n",
+		},
+		{
+			name:   "local constant duplicate",
+			source: "package routes\nconst elementKey = \"metrics\"\nfunc routes() {\n\tconst elementKey = \"health\"\n\t_ = map[string]int{\"health\": 1}\n}\n",
+		},
+	}
+	for index, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			writeTestGoModule(t, root)
+			path := filepath.Join(root, "routes.go")
+			if err := os.WriteFile(path, []byte(test.source), 0o600); err != nil {
+				t.Fatalf("write lexical-scope fixture: %v", err)
+			}
+			before := []byte(test.source)
+			response := callCompositeTool(t, root, index+1, "semantic_insert_composite_element", map[string]any{
+				"file": "routes.go", "in_declaration": "routes", "discriminator": `map[string]int{"health": 1}`,
+				"source": `elementKey: 2`, "placement": "append",
+			}, true)
+			result := response["result"].(map[string]any)
+			if result["isError"] != true || !strings.Contains(result["content"].([]any)[0].(map[string]any)["text"].(string), "key") {
+				t.Fatalf("lexically invalid key was not refused: %#v", result)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read source after lexical key refusal: %v", err)
+			}
+			if !bytes.Equal(after, before) {
+				t.Fatalf("lexically invalid key changed source:\n%s", after)
+			}
+		})
+	}
+}
+
 func callCompositeTool(t *testing.T, root string, id int, name string, arguments map[string]any, allowRefusal ...bool) map[string]any {
 	t.Helper()
 	request, err := json.Marshal(map[string]any{

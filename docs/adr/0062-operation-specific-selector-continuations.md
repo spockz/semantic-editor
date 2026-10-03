@@ -1,5 +1,5 @@
 <!-- This decision defines live follow-up selectors for edits whose targets are not symbols. -->
-# ADR-0061: Operation-Specific Selector Continuations
+# ADR-0062: Operation-Specific Selector Continuations
 
 * **Status**: Accepted
 * **Date**: 2026-10-02

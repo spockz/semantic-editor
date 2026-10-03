@@ -253,9 +253,9 @@ func structuralTypedCompositeContext(snapshot *structuralSnapshot, declaration, 
 			start, end := selectedPackage.Fset.Position(keyed.Key.Pos()).Offset, selectedPackage.Fset.Position(keyed.Key.End()).Offset
 			context.ExistingMapKeys = append(context.ExistingMapKeys, astedit.TypedKeyEvidence{Expression: string(snapshot.Sources[snapshot.File][start:end]), Identity: evidence.Value.String()})
 		}
-		newKey, err := types.Eval(selectedPackage.Fset, selectedPackage.Types, token.NoPos, keySource)
+		newKey, err := types.Eval(selectedPackage.Fset, selectedPackage.Types, literal.Pos(), keySource)
 		if err != nil || newKey.Type == nil || newKey.Value == nil || !types.AssignableTo(newKey.Type, underlying.Key()) {
-			return astedit.CompositeTypeContext{}, fmt.Errorf("new map key must be a package-scope constant assignable to %s", context.MapKeyType)
+			return astedit.CompositeTypeContext{}, fmt.Errorf("new map key must be a constant assignable to %s", context.MapKeyType)
 		}
 		context.NewMapKey = astedit.TypedKeyEvidence{Expression: keySource, Identity: newKey.Value.String()}
 	default:
@@ -324,12 +324,15 @@ func canonicalCompositeElement(source string) (string, error) {
 		return "", fmt.Errorf("parse inserted composite element: %w", err)
 	}
 	var selected *ast.KeyValueExpr
-	ast.Inspect(file, func(node ast.Node) bool {
-		if literal, ok := node.(*ast.CompositeLit); ok && len(literal.Elts) == 1 {
-			selected, _ = literal.Elts[0].(*ast.KeyValueExpr)
+	if len(file.Decls) == 1 {
+		if declaration, ok := file.Decls[0].(*ast.GenDecl); ok && len(declaration.Specs) == 1 {
+			if value, ok := declaration.Specs[0].(*ast.ValueSpec); ok && len(value.Values) == 1 {
+				if literal, ok := value.Values[0].(*ast.CompositeLit); ok && len(literal.Elts) == 1 {
+					selected, _ = literal.Elts[0].(*ast.KeyValueExpr)
+				}
+			}
 		}
-		return true
-	})
+	}
 	if selected == nil || keySource == "" {
 		return "", fmt.Errorf("inserted composite element has no key/value syntax")
 	}

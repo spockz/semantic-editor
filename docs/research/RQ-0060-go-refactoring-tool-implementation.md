@@ -2369,7 +2369,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go insert composite element
 
-Original handover: RQ-0058. Implementation status: Open.
+Original handover: RQ-0058. Implementation status: Complete for the bounded keyed struct/map append described below; see ADR-0062.
 
 ### Context
 
@@ -2385,10 +2385,10 @@ Existing declaration and body tools can replace large source units but cannot in
 
 ### Current evidence and limits
 
-* Current structural editing includes declaration insertion/replacement and case insertion; no `semantic_insert_composite_element` registration or corresponding AST implementation appears in the current source scan.
-* `docs/MANUAL_EDITS.md` ME-0041 explicitly proposes `semantic_insert_composite_element` because current tools cannot target one literal element proportionately.
+* `semantic_insert_composite_element` is registered as Go-only, file-scoped, batchable, and buffered. It appends one typed keyed struct or map element over the current source overlay and refuses unsupported selectors and invalid typed keys.
+* `docs/MANUAL_EDITS.md` ME-0050 records the delivered composite-element flow; ADR-0062 defines its operation-specific final-source selector continuation.
 * This operation has no standalone declaration `symbol`. The holder is selected with `in_declaration`, as required by the shared handover contract; `in_function` may be needed only when the literal is local and declaration selection is insufficient.
-* The root checkout predates pending `sourcebuf` changes. Implementation must use the integrated overlay and not direct-write disk.
+* Structural package loading reads the current source-buffer overlay, including earlier successful batch children; the public batch fixture replaces a literal and appends against that unsaved result.
 
 ### Outcomes and non-goals
 
