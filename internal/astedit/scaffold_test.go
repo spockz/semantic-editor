@@ -140,6 +140,22 @@ func TestScaffoldFile_EmptyDirInfer(t *testing.T) {
 	}
 }
 
+func TestScaffoldFile_InferPreservesSiblingReadFailure(t *testing.T) {
+	tmpDir := t.TempDir()
+	sibling := filepath.Join(tmpDir, "broken.go")
+	if err := os.Symlink(filepath.Join(tmpDir, "missing.go"), sibling); err != nil {
+		t.Fatalf("create broken sibling symlink: %v", err)
+	}
+	targetPath := filepath.Join(tmpDir, "generated.go")
+	_, err := astedit.ScaffoldFile(context.Background(), targetPath, "infer", astedit.ScaffoldOptions{})
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("error = %v, want wrapped os.ErrNotExist", err)
+	}
+	if _, statErr := os.Stat(targetPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("scaffold target stat error = %v, want target unchanged", statErr)
+	}
+}
+
 func TestScaffoldFile_PurposeHeaderPreservedForExplicitAndInferredPackages(t *testing.T) {
 	const header = "// WHY: This file groups the service adapters.\n// Keep this wording exactly."
 	tests := []struct {

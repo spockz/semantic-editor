@@ -214,32 +214,43 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 
 // PlanIntroduceParameter plans a typed constant move and its caller updates.
 func PlanIntroduceParameter(request IntroduceParameterRequest, proof SignatureCallSetProof) (SignaturePlan, error) {
-	if request.Expression == "" || request.ParameterName == "" {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: selected expression and parameter name are required")
-	}
-	evidence := request.Constant
-	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
-	}
-	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
-	}
-	added := false
-	for _, mapping := range request.Signature.Parameters {
-		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
-			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
-				return SignaturePlan{}, fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
-			}
-			added = true
-		}
-	}
-	if !added {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	if err := validateIntroducedParameterEvidence(request); err != nil {
+		return SignaturePlan{}, err
 	}
 	plan, err := PlanChangeSignature(request.Signature, proof)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
+	return replaceIntroducedParameterExpression(plan, request)
+}
+
+func validateIntroducedParameterEvidence(request IntroduceParameterRequest) error {
+	if request.Expression == "" || request.ParameterName == "" {
+		return fmt.Errorf("introduce parameter: selected expression and parameter name are required")
+	}
+	evidence := request.Constant
+	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
+		return fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
+	}
+	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
+		return fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
+	}
+	added := false
+	for _, mapping := range request.Signature.Parameters {
+		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
+			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
+				return fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
+			}
+			added = true
+		}
+	}
+	if !added {
+		return fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	}
+	return nil
+}
+
+func replaceIntroducedParameterExpression(plan SignaturePlan, request IntroduceParameterRequest) (SignaturePlan, error) {
 	var target *SignaturePlannedFile
 	for index := range plan.Files {
 		if plan.Files[index].File == request.Signature.File {
@@ -453,31 +464,21 @@ func signatureNoPackageNameCollision(inputs []SignatureSourceFile, name string) 
 		if err != nil {
 			return fmt.Errorf("introduce parameter object: parse read-set file %q: %w", input.File, err)
 		}
-		for _, decl := range file.Decls {
-			switch value := decl.(type) {
-			case *ast.FuncDecl:
-				if value.Name.Name == name {
-					return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-				}
-			case *ast.GenDecl:
-				for _, spec := range value.Specs {
-					switch item := spec.(type) {
-					case *ast.TypeSpec:
-						if item.Name.Name == name {
-							return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-						}
-					case *ast.ValueSpec:
-						for _, identifier := range item.Names {
-							if identifier.Name == name {
-								return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-							}
-						}
-					}
-				}
-			}
+		if packageDeclaresName(file.Decls, name) || signatureHasMethodName(file, name) {
+			return fmt.Errorf("introduce parameter object: package name %q already exists", name)
 		}
 	}
 	return nil
+}
+
+func signatureHasMethodName(file *ast.File, name string) bool {
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv != nil && nodeDeclaresName(function, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func signatureAppendDeclaration(source []byte, declaration string) string {
