@@ -32,10 +32,11 @@ type structuralPlanSpec struct {
 }
 
 type structuralPlanResult struct {
-	Edit    FileEditRes
-	Draft   EditReceiptDraft
-	Resolve ContinuationResolver
-	Receipt EditReceipt
+	Edit           FileEditRes
+	Draft          EditReceiptDraft
+	Resolve        ContinuationResolver
+	Receipt        EditReceipt
+	FunctionTarget *SymbolTarget
 }
 
 func structuralPlanDef(spec structuralPlanSpec) Def[map[string]any, structuralPlanResult] {

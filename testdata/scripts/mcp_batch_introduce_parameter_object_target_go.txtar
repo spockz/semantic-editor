@@ -1,0 +1,37 @@
+# Buffered parameter-object results omit live function_target claims until the batch publishes its final view.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"function_target"'
+cmp write.go .scratch/want/write.txt
+cmp calls.go .scratch/want/calls.txt
+exec go test ./...
+-- go.mod --
+module example.com/parameterobjectbatchtarget
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_introduce_parameter_object","params":{"file":"write.go","symbol":"write","destination_file":"write.go","parameter":{"name":"options","type":"writeOptions"},"fields":[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]}}]}}}
+-- write.go --
+package sample
+
+func write(path, data string, mode uint32) string { return path + data }
+-- calls.go --
+package sample
+
+func first() string { return write("a", "b", 7) }
+-- .scratch/want/write.txt --
+package sample
+
+func write(options writeOptions) string { return options.path + options.data }
+
+type writeOptions struct {
+	path string
+	data string
+	mode uint32
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() string { return write(writeOptions{path: "a", data: "b", mode: 7}) }

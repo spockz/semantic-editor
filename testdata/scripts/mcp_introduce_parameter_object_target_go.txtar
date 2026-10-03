@@ -1,0 +1,39 @@
+# Standalone parameter-object output separates the function edit target from inspectable receipt declarations.
+stdin input.json
+exec semedit mcp
+stdout '"function_target":\{[^}]*"file":"write.go"[^}]*"symbol":"write"'
+stdout '"continuations":\[\{[^}]*"symbol":"write"[^}]*\},\{[^}]*"symbol":"writeOptions"'
+stdout 'type writeOptions struct'
+cmp write.go .scratch/want/write.txt
+cmp calls.go .scratch/want/calls.txt
+exec go test ./...
+-- go.mod --
+module example.com/parameterobjecttarget
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_introduce_parameter_object","arguments":{"file":"write.go","symbol":"write","destination_file":"write.go","parameter":{"name":"options","type":"writeOptions"},"fields":[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"file":"write.go","symbol":"writeOptions","language":"go"}}}
+-- write.go --
+package sample
+
+func write(path, data string, mode uint32) string { return path + data }
+-- calls.go --
+package sample
+
+func first() string { return write("a", "b", 7) }
+-- .scratch/want/write.txt --
+package sample
+
+func write(options writeOptions) string { return options.path + options.data }
+
+type writeOptions struct {
+	path string
+	data string
+	mode uint32
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() string { return write(writeOptions{path: "a", data: "b", mode: 7}) }

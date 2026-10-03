@@ -40,8 +40,8 @@ func (r InspectReq) GetProjectContext() backend.ProjectContext { return r.Projec
 func (r *InspectReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var inspectReadParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Required: true, SourceFields: append(append(append([]string(nil), sourceSymbolContinuations...), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(append(append([]string(nil), sourceFileContinuations...), sourceContractExtractFile, sourceContractImplementFile), sourceConcreteTargetFile, sourceGeneratedMethodFile)},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Required: true, SourceFields: append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol), signatureReceiptSourceFields("symbol")...)},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(append(append(append([]string(nil), sourceFileContinuations...), sourceContractExtractFile, sourceContractImplementFile), sourceConcreteTargetFile, sourceGeneratedMethodFile), signatureReceiptSourceFields("file")...)},
 )
 
 var outlineReadParams = readRequestParams(

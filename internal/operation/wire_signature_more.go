@@ -45,19 +45,13 @@ func signatureExpansionDef(key, cliName, mcpName, summary string, params []Param
 				return structuralPlanResult{}, fmt.Errorf("finalize signature expansion receipt: %w", err)
 			}
 			result.Receipt = receipt
+			result.FunctionTarget, err = finalizedSignatureFunctionTarget(ctx, cc, result)
+			if err != nil {
+				return structuralPlanResult{}, fmt.Errorf("finalize signature function target: %w", err)
+			}
 			return result, nil
 		},
-		ProjectOutput: func(result structuralPlanResult) (any, error) {
-			out := map[string]any{"result": result.Edit.Detail, signatureEditReceiptField: result.Receipt}
-			if len(result.Receipt.Continuations) > 0 {
-				target := result.Receipt.Continuations[0]
-				out["file"], out["symbol"] = target.File, target.Symbol
-			}
-			if result.Edit.Diff != "" {
-				out["diff"] = result.Edit.Diff
-			}
-			return out, nil
-		},
+		ProjectOutput: func(result structuralPlanResult) (any, error) { return projectSignatureExpansion(result), nil },
 	}
 }
 
@@ -66,13 +60,13 @@ func introduceParameterDef() Def[map[string]any, structuralPlanResult] {
 	minimum := 1
 	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping, MinItems: &minimum}
 	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file", "semantic_introduce_parameter.result.edit_receipt.continuations[].file", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].file"),
-		structuralStringParam("symbol", "Target: private Go free function whose body and direct callers will be updated. Copy the qualified symbol from semantic_lookup or a live signature continuation.", true, true, RoleTarget, "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol", "semantic_introduce_parameter.result.edit_receipt.continuations[].symbol", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].symbol"),
+		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, append([]string{"semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
+		structuralStringParam("symbol", "Target: private Go free function whose body and direct callers will be updated. Copy the qualified symbol from semantic_lookup or a finalized function_target.", true, true, RoleTarget, append([]string{"semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
 		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping; preserve existing parameters by source_index and append one parameter with its closed constant argument.", Schema: &mappings},
 		structuralStringParam(wireDiscriminator, "Selector: exact source text of one compile-time constant expression in the target function body; it must match the supplied caller constant in typed value and evaluation timing.", true, false, RoleSelector),
-		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from a live continuation for this file and symbol; stale body selections are refused.", false, true, RoleTarget, "semantic_change_signature.result.edit_receipt.continuations[].expected_revision", "semantic_introduce_parameter.result.edit_receipt.continuations[].expected_revision", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].expected_revision"),
+		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from the same finalized function_target record as file and symbol; stale body selections are refused.", false, true, RoleTarget, signatureTargetSourceFields(wireExpectedRevision)...),
 	}
-	return signatureExpansionDef("introduce_parameter", "introduce-parameter", "semantic_introduce_parameter", "Use this tool instead of manually replacing one compile-time constant expression in a private Go free function and updating its callers. It appends a parameter and updates every proven direct caller using the same closed constant value. Mutable reads, side effects, methods, exported or generic functions, function values, and incomplete call sets are refused. The edit receipt contains a live continuation for the surviving function.", params,
+	return signatureExpansionDef("introduce_parameter", "introduce-parameter", "semantic_introduce_parameter", "Use this tool instead of manually replacing one compile-time constant expression in a private Go free function and updating its callers. It appends a parameter and updates every proven direct caller using the same closed constant value. Mutable reads, side effects, methods, exported or generic functions, function values, and incomplete call sets are refused. Standalone results expose a finalized function_target; receipt continuations remain available for inspection.", params,
 		map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}}, map[string]any{"parameter": map[string]any{"name": "mode", "type": "int"}, "argument": "3"}}, wireDiscriminator: "3"}, runIntroduceParameter)
 }
 
@@ -82,14 +76,14 @@ func introduceParameterObjectDef() Def[map[string]any, structuralPlanResult] {
 	fields := ValueSchema{Kind: SchemaArray, Items: &fieldMapping, MinItems: &minimum}
 	parameter := ParameterSpecSchema()
 	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file", "semantic_introduce_parameter.result.edit_receipt.continuations[].file", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].file"),
-		structuralStringParam("symbol", "Target: private Go free function whose complete parameter list, body bindings, and direct callers will be updated. Copy the qualified symbol from semantic_lookup or a live signature continuation.", true, true, RoleTarget, "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol", "semantic_introduce_parameter.result.edit_receipt.continuations[].symbol", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].symbol"),
+		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, append([]string{"semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
+		structuralStringParam("symbol", "Target: private Go free function whose complete parameter list, body bindings, and direct callers will be updated. Copy the qualified symbol from semantic_lookup or a finalized function_target.", true, true, RoleTarget, append([]string{"semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
 		structuralStringParam("destination_file", "Destination: existing same-file location for the new private struct; release one requires the target file.", true, true, RoleTarget, "semantic_lookup.file"),
 		{Name: "parameter", JSONName: "parameter", CLIName: "parameter", Type: ParamObject, Required: true, Role: RoleValue, Description: "Creation choice: new private parameter name and private struct type name; choose both names for this conversion.", Schema: &parameter},
 		{Name: "fields", JSONName: "fields", CLIName: "fields", Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: map every original parameter exactly once, in source_index order, to a private field with the same Go type; caller expressions become keyed fields in original evaluation order.", Schema: &fields},
-		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from a live continuation for this file and symbol; stale targets are refused.", false, true, RoleTarget, "semantic_change_signature.result.edit_receipt.continuations[].expected_revision", "semantic_introduce_parameter.result.edit_receipt.continuations[].expected_revision", "semantic_introduce_parameter_object.result.edit_receipt.continuations[].expected_revision"),
+		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from the same finalized function_target record as file and symbol; stale targets are refused.", false, true, RoleTarget, signatureTargetSourceFields(wireExpectedRevision)...),
 	}
-	return signatureExpansionDef("introduce_parameter_object", "introduce-parameter-object", "semantic_introduce_parameter_object", "Use this tool instead of manually replacing all parameters of one private Go free function with a private same-file struct. It rewrites bound body references and converts every proven direct caller to a keyed literal that preserves original argument evaluation order. Partial mappings, methods, exported or generic functions, function values, and incomplete call sets are refused. The receipt contains live continuations for the function and new type.", params,
+	return signatureExpansionDef("introduce_parameter_object", "introduce-parameter-object", "semantic_introduce_parameter_object", "Use this tool instead of manually replacing all parameters of one private Go free function with a private same-file struct. It rewrites bound body references and converts every proven direct caller to a keyed literal that preserves original argument evaluation order. Partial mappings, methods, exported or generic functions, function values, and incomplete call sets are refused. Standalone results expose the finalized function_target; the receipt keeps the new type as an inspectable continuation.", params,
 		map[string]any{"file": "write.go", "symbol": "write", "destination_file": "write.go", "parameter": map[string]any{"name": "options", "type": "writeOptions"}, "fields": []any{map[string]any{wireSourceIndex: 0, "field": map[string]any{"name": "path", "type": "string"}}}}, runIntroduceParameterObject)
 }
 
