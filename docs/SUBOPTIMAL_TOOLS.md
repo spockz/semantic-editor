@@ -3127,6 +3127,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: the tool treated the purpose header as Go source and reported `expected 'package', found This`; it created no file.
 - Workaround: use a scoped patch to initialize the new source file with the required WHY header.
 - Root cause: the scaffold implementation passed the header text to its source parser without emitting it as a Go comment.
+
 ## Integration: batch verification refused workspace hook and reformatted oracle fixtures
 
 - Tool: `semantic_batch` with `semantic_insert_decl` and five `semantic_replace_decl` children.

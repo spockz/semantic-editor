@@ -186,7 +186,7 @@ var organizeImportsFileConsumers = []string{
 	"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
 	"semantic_insert_structure", "semantic_replace_decl", "semantic_extract_function",
 	"semantic_extract_variable", "semantic_inline_variable",
-	"semantic_find_references", "semantic_inspect_symbol", "semantic_assertion_mode",
+	"semantic_find_references", semanticInspectSymbolToolName, "semantic_assertion_mode",
 }
 
 // AddBuildDependencyReq fetches one external module into the build (go get + go mod tidy).

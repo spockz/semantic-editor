@@ -148,7 +148,7 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Params:   inspectReadParams,
 		Level:    LevelSymbol,
 		CLIName:  "inspect-symbol",
-		MCPName:  "semantic_inspect_symbol",
+		MCPName:  semanticInspectSymbolToolName,
 		ReadOnly: true,
 		Parse:    parseInspectRead,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InspectReq) (*backend.InspectResult, error){

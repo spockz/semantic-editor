@@ -155,8 +155,11 @@ func structuralReadSet(workDir string, snapshot *structuralSnapshot) ([]FileRevi
 	readSet := make([]FileRevision, 0, len(snapshot.Sources))
 	for path, content := range snapshot.Sources {
 		relative, err := filepath.Rel(workDir, path)
-		if err != nil || !filepath.IsLocal(relative) {
+		if err != nil {
 			return nil, fmt.Errorf("structural read-set path %q is outside workspace %q", path, workDir)
+		}
+		if !filepath.IsLocal(relative) {
+			continue
 		}
 		readSet = append(readSet, FileRevision{Path: filepath.ToSlash(relative), Revision: structuralRevision(content)})
 	}

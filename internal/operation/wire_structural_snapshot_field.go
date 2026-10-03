@@ -34,7 +34,7 @@ func structuralFieldOwner(snapshot *structuralSnapshot, selector string) (*packa
 		if err != nil {
 			return nil, nil, "", err
 		}
-		if !contains || strings.Contains(pkg.PkgPath, " [") || pkg.Types == nil || pkg.Types.Path() != pkg.PkgPath || pkg.TypesInfo == nil || pkg.Fset == nil {
+		if !contains || pkg.ID != pkg.PkgPath || strings.Contains(pkg.PkgPath, " [") || pkg.Types == nil || pkg.Types.Path() != pkg.PkgPath || pkg.TypesInfo == nil || pkg.Fset == nil {
 			continue
 		}
 		if parts[0] != typeName && pkg.Name != parts[0] {

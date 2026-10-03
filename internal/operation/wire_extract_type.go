@@ -11,6 +11,7 @@ import (
 	"go/token"
 	"go/types"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,12 +47,12 @@ func extractTypeStructuralDef() Def[map[string]any, structuralPlanResult] {
 	output := structuralOutputContract(false)
 	properties := SymbolTargetSchema().Properties
 	output.Continuations = append(output.Continuations,
-		OutputContinuation{Path: "result.edit_receipt.continuations[].file", Schema: properties["file"], Role: RoleTarget, Consumers: []string{"semantic_inspect_symbol"}},
-		OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: properties["symbol"], Role: RoleTarget, Consumers: []string{"semantic_inspect_symbol"}},
+		OutputContinuation{Path: "result.edit_receipt.continuations[].file", Schema: properties["file"], Role: RoleTarget, Consumers: []string{semanticInspectSymbolToolName}},
+		OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: properties["symbol"], Role: RoleTarget, Consumers: []string{semanticInspectSymbolToolName}},
 	)
 	return structuralPlanDef(structuralPlanSpec{
 		Key: "extract_type", CLIName: "extract-type", MCPName: extractTypeToolName,
-		Summary: "Use this tool to move selected direct private fields from one private same-package Go struct into a new composed private struct. Select exact fields with typed {file, symbol} members; choose fresh symbol and field names. The source and extracted type stay in the same file. It rewrites only typed direct field selectors in that file. Generated files, keyed or address-taken uses, cross-file or external consumers, selected tags or comments, reflection or unsafe imports, embedded or grouped fields, generic or exported owners, and build variants are refused. Methods stay on the original type, so this operation does not change interface implementations or method sets. The complete overlay is typechecked before one buffered edit; static inputs are required in batches.",
+		Summary: "Use this tool instead of manually editing the owner struct and its selectors to move selected direct private fields from one private same-package Go struct into a new composed private struct. Select exact fields with typed {file, symbol} members; choose fresh symbol and field names. The source and extracted type stay in the same file. It rewrites only typed direct field selectors in that file. Generated files, keyed or address-taken uses, cross-file or external consumers, selected tags or comments, owner trailing comments, reflection or unsafe imports, embedded or grouped fields, generic or exported owners, and build variants are refused. Methods stay on the original type, so this operation does not change interface implementations or method sets. The complete overlay is typechecked before one buffered edit; static inputs are required in batches.",
 		Params:  params, Output: &output,
 		ExampleRaw: map[string]any{"file": "cache.go", "symbol": "cacheState", "in_type": "cache", "members": []any{map[string]any{"file": "cache.go", "symbol": "cache.entries"}}, "field": "state"},
 		Plan:       planExtractType,
@@ -113,6 +114,17 @@ func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.
 	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
+	ownerLine := fset.Position(ownerGroup.End()).Line
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			if comment.Pos() > ownerGroup.End() && fset.Position(comment.Pos()).Line == ownerLine {
+				return astedit.SourcePlan{}, fmt.Errorf("owner %q has a trailing comment that cannot be preserved safely", typeName)
+			}
+		}
+	}
+	if err := bindExtractTypeFieldDeclarations(selected, ownerGroup, typeName); err != nil {
+		return astedit.SourcePlan{}, err
+	}
 	edits := make([]sourceEdit, 0, len(selected)+len(selected))
 	fieldLines := make([]string, 0, len(selected))
 	firstField := true
@@ -153,7 +165,7 @@ func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.
 					return true
 				}
 				selection := pkg.TypesInfo.Uses[selector.Sel]
-				if isSelectedExtractField(selected, pkg.Fset, selection) {
+				if isSelectedExtractField(selected, selection) {
 					offset := pkg.Fset.Position(selector.X.End()).Offset
 					if !seenUse[offset] {
 						edits = append(edits, sourceEdit{start: offset, end: offset, text: []byte("." + fieldName)})
@@ -178,6 +190,33 @@ func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.
 		return astedit.SourcePlan{}, err
 	}
 	return astedit.SourcePlan{Source: updated, Selection: astedit.PlanSelection{Kind: "type", Owner: typeName, Target: newType}, RequiredProofs: []astedit.ProofRequirement{astedit.ProofCompleteSourceSet, astedit.ProofTypedMemberSet, astedit.ProofUnkeyedLiteralSet}, Changed: !bytes.Equal(source, updated)}, nil
+}
+
+func bindExtractTypeFieldDeclarations(selected []extractTypeField, ownerGroup *ast.GenDecl, typeName string) error {
+	var structure *ast.StructType
+	for _, spec := range ownerGroup.Specs {
+		typeSpec, ok := spec.(*ast.TypeSpec)
+		if ok && typeSpec.Name.Name == typeName {
+			structure, _ = typeSpec.Type.(*ast.StructType)
+			break
+		}
+	}
+	if structure == nil {
+		return fmt.Errorf("owner %q is not a directly declared struct", typeName)
+	}
+	for index := range selected {
+		selected[index].decl = nil
+		for _, declaration := range structure.Fields.List {
+			if len(declaration.Names) == 1 && declaration.Names[0].Name == selected[index].name {
+				selected[index].decl = declaration
+				break
+			}
+		}
+		if selected[index].decl == nil {
+			return fmt.Errorf("selected field %q is absent from the parsed source", selected[index].name)
+		}
+	}
+	return nil
 }
 
 type extractTypeField struct {
@@ -243,7 +282,7 @@ func parseExtractTypeMembers(raw any, snapshot *structuralSnapshot, owner *packa
 }
 
 func findStructField(structure *types.Struct, name string) (*types.Var, int) {
-	for index := 0; index < structure.NumFields(); index++ {
+	for index := range structure.NumFields() {
 		field := structure.Field(index)
 		if field.Name() == name {
 			return field, index
@@ -296,11 +335,9 @@ func enclosingExtractField(owner *packages.Package, ident *ast.Ident) (*ast.Fiel
 			if !ok {
 				return true
 			}
-			for _, name := range field.Names {
-				if name == ident {
-					result = field
-					return false
-				}
+			if slices.Contains(field.Names, ident) {
+				result = field
+				return false
 			}
 			return result == nil
 		})
@@ -331,10 +368,21 @@ func proveExtractTypeUses(snapshot *structuralSnapshot, owner *packages.Package,
 				}
 				if selector, ok := node.(*ast.SelectorExpr); ok {
 					selectors[selector.Sel] = true
-					if len(stack) > 0 {
-						if unary, ok := stack[len(stack)-1].(*ast.UnaryExpr); ok && unary.Op == token.AND && unary.X == selector {
-							addressTaken[selector.Sel] = true
+					address := ast.Expr(selector)
+					for _, s := range slices.Backward(stack) {
+						switch parent := s.(type) {
+						case *ast.ParenExpr:
+							if parent.X != address {
+								break
+							}
+							address = parent
+							continue
+						case *ast.UnaryExpr:
+							if parent.Op == token.AND && parent.X == address {
+								addressTaken[selector.Sel] = true
+							}
 						}
+						break
 					}
 				}
 				stack = append(stack, node)
@@ -372,13 +420,13 @@ func proveExtractTypeUses(snapshot *structuralSnapshot, owner *packages.Package,
 	return nil
 }
 
-func isSelectedExtractField(selected []extractTypeField, fset *token.FileSet, object types.Object) bool {
+func isSelectedExtractField(selected []extractTypeField, object types.Object) bool {
 	field, ok := object.(*types.Var)
 	if !ok || !field.IsField() {
 		return false
 	}
 	for _, candidate := range selected {
-		if field.Name() == candidate.name && fset.Position(field.Pos()).Offset == fset.Position(candidate.object.Pos()).Offset {
+		if field == candidate.object {
 			return true
 		}
 	}
@@ -485,8 +533,8 @@ func extractExportedDeclarationUsesOwner(owner *packages.Package, declaration as
 }
 
 func signatureReturnsInterface(signature *types.Signature) bool {
-	for index := 0; index < signature.Results().Len(); index++ {
-		if _, ok := types.Unalias(signature.Results().At(index).Type()).Underlying().(*types.Interface); ok {
+	for v := range signature.Results().Variables() {
+		if _, ok := types.Unalias(v.Type()).Underlying().(*types.Interface); ok {
 			return true
 		}
 	}
@@ -557,8 +605,8 @@ func extractTypeContains(candidate types.Type, target *types.Named, seen map[typ
 		if value.Obj() == target.Obj() {
 			return true
 		}
-		for index := 0; index < value.TypeArgs().Len(); index++ {
-			if extractTypeContains(value.TypeArgs().At(index), target, seen) {
+		for t := range value.TypeArgs().Types() {
+			if extractTypeContains(t, target, seen) {
 				return true
 			}
 		}
@@ -578,34 +626,34 @@ func extractTypeContains(candidate types.Type, target *types.Named, seen map[typ
 	case *types.Signature:
 		return extractTypeContains(value.Params(), target, seen) || extractTypeContains(value.Results(), target, seen)
 	case *types.Tuple:
-		for index := 0; index < value.Len(); index++ {
-			if extractTypeContains(value.At(index).Type(), target, seen) {
+		for v := range value.Variables() {
+			if extractTypeContains(v.Type(), target, seen) {
 				return true
 			}
 		}
 	case *types.Struct:
-		for index := 0; index < value.NumFields(); index++ {
-			if extractTypeContains(value.Field(index).Type(), target, seen) {
+		for field := range value.Fields() {
+			if extractTypeContains(field.Type(), target, seen) {
 				return true
 			}
 		}
 	case *types.Interface:
 		value.Complete()
-		for index := 0; index < value.NumMethods(); index++ {
-			if extractTypeContains(value.Method(index).Type(), target, seen) {
+		for method := range value.Methods() {
+			if extractTypeContains(method.Type(), target, seen) {
 				return true
 			}
 		}
-		for index := 0; index < value.NumEmbeddeds(); index++ {
-			if extractTypeContains(value.EmbeddedType(index), target, seen) {
+		for etyp := range value.EmbeddedTypes() {
+			if extractTypeContains(etyp, target, seen) {
 				return true
 			}
 		}
 	case *types.TypeParam:
 		return extractTypeContains(value.Constraint(), target, seen)
 	case *types.Union:
-		for index := 0; index < value.Len(); index++ {
-			if extractTypeContains(value.Term(index).Type(), target, seen) {
+		for term := range value.Terms() {
+			if extractTypeContains(term.Type(), target, seen) {
 				return true
 			}
 		}
