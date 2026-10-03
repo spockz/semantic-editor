@@ -1,0 +1,37 @@
+# Undo reports unavailable diagnostics while keeping a completed restore applied
+exec chmod +x bin/gopls
+env PATH=$WORK/bin:$PATH
+exec semedit snapshot --label before-edit --paths main.go
+stdout '"snapshot_id":'
+exec cp modified.go main.go
+exec semedit undo --id latest
+stdout '"diagnostic_status":\s*"unavailable"'
+stdout '"diagnostic_error":.*gopls'
+stdout '"restored_files":'
+exists gopls-invoked
+cmp main.go want/main.go
+
+-- go.mod --
+module snapshot.test/fixture
+
+go 1.27
+
+-- main.go --
+package main
+
+func Value() int { return 1 }
+
+-- modified.go --
+package main
+
+func Value() int { return 2 }
+
+-- want/main.go --
+package main
+
+func Value() int { return 1 }
+
+-- bin/gopls --
+#!/bin/sh
+printf invoked > gopls-invoked
+exit 23
