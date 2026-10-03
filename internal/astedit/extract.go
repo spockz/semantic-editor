@@ -308,6 +308,20 @@ func validateExtractedScope(file *ast.File, target *ast.FuncDecl, selected []ast
 }
 
 func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded []string, ownerName string) error {
+	if err := rejectSelectedRecoverCalls(selected, ownerName); err != nil {
+		return err
+	}
+	forwardedSet, typesByName := forwardedParameterInfo(owner, forwarded)
+	if len(forwardedSet) == 0 {
+		return nil
+	}
+	if err := rejectAddressedOrCapturedForwarded(owner.Body, forwardedSet, ownerName); err != nil {
+		return err
+	}
+	return rejectImplicitPointerReceivers(selected, forwardedSet, typesByName, ownerName)
+}
+
+func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
 	for _, stmt := range selected {
 		var recoveryCall bool
 		ast.Inspect(stmt, func(node ast.Node) bool {
@@ -324,6 +338,10 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 			return fmt.Errorf("cannot extract %s: selected direct recover() calls change recovery semantics when moved", ownerName)
 		}
 	}
+	return nil
+}
+
+func forwardedParameterInfo(owner *ast.FuncDecl, forwarded []string) (map[string]bool, map[string]ast.Expr) {
 	forwardedSet := make(map[string]bool, len(forwarded))
 	typesByName := make(map[string]ast.Expr, len(forwarded))
 	for _, name := range forwarded {
@@ -342,11 +360,12 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 			}
 		}
 	}
-	if len(forwardedSet) == 0 {
-		return nil
-	}
+	return forwardedSet, typesByName
+}
+
+func rejectAddressedOrCapturedForwarded(body *ast.BlockStmt, forwardedSet map[string]bool, ownerName string) error {
 	var unsafe error
-	ast.Inspect(owner.Body, func(node ast.Node) bool {
+	ast.Inspect(body, func(node ast.Node) bool {
 		if unsafe != nil || node == nil {
 			return false
 		}
@@ -378,6 +397,11 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 	if unsafe != nil {
 		return unsafe
 	}
+	return nil
+}
+
+func rejectImplicitPointerReceivers(selected []ast.Stmt, forwardedSet map[string]bool, typesByName map[string]ast.Expr, ownerName string) error {
+	var unsafe error
 	for _, stmt := range selected {
 		ast.Inspect(stmt, func(node ast.Node) bool {
 			if unsafe != nil || node == nil {
@@ -513,32 +537,45 @@ func extractOutputs(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stm
 func localDeclarationCount(body *ast.BlockStmt, name string) int {
 	count := 0
 	ast.Inspect(body, func(node ast.Node) bool {
-		switch item := node.(type) {
-		case *ast.AssignStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range item.Lhs {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-						count++
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, ident := range item.Names {
-				if ident.Name == name {
-					count++
-				}
-			}
-		case *ast.RangeStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range []ast.Expr{item.Key, item.Value} {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-						count++
-					}
-				}
-			}
-		}
+		count += localDeclarationCountAt(node, name)
 		return true
 	})
+	return count
+}
+
+func localDeclarationCountAt(node ast.Node, name string) int {
+	switch item := node.(type) {
+	case *ast.AssignStmt:
+		if item.Tok == token.DEFINE {
+			return matchingIdentifierCount(item.Lhs, name)
+		}
+	case *ast.ValueSpec:
+		return matchingNameCount(item.Names, name)
+	case *ast.RangeStmt:
+		if item.Tok == token.DEFINE {
+			return matchingIdentifierCount([]ast.Expr{item.Key, item.Value}, name)
+		}
+	}
+	return 0
+}
+
+func matchingIdentifierCount(expressions []ast.Expr, name string) int {
+	count := 0
+	for _, expr := range expressions {
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func matchingNameCount(identifiers []*ast.Ident, name string) int {
+	count := 0
+	for _, ident := range identifiers {
+		if ident.Name == name {
+			count++
+		}
+	}
 	return count
 }
 

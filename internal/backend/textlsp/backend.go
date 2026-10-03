@@ -1002,82 +1002,7 @@ func decodeReadSymbols(raw json.RawMessage, source []byte, syntax, uri, file str
 		return nil, nil, err
 	}
 	limitations := make(map[string]bool)
-	var walk func([]symbol, []string) ([]backend.ReadSymbol, error)
-	walk = func(items []symbol, parents []string) ([]backend.ReadSymbol, error) {
-		out := make([]backend.ReadSymbol, 0, len(items))
-		for _, item := range items {
-			if item.URI != "" && item.URI != uri {
-				return nil, fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
-			}
-			if item.Location != nil && item.Location.URI != uri {
-				return nil, fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
-			}
-			if syntax == "make" && item.Kind == 3 {
-				if !validMakeContainer(source, item) {
-					return nil, fmt.Errorf("%w: unexpected Make namespace %q", ErrMalformedSymbols, item.Name)
-				}
-				limitations["conditional blocks are omitted because server ranges cover multiple source declarations"] = true
-				continue
-			}
-			kind := ""
-			switch item.Kind {
-			case 12:
-				if syntax == "bash" {
-					kind = "function"
-				} else {
-					kind = "target"
-				}
-			case 13:
-				kind = "variable"
-			}
-			if kind == "" {
-				return nil, fmt.Errorf("%w: unsupported %s symbol kind %d for %q", ErrMalformedSymbols, syntax, item.Kind, item.Name)
-			}
-			var sourceRangeValue sourceRange
-			if syntax == "bash" {
-				if item.Location == nil || item.Location.URI != uri {
-					return nil, fmt.Errorf("%w: Bash symbol %q has a missing or foreign URI", ErrMalformedSymbols, item.Name)
-				}
-				sourceRangeValue = item.Location.Range
-				if item.Name == "" || !validBashReadSymbol(source, item) {
-					return nil, fmt.Errorf("%w: invalid Bash symbol %q", ErrMalformedSymbols, item.Name)
-				}
-			} else {
-				if item.Location != nil && item.Location.URI != uri {
-					return nil, fmt.Errorf("%w: Make symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
-				}
-				sourceRangeValue = item.Range
-				if item.Name == "" || item.Selection == (sourceRange{}) || !validMakeReadSymbol(source, item) {
-					return nil, fmt.Errorf("%w: invalid or unmappable Make symbol %q", ErrMalformedSymbols, item.Name)
-				}
-				if isMakeIncludeLine(source, item.Selection.Start.Line) {
-					limitations["included targets mapped onto include lines are omitted"] = true
-					continue
-				}
-			}
-			qualified := item.Name
-			if syntax == "make" && len(parents) > 0 {
-				qualified = strings.Join(append(append([]string{}, parents...), item.Name), ".")
-			}
-			readSymbol := backend.ReadSymbol{
-				Name: item.Name, QualifiedName: qualified, Kind: kind, File: filepath.ToSlash(file),
-				Range: backend.Range{Start: backend.Position(sourceRangeValue.Start), End: backend.Position(sourceRangeValue.End)},
-			}
-			if syntax == "bash" {
-				readSymbol.SelectionRange = readSymbol.Range
-			} else {
-				readSymbol.SelectionRange = backend.Range{Start: backend.Position(item.Selection.Start), End: backend.Position(item.Selection.End)}
-			}
-			children, err := walk(item.Children, append(append([]string{}, parents...), item.Name))
-			if err != nil {
-				return nil, err
-			}
-			readSymbol.Children = children
-			out = append(out, readSymbol)
-		}
-		return out, nil
-	}
-	mapped, err := walk(values, nil)
+	mapped, err := decodeReadSymbolList(values, source, syntax, uri, file, nil, limitations)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1087,6 +1012,117 @@ func decodeReadSymbols(raw json.RawMessage, source []byte, syntax, uri, file str
 	}
 	slices.Sort(readLimitations)
 	return mapped, readLimitations, nil
+}
+
+func decodeReadSymbolList(items []symbol, source []byte, syntax, uri, file string, parents []string, limitations map[string]bool) ([]backend.ReadSymbol, error) {
+	out := make([]backend.ReadSymbol, 0, len(items))
+	for _, item := range items {
+		converted, include, err := convertReadSymbol(item, source, syntax, uri, file, parents, limitations)
+		if err != nil {
+			return nil, err
+		}
+		if !include {
+			continue
+		}
+		children, err := decodeReadSymbolList(item.Children, source, syntax, uri, file, append(append([]string{}, parents...), item.Name), limitations)
+		if err != nil {
+			return nil, err
+		}
+		converted.Children = children
+		out = append(out, converted)
+	}
+	return out, nil
+}
+
+func convertReadSymbol(item symbol, source []byte, syntax, uri, file string, parents []string, limitations map[string]bool) (backend.ReadSymbol, bool, error) {
+	if item.URI != "" && item.URI != uri || item.Location != nil && item.Location.URI != uri {
+		return backend.ReadSymbol{}, false, fmt.Errorf("%w: symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+	}
+	omitContainer, err := shouldOmitMakeContainer(item, source, syntax, limitations)
+	if err != nil {
+		return backend.ReadSymbol{}, false, err
+	}
+	if omitContainer {
+		return backend.ReadSymbol{}, false, nil
+	}
+	kind, sourceRangeValue, include, err := validateReadSymbol(item, source, syntax, uri, limitations)
+	if err != nil || !include {
+		return backend.ReadSymbol{}, include, err
+	}
+	qualified := item.Name
+	if syntax == "make" && len(parents) > 0 {
+		qualified = strings.Join(append(append([]string{}, parents...), item.Name), ".")
+	}
+	readSymbol := backend.ReadSymbol{
+		Name: item.Name, QualifiedName: qualified, Kind: kind, File: filepath.ToSlash(file),
+		Range: backend.Range{Start: backend.Position(sourceRangeValue.Start), End: backend.Position(sourceRangeValue.End)},
+	}
+	if syntax == "bash" {
+		readSymbol.SelectionRange = readSymbol.Range
+	} else {
+		readSymbol.SelectionRange = backend.Range{Start: backend.Position(item.Selection.Start), End: backend.Position(item.Selection.End)}
+	}
+	return readSymbol, true, nil
+}
+
+func shouldOmitMakeContainer(item symbol, source []byte, syntax string, limitations map[string]bool) (bool, error) {
+	if syntax != "make" || item.Kind != 3 {
+		return false, nil
+	}
+	if !validMakeContainer(source, item) {
+		return false, fmt.Errorf("%w: unexpected Make namespace %q", ErrMalformedSymbols, item.Name)
+	}
+	limitations["conditional blocks are omitted because server ranges cover multiple source declarations"] = true
+	return true, nil
+}
+
+func validateReadSymbol(item symbol, source []byte, syntax, uri string, limitations map[string]bool) (string, sourceRange, bool, error) {
+	kind := readSymbolKind(item.Kind, syntax)
+	if kind == "" {
+		return "", sourceRange{}, false, fmt.Errorf("%w: unsupported %s symbol kind %d for %q", ErrMalformedSymbols, syntax, item.Kind, item.Name)
+	}
+	if syntax == "bash" {
+		return validateBashReadSymbol(item, source, uri, kind)
+	}
+	return validateMakeReadSymbol(item, source, limitations, kind)
+}
+
+func readSymbolKind(kind int, syntax string) string {
+	switch kind {
+	case 12:
+		if syntax == "bash" {
+			return "function"
+		}
+		return "target"
+	case 13:
+		return "variable"
+	default:
+		return ""
+	}
+}
+
+func validateBashReadSymbol(item symbol, source []byte, uri, kind string) (string, sourceRange, bool, error) {
+	if item.Location == nil || item.Location.URI != uri {
+		return "", sourceRange{}, false, fmt.Errorf("%w: Bash symbol %q has a missing or foreign URI", ErrMalformedSymbols, item.Name)
+	}
+	if item.Name == "" || !validBashReadSymbol(source, item) {
+		return "", sourceRange{}, false, fmt.Errorf("%w: invalid Bash symbol %q", ErrMalformedSymbols, item.Name)
+	}
+	return kind, item.Location.Range, true, nil
+}
+
+func validateMakeReadSymbol(item symbol, source []byte, limitations map[string]bool, kind string) (string, sourceRange, bool, error) {
+	if item.Location != nil {
+		return "", sourceRange{}, false, fmt.Errorf("%w: Make symbol %q has a foreign URI", ErrMalformedSymbols, item.Name)
+	}
+	if item.Name == "" || item.Selection == (sourceRange{}) || !validMakeReadSymbol(source, item) {
+		return "", sourceRange{}, false, fmt.Errorf("%w: invalid or unmappable Make symbol %q", ErrMalformedSymbols, item.Name)
+	}
+	if isMakeIncludeLine(source, item.Selection.Start.Line) {
+		limitations["included targets mapped onto include lines are omitted"] = true
+		return "", sourceRange{}, false, nil
+	}
+	return kind, item.Range, true, nil
 }
 
 func validMakeReadSymbol(source []byte, s symbol) bool {
@@ -1242,42 +1278,61 @@ func validateReadRangeShapes(raw json.RawMessage, syntax string) error {
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return fmt.Errorf("%w: %w", ErrMalformedSymbols, err)
 	}
-	var walk func([]json.RawMessage) error
-	walk = func(items []json.RawMessage) error {
-		for _, item := range items {
-			var object map[string]json.RawMessage
-			if err := json.Unmarshal(item, &object); err != nil || object == nil {
-				return fmt.Errorf("%w: symbol is not an object", ErrMalformedSymbols)
-			}
-			var rangeRaw json.RawMessage
-			if syntax == "bash" {
-				var location map[string]json.RawMessage
-				if err := json.Unmarshal(object["location"], &location); err != nil || location == nil {
-					return fmt.Errorf("%w: Bash symbol has invalid location", ErrMalformedSymbols)
-				}
-				rangeRaw = location["range"]
-			} else {
-				rangeRaw = object["range"]
-			}
-			if err := readlsp.ValidateRangeShape(rangeRaw); err != nil {
-				return fmt.Errorf("%w: invalid %s symbol range: %w", ErrMalformedSymbols, syntax, err)
-			}
-			if syntax == "make" {
-				if err := readlsp.ValidateRangeShape(object["selectionRange"]); err != nil {
-					return fmt.Errorf("%w: invalid Make selection range: %w", ErrMalformedSymbols, err)
-				}
-			}
-			var children []json.RawMessage
-			if childRaw, ok := object["children"]; ok && string(childRaw) != "null" {
-				if err := json.Unmarshal(childRaw, &children); err != nil {
-					return fmt.Errorf("%w: invalid child symbols", ErrMalformedSymbols)
-				}
-			}
-			if err := walk(children); err != nil {
-				return err
-			}
+	return validateReadShapeList(values, syntax)
+}
+
+func validateReadShapeList(items []json.RawMessage, syntax string) error {
+	for _, item := range items {
+		children, err := validateReadShapeItem(item, syntax)
+		if err != nil {
+			return err
 		}
-		return nil
+		if err := validateReadShapeList(children, syntax); err != nil {
+			return err
+		}
 	}
-	return walk(values)
+	return nil
+}
+
+func validateReadShapeItem(raw json.RawMessage, syntax string) ([]json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err != nil || object == nil {
+		return nil, fmt.Errorf("%w: symbol is not an object", ErrMalformedSymbols)
+	}
+	rangeRaw, err := readSymbolRangeRaw(object, syntax)
+	if err != nil {
+		return nil, err
+	}
+	if err := readlsp.ValidateRangeShape(rangeRaw); err != nil {
+		return nil, fmt.Errorf("%w: invalid %s symbol range: %w", ErrMalformedSymbols, syntax, err)
+	}
+	if syntax == "make" {
+		if err := readlsp.ValidateRangeShape(object["selectionRange"]); err != nil {
+			return nil, fmt.Errorf("%w: invalid Make selection range: %w", ErrMalformedSymbols, err)
+		}
+	}
+	return readSymbolChildrenRaw(object)
+}
+
+func readSymbolRangeRaw(object map[string]json.RawMessage, syntax string) (json.RawMessage, error) {
+	if syntax != "bash" {
+		return object["range"], nil
+	}
+	var location map[string]json.RawMessage
+	if err := json.Unmarshal(object["location"], &location); err != nil || location == nil {
+		return nil, fmt.Errorf("%w: Bash symbol has invalid location", ErrMalformedSymbols)
+	}
+	return location["range"], nil
+}
+
+func readSymbolChildrenRaw(object map[string]json.RawMessage) ([]json.RawMessage, error) {
+	childRaw, ok := object["children"]
+	if !ok || string(childRaw) == "null" {
+		return nil, nil
+	}
+	var children []json.RawMessage
+	if err := json.Unmarshal(childRaw, &children); err != nil {
+		return nil, fmt.Errorf("%w: invalid child symbols", ErrMalformedSymbols)
+	}
+	return children, nil
 }
