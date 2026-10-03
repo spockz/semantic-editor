@@ -121,6 +121,44 @@ func TestUndo_CleanRestore(t *testing.T) {
 	}
 }
 
+func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "main.go")
+	preimage := []byte("package main\n\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(file, preimage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshotResult, createErr := snapshot.Create(context.Background(), dir, snapshot.CreateOptions{Label: "before-edit"})
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	if writeErr := os.WriteFile(file, []byte("package main\n\nfunc Value() int { return 2 }\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, undoErr := snapshot.Undo(ctx, dir, snapshotResult.SnapshotID)
+	if undoErr != nil {
+		t.Fatalf("Undo failed: %v", undoErr)
+	}
+	if result.DiagnosticStatus != "unavailable" || result.DiagnosticError == "" || result.Delta != nil {
+		t.Fatalf("diagnostics outcome = status %q, error %q, delta %#v", result.DiagnosticStatus, result.DiagnosticError, result.Delta)
+	}
+	if len(result.RestoredFiles) != 1 || result.RestoredFiles[0] != "main.go" {
+		t.Fatalf("restored files = %v", result.RestoredFiles)
+	}
+	// #nosec G304 -- test reads temporary workspace file
+	current, readErr := os.ReadFile(file)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(current, preimage) {
+		t.Fatalf("restored bytes = %q, want %q", current, preimage)
+	}
+}
+
 func TestUndo_ConflictDetection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

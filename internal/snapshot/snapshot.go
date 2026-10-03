@@ -56,10 +56,12 @@ type CreateResult struct {
 
 // UndoResult returns details of a restored snapshot state.
 type UndoResult struct {
-	RestoredFiles []string                  `json:"restored_files"`
-	RestoredDiff  string                    `json:"restored_diff"`
-	Diagnostics   []string                  `json:"diagnostics"`
-	Delta         *pipeline.DiagnosticDelta `json:"delta,omitempty"`
+	RestoredFiles    []string                  `json:"restored_files"`
+	RestoredDiff     string                    `json:"restored_diff"`
+	Diagnostics      []string                  `json:"diagnostics"`
+	DiagnosticStatus string                    `json:"diagnostic_status"`
+	DiagnosticError  string                    `json:"diagnostic_error,omitempty"`
+	Delta            *pipeline.DiagnosticDelta `json:"delta,omitempty"`
 }
 
 // Create captures pre-edit state of specified files or the workspace root into .scratch/snapshots/<id>/.
@@ -199,6 +201,17 @@ type fileRestorePlan struct {
 	needsWrite   bool
 }
 
+type restoreFileState struct {
+	bytes  []byte
+	sha256 string
+	exists bool
+}
+
+type restoreResult struct {
+	files []string
+	diff  string
+}
+
 // Undo verifies preimage/post-edit integrity and atomically restores files from the specified snapshot.
 func Undo(ctx context.Context, workDir string, snapshotID string) (*UndoResult, error) {
 	absWorkDir, err := resolveWorkDir(workDir)
@@ -216,25 +229,35 @@ func Undo(ctx context.Context, workDir string, snapshotID string) (*UndoResult, 
 		return nil, err
 	}
 
-	diagsBefore, _ := pipeline.CheckDiagnostics(ctx, absWorkDir)
+	diagsBefore, beforeErr := pipeline.CheckDiagnostics(ctx, absWorkDir)
 	plans, err := preflightRestorePlans(absWorkDir, resolvedID, manifest)
 	if err != nil {
 		return nil, err
 	}
-	restoredFiles, restoredDiff, err := restorePlans(plans)
+	restored, err := restorePlans(plans)
 	if err != nil {
 		return nil, err
 	}
 
-	diagsAfter, _ := pipeline.CheckDiagnostics(ctx, absWorkDir)
-	delta := pipeline.ComputeDelta(diagsBefore, diagsAfter)
+	return undoResultWithDiagnostics(ctx, absWorkDir, diagsBefore, beforeErr, restored)
+}
 
-	return &UndoResult{
-		RestoredFiles: restoredFiles,
-		RestoredDiff:  restoredDiff,
-		Diagnostics:   diagsAfter,
-		Delta:         &delta,
-	}, nil
+func undoResultWithDiagnostics(ctx context.Context, workDir string, before []string, beforeErr error, restored restoreResult) (*UndoResult, error) {
+	after, afterErr := pipeline.CheckDiagnostics(ctx, workDir)
+	result := &UndoResult{
+		RestoredFiles:    restored.files,
+		RestoredDiff:     restored.diff,
+		Diagnostics:      after,
+		DiagnosticStatus: "unavailable",
+	}
+	if beforeErr != nil || afterErr != nil {
+		result.DiagnosticError = errors.Join(beforeErr, afterErr).Error()
+		return result, nil
+	}
+	delta := pipeline.ComputeDelta(before, after)
+	result.DiagnosticStatus = "available"
+	result.Delta = &delta
+	return result, nil
 }
 
 func preflightRestorePlans(root, snapshotID string, manifest *Manifest) ([]fileRestorePlan, error) {
@@ -260,14 +283,14 @@ func prepareRestorePlan(root, blobsDir string, record FileRecord) (fileRestorePl
 	if err != nil {
 		return fileRestorePlan{}, err
 	}
-	currentData, currentSHA, fileExists, err := readCurrentRestoreFile(absPath, record.Path)
+	current, err := readCurrentRestoreFile(absPath, record.Path)
 	if err != nil {
 		return fileRestorePlan{}, err
 	}
-	if err := validateRestoreConflict(record, currentSHA, fileExists); err != nil {
+	if err := validateRestoreConflict(record, current.sha256, current.exists); err != nil {
 		return fileRestorePlan{}, err
 	}
-	return fileRestorePlan{record: record, absPath: absPath, currentBytes: currentData, blobBytes: blobData, needsWrite: !fileExists || currentSHA != record.PreimageSHA256}, nil
+	return fileRestorePlan{record: record, absPath: absPath, currentBytes: current.bytes, blobBytes: blobData, needsWrite: !current.exists || current.sha256 != record.PreimageSHA256}, nil
 }
 
 func readVerifiedBlob(blobsDir string, record FileRecord) ([]byte, error) {
@@ -283,16 +306,16 @@ func readVerifiedBlob(blobsDir string, record FileRecord) ([]byte, error) {
 	return data, nil
 }
 
-func readCurrentRestoreFile(absPath, relativePath string) ([]byte, string, bool, error) {
+func readCurrentRestoreFile(absPath, relativePath string) (restoreFileState, error) {
 	// #nosec G304 -- reading workspace file to preflight conflict check
 	data, err := os.ReadFile(absPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, "", false, nil
+		return restoreFileState{}, nil
 	}
 	if err != nil {
-		return nil, "", false, fmt.Errorf("read on-disk file %s: %w", relativePath, err)
+		return restoreFileState{}, fmt.Errorf("read on-disk file %s: %w", relativePath, err)
 	}
-	return data, computeSHA256(data), true, nil
+	return restoreFileState{bytes: data, sha256: computeSHA256(data), exists: true}, nil
 }
 
 func validateRestoreConflict(record FileRecord, currentSHA string, fileExists bool) error {
@@ -314,20 +337,21 @@ func validateRestoreConflict(record FileRecord, currentSHA string, fileExists bo
 	return nil
 }
 
-func restorePlans(plans []fileRestorePlan) ([]string, string, error) {
-	var restored []string
+func restorePlans(plans []fileRestorePlan) (restoreResult, error) {
+	result := restoreResult{}
 	var diff strings.Builder
 	for _, plan := range plans {
 		if !plan.needsWrite {
 			continue
 		}
 		if err := restorePlan(plan); err != nil {
-			return nil, "", err
+			return restoreResult{}, err
 		}
-		restored = append(restored, plan.record.Path)
+		result.files = append(result.files, plan.record.Path)
 		appendRestoreDiff(&diff, plan)
 	}
-	return restored, diff.String(), nil
+	result.diff = diff.String()
+	return result, nil
 }
 
 func restorePlan(plan fileRestorePlan) error {
@@ -338,7 +362,9 @@ func restorePlan(plan fileRestorePlan) error {
 		return fmt.Errorf("atomic write restore for %s: %w", plan.record.Path, err)
 	}
 	if plan.record.Mode != 0 {
-		_ = os.Chmod(plan.absPath, plan.record.Mode)
+		if err := os.Chmod(plan.absPath, plan.record.Mode); err != nil {
+			return fmt.Errorf("restore mode for %s after content was restored: %w", plan.record.Path, err)
+		}
 	}
 	return nil
 }
