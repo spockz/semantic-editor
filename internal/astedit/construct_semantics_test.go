@@ -41,8 +41,32 @@ func TestReplaceConstructStatementExpressionAmbiguityAndPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(after), "f(1, (2))") {
-		t.Fatalf("construct_path changed the wrong repeated argument: %s", after)
+	assertCallArgumentValues(t, after, "1", "2")
+}
+
+func assertCallArgumentValues(t *testing.T, source []byte, expected ...string) {
+	t.Helper()
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stmt := file.Decls[0].(*ast.FuncDecl).Body.List[0].(*ast.ExprStmt)
+	call := stmt.X.(*ast.CallExpr)
+	if len(call.Args) != len(expected) {
+		t.Fatalf("argument count %d, want %d", len(call.Args), len(expected))
+	}
+	for index, expr := range call.Args {
+		for {
+			paren, ok := expr.(*ast.ParenExpr)
+			if !ok {
+				break
+			}
+			expr = paren.X
+		}
+		literal, ok := expr.(*ast.BasicLit)
+		if !ok || literal.Value != expected[index] {
+			t.Fatalf("argument %d is %T(%v), want literal %s", index, expr, expr, expected[index])
+		}
 	}
 }
 
