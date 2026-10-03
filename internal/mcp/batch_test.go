@@ -777,16 +777,33 @@ type moveSymlinkCase struct {
 func assertMoveSymlinkRefused(t *testing.T, test moveSymlinkCase) {
 	t.Helper()
 	root := createMoveSymlinkWorkspace(t)
-	sourcePath := filepath.Join(root, "source.go")
-	destinationPath := filepath.Join(root, "real", "dest.go")
-	sourceBefore := readFixtureFile(t, sourcePath)
-	destinationBefore := readFixtureFile(t, destinationPath)
+	files := snapshotMoveFiles(t, root)
 	response, err := executeMoveSymlinkCase(root, test)
 	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("symlink move error = %v, response = %+v", err, response)
 	}
-	assertFixtureBytesUnchanged(t, sourcePath, sourceBefore, "source")
-	assertFixtureBytesUnchanged(t, destinationPath, destinationBefore, "destination")
+	for _, file := range files {
+		assertFixtureBytesUnchanged(t, file.path, file.content, file.label)
+	}
+}
+
+type moveFileSnapshot struct {
+	path    string
+	label   string
+	content []byte
+}
+
+func snapshotMoveFiles(t *testing.T, root string) []moveFileSnapshot {
+	t.Helper()
+	paths := []moveFileSnapshot{
+		{path: filepath.Join(root, "source.go"), label: "source"},
+		{path: filepath.Join(root, "dest.go"), label: "file-symlink destination"},
+		{path: filepath.Join(root, "real", "dest.go"), label: "directory-symlink destination"},
+	}
+	for index := range paths {
+		paths[index].content = readFixtureFile(t, paths[index].path)
+	}
+	return paths
 }
 
 func createMoveSymlinkWorkspace(t *testing.T) string {
@@ -816,9 +833,17 @@ func createMoveSymlinkWorkspace(t *testing.T) string {
 }
 
 func executeMoveSymlinkCase(root string, test moveSymlinkCase) (*mcp.BatchResponse, error) {
+	params, err := json.Marshal(map[string]string{
+		"file":             test.source,
+		"destination_file": test.destination,
+		"symbol":           "MoveMe",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode symlink move test parameters: %w", err)
+	}
 	return mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
 		Tool:   "semantic_move_construct",
-		Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, test.source, test.destination)),
+		Params: params,
 	}}, false)
 }
 
