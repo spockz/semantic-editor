@@ -50,11 +50,11 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	}
 
 	fnName := fnDecl.Name.Name
-	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, fnName); err != nil {
-		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+	if accessErr := ValidateAccess(DefaultBackend, opts.AccessModifier, fnName); accessErr != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](accessErr); ok {
 			visErr.File = "snippet"
 		}
-		return fmt.Errorf("validate access modifier: %w", err)
+		return fmt.Errorf("validate access modifier: %w", accessErr)
 	}
 
 	effectiveAccess, err := ResolveAccess(DefaultBackend, opts.AccessModifier, fnName)
@@ -67,8 +67,8 @@ func insertFunctionImpl(ctx context.Context, filePath string, source string, opt
 	if err != nil {
 		return fmt.Errorf("parse target file before insertion: %w", err)
 	}
-	if err := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); err != nil {
-		return fmt.Errorf("check declaration collision: %w", err)
+	if collisionErr := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, fnDecl); collisionErr != nil {
+		return fmt.Errorf("check declaration collision: %w", collisionErr)
 	}
 
 	insertOffset, err := calculateFunctionOffset(fset, fileNode, content, fnDecl, effectiveAccess, opts)

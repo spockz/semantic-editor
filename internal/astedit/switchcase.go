@@ -126,8 +126,8 @@ func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSourc
 	caseTrimmed := strings.TrimSpace(caseSource)
 	synthetic := "package dummy\n\nfunc _() {\nswitch {\n" + caseTrimmed + "\n}\n}\n"
 	synthFset := token.NewFileSet()
-	if _, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); err != nil {
-		pos := extractSyntaxPosition(synthFset, err)
+	if _, parseErr := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); parseErr != nil {
+		pos := extractSyntaxPosition(synthFset, parseErr)
 		if pos.Line > 4 {
 			pos.Line -= 4
 		}
@@ -135,7 +135,7 @@ func insertCaseImpl(ctx context.Context, filePath, funcName, switchOn, caseSourc
 			File:    "snippet",
 			Snippet: caseSource,
 			Pos:     pos,
-			Cause:   err,
+			Cause:   parseErr,
 			Err:     ErrSyntax,
 		}
 	}

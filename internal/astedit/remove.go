@@ -232,13 +232,13 @@ func scanModuleSources(ctx context.Context, root, target string, targetOffset in
 		if !entry.Type().IsRegular() {
 			return fmt.Errorf("non-regular Go source in module source set: %s", path)
 		}
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return fmt.Errorf("resolve source path %s: %w", path, err)
+		absolute, absoluteErr := filepath.Abs(path)
+		if absoluteErr != nil {
+			return fmt.Errorf("resolve source path %s: %w", path, absoluteErr)
 		}
-		relative, err := filepath.Rel(root, absolute)
-		if err != nil {
-			return fmt.Errorf("resolve source path relative to module root: %w", err)
+		relative, relativeErr := filepath.Rel(root, absolute)
+		if relativeErr != nil {
+			return fmt.Errorf("resolve source path relative to module root: %w", relativeErr)
 		}
 		var data []byte
 		if sourcebuf.FromContext(ctx) != nil {
@@ -546,8 +546,8 @@ func removalRange(fset *token.FileSet, file *ast.File, selected ast.Node, conten
 	startNode, endNode := selected.Pos(), selected.End()
 	for _, decl := range file.Decls {
 		if gen, ok := decl.(*ast.GenDecl); ok {
-			if startNode, endNode, found := declarationRemovalRange(gen, selected); found {
-				return validateRemovalRange(fset, startNode, endNode, contentLength)
+			if declarationStart, declarationEnd, found := declarationRemovalRange(gen, selected); found {
+				return validateRemovalRange(fset, declarationStart, declarationEnd, contentLength)
 			}
 		}
 		if fn, ok := decl.(*ast.FuncDecl); ok && fn == selected && fn.Doc != nil {
