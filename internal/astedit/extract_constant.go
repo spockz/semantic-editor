@@ -194,7 +194,11 @@ func collectExtractionPackageInputs(loaded []*packages.Package) (extractionPacka
 	inputs := newExtractionPackageInputs()
 	var visitErr error
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
-		if visitErr = collectPackageInputRecord(pkg, &inputs); visitErr != nil {
+		if visitErr != nil {
+			return false
+		}
+		if collectionErr := collectPackageInputRecord(pkg, &inputs); collectionErr != nil {
+			visitErr = collectionErr
 			return false
 		}
 		return true
