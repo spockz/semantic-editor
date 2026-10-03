@@ -332,13 +332,13 @@ func resolveRemoveTarget(fset *token.FileSet, file *ast.File, content []byte, op
 	case "case":
 		return findCaseTarget(fset, file, opts, cleanPath)
 	case string(ConstructStatementOrExpr):
-		return findStatementOrExpressionRemoveTarget(fset, file, content, opts, cleanPath)
+		return findStatementOrExpressionRemoveTarget(fset, file, content, opts)
 	default:
 		return removeTarget{}, fmt.Errorf("unsupported removal kind %q", opts.Kind)
 	}
 }
 
-func findStatementOrExpressionRemoveTarget(fset *token.FileSet, file *ast.File, content []byte, opts RemoveOptions, cleanPath string) (removeTarget, error) {
+func findStatementOrExpressionRemoveTarget(fset *token.FileSet, file *ast.File, content []byte, opts RemoveOptions) (removeTarget, error) {
 	ownerName := opts.InFunction
 	if ownerName == "" {
 		return removeTarget{}, fmt.Errorf("in_function is required for statement/expression removal")
@@ -351,35 +351,50 @@ func findStatementOrExpressionRemoveTarget(fset *token.FileSet, file *ast.File, 
 		return removeTarget{}, err
 	}
 	candidates := collectStatementExpressionCandidates(fset, content, owner.Body)
-	matches := make([]constructCandidate, 0, 1)
+	var directMatches []constructCandidate
+	var expressionMatches []constructCandidate
 	for _, candidate := range candidates {
-		if candidate.key == strings.TrimSpace(opts.Discriminator) {
-			matches = append(matches, candidate)
+		if candidate.key != normalizeConstructSelector(opts.Discriminator) {
+			continue
+		}
+		if isDirectOwnerStatementCandidate(candidate) {
+			directMatches = append(directMatches, candidate)
+		} else if candidate.class == "expression" {
+			expressionMatches = append(expressionMatches, candidate)
 		}
 	}
 	if opts.ConstructPath != "" {
-		selected := make([]constructCandidate, 0, 1)
-		for _, candidate := range matches {
+		var selected *constructCandidate
+		for _, candidate := range candidates {
+			if candidate.key != normalizeConstructSelector(opts.Discriminator) {
+				continue
+			}
 			if candidate.path == opts.ConstructPath {
-				selected = append(selected, candidate)
+				selected = &candidate
+				break
 			}
 		}
-		if len(selected) == 0 {
-			return removeTarget{}, fmt.Errorf("construct_path %q does not select statement/expression %q in %s; candidates:\n%s", opts.ConstructPath, opts.Discriminator, ownerName, formatSpanCandidates(fset, matches))
+		if selected == nil {
+			return removeTarget{}, fmt.Errorf("construct_path %q does not select %q in %s; candidates:\n%s", opts.ConstructPath, opts.Discriminator, ownerName, formatSpanCandidates(fset, candidates))
 		}
-		matches = selected
+		if !isDirectOwnerStatementCandidate(*selected) {
+			if selected.class == "expression" {
+				return removeTarget{}, fmt.Errorf("cannot remove expression slot %q; select a direct statement", opts.Discriminator)
+			}
+			return removeTarget{}, fmt.Errorf("construct_path %q selects a nested statement; only direct owner statements can be removed", selected.path)
+		}
+		directMatches = []constructCandidate{*selected}
 	}
-	if len(matches) == 0 {
+	if len(directMatches) == 0 && len(expressionMatches) > 0 {
+		return removeTarget{}, fmt.Errorf("cannot remove expression slot %q; select a direct statement", opts.Discriminator)
+	}
+	if len(directMatches) == 0 {
 		return removeTarget{}, fmt.Errorf("statement/expression %q not found in %s; candidates:\n%s", opts.Discriminator, ownerName, formatSpanCandidates(fset, candidates))
 	}
-	if len(matches) > 1 {
-		return removeTarget{}, fmt.Errorf("ambiguous statement/expression %q in %s; set construct_path to one of:\n%s", opts.Discriminator, ownerName, formatSpanCandidates(fset, matches))
+	if len(directMatches) > 1 {
+		return removeTarget{}, fmt.Errorf("ambiguous direct statement %q in %s; set construct_path to one of:\n%s", opts.Discriminator, ownerName, formatSpanCandidates(fset, directMatches))
 	}
-	selected := matches[0]
-	if selected.class != "statement" {
-		return removeTarget{}, fmt.Errorf("cannot remove expression slot %q; select a complete direct statement", opts.Discriminator)
-	}
-	stmt, ok := selected.node.(ast.Stmt)
+	stmt, ok := directMatches[0].node.(ast.Stmt)
 	if !ok {
 		return removeTarget{}, fmt.Errorf("selected target is not a direct statement")
 	}

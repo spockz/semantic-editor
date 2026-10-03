@@ -54,6 +54,8 @@ func InsertConstruct(ctx context.Context, filePath string, source string, opts I
 	kind := opts.Kind
 	if kind == "" {
 		kind = inferInsertConstructKind(source, opts)
+	} else if err := validateInsertConstructKind(source, kind, opts); err != nil {
+		return InsertConstructResult{}, err
 	}
 
 	switch kind {
@@ -137,6 +139,50 @@ func InsertConstruct(ctx context.Context, filePath string, source string, opts I
 	default:
 		return InsertConstructResult{}, fmt.Errorf("unsupported Go construct insertion kind: %q", kind)
 	}
+}
+
+func validateInsertConstructKind(source string, kind ConstructKind, opts InsertConstructOptions) error {
+	trimmed := strings.TrimSpace(source)
+	switch kind {
+	case backend.ConstructFunction, backend.ConstructMethod:
+		candidate := trimmed
+		if !strings.HasPrefix(candidate, "package ") {
+			candidate = "package p\n" + candidate
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), "insert.go", []byte(candidate), parser.ParseComments|parser.AllErrors)
+		if err != nil || len(file.Decls) != 1 {
+			return fmt.Errorf("%s insertion requires exactly one function declaration", kind)
+		}
+		fn, ok := file.Decls[0].(*ast.FuncDecl)
+		if !ok || (kind == backend.ConstructMethod) != (fn.Recv != nil) {
+			return fmt.Errorf("source declaration does not match construct kind %q", kind)
+		}
+	case backend.ConstructType:
+		if !strings.HasPrefix(trimmed, "type ") {
+			return fmt.Errorf("type insertion requires a type declaration")
+		}
+	case backend.ConstructConst:
+		if !strings.HasPrefix(trimmed, "const ") {
+			return fmt.Errorf("const insertion requires a const declaration")
+		}
+	case backend.ConstructVar:
+		if !strings.HasPrefix(trimmed, "var ") {
+			return fmt.Errorf("var insertion requires a var declaration")
+		}
+	case backend.ConstructField:
+		if opts.TypeName == "" {
+			return fmt.Errorf("field insertion requires a type selector")
+		}
+	case backend.ConstructCase:
+	case backend.ConstructStatementOrExpr:
+		if opts.Function == "" {
+			return fmt.Errorf("statement insertion requires an owner function")
+		}
+	case backend.ConstructDeclaration, backend.ConstructDecl:
+	default:
+		return fmt.Errorf("unsupported Go construct insertion kind: %q", kind)
+	}
+	return nil
 }
 
 func inferInsertConstructKind(source string, opts InsertConstructOptions) ConstructKind {

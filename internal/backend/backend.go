@@ -90,11 +90,15 @@ const (
 	// OperationRename performs a semantic rename.
 	OperationRename Operation = "rename"
 	// OperationVerify formats and checks project diagnostics.
-	OperationVerify           Operation = "verify"
-	OperationInsertConstruct  Operation = "insert_construct"
+	OperationVerify Operation = "verify"
+	// OperationInsertConstruct inserts one syntax construct.
+	OperationInsertConstruct Operation = "insert_construct"
+	// OperationReplaceConstruct replaces one selected syntax construct.
 	OperationReplaceConstruct Operation = "replace_construct"
-	OperationRemoveConstruct  Operation = "remove_construct"
-	OperationMoveConstruct    Operation = "move_construct"
+	// OperationRemoveConstruct removes one selected syntax construct.
+	OperationRemoveConstruct Operation = "remove_construct"
+	// OperationMoveConstruct moves one existing syntax construct.
+	OperationMoveConstruct Operation = "move_construct"
 	// CapabilityLookup is the lookup capability key.
 	CapabilityLookup = OperationLookup
 	// CapabilityRename is the rename capability key.

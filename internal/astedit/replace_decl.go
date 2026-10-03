@@ -133,6 +133,10 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("clean imports after declaration replacement: %w", err)
+	}
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
@@ -141,8 +145,6 @@ func ReplaceDecl(ctx context.Context, filePath, symbolQuery, source string, opts
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)
 		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
 	}
 	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[startOffset:endOffset])), strings.TrimSpace(replacementText)), nil
 }
