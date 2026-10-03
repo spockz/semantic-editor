@@ -64,12 +64,7 @@ func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) error {
 }
 
 func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
-	agyBin := "/Users/alessandro/.local/bin/agy"
-	if r.agyExecutable != "" {
-		agyBin = r.agyExecutable
-	} else if _, err := os.Stat(agyBin); err != nil {
-		agyBin = "agy"
-	}
+	agyBin := configuredAgyExecutable(r.agyExecutable)
 
 	absWorkDir, err := filepath.Abs(workDir)
 	if err != nil {
@@ -92,19 +87,7 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 		_ = os.Remove(configPath)
 	}()
 
-	args := []string{"--output-format", "json", "--dangerously-skip-permissions", "--add-dir", absWorkDir}
-	if resumeID != "" {
-		args = append(args, "--conversation", resumeID)
-	}
-	if target.Model != "" {
-		args = append(args, "--model", target.Model)
-	}
-	if target.Effort != "" {
-		args = append(args, "--effort", target.Effort)
-	}
-
-	fullPrompt := fmt.Sprintf("Working directory is %s.\n%s", absWorkDir, prompt)
-	args = append(args, "-p", fullPrompt)
+	args := buildAgyArguments(absWorkDir, target, prompt, resumeID)
 
 	// #nosec G204 -- agyBin is one of two fixed executable names; args are passed directly without shell interpretation.
 	cmd := exec.CommandContext(ctx, agyBin, args...)
@@ -151,14 +134,42 @@ func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prom
 	return resp.ConversationID, nil
 }
 
+func configuredAgyExecutable(configured string) string {
+	if configured != "" {
+		return configured
+	}
+	const defaultExecutable = "/Users/alessandro/.local/bin/agy"
+	if _, err := os.Stat(defaultExecutable); err == nil {
+		return defaultExecutable
+	}
+	return "agy"
+}
+
+func buildAgyArguments(workDir string, target Target, prompt, resumeID string) []string {
+	args := []string{"--output-format", "json", "--dangerously-skip-permissions", "--add-dir", workDir}
+	if resumeID != "" {
+		args = append(args, "--conversation", resumeID)
+	}
+	if target.Model != "" {
+		args = append(args, "--model", target.Model)
+	}
+	if target.Effort != "" {
+		args = append(args, "--effort", target.Effort)
+	}
+	fullPrompt := fmt.Sprintf("Working directory is %s.\n%s", workDir, prompt)
+	return append(args, "-p", fullPrompt)
+}
+
 type agyTranscriptStep struct {
-	Type      string `json:"type"`
-	Status    string `json:"status"`
-	Content   string `json:"content"`
-	ToolCalls []struct {
-		Name string `json:"name"`
-		Args any    `json:"args"`
-	} `json:"tool_calls"`
+	Type      string                  `json:"type"`
+	Status    string                  `json:"status"`
+	Content   string                  `json:"content"`
+	ToolCalls []agyTranscriptToolCall `json:"tool_calls"`
+}
+
+type agyTranscriptToolCall struct {
+	Name string `json:"name"`
+	Args any    `json:"args"`
 }
 
 func isMutatingTool(name string) bool {
@@ -209,80 +220,115 @@ func extractAgyTools(convID string, res *RunResult) error {
 
 func parseAgyTranscript(data []byte, res *RunResult) error {
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	internalTurns := 0
-	initialLoadTurns := 0
-	mcpLoadTurns := 0
-	mutatingSeen := false
-	var pending []int
-	lineNumber := 0
+	state := agyTranscriptState{}
 	for scanner.Scan() {
-		lineNumber++
 		line := append([]byte(nil), scanner.Bytes()...)
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
 		}
-		var step agyTranscriptStep
-		if err := json.Unmarshal(line, &step); err != nil {
-			return fmt.Errorf("decode transcript line %d: %w", lineNumber, err)
-		}
-		res.rawEvents = append(res.rawEvents, json.RawMessage(line))
-		if step.Type == "PLANNER_RESPONSE" {
-			internalTurns++
-		}
-		for _, tc := range step.ToolCalls {
-			toolName := strings.Trim(strings.TrimSpace(tc.Name), "\"")
-			serverName := ""
-			isMCPCall := toolName == "call_mcp_tool"
-			if isMCPCall {
-				if argsMap, ok := tc.Args.(map[string]any); ok {
-					if t, ok := argsMap["ToolName"].(string); ok {
-						toolName = strings.Trim(strings.TrimSpace(t), "\"")
-					}
-					if s, ok := argsMap["ServerName"].(string); ok {
-						serverName = strings.Trim(strings.TrimSpace(s), "\"")
-					}
-				}
-			}
-			cleanName := strings.Trim(toolName, "\"")
-			arguments, err := json.Marshal(tc.Args)
-			if err != nil {
-				return fmt.Errorf("encode arguments on transcript line %d: %w", lineNumber, err)
-			}
-			callIndex := appendToolCall(res, ToolCall{Name: cleanName, Server: serverName, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
-			pending = append(pending, callIndex)
-			isMutating := isSemanticTool(cleanName, serverName) || isMutatingTool(cleanName)
-			if isMutating {
-				mutatingSeen = true
-			} else if !mutatingSeen {
-				initialLoadTurns++
-				if isMCPCall || isMCPDiscoveryTool(cleanName) {
-					mcpLoadTurns++
-				}
-			}
-		}
-		if step.Type == "GENERIC" && len(pending) > 0 {
-			for _, callIndex := range pending {
-				res.ToolCalls[callIndex].TransportStatus = ToolCallStatusSucceeded
-				res.ToolCalls[callIndex].FunctionalStatus = agyToolFunctionalStatus(step.Status)
-				if res.ToolCalls[callIndex].FunctionalStatus == ToolCallStatusFailed {
-					res.ToolCalls[callIndex].Failure = compactToolFailure(step.Content)
-				}
-			}
-			pending = nil
-			refreshMCPVerified(res)
+		state.lineNumber++
+		if err := processAgyTranscriptLine(line, res, &state); err != nil {
+			return err
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("scan Agy transcript: %w", err)
 	}
-	if internalTurns > 0 {
-		res.InternalTurns = internalTurns
+	if state.internalTurns > 0 {
+		res.InternalTurns = state.internalTurns
 	}
-	res.InitialLoadTurns = initialLoadTurns
-	res.MCPLoadTurns = mcpLoadTurns
+	res.InitialLoadTurns = state.initialLoadTurns
+	res.MCPLoadTurns = state.mcpLoadTurns
 	res.ToolCount = len(res.ToolCalls)
 	refreshMCPVerified(res)
 	return nil
+}
+
+type agyTranscriptState struct {
+	internalTurns    int
+	initialLoadTurns int
+	mcpLoadTurns     int
+	mutatingSeen     bool
+	pending          []int
+	lineNumber       int
+}
+
+func processAgyTranscriptLine(line []byte, result *RunResult, state *agyTranscriptState) error {
+	var step agyTranscriptStep
+	if err := json.Unmarshal(line, &step); err != nil {
+		return fmt.Errorf("decode transcript line %d: %w", state.lineNumber, err)
+	}
+	result.rawEvents = append(result.rawEvents, json.RawMessage(line))
+	if step.Type == "PLANNER_RESPONSE" {
+		state.internalTurns++
+	}
+	if err := appendAgyTranscriptCalls(step.ToolCalls, result, state); err != nil {
+		return err
+	}
+	if step.Type == "GENERIC" {
+		completeAgyTranscriptCalls(step, result, state)
+	}
+	return nil
+}
+
+func appendAgyTranscriptCalls(toolCalls []agyTranscriptToolCall, result *RunResult, state *agyTranscriptState) error {
+	for _, toolCall := range toolCalls {
+		name, server, isMCPCall := resolveAgyToolCall(toolCall)
+		arguments, err := json.Marshal(toolCall.Args)
+		if err != nil {
+			return fmt.Errorf("encode arguments on transcript line %d: %w", state.lineNumber, err)
+		}
+		index := appendToolCall(result, ToolCall{Name: name, Server: server, Arguments: arguments, TransportStatus: ToolCallStatusUnknown, FunctionalStatus: ToolCallStatusUnknown})
+		state.pending = append(state.pending, index)
+		observeAgyToolCall(name, server, isMCPCall, state)
+	}
+	return nil
+}
+
+func resolveAgyToolCall(toolCall agyTranscriptToolCall) (string, string, bool) {
+	name := strings.Trim(strings.TrimSpace(toolCall.Name), "\"")
+	server := ""
+	isMCPCall := name == "call_mcp_tool"
+	argsMap, ok := toolCall.Args.(map[string]any)
+	if !isMCPCall || !ok {
+		return name, server, isMCPCall
+	}
+	if toolName, ok := argsMap["ToolName"].(string); ok {
+		name = strings.Trim(strings.TrimSpace(toolName), "\"")
+	}
+	if serverName, ok := argsMap["ServerName"].(string); ok {
+		server = strings.Trim(strings.TrimSpace(serverName), "\"")
+	}
+	return strings.Trim(name, "\""), server, isMCPCall
+}
+
+func observeAgyToolCall(name, server string, isMCPCall bool, state *agyTranscriptState) {
+	if isSemanticTool(name, server) || isMutatingTool(name) {
+		state.mutatingSeen = true
+		return
+	}
+	if state.mutatingSeen {
+		return
+	}
+	state.initialLoadTurns++
+	if isMCPCall || isMCPDiscoveryTool(name) {
+		state.mcpLoadTurns++
+	}
+}
+
+func completeAgyTranscriptCalls(step agyTranscriptStep, result *RunResult, state *agyTranscriptState) {
+	if len(state.pending) == 0 {
+		return
+	}
+	for _, index := range state.pending {
+		result.ToolCalls[index].TransportStatus = ToolCallStatusSucceeded
+		result.ToolCalls[index].FunctionalStatus = agyToolFunctionalStatus(step.Status)
+		if result.ToolCalls[index].FunctionalStatus == ToolCallStatusFailed {
+			result.ToolCalls[index].Failure = compactToolFailure(step.Content)
+		}
+	}
+	state.pending = nil
+	refreshMCPVerified(result)
 }
 
 func writeAgyMCPConfig(workDir, repositoryRoot string, arm ArmType, mode MCPServerInstructionMode, env []string) error {

@@ -57,24 +57,21 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if task == nil {
 		return nil, fmt.Errorf("execute agent: task is nil")
 	}
-	adapter, err := selectProvider(r, target)
-	if err != nil {
-		return nil, err
+	selectedAdapter, selectErr := selectProvider(r, target)
+	if selectErr != nil {
+		return nil, selectErr
 	}
-	var started time.Time
-	var prewarmDuration time.Duration
-	var prewarmApplied bool
 	runID := fmt.Sprintf("run_%s_%s_%s_%s_%d", target.Harness, arm, safePathFragment(variant), task.Metadata.TaskID, time.Now().UnixNano())
 	workDir := filepath.Join(r.baseScratchDir, runID)
 	// #nosec G703,G301 -- benchmark work directory is isolated under the configured scratch root.
 	if err := os.MkdirAll(workDir, 0o750); err != nil {
 		return nil, fmt.Errorf("create work dir: %w", err)
 	}
-	session, err := newAgentSession(adapter, r.baseScratchDir, runID, workDir)
-	if err != nil {
+	session, sessionErr := newAgentSession(selectedAdapter, r.baseScratchDir, runID, workDir)
+	if sessionErr != nil {
 		// #nosec G703 -- cleanup isolated workspace when session initialization fails.
 		removeErr := os.RemoveAll(workDir)
-		return nil, errors.Join(err, removeErr)
+		return nil, errors.Join(sessionErr, removeErr)
 	}
 	session.execution = execution
 	defer func() {
@@ -90,26 +87,62 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 			executeErr = errors.Join(executeErr, closeErr)
 		}
 	}()
+	workspace, workspaceErr := prepareAgentWorkspace(ctx, r, task, target, arm, variant, workDir, session)
+	if workspaceErr != nil {
+		return nil, workspaceErr
+	}
+	mcpInstructions := MCPServerInstructionsNone
+	if target.Harness == string(HarnessCodex) || target.Harness == string(HarnessOpenCode) {
+		mcpInstructions = r.mcpServerInstructionsMode
+	}
+	res := newAgentRunResult(r, task, target, arm, variant, execution, session, workspace.prewarmApplied, workspace.prewarmDuration, mcpInstructions)
+	session.result = res
+	prompt, err := prepareAgentRunMetadata(execution, session, res, r.semeditPrewarmVerify)
+	if err != nil {
+		return nil, err
+	}
+	started, stopEarly := runInitialAgentTask(ctx, session, target, task, prompt, res)
+	if stopEarly {
+		return res, nil
+	}
+	r.runAgentFollowups(ctx, session, target, arm, started, res)
+	return res, nil
+}
+
+type agentWorkspaceSetup struct {
+	prewarmApplied  bool
+	prewarmDuration time.Duration
+}
+
+func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, target Target, arm ArmType, variant, workDir string, session *agentSession) (agentWorkspaceSetup, error) {
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
-		return nil, fmt.Errorf("extract task fixture: %w", err)
+		return agentWorkspaceSetup{}, fmt.Errorf("extract task fixture: %w", err)
 	}
 	if target.Harness == string(HarnessCodex) {
 		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
-			return nil, fmt.Errorf("prepare Codex fixture instructions: %w", err)
+			return agentWorkspaceSetup{}, fmt.Errorf("prepare Codex fixture instructions: %w", err)
 		}
 	}
-	if arm == ArmSemedit && r.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
-		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(r.baseScratchDir)), "bin", "semedit-next")
-		prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
+	setup := agentWorkspaceSetup{}
+	if arm == ArmSemedit && runner.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
+		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")
+		var err error
+		setup.prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
 		if err != nil {
-			return nil, err
+			return agentWorkspaceSetup{}, err
 		}
-		prewarmApplied = true
+		setup.prewarmApplied = true
 	}
-	session.beforeFiles, err = snapshotWorkspaceFiles(workDir)
+	beforeFiles, err := snapshotWorkspaceFiles(workDir)
 	if err != nil {
-		return nil, fmt.Errorf("snapshot benchmark workspace: %w", err)
+		return agentWorkspaceSetup{}, fmt.Errorf("snapshot benchmark workspace: %w", err)
 	}
+	session.beforeFiles = beforeFiles
+	setAgentInitialFile(session, task, workDir)
+	return setup, nil
+}
+
+func setAgentInitialFile(session *agentSession, task *Task, workDir string) {
 	targetFile := task.Metadata.Oracle.AST.File
 	if targetFile == "" {
 		targetFile = "api/server.go"
@@ -119,11 +152,10 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	if data, err := os.ReadFile(session.initialPath); err == nil {
 		session.beforeContent = strings.TrimSpace(string(data))
 	}
-	mcpInstructions := MCPServerInstructionsNone
-	if target.Harness == string(HarnessCodex) || target.Harness == string(HarnessOpenCode) {
-		mcpInstructions = r.mcpServerInstructionsMode
-	}
-	res := &RunResult{
+}
+
+func newAgentRunResult(r *Runner, task *Task, target Target, arm ArmType, variant string, execution AgentExecution, session *agentSession, prewarmApplied bool, prewarmDuration time.Duration, mcpInstructions MCPServerInstructionMode) *RunResult {
+	return &RunResult{
 		TaskID: task.Metadata.TaskID, Variant: variant,
 		InteractiveMode:              task.Metadata.InteractiveMode,
 		PromptVariant:                promptVariantFromExecution(execution),
@@ -134,73 +166,82 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		MCPServerInstructions:        mcpInstructions,
 		Provenance:                   r.provenanceFor(), Target: target, Arm: arm, BeforeState: session.beforeContent,
 	}
-	session.result = res
-	if strings.HasPrefix(target.Model, "openrouter/") {
-		if res.Provenance == nil {
-			res.Provenance = make(ProvenanceSet)
+}
+
+func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, result *RunResult, prewarmConfigured bool) (string, error) {
+	if strings.HasPrefix(execution.Target.Model, "openrouter/") {
+		ensureProvenance(result)
+		result.Provenance["openrouter_auth"] = "environment"
+		if strings.HasSuffix(execution.Target.Model, ":free") {
+			result.Provenance["openrouter_catalog_as_of"] = openRouterFreeCatalogAsOf
+			result.Provenance["openrouter_catalog_source"] = openRouterFreeCatalogURL
 		}
-		res.Provenance["openrouter_auth"] = "environment"
-		if strings.HasSuffix(target.Model, ":free") {
-			res.Provenance["openrouter_catalog_as_of"] = openRouterFreeCatalogAsOf
-			res.Provenance["openrouter_catalog_source"] = openRouterFreeCatalogURL
-		}
 	}
-	prompt := execution.Prompt
-	if prompt == "" {
-		return nil, fmt.Errorf("planned agent execution has empty initial prompt")
+	if execution.Prompt == "" {
+		return "", fmt.Errorf("planned agent execution has empty initial prompt")
 	}
-	res.Prompt = prompt
-	if res.Provenance == nil {
-		res.Provenance = make(ProvenanceSet)
+	result.Prompt = execution.Prompt
+	ensureProvenance(result)
+	result.Provenance["session_transcript"] = session.transcriptPath
+	if result.SemeditPrewarmVerify {
+		result.Provenance["semedit_prewarm"] = "verify_cli_check_only"
+		result.Provenance["go_cache_initial_state"] = "empty"
+	} else if execution.Arm == ArmSemedit && prewarmConfigured {
+		result.Provenance["semedit_prewarm_skipped"] = "no_go_target_or_unsupported_provider"
 	}
-	res.Provenance["session_transcript"] = session.transcriptPath
-	if res.SemeditPrewarmVerify {
-		res.Provenance["semedit_prewarm"] = "verify_cli_check_only"
-		res.Provenance["go_cache_initial_state"] = "empty"
-	} else if arm == ArmSemedit && r.semeditPrewarmVerify {
-		res.Provenance["semedit_prewarm_skipped"] = "no_go_target_or_unsupported_provider"
+	return execution.Prompt, nil
+}
+
+func ensureProvenance(result *RunResult) {
+	if result.Provenance == nil {
+		result.Provenance = make(ProvenanceSet)
 	}
-	started = time.Now()
+}
+
+func runInitialAgentTask(ctx context.Context, session *agentSession, target Target, task *Task, prompt string, result *RunResult) (time.Time, bool) {
+	started := time.Now()
 	session.started = started
-	err = session.runTurn(ctx, target, prompt, "task", res)
-	if res.processStartedAt.IsZero() {
+	runErr := session.runTurn(ctx, target, prompt, "task", result)
+	if result.processStartedAt.IsZero() {
 		started = time.Time{}
 	} else {
-		started = res.processStartedAt
+		started = result.processStartedAt
 	}
 	session.started = started
-	if err != nil {
-		res.WallClock = elapsedTaskTime(started)
-		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
-		res.Error = fmt.Sprintf("%s execution: %v", target.Harness, err)
-		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
-		return res, nil
+	if runErr != nil {
+		result.WallClock = elapsedTaskTime(started)
+		session.retainWorkDir = shouldRetainWorkDir(ctx, runErr)
+		result.Error = fmt.Sprintf("%s execution: %v", target.Harness, runErr)
+		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
+		return started, true
 	}
-	res.WallClock = elapsedTaskTime(started)
-	if err := session.evaluate(ctx, res); err != nil {
-		res.WallClock = elapsedTaskTime(started)
+	result.WallClock = elapsedTaskTime(started)
+	if err := session.evaluate(ctx, result); err != nil {
+		result.WallClock = elapsedTaskTime(started)
 		session.retainWorkDir = shouldRetainWorkDir(ctx, err)
-		res.Error = err.Error()
-		res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
-		return res, nil
+		result.Error = err.Error()
+		result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
+		return started, true
 	}
 	if task.Metadata.InteractiveMode == "staged" {
-		res.WallClock = elapsedTaskTime(started)
+		result.WallClock = elapsedTaskTime(started)
 	}
-	res.InteractionSteps = append(res.InteractionSteps, initialInteractionStep(task, prompt, res))
-	if task.Metadata.InteractiveMode == "staged" {
+	result.InteractionSteps = append(result.InteractionSteps, initialInteractionStep(task, prompt, result))
+	return started, false
+}
+
+func (r *Runner) runAgentFollowups(ctx context.Context, session *agentSession, target Target, arm ArmType, started time.Time, result *RunResult) {
+	if session.execution.Task.Metadata.InteractiveMode == "staged" {
 		_, session.retainWorkDir = session.runStagedFollowups(ctx)
 	} else {
 		_, session.retainWorkDir = session.runFollowups(ctx)
 	}
-	sessionID := session.resumeID
-	res.WallClock = elapsedTaskTime(started)
-	if shouldRequestSemanticBatchReflection(arm, sessionID, res) {
-		res.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, session, target, semanticBatchReflectionPrompt)
-	} else if shouldRequestSemanticToolReflection(arm, sessionID, res) {
-		res.SemanticToolReflection = r.requestSemanticToolReflection(ctx, session, target, semanticToolReflectionPrompt)
+	result.WallClock = elapsedTaskTime(started)
+	if shouldRequestSemanticBatchReflection(arm, session.resumeID, result) {
+		result.SemanticBatchReflection = r.requestSemanticToolReflection(ctx, session, target, semanticBatchReflectionPrompt)
+	} else if shouldRequestSemanticToolReflection(arm, session.resumeID, result) {
+		result.SemanticToolReflection = r.requestSemanticToolReflection(ctx, session, target, semanticToolReflectionPrompt)
 	}
-	return res, nil
 }
 
 func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *RunResult, policy ...SemeditArmRestriction) (string, error) {
@@ -451,15 +492,15 @@ func snapshotWorkspaceFiles(root string) (workspaceSnapshot, error) {
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return fmt.Errorf("relativize %s: %w", path, err)
+		relativePath, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return fmt.Errorf("relativize %s: %w", path, relErr)
 		}
-		data, err := workspaceFS.ReadFile(rel)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", path, err)
+		data, readErr := workspaceFS.ReadFile(relativePath)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", path, readErr)
 		}
-		files[filepath.ToSlash(rel)] = sha256.Sum256(data)
+		files[filepath.ToSlash(relativePath)] = sha256.Sum256(data)
 		return nil
 	})
 	if err != nil {

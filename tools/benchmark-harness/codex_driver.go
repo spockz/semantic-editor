@@ -482,9 +482,9 @@ func runSemeditVerifyWarmup(ctx context.Context, workDir, file, binaryPath strin
 	}
 	for _, subdir := range []string{"build", "mod"} {
 		cacheDir := filepath.Join(workDir, ".scratch", "go", subdir)
-		entries, err := os.ReadDir(cacheDir)
-		if err != nil {
-			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, err)
+		entries, readErr := os.ReadDir(cacheDir)
+		if readErr != nil {
+			return 0, fmt.Errorf("read prewarm %s cache: %w", subdir, readErr)
 		}
 		if len(entries) != 0 {
 			return 0, fmt.Errorf("prewarm %s cache is not empty in %s", subdir, cacheDir)

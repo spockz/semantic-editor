@@ -362,112 +362,7 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 		return nil, fmt.Errorf("extract task fixture: %w", err)
 	}
 
-	var modifiedFiles []string
-	var execErr error
-
-	switch task.Metadata.TaskID {
-	case "task-01-rename-local", "task-01b-rename-local-large-context":
-		// Rename method Server.oldName to Server.newName in api/server.go
-		res, err := symbol.Resolve(workDir, "api/server.go", "Server.oldName")
-		if err != nil {
-			execErr = fmt.Errorf("resolve Server.oldName: %w", err)
-			break
-		}
-		if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, "newName"); err != nil {
-			execErr = fmt.Errorf("rename Server.oldName to newName: %w", err)
-			break
-		}
-		_ = pipeline.Format(ctx, workDir, "api/server.go")
-		modifiedFiles = append(modifiedFiles, "api/server.go")
-
-	case "task-02-rename-cross-pkg":
-		// Rename ValidateToken to VerifyToken across packages
-		res, err := symbol.Resolve(workDir, "auth/token.go", "ValidateToken")
-		if err != nil {
-			execErr = fmt.Errorf("resolve ValidateToken: %w", err)
-			break
-		}
-		if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, "VerifyToken"); err != nil {
-			execErr = fmt.Errorf("rename ValidateToken to VerifyToken: %w", err)
-			break
-		}
-		_ = pipeline.Format(ctx, workDir, ".")
-		modifiedFiles = append(modifiedFiles, "auth/token.go", "cmd/main.go")
-
-	case "task-03-rename-interface":
-		// Rename interface method Storage.Save to Storage.Persist
-		res, err := symbol.Resolve(workDir, "store/store.go", "Storage.Save")
-		if err != nil {
-			execErr = fmt.Errorf("resolve Storage.Save: %w", err)
-			break
-		}
-		if err := golang.Rename(ctx, workDir, res.File, res.Line, res.Column, "Persist"); err != nil {
-			execErr = fmt.Errorf("rename Storage.Save to Persist: %w", err)
-			break
-		}
-		_ = pipeline.Format(ctx, workDir, ".")
-		modifiedFiles = append(modifiedFiles, "store/store.go")
-
-	case "task-04-insert-public":
-		// Insert public constructor InitServer() *Server before private helpers
-		source := "func InitServer() *Server {\n\treturn &Server{Port: 8080}\n}"
-		opts := astedit.Options{
-			Placement:    astedit.PlacementBeforeSymbol,
-			TargetSymbol: "internalRun",
-			Visibility:   "public",
-		}
-		targetPath := filepath.Join(workDir, "api", "server.go")
-		if err := astedit.InsertDeclaration(ctx, targetPath, source, opts); err != nil {
-			execErr = fmt.Errorf("insert InitServer: %w", err)
-			break
-		}
-		modifiedFiles = append(modifiedFiles, "api/server.go")
-
-	case "task-05-insert-method":
-		// Insert method func (s *Server) Stop() after Server.Start
-		source := "func (s *Server) Stop() {\n\ts.running = false\n}"
-		opts := astedit.Options{
-			Placement:    astedit.PlacementAfterSymbol,
-			TargetSymbol: "Server.Start",
-		}
-		targetPath := filepath.Join(workDir, "api", "server.go")
-		if err := astedit.InsertDeclaration(ctx, targetPath, source, opts); err != nil {
-			execErr = fmt.Errorf("insert Server.Stop: %w", err)
-			break
-		}
-		modifiedFiles = append(modifiedFiles, "api/server.go")
-
-	case "task-06-imports-cleanup":
-		// Clean unused imports in api/server.go
-		targetFile := filepath.Join(workDir, "api", "server.go")
-		if err := pipeline.OrganizeImports(ctx, workDir, targetFile); err != nil {
-			execErr = fmt.Errorf("organize imports: %w", err)
-			break
-		}
-		modifiedFiles = append(modifiedFiles, "api/server.go")
-
-	case "task-11-mixed-sink-api-migration":
-		normalizePath := filepath.Join(workDir, "audit", "normalize.go")
-		if err := astedit.InsertFunction(ctx, normalizePath, "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}", astedit.FunctionOptions{
-			Placement:           astedit.PlacementFileEnd,
-			AutoOrganizeImports: true,
-		}); err != nil {
-			execErr = fmt.Errorf("insert audit NormalizeKind: %w", err)
-			break
-		}
-		if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "audit", "summary.go"), "Classify", "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}", astedit.BodyOptions{}); err != nil {
-			execErr = fmt.Errorf("replace audit Classify body: %w", err)
-			break
-		}
-		if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "service", "dispatch.go"), "(*Dispatcher).Record", "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)", astedit.BodyOptions{}); err != nil {
-			execErr = fmt.Errorf("replace Dispatcher.Record body: %w", err)
-			break
-		}
-		modifiedFiles = append(modifiedFiles, "audit/normalize.go", "audit/summary.go", "service/dispatch.go")
-
-	default:
-		execErr = fmt.Errorf("task %s has no registered control transformation", task.Metadata.TaskID)
-	}
+	modifiedFiles, execErr := executeControlTransformation(ctx, task, workDir)
 
 	res := &RunResult{
 		TaskID:                task.Metadata.TaskID,
@@ -492,6 +387,69 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	res.Oracle = oracleRes
 	res.Success = oracleRes.Passed
 	return res, nil
+}
+
+func executeControlTransformation(ctx context.Context, task *Task, workDir string) ([]string, error) {
+	switch task.Metadata.TaskID {
+	case "task-01-rename-local", "task-01b-rename-local-large-context":
+		return renameControlSymbol(ctx, workDir, "api/server.go", "Server.oldName", "newName", "api/server.go", "api/server.go")
+	case "task-02-rename-cross-pkg":
+		return renameControlSymbol(ctx, workDir, "auth/token.go", "ValidateToken", "VerifyToken", ".", "auth/token.go", "cmd/main.go")
+	case "task-03-rename-interface":
+		return renameControlSymbol(ctx, workDir, "store/store.go", "Storage.Save", "Persist", ".", "store/store.go")
+	case "task-04-insert-public":
+		return insertControlDeclaration(ctx, workDir, "func InitServer() *Server {\n\treturn &Server{Port: 8080}\n}", astedit.Options{Placement: astedit.PlacementBeforeSymbol, TargetSymbol: "internalRun", Visibility: "public"}, "insert InitServer: %w")
+	case "task-05-insert-method":
+		return insertControlDeclaration(ctx, workDir, "func (s *Server) Stop() {\n\ts.running = false\n}", astedit.Options{Placement: astedit.PlacementAfterSymbol, TargetSymbol: "Server.Start"}, "insert Server.Stop: %w")
+	case "task-06-imports-cleanup":
+		return organizeControlImports(ctx, workDir)
+	case "task-11-mixed-sink-api-migration":
+		return applyMixedSinkControlMigration(ctx, workDir)
+	default:
+		return nil, fmt.Errorf("task %s has no registered control transformation", task.Metadata.TaskID)
+	}
+}
+
+func renameControlSymbol(ctx context.Context, workDir, file, symbolName, replacement, formatPath string, changedFiles ...string) ([]string, error) {
+	resolved, err := symbol.Resolve(workDir, file, symbolName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve %s: %w", symbolName, err)
+	}
+	if err := golang.Rename(ctx, workDir, resolved.File, resolved.Line, resolved.Column, replacement); err != nil {
+		return nil, fmt.Errorf("rename %s: %w", symbolName, err)
+	}
+	_ = pipeline.Format(ctx, workDir, formatPath)
+	return changedFiles, nil
+}
+
+func insertControlDeclaration(ctx context.Context, workDir, source string, options astedit.Options, errorFormat string) ([]string, error) {
+	targetPath := filepath.Join(workDir, "api", "server.go")
+	if err := astedit.InsertDeclaration(ctx, targetPath, source, options); err != nil {
+		return nil, fmt.Errorf(errorFormat, err)
+	}
+	return []string{"api/server.go"}, nil
+}
+
+func organizeControlImports(ctx context.Context, workDir string) ([]string, error) {
+	targetFile := filepath.Join(workDir, "api", "server.go")
+	if err := pipeline.OrganizeImports(ctx, workDir, targetFile); err != nil {
+		return nil, fmt.Errorf("organize imports: %w", err)
+	}
+	return []string{"api/server.go"}, nil
+}
+
+func applyMixedSinkControlMigration(ctx context.Context, workDir string) ([]string, error) {
+	normalizePath := filepath.Join(workDir, "audit", "normalize.go")
+	if err := astedit.InsertFunction(ctx, normalizePath, "func NormalizeKind(kind string) string {\n\treturn strings.ToLower(strings.TrimSpace(kind))\n}", astedit.FunctionOptions{Placement: astedit.PlacementFileEnd, AutoOrganizeImports: true}); err != nil {
+		return nil, fmt.Errorf("insert audit NormalizeKind: %w", err)
+	}
+	if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "audit", "summary.go"), "Classify", "switch NormalizeKind(kind) {\ncase \"health\", \"probe\":\n\treturn \"control\"\ndefault:\n\treturn \"data\"\n}", astedit.BodyOptions{}); err != nil {
+		return nil, fmt.Errorf("replace audit Classify body: %w", err)
+	}
+	if _, err := astedit.ReplaceBody(ctx, filepath.Join(workDir, "service", "dispatch.go"), "(*Dispatcher).Record", "event.Kind = audit.NormalizeKind(event.Kind)\nreturn d.sink.Write(event)", astedit.BodyOptions{}); err != nil {
+		return nil, fmt.Errorf("replace Dispatcher.Record body: %w", err)
+	}
+	return []string{"audit/normalize.go", "audit/summary.go", "service/dispatch.go"}, nil
 }
 
 // ParseMCPServerInstructionModes parses and canonicalizes a comma-separated mode list.

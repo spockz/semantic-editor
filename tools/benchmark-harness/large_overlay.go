@@ -1,11 +1,10 @@
+// large_overlay.go provides deterministic sibling-source overlays for benchmark fixtures.
 package main
 
 import "maps"
 
-// LargeContextOverlayFiles returns shared and task-specific sibling code for large-context trials.
-func LargeContextOverlayFiles(taskID string) map[string]string {
-	files := map[string]string{
-		"api/router.go": `package api
+var sharedLargeContextOverlayFiles = map[string]string{
+	"api/router.go": `package api
 
 type Route struct {
 	Path   string
@@ -19,7 +18,7 @@ func DefaultRoutes() []Route {
 	}
 }
 `,
-		"api/router_test.go": `package api
+	"api/router_test.go": `package api
 
 import "testing"
 
@@ -30,7 +29,7 @@ func TestDefaultRoutes(t *testing.T) {
 	}
 }
 `,
-		"auth/auth.go": `package auth
+	"auth/auth.go": `package auth
 
 type Session struct {
 	Token string
@@ -40,7 +39,7 @@ func ValidateToken(token string) bool {
 	return token != ""
 }
 `,
-		"config/config.go": `package config
+	"config/config.go": `package config
 
 type Config struct {
 	Port int
@@ -51,7 +50,7 @@ func LoadConfig() Config {
 	return Config{Port: 8080, Env: "dev"}
 }
 `,
-		"db/db.go": `package db
+	"db/db.go": `package db
 
 type Connection struct {
 	DSN string
@@ -61,7 +60,7 @@ func Connect(dsn string) (*Connection, error) {
 	return &Connection{DSN: dsn}, nil
 }
 `,
-		"cache/cache.go": `package cache
+	"cache/cache.go": `package cache
 
 type MemoryCache struct {
 	data map[string]string
@@ -71,7 +70,7 @@ func New() *MemoryCache {
 	return &MemoryCache{data: make(map[string]string)}
 }
 `,
-		"metrics/metrics.go": `package metrics
+	"metrics/metrics.go": `package metrics
 
 type Counter struct {
 	Name  string
@@ -82,7 +81,7 @@ func NewCounter(name string) *Counter {
 	return &Counter{Name: name}
 }
 `,
-		"models/models.go": `package models
+	"models/models.go": `package models
 
 type User struct {
 	ID    int64
@@ -94,7 +93,7 @@ type Product struct {
 	Price float64
 }
 `,
-		"logging/logging.go": `package logging
+	"logging/logging.go": `package logging
 
 type Logger struct {
 	Prefix string
@@ -104,7 +103,7 @@ func NewLogger(p string) *Logger {
 	return &Logger{Prefix: p}
 }
 `,
-		"utils/utils.go": `package utils
+	"utils/utils.go": `package utils
 
 import "strings"
 
@@ -112,7 +111,7 @@ func Sanitize(s string) string {
 	return strings.TrimSpace(s)
 }
 `,
-		"health/health.go": `package health
+	"health/health.go": `package health
 
 type Status struct {
 	Alive bool
@@ -122,8 +121,11 @@ func Check() Status {
 	return Status{Alive: true}
 }
 `,
-	}
+}
 
+// LargeContextOverlayFiles returns shared and task-specific sibling code for large-context trials.
+func LargeContextOverlayFiles(taskID string) map[string]string {
+	files := maps.Clone(sharedLargeContextOverlayFiles)
 	if taskID == "task-11-mixed-sink-api-migration" {
 		maps.Copy(files, mixedSinkMigrationOverlayFiles())
 	}
@@ -131,10 +133,8 @@ func Check() Status {
 	return files
 }
 
-// mixedSinkMigrationOverlayFiles adds real API consumers for the task-11 large variant.
-func mixedSinkMigrationOverlayFiles() map[string]string {
-	return map[string]string{
-		"audit/fanout.go": `// FanoutSink delivers an event to each configured audit destination.
+var mixedSinkMigrationFiles = map[string]string{
+	"audit/fanout.go": `// FanoutSink delivers an event to each configured audit destination.
 package audit
 
 type FanoutSink struct {
@@ -149,7 +149,7 @@ func (f FanoutSink) Write(event Event) error {
 	return f.Second.Write(event)
 }
 `,
-		"audit/transaction.go": `// BufferedSink exposes transactional delivery without owning the persistence protocol.
+	"audit/transaction.go": `// BufferedSink exposes transactional delivery without owning the persistence protocol.
 package audit
 
 type BufferedSink struct {
@@ -171,7 +171,7 @@ func (b *BufferedSink) Commit() error {
 	return nil
 }
 `,
-		"journal/file.go": `// Package journal contains a separate audit implementation used by batch jobs.
+	"journal/file.go": `// Package journal contains a separate audit implementation used by batch jobs.
 package journal
 
 import "example.com/auditapp/audit"
@@ -187,7 +187,7 @@ func (j *JournalSink) Write(event audit.Event) error {
 
 var _ audit.Sink = (*JournalSink)(nil)
 `,
-		"service/replay.go": `// Package service contains replay helpers for previously captured audit events.
+	"service/replay.go": `// Package service contains replay helpers for previously captured audit events.
 package service
 
 import "example.com/auditapp/audit"
@@ -202,7 +202,7 @@ func Replay(sink audit.Sink, events []audit.Event) error {
 	return nil
 }
 `,
-		"cmd/replay/main.go": `// Command replay demonstrates the default audit delivery path.
+	"cmd/replay/main.go": `// Command replay demonstrates the default audit delivery path.
 package main
 
 import (
@@ -215,5 +215,9 @@ func main() {
 	_ = sink.Record(audit.Event{ID: "replay", Kind: "replayed"})
 }
 `,
-	}
+}
+
+// mixedSinkMigrationOverlayFiles returns real API consumers for the task-11 large variant.
+func mixedSinkMigrationOverlayFiles() map[string]string {
+	return maps.Clone(mixedSinkMigrationFiles)
 }
