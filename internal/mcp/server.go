@@ -1190,8 +1190,8 @@ func parameterDescription(param operation.ParameterContract) string {
 		if len(tools) == 0 {
 			continue
 		}
-		if strings.HasPrefix(field, "result.continuations[].") {
-			name := strings.TrimPrefix(field, "result.continuations[].")
+		if after, ok := strings.CutPrefix(field, "result.continuations[]."); ok {
+			name := after
 			fmt.Fprintf(&description, " Receipt %s from %s.", name, joinToolNames(tools))
 			continue
 		}

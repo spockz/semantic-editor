@@ -3484,6 +3484,7 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: the requested source file does not exist; the declaration is in `inline.go`.
 - Workaround: discover the source filename with `rg --files`, then inspect the known declaration there.
 - Root cause: caller reconstructed the filename instead of reusing discovery; no source changed.
+
 ## 2026-10-03: semantic outline used the primary checkout
 
 - Tool: `semantic_outline` MCP.
