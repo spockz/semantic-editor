@@ -28,7 +28,7 @@ type LanguageCoverage struct {
 
 var goBuildExclusions = []string{"Go build context and build tags", "testdata", "build", "dist", "target", "vendor", "node_modules", ".scratch", ".git", "bazel-*", "_*", ".*"}
 
-func runPlanLSPVerification(ctx context.Context, service *backend.Service, project backend.ProjectContext, request VerifyReq, plan projectverify.Plan, scope projectverify.Scope) ([]backend.Diagnostic, []LanguageCoverage, error) {
+func runPlanLSPVerificationEnabled(ctx context.Context, service *backend.Service, project backend.ProjectContext, request VerifyReq, plan projectverify.Plan, scope projectverify.Scope) ([]backend.Diagnostic, []LanguageCoverage, error) {
 	if service == nil {
 		return nil, nil, fmt.Errorf("verification backend service is nil")
 	}
@@ -124,6 +124,35 @@ func runPlanLSPVerification(ctx context.Context, service *backend.Service, proje
 		return diagnostics, coverage, fmt.Errorf("no selected source has a configured verification backend")
 	}
 	return diagnostics, coverage, nil
+}
+
+func runPlanLSPVerification(ctx context.Context, service *backend.Service, project backend.ProjectContext, request VerifyReq, plan projectverify.Plan, scope projectverify.Scope, allowed []backend.LanguageID) ([]backend.Diagnostic, []LanguageCoverage, error) {
+	if allowed == nil {
+		return runPlanLSPVerificationEnabled(ctx, service, project, request, plan, scope)
+	}
+	filtered := planForAllowedLanguages(plan, allowed)
+	diagnostics, coverage, err := runPlanLSPVerificationEnabled(ctx, service, project, request, filtered, scope)
+	seen := make(map[string]bool, len(coverage))
+	for _, item := range coverage {
+		seen[item.Language] = true
+	}
+	byLanguage := make(map[string][]string)
+	for _, source := range plan.Sources {
+		if sourceInScope(source.Path, scope) {
+			byLanguage[source.Language] = append(byLanguage[source.Language], source.Path)
+		}
+	}
+	languages := make([]string, 0, len(byLanguage))
+	for language := range byLanguage {
+		languages = append(languages, language)
+	}
+	slices.Sort(languages)
+	for _, language := range languages {
+		if !seen[language] && !slices.Contains(allowed, backend.LanguageID(language)) {
+			coverage = append(coverage, LanguageCoverage{Language: language, Status: "disabled", Paths: byLanguage[language], Detail: "Verification is disabled by --enabled-languages."})
+		}
+	}
+	return diagnostics, coverage, err
 }
 
 // SelectedGoModuleRoots returns the effective Go module roots for selected source paths.
@@ -253,4 +282,62 @@ func executableAvailable(configured, fallback string) bool {
 	}
 	_, err := exec.LookPath(fallback)
 	return err == nil
+}
+
+func planForAllowedLanguages(plan projectverify.Plan, allowed []backend.LanguageID) projectverify.Plan {
+	if allowed == nil {
+		return plan
+	}
+	filtered := plan
+	filtered.Sources = make([]projectverify.Source, 0, len(plan.Sources))
+	for _, source := range plan.Sources {
+		if slices.Contains(allowed, backend.LanguageID(source.Language)) {
+			filtered.Sources = append(filtered.Sources, source)
+		}
+	}
+	filterHooks := func(hooks []projectverify.Hook) []projectverify.Hook {
+		result := append([]projectverify.Hook(nil), hooks...)
+		for i := range result {
+			if result[i].LSP != nil && !slices.Contains(allowed, backend.LanguageID(result[i].LSP.Language)) {
+				result[i].Disabled = true
+			}
+			if len(result[i].Languages) == 0 {
+				continue
+			}
+			languages := make([]string, 0, len(result[i].Languages))
+			for _, language := range result[i].Languages {
+				if slices.Contains(allowed, backend.LanguageID(language)) {
+					languages = append(languages, language)
+				}
+			}
+			if len(languages) == 0 {
+				result[i].Disabled = true
+			}
+			result[i].Languages = languages
+		}
+		return result
+	}
+	filtered.Normalize = filterHooks(plan.Normalize)
+	filtered.Checks = filterHooks(plan.Checks)
+	return filtered
+}
+
+func verificationSelectionLanguage(project backend.ProjectContext, path string) (backend.LanguageID, bool) {
+	if project.Language != "" && project.Language != backend.LanguageAuto {
+		return project.Language, true
+	}
+	if project.File != "" {
+		language := backend.LanguageIDFromFile(project.File)
+		info, err := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(project.File)))
+		if language != "" && language != backend.LanguageAuto && (errors.Is(err, os.ErrNotExist) || err == nil && info.Mode().IsRegular()) {
+			return language, true
+		}
+	}
+	if isExistingSourceFile(project.RootDir, path) {
+		language := backend.LanguageIDFromFile(path)
+		if language != "" && language != backend.LanguageAuto {
+			return language, true
+		}
+	}
+	return "", false
 }

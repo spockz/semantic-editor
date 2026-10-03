@@ -166,7 +166,7 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves validate complete edit plans over current unsaved sources. Cross-package moves typecheck those plans and update module-wide references. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: "semantic_move_construct", Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of manually moving a Go declaration within one file or package, or moving an exported free function between packages in one Go module. Batched moves validate complete edit plans over current unsaved sources. Cross-package moves typecheck those plans and update module-wide references. Cross-package moves reject methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -205,9 +205,9 @@ func executableConstructKinds(candidate backend.Backend) []string {
 }
 
 var replaceBodyParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, Role: RoleTarget, SourceFields: append(sourceReplaceBodyFileContinuations, "semantic_inspect_symbol.result.continuations[].file")},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceExtractFunctionReceiptSymbol, "semantic_inspect_symbol.result.continuations[].symbol"}},
-	{Name: wireExpectedRevision, CLIName: "expected-revision", JSONName: wireExpectedRevision, Type: ParamString, Description: "Guard: full-file revision copied from semantic_inspect_symbol for this file and symbol", Role: RoleTarget, SourceFields: []string{"semantic_inspect_symbol.result.continuations[].expected_revision"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, Role: RoleTarget, SourceFields: append(append(sourceReplaceBodyFileContinuations, "semantic_inspect_symbol.result.continuations[].file"), sourceGeneratedMethodFile)},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified function or method name (e.g. 'Foo' or '(*T).Foo')", Required: true, Role: RoleTarget, SourceFields: append([]string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceExtractFunctionReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol, "semantic_inspect_symbol.result.continuations[].symbol"}, sourceGeneratedMethodSymbol)},
+	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Description: "Guard: full-file revision copied from semantic_inspect_symbol, an extraction receipt, or a resolved rename continuation for this file and symbol", Type: ParamString, Role: RoleTarget, SourceFields: []string{"semantic_inspect_symbol.result.continuations[].expected_revision", sourceRenameExpectedRevision, sourceExtractFunctionReceiptRevision, sourceExtractVariableReceiptRevision, sourceInlineVariableReceiptRevision}},
 	{Name: "body", CLIName: "body", JSONName: "body", Type: ParamString, Description: "replacement body as bare Go statements, no braces", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "run goimports after replacement (default false)"},
 }
@@ -269,14 +269,23 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",
-		MCPName: "semantic_replace_body",
+		MCPName: replaceBodyTool,
 		Parse:   parseReplaceBody,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceBodyReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceBody,
 		},
 		Format: func(res FileEditRes) (string, error) {
-			text := fmt.Sprintf("Successfully replaced body of %s in %s.\n%s", res.Symbol, res.Display, res.Diff)
-			return AppendDiagnosticDelta(text, res.Delta), nil
+			text := fmt.Sprintf("Successfully replaced body of %s in %s.", res.Symbol, res.Display)
+			if res.HasDelta {
+				text += " diagnostic_status: " + res.DiagnosticStatus + "."
+				if res.DiagnosticStatus == "changed" {
+					text = AppendDiagnosticDelta(text, res.Delta)
+				}
+			}
+			if res.Diff != "" {
+				text += "\n" + res.Diff
+			}
+			return text, nil
 		},
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
 		BufferedBatch: true, Batchable: true,

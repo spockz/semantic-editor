@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	types "go/types"
-	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
@@ -41,6 +40,10 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 		return "", fmt.Errorf("discriminator must contain the exact source text of the expression")
 	}
 	cleanPath := filepath.Clean(filePath)
+	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
+	if err != nil {
+		return "", err
+	}
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read extraction target: %w", err)
@@ -109,34 +112,25 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: opts.Discriminator, Cause: err, Err: ErrSyntax}
 	}
-	formatted = preserveTrailingNewlines(content, formatted)
+	formatted = normalizeExtractionNewlines(formatted)
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: opts.Discriminator, Cause: err, Err: ErrSyntax}
 	}
 	if err := validateVariableCandidate(ctx, cleanPath, owner, name, opts.Discriminator, candidate.path, content, formatted); err != nil {
 		return "", err
 	}
-	checkPreimage := func() error {
-		latest, readErr := sourcebuf.ReadFile(ctx, cleanPath)
-		if readErr != nil {
-			return fmt.Errorf("recheck extraction source: %w", readErr)
-		}
-		if !bytes.Equal(latest, content) {
-			return fmt.Errorf("cannot extract from %s: source changed while planning", owner)
-		}
-		return nil
-	}
-	if err := sourcebuf.WriteFileChecked(ctx, cleanPath, formatted, checkPreimage); err != nil {
-		return "", fmt.Errorf("write extracted variable atomically: %w", err)
-	}
-	if sourcebuf.FromContext(ctx) == nil {
-		if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-			return "", fmt.Errorf("format extracted variable: %w", err)
-		}
+	buffer := sourcebuf.FromContext(ctx)
+	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
+		return "", fmt.Errorf("apply extracted variable after compiler preflight: %w", err)
 	}
 	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
+	}
+	if standalone {
+		if err := ownedBuffer.Flush(ctx); err != nil {
+			return "", fmt.Errorf("publish extracted variable: %w", err)
+		}
 	}
 	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(finalSource)), nil
 }
@@ -345,7 +339,7 @@ func validateVariableCandidate(ctx context.Context, filePath, owner, name, discr
 			overlay = make(map[string][]byte)
 		}
 		overlay[cleanPath] = bytes.Clone(source)
-		loaded, loadErr := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay)
+		loaded, loadErr := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, false)
 		if loadErr != nil {
 			return nil, nil, nil, fmt.Errorf("type-check variable extraction candidate: %w", loadErr)
 		}

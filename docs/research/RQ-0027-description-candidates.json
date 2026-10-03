@@ -1,0 +1,244 @@
+{
+  "purpose": "Reviewable description candidates and catalog accounting for RQ-0027; these are proposals, not runtime configuration.",
+  "status": "Proposed",
+  "auditedMain": "b99f558f0ad06d25bfd7c52adba2b1fb907831c0",
+  "catalogScope": "Go and Java full profile, explicit allowlist in empty workspace; live reload enabled",
+  "accounting": "Exact whitespace-separated words and UTF-8 bytes. No tokenizer or client tool-wrapper accounting; not token counts.",
+  "productionChanged": false,
+  "serverInstructionsCandidate": {
+    "text": "Discover the complete tool inventory, including deferred/lazy tools, before editing. Confirm applicable semantic tools are callable and use them for mutations. Use file edits only when none is callable or an operation fails, is unsupported, or remains ambiguous.",
+    "words": 38,
+    "bytes": 262
+  },
+  "measurements": {
+    "instructionModes": {
+      "none": {
+        "words": 0,
+        "bytes": 0
+      },
+      "descriptive": {
+        "words": 9,
+        "bytes": 74
+      },
+      "prescriptive": {
+        "words": 65,
+        "bytes": 438
+      }
+    },
+    "catalogScopes": [
+      {
+        "languages": "go,java",
+        "profile": "full",
+        "instructionMode": "none",
+        "count": 39,
+        "compactJSONBytes": 189211
+      },
+      {
+        "languages": "go,java",
+        "profile": "full",
+        "instructionMode": "descriptive",
+        "count": 39,
+        "compactJSONBytes": 189211
+      },
+      {
+        "languages": "go,java",
+        "profile": "full",
+        "instructionMode": "prescriptive",
+        "count": 39,
+        "compactJSONBytes": 189211
+      },
+      {
+        "languages": "go",
+        "profile": "full",
+        "instructionMode": "none",
+        "count": 37,
+        "compactJSONBytes": 186412
+      },
+      {
+        "languages": "go",
+        "profile": "mutations-only",
+        "instructionMode": "none",
+        "count": 33,
+        "compactJSONBytes": 169517
+      }
+    ],
+    "descriptionTotals": {
+      "summaryWords": 2955,
+      "inputDescriptionWords": 7591,
+      "outputDescriptionWords": 1410,
+      "copyClauseWords": 2992,
+      "outputContinuationWords": 513
+    },
+    "sourceCommit": "b99f558f0ad06d25bfd7c52adba2b1fb907831c0",
+    "accounting": "Exact whitespace-separated words and UTF-8 bytes. No tokenizer or client tool-wrapper accounting; not token counts.",
+    "summaryProse": {
+      "before": {
+        "words": 2442,
+        "bytes": 17419
+      },
+      "candidate": {
+        "words": 1965,
+        "bytes": 13674
+      }
+    },
+    "copyProse": {
+      "before": {
+        "words": 2992,
+        "bytes": 32167
+      },
+      "candidate": {
+        "words": 2686,
+        "bytes": 31249
+      }
+    },
+    "serializedToolCatalogBytes": {
+      "before": 189211,
+      "summariesOnly": 185442,
+      "summariesAndCopies": 184524
+    },
+    "note": "Candidates preserve schemas, generated result suffixes, field paths, and producer names. Human review still required; no live changes. Native batch-embedded parameter descriptions repeat the copy rewrite."
+  },
+  "notes": [
+    "Candidate values replace SUMMARY prose only. Keep generated continuation suffixes and exact producer/consumer paths unchanged.",
+    "These are audit candidates; no production descriptions or schemas were edited."
+  ],
+  "proposedSummaries": {
+    "semantic_add_build_dependency": "Use this tool instead of editing go.mod/go.sum or running go get or go mod tidy to add a Go module dependency. It runs go get and go mod tidy, may access the network, and may change both manifests. Use semantic_organize_imports for source imports.",
+    "semantic_assertion_mode": "Use this tool instead of text replacement to convert supported Go test assertions between fail-fast and continue-on-failure modes. Set dry_run=true to preview without trust or writes; a write requires trust_workspace=true.",
+    "semantic_extract_function": "Use this tool instead of manually copying a safe contiguous run of direct call statements from a Go function or method into a local helper. It infers parameters from the owner's named parameters and receiver; at most one leading single-variable declaration may be returned. It refuses address-taken or captured values, direct recover, calls on forwarded selectors, other data flow, branching, loops, comments, composite literals, and generic or variadic owners. Standalone calls verify diagnostics automatically.",
+    "semantic_extract_interface": "Use this tool instead of reconstructing signatures to create a Go interface from selected direct methods of a concrete type. expected_revision guards the selected file; the destination file must already exist in the same package. It type-checks before one apply and does not implement methods or rewrite callers. Copy contract and contract_file together from the same finalized standalone result to semantic_implement_contract; buffered results omit these aliases.",
+    "semantic_extract_variable": "Use this tool instead of text editing to extract one side-effect-free, typed whole argument of a direct single-argument Go call statement into a preceding local. It refuses calls, receives, address-taking, composite literals, constants, shifts with an untyped left operand, nested or return expressions, receiver or multi-argument calls, and unsupported local data flow. If selection is ambiguous, use construct_path from the diagnostic. Standalone calls verify diagnostics automatically.",
+    "semantic_find_references": "Use this tool instead of text search to find typed references to a Go declaration in its active module build. An optional file selects the declaration; results span the module, including test variants.",
+    "semantic_implement_contract": "Use this tool instead of rebuilding signatures to add missing methods from an ordinary Go interface to an existing concrete type. Choose pointer or value receiver semantics and explicitly select panic_stub: generated methods panic and are placeholders, not implementations. Copy contract and contract_file together from one finalized semantic_extract_interface result; expected_revision guards the concrete-type file, and the destination must exist in that package. Incompatible methods, unsupported promoted methods, and failed required-package checks are refused before one apply.",
+    "semantic_inline_function": "Use this tool instead of text editing to inline one direct zero-argument call to a same-package Go free function whose body is one literal return. Select the callee by file and symbol; expected_revision guards the callee file. Select the caller through call_site and copy its file, in_function, and optional expected_revision from the same semantic_inspect_symbol continuation. The callee remains. Calls with arguments, methods, generics, nonliteral bodies, and unsupported scopes are refused.",
+    "semantic_inline_variable": "Use this tool instead of manual editing to remove one local Go binding initialized by a literal and substitute it in direct call arguments or return values of the immediately following statement. It refuses expressions, reassignment, shadowing, intervening statements, and unsupported uses. For an eligible direct zero-argument same-package function call with one literal return, use semantic_inline_function.",
+    "semantic_insert_case": "Use this tool instead of text editing to add one complete case clause to an existing Go switch. Supply in_function and the exact discriminator for a tagged switch; omit the discriminator only for a tagless switch. If selection is ambiguous, use construct_path from the diagnostic. The case input includes its colon and statements.",
+    "semantic_insert_decl": "Use this tool instead of file replacement to add one Go constant or variable. By default it merges into the matching kind and visibility group; sentinel-shaped Err variables are grouped alphabetically. Existing package names are rejected unless overwrite=true. Use target_symbol for before/after placement or group=standalone to avoid merging. Standalone calls verify diagnostics automatically.",
+    "semantic_insert_declaration": "Use this general tool instead of file replacement only when a specialized insert tool does not fit one top-level Go declaration. It places declarations at file boundaries, public/private sections, or relative to a symbol; prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for their matching kinds. Standalone calls verify diagnostics automatically.",
+    "semantic_insert_field": "Use this tool instead of replacing a struct or inserting a whole declaration to add exactly one named field to an existing private, non-generic Go struct; the struct must be multiline or empty. Copy file, in_type, and optional expected_revision from the same semantic_inspect_symbol continuation. symbol is the caller-chosen Type.Field name. It does not update literals. Aliases, exported or generic owners, embedded fields, method-name collisions, unkeyed literals in same-package variants, malformed input, and stale revisions are refused. Anchored placement requires a live target_symbol.",
+    "semantic_insert_function": "Use this tool instead of file replacement to add one complete Go function or method declaration to an existing file. Include parameters, results, and body; exported-name visibility must match access. It clusters methods by receiver and public/private section. Standalone calls verify diagnostics automatically.",
+    "semantic_insert_statement": "Use this tool instead of replacing a Go function body to insert one direct call or simple assignment before or after a uniquely selected direct statement. Select the receiver-qualified owner and exact anchor source; stale expected_revision values are refused. This version requires a straight-line owner with no control-flow constructs or labels; shared-line statements and ambiguous anchors are refused. It type-checks before one buffered apply; batch results are applied_working without live selectors.",
+    "semantic_insert_structure": "Use this tool instead of file replacement to add one supported Go function, method, type, constant, variable, or switch case by kind and complete source; exported names require public access. It overlaps the specialized inserters, so prefer semantic_insert_function, semantic_insert_type, semantic_insert_decl, or semantic_insert_case for matching kinds. Use in_function, discriminator, or construct_path for case selection; no distinct behavior is claimed for this generic wrapper.",
+    "semantic_insert_type": "Use this tool instead of file replacement to add one Go struct, interface, or type alias declaration to an existing file. Provide the complete type declaration; exported names require public access. It places the type by section and resolves imports. Standalone calls verify diagnostics automatically.",
+    "semantic_inspect_symbol": "Use this tool instead of shell source reads when you need a declaration's exact source, metadata, and snapshot revision in Go or a selected trusted source file. External language tools must be installed and workspace trust may be required. Use returned declaration context to plan an edit; copy only continuations advertised for the intended follow-up tool.",
+    "semantic_lookup": "Use this tool instead of grep or text search to locate a named symbol in Go or a selected source file. Omit file for Go workspace lookup. Other language backends are read-only, require workspace trust, and need preinstalled tools. line and column are navigation-only; pass symbol and file to follow-up semantic operations.",
+    "semantic_maven_compile": "Use this tool instead of a shell Maven command to compile tests for a Java root POM. Set trust_workspace=true. It runs the fixed test-compile goal offline unless allow_network=true, uses temporary Maven data under .scratch, and writes project build outputs.",
+    "semantic_maven_test": "Use this tool instead of a shell Maven command to test a Java root POM. Set trust_workspace=true. It runs the fixed test goal offline unless allow_network=true, uses temporary Maven data under .scratch, and writes project build outputs.",
+    "semantic_migrate_type": "Use this tool instead of text editing to change the type spelling of one unexported Go struct field to an unqualified same-package or predeclared type with identical type identity after alias resolution; it inserts no conversion. When guarding from inspection, copy the target file, field symbol, and expected_revision from the same continuation. Distinct named types, exported fields, conversions, imported selectors, local variables, and stale file revisions are refused before editing.",
+    "semantic_move_construct": "Use this tool instead of manually moving a Go declaration within one file or package, or an exported free function between packages in one module. Batched moves plan against current unsaved sources; cross-package moves type-check and update module-wide references. Cross-package moves refuse methods, unexported symbols, source-package dependencies, import cycles, and ambiguous build or generated files.",
+    "semantic_organize_imports": "Use this tool instead of editing Go import blocks or running goimports to add, remove, or format imports. Set file to limit changes to one file or directory; omit it only for workspace-wide changes. It supports explicit additions, aliases, blank imports, and removals. Standalone calls verify diagnostics automatically.",
+    "semantic_outline": "Use this tool instead of scanning source with shell commands to get a declaration outline with function and method bodies elided. Directory outlines are Go-only; trusted external language backends require workspace trust and installed tools.",
+    "semantic_remove_construct": "Use this tool instead of file replacement to remove exactly one Go top-level declaration or switch case. Select top-level declarations by symbol, or cases by in_function and optional discriminator/target_case/construct_path. Removal does not prove behavior preservation. safe_delete is limited to unexported standalone constants; other requests fail closed after safety checks.",
+    "semantic_rename": "Use this tool instead of text search-and-replace to rename a symbol and its references through the selected backend. Go supports workspace rename; trusted Rust and Java support selected-file rename; other languages may be lookup-only. Standalone calls verify diagnostics automatically.",
+    "semantic_replace_body": "Use this tool instead of text editing or replacing a whole declaration to replace the bare-statement body of an existing Go function or method by name. When guarding against stale source, copy file, symbol, and expected_revision from the same semantic_inspect_symbol continuation. It validates and formats before writing and leaves source unchanged on syntax errors. Standalone calls verify diagnostics automatically.",
+    "semantic_replace_construct": "Use this tool instead of replacing a whole function body or text editing to replace one Go loop, conditional, else block, switch/select branch, or defer statement. Select the owner, kind, and optional discriminator; use construct_path from ambiguity diagnostics. The replacement source is the complete construct.",
+    "semantic_replace_decl": "Use this tool instead of file replacement or duplicate insertion to update an existing package-level Go constant, variable, or type alias. The replacement must retain the selected name; grouped specs and collisions are checked before writing.",
+    "semantic_scaffold_file": "Use this tool instead of a file writer to create a Go source file with the correct package clause. package=infer uses sibling non-test files. Existing files fail unless overwrite=true; the operation creates no declarations, so use an insert tool afterward.",
+    "semantic_set_doc_comment": "Use this tool instead of text editing to set or remove the owned doc comment of one top-level Go declaration. Scope is declaration-only; comment must be present and non-null, and an explicit empty string removes it. Directives, grouped declarations, detached comments, ambiguous targets, and stale revisions are refused. Copy file, symbol, and expected_revision from the same standalone continuation; batch results are applied_working without one.",
+    "semantic_snapshot": "Use this tool instead of git stash or manual copies only when a later semantic_undo may be needed for a bounded edit. It creates an immutable snapshot journal under .scratch/snapshots. Do not use it for routine one-way edits, batches, or verification.",
+    "semantic_undo": "Use this tool instead of git reset or manual restoration to undo edits recorded by semantic_snapshot. It refuses and writes nothing if any touched file drifted from the snapshot's recorded post-edit state.",
+    "semantic_verify": "Use this tool instead of ad hoc diagnostics to verify files with detected or selected language servers. Go verification formats files and may write; set check_only=true to skip normalization. External language verification requires workspace trust.",
+    "semantic_batch": "Use this tool instead of separate calls when semantic edits must run in order against current overlays. Each edit uses static parameters in exactly {tool, params}; later edits cannot interpolate earlier receipts. On failure, earlier successful edits remain applied; there is no whole-batch rollback. Success returns final_diff and diagnostic_delta.",
+    "semantic_metrics": "Use this tool to retrieve recent timing records from this server session, newest first, up to limit. The metrics query is not itself recorded.",
+    "semantic_reload": "Use this tool instead of restarting the client or MCP process after binary promotion when live reload is enabled. It re-executes the server and announces the refreshed catalog.",
+    "report_feedback": "Use this tool after an unexpected command/tool result or required manual touch-up to prepare a feedback draft for user review. It does not save or post an issue. Omit source code, credentials, private/customer data, proprietary details, and other sensitive information; summarize parameters where needed. If project status or a detail's safety is unclear, ask first and leave it out until approved."
+  },
+  "findings": [
+    {
+      "kind": "duplicate-continuation-guidance",
+      "tools": [
+        "semantic_extract_interface",
+        "semantic_implement_contract",
+        "semantic_inline_function",
+        "semantic_migrate_type",
+        "semantic_set_doc_comment",
+        "semantic_inspect_symbol",
+        "semantic_insert_field"
+      ],
+      "finding": "Each summary manually enumerates successful result continuations immediately before the generator appends exact declared producer/consumer paths. This duplicates the same mapping and makes summaries very long. Keep exact generated paths; remove only the manually repeated continuation list from SUMMARY."
+    },
+    {
+      "kind": "overlapping-insert-routing",
+      "tools": [
+        "semantic_insert_declaration",
+        "semantic_insert_structure",
+        "semantic_insert_function",
+        "semantic_insert_type",
+        "semantic_insert_decl"
+      ],
+      "finding": "The generic declaration and structure tools overlap specialized function/type/constant/variable insertion. insert_declaration prefers specialists, but insert_structure does not have a documented behavior that distinguishes it from those wrappers. Preserve specialist preference and identify/document a real capability difference before claiming a fallback case; do not invent one in the summary."
+    },
+    {
+      "kind": "same-session-verification-repetition",
+      "tools": [
+        "semantic_extract_function",
+        "semantic_extract_variable",
+        "semantic_insert_decl",
+        "semantic_insert_declaration",
+        "semantic_insert_function",
+        "semantic_insert_structure",
+        "semantic_insert_type",
+        "semantic_organize_imports",
+        "semantic_rename",
+        "semantic_replace_body"
+      ],
+      "finding": "The repeated phrase that standalone edits verify automatically and should not be followed by semantic_verify consumes summary tokens and may be standard policy across these operations. Consider one concise clause or shared tool metadata, while retaining it wherever behavior or verification opt-out actually differs."
+    },
+    {
+      "kind": "partial-rollback-risk",
+      "tools": [
+        "semantic_batch"
+      ],
+      "finding": "The no-rollback warning is essential and should remain prominent; callers may assume batch atomicity from the name. Current wording is clear but could say earlier changes remain applied on failure in fewer words."
+    },
+    {
+      "kind": "panic-stub-routing-risk",
+      "tools": [
+        "semantic_implement_contract"
+      ],
+      "finding": "panic_stub is central to choosing this operation safely, not secondary detail. Retain the fact that generated methods panic and are placeholders, and that body_policy must select this explicitly."
+    },
+    {
+      "kind": "mutation-under-verify-name",
+      "tools": [
+        "semantic_verify"
+      ],
+      "finding": "The name can suggest a read-only check, but Go verification formats and writes unless check_only=true. Keep that mutation warning in the opening sentence, not only in parameter help."
+    },
+    {
+      "kind": "special-case-aliases-and-zero-arguments",
+      "tools": [
+        "semantic_migrate_type",
+        "semantic_inline_function"
+      ],
+      "finding": "The narrow constraints distinguish these tools from general field moves/inlining: migrate_type requires identical type identity after alias resolution, and inline_function is only a zero-argument direct call to a same-package free function with one literal return. Keep those bounds early."
+    },
+    {
+      "kind": "trust-and-network-risk",
+      "tools": [
+        "semantic_add_build_dependency",
+        "semantic_find_references",
+        "semantic_inspect_symbol",
+        "semantic_lookup",
+        "semantic_maven_compile",
+        "semantic_maven_test",
+        "semantic_outline",
+        "semantic_rename",
+        "semantic_verify"
+      ],
+      "finding": "Trust and external execution vary per backend. Preserve workspace trust, preinstalled-tool, and network requirements in the tool summary when they materially affect routing; do not transfer those warnings to Go-only operations or imply Maven always uses the network."
+    }
+  ],
+  "copyClauseCandidate": {
+    "before": "Copy from the result.continuations[].symbol field of a preceding semantic_inspect_symbol or semantic_inline_function result.",
+    "after": "Copy result.continuations[].symbol from a preceding semantic_inspect_symbol or semantic_inline_function result record.",
+    "constraints": "Retain all exact source paths/tool names and same-record companion guidance; remove invalid producer edges through a separate correctness fix."
+  },
+  "review": {
+    "scope": "Copy-clause wording only",
+    "model": "gpt-5.6-terra",
+    "conversation": "01a0fbbb-e5b9-7152-badd-2568e8f686c3",
+    "finding": "Initial shortening dropped preceding-result-record context; retain it, exact paths/tools, and same-record companion guards.",
+    "allSummariesReviewed": false
+  }
+}

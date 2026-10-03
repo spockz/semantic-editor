@@ -16,13 +16,8 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
-
-	"semedit/internal/gocache"
-
-	"golang.org/x/tools/go/packages"
 )
 
 // ExtractKind selects the declaration form created by ExtractFunction.
@@ -63,6 +58,10 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 		return "", fmt.Errorf("cannot extract: helper name %q collides with a predeclared Go identifier", helper)
 	}
 	cleanPath := filepath.Clean(filePath)
+	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
+	if err != nil {
+		return "", err
+	}
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read extraction target: %w", err)
@@ -127,7 +126,7 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: declSource, Cause: err, Err: ErrSyntax}
 	}
-	formatted = preserveTrailingNewlines(content, formatted)
+	formatted = normalizeExtractionNewlines(formatted)
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: declSource, Cause: err, Err: ErrSyntax}
 	}
@@ -140,27 +139,18 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	} else if !bytes.Equal(current, content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)
 	}
-	checkPreimage := func() error {
-		latest, readErr := sourcebuf.ReadFile(ctx, cleanPath)
-		if readErr != nil {
-			return fmt.Errorf("recheck extraction source: %w", readErr)
-		}
-		if !bytes.Equal(latest, content) {
-			return fmt.Errorf("cannot extract %s: source changed while planning", owner)
-		}
-		return nil
-	}
-	if err := sourcebuf.WriteFileChecked(ctx, cleanPath, formatted, checkPreimage); err != nil {
-		return "", fmt.Errorf("write extracted source atomically: %w", err)
-	}
-	if sourcebuf.FromContext(ctx) == nil {
-		if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-			return "", fmt.Errorf("format extracted source: %w", err)
-		}
+	buffer := sourcebuf.FromContext(ctx)
+	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
+		return "", fmt.Errorf("apply extracted source after compiler preflight: %w", err)
 	}
 	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
+	}
+	if standalone {
+		if err := ownedBuffer.Flush(ctx); err != nil {
+			return "", fmt.Errorf("publish extracted source: %w", err)
+		}
 	}
 	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(finalSource)), nil
 }
@@ -190,10 +180,8 @@ func validateOutputAliases(selected []ast.Stmt, outputs []extractionOutput, owne
 	return nil
 }
 
-func preserveTrailingNewlines(before, after []byte) []byte {
-	beforeCount := len(before) - len(bytes.TrimRight(before, "\n"))
-	trimmed := bytes.TrimRight(after, "\n")
-	return append(trimmed, bytes.Repeat([]byte{'\n'}, beforeCount)...)
+func normalizeExtractionNewlines(source []byte) []byte {
+	return append(bytes.TrimRight(source, "\n"), '\n')
 }
 
 func findExtractOwner(file *ast.File, name, recv string) *ast.FuncDecl {
@@ -899,27 +887,6 @@ func helperNameExists(ctx context.Context, filePath, packageName, helper string,
 	return false, nil
 }
 
-func loadExtractionPackages(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
-	environment, err := gocache.Environment(ctx, dir)
-	if err != nil {
-		return nil, fmt.Errorf("prepare extraction Go environment: %w", err)
-	}
-	config := &packages.Config{Context: ctx, Dir: dir, Env: environment, BuildFlags: []string{"-mod=readonly"}, Overlay: overlay, Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports}
-	loaded, err := packages.Load(config, ".")
-	if err != nil {
-		return nil, fmt.Errorf("load Go package for extraction: %w", err)
-	}
-	if len(loaded) == 0 {
-		return nil, fmt.Errorf("load Go package for extraction: no package found")
-	}
-	for _, pkg := range loaded {
-		for _, item := range pkg.Errors {
-			return nil, fmt.Errorf("load Go package for extraction: %s", item.Error())
-		}
-	}
-	return loaded, nil
-}
-
 func validateExtractionCandidate(ctx context.Context, filePath string, source []byte) error {
 	overlay := sourcebuf.Overlay(ctx)
 	if overlay == nil {
@@ -927,7 +894,7 @@ func validateExtractionCandidate(ctx context.Context, filePath string, source []
 	}
 	cleanPath := filepath.Clean(filePath)
 	overlay[cleanPath] = bytes.Clone(source)
-	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay); err != nil {
+	if _, err := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, false); err != nil {
 		return fmt.Errorf("validate complete extracted package: %w", err)
 	}
 	return nil
@@ -939,7 +906,7 @@ func validateOutputTypeNames(ctx context.Context, filePath string, file *ast.Fil
 		overlay = make(map[string][]byte)
 	}
 	overlay[filepath.Clean(filePath)] = bytes.Clone(source)
-	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay)
+	loaded, err := loadExtractionPackages(ctx, filepath.Dir(filePath), overlay, false)
 	if err != nil {
 		return fmt.Errorf("resolve extracted result types: %w", err)
 	}

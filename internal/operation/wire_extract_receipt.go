@@ -20,11 +20,27 @@ import (
 )
 
 const (
-	sourceExtractFunctionReceiptFile   = "semantic_extract_function.result.continuations[].file"
-	sourceExtractFunctionReceiptSymbol = "semantic_extract_function.result.continuations[].symbol"
-	sourceExtractConstantReceiptFile   = "semantic_extract_constant.result.continuations[].file"
-	sourceExtractConstantReceiptSymbol = "semantic_extract_constant.result.continuations[].symbol"
+	sourceExtractFunctionReceiptFile     = "semantic_extract_function.result.continuations[].file"
+	sourceExtractFunctionReceiptSymbol   = "semantic_extract_function.result.continuations[].symbol"
+	sourceExtractFunctionReceiptRevision = "semantic_extract_function.result.continuations[].expected_revision"
+	sourceExtractConstantReceiptFile     = "semantic_extract_constant.result.continuations[].file"
+	sourceExtractConstantReceiptSymbol   = "semantic_extract_constant.result.continuations[].symbol"
+	sourceExtractVariableReceiptFile     = "semantic_extract_variable.result.continuations[].file"
+	sourceExtractVariableReceiptSymbol   = "semantic_extract_variable.result.continuations[].symbol"
+	sourceExtractVariableReceiptRevision = "semantic_extract_variable.result.continuations[].expected_revision"
+	sourceInlineVariableReceiptFile      = "semantic_inline_variable.result.continuations[].file"
+	sourceInlineVariableReceiptSymbol    = "semantic_inline_variable.result.continuations[].symbol"
+	sourceInlineVariableReceiptRevision  = "semantic_inline_variable.result.continuations[].expected_revision"
 )
+
+var extractionReceiptFileConsumers = []string{
+	semanticLookupToolName, semanticRenameToolName, "semantic_find_references", semanticInspectSymbolToolName,
+	semanticReplaceBodyToolName, "semantic_replace_construct", semanticMoveConstructToolName, "semantic_remove_construct",
+	"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
+	"semantic_insert_declaration", "semantic_insert_structure", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	"semantic_extract_constant", semanticExtractVariableToolName, semanticInlineVariableToolName, "semantic_insert_field",
+	"semantic_assertion_mode",
+}
 
 // ExtractionResult combines human CLI detail with the typed public edit receipt.
 type ExtractionResult struct {
@@ -171,9 +187,19 @@ func extractionReceiptOutput(continuationTools ...string) *OperationOutputContra
 		return contract
 	}
 	text := nonEmptyStringSchema()
+	symbolConsumers := append(append([]string(nil), continuationTools...), semanticInspectSymbolToolName)
 	contract.Continuations = []OutputContinuation{
-		{Path: "result.continuations[].file", Schema: text, Role: RoleTarget, Consumers: continuationTools},
-		{Path: "result.continuations[].symbol", Schema: text, Role: RoleTarget, Consumers: continuationTools},
+		{Path: "result.continuations[].file", Schema: text, Role: RoleTarget, Consumers: extractionReceiptFileConsumers},
+		{Path: "result.continuations[].symbol", Schema: text, Role: RoleTarget, Consumers: symbolConsumers},
+	}
+	for _, consumer := range continuationTools {
+		if consumer != semanticReplaceBodyToolName {
+			continue
+		}
+		contract.Continuations = append(contract.Continuations, OutputContinuation{
+			Path: "result.continuations[].expected_revision", Schema: text, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName},
+		})
+		break
 	}
 	return contract
 }

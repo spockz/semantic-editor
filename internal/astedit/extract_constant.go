@@ -11,15 +11,12 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
-
-	"semedit/internal/gocache"
 
 	"strings"
 
@@ -41,38 +38,16 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	if err != nil {
 		return "", fmt.Errorf("resolve constant extraction target: %w", err)
 	}
+	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
+	if err != nil {
+		return "", err
+	}
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read constant extraction target: %w", err)
 	}
 	if opts.ExpectedRevision != "" && goReadRevision(content) != opts.ExpectedRevision {
 		return "", fmt.Errorf("selected source revision mismatch: expected %q, current %q", opts.ExpectedRevision, goReadRevision(content))
-	}
-	standalone := sourcebuf.FromContext(ctx) == nil
-	var ownedBuffer *sourcebuf.Buffer
-	if standalone {
-		moduleRoot, rootErr := moveModuleRoot(cleanPath)
-		if rootErr != nil {
-			return "", fmt.Errorf("locate constant extraction module: %w", rootErr)
-		}
-		ownedBuffer, err = sourcebuf.New(filepath.Dir(cleanPath))
-		if err != nil {
-			return "", fmt.Errorf("capture constant extraction source package: %w", err)
-		}
-		ctx = sourcebuf.WithBuffer(ctx, ownedBuffer)
-		if err := ownedBuffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return "", fmt.Errorf("authorize constant extraction output: %w", err)
-		}
-		buffered, readErr := sourcebuf.ReadFile(ctx, cleanPath)
-		if readErr != nil {
-			return "", fmt.Errorf("read captured constant extraction target: %w", readErr)
-		}
-		if !bytes.Equal(buffered, content) {
-			return "", fmt.Errorf("selected source changed while capturing constant extraction inputs")
-		}
-	}
-	if err := sourcebuf.ObserveTree(ctx, filepath.Dir(cleanPath)); err != nil {
-		return "", fmt.Errorf("capture package source set for constant extraction: %w", err)
 	}
 	overlay := sourcebuf.Overlay(ctx)
 	if overlay == nil {
@@ -167,72 +142,20 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 }
 
 func loadConstantPackage(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
-	if err := rejectConstantPackageSymlinks(dir); err != nil {
+	loaded, err := loadExtractionPackages(ctx, dir, overlay, true)
+	if err != nil {
 		return nil, err
 	}
-	environment, err := gocache.Environment(ctx, dir)
-	if err != nil {
-		return nil, fmt.Errorf("prepare constant extraction Go environment: %w", err)
-	}
-	moduleRoot, err := moveModuleRoot(filepath.Join(dir, "constant.go"))
-	if err != nil {
-		return nil, fmt.Errorf("locate constant extraction module: %w", err)
-	}
-	buffer := sourcebuf.FromContext(ctx)
-	if buffer != nil {
-		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return nil, fmt.Errorf("bind constant extraction module: %w", err)
+	primary := make([]*packages.Package, 0, len(loaded))
+	for _, pkg := range loaded {
+		if !hasConstantTestFiles(pkg.CompiledGoFiles) {
+			primary = append(primary, pkg)
 		}
 	}
-	bound := map[string]bool{"dir:" + filepath.Clean(dir): true, "module:" + filepath.Clean(moduleRoot): true}
-	for {
-		current := sourcebuf.Overlay(ctx)
-		if current == nil {
-			current = make(map[string][]byte)
-		}
-		maps.Copy(current, overlay)
-		config := &packages.Config{
-			Context: ctx, Dir: dir, Env: environment, BuildFlags: []string{"-mod=readonly"},
-			Tests: true, Overlay: current,
-			Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles | packages.NeedSyntax |
-				packages.NeedTypes | packages.NeedTypesInfo | packages.NeedImports | packages.NeedDeps |
-				packages.NeedModule | packages.NeedEmbedFiles,
-		}
-		loaded, err := packages.Load(config, ".")
-		if err != nil {
-			return nil, fmt.Errorf("load Go package for constant extraction: %w", err)
-		}
-		if len(loaded) == 0 {
-			return nil, fmt.Errorf("load Go package for constant extraction: no package found")
-		}
-		for _, pkg := range loaded {
-			for _, item := range pkg.Errors {
-				return nil, fmt.Errorf("load Go package for constant extraction: %s", item.Error())
-			}
-		}
-		added, err := bindConstantPackageInputs(ctx, loaded, bound)
-		if err != nil {
-			return nil, fmt.Errorf("capture constant extraction analysis inputs: %w", err)
-		}
-		if added {
-			continue
-		}
-		if buffer != nil {
-			if err := buffer.AssertDisk(); err != nil {
-				return nil, fmt.Errorf("revalidate constant extraction analysis inputs: %w", err)
-			}
-		}
-		primary := make([]*packages.Package, 0, 1)
-		for _, pkg := range loaded {
-			if !hasConstantTestFiles(pkg.CompiledGoFiles) {
-				primary = append(primary, pkg)
-			}
-		}
-		if len(primary) == 0 {
-			return nil, fmt.Errorf("load Go package for constant extraction: no primary package found")
-		}
-		return primary, nil
+	if len(primary) == 0 {
+		return nil, fmt.Errorf("load Go package for constant extraction: no primary package found")
 	}
+	return primary, nil
 }
 
 func hasConstantTestFiles(files []string) bool {
@@ -244,7 +167,7 @@ func hasConstantTestFiles(files []string) bool {
 	return false
 }
 
-func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, bound map[string]bool) (bool, error) {
+func bindExtractionPackageInputs(ctx context.Context, loaded []*packages.Package, bound map[string]bool) (bool, error) {
 	roots := make(map[string]bool)
 	directories := make(map[string]bool)
 	auxiliary := make(map[string]bool)
@@ -302,12 +225,12 @@ func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, 
 		return false, visitErr
 	}
 	added := false
-	for _, root := range sortedConstantKeys(roots) {
+	for _, root := range sortedExtractionKeys(roots) {
 		key := "module:" + root
 		if bound[key] {
 			continue
 		}
-		if err := rejectConstantModuleSymlinks(root); err != nil {
+		if err := rejectExtractionModuleSymlinks(root); err != nil {
 			return false, err
 		}
 		if err := sourcebuf.ObserveTree(ctx, root); err != nil {
@@ -321,12 +244,12 @@ func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, 
 			}
 		}
 	}
-	for _, directory := range sortedConstantKeys(directories) {
+	for _, directory := range sortedExtractionKeys(directories) {
 		key := "dir:" + directory
 		if bound[key] {
 			continue
 		}
-		if err := rejectConstantPackageSymlinks(directory); err != nil {
+		if err := rejectExtractionPackageSymlinks(directory); err != nil {
 			return false, err
 		}
 		if err := sourcebuf.ObserveTree(ctx, directory); err != nil {
@@ -335,7 +258,7 @@ func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, 
 		bound[key] = true
 		added = true
 	}
-	for _, path := range sortedConstantKeys(manifests) {
+	for _, path := range sortedExtractionKeys(manifests) {
 		key := "manifest:" + filepath.Clean(path)
 		if bound[key] {
 			continue
@@ -346,12 +269,12 @@ func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, 
 		bound[key] = true
 		added = true
 	}
-	for _, path := range sortedConstantKeys(files) {
+	for _, path := range sortedExtractionKeys(files) {
 		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
 			return false, fmt.Errorf("read compiled Go input %q: %w", path, err)
 		}
 	}
-	for _, path := range sortedConstantKeys(auxiliary) {
+	for _, path := range sortedExtractionKeys(auxiliary) {
 		if _, err := sourcebuf.ReadFile(ctx, path); err != nil {
 			return false, fmt.Errorf("read embedded input %q: %w", path, err)
 		}
@@ -359,7 +282,7 @@ func bindConstantPackageInputs(ctx context.Context, loaded []*packages.Package, 
 	return added, nil
 }
 
-func rejectConstantPackageSymlinks(dir string) error {
+func rejectExtractionPackageSymlinks(dir string) error {
 	absolute, err := filepath.Abs(dir)
 	if err != nil {
 		return fmt.Errorf("resolve constant package source directory: %w", err)
@@ -369,7 +292,7 @@ func rejectConstantPackageSymlinks(dir string) error {
 		return fmt.Errorf("resolve constant package source directory %q: %w", absolute, err)
 	}
 	if resolved != absolute {
-		return fmt.Errorf("constant extraction refuses symlinked package source directory %q", absolute)
+		return fmt.Errorf("extraction refuses symlinked package source directory %q", absolute)
 	}
 	entries, err := os.ReadDir(absolute)
 	if err != nil {
@@ -385,13 +308,13 @@ func rejectConstantPackageSymlinks(dir string) error {
 			return fmt.Errorf("inspect constant package source %q: %w", path, err)
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("constant extraction refuses symlinked Go package source %q", path)
+			return fmt.Errorf("extraction refuses symlinked Go package source %q", path)
 		}
 	}
 	return nil
 }
 
-func sortedConstantKeys(values map[string]bool) []string {
+func sortedExtractionKeys(values map[string]bool) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
@@ -400,7 +323,7 @@ func sortedConstantKeys(values map[string]bool) []string {
 	return keys
 }
 
-func rejectConstantModuleSymlinks(root string) error {
+func rejectExtractionModuleSymlinks(root string) error {
 	absolute, err := filepath.Abs(root)
 	if err != nil {
 		return fmt.Errorf("resolve dependency module source root: %w", err)
@@ -410,7 +333,7 @@ func rejectConstantModuleSymlinks(root string) error {
 		return fmt.Errorf("resolve dependency module source root %q: %w", absolute, err)
 	}
 	if resolved != absolute {
-		return fmt.Errorf("constant extraction refuses symlinked dependency module %q", absolute)
+		return fmt.Errorf("extraction refuses symlinked dependency module %q", absolute)
 	}
 	return filepath.WalkDir(absolute, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -425,6 +348,6 @@ func rejectConstantModuleSymlinks(root string) error {
 		if filepath.Ext(entry.Name()) != ".go" || entry.Type()&os.ModeSymlink == 0 {
 			return nil
 		}
-		return fmt.Errorf("constant extraction refuses symlinked dependency Go source %q", path)
+		return fmt.Errorf("extraction refuses symlinked Go package source %q", path)
 	})
 }

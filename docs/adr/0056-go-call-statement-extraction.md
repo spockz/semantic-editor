@@ -24,11 +24,11 @@ range by exact start and end lines of direct statements in the owner's body.
 Only a contiguous region of direct call expression statements, optionally
 preceded by one `:=` declaration with distinct named results, is supported.
 Every result must be used after the selected region. Results become ordered
-helper return values. Their types are inferred only for basic literals, a
-boolean literal, a named owner parameter, or a supported unary/parenthesized
-form of those expressions. Calls and other compound or unsupported result
-expressions refuse before writing. The helper receives each referenced named
-owner parameter and, when required, the receiver.
+helper return values. Their types are inferred only for basic literals, boolean
+literals, named owner parameters, or supported unary/parenthesized forms of
+those expressions. Calls and other compound or unsupported result expressions
+refuse before writing. The helper receives each referenced named owner
+parameter and, when required, the receiver.
 Function extraction passes a referenced receiver as a normal argument. Method
 extraction preserves the receiver on the new method. The selected calls retain
 their order and are replaced by one helper invocation. The helper is inserted
@@ -63,11 +63,14 @@ following conditions:
 * The generated helper name is a valid simple identifier and does not collide
   with a package declaration, same-receiver method, or predeclared Go identifier.
 
-The typed output receipt reports the publication state, changed file revision,
-and analysis read set. Standalone function extraction returns the live helper in
+The typed output receipt reports publication state, the changed file revision,
+and scoped package-local read-set evidence. Compiler package inputs, including
+transitive source and module inputs used to validate the candidate, are captured
+and revalidated internally before apply; the receipt does not claim that its
+local read set is a complete transitive proof. Standalone function extraction returns the live helper in
 `continuations` with `file`, `symbol`, and the selected file SHA-256
 `expected_revision`. Batch child receipts report `applied_working` and omit live
-continuations until the coordinator resolves them after later edits and final
+continuations. Obtain fresh selectors with inspection or lookup after batch
 publication. The line range is omitted because its coordinates no longer
 identify the moved statements after a successful mutation. CLI output retains
 the diff and diagnostic details. Writes follow ADR-0010's atomic publication
@@ -78,9 +81,10 @@ rules.
 * `symbol` names the new helper; `in_function` only selects the existing owner.
 * `start_line` and `end_line` are positive, inclusive, one-based line numbers,
   not byte offsets. The selected range must match AST statement boundaries.
-* The operation preserves call order and argument evaluation order. Returning
-multiple values is limited to the explicit result-expression classes above; the
-operation does not infer arbitrary expression types.
+* The operation preserves call order and argument evaluation order. One leading
+  declaration may return multiple ordered live locals; each result must fit the
+  explicit type-expression classes above, and the generated package is
+  type-checked before application.
 * Unsupported or ambiguous selections fail before mutation.
 * `semantic_extract_function` is advertised only for Go and has CLI txtar
   coverage for its observable success and refusal behavior.
@@ -91,9 +95,8 @@ operation does not infer arbitrary expression types.
 ## Consequences
 
 The operation reduces a common manual helper extraction to one semantic call
-for call regions and a deliberately small result-type inference boundary. The
-single-output case remains supported, and a leading declaration may now return
-multiple live locals when each result expression belongs to the listed
-syntax-bounded class. Other local data flow or control flow receives an explicit
-refusal. The shared schema and registry expose the operation through
+for call regions and a deliberately small result-type inference boundary. A
+leading declaration may return multiple live locals when each result expression
+belongs to the listed syntax-bounded class. Other local data flow or control
+flow receives an explicit refusal. The shared schema and registry expose the operation through
 both CLI and MCP, and its receipt follows ADR-0055 continuation naming.

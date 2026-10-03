@@ -31,11 +31,11 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		return EditReceipt{}, fmt.Errorf("finalize receipt: operation is empty")
 	}
 	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: draft.Operation, ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
-	if inBatch && draft.Status != EditRefused {
+	if inBatch && draft.Status != EditRefused && draft.Status != EditNoOp {
 		receipt.Status = EditAppliedWorking
 	}
 	switch receipt.Status {
-	case EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+	case EditRefused, EditNoOp, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
 	default:
 		return EditReceipt{}, fmt.Errorf("finalize receipt: unsupported outcome %q", receipt.Status)
 	}
@@ -53,6 +53,9 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 	}
 	if err := validateFileRevisions(draft.PlannedChanges, "planned_changes"); err != nil {
 		return EditReceipt{}, fmt.Errorf("finalize planned changes: %w", err)
+	}
+	if receipt.Status == EditNoOp && len(draft.PlannedChanges) != 0 {
+		return EditReceipt{}, fmt.Errorf("no-op receipt cannot contain planned changes: %w", ErrInvalidDefinition)
 	}
 	readRevisions := make(map[string]string, len(receipt.ReadSet))
 	for _, revision := range receipt.ReadSet {
@@ -86,7 +89,7 @@ func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft E
 		}
 	}
 	if !inBatch && expectedChanges > confirmedChanges {
-		if publicationUncertain {
+		if confirmedChanges > 0 || publicationUncertain {
 			receipt.Status = EditPartiallyPublished
 		} else if knownUnchanged {
 			receipt.Status = EditRefused

@@ -7,8 +7,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"semedit/internal/backend"
+	"semedit/internal/sourcebuf"
 	"testing"
 )
 
@@ -301,6 +304,138 @@ func TestRegistryRejectsOutputProjectorWithoutResultSchema(t *testing.T) {
 	}
 }
 
+func TestRegistryProjectsKnownErrorsAgainstPrivateErrorSchema(t *testing.T) {
+	resultSchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"status": {Kind: SchemaString, Enum: []any{"done"}},
+	}, Required: []string{"status"}}
+	errorSchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"application_state": {Kind: SchemaString, Enum: []any{"partially_published", "unknown"}},
+	}, Required: []string{"application_state"}}
+	definition := Def[string, string]{
+		Key:    "typed-error-output",
+		Parse:  func(map[string]any) (string, error) { return "", nil },
+		Output: &OperationOutputContract{ResultSchema: &resultSchema},
+		ProjectOutput: func(string) (any, error) {
+			return map[string]any{"status": "done"}, nil
+		},
+		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &errorSchema},
+		ProjectErrorOutput: func(error) (any, bool, error) {
+			return map[string]any{"application_state": "partially_published"}, true, nil
+		},
+	}
+	registry := NewRegistry()
+	if err := Register(registry, definition); err != nil {
+		t.Fatalf("register typed error output: %v", err)
+	}
+	entry, ok := registry.LookupKey(definition.Key)
+	if !ok {
+		t.Fatal("registered operation was not found")
+	}
+	projected, known, err := entry.ProjectErrorOutput(errors.New("write failed"))
+	if err != nil {
+		t.Fatalf("project known error: %v", err)
+	}
+	if !known {
+		t.Fatal("typed error state was not marked known")
+	}
+	if got := projected.(map[string]any)["application_state"]; got != "partially_published" {
+		t.Fatalf("error state = %v", got)
+	}
+	result, err := entry.ProjectOutput("success")
+	if err != nil || result.(map[string]any)["status"] != "done" {
+		t.Fatalf("success projection = %v, %v", result, err)
+	}
+	definition.ProjectErrorOutput = func(error) (any, bool, error) {
+		return map[string]any{"status": "done"}, true, nil
+	}
+	registry = NewRegistry()
+	if err := Register(registry, definition); err != nil {
+		t.Fatalf("register mismatched projection test: %v", err)
+	}
+	entry, _ = registry.LookupKey(definition.Key)
+	if _, wasKnown, projectionErr := entry.ProjectErrorOutput(errors.New("write failed")); projectionErr == nil || wasKnown {
+		t.Fatalf("error output was not checked against its paired private schema: known=%v err=%v", wasKnown, projectionErr)
+	}
+}
+
+func TestRegistryRejectsUnpairedErrorOutputContract(t *testing.T) {
+	schema := ValueSchema{Kind: SchemaObject}
+	definition := Def[string, string]{
+		Key:         "orphan-error-output",
+		Parse:       func(map[string]any) (string, error) { return "", nil },
+		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &schema},
+	}
+	if err := Register(NewRegistry(), definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("orphan error contract registration error = %v", err)
+	}
+}
+
+func TestErrorProjectionRejectsLiveFieldsAndUnknownState(t *testing.T) {
+	text := ValueSchema{Kind: SchemaString}
+	errorSchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"state": text,
+	}, Required: []string{"state"}}
+	definition := Def[string, string]{
+		Key:         "guard-error-output",
+		Parse:       func(map[string]any) (string, error) { return "", nil },
+		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &errorSchema},
+		ProjectErrorOutput: func(error) (any, bool, error) {
+			return nil, false, nil
+		},
+	}
+	registry := NewRegistry()
+	if err := Register(registry, definition); err != nil {
+		t.Fatalf("register unknown error output: %v", err)
+	}
+	entry, _ := registry.LookupKey(definition.Key)
+	if projected, known, err := entry.ProjectErrorOutput(errors.New("untyped failure")); err != nil || known || projected != nil {
+		t.Fatalf("unknown error projection = %#v, %v, %v", projected, known, err)
+	}
+	definition.ProjectErrorOutput = func(error) (any, bool, error) {
+		return map[string]any{"state": "unknown", "nested": map[string]any{"continuations": []any{}}}, true, nil
+	}
+	registry = NewRegistry()
+	if err := Register(registry, definition); err != nil {
+		t.Fatalf("register runtime guard test: %v", err)
+	}
+	entry, _ = registry.LookupKey(definition.Key)
+	if _, known, err := entry.ProjectErrorOutput(errors.New("typed failure")); err == nil || known {
+		t.Fatalf("nested additional live field passed output validation: known=%v err=%v", known, err)
+	}
+
+	definition.ErrorOutput.ResultSchema = &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"details": {Kind: SchemaObject, Properties: map[string]ValueSchema{"expected_revision": text}},
+	}}
+	if err := Register(NewRegistry(), definition); err == nil {
+		t.Fatalf("nested reserved field schema error = %v", err)
+	}
+}
+
+func TestProjectedContinuationFieldsAllowsOnlyDeclaredOptionalOmissions(t *testing.T) {
+	text := nonEmptyStringSchema()
+	resultSchema := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text}}
+	contract := &OperationOutputContract{ResultSchema: &resultSchema, Continuations: []OutputContinuation{
+		{Field: "file", Schema: text, Role: RoleSelector, Consumers: []string{"semantic_organize_imports"}, Optional: true},
+	}}
+	fields, err := ProjectedContinuationFields(map[string]any{"status": "organized"}, contract)
+	if err != nil || len(fields) != 0 {
+		t.Fatalf("omitted optional continuation = %#v, %v", fields, err)
+	}
+	fields, err = ProjectedContinuationFields(map[string]any{"file": "selected.go"}, contract)
+	if err != nil || fields["file"] != "selected.go" {
+		t.Fatalf("present optional continuation = %#v, %v", fields, err)
+	}
+	if _, err := ProjectedContinuationFields(map[string]any{"file": ""}, contract); err == nil {
+		t.Fatal("empty optional file continuation was accepted")
+	}
+	if err := ValidateOutputContract(OperationOutputContract{
+		ResultSchema:  &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"file": text}, Required: []string{"file"}},
+		Continuations: contract.Continuations,
+	}); err == nil {
+		t.Fatal("required result field accepted an optional continuation")
+	}
+}
+
 func TestSchemaAtResultPathRejectsMalformedSegmentsAndSelectsArrayLeaves(t *testing.T) {
 	schema := EditReceiptSchema()
 	leaf, err := SchemaAtResultPath(schema, "result.continuations[].symbol")
@@ -365,6 +500,53 @@ func TestFinalizeEditReceiptIncludesOnlyObservedPostimages(t *testing.T) {
 	}
 }
 
+func TestFinalizeEditReceiptDistinguishesPartialPublicationFromRefusal(t *testing.T) {
+	root := t.TempDir()
+	beforeA := []byte("package sample\nvar First = 1\n")
+	afterA := []byte("package sample\nvar First = 2\n")
+	beforeB := []byte("package sample\nvar Second = 1\n")
+	afterB := []byte("package sample\nvar Second = 2\n")
+	if err := os.WriteFile(filepath.Join(root, "first.go"), afterA, 0600); err != nil {
+		t.Fatalf("write published output: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "second.go"), beforeB, 0600); err != nil {
+		t.Fatalf("write unchanged preimage: %v", err)
+	}
+	digest := func(source []byte) string {
+		sum := sha256.Sum256(source)
+		return hex.EncodeToString(sum[:])
+	}
+	draft := EditReceiptDraft{
+		Operation: "multi-file-edit",
+		Status:    EditPersisted,
+		PlannedChanges: []FileRevision{
+			{Path: "first.go", Revision: digest(afterA)},
+			{Path: "second.go", Revision: digest(afterB)},
+		},
+		ReadSet: []FileRevision{
+			{Path: "first.go", Revision: digest(beforeA)},
+			{Path: "second.go", Revision: digest(beforeB)},
+		},
+	}
+	partial, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize partial publication: %v", err)
+	}
+	if partial.Status != EditPartiallyPublished || len(partial.Changes) != 1 || partial.Changes[0].Path != "first.go" {
+		t.Fatalf("mixed published and unchanged files = %#v", partial)
+	}
+	if err := os.WriteFile(filepath.Join(root, "first.go"), beforeA, 0600); err != nil {
+		t.Fatalf("restore unchanged preimage: %v", err)
+	}
+	refused, err := FinalizeEditReceipt(context.Background(), root, false, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize fully unchanged publication: %v", err)
+	}
+	if refused.Status != EditRefused || len(refused.Changes) != 0 {
+		t.Fatalf("fully unchanged planned files = %#v, want refused with no changes", refused)
+	}
+}
+
 func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "main.go")
@@ -415,5 +597,95 @@ func TestFinalizeEditReceiptRequiresObservedCandidateDigest(t *testing.T) {
 	}
 	if len(receipt.Continuations) != 1 || receipt.Continuations[0].ExpectedRevision == nil || *receipt.Continuations[0].ExpectedRevision != observedRevision {
 		t.Fatalf("matching final candidate was not emitted with observed digest: %#v", receipt.Continuations)
+	}
+}
+
+func TestFinalizeEditReceiptPreservesNoOpOutcomes(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "main.go")
+	content := []byte("package sample\n")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(content)
+	revision := hex.EncodeToString(digest[:])
+	candidate := SymbolTarget{File: "main.go", Symbol: "Value", ExpectedRevision: &revision}
+	draft := EditReceiptDraft{Operation: "contract", Status: EditNoOp, ReadSet: []FileRevision{{Path: "main.go", Revision: revision}}, Continuations: []SymbolTarget{candidate}}
+	standalone, err := FinalizeEditReceipt(context.Background(), root, false, draft, func(_ context.Context, target SymbolTarget) (SymbolTarget, bool, error) { return target, true, nil })
+	if err != nil {
+		t.Fatalf("finalize standalone no-op: %v", err)
+	}
+	if standalone.Status != EditNoOp || len(standalone.Changes) != 0 || len(standalone.Continuations) != 1 {
+		t.Fatalf("standalone no-op receipt = %#v", standalone)
+	}
+	buffer, err := sourcebuf.New(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := sourcebuf.WithBuffer(context.Background(), buffer)
+	if err := buffer.AuthorizeWrites(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	working, err := FinalizeEditReceipt(ctx, root, true, draft, nil)
+	if err != nil {
+		t.Fatalf("finalize buffered no-op: %v", err)
+	}
+	if working.Status != EditNoOp || len(working.Changes) != 0 || len(working.Continuations) != 0 {
+		t.Fatalf("buffered no-op receipt = %#v", working)
+	}
+}
+
+func TestProjectInspectResultKeepsLanguageNeutralAmbiguousMatches(t *testing.T) {
+	result := &backend.InspectResult{Matches: []backend.InspectedSymbol{
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Widget.java", Revision: "captured-one"},
+		{QualifiedName: "Widget.run", Kind: "method", File: "src/Other.java", Revision: "captured-two"},
+	}}
+	projection, err := ProjectInspectResult(result)
+	if err != nil {
+		t.Fatalf("project language-neutral matches: %v", err)
+	}
+	if len(projection.Continuations) != 2 {
+		t.Fatalf("continuations = %#v, want both ambiguous matches", projection.Continuations)
+	}
+	for index, want := range []InspectContinuation{
+		{File: "src/Widget.java", Symbol: "Widget.run", ExpectedRevision: "captured-one"},
+		{File: "src/Other.java", Symbol: "Widget.run", ExpectedRevision: "captured-two"},
+	} {
+		got := projection.Continuations[index]
+		if got.File != want.File || got.Symbol != want.Symbol || got.ExpectedRevision != want.ExpectedRevision || got.InFunction != nil || got.InType != nil || got.InDeclaration != nil {
+			t.Errorf("continuation %d = %#v, want language-neutral captured identity %#v", index, got, want)
+		}
+	}
+}
+
+func TestProjectInspectResultAddsGoDeclarationOwnerAliases(t *testing.T) {
+	kinds := []string{"function", "method", "type", "interface", "constant", "variable", "field"}
+	matches := make([]backend.InspectedSymbol, 0, len(kinds))
+	for _, kind := range kinds {
+		matches = append(matches, backend.InspectedSymbol{
+			QualifiedName: "pkg." + kind, Kind: kind, File: "src/sample.go",
+			Revision: "captured-" + kind,
+		})
+	}
+	projection, err := ProjectInspectResult(&backend.InspectResult{Matches: matches})
+	if err != nil {
+		t.Fatalf("project Go declarations: %v", err)
+	}
+	if len(projection.Continuations) != len(kinds) {
+		t.Fatalf("continuations = %d, want %d", len(projection.Continuations), len(kinds))
+	}
+	for index, kind := range kinds {
+		got := projection.Continuations[index]
+		wantFunction := kind == "function" || kind == "method"
+		wantType := kind == "type" || kind == "interface"
+		wantDeclaration := kind != "field"
+		if (got.InFunction != nil) != wantFunction || (got.InType != nil) != wantType || (got.InDeclaration != nil) != wantDeclaration {
+			t.Errorf("%s aliases = function:%v type:%v declaration:%v", kind, got.InFunction != nil, got.InType != nil, got.InDeclaration != nil)
+		}
+		for _, alias := range []*string{got.InFunction, got.InType, got.InDeclaration} {
+			if alias != nil && *alias != got.Symbol {
+				t.Errorf("%s alias = %q, want exact qualified identity %q", kind, *alias, got.Symbol)
+			}
+		}
 	}
 }

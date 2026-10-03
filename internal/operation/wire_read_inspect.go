@@ -39,16 +39,16 @@ func (r InspectReq) GetProjectContext() backend.ProjectContext { return r.Projec
 // SetProjectContext applies the effective project selected by registry dispatch.
 func (r *InspectReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
+var inspectReadParams = readRequestParams(
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Required: true, SourceFields: append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol, sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(append(append([]string(nil), sourceFileContinuations...), sourceContractExtractFile, sourceContractImplementFile), sourceConcreteTargetFile, sourceGeneratedMethodFile)},
+)
+
 var outlineReadParams = readRequestParams(
 	ParameterContract{Name: "path", CLIName: "path", JSONName: "path", Description: "Source file or directory to outline", Type: ParamString, Required: true},
 	ParameterContract{Name: "kinds", CLIName: "kind", JSONName: "kinds", Description: "Optional kinds to include: type, interface, function, method, field, constant, variable, package, class, constructor, enum, record, module, property, object, enum_member, trait, target; known kinds absent from a backend produce empty symbols", Type: ParamStringSlice},
 	ParameterContract{Name: "include_unexported", CLIName: "include-unexported", JSONName: "include_unexported", Description: "Include unexported Go declarations and members; external backends require true (default true)", Type: ParamBoolean, Default: true},
 	ParameterContract{Name: "include_tests", CLIName: "include-tests", JSONName: "include_tests", Description: "Include _test.go files for Go directory scopes (default false)", Type: ParamBoolean, Default: false},
-)
-
-var inspectReadParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified Go symbol name to inspect", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: sourceFileContinuations},
 )
 
 func parseInspectRead(raw map[string]any) (InspectReq, error) {
@@ -161,10 +161,11 @@ func inspectReadDef() Def[InspectReq, *backend.InspectResult] {
 		Output: &OperationOutputContract{
 			ResultSchema: &projectionSchema,
 			Continuations: []OutputContinuation{
-				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{"semantic_replace_body"}},
-				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{"semantic_replace_construct"}},
+				{Path: "result.continuations[].file", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName}},
+				{Path: "result.continuations[].symbol", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName}},
+				{Path: "result.continuations[].expected_revision", Schema: ValueSchema{Kind: SchemaString}, Role: RoleTarget, Consumers: []string{semanticReplaceBodyToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName, insertFieldToolName, semanticExtractConstantToolName, semanticExtractVariableToolName}},
+				{Path: "result.continuations[].in_function", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{"semantic_replace_construct", semanticExtractFunctionToolName, semanticExtractConstantToolName, semanticExtractVariableToolName, semanticInlineVariableToolName}},
+				{Path: "result.continuations[].in_type", Schema: ValueSchema{Kind: SchemaString}, Role: RoleSelector, Consumers: []string{insertFieldToolName}},
 			},
 		},
 		ProjectOutput: func(result *backend.InspectResult) (any, error) { return ProjectInspectResult(result) },

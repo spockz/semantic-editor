@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/token"
 	"path/filepath"
+	"slices"
 )
 
 // CallSiteSelector addresses one call site in its owning function.
@@ -20,8 +21,6 @@ import (
 // FileRevision binds one project-relative path to an opaque content revision.
 
 // EditStatus records the actual working-buffer and disk publication outcome.
-
-// EditReceipt reports changed revisions, the complete analysis read set, and live targets.
 
 // EditPartiallyPublished means some publication completed before another part failed.
 const EditPartiallyPublished EditStatus = "partially_published"
@@ -78,6 +77,11 @@ type OperationOutputContract struct {
 	Continuations []OutputContinuation `json:"continuations,omitempty"`
 }
 
+// OperationErrorOutputContract declares a private typed projection for known operation errors.
+type OperationErrorOutputContract struct {
+	ResultSchema *ValueSchema
+}
+
 // OutputContinuation describes one complete live result field and its compatible consumers.
 type OutputContinuation struct {
 	Field     string        `json:"field,omitempty"`
@@ -85,6 +89,7 @@ type OutputContinuation struct {
 	Schema    ValueSchema   `json:"schema"`
 	Role      ParameterRole `json:"role"`
 	Consumers []string      `json:"consumers"`
+	Optional  bool          `json:"optional,omitempty"`
 }
 
 // ParameterRole classifies a parameter effect on target selection or caller policy.
@@ -409,7 +414,7 @@ func ConstructSelectorSchema() ValueSchema {
 		wireInFunction:       text,
 		"in_declaration":     text,
 		"kind":               text,
-		"discriminator":      text,
+		wireDiscriminator:    text,
 		"construct_path":     text,
 		wireExpectedRevision: text,
 	}, Required: []string{"file", "kind"}}
@@ -439,17 +444,17 @@ func FileRevisionSchema() ValueSchema {
 // EditReceiptSchema describes an outcome without implying batch-wide atomicity.
 func EditReceiptSchema() ValueSchema {
 	version := ValueSchema{Kind: SchemaString, Enum: []any{"semedit.edit-receipt/v1"}}
-	status := ValueSchema{Kind: SchemaString, Enum: []any{string(EditRefused), string(EditAppliedWorking), string(EditPersisted), string(EditPersistedWithDiagnostics), string(EditPartiallyPublished)}}
+	status := ValueSchema{Kind: SchemaString, Enum: []any{string(EditNoOp), string(EditRefused), string(EditAppliedWorking), string(EditPersisted), string(EditPersistedWithDiagnostics), string(EditPartiallyPublished)}}
 	text := nonEmptyStringSchema()
 	revisions := ValueSchema{Kind: SchemaArray, Items: new(FileRevisionSchema())}
 	continuations := ValueSchema{Kind: SchemaArray, Items: new(SymbolTargetSchema())}
 	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"schema_version": version,
-		"status":         status,
-		"operation":      text,
-		"changes":        revisions,
-		"read_set":       revisions,
-		"continuations":  continuations,
+		"schema_version":       version,
+		"status":               status,
+		"operation":            text,
+		"changes":              revisions,
+		"read_set":             revisions,
+		errorContinuationField: continuations,
 	}, Required: []string{"schema_version", "status", "operation"}}
 }
 
@@ -490,6 +495,9 @@ func ValidateOutputContract(contract OperationOutputContract) error {
 			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
 				return fmt.Errorf("continuation field %q schema disagrees with its result field", continuation.Field)
 			}
+			if continuation.Optional && slices.Contains(contract.ResultSchema.Required, continuation.Field) {
+				return fmt.Errorf("optional continuation field %q is required by its result schema", continuation.Field)
+			}
 		}
 		if _, ok := seenFields[identity]; ok {
 			return fmt.Errorf("continuation %q is repeated", identity)
@@ -524,7 +532,7 @@ func ValidateEditReceipt(receipt EditReceipt) error {
 		return fmt.Errorf("unsupported edit receipt schema version %q", receipt.SchemaVersion)
 	}
 	switch receipt.Status {
-	case EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+	case EditNoOp, EditRefused, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
 	default:
 		return fmt.Errorf("unsupported edit receipt status %q", receipt.Status)
 	}
@@ -533,6 +541,9 @@ func ValidateEditReceipt(receipt EditReceipt) error {
 	}
 	if receipt.Status == EditRefused && (len(receipt.Changes) > 0 || len(receipt.Continuations) > 0) {
 		return fmt.Errorf("refused receipt cannot expose changes or live continuations")
+	}
+	if receipt.Status == EditNoOp && len(receipt.Changes) > 0 {
+		return fmt.Errorf("no-op receipt cannot expose changes")
 	}
 	if err := validateFileRevisions(receipt.Changes, "changes"); err != nil {
 		return err
@@ -585,3 +596,6 @@ func validateFileRevisions(revisions []FileRevision, label string) error {
 	}
 	return nil
 }
+
+// EditNoOp means the requested semantic state already held and no edit was published.
+const EditNoOp EditStatus = "no_op"

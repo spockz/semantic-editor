@@ -1,0 +1,35 @@
+# CLI extracts selected direct methods to an existing same-package destination and preserves the source.
+exec semedit extract-interface --file api/store.go --in-type Store --symbol StoreAPI --destination-file api/contracts.go --receiver-kind pointer --members '[{"file":"api/store.go","symbol":"(*Store).Read"}]'
+stdout '"status":\s*"persisted"'
+stdout '"symbol":\s*"StoreAPI"'
+stdout '"contract":\s*"StoreAPI"'
+stdout '"contract_file":\s*"api/contracts.go"'
+stdout '"continuations":\s*\['
+stdout '"expected_revision":\s*"[0-9a-f]+"'
+cmp api/store.go .scratch/want/store.go
+cmp api/contracts.go .scratch/want/contracts.go
+exec go test ./...
+-- go.mod --
+module example.com/extract
+
+go 1.27.1
+-- api/store.go --
+package api
+
+type Store struct{}
+
+func (*Store) Read() (value int) { return 1 }
+-- api/contracts.go --
+package api
+-- .scratch/want/store.go --
+package api
+
+type Store struct{}
+
+func (*Store) Read() (value int) { return 1 }
+-- .scratch/want/contracts.go --
+package api
+
+type StoreAPI interface {
+	Read() (value int)
+}

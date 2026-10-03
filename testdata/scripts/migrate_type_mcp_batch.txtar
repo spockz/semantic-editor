@@ -1,0 +1,35 @@
+# Alias-preserving field type migrations accept the current buffered file revision between batch children.
+stdin input.json
+exec semedit mcp --live-reload
+! stdout '"isError":true'
+stdout '"name":\s*"semantic_migrate_type"'
+stdout '"status":"applied_working"'
+cmp settings.go .scratch/want/settings.go
+exec go test ./...
+
+-- go.mod --
+module example.com/migratetypebatch
+
+go 1.24
+-- settings.go --
+package sample
+
+type Duration = int64
+
+type Settings struct {
+	timeout int64
+	retry   int64
+}
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_migrate_type","params":{"file":"settings.go","symbol":"Settings.timeout","type":"Duration"}},{"tool":"semantic_migrate_type","params":{"file":"settings.go","symbol":"Settings.retry","type":"Duration","expected_revision":"7e2df98974e5b9dea477a2224b136d43bc8c4e1782fdf1fca934f1c5684a6694"}}]}}}
+-- .scratch/want/settings.go --
+package sample
+
+type Duration = int64
+
+type Settings struct {
+	timeout Duration
+	retry   Duration
+}

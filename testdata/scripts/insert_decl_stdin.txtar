@@ -1,0 +1,31 @@
+# Multiline declaration source arrives directly on stdin, including quote and backslash bytes.
+stdin declaration.txt
+exec semedit insert-decl --file api/settings.go --source -
+stdout 'Successfully inserted declaration.*'
+cmp api/settings.go want/api/settings.go
+
+-- go.mod --
+module example.com/insert-decl-stdin
+
+go 1.23
+
+-- api/settings.go --
+package api
+
+var Existing = 1
+
+-- declaration.txt --
+const (
+	Quoted = `quote " and \\ path`
+	Plain  = 2
+)
+
+-- want/api/settings.go --
+package api
+
+const (
+	Quoted = `quote " and \\ path`
+	Plain  = 2
+)
+
+var Existing = 1

@@ -1,3 +1,5 @@
+<!-- Records semantic read operations and the typed inspection evidence they expose for follow-up edits. -->
+
 # ADR-0051: Semantic Code Inspection and Outline Operations
 
 Status: Accepted
@@ -15,6 +17,14 @@ We introduce three dedicated, zero-token read operations across the core engine,
 
 1. **Symbol Inspection (`semantic_inspect_symbol` / `semedit inspect`)**:
    Returns complete source declarations, signatures, doc comments, enclosing package/imports, and content digests for queried symbols. Ambiguous queries return all matching candidates across the workspace in one structured response.
+
+   MCP structured inspection also projects one typed continuation record for
+   each captured match, keeping its project-relative `file`, qualified
+   `symbol`, and `expected_revision` together. Go owner selectors are
+   included in that same record when applicable. These values are copyable
+   only for consumers declared by the operation contract; the legacy
+   inspection text remains a separate representation and uses its own
+   `revision` field.
 
 2. **Hierarchical Outline (`semantic_outline` / `semedit outline`)**:
    Projects declaration hierarchies for a selected file or directory. Function and method bodies are elided to conserve context budget. Supports kind filtering (`kinds`), unexported symbol inclusion (`include_unexported`), and test symbol inclusion (`include_tests`). Preserves package documentation comments on empty extension points.
