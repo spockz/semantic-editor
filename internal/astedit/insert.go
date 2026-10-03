@@ -194,81 +194,85 @@ func calculateInsertionOffset(fset *token.FileSet, fileNode *ast.File, content [
 		return len(content), nil
 
 	case PlacementBeforeSymbol, PlacementAfterSymbol:
-		if opts.TargetSymbol == "" {
-			return 0, &PlacementError{
-				Strategy: opts.Placement,
-				Err:      ErrSymbolNotFound,
-			}
-		}
-		targetDecl, err := findTargetDecl(fileNode, opts.TargetSymbol)
-		if err != nil {
-			if pErr, ok := errors.AsType[*PlacementError](err); ok {
-				pErr.Strategy = opts.Placement
-			}
-			return 0, err
-		}
-		if opts.Placement == PlacementBeforeSymbol {
-			return fset.Position(targetDecl.Pos()).Offset, nil
-		}
-		return fset.Position(targetDecl.End()).Offset, nil
-
+		return symbolInsertionOffset(fset, fileNode, opts)
 	case PlacementPublicStart, PlacementPublicEnd, PlacementPrivateStart, PlacementPrivateEnd:
-		var codeDecls []ast.Decl
-		for _, decl := range fileNode.Decls {
-			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok == token.IMPORT {
-				continue
-			}
-			codeDecls = append(codeDecls, decl)
-		}
-
-		var publicDecls []ast.Decl
-		var privateDecls []ast.Decl
-		for _, decl := range codeDecls {
-			if isDeclExported(decl) {
-				publicDecls = append(publicDecls, decl)
-			} else {
-				privateDecls = append(privateDecls, decl)
-			}
-		}
-
-		switch opts.Placement {
-		case PlacementPublicStart:
-			if len(publicDecls) > 0 {
-				return fset.Position(publicDecls[0].Pos()).Offset, nil
-			}
-			if len(privateDecls) > 0 {
-				// Public precedes private invariant: land before first private
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return offsetAfterImports(fset, fileNode), nil
-
-		case PlacementPublicEnd:
-			if len(publicDecls) > 0 {
-				return fset.Position(publicDecls[len(publicDecls)-1].End()).Offset, nil
-			}
-			if len(privateDecls) > 0 {
-				// Public precedes private invariant: land before first private (identical to PublicStart)
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return offsetAfterImports(fset, fileNode), nil
-
-		case PlacementPrivateStart:
-			if len(privateDecls) > 0 {
-				return fset.Position(privateDecls[0].Pos()).Offset, nil
-			}
-			return len(content), nil
-
-		case PlacementPrivateEnd:
-			if len(privateDecls) > 0 {
-				return fset.Position(privateDecls[len(privateDecls)-1].End()).Offset, nil
-			}
-			return len(content), nil
-		default:
-			return 0, fmt.Errorf("invalid grouped placement %q", opts.Placement)
-		}
+		return groupedDeclarationOffset(fset, fileNode, content, opts.Placement)
 	}
 
 	return len(content), nil
+}
+
+func symbolInsertionOffset(fset *token.FileSet, file *ast.File, opts Options) (int, error) {
+	if opts.TargetSymbol == "" {
+		return 0, &PlacementError{Strategy: opts.Placement, Err: ErrSymbolNotFound}
+	}
+	declaration, err := findTargetDecl(file, opts.TargetSymbol)
+	if err != nil {
+		if placementErr, ok := errors.AsType[*PlacementError](err); ok {
+			placementErr.Strategy = opts.Placement
+		}
+		return 0, err
+	}
+	if opts.Placement == PlacementBeforeSymbol {
+		return fset.Position(declaration.Pos()).Offset, nil
+	}
+	return fset.Position(declaration.End()).Offset, nil
+}
+
+func groupedDeclarationOffset(fset *token.FileSet, file *ast.File, content []byte, placement Placement) (int, error) {
+	public, private := partitionDeclarationSections(file.Decls)
+	switch placement {
+	case PlacementPublicStart:
+		return publicSectionStart(fset, file, public, private), nil
+	case PlacementPublicEnd:
+		return publicSectionEnd(fset, file, public, private), nil
+	case PlacementPrivateStart:
+		if len(private) > 0 {
+			return fset.Position(private[0].Pos()).Offset, nil
+		}
+	case PlacementPrivateEnd:
+		if len(private) > 0 {
+			return fset.Position(private[len(private)-1].End()).Offset, nil
+		}
+	default:
+		return 0, fmt.Errorf("invalid grouped placement %q", placement)
+	}
+	return len(content), nil
+}
+
+func partitionDeclarationSections(declarations []ast.Decl) ([]ast.Decl, []ast.Decl) {
+	var public, private []ast.Decl
+	for _, declaration := range declarations {
+		if group, ok := declaration.(*ast.GenDecl); ok && group.Tok == token.IMPORT {
+			continue
+		}
+		if isDeclExported(declaration) {
+			public = append(public, declaration)
+		} else {
+			private = append(private, declaration)
+		}
+	}
+	return public, private
+}
+
+func publicSectionStart(fset *token.FileSet, file *ast.File, public, private []ast.Decl) int {
+	if len(public) > 0 {
+		return fset.Position(public[0].Pos()).Offset
+	}
+	if len(private) > 0 {
+		return fset.Position(private[0].Pos()).Offset
+	}
+	return offsetAfterImports(fset, file)
+}
+
+func publicSectionEnd(fset *token.FileSet, file *ast.File, public, private []ast.Decl) int {
+	if len(public) > 0 {
+		return fset.Position(public[len(public)-1].End()).Offset
+	}
+	if len(private) > 0 {
+		return fset.Position(private[0].Pos()).Offset
+	}
+	return offsetAfterImports(fset, file)
 }
 
 func offsetAfterImports(fset *token.FileSet, fileNode *ast.File) int {
