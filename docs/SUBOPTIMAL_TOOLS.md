@@ -3609,6 +3609,22 @@ The need to report successfully written paths motivated adding a report-returnin
 - Workaround: complete the named return and root-parameter signature changes with targeted patches, then organize the required imports before verification.
 - Root cause: caller published new bodies before their required signatures and imports; the body-only operation does not change declaration signatures.
 
+## 2026-10-01: Benchmark feedback batch reports an error
+
+- Tool: `semantic_batch`.
+- Targets: `tools/benchmark-harness/driver.go`, `tools/benchmark-harness/report.go`, `cmd/docgen/benchmark_render.go`, and `cmd/docgen/benchmark_aggregate.go`.
+- Observed: the prepared integration-feedback batch returned `status: error`; completed edits were reported as applied, and the response included a very large diff.
+- Workaround: inspect the applied declarations and diagnostics before retrying only the missing operations. Struct-field additions use Go AST coordinates because the advertised tool surface has no struct-field insertion operation.
+- Root cause: the final `semantic_verify` requires workspace trust to run the detected `golangci-lint` verification hook; the advertised `semantic_batch` arguments do not expose a workspace-trust option. Both batches applied every edit but reported this final verification refusal. Repository verification proceeds with the authorized `make check` workflow.
+
+## 2026-10-01: Verify diagnostics contradict repository checks
+
+- Tool: `semantic_verify` with `check_only: true` and workspace trust.
+- Targets: `internal/astedit/inspect.go`, `internal/backend/backend_test.go`, and `internal/backend/haskell/haskell_probe_test.go`.
+- Observed: 16 unknown-field diagnostics after the full `make check` passed, including compilation, race tests, and the successful verification hook. These files were outside the benchmark feedback change.
+- Workaround: rely on the passing repository compilation, race tests, and lint hook for this benchmark-only change; compare with a fresh semedit session using explicit Go selection. Auto language selection also refuses the unconfigured Make backend in the fresh CLI.
+- Root cause: a fresh, newly built semedit process reproduced the same 16 Go diagnostics, ruling out retained-session staleness as the sole cause. The repository compiles under Go 1.27.1; gopls rejects promoted embedded fields in composite literals in these unrelated existing files. A Go/gopls compatibility mismatch remains the likely cause; it is not established as a source failure.
+
 ## 2026-10-03: Coordinator inspection guessed absent declarations
 
 - Tool: `semantic_inspect_symbol`.

@@ -31,7 +31,6 @@ Every benchmark pairs **Vanilla LLM** (standard file editing tools) against **Se
 `
 
 func renderBenchmarkComparisonsDoc(title, description, preamble string, comparisons []*BenchComparisonSummary) string {
-
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "---\ntitle: %q\ndescription: %q\nicon: \"speed\"\ndraft: false\nweight: 20\n---\n\n", title, description)
 	sb.WriteString(benchmarkToolCallCSS)
@@ -133,6 +132,7 @@ func writeDocComparisonResults(sb *strings.Builder, label string, headingLevel i
 func writeDocComparisonContext(sb *strings.Builder, headingLevel int, label string, baseline, semedit *BenchRunResult) {
 	renderDocRunSummary(sb, headingLevel, label, baseline, semedit)
 	renderDocSemanticToolDiagnostic(sb, semedit)
+	renderDocSemanticIntegrationFeedback(sb, semedit)
 }
 
 func hasStandardBenchmarkRuns(comp *BenchComparisonSummary) bool {
@@ -809,4 +809,18 @@ func displaySemeditArmRestriction(policy string) string {
 		return "unspecified"
 	}
 	return policy
+}
+
+func renderDocSemanticIntegrationFeedback(sb *strings.Builder, run *BenchRunResult) {
+	if run == nil || run.SemanticIntegrationReflection == nil {
+		return
+	}
+	reflection := run.SemanticIntegrationReflection
+	sb.WriteString("**Semedit integration feedback (agent opinion, excluded from measurements):**\n\n")
+	if reflection.Response != "" {
+		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))
+	}
+	if reflection.Error != "" {
+		fmt.Fprintf(sb, "<p><strong>Integration feedback unavailable:</strong> %s</p>\n\n", html.EscapeString(reflection.Error))
+	}
 }

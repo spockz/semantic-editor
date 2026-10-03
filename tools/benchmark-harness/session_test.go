@@ -60,8 +60,8 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 		t.Fatalf("transcript did not survive workspace cleanup: %v", err)
 	}
 	var turns []sessionTurn
-	if err := json.Unmarshal(transcript, &turns); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(transcript, &turns); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	if len(turns) != 3 || turns[0].Classification != "task" || turns[1].Classification != "task" || turns[2].Classification != "diagnostic_reflection" {
 		t.Fatalf("unexpected explicit transcript turns: %+v", turns)
@@ -166,16 +166,16 @@ case "$count" in
      printf '{"type":"item.completed","item":{"id":"unnamed","type":"mcp_tool_call","status":"completed"}}\n' ;;
   2) printf 'package main\nfunc Done() {}\n' > main.go
      printf '{"type":"item.completed","item":{"id":"replace","type":"mcp_tool_call","server":"semedit","tool":"semantic_replace_body","status":"failed"}}\n' ;;
-  3) sleep 0.05 ;;
+  3|4) sleep 0.05 ;;
 esac
-if [ "$count" -eq 3 ]; then
+if [ "$count" -ge 3 ]; then
   printf '{"type":"item.completed","item":{"id":"diagnostic-tool","type":"mcp_tool_call","server":"semedit","tool":"semantic_insert_construct","status":"completed"}}\n'
 fi
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
+printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"I would ask my owner to add semedit because its precise edits eased this task."}}\n'
 case "$count" in
   1) printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n' ;;
   2) printf '{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":2}}\n' ;;
-  3) printf '{"type":"turn.completed","usage":{"input_tokens":100000,"output_tokens":100000}}\n' ;;
+  3|4) printf '{"type":"turn.completed","usage":{"input_tokens":100000,"output_tokens":100000}}\n' ;;
 esac
 `
 	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
@@ -219,15 +219,15 @@ func assertSessionProcessTaskResult(t *testing.T, result *RunResult) {
 func assertSessionProcessWorkspace(t *testing.T, countPath, workLog string) {
 	t.Helper()
 	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != "3" {
-		t.Fatalf("expected initial, followup, and reflection process calls; count=%q err=%v", count, err)
+	if err != nil || string(count) != "4" {
+		t.Fatalf("expected initial, followup, and two reflection process calls; count=%q err=%v", count, err)
 	}
 	workdirs, err := os.ReadFile(workLog)
 	if err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Fields(string(workdirs))
-	if len(lines) != 3 || lines[0] != lines[1] || lines[1] != lines[2] {
+	if len(lines) != 4 || lines[0] != lines[1] || lines[1] != lines[2] || lines[2] != lines[3] {
 		t.Fatalf("provider process changed work directory across turns: %q", workdirs)
 	}
 }
@@ -239,8 +239,21 @@ func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
 	if err != nil {
 		t.Fatalf("session evidence missing after cleanup: %v", err)
 	}
-	if strings.Count(string(transcript), "diagnostic_reflection") != 1 || strings.Count(string(transcript), "fake-session") < 3 {
+	if strings.Count(string(transcript), "diagnostic_reflection") != 2 || strings.Count(string(transcript), "fake-session") < 4 {
 		t.Fatalf("transcript did not retain task and diagnostic events: %s", transcript)
+	}
+	if result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Prompt != semanticIntegrationReflectionPrompt || !strings.Contains(result.SemanticIntegrationReflection.Response, "ask my owner") {
+		t.Fatalf("integration feedback missing or incorrectly captured: %#v", result.SemanticIntegrationReflection)
+	}
+	var turns []sessionTurn
+	if decodeErr := json.Unmarshal(transcript, &turns); decodeErr != nil {
+		t.Fatal(decodeErr)
+	}
+	if len(turns) != 4 || turns[3].Classification != "diagnostic_reflection" || turns[3].Prompt != semanticIntegrationReflectionPrompt {
+		t.Fatalf("integration question did not resume the measured session: %#v", turns)
+	}
+	if result.WallClock > turns[2].StartedAt.Sub(result.processStartedAt) {
+		t.Fatal("integration reflection time leaked into measured wall clock")
 	}
 	encoded, err := json.Marshal(result)
 	if err != nil {
@@ -652,7 +665,7 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 	if result.DiagnosticReflectionSkipped != "final task oracle did not pass" {
 		t.Fatalf("diagnostic skip reason = %q", result.DiagnosticReflectionSkipped)
 	}
-	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil {
+	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil || result.SemanticIntegrationReflection != nil {
 		t.Fatalf("failed final oracle triggered diagnostic reflection: %#v", result)
 	}
 	count, err := os.ReadFile(countPath)
@@ -740,5 +753,126 @@ printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","t
 	args, err := os.ReadFile(argsLog)
 	if err != nil || !strings.Contains(string(args), "resume --json fake-stage") {
 		t.Fatalf("staged follow-up did not resume provider session: %q, err=%v", args, err)
+	}
+}
+
+func TestExecuteAgentIntegrationFeedbackFollowsOnlySemeditTasks(t *testing.T) {
+	for _, testCase := range integrationFeedbackCases() {
+		t.Run(testCase.name, func(t *testing.T) {
+			runIntegrationFeedbackCase(t, testCase)
+		})
+	}
+}
+
+type integrationFeedbackCase struct {
+	name          string
+	arm           ArmType
+	useTools      bool
+	feedbackError bool
+	calls         int
+}
+
+func integrationFeedbackCases() []integrationFeedbackCase {
+	return []integrationFeedbackCase{
+		{name: "baseline", arm: ArmBaseline, calls: 1},
+		{name: "semantic-use", arm: ArmSemedit, useTools: true, calls: 2},
+		{name: "semantic-non-use", arm: ArmSemedit, calls: 3},
+		{name: "feedback-error", arm: ArmSemedit, useTools: true, feedbackError: true, calls: 2},
+	}
+}
+
+func runIntegrationFeedbackCase(t *testing.T, testCase integrationFeedbackCase) {
+	t.Helper()
+	root := t.TempDir()
+	bin := filepath.Join(root, "bin")
+	if err := os.Mkdir(bin, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	countPath := filepath.Join(root, "count")
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(integrationFeedbackProvider), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_FEEDBACK_COUNT", countPath)
+	t.Setenv("SEMEDIT_FEEDBACK_USE_TOOLS", strconv.FormatBool(testCase.useTools))
+	t.Setenv("SEMEDIT_FEEDBACK_ERROR", strconv.FormatBool(testCase.feedbackError))
+	task := integrationFeedbackTask()
+	execution := AgentExecution{
+		Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"},
+		Arm: testCase.arm, Variant: "small", Prompt: "Inspect Existing.", Policy: SemeditArmRestrictWrite,
+	}
+	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(context.Background(), execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertIntegrationFeedbackResult(t, testCase, result, countPath)
+}
+
+const integrationFeedbackProvider = `#!/bin/sh
+count=0
+if [ -f "$SEMEDIT_FEEDBACK_COUNT" ]; then count=$(cat "$SEMEDIT_FEEDBACK_COUNT"); fi
+count=$((count + 1))
+printf '%s' "$count" > "$SEMEDIT_FEEDBACK_COUNT"
+if [ "$count" -gt 1 ] && [ "$SEMEDIT_FEEDBACK_ERROR" = true ]; then exit 7; fi
+printf '{"type":"thread.started","thread_id":"feedback-session"}\n'
+printf '{"type":"turn.started"}\n'
+if [ "$count" -eq 1 ]; then
+ if [ "$SEMEDIT_FEEDBACK_USE_TOOLS" = true ]; then
+  printf '{"type":"item.completed","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"completed"}}\n'
+ fi
+ printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"Task completed."}}\n'
+ printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n'
+else
+ printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"I would not ask my owner to add semedit because I could not assess its value in this task."}}\n'
+ printf '{"type":"turn.completed","usage":{"input_tokens":99999,"output_tokens":99999}}\n'
+fi
+`
+
+func integrationFeedbackTask() *Task {
+	return &Task{
+		Metadata: TaskMetadata{
+			TaskID:      "integration-feedback",
+			Instruction: "Inspect Existing.",
+			Oracle: OracleConfig{AST: ASTConfig{
+				File: "main.go", MustContainSymbols: []string{"Existing"},
+			}},
+		},
+		Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Existing() {}\n")),
+	}
+}
+
+func assertIntegrationFeedbackResult(t *testing.T, testCase integrationFeedbackCase, result *RunResult, countPath string) {
+	t.Helper()
+	if !result.Success || result.Error != "" || result.Turns != 1 || result.PromptTokens != 5 || result.OutputTokens != 2 {
+		t.Fatalf("feedback changed the task outcome or metrics: %+v", result)
+	}
+	count, err := os.ReadFile(countPath)
+	if err != nil || string(count) != strconv.Itoa(testCase.calls) {
+		t.Fatalf("provider calls=%q error=%v; want %d", count, err, testCase.calls)
+	}
+	if testCase.arm == ArmBaseline {
+		if result.SemanticIntegrationReflection != nil {
+			t.Fatal("baseline received integration feedback")
+		}
+		return
+	}
+	feedback := result.SemanticIntegrationReflection
+	if feedback == nil || feedback.Prompt != semanticIntegrationReflectionPrompt {
+		t.Fatalf("missing integration question: %#v", feedback)
+	}
+	if !testCase.useTools && result.SemanticToolReflection == nil {
+		t.Fatal("integration question replaced the non-use question")
+	}
+	assertIntegrationFeedbackCapture(t, testCase, feedback)
+}
+
+func assertIntegrationFeedbackCapture(t *testing.T, testCase integrationFeedbackCase, feedback *SemanticToolReflection) {
+	t.Helper()
+	if testCase.feedbackError {
+		if feedback.Error == "" {
+			t.Fatal("feedback failure was silently swallowed")
+		}
+	} else if !strings.Contains(feedback.Response, "would not ask my owner") || feedback.Error != "" {
+		t.Fatalf("negative feedback was not preserved: %#v", feedback)
 	}
 }

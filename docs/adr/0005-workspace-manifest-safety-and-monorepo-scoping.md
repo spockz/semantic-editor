@@ -13,14 +13,14 @@ However, automatically generating or modifying workspace configuration files (su
 
 1. **Strict Manifest Invariant**: `semedit` will **never** automatically create or modify a workspace manifest (`go.work`, `Cargo.toml`, `pom.xml`, etc.) on disk without explicit user approval.
 2. **In-Memory LSP Workspaces**: When multiple disconnected sub-projects exist, `semedit` passes the directory roots in-memory to the language server via LSP `workspaceFolders` or linked-project configurations.
-3. **Single-Language Focus (Phase 1)**: Concurrent polyglot language servers running simultaneously in a single workspace are explicitly postponed to Phase 2. `semedit` scopes its server lifecycle to the active project's language.
+3. **Single-Language-Per-Session Scoping (Phase 2)**: Concurrent polyglot language servers are scoped to one language server type per workspace session, as adopted through [ADR-0009](0009-mcp-coexistence-and-tool-scoping.md). Each incremental backend ([ADR-0024](0024-rust-file-scoped-lookup-backend.md) through [ADR-0037](0037-java-bounded-maven-actions.md), [ADR-0047](0047-kotlin-read-only-backend.md), [ADR-0048](0048-bash-and-makefile-read-only-backends.md)) registers independently; the active session's tool surface is dynamically scoped to enabled backends. Cross-language polyglot refactorings (e.g. editing Rust FFI and Python bindings simultaneously) remain unsupported.
 
 ## Invariants
 
 * No workspace manifest may be written to disk without explicit user confirmation.
-* Only one language server type is active per workspace session in Phase 1.
+* Only one language server type is active per workspace session; single-language-per-session scoping is enforced through the dynamic backend registry ([ADR-0009](0009-mcp-coexistence-and-tool-scoping.md)).
 
 ## Consequences
 
-* **Positive**: Guarantees zero unprompted git pollution and prevents host RAM starvation.
-* **Negative**: Cross-language polyglot refactorings (e.g. editing Rust FFI and Python bindings simultaneously) are unsupported in Phase 1.
+* **Positive**: Guarantees zero unprompted git pollution, prevents host RAM starvation, and supports read-only lookup across multiple languages within a single session without cross-language mutation.
+* **Negative**: Cross-language polyglot refactorings (e.g. editing Rust FFI and Python bindings simultaneously) remain unsupported.

@@ -109,6 +109,9 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		return res, nil
 	}
 	r.runAgentFollowups(ctx, session, target, arm, initialTask.started, res)
+	if arm == ArmSemedit && session.resumeID != "" && res.Success {
+		res.SemanticIntegrationReflection = r.requestSemanticToolReflection(ctx, session, target, semanticIntegrationReflectionPrompt)
+	}
 	return res, nil
 }
 
@@ -324,6 +327,8 @@ func writeBenchmarkAGENTSOverride(workDir string) error {
 const semanticToolReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. In one to three sentences, explain why you did not call any semantic_* tool from the available semedit MCP server while completing this task. State whether you did not discover the tools, judged ordinary editing simpler, could not use the server, or had another reason. Do not retry the task."
 
 const semanticBatchReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
+
+const semanticIntegrationReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits."
 
 func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
 	return arm == ArmSemedit && sessionID != "" && result != nil && result.Success && !result.MCPVerified

@@ -443,7 +443,9 @@ func renderStandardSections(sb *strings.Builder, comp *ComparisonSummary) {
 	renderSemanticToolReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
 	renderSemanticToolReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 	renderSemanticBatchReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
+	renderSemanticIntegrationReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
 	renderSemanticBatchReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
+	renderSemanticIntegrationReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 }
 
 func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
@@ -457,7 +459,9 @@ func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
 	renderSemanticToolReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
 	renderSemanticToolReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 	renderSemanticBatchReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
+	renderSemanticIntegrationReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
 	renderSemanticBatchReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
+	renderSemanticIntegrationReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 }
 
 func writePrompt(sb *strings.Builder, label, prompt string) {
@@ -498,12 +502,7 @@ func renderSemanticToolReflection(sb *strings.Builder, title string, run *RunRes
 	if reflection.Response != "" {
 		renderSemanticToolCallout(sb, reflection.Response)
 	}
-	sb.WriteString("<details><summary>Session reflection</summary>\n\n")
-	fmt.Fprintf(sb, "<p><strong>Prompt:</strong></p><pre>%s</pre>\n", html.EscapeString(reflection.Prompt))
-	if reflection.Error != "" {
-		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
-	}
-	sb.WriteString("</details>\n\n")
+	renderSemanticReflectionDetails(sb, reflection)
 }
 
 func renderSemanticBatchReflection(sb *strings.Builder, title string, run *RunResult) {
@@ -516,12 +515,7 @@ func renderSemanticBatchReflection(sb *strings.Builder, title string, run *RunRe
 	if reflection.Response != "" {
 		renderSemanticBatchCallout(sb, reflection.Response)
 	}
-	sb.WriteString("<details><summary>Session reflection</summary>\n\n")
-	fmt.Fprintf(sb, "<p><strong>Prompt:</strong></p><pre>%s</pre>\n", html.EscapeString(reflection.Prompt))
-	if reflection.Error != "" {
-		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
-	}
-	sb.WriteString("</details>\n\n")
+	renderSemanticReflectionDetails(sb, reflection)
 }
 
 func renderSemanticToolCallout(sb *strings.Builder, response string) {
@@ -1098,6 +1092,28 @@ func comparisonTaskIdentity(run *RunResult) string {
 		return run.TaskID
 	}
 	return normalizeTaskBase(run.TaskID)
+}
+
+func renderSemanticReflectionDetails(sb *strings.Builder, reflection *SemanticToolReflection) {
+	sb.WriteString("<details><summary>Session reflection</summary>\n\n")
+	fmt.Fprintf(sb, "<p><strong>Prompt:</strong></p><pre>%s</pre>\n", html.EscapeString(reflection.Prompt))
+	if reflection.Error != "" {
+		fmt.Fprintf(sb, "<p><strong>Capture error:</strong> %s</p>\n", html.EscapeString(reflection.Error))
+	}
+	sb.WriteString("</details>\n\n")
+}
+
+func renderSemanticIntegrationReflection(sb *strings.Builder, title string, run *RunResult) {
+	if run == nil || run.SemanticIntegrationReflection == nil {
+		return
+	}
+	reflection := run.SemanticIntegrationReflection
+	fmt.Fprintf(sb, "#### %s: Semedit Integration Feedback\n\n", title)
+	sb.WriteString("Agent opinion based on this run; excluded from benchmark measurements.\n\n")
+	if reflection.Response != "" {
+		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))
+	}
+	renderSemanticReflectionDetails(sb, reflection)
 }
 
 // SaveReport writes telemetry stats as JSON and a rendered Markdown table.

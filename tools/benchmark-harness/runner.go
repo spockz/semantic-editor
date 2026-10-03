@@ -252,6 +252,7 @@ type RunResult struct {
 	toolObservationState             ToolObservationState     `json:"-"`
 	toolObservationReason            string                   `json:"-"`
 	SemanticToolReflection           *SemanticToolReflection  `json:"semantic_tool_reflection,omitempty"`
+	SemanticIntegrationReflection    *SemanticToolReflection  `json:"semantic_integration_reflection,omitempty"`
 	SemanticBatchReflection          *SemanticToolReflection  `json:"semantic_batch_reflection,omitempty"`
 	MCPVerified                      bool                     `json:"mcp_verified"`
 	Error                            string                   `json:"error,omitempty"`

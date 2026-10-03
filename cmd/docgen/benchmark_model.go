@@ -65,6 +65,7 @@ type BenchRunResult struct {
 	InteractiveMode                  string                       `json:"interactive_mode,omitempty"`
 	InteractionSteps                 []BenchInteractionStep       `json:"interaction_steps,omitempty"`
 	SemanticToolReflection           *BenchSemanticToolReflection `json:"semantic_tool_reflection,omitempty"`
+	SemanticIntegrationReflection    *BenchSemanticToolReflection `json:"semantic_integration_reflection,omitempty"`
 	MCPVerified                      bool                         `json:"mcp_verified"`
 	Error                            string                       `json:"error,omitempty"`
 }

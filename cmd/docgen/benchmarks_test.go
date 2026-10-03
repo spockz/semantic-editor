@@ -915,6 +915,7 @@ func decodeJSONField[T any](t *testing.T, row map[string]json.RawMessage, field 
 func TestDiagnosticQuestioningIsNotBrowserTelemetry(t *testing.T) {
 	t.Parallel()
 	run := map[string]any{"task_id": "task", "arm": "semedit", "turns": 2, "wall_clock_ms": 1000, "output_tokens": 5, "semantic_tool_reflection": map[string]any{"turns": 100, "wall_clock_ms": 9000, "output_tokens": 10000}, "semantic_batch_reflection": map[string]any{"turns": 100, "wall_clock_ms": 9000, "output_tokens": 10000}}
+	run["semantic_integration_reflection"] = map[string]any{"turns": 100, "wall_clock_ms": 9000, "output_tokens": 10000, "response": "I would ask my owner to add semedit."}
 	for _, kind := range []string{"runs", "comparisons"} {
 		report := map[string]any{"format_version": 2, "duration_unit": "milliseconds"}
 		if kind == "runs" {
@@ -1072,5 +1073,22 @@ func TestStagedBenchmarkStepsAreNotCorrectiveAttempts(t *testing.T) {
 	}
 	if _, available := correctiveInteractiveTurns(run); available {
 		t.Fatal("scheduled stage counted as corrective follow-up")
+	}
+}
+
+func TestIntegrationFeedbackSurvivesReportPublication(t *testing.T) {
+	data := []byte(`{"format_version":2,"duration_unit":"milliseconds","comparisons":[{"task_id":"feedback-task","target":{"harness":"codex","model":"fake"},"small_semedit":{"task_id":"feedback-task","arm":"semedit","success":true,"mcp_verified":true,"turns":1,"wall_clock_ms":1000,"semantic_integration_reflection":{"prompt":"Question","response":"I would not ask my owner to add semedit: <unassessed>.","error":"capture <error>"}}}]}`)
+	var report BenchReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+	rendered := renderBenchmarkComparisonsDoc("Feedback", "Feedback", "", report.Comparisons)
+	for _, want := range []string{"Semedit integration feedback", "agent opinion", "I would not ask my owner", "&lt;unassessed&gt;", "capture &lt;error&gt;"} {
+		if !strings.Contains(rendered, want) {
+			t.Errorf("published report missing %q: %s", want, rendered)
+		}
+	}
+	if strings.Contains(rendered, "<unassessed>") || strings.Contains(rendered, "capture <error>") {
+		t.Fatal("feedback HTML was not escaped")
 	}
 }

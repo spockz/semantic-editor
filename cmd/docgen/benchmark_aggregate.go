@@ -648,7 +648,7 @@ func isBenchmarkComparisonPrompt(name string) bool {
 
 func isBenchmarkRunDetail(name string) bool {
 	switch name {
-	case "prompt", "before_state", "diff", "tools_used", "tool_calls", "interaction_steps", "semantic_tool_reflection", "semantic_batch_reflection":
+	case "prompt", "before_state", "diff", "tools_used", "tool_calls", "interaction_steps", "semantic_tool_reflection", "semantic_batch_reflection", "semantic_integration_reflection":
 		return true
 	default:
 		return false
@@ -795,7 +795,7 @@ func loadBenchmarkBrowserEntry(entry json.RawMessage, report map[string]json.Raw
 	}
 	row := make(map[string]json.RawMessage, len(sourceRow))
 	for key, value := range sourceRow {
-		if key == "semantic_tool_reflection" || key == "semantic_batch_reflection" {
+		if key == "semantic_tool_reflection" || key == "semantic_batch_reflection" || key == "semantic_integration_reflection" {
 			continue
 		}
 		if err := flattenBenchmarkField(key, value, row); err != nil {

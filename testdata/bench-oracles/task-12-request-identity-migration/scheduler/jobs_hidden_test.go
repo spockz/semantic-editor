@@ -1,8 +1,8 @@
 package scheduler
 
 import (
-	"testing"
 	"example.com/identityservice/request"
+	"testing"
 )
 
 func TestPendingMatchesRequestIdentity(t *testing.T) {

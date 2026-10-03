@@ -79,8 +79,15 @@ corrective-attempt publication metrics.
 
 Measured results contain only the original task answer and subsequent interactive
 attempts to solve the task. Freeze task metrics before diagnostic questioning.
-Any non-use or batching reflection has a separate diagnostic record and contributes
+Any non-use, batching, or integration-value reflection has a separate diagnostic record and contributes
 nothing to measured tokens, turns, tools, elapsed time, or oracle outcomes.
+Every successful semedit session with a continuation identity receives an additional
+integration-value question after any non-use or batching question. Store its prompt,
+response, and capture error in `semantic_integration_reflection`; ask for a candid
+one-sentence coding-agent recommendation, including whether the agent would ask
+its owner to add semedit. Accept negative recommendations and acknowledge unassessed
+tools. Render this as agent opinion, never a performance measurement. Failed or
+non-resumable sessions keep the existing diagnostic skip behavior.
 Cumulative provider transcripts must contribute each task event at most once.
 
 The CLI defaults to the control target, all discoverable benchmark fixtures,

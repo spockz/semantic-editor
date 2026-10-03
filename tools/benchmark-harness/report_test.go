@@ -20,8 +20,9 @@ func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
 		InteractionSteps: []InteractionStep{{
 			WallClock: 1750 * time.Millisecond,
 		}},
-		SemanticToolReflection:  &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Reason recorded"},
-		SemanticBatchReflection: &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Batch reason recorded"},
+		SemanticToolReflection:        &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Reason recorded"},
+		SemanticIntegrationReflection: &SemanticToolReflection{WallClock: 9 * time.Second, Turns: 999, ToolCalls: []ToolCall{{Name: "integration-only"}}, Response: "I would ask my owner to add semedit."},
+		SemanticBatchReflection:       &SemanticToolReflection{WallClock: 2 * time.Second, Turns: 99, ToolCalls: []ToolCall{{Name: "diagnostic-only"}}, Response: "Batch reason recorded"},
 		Oracle: &OracleResult{
 			Level1Policy: true,
 			Duration:     1750 * time.Millisecond,
@@ -65,7 +66,7 @@ func TestSaveReportSerializesDurationsAsMilliseconds(t *testing.T) {
 	if got, want := run["interaction_steps"].([]any)[0].(map[string]any)["wall_clock_ms"], float64(1750); got != want {
 		t.Errorf("interaction wall_clock_ms = %v, want %v", got, want)
 	}
-	for _, key := range []string{"semantic_tool_reflection", "semantic_batch_reflection"} {
+	for _, key := range []string{"semantic_tool_reflection", "semantic_batch_reflection", "semantic_integration_reflection"} {
 		reflection := run[key].(map[string]any)
 		for _, metric := range []string{"wall_clock_ms", "turns", "tool_calls", "output_tokens", "prompt_tokens"} {
 			if _, present := reflection[metric]; present {

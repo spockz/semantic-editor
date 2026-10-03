@@ -89,11 +89,18 @@ func assertCLIRestrictionPolicy(t *testing.T, policy string, baselinePrompt *str
 	assertCLIPairedResults(t, trial)
 	for _, invocation := range trial.Invocations {
 		assertCLIPlanWasResolved(t, invocation)
+		if invocation.Prompt == semanticIntegrationReflectionPrompt {
+			assertCLIIntegrationFollowup(t, invocation)
+			continue
+		}
 		if slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=false") {
 			assertCLIBaselinePolicyIsolation(t, policy, baselinePrompt, invocation.Prompt)
 			continue
 		}
 		assertCLISemeditPolicy(t, policy, resolved, invocation.Prompt, invocation.Args)
+	}
+	if trial.Report.Runs[1].SemanticIntegrationReflection == nil {
+		t.Fatal("CLI report did not retain integration feedback")
 	}
 	assertCLIResultConditions(t, trial, resolved)
 	if trial.Report.Runs[0].ComparisonPairID != trial.Report.Runs[1].ComparisonPairID {
@@ -113,8 +120,15 @@ func cliRestrictionFlags(policy string) ([]string, string) {
 
 func assertCLIPairedResults(t *testing.T, trial cliTrial) {
 	t.Helper()
-	if len(trial.Invocations) != 2 || len(trial.Report.Runs) != 2 {
-		t.Fatalf("invocations=%d results=%d, want paired jobs\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	if len(trial.Invocations) != 3 || len(trial.Report.Runs) != 2 {
+		t.Fatalf("invocations=%d results=%d, want two task jobs and one integration follow-up\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	}
+}
+
+func assertCLIIntegrationFollowup(t *testing.T, invocation cliProviderInvocation) {
+	t.Helper()
+	if !slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=true") || !slices.Contains(invocation.Args, "resume") || !slices.Contains(invocation.Args, "fake-session") {
+		t.Error("integration question must resume the semedit session")
 	}
 }
 
@@ -223,8 +237,8 @@ func TestCLIControlSharesSchedulerAndRetainsFailure(t *testing.T) {
 	if len(trial.Report.Runs) != 3 {
 		t.Fatalf("results=%d, want two agent arms and failed control\n%s", len(trial.Report.Runs), trial.Output)
 	}
-	if len(trial.Invocations) != 2 {
-		t.Errorf("provider invocations=%d, control must not invoke one", len(trial.Invocations))
+	if len(trial.Invocations) != 3 {
+		t.Errorf("provider invocations=%d, want two agent turns and one semedit reflection; control must not invoke one", len(trial.Invocations))
 	}
 	controlCount := 0
 	for _, run := range trial.Report.Runs {
@@ -255,42 +269,80 @@ func TestCLIMCPInstructionModeMatrixUsesPerJobRuntimeSettings(t *testing.T) {
 	if trial.Err != nil {
 		t.Fatalf("CLI failed: %v\n%s", trial.Err, trial.Output)
 	}
-	if len(trial.Invocations) != 6 || len(trial.Report.Runs) != 6 {
-		t.Fatalf("invocations=%d results=%d, want three paired mode cells\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	assertMCPInstructionModeMatrix(t, trial)
+}
+
+func assertMCPInstructionModeMatrix(t *testing.T, trial cliTrial) {
+	t.Helper()
+	if len(trial.Invocations) != 9 || len(trial.Report.Runs) != 6 {
+		t.Fatalf("invocations=%d results=%d, want three paired mode cells plus their integration reflections\n%s", len(trial.Invocations), len(trial.Report.Runs), trial.Output)
+	}
+	if len(trial.Report.Comparisons) != 3 {
+		t.Errorf("comparisons=%d, want one per canonical mode", len(trial.Report.Comparisons))
 	}
 	wantModes := []MCPServerInstructionMode{MCPServerInstructionsNone, MCPServerInstructionsDescriptive, MCPServerInstructionsPrescriptive}
-	pairByMode := make(map[MCPServerInstructionMode]string)
-	jobIDs := make(map[string]bool)
-	counts := make(map[MCPServerInstructionMode]int)
-	for _, run := range trial.Report.Runs {
+	pairedModes := collectMCPInstructionRunModes(t, trial.Report.Runs)
+	assertMCPInstructionModePairs(t, pairedModes, wantModes)
+	assertMCPInstructionPromptModes(t, trial.Invocations)
+}
+
+type mcpInstructionRunModes struct {
+	pairByMode map[MCPServerInstructionMode]string
+	counts     map[MCPServerInstructionMode]int
+	jobIDs     map[string]bool
+}
+
+func collectMCPInstructionRunModes(t *testing.T, runs []*RunResult) mcpInstructionRunModes {
+	t.Helper()
+	modes := mcpInstructionRunModes{
+		pairByMode: make(map[MCPServerInstructionMode]string),
+		counts:     make(map[MCPServerInstructionMode]int),
+		jobIDs:     make(map[string]bool),
+	}
+	for _, run := range runs {
+		if run.Arm == ArmSemedit && run.SemanticIntegrationReflection == nil {
+			t.Error("semedit mode result missing integration feedback")
+		}
 		mode := run.MCPServerInstructions
-		counts[mode]++
-		if counts[mode] == 1 {
-			pairByMode[mode] = run.ComparisonPairID
-		} else if pairByMode[mode] != run.ComparisonPairID {
+		modes.counts[mode]++
+		if modes.counts[mode] == 1 {
+			modes.pairByMode[mode] = run.ComparisonPairID
+		} else if modes.pairByMode[mode] != run.ComparisonPairID {
 			t.Errorf("mode %q has mismatched pair ids", mode)
 		}
-		if run.JobID == "" || jobIDs[run.JobID] {
+		if run.JobID == "" || modes.jobIDs[run.JobID] {
 			t.Errorf("missing or duplicate job id %q", run.JobID)
 		}
-		jobIDs[run.JobID] = true
+		modes.jobIDs[run.JobID] = true
+	}
+	return modes
+}
+
+func assertMCPInstructionModePairs(t *testing.T, modes mcpInstructionRunModes, wantModes []MCPServerInstructionMode) {
+	t.Helper()
+	if len(modes.pairByMode) != len(wantModes) {
+		t.Errorf("mode pairs=%d, want %d", len(modes.pairByMode), len(wantModes))
 	}
 	for _, mode := range wantModes {
-		if counts[mode] != 2 || pairByMode[mode] == "" {
-			t.Errorf("mode %q has %d runs and pair %q, want two paired arms", mode, counts[mode], pairByMode[mode])
+		if modes.counts[mode] != 2 || modes.pairByMode[mode] == "" {
+			t.Errorf("mode %q has %d runs and pair %q, want two paired arms", mode, modes.counts[mode], modes.pairByMode[mode])
 		}
 		for _, other := range wantModes {
-			if mode != other && pairByMode[mode] != "" && pairByMode[mode] == pairByMode[other] {
+			if mode != other && modes.pairByMode[mode] != "" && modes.pairByMode[mode] == modes.pairByMode[other] {
 				t.Errorf("modes %q and %q share a comparison pair", mode, other)
 			}
 		}
 	}
-	if len(trial.Report.Comparisons) != len(wantModes) {
-		t.Errorf("comparisons=%d, want one per canonical mode", len(trial.Report.Comparisons))
-	}
+}
+
+func assertMCPInstructionPromptModes(t *testing.T, invocations []cliProviderInvocation) {
+	t.Helper()
 	descriptive := 0
 	prescriptive := 0
-	for _, invocation := range trial.Invocations {
+	for _, invocation := range invocations {
+		if invocation.Prompt == semanticIntegrationReflectionPrompt {
+			continue
+		}
 		arguments := strings.Join(invocation.Args, " ")
 		if strings.Contains(arguments, "mcp_servers.semedit.enabled=false") {
 			continue
