@@ -9,6 +9,7 @@ exec semedit replace-construct --file values.go --kind statement/expression --in
 stderr 'ambiguous.*construct_path'
 exec semedit replace-construct --file values.go --kind statement/expression --in-function Shared --discriminator 'callValue()' --construct-path 0.e0 --source 'recordValue()'
 exec semedit replace-construct --file values.go --kind statement/expression --in-function Index --discriminator 'items[17]' --source 'items[18]'
+exec semedit replace-construct --file values.go --kind statement/expression --in-function RuntimeNew --discriminator 'new(value)' --source 'new(value + 1)'
 cp values.go .scratch/replaced.go
 ! exec semedit replace-construct --file values.go --kind statement/expression --in-function Values --discriminator '3' --source 'if ('
 stderr 'syntax|expression'
@@ -35,12 +36,13 @@ grep 'return 5' values.go
 grep 'b := \(9\)' values.go
 grep 'recordValue()' values.go
 grep 'items.*18' values.go
+grep 'return new\(value \+ 1\)' values.go
 exec go test ./...
 
 -- go.mod --
 module example.com/constructreplace
 
-go 1.24
+go 1.27.1
 -- values.go --
 package sample
 
@@ -67,6 +69,10 @@ func recordValue() {}
 
 func Index(items []int) int {
 	return items[17]
+}
+
+func RuntimeNew(value int) *int {
+	return new(value)
 }
 
 func Injection() int {
