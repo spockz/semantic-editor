@@ -188,7 +188,11 @@ func validateInlineReplacement(ctx context.Context, moduleRoot, callerPath, call
 		return fmt.Errorf("inlined conversion does not preserve the callee result type: %w", err)
 	}
 	postSignature, postOK := postCalleeObject.Type().(*types.Signature)
-	if !postOK || postPkg.TypesInfo.TypeOf(postCall) == nil || !types.Identical(postPkg.TypesInfo.TypeOf(postCall), types.Unalias(postSignature.Results().At(0).Type())) {
+	if !postOK || postSignature.Results() == nil || postSignature.Results().Len() != 1 || postCall == nil || postPkg.TypesInfo == nil {
+		return fmt.Errorf("inlined conversion does not preserve the callee result type")
+	}
+	postCallType := postPkg.TypesInfo.TypeOf(postCall)
+	if postCallType == nil || !types.Identical(postCallType, types.Unalias(postSignature.Results().At(0).Type())) {
 		return fmt.Errorf("inlined conversion does not preserve the callee result type")
 	}
 	return nil

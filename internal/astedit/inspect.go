@@ -21,9 +21,43 @@ func InspectGo(root, file, query string) (*backend.InspectResult, error) {
 
 // InspectGoWithContext resolves exact declaration snapshots from the request's source view.
 func InspectGoWithContext(ctx context.Context, root, file, query string) (*backend.InspectResult, error) {
+	inspection, err := resolveGoInspectSnapshot(ctx, root, file, query)
+	if err != nil {
+		return nil, err
+	}
+	result := &backend.InspectResult{
+		Scope: backend.ReadScope{
+			Kind:     "workspace_syntax",
+			Path:     ".",
+			Complete: true,
+		},
+		Matches: make([]backend.InspectedSymbol, 0, len(inspection.candidates)),
+	}
+	if inspection.selectedFile != "" {
+		result.Scope.Kind = "selected_file"
+		result.Scope.Path = displayGoPath(inspection.root, inspection.selectedFile)
+	}
+	for _, candidate := range inspection.candidates {
+		inspected, err := inspectGoCandidate(inspection, candidate)
+		if err != nil {
+			return nil, err
+		}
+		result.Matches = append(result.Matches, inspected)
+	}
+	return result, nil
+}
+
+type goInspectSnapshot struct {
+	root         string
+	selectedFile string
+	files        map[string][]byte
+	candidates   []*symbol.Symbol
+}
+
+func resolveGoInspectSnapshot(ctx context.Context, root, file, query string) (goInspectSnapshot, error) {
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve Go workspace %q: %w", root, err)
+		return goInspectSnapshot{}, fmt.Errorf("resolve Go workspace %q: %w", root, err)
 	}
 	selectedFile := file
 	if selectedFile != "" && !filepath.IsAbs(selectedFile) {
@@ -31,16 +65,11 @@ func InspectGoWithContext(ctx context.Context, root, file, query string) (*backe
 	}
 	snapshot, err := symbol.ResolveSnapshotWithContext(ctx, absoluteRoot, selectedFile, query)
 	if err != nil {
-		return nil, err
+		return goInspectSnapshot{}, err
 	}
-	candidates := make([]*symbol.Symbol, 0, 1)
-	if snapshot.Result.Ambiguous {
-		candidates = append(candidates, snapshot.Result.Candidates...)
-	} else if snapshot.Result.Definition != nil {
-		candidates = append(candidates, snapshot.Result.Definition)
-	}
+	candidates := inspectSymbolCandidates(snapshot.Result)
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("symbol resolver returned no inspection candidates for %q", query)
+		return goInspectSnapshot{}, fmt.Errorf("symbol resolver returned no inspection candidates for %q", query)
 	}
 	slices.SortFunc(candidates, func(left, right *symbol.Symbol) int {
 		if order := strings.Compare(left.File, right.File); order != 0 {
@@ -48,90 +77,83 @@ func InspectGoWithContext(ctx context.Context, root, file, query string) (*backe
 		}
 		return cmp.Compare(left.Offset, right.Offset)
 	})
-	result := &backend.InspectResult{
-		Scope: backend.ReadScope{
-			Kind:     "workspace_syntax",
-			Path:     ".",
-			Complete: true,
-		},
-		Matches: make([]backend.InspectedSymbol, 0, len(candidates)),
+	return goInspectSnapshot{root: absoluteRoot, selectedFile: selectedFile, files: snapshot.Files, candidates: candidates}, nil
+}
+
+func inspectSymbolCandidates(result *symbol.LookupResult) []*symbol.Symbol {
+	candidates := make([]*symbol.Symbol, 0, 1)
+	if result.Ambiguous {
+		return append(candidates, result.Candidates...)
 	}
-	if selectedFile != "" {
-		result.Scope.Kind = "selected_file"
-		result.Scope.Path = displayGoPath(absoluteRoot, selectedFile)
+	if result.Definition != nil {
+		candidates = append(candidates, result.Definition)
 	}
-	for _, candidate := range candidates {
-		candidatePath := candidate.File
-		if !filepath.IsAbs(candidatePath) {
-			candidatePath = filepath.Join(absoluteRoot, candidatePath)
-		}
-		candidatePath, err = filepath.Abs(candidatePath)
-		if err != nil {
-			return nil, fmt.Errorf("resolve inspection candidate path %q: %w", candidate.File, err)
-		}
-		source, ok := snapshot.Files[filepath.Clean(candidatePath)]
-		if !ok {
-			return nil, fmt.Errorf("inspection snapshot omitted resolved source %s", candidatePath)
-		}
-		parsed, err := parseGoReadSource(absoluteRoot, candidatePath, source)
-		if err != nil {
-			return nil, err
-		}
-		target, err := findGoInspectTarget(parsed, candidate)
-		if err != nil {
-			return nil, err
-		}
-		start := target.start
-		if !start.IsValid() {
-			start = target.node.Pos()
-		}
-		end := target.end
-		if !end.IsValid() {
-			end = target.node.End()
-		}
-		sourceText, err := goReadSpan(source, parsed.fset, start, end)
-		if err != nil {
-			return nil, err
-		}
-		rng, err := goReadRange(source, parsed.fset, start, end)
-		if err != nil {
-			return nil, err
-		}
-		selectionRange, err := goReadRange(source, parsed.fset, target.selection.Pos(), target.selection.End())
-		if err != nil {
-			return nil, err
-		}
-		doc, err := goReadComment(source, parsed.fset, target.doc)
-		if err != nil {
-			return nil, err
-		}
-		imports, err := goReadImports(parsed.file)
-		if err != nil {
-			return nil, err
-		}
-		qualifiedName := target.qualified
-		if qualifiedName == "" {
-			qualifiedName = target.name
-		}
-		result.Matches = append(result.Matches, backend.InspectedSymbol{
-			Name:           target.name,
-			QualifiedName:  qualifiedName,
-			Kind:           target.kind,
-			File:           parsed.displayPath,
-			Range:          rng,
-			SelectionRange: selectionRange,
-			Signature:      target.signature,
-			Doc:            doc,
-			Type:           target.typeValue,
-			Tag:            target.tag,
-			Source:         sourceText,
-			Revision:       goReadRevision(source),
-			SourceExtent:   "declaration",
-			Package:        parsed.file.Name.Name,
-			Imports:        imports,
-		})
+	return candidates
+}
+
+func inspectGoCandidate(snapshot goInspectSnapshot, candidate *symbol.Symbol) (backend.InspectedSymbol, error) {
+	candidatePath := candidate.File
+	if !filepath.IsAbs(candidatePath) {
+		candidatePath = filepath.Join(snapshot.root, candidatePath)
 	}
-	return result, nil
+	candidatePath, err := filepath.Abs(candidatePath)
+	if err != nil {
+		return backend.InspectedSymbol{}, fmt.Errorf("resolve inspection candidate path %q: %w", candidate.File, err)
+	}
+	source, ok := snapshot.files[filepath.Clean(candidatePath)]
+	if !ok {
+		return backend.InspectedSymbol{}, fmt.Errorf("inspection snapshot omitted resolved source %s", candidatePath)
+	}
+	parsed, err := parseGoReadSource(snapshot.root, candidatePath, source)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	target, err := findGoInspectTarget(parsed, candidate)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	return buildInspectedGoSymbol(parsed, source, target)
+}
+
+func buildInspectedGoSymbol(parsed *goReadSource, source []byte, target *goInspectTarget) (backend.InspectedSymbol, error) {
+	start, end := target.start, target.end
+	if !start.IsValid() {
+		start = target.node.Pos()
+	}
+	if !end.IsValid() {
+		end = target.node.End()
+	}
+	sourceText, err := goReadSpan(source, parsed.fset, start, end)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	rng, err := goReadRange(source, parsed.fset, start, end)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	selectionRange, err := goReadRange(source, parsed.fset, target.selection.Pos(), target.selection.End())
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	doc, err := goReadComment(source, parsed.fset, target.doc)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	imports, err := goReadImports(parsed.file)
+	if err != nil {
+		return backend.InspectedSymbol{}, err
+	}
+	qualifiedName := target.qualified
+	if qualifiedName == "" {
+		qualifiedName = target.name
+	}
+	return backend.InspectedSymbol{
+		Name: target.name, QualifiedName: qualifiedName, Kind: target.kind,
+		File: parsed.displayPath, Range: rng, SelectionRange: selectionRange,
+		Signature: target.signature, Doc: doc, Type: target.typeValue, Tag: target.tag,
+		Source: sourceText, Revision: goReadRevision(source), SourceExtent: "declaration",
+		Package: parsed.file.Name.Name, Imports: imports,
+	}, nil
 }
 
 type goInspectTarget struct {
