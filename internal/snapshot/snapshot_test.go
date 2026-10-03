@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"bytes"
+	"semedit/internal/atomicfile"
 	"semedit/internal/snapshot"
 )
 
@@ -347,7 +348,7 @@ func TestUndo_LatestResolution(t *testing.T) {
 func writeSnapshotTestModule(t *testing.T, dir string) {
 	t.Helper()
 	module := []byte("module snapshot.test/fixture\n\ngo 1.27.1\n")
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), module, 0o600); err != nil {
+	if err := atomicfile.WriteAtomic(filepath.Join(dir, "go.mod"), module); err != nil {
 		t.Fatalf("write test go.mod: %v", err)
 	}
 }
