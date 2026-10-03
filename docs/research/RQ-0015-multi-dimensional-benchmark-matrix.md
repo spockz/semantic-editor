@@ -2,7 +2,7 @@
 
 * **Status**: Open
 * **Category**: Benchmarks & Empirical Evaluation
-* **Last Updated**: 2026-09-16
+* **Last Updated**: 2026-09-30
 
 ---
 
@@ -264,3 +264,68 @@ Publishing credible benchmarks requires mitigating the following biases:
 * **Aider LLM Leaderboards**: Refactoring benchmarks comparing unified diff formats with whole-file replacements.
 * **HumanEval / MultiPL-E**: Unit test evaluation harnesses for code synthesis models.
 * **Go `testscript`**: Hermetic shell script and archive testing engine for CLI workflows.
+
+## 10. Shared-buffer smoke test
+
+The 2026-09-30 smoke test runs one baseline/semedit pair for each of
+`codex/gpt-6-luna/medium` and `agy/gemini-3.7-flash-medium` on the pinned chi
+identity-and-split fixture. The Agy model identifier comes from its live model
+catalog. Runs are serial, use small/default context, prescriptive MCP instructions,
+semantic-write steering, cold fixture-local Go caches, no verify prewarm, and a
+five-minute timeout per job. One pair per model tests integration and correctness;
+it does not establish a performance distribution or a repeatable advantage.
+
+The semedit binary is the checked shared-gopls and buffered-move implementation,
+SHA-256 `724e6b62f104b7c3dc3753cbfcc9d792525d07f84fb81976878b723af19ed3bf`.
+The fixture, hidden oracle, and binary are copied without content changes into
+`.scratch/chi-smoke-luna6-gemini37-20260930T210925Z/`. The harness uses its native
+supported MCP flags. That directory retains a manifest, the resolved plan and
+progress log, per-run transcripts, persisted MCP metrics, and final reports.
+The fixture comes from the benchmark proof checkout and requires fifteen
+declaration moves into four files and four compiler-bound field renames while
+preserving original headers, protected bytes, declaration identity, and behavior.
+
+| Target | Baseline | Semedit-labeled arm | MCP use observed |
+| :--- | :--- | :--- | :--- |
+| Luna 6, medium | Timeout at 299.740 s; no completed oracle | Pass at 207.023 s | Yes |
+| Gemini 3.7 Flash, medium | Pass at 258.360 s | Pass at 264.705 s | No |
+
+All three completed oracles pass policy, AST preservation, build, and tests. Luna's
+baseline transcript shows repeated ordinary-edit repairs and test failures before
+the timeout. It also records a loopback-port denial in `TestMuxBasic` and
+`TestCompressor`. A later middleware test passes, while root tests still fail to
+compile because `tree_test.go` references the renamed `n.prefix`. The semedit
+arm's `go test ./...` exits successfully. Raw command-completion events omit
+sandbox permission arguments, so equivalent test permissions are not established.
+The timeout includes both editing and environmental failures; future repetitions
+need equivalent allowed runtime tests. Its retained workspace remains available;
+the timeout does not give
+a completed baseline latency or oracle verdict. The harness exits with status 1
+because that scheduled job times out.
+
+Luna uses four scaffold calls, one batch for the fifteen moves, and four rename
+calls. Its nine persisted MCP records total 12.529 s of server execution. The
+move batch takes 10.690 s; rename calls take 457, 442, 449, and 434 ms. These are
+actual smoke-run timings, not recovered estimates from an older fixture probe.
+The complete task clock includes 27.602 s of hidden-oracle execution.
+
+Gemini's nominal semedit arm uses ordinary editing and has no observed semantic
+calls or persisted MCP timing file. In the separately recorded diagnostic
+reflection, it reports discovering the tools and preferring ordinary editing.
+That explanation is model-reported rather than independent discovery evidence.
+The completed task passes, but it does not validate the shared-gopls path. Do not
+interpret its comparison as a measurement of semantic-tool execution. The Agy
+adapter retains its existing unknown transcript-completeness classification.
+
+`summary.json` in the run directory links both native reports, all four task
+transcripts, the retained timeout workspace, and Luna's MCP metrics. Task wall
+time starts after successful provider launch, includes oracle checks, and excludes
+diagnostic reflection. No additional model repetitions or historical verdict
+changes are part of this smoke test.
+
+The native reports use format version 2 and omit the corrected accounting
+metadata (`measurement_version`, `token_capture`, and `user_turns`). Timeout
+token zeros mean unavailable usage, not zero usage or cost. The derived summary
+marks them unavailable and retains successful legacy token fields as unvalidated.
+Do not derive token or cost comparisons from this smoke evidence. `turns` counts
+orchestrated task prompts; `internal_turns` does not count human turns.
