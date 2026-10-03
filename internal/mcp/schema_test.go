@@ -1748,35 +1748,72 @@ func assertTypedBatchResults(t *testing.T, response map[string]any) {
 	if !ok {
 		t.Fatalf("batch call returned no results array: %#v", response)
 	}
+	assertOrderedTypedBatchRows(t, results)
+}
+
+func assertOrderedTypedBatchRows(t *testing.T, results []any) {
+	t.Helper()
+	operationNames := []string{
+		"semantic_typed_object",
+		"semantic_typed_scalar",
+		"semantic_typed_array",
+		"semantic_typed_null",
+		"semantic_legacy_output",
+	}
+	if len(results) != len(operationNames)+1 {
+		t.Fatalf("batch results contain %d rows, want %d requested operations plus verification: %#v", len(results), len(operationNames)+1, results)
+	}
 	expected := map[string]any{
 		"semantic_typed_object": map[string]any{"value": float64(7)},
 		"semantic_typed_scalar": "scalar",
 		"semantic_typed_array":  []any{"array"},
 		"semantic_typed_null":   nil,
 	}
-	for index, rawResult := range results {
-		result := rawResult.(map[string]any)
-		name := result["tool"].(string)
-		if name == "semantic_verify" {
-			if result["status"] != "error" || result["error"] == nil {
-				t.Errorf("synthetic verification row = %#v, want explicit missing-registration error", result)
-			}
-			continue
+	for index, name := range operationNames {
+		result := typedBatchResultRow(t, results[index], index)
+		if result["tool"] != name {
+			t.Fatalf("batch row %d names tool %#v, want %q", index, result["tool"], name)
 		}
-		if want, typed := expected[name]; typed {
-			got, present := result["result"]
-			if !present || !reflect.DeepEqual(got, want) {
-				t.Errorf("batch result %s = %#v present=%t, want %#v", name, got, present, want)
-			}
-			continue
+		if result["status"] != "ok" {
+			t.Fatalf("batch row %q status = %#v, want ok", name, result["status"])
 		}
 		if name == "semantic_legacy_output" {
-			if _, present := result["result"]; present {
-				t.Errorf("legacy batch result unexpectedly has result: %#v", result)
-			}
+			assertLegacyTypedBatchResult(t, result)
 			continue
 		}
-		t.Errorf("unexpected batch result at index %d: %#v", index, result)
+		assertTypedBatchResult(t, result, name, expected[name])
+	}
+	assertMissingVerificationBatchResult(t, typedBatchResultRow(t, results[len(operationNames)], len(operationNames)))
+}
+
+func typedBatchResultRow(t *testing.T, value any, index int) map[string]any {
+	t.Helper()
+	row, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("batch result row %d has type %T, want object", index, value)
+	}
+	return row
+}
+
+func assertTypedBatchResult(t *testing.T, result map[string]any, name string, want any) {
+	t.Helper()
+	got, present := result["result"]
+	if !present || !reflect.DeepEqual(got, want) {
+		t.Fatalf("batch result %s = %#v present=%t, want %#v", name, got, present, want)
+	}
+}
+
+func assertLegacyTypedBatchResult(t *testing.T, result map[string]any) {
+	t.Helper()
+	if _, present := result["result"]; present {
+		t.Fatalf("legacy batch result unexpectedly has result: %#v", result)
+	}
+}
+
+func assertMissingVerificationBatchResult(t *testing.T, result map[string]any) {
+	t.Helper()
+	if result["tool"] != "semantic_verify" || result["status"] != "error" || result["error"] != "verification operation is not registered" {
+		t.Fatalf("synthetic verification row = %#v, want explicit missing-registration error", result)
 	}
 }
 
