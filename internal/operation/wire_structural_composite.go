@@ -170,40 +170,15 @@ func compositeElementDef(spec structuralPlanSpec, output OperationOutputContract
 }
 
 func structuralTypedCompositeContext(snapshot *structuralSnapshot, declaration, discriminator, source string) (astedit.CompositeTypeContext, error) {
-	var selectedPackage *packages.Package
-	var selectedFile *ast.File
-	for _, pkg := range snapshot.Packages {
-		if pkg.ID != pkg.PkgPath || pkg.Types == nil || pkg.Types.Path() != pkg.PkgPath || pkg.TypesInfo == nil || pkg.Fset == nil {
-			continue
-		}
-		contains, err := packageContainsStructuralFile(pkg, snapshot.File)
-		if err != nil {
-			return astedit.CompositeTypeContext{}, err
-		}
-		if !contains {
-			continue
-		}
-		if len(pkg.Errors) != 0 || pkg.IllTyped {
-			return astedit.CompositeTypeContext{}, fmt.Errorf("selected package %s is not fully typechecked", pkg.PkgPath)
-		}
-		for _, file := range pkg.Syntax {
-			path, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
-			if err != nil {
-				return astedit.CompositeTypeContext{}, fmt.Errorf("resolve selected syntax file: %w", err)
-			}
-			if path == snapshot.File {
-				if selectedFile != nil {
-					return astedit.CompositeTypeContext{}, fmt.Errorf("selected Go source has ambiguous package syntax")
-				}
-				selectedFile = file
-			}
-		}
-		selectedPackage = pkg
+	selected, err := selectCompositePackage(snapshot)
+	if err != nil {
+		return astedit.CompositeTypeContext{}, err
 	}
-	if selectedPackage == nil || selectedFile == nil {
-		return astedit.CompositeTypeContext{}, fmt.Errorf("selected Go file has no complete current-overlay type information")
+	owner, err := structuralDeclarationOwner(selected.file, declaration)
+	if err != nil {
+		return astedit.CompositeTypeContext{}, err
 	}
-	owner, err := structuralDeclarationOwner(selectedFile, declaration)
+	literal, err := selectedCompositeLiteral(snapshot, selected.pkg, owner, discriminator)
 	if err != nil {
 		return astedit.CompositeTypeContext{}, err
 	}
@@ -211,105 +186,213 @@ func structuralTypedCompositeContext(snapshot *structuralSnapshot, declaration, 
 	if err != nil {
 		return astedit.CompositeTypeContext{}, err
 	}
+	typeAndValue, ok := selected.pkg.TypesInfo.Types[literal]
+	if !ok || typeAndValue.Type == nil {
+		return astedit.CompositeTypeContext{}, fmt.Errorf("selected literal has no typed object")
+	}
+	return typedCompositeContext(snapshot, selected.pkg, literal, typeAndValue.Type.Underlying(), keySource)
+}
+
+type compositePackageSelection struct {
+	pkg  *packages.Package
+	file *ast.File
+}
+
+func selectCompositePackage(snapshot *structuralSnapshot) (compositePackageSelection, error) {
+	var selectedPackage *packages.Package
+	var selectedFile *ast.File
+	for _, pkg := range snapshot.Packages {
+		if !eligibleCompositePackage(pkg) {
+			continue
+		}
+		contains, err := packageContainsStructuralFile(pkg, snapshot.File)
+		if err != nil {
+			return compositePackageSelection{}, err
+		}
+		if !contains {
+			continue
+		}
+		if len(pkg.Errors) != 0 || pkg.IllTyped {
+			return compositePackageSelection{}, fmt.Errorf("selected package %s is not fully typechecked", pkg.PkgPath)
+		}
+		file, err := compositeFileInPackage(pkg, snapshot.File)
+		if err != nil {
+			return compositePackageSelection{}, err
+		}
+		if file != nil {
+			if selectedFile != nil {
+				return compositePackageSelection{}, fmt.Errorf("selected Go source has ambiguous package syntax")
+			}
+			selectedFile = file
+			selectedPackage = pkg
+		}
+	}
+	if selectedPackage == nil || selectedFile == nil {
+		return compositePackageSelection{}, fmt.Errorf("selected Go file has no complete current-overlay type information")
+	}
+	return compositePackageSelection{pkg: selectedPackage, file: selectedFile}, nil
+}
+
+func eligibleCompositePackage(pkg *packages.Package) bool {
+	return pkg.ID == pkg.PkgPath && pkg.Types != nil && pkg.Types.Path() == pkg.PkgPath && pkg.TypesInfo != nil && pkg.Fset != nil
+}
+
+func compositeFileInPackage(pkg *packages.Package, selectedPath string) (*ast.File, error) {
+	var selected *ast.File
+	for _, file := range pkg.Syntax {
+		path, err := filepath.Abs(pkg.Fset.Position(file.Pos()).Filename)
+		if err != nil {
+			return nil, fmt.Errorf("resolve selected syntax file: %w", err)
+		}
+		if path != selectedPath {
+			continue
+		}
+		if selected != nil {
+			return nil, fmt.Errorf("selected Go source has ambiguous package syntax")
+		}
+		selected = file
+	}
+	return selected, nil
+}
+
+func selectedCompositeLiteral(snapshot *structuralSnapshot, pkg *packages.Package, owner ast.Node, discriminator string) (*ast.CompositeLit, error) {
 	var matches []*ast.CompositeLit
 	ast.Inspect(owner, func(node ast.Node) bool {
 		literal, ok := node.(*ast.CompositeLit)
 		if !ok {
 			return true
 		}
-		start, end := selectedPackage.Fset.Position(literal.Pos()).Offset, selectedPackage.Fset.Position(literal.End()).Offset
+		start, end := pkg.Fset.Position(literal.Pos()).Offset, pkg.Fset.Position(literal.End()).Offset
 		if start >= 0 && end <= len(snapshot.Sources[snapshot.File]) && string(snapshot.Sources[snapshot.File][start:end]) == discriminator {
 			matches = append(matches, literal)
 		}
 		return true
 	})
 	if len(matches) != 1 {
-		return astedit.CompositeTypeContext{}, fmt.Errorf("literal selector matched %d composites", len(matches))
+		return nil, fmt.Errorf("literal selector matched %d composites", len(matches))
 	}
-	literal := matches[0]
-	typeAndValue, ok := selectedPackage.TypesInfo.Types[literal]
-	if !ok || typeAndValue.Type == nil {
-		return astedit.CompositeTypeContext{}, fmt.Errorf("selected literal has no typed object")
-	}
+	return matches[0], nil
+}
+
+func typedCompositeContext(snapshot *structuralSnapshot, pkg *packages.Package, literal *ast.CompositeLit, underlying types.Type, keySource string) (astedit.CompositeTypeContext, error) {
 	context := astedit.CompositeTypeContext{}
-	switch underlying := typeAndValue.Type.Underlying().(type) {
+	switch typed := underlying.(type) {
 	case *types.Struct:
 		context.Family = astedit.LiteralStruct
-		for field := range underlying.Fields() {
+		for field := range typed.Fields() {
 			context.StructFields = append(context.StructFields, astedit.FieldSpec{Name: field.Name(), Type: types.TypeString(field.Type(), nil)})
 		}
 	case *types.Map:
 		context.Family = astedit.LiteralMap
-		context.MapKeyType = types.TypeString(underlying.Key(), nil)
-		for _, element := range literal.Elts {
-			keyed, ok := element.(*ast.KeyValueExpr)
-			if !ok {
-				return astedit.CompositeTypeContext{}, fmt.Errorf("map literal contains a positional element")
-			}
-			evidence, ok := selectedPackage.TypesInfo.Types[keyed.Key]
-			if !ok || evidence.Value == nil {
-				return astedit.CompositeTypeContext{}, fmt.Errorf("map literal has a key without constant identity")
-			}
-			start, end := selectedPackage.Fset.Position(keyed.Key.Pos()).Offset, selectedPackage.Fset.Position(keyed.Key.End()).Offset
-			context.ExistingMapKeys = append(context.ExistingMapKeys, astedit.TypedKeyEvidence{Expression: string(snapshot.Sources[snapshot.File][start:end]), Identity: evidence.Value.String()})
-		}
-		newKey, err := types.Eval(selectedPackage.Fset, selectedPackage.Types, literal.Pos(), keySource)
-		if err != nil || newKey.Type == nil || newKey.Value == nil || !types.AssignableTo(newKey.Type, underlying.Key()) {
-			return astedit.CompositeTypeContext{}, fmt.Errorf("new map key must be a constant assignable to %s", context.MapKeyType)
-		}
-		context.NewMapKey = astedit.TypedKeyEvidence{Expression: keySource, Identity: newKey.Value.String()}
+		return typedMapCompositeContext(snapshot, pkg, literal, typed, keySource, context)
 	default:
 		return astedit.CompositeTypeContext{}, fmt.Errorf("only typed keyed struct and map literals are supported")
 	}
 	return context, nil
 }
 
+func typedMapCompositeContext(snapshot *structuralSnapshot, pkg *packages.Package, literal *ast.CompositeLit, typed *types.Map, keySource string, context astedit.CompositeTypeContext) (astedit.CompositeTypeContext, error) {
+	context.MapKeyType = types.TypeString(typed.Key(), nil)
+	for _, element := range literal.Elts {
+		keyed, ok := element.(*ast.KeyValueExpr)
+		if !ok {
+			return astedit.CompositeTypeContext{}, fmt.Errorf("map literal contains a positional element")
+		}
+		evidence, ok := pkg.TypesInfo.Types[keyed.Key]
+		if !ok || evidence.Value == nil {
+			return astedit.CompositeTypeContext{}, fmt.Errorf("map literal has a key without constant identity")
+		}
+		start, end := pkg.Fset.Position(keyed.Key.Pos()).Offset, pkg.Fset.Position(keyed.Key.End()).Offset
+		context.ExistingMapKeys = append(context.ExistingMapKeys, astedit.TypedKeyEvidence{Expression: string(snapshot.Sources[snapshot.File][start:end]), Identity: evidence.Value.String()})
+	}
+	newKey, err := types.Eval(pkg.Fset, pkg.Types, literal.Pos(), keySource)
+	if err != nil || newKey.Type == nil || newKey.Value == nil || !types.AssignableTo(newKey.Type, typed.Key()) {
+		return astedit.CompositeTypeContext{}, fmt.Errorf("new map key must be a constant assignable to %s", context.MapKeyType)
+	}
+	context.NewMapKey = astedit.TypedKeyEvidence{Expression: keySource, Identity: newKey.Value.String()}
+	return context, nil
+}
+
 func structuralDeclarationOwner(file *ast.File, name string) (ast.Node, error) {
 	var owner ast.Node
 	for _, declaration := range file.Decls {
-		switch value := declaration.(type) {
-		case *ast.FuncDecl:
-			matches := value.Name.Name == name && value.Recv == nil
-			if value.Recv != nil && len(value.Recv.List) == 1 {
-				receiver := receiverName(value.Recv.List[0].Type)
-				matches = name == qualifiedGoTarget(receiver, value.Name.Name)
-				if pointer, ok := value.Recv.List[0].Type.(*ast.StarExpr); ok {
-					if identifier, ok := pointer.X.(*ast.Ident); ok {
-						matches = matches || name == "(*"+identifier.Name+")."+value.Name.Name
-					}
-				}
-			}
-			if matches {
-				if owner != nil {
-					return nil, fmt.Errorf("declaration %q is ambiguous", name)
-				}
-				owner = value
-			}
-		case *ast.GenDecl:
-			for _, spec := range value.Specs {
-				matched := false
-				switch item := spec.(type) {
-				case *ast.TypeSpec:
-					matched = item.Name.Name == name
-				case *ast.ValueSpec:
-					if len(item.Names) != 1 && slices.ContainsFunc(item.Names, func(identifier *ast.Ident) bool { return identifier.Name == name }) {
-						return nil, fmt.Errorf("declaration %q shares a ValueSpec", name)
-					}
-					matched = len(item.Names) == 1 && item.Names[0].Name == name
-				}
-				if matched {
-					if owner != nil {
-						return nil, fmt.Errorf("declaration %q is ambiguous", name)
-					}
-					owner = spec
-				}
-			}
+		candidate, err := structuralDeclarationInNode(declaration, name)
+		if err != nil {
+			return nil, err
 		}
+		if !candidate.Found {
+			continue
+		}
+		if owner != nil {
+			return nil, fmt.Errorf("declaration %q is ambiguous", name)
+		}
+		owner = candidate.Node
 	}
 	if owner == nil {
 		return nil, fmt.Errorf("declaration %q not found", name)
 	}
 	return owner, nil
+}
+
+type structuralDeclarationMatch struct {
+	Node  ast.Node
+	Found bool
+}
+
+func structuralDeclarationInNode(declaration ast.Decl, name string) (structuralDeclarationMatch, error) {
+	switch node := declaration.(type) {
+	case *ast.FuncDecl:
+		if structuralFunctionMatches(node, name) {
+			return structuralDeclarationMatch{Node: node, Found: true}, nil
+		}
+	case *ast.GenDecl:
+		return structuralSpecOwner(node.Specs, name)
+	}
+	return structuralDeclarationMatch{}, nil
+}
+
+func structuralFunctionMatches(function *ast.FuncDecl, name string) bool {
+	if function.Recv == nil {
+		return function.Name.Name == name
+	}
+	if len(function.Recv.List) != 1 {
+		return false
+	}
+	receiver := function.Recv.List[0].Type
+	if name == qualifiedGoTarget(receiverName(receiver), function.Name.Name) {
+		return true
+	}
+	pointer, ok := receiver.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	identifier, ok := pointer.X.(*ast.Ident)
+	return ok && name == "(*"+identifier.Name+")."+function.Name.Name
+}
+
+func structuralSpecOwner(specs []ast.Spec, name string) (structuralDeclarationMatch, error) {
+	for _, spec := range specs {
+		matched, shared := structuralSpecMatches(spec, name)
+		if shared {
+			return structuralDeclarationMatch{}, fmt.Errorf("declaration %q shares a ValueSpec", name)
+		}
+		if matched {
+			return structuralDeclarationMatch{Node: spec, Found: true}, nil
+		}
+	}
+	return structuralDeclarationMatch{}, nil
+}
+
+func structuralSpecMatches(spec ast.Spec, name string) (matched, shared bool) {
+	switch item := spec.(type) {
+	case *ast.TypeSpec:
+		return item.Name.Name == name, false
+	case *ast.ValueSpec:
+		if slices.ContainsFunc(item.Names, func(identifier *ast.Ident) bool { return identifier.Name == name }) {
+			return len(item.Names) == 1, len(item.Names) != 1
+		}
+	}
+	return false, false
 }
 
 func canonicalCompositeElement(source string) (string, error) {
@@ -350,88 +433,129 @@ func resolveCompositeSelectorContinuation(ctx context.Context, root string, cand
 	if !filepath.IsLocal(filepath.FromSlash(candidate.File)) || candidate.Declaration == "" || candidate.ElementSource == "" {
 		return compositeSelectorContinuation{}, false, nil
 	}
-	var expectedRevision string
-	for _, change := range receipt.Changes {
-		if change.Path == candidate.File {
-			expectedRevision = change.Revision
-			break
-		}
-	}
+	expectedRevision := expectedCompositeRevision(candidate.File, receipt.Changes)
 	if expectedRevision == "" {
 		return compositeSelectorContinuation{}, false, nil
 	}
-	absolute, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(candidate.File)))
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("resolve composite source path: %w", err)
+	location, exists, err := resolveCompositeSourceLocation(root, candidate.File)
+	if err != nil || !exists {
+		return compositeSelectorContinuation{}, false, err
 	}
-	root, err = filepath.Abs(root)
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("resolve composite workspace root: %w", err)
+	source, current, err := readCompositeContinuationSource(location.File, expectedRevision)
+	if err != nil || !current {
+		return compositeSelectorContinuation{}, false, err
 	}
-	canonicalRoot, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("canonicalize composite workspace root: %w", err)
-	}
-	canonicalFile, err := filepath.EvalSymlinks(absolute)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return compositeSelectorContinuation{}, false, nil
-		}
-		return compositeSelectorContinuation{}, false, fmt.Errorf("canonicalize final composite source: %w", err)
-	}
-	relative, err := filepath.Rel(canonicalRoot, canonicalFile)
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("derive final composite source path: %w", err)
-	}
-	if !filepath.IsLocal(relative) {
-		return compositeSelectorContinuation{}, false, nil
-	}
-	content, err := os.ReadFile(canonicalFile)
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("read final composite source: %w", err)
-	}
-	if structuralRevision(content) != expectedRevision {
-		return compositeSelectorContinuation{}, false, nil
-	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, canonicalFile, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return compositeSelectorContinuation{}, false, fmt.Errorf("parse final composite source: %w", err)
-	}
-	owner, ownerLive := structuralContinuationOwner(file, candidate.Declaration)
+	owner, ownerLive := structuralContinuationOwner(source.File, candidate.Declaration)
 	if !ownerLive {
 		return compositeSelectorContinuation{}, false, nil
 	}
-	type literalMatch struct {
-		literal *ast.CompositeLit
-		start   int
-		end     int
+	selected, matched := findCompositeLiteral(owner, source, candidate.ElementSource)
+	if !matched {
+		return compositeSelectorContinuation{}, false, nil
 	}
-	var matches []literalMatch
+	return compositeSelectorContinuation{
+		File: filepath.ToSlash(location.Relative), InDeclaration: candidate.Declaration,
+		Discriminator: string(source.Content[selected.Start:selected.End]), ExpectedRevision: expectedRevision,
+	}, true, nil
+}
+
+type compositeSourceLocation struct {
+	File     string
+	Relative string
+}
+
+type compositeSource struct {
+	Content []byte
+	Fset    *token.FileSet
+	File    *ast.File
+}
+
+type compositeLiteralSpan struct {
+	Start int
+	End   int
+}
+
+func expectedCompositeRevision(path string, changes []FileRevision) string {
+	for _, change := range changes {
+		if change.Path == path {
+			return change.Revision
+		}
+	}
+	return ""
+}
+
+func resolveCompositeSourceLocation(root, file string) (compositeSourceLocation, bool, error) {
+	abs, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(file)))
+	if err != nil {
+		return compositeSourceLocation{}, false, fmt.Errorf("resolve composite source path: %w", err)
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return compositeSourceLocation{}, false, fmt.Errorf("resolve composite workspace root: %w", err)
+	}
+	canonicalRoot, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return compositeSourceLocation{}, false, fmt.Errorf("canonicalize composite workspace root: %w", err)
+	}
+	canonicalFile, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return compositeSourceLocation{}, false, nil
+		}
+		return compositeSourceLocation{}, false, fmt.Errorf("canonicalize final composite source: %w", err)
+	}
+	relative, err := filepath.Rel(canonicalRoot, canonicalFile)
+	if err != nil {
+		return compositeSourceLocation{}, false, fmt.Errorf("derive final composite source path: %w", err)
+	}
+	if !filepath.IsLocal(relative) {
+		return compositeSourceLocation{}, false, nil
+	}
+	return compositeSourceLocation{File: canonicalFile, Relative: relative}, true, nil
+}
+
+func readCompositeContinuationSource(path, expectedRevision string) (compositeSource, bool, error) {
+	content, err := os.ReadFile(path) // #nosec G304 -- the caller canonicalizes this path beneath the selected workspace root.
+	if err != nil {
+		return compositeSource{}, false, fmt.Errorf("read final composite source: %w", err)
+	}
+	if structuralRevision(content) != expectedRevision {
+		return compositeSource{}, false, nil
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, path, content, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return compositeSource{}, false, fmt.Errorf("parse final composite source: %w", err)
+	}
+	return compositeSource{Content: content, Fset: fset, File: file}, true, nil
+}
+
+func findCompositeLiteral(owner ast.Node, source compositeSource, element string) (compositeLiteralSpan, bool) {
+	var matches []compositeLiteralSpan
 	ast.Inspect(owner, func(node ast.Node) bool {
 		literal, ok := node.(*ast.CompositeLit)
 		if !ok {
 			return true
 		}
-		for _, element := range literal.Elts {
-			if canonicalASTNode(fset, element) == candidate.ElementSource {
-				matches = append(matches, literalMatch{literal: literal, start: fset.Position(literal.Pos()).Offset, end: fset.Position(literal.End()).Offset})
+		for _, child := range literal.Elts {
+			if canonicalASTNode(source.Fset, child) == element {
+				matches = append(matches, compositeLiteralSpan{
+					Start: source.Fset.Position(literal.Pos()).Offset,
+					End:   source.Fset.Position(literal.End()).Offset,
+				})
 				break
 			}
 		}
 		return true
 	})
 	if len(matches) != 1 {
-		return compositeSelectorContinuation{}, false, nil
+		return compositeLiteralSpan{}, false
 	}
 	selected := matches[0]
-	if selected.start < 0 || selected.end > len(content) || selected.end <= selected.start {
-		return compositeSelectorContinuation{}, false, nil
+	if selected.Start < 0 || selected.End > len(source.Content) || selected.End <= selected.Start {
+		return compositeLiteralSpan{}, false
 	}
-	return compositeSelectorContinuation{
-		File: filepath.ToSlash(relative), InDeclaration: candidate.Declaration,
-		Discriminator: string(content[selected.start:selected.end]), ExpectedRevision: expectedRevision,
-	}, true, nil
+	return selected, true
 }
 
 func structuralContinuationOwner(file *ast.File, declaration string) (ast.Node, bool) {
