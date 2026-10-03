@@ -3528,3 +3528,83 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: replacing the function body removed its use of `internal/pipeline`; the subsequent CLI import operation could not start because the source no longer compiled.
 - Workaround: remove the obsolete import with a targeted patch, then rerun semantic verification.
 - Root cause: `replace-body` changes one function body and does not clean file imports.
+
+## 2026-10-03: smoke trial invented a lookup parameter
+
+- Tool: `semantic_lookup`, Luna 6 medium sink-migration smoke trial.
+- Target: fixture `service/dispatch.go`, `Dispatcher.Record`.
+- Observed failure: `{"query":"Dispatcher Record"}` was rejected because lookup accepts `symbol`, not `query`.
+- Workaround: the agent retried lookup with supported parameters and completed the task; its oracle passed.
+- Root cause: caller invented a parameter instead of copying the advertised schema. Evidence: the task-11 Codex semedit transcript for `flow-tools-smoke-20261003T113815Z`.
+
+## 2026-10-03: smoke extraction selected the wrong line range
+
+- Tool: `semantic_extract_function`, Luna 6 medium request-identity smoke trial.
+- Target: fixture `request/request.go`, `Normalize`; requested lines 21-22 and new helper `normalizeKind`.
+- Observed failure: the range did not select a contiguous top-level statement region in `Normalize`.
+- Workaround: the agent used ordinary file edits, then built and tested the fixture; its oracle passed, but this trial does not demonstrate successful semantic extraction or adherence to semantic-only mutation guidance.
+- Root cause: caller supplied invalid source coordinates. Evidence: the task-12 Codex semedit transcript for `flow-tools-smoke-20261003T113815Z`.
+
+## 2026-10-03: smoke harness failed to remove read-only Go caches
+
+- Tool: benchmark harness session cleanup, AGY Gemini 3.7 medium.
+- Target: six disposable large-context fixture workspaces under `.scratch/benchmarks/`.
+- Observed failure: all six task oracles passed, then `os.RemoveAll` failed inside fixture-local `.scratch/go/mod/pgregory.net/rapid@v1.3.0`; the harness correctly retained an execution error instead of declaring overall success.
+- Workaround: preserve the original reports and diagnose cleanup independently of the task oracle. A cache cleanup correction and fresh AGY trials are required before claiming clean harness runs.
+- Root cause: Go creates read-only module-cache directories; ordinary recursive removal cannot unlink their children. Evidence: reports and transcripts for `flow-tools-smoke-20261003T113815Z`.
+
+## 2026-10-03: cleanup worker supplied an uncommented scaffold header
+
+- Tool: `semantic_scaffold_file`.
+- Target: `tools/benchmark-harness/session_cleanup_test.go`.
+- Observed failure: `purpose_header` lacked the Go comment prefix `//` and was rejected.
+- Workaround: retry with a valid Go comment; scaffolding succeeded.
+- Root cause: caller supplied prose where the operation requires source comment syntax.
+
+## 2026-10-03: cleanup worker inserted two functions in one call
+
+- Tool: `semantic_insert_function`.
+- Target: benchmark session cleanup implementation and test declarations.
+- Observed failure: a snippet containing two declarations was rejected.
+- Workaround: insert each function in a separate call.
+- Root cause: caller violated the single-function source contract.
+
+## 2026-10-03: cleanup worker marked a test function private
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/session_cleanup_test.go`, a `Test*` declaration.
+- Observed failure: the function's exported Go name was incompatible with the requested private visibility.
+- Workaround: retry with public visibility.
+- Root cause: caller supplied incompatible name and visibility choices.
+
+## 2026-10-03: cleanup regression guessed an arm constant
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/session_cleanup_test.go`.
+- Observed failure: insertion returned an undefined `ArmCodex` compiler diagnostic.
+- Workaround: replace the test body using the supported `ArmBaseline` constant.
+- Root cause: caller confused the provider choice with the benchmark editing arm and invented a constant instead of inspecting the existing types.
+
+## 2026-10-03: lookup did not resolve a newly inserted test
+
+- Tool: `semantic_lookup`.
+- Target: `tools/benchmark-harness/session_cleanup_test.go`, `TestExecuteAgentCleansReadonlyModuleCacheAfterPassingOracle`.
+- Observed failure: a request with only that `symbol` returned `symbol not found`, although the declaration was present in the new file.
+- Workaround: add the fake provider's required `set -eu` using a targeted patch.
+- Root cause: the unscoped lookup failed to discover the new test declaration; its underlying resolution cause has not been established.
+
+## 2026-10-03: cleanup worker used alias replacement for a struct
+
+- Tool: `semantic_replace_decl`.
+- Target: `tools/benchmark-harness/session.go`, `agentSession`.
+- Observed failure: replacing the struct was rejected because the operation requires a type alias.
+- Workaround: use field insertion for the new session resource fields; use a targeted patch only if that structural operation is unavailable.
+- Root cause: caller selected a declaration replacement operation whose supported type scope excludes structs.
+
+## 2026-10-03: cleanup body edits preceded companion signature changes
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/session.go`, `agentSession.close` and `makeSessionWorkspaceRemovable`.
+- Observed failure: intermediate compiler diagnostics reported undefined `retErr`, a root handle passed to the old string parameter, and undefined `workspaceRoot` and `fs`.
+- Workaround: complete the named return and root-parameter signature changes with targeted patches, then organize the required imports before verification.
+- Root cause: caller published new bodies before their required signatures and imports; the body-only operation does not change declaration signatures.

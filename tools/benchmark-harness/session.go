@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"semedit/internal/pipeline"
@@ -144,7 +145,23 @@ func (s *agentSession) retainTaskMCPMetrics() error {
 	return nil
 }
 
-func (s *agentSession) close() error {
+func (s *agentSession) close() (retErr error) {
+	var closeErr error
+	defer func() {
+		if s.workspaceRoot != nil {
+			if err := s.workspaceRoot.Close(); err != nil {
+				closeErr = errors.Join(closeErr, fmt.Errorf("close session workspace root: %w", err))
+			}
+			s.workspaceRoot = nil
+		}
+		if s.scratchRoot != nil {
+			if err := s.scratchRoot.Close(); err != nil {
+				closeErr = errors.Join(closeErr, fmt.Errorf("close benchmark scratch root: %w", err))
+			}
+			s.scratchRoot = nil
+		}
+		retErr = errors.Join(retErr, closeErr)
+	}()
 	if err := s.retainTaskMCPMetrics(); err != nil {
 		return err
 	}
@@ -173,7 +190,24 @@ func (s *agentSession) close() error {
 		}
 		return nil
 	}
-	if err := os.RemoveAll(s.workDir); err != nil {
+	if err := makeSessionWorkspaceRemovable(s.workspaceRoot); err != nil {
+		return fmt.Errorf("make session workspace removable: %w", err)
+	}
+	entries, err := fs.ReadDir(s.workspaceRoot.FS(), ".")
+	if err != nil {
+		return fmt.Errorf("read session workspace for cleanup: %w", err)
+	}
+	for _, entry := range entries {
+		if err := s.workspaceRoot.RemoveAll(entry.Name()); err != nil {
+			return fmt.Errorf("remove captured session workspace entry %q: %w", entry.Name(), err)
+		}
+	}
+	if err := s.workspaceRoot.Close(); err != nil {
+		s.workspaceRoot = nil
+		return fmt.Errorf("close session workspace root before removal: %w", err)
+	}
+	s.workspaceRoot = nil
+	if err := s.scratchRoot.RemoveAll(s.workspaceRelativePath); err != nil {
 		return fmt.Errorf("remove session workspace: %w", err)
 	}
 	return nil
@@ -262,6 +296,9 @@ type agentSession struct {
 	adapter                providerAdapter
 	execution              AgentExecution
 	workDir                string
+	scratchRoot            *os.Root
+	workspaceRoot          *os.Root
+	workspaceRelativePath  string
 	transcriptPath         string
 	resumeID               string
 	turns                  []sessionTurn
@@ -376,7 +413,30 @@ func newAgentSession(adapter providerAdapter, baseDir, runID, workDir string) (*
 		return nil, fmt.Errorf("create session transcript directory: %w", err)
 	}
 	transcriptPath := filepath.Join(transcriptDir, runID+".json")
-	return &agentSession{adapter: adapter, workDir: workDir, transcriptPath: transcriptPath, toolObservationState: ToolObservationUnknown}, nil
+	workspaceRelativePath, err := filepath.Rel(baseDir, workDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve session workspace relative path: %w", err)
+	}
+	if workspaceRelativePath == "." || workspaceRelativePath == ".." || strings.HasPrefix(workspaceRelativePath, ".."+string(filepath.Separator)) {
+		return nil, fmt.Errorf("session workspace %q is outside scratch directory %q", workDir, baseDir)
+	}
+	scratchRoot, err := os.OpenRoot(baseDir)
+	if err != nil {
+		return nil, fmt.Errorf("open benchmark scratch root: %w", err)
+	}
+	workspaceRoot, err := scratchRoot.OpenRoot(filepath.ToSlash(workspaceRelativePath))
+	if err != nil {
+		return nil, errors.Join(fmt.Errorf("open session workspace root: %w", err), scratchRoot.Close())
+	}
+	return &agentSession{
+		adapter:               adapter,
+		workDir:               workDir,
+		scratchRoot:           scratchRoot,
+		workspaceRoot:         workspaceRoot,
+		workspaceRelativePath: filepath.ToSlash(workspaceRelativePath),
+		transcriptPath:        transcriptPath,
+		toolObservationState:  ToolObservationUnknown,
+	}, nil
 }
 
 func errorString(err error) string {
@@ -397,4 +457,58 @@ func providerExitDescription(result *RunResult) string {
 		return fmt.Sprintf("opencode exit code %d", *result.OpenCodeExitCode)
 	}
 	return ""
+}
+
+func makeSessionDirectoryWritable(workspaceRoot *os.Root, path string, walkInfo fs.FileInfo) error {
+	file, err := workspaceRoot.Open(path)
+	if err != nil {
+		return fmt.Errorf("open workspace directory %q: %w", path, err)
+	}
+	openedInfo, statErr := file.Stat()
+	if statErr != nil {
+		closeErr := file.Close()
+		if closeErr != nil {
+			closeErr = fmt.Errorf("close workspace directory %q: %w", path, closeErr)
+		}
+		return errors.Join(fmt.Errorf("stat opened workspace directory %q: %w", path, statErr), closeErr)
+	}
+	if !openedInfo.IsDir() || !os.SameFile(walkInfo, openedInfo) {
+		closeErr := file.Close()
+		if closeErr != nil {
+			closeErr = fmt.Errorf("close workspace directory %q: %w", path, closeErr)
+		}
+		return errors.Join(fmt.Errorf("workspace directory changed during cleanup: %q", path), closeErr)
+	}
+	mode := openedInfo.Mode().Perm() | 0o700
+	if mode == openedInfo.Mode().Perm() {
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("close workspace directory %q: %w", path, err)
+		}
+		return nil
+	}
+	chmodErr := file.Chmod(mode)
+	closeErr := file.Close()
+	if chmodErr != nil {
+		chmodErr = fmt.Errorf("make workspace directory writable %q: %w", path, chmodErr)
+	}
+	if closeErr != nil {
+		closeErr = fmt.Errorf("close workspace directory %q: %w", path, closeErr)
+	}
+	return errors.Join(chmodErr, closeErr)
+}
+
+func makeSessionWorkspaceRemovable(workspaceRoot *os.Root) error {
+	return fs.WalkDir(workspaceRoot.FS(), ".", func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return fmt.Errorf("inspect workspace path %q: %w", path, walkErr)
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("read workspace directory metadata %q: %w", path, err)
+		}
+		return makeSessionDirectoryWritable(workspaceRoot, path, info)
+	})
 }
