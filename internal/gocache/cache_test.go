@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"semedit/internal/gocache"
+	"strings"
 	"testing"
 )
 
@@ -44,8 +45,8 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 	}
 	path := string(output)
 	defer func() {
-		if err := os.Remove(path); err != nil {
-			t.Error(err)
+		if removeErr := os.Remove(path); removeErr != nil {
+			t.Error(removeErr)
 		}
 	}()
 	expected := filepath.Join(workspace, ".scratch", "go", "tmp")
@@ -67,4 +68,22 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 	if len(entries) != 0 {
 		t.Fatalf("inherited temporary directory polluted: %v", entries)
 	}
+}
+
+func TestEnvironmentKeepsGoplsCacheBelowSelectedBase(t *testing.T) {
+	baseDir := filepath.Join(t.TempDir(), "selected", ".scratch", "go")
+	environment, err := gocache.Environment(gocache.WithBaseDir(t.Context(), baseDir), t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "GOPLSCACHE=" + filepath.Join(baseDir, "gopls")
+	for _, variable := range environment {
+		if strings.HasPrefix(variable, "GOPLSCACHE=") {
+			if variable != want {
+				t.Fatalf("GOPLSCACHE = %q, want %q", variable, want)
+			}
+			return
+		}
+	}
+	t.Fatal("Go subprocess environment omitted GOPLSCACHE")
 }
