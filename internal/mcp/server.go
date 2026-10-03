@@ -467,10 +467,11 @@ func initializeWorkspaceRoot(defaultRoot string, params initializeParams) (strin
 		selectedRoot = root
 	}
 	if selectedRoot == "" {
-		if workingDirectory, err := os.Getwd(); err == nil {
-			return workingDirectory, nil
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("resolve default MCP workspace root: %w", err)
 		}
-		return ".", nil
+		return workingDirectory, nil
 	}
 	return selectedRoot, nil
 }
@@ -676,11 +677,11 @@ func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) (
 }
 
 func toolSchema(entry operation.Entry) (map[string]any, error) {
-	output, continuations, err := toolOutputAndContinuations(entry)
+	toolOutput, err := toolOutputAndContinuations(entry)
 	if err != nil {
 		return nil, err
 	}
-	description := toolSchemaDescription(entry, continuations)
+	description := toolSchemaDescription(entry, toolOutput.continuations)
 	inputSchema, err := operationInputSchema(entry)
 	if err != nil {
 		return nil, err
@@ -689,11 +690,16 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 		"name":                entry.MCPName,
 		toolFieldDescription:  description,
 		toolFieldInputSchema:  inputSchema,
-		toolFieldOutputSchema: output,
+		toolFieldOutputSchema: toolOutput.schema,
 	}, nil
 }
 
-func toolOutputAndContinuations(entry operation.Entry) (map[string]any, map[string]any, error) {
+type toolOutputAndContinuationsResult struct {
+	schema        map[string]any
+	continuations map[string]any
+}
+
+func toolOutputAndContinuations(entry operation.Entry) (toolOutputAndContinuationsResult, error) {
 	output := standardOutputSchema(map[string]any{"type": "string"})
 	if entry.MCPName == "semantic_remove_construct" {
 		output = standardOutputSchema(removeConstructResultSchema())
@@ -704,7 +710,7 @@ func toolOutputAndContinuations(entry operation.Entry) (map[string]any, map[stri
 		if entry.Output.ResultSchema != nil {
 			resultSchema, err := entry.Output.ResultSchema.JSONSchema()
 			if err != nil {
-				return nil, nil, fmt.Errorf("operation %q result schema: %w", entry.MCPName, err)
+				return toolOutputAndContinuationsResult{}, fmt.Errorf("operation %q result schema: %w", entry.MCPName, err)
 			}
 			output = standardOutputSchema(resultSchema)
 			properties = output[schemaPropertiesKey].(map[string]any)
@@ -716,13 +722,13 @@ func toolOutputAndContinuations(entry operation.Entry) (map[string]any, map[stri
 			}
 			fieldSchema, err := continuation.Schema.JSONSchema()
 			if err != nil {
-				return nil, nil, fmt.Errorf("operation %q continuation %q schema: %w", entry.MCPName, continuation.Field, err)
+				return toolOutputAndContinuationsResult{}, fmt.Errorf("operation %q continuation %q schema: %w", entry.MCPName, continuation.Field, err)
 			}
 			continuations[continuation.Field] = fieldSchema
 		}
 	}
 	maps.Copy(properties, continuations)
-	return output, continuations, nil
+	return toolOutputAndContinuationsResult{schema: output, continuations: continuations}, nil
 }
 
 func toolSchemaDescription(entry operation.Entry, continuations map[string]any) string {
