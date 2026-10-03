@@ -77,6 +77,7 @@ func TestCreateSnapshot_SpecificFiles(t *testing.T) {
 func TestUndo_CleanRestore(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeSnapshotTestModule(t, dir)
 
 	file1 := filepath.Join(dir, "calc.go")
 	originalContent := []byte("package main\n\nfunc Calculate() int { return 1 }\n")
@@ -179,6 +180,7 @@ func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
 func TestUndo_ConflictDetection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeSnapshotTestModule(t, dir)
 
 	file1 := filepath.Join(dir, "calc.go")
 	preimage := []byte("package main\n\nfunc V() int { return 10 }\n")
@@ -242,6 +244,7 @@ func TestUndo_ConflictDetection(t *testing.T) {
 func TestUndo_CorruptBlob(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeSnapshotTestModule(t, dir)
 
 	file1 := filepath.Join(dir, "calc.go")
 	preimage := []byte("package main\n\nfunc Original() {}\n")
@@ -283,6 +286,7 @@ func TestUndo_CorruptBlob(t *testing.T) {
 func TestUndo_LatestResolution(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeSnapshotTestModule(t, dir)
 
 	file1 := filepath.Join(dir, "calc.go")
 	if err := os.WriteFile(file1, []byte("v1"), 0o600); err != nil {
@@ -337,6 +341,14 @@ func TestUndo_LatestResolution(t *testing.T) {
 	}
 	if string(data) != "v2" {
 		t.Errorf("expected v2, got %q", string(data))
+	}
+}
+
+func writeSnapshotTestModule(t *testing.T, dir string) {
+	t.Helper()
+	module := []byte("module snapshot.test/fixture\n\ngo 1.27.1\n")
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), module, 0o600); err != nil {
+		t.Fatalf("write test go.mod: %v", err)
 	}
 }
 
