@@ -1066,6 +1066,7 @@ func TestMCPMutationsOnlyProfile(t *testing.T) {
 
 func TestMCPSpecializedInsertAndImports(t *testing.T) {
 	dir := t.TempDir()
+	writeMCPFixtureModule(t, dir)
 	filePath := filepath.Join(dir, "app.go")
 	initial := `package app
 
@@ -1142,6 +1143,7 @@ func TestMCPToolLocationError(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+	writeMCPFixtureModule(t, dir)
 	filePath := filepath.Join(dir, "app.go")
 	if err := os.WriteFile(filePath, []byte("package app\n"), 0o600); err != nil {
 		t.Fatalf("write initial file: %v", err)
@@ -1155,6 +1157,14 @@ func TestMCPToolLocationError(t *testing.T) {
 	}
 	fileResponse := callMCPErrorLocation(t, dir, "semantic_lookup", map[string]any{"file": brokenPath, "symbol": "bad"})
 	assertDiskErrorLocation(t, fileResponse)
+}
+
+func writeMCPFixtureModule(t *testing.T, root string) {
+	t.Helper()
+	module := []byte("module example.com/mcpfixture\n\ngo 1.27.1\n")
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), module, 0o600); err != nil {
+		t.Fatalf("write isolated Go fixture module: %v", err)
+	}
 }
 
 type mcpErrorLocationResponse struct {
