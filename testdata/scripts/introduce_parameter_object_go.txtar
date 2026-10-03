@@ -1,0 +1,70 @@
+# The CLI replaces every parameter of a private function with one same-file object, rewrites bound body uses, and preserves call argument order in keyed literals.
+cp write.go .scratch/write-before.txt
+! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"_"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+stderr 'private identifiers'
+cmp write.go .scratch/write-before.txt
+! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"status","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+stderr 'conflicts with an existing body binding'
+cmp write.go .scratch/write-before.txt
+! exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}}]'
+stderr 'every original parameter'
+cmp write.go .scratch/write-before.txt
+exec semedit introduce-parameter-object --file write.go --symbol write --destination-file write.go --parameter '{"name":"options","type":"writeOptions"}' --fields '[{"source_index":0,"field":{"name":"path","type":"string"}},{"source_index":1,"field":{"name":"data","type":"string"}},{"source_index":2,"field":{"name":"mode","type":"uint32"}}]'
+stdout 'Replaced all function parameters'
+cmp write.go .scratch/want/write.txt
+cmp calls.go .scratch/want/calls.txt
+cmp other.go .scratch/want/other.txt
+cmp write_test.go .scratch/want/write_test.txt
+exec go test ./...
+-- go.mod --
+module example.com/parameterobject
+
+go 1.24
+-- write.go --
+package sample
+
+import "fmt"
+
+var status = "global"
+
+func save(path, data string, mode uint32) string { return path + data }
+func write(path, data string, mode uint32) string { return fmt.Sprint(status) + save(path, data, mode) }
+-- calls.go --
+package sample
+
+func first() string { return write("a", "b", 7) }
+-- other.go --
+package sample
+
+func second() string { return write("c", "d", 9) }
+-- write_test.go --
+package sample
+
+func testCaller() string { return write("test", "case", 11) }
+-- .scratch/want/write.txt --
+package sample
+
+import "fmt"
+
+var status = "global"
+
+func save(path, data string, mode uint32) string { return path + data }
+func write(options writeOptions) string { return fmt.Sprint(status) + save(options.path, options.data, options.mode) }
+
+type writeOptions struct {
+	path string
+	data string
+	mode uint32
+}
+-- .scratch/want/calls.txt --
+package sample
+
+func first() string { return write(writeOptions{path: "a", data: "b", mode: 7}) }
+-- .scratch/want/other.txt --
+package sample
+
+func second() string { return write(writeOptions{path: "c", data: "d", mode: 9}) }
+-- .scratch/want/write_test.txt --
+package sample
+
+func testCaller() string { return write(writeOptions{path: "test", data: "case", mode: 11}) }

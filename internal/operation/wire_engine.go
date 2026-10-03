@@ -222,64 +222,72 @@ func qualifiedGoTarget(receiver, name string) string {
 
 // registerEngineOps adds the host-engine file and build operations to the registry.
 func registerEngineOps(registry *Registry) error {
-	if err := Register(registry, assertionModeDef()); err != nil {
-		return err
+	{
+		if err := Register(registry, assertionModeDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertStructureDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertDeclarationDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertFunctionDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertTypeDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertDeclDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, replaceDeclDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, removeDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, organizeImportsDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, addBuildDependencyDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, replaceBodyDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, replaceConstructDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, moveConstructDef()); err != nil {
+			return err
+		}
+		if err := registerExtractOps(registry); err != nil {
+			return err
+		}
+		if err := Register(registry, inlineVariableDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, migrateTypeDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, inlineFunctionDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, scaffoldFileDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, insertCaseDef()); err != nil {
+			return err
+		}
+		if err := Register(registry, changeSignatureDef()); err != nil {
+			return fmt.Errorf("register change-signature: %w", err)
+		}
+		if err := registerSignatureExpansionOps(registry); err != nil {
+			return err
+		}
+		return registerStructuralPlanOps(registry)
 	}
-	if err := Register(registry, insertStructureDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, insertDeclarationDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, insertFunctionDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, insertTypeDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, insertDeclDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, replaceDeclDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, removeDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, organizeImportsDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, addBuildDependencyDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, replaceBodyDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, replaceConstructDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, moveConstructDef()); err != nil {
-		return err
-	}
-	if err := registerExtractOps(registry); err != nil {
-		return err
-	}
-	if err := Register(registry, inlineVariableDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, migrateTypeDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, inlineFunctionDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, scaffoldFileDef()); err != nil {
-		return err
-	}
-	if err := Register(registry, insertCaseDef()); err != nil {
-		return err
-	}
-	return registerStructuralPlanOps(registry)
 }
 
 func goTargetAfterEdit(ctx context.Context, filePath, source string) (string, int, error) {

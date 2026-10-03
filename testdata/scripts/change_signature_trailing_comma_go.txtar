@@ -1,0 +1,41 @@
+# The CLI appends parameters and call arguments after existing multiline trailing commas without creating invalid comma layouts.
+exec semedit change-signature --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"enabled","type":"bool"},"argument":"true"}]'
+cmp service.go .scratch/want/service.txt
+cmp caller.go .scratch/want/caller.txt
+exec go test ./...
+-- go.mod --
+module example.com/signaturetrailing
+
+go 1.24
+-- service.go --
+package sample
+
+func transform(
+	id int,
+) bool {
+	return id > 0
+}
+-- caller.go --
+package sample
+
+func run() bool {
+	return transform(
+		1,
+	)
+}
+-- .scratch/want/service.txt --
+package sample
+
+func transform(
+	id int, enabled bool,
+) bool {
+	return id > 0
+}
+-- .scratch/want/caller.txt --
+package sample
+
+func run() bool {
+	return transform(
+		1, true,
+	)
+}

@@ -1,0 +1,92 @@
+# The CLI resolves named and imported parameter types in the selected subpackage even when another package declares the same unexported name.
+exec semedit introduce-parameter --file service/service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
+stdout 'Replaced the selected constant expression'
+exec semedit introduce-parameter --file service/service.go --symbol transformImported --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"step","type":"imported.Mode"},"argument":"4"}]' --discriminator importedDefault
+stdout 'Replaced the selected constant expression'
+cmp service/service.go .scratch/want/service.go
+cmp service/calls.go .scratch/want/calls.go
+cmp service/other.go .scratch/want/other.go
+cmp service/service_test.go .scratch/want/service_test.go
+exec go test ./...
+-- go.mod --
+module example.com/introduceparameterscope
+
+go 1.24
+-- aother/mode.go --
+package aother
+
+type mode int
+-- types/mode.go --
+package types
+
+type Mode int
+-- service/service.go --
+package service
+
+import imported "example.com/introduceparameterscope/types"
+
+type mode int
+
+const defaultMode mode = 3
+const importedDefault imported.Mode = 4
+
+func transform(id int) int { return id + int(defaultMode) }
+func transformImported(id int) int { return id + int(importedDefault) }
+-- service/calls.go --
+package service
+
+func first() int { return transform(1) }
+func firstImported() int { return transformImported(1) }
+-- service/other.go --
+package service
+
+func second() int { return transform(2) }
+func secondImported() int { return transformImported(2) }
+-- service/service_test.go --
+package service
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(5); got != 8 {
+		t.Fatalf("transform(5) = %d, want 8", got)
+	}
+	if got := transformImported(5); got != 9 {
+		t.Fatalf("transformImported(5) = %d, want 9", got)
+	}
+}
+-- .scratch/want/service.go --
+package service
+
+import imported "example.com/introduceparameterscope/types"
+
+type mode int
+
+const defaultMode mode = 3
+const importedDefault imported.Mode = 4
+
+func transform(id int, mode mode) int { return id + int(mode) }
+func transformImported(id int, step imported.Mode) int { return id + int(step) }
+-- .scratch/want/calls.go --
+package service
+
+func first() int { return transform(1, 3) }
+func firstImported() int { return transformImported(1, 4) }
+-- .scratch/want/other.go --
+package service
+
+func second() int { return transform(2, 3) }
+func secondImported() int { return transformImported(2, 4) }
+-- .scratch/want/service_test.go --
+package service
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(5, 3); got != 8 {
+		t.Fatalf("transform(5) = %d, want 8", got)
+	}
+	if got := transformImported(5, 4); got != 9 {
+		t.Fatalf("transformImported(5) = %d, want 9", got)
+	}
+}

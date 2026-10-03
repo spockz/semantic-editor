@@ -344,11 +344,7 @@ func ParameterSpecSchema() ValueSchema {
 // ParameterMappingSchema declares one closed source-parameter mapping.
 func ParameterMappingSchema() ValueSchema {
 	minimum := float64(0)
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
-		"parameter":    ParameterSpecSchema(),
-		"argument":     {Kind: SchemaString},
-	}, Required: []string{"parameter"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{wireSourceIndex: {Kind: SchemaInteger, Minimum: &minimum}, "parameter": ParameterSpecSchema(), "argument": {Kind: SchemaString}}, Required: []string{"parameter"}}
 }
 
 // ResultSpecSchema declares one closed function-result shape.
@@ -373,10 +369,7 @@ func FieldSpecSchema() ValueSchema {
 // ParameterToFieldMappingSchema declares one closed parameter-to-field mapping.
 func ParameterToFieldMappingSchema() ValueSchema {
 	minimum := float64(0)
-	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"source_index": {Kind: SchemaInteger, Minimum: &minimum},
-		"field":        FieldSpecSchema(),
-	}, Required: []string{"source_index", "field"}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{wireSourceIndex: {Kind: SchemaInteger, Minimum: &minimum}, "field": FieldSpecSchema()}, Required: []string{wireSourceIndex, "field"}}
 }
 
 // MemberTargetSchema declares one closed source or target member identity.

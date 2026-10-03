@@ -3484,3 +3484,10 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: the requested source file does not exist; the declaration is in `inline.go`.
 - Workaround: discover the source filename with `rg --files`, then inspect the known declaration there.
 - Root cause: caller reconstructed the filename instead of reusing discovery; no source changed.
+## 2026-10-03: semantic outline used the primary checkout
+
+- Tool: `semantic_outline` MCP.
+- Target: `internal/operation/wire_signature.go` in the private `codex/flow-signatures` worktree.
+- Observed failure: the MCP resolved the relative path under the primary checkout, where this branch-only file does not exist.
+- Workaround: inspect the private worktree directly and continue source mutations with its local semantic CLI if available.
+- Root cause: the MCP server is bound to the primary checkout rather than the active private worktree.

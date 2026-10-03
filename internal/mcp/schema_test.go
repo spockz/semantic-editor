@@ -280,6 +280,9 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				case "semantic_inspect_symbol":
 					assertStandardOutputSchema(t, tool["outputSchema"], "object")
 					assertInspectOutputSchema(t, tool["outputSchema"])
+
+				case "semantic_change_signature", "semantic_introduce_parameter", "semantic_introduce_parameter_object":
+					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				default:
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 				}
