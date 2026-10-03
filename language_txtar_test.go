@@ -129,7 +129,7 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 			return
 		}
 		if err != nil {
-			return
+			failFakeLanguageServer(fmt.Errorf("read fake language server frame: %w", err))
 		}
 		request, err := decodeFakeLSPRequest(payload)
 		if err != nil {
@@ -340,9 +340,11 @@ func fakeRenameEdit(symbol fakeDocumentSymbol, raw json.RawMessage) map[string]a
 		failFakeLanguageServer(errors.New("fake rename params missing URI or new name"))
 	}
 	uri := params.TextDocument.URI
-	if parsed, err := url.Parse(uri); err == nil {
-		uri = parsed.String()
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("parse fake rename URI: %w", err))
 	}
+	uri = parsed.String()
 	changes := map[string][]map[string]any{
 		uri: {{"range": symbol.SelectionRange, "newText": params.NewName}},
 	}
