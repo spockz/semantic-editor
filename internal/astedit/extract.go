@@ -311,14 +311,14 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 	if err := rejectSelectedRecoverCalls(selected, ownerName); err != nil {
 		return err
 	}
-	forwardedSet, typesByName := forwardedParameterInfo(owner, forwarded)
-	if len(forwardedSet) == 0 {
+	info := forwardedParameterInfo(owner, forwarded)
+	if len(info.names) == 0 {
 		return nil
 	}
-	if err := rejectAddressedOrCapturedForwarded(owner.Body, forwardedSet, ownerName); err != nil {
+	if err := rejectAddressedOrCapturedForwarded(owner.Body, info.names, ownerName); err != nil {
 		return err
 	}
-	return rejectImplicitPointerReceivers(selected, forwardedSet, typesByName, ownerName)
+	return rejectImplicitPointerReceivers(selected, info.names, info.types, ownerName)
 }
 
 func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
@@ -341,26 +341,30 @@ func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
 	return nil
 }
 
-func forwardedParameterInfo(owner *ast.FuncDecl, forwarded []string) (map[string]bool, map[string]ast.Expr) {
-	forwardedSet := make(map[string]bool, len(forwarded))
-	typesByName := make(map[string]ast.Expr, len(forwarded))
+type forwardedNameInfo struct {
+	names map[string]bool
+	types map[string]ast.Expr
+}
+
+func forwardedParameterInfo(owner *ast.FuncDecl, forwarded []string) forwardedNameInfo {
+	info := forwardedNameInfo{names: make(map[string]bool, len(forwarded)), types: make(map[string]ast.Expr, len(forwarded))}
 	for _, name := range forwarded {
-		forwardedSet[name] = true
+		info.names[name] = true
 		if owner.Recv != nil && owner.Recv.List[0].Names[0].Name == name {
-			typesByName[name] = owner.Recv.List[0].Type
+			info.types[name] = owner.Recv.List[0].Type
 			continue
 		}
 		if owner.Type.Params != nil {
 			for _, field := range owner.Type.Params.List {
 				for _, ident := range field.Names {
 					if ident.Name == name {
-						typesByName[name] = field.Type
+						info.types[name] = field.Type
 					}
 				}
 			}
 		}
 	}
-	return forwardedSet, typesByName
+	return info
 }
 
 func rejectAddressedOrCapturedForwarded(body *ast.BlockStmt, forwardedSet map[string]bool, ownerName string) error {
