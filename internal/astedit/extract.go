@@ -102,19 +102,19 @@ func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts E
 	} else if err := validateOutputTypeNames(ctx, cleanPath, file, outputs, owner, content); err != nil {
 		return "", err
 	}
-	paramNames, paramDecls, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
+	params, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
 	if err != nil {
 		return "", fmt.Errorf("cannot extract %s: %w", owner, err)
 	}
-	if err := validateForwardedNames(target, selected, paramNames, owner); err != nil {
+	if err := validateForwardedNames(target, selected, params.names, owner); err != nil {
 		return "", err
 	}
-	if err := validateExtractedScope(file, target, selected, paramNames, outputs, owner); err != nil {
+	if err := validateExtractedScope(file, target, selected, params.names, outputs, owner); err != nil {
 		return "", err
 	}
 	selectedSource := strings.TrimSpace(string(content[fset.Position(selected[0].Pos()).Offset:fset.Position(selected[len(selected)-1].End()).Offset]))
-	callSource := extractionCall(target, helper, paramNames, outputs, opts.Kind)
-	declSource, err := extractionDeclaration(fset, target, helper, opts.Kind, paramDecls, outputs, selectedSource)
+	callSource := extractionCall(target, helper, params.names, outputs, opts.Kind)
+	declSource, err := extractionDeclaration(fset, target, helper, opts.Kind, params.declarations, outputs, selectedSource)
 	if err != nil {
 		return "", err
 	}
@@ -308,6 +308,20 @@ func validateExtractedScope(file *ast.File, target *ast.FuncDecl, selected []ast
 }
 
 func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded []string, ownerName string) error {
+	if err := rejectSelectedRecoverCalls(selected, ownerName); err != nil {
+		return err
+	}
+	info := forwardedParameterInfo(owner, forwarded)
+	if len(info.names) == 0 {
+		return nil
+	}
+	if err := rejectAddressedOrCapturedForwarded(owner.Body, info.names, ownerName); err != nil {
+		return err
+	}
+	return rejectImplicitPointerReceivers(selected, info.names, info.types, ownerName)
+}
+
+func rejectSelectedRecoverCalls(selected []ast.Stmt, ownerName string) error {
 	for _, stmt := range selected {
 		var recoveryCall bool
 		ast.Inspect(stmt, func(node ast.Node) bool {
@@ -324,29 +338,38 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 			return fmt.Errorf("cannot extract %s: selected direct recover() calls change recovery semantics when moved", ownerName)
 		}
 	}
-	forwardedSet := make(map[string]bool, len(forwarded))
-	typesByName := make(map[string]ast.Expr, len(forwarded))
+	return nil
+}
+
+type forwardedNameInfo struct {
+	names map[string]bool
+	types map[string]ast.Expr
+}
+
+func forwardedParameterInfo(owner *ast.FuncDecl, forwarded []string) forwardedNameInfo {
+	info := forwardedNameInfo{names: make(map[string]bool, len(forwarded)), types: make(map[string]ast.Expr, len(forwarded))}
 	for _, name := range forwarded {
-		forwardedSet[name] = true
+		info.names[name] = true
 		if owner.Recv != nil && owner.Recv.List[0].Names[0].Name == name {
-			typesByName[name] = owner.Recv.List[0].Type
+			info.types[name] = owner.Recv.List[0].Type
 			continue
 		}
 		if owner.Type.Params != nil {
 			for _, field := range owner.Type.Params.List {
 				for _, ident := range field.Names {
 					if ident.Name == name {
-						typesByName[name] = field.Type
+						info.types[name] = field.Type
 					}
 				}
 			}
 		}
 	}
-	if len(forwardedSet) == 0 {
-		return nil
-	}
+	return info
+}
+
+func rejectAddressedOrCapturedForwarded(body *ast.BlockStmt, forwardedSet map[string]bool, ownerName string) error {
 	var unsafe error
-	ast.Inspect(owner.Body, func(node ast.Node) bool {
+	ast.Inspect(body, func(node ast.Node) bool {
 		if unsafe != nil || node == nil {
 			return false
 		}
@@ -378,6 +401,11 @@ func validateForwardedNames(owner *ast.FuncDecl, selected []ast.Stmt, forwarded 
 	if unsafe != nil {
 		return unsafe
 	}
+	return nil
+}
+
+func rejectImplicitPointerReceivers(selected []ast.Stmt, forwardedSet map[string]bool, typesByName map[string]ast.Expr, ownerName string) error {
+	var unsafe error
 	for _, stmt := range selected {
 		ast.Inspect(stmt, func(node ast.Node) bool {
 			if unsafe != nil || node == nil {
@@ -513,32 +541,45 @@ func extractOutputs(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stm
 func localDeclarationCount(body *ast.BlockStmt, name string) int {
 	count := 0
 	ast.Inspect(body, func(node ast.Node) bool {
-		switch item := node.(type) {
-		case *ast.AssignStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range item.Lhs {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-						count++
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, ident := range item.Names {
-				if ident.Name == name {
-					count++
-				}
-			}
-		case *ast.RangeStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range []ast.Expr{item.Key, item.Value} {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-						count++
-					}
-				}
-			}
-		}
+		count += localDeclarationCountAt(node, name)
 		return true
 	})
+	return count
+}
+
+func localDeclarationCountAt(node ast.Node, name string) int {
+	switch item := node.(type) {
+	case *ast.AssignStmt:
+		if item.Tok == token.DEFINE {
+			return matchingIdentifierCount(item.Lhs, name)
+		}
+	case *ast.ValueSpec:
+		return matchingNameCount(item.Names, name)
+	case *ast.RangeStmt:
+		if item.Tok == token.DEFINE {
+			return matchingIdentifierCount([]ast.Expr{item.Key, item.Value}, name)
+		}
+	}
+	return 0
+}
+
+func matchingIdentifierCount(expressions []ast.Expr, name string) int {
+	count := 0
+	for _, expr := range expressions {
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
+			count++
+		}
+	}
+	return count
+}
+
+func matchingNameCount(identifiers []*ast.Ident, name string) int {
+	count := 0
+	for _, ident := range identifiers {
+		if ident.Name == name {
+			count++
+		}
+	}
 	return count
 }
 
@@ -619,7 +660,27 @@ func formatExpr(fset *token.FileSet, expr ast.Expr) string {
 	return text
 }
 
-func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt, kind ExtractKind, outputs []extractionOutput) ([]string, []string, error) {
+type extractionParameterSet struct {
+	names        []string
+	declarations []string
+}
+
+func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []ast.Stmt, kind ExtractKind, outputs []extractionOutput) (extractionParameterSet, error) {
+	used := extractionUsedNames(selected, outputs)
+	params := extractionParameterSet{}
+	if err := appendReceiverParameter(fset, owner, kind, used, &params); err != nil {
+		return extractionParameterSet{}, err
+	}
+	if err := appendFunctionParameters(fset, owner, used, &params); err != nil {
+		return extractionParameterSet{}, err
+	}
+	if kind == ExtractMethod && owner.Recv == nil {
+		return extractionParameterSet{}, fmt.Errorf("method extraction requires an owner receiver")
+	}
+	return params, nil
+}
+
+func extractionUsedNames(selected []ast.Stmt, outputs []extractionOutput) map[string]bool {
 	used := make(map[string]bool)
 	for _, stmt := range selected {
 		ast.Inspect(stmt, func(node ast.Node) bool {
@@ -631,45 +692,52 @@ func extractionParameters(fset *token.FileSet, owner *ast.FuncDecl, selected []a
 			return true
 		})
 	}
-	var names, decls []string
-	if owner.Recv != nil {
-		field := owner.Recv.List[0]
-		name := field.Names[0].Name
-		if used[name] {
-			names = append(names, name)
-			if kind == ExtractKindFunction {
-				text, err := nodeSource(fset, field.Type)
-				if err != nil {
-					return nil, nil, err
-				}
-				decls = append(decls, name+" "+text)
-			}
-		}
+	return used
+}
+
+func appendReceiverParameter(fset *token.FileSet, owner *ast.FuncDecl, kind ExtractKind, used map[string]bool, params *extractionParameterSet) error {
+	if owner.Recv == nil {
+		return nil
 	}
+	field := owner.Recv.List[0]
+	name := field.Names[0].Name
+	if !used[name] {
+		return nil
+	}
+	params.names = append(params.names, name)
+	if kind != ExtractKindFunction {
+		return nil
+	}
+	text, err := nodeSource(fset, field.Type)
+	if err != nil {
+		return err
+	}
+	params.declarations = append(params.declarations, name+" "+text)
+	return nil
+}
+
+func appendFunctionParameters(fset *token.FileSet, owner *ast.FuncDecl, used map[string]bool, params *extractionParameterSet) error {
 	if owner.Type.Params != nil {
 		for _, field := range owner.Type.Params.List {
 			if _, ok := field.Type.(*ast.Ellipsis); ok {
-				return nil, nil, fmt.Errorf("variadic owner parameters are unsupported")
+				return fmt.Errorf("variadic owner parameters are unsupported")
 			}
 			if len(field.Names) == 0 {
 				continue
 			}
 			typeText, err := nodeSource(fset, field.Type)
 			if err != nil {
-				return nil, nil, err
+				return err
 			}
 			for _, ident := range field.Names {
-				if used[ident.Name] && !slices.Contains(names, ident.Name) {
-					decls = append(decls, ident.Name+" "+typeText)
-					names = append(names, ident.Name)
+				if used[ident.Name] && !slices.Contains(params.names, ident.Name) {
+					params.declarations = append(params.declarations, ident.Name+" "+typeText)
+					params.names = append(params.names, ident.Name)
 				}
 			}
 		}
 	}
-	if kind == ExtractMethod && owner.Recv == nil {
-		return nil, nil, fmt.Errorf("method extraction requires an owner receiver")
-	}
-	return names, decls, nil
+	return nil
 }
 
 func extractionScope(file *ast.File, params []string) map[string]bool {
@@ -719,31 +787,35 @@ func extractionScope(file *ast.File, params []string) map[string]bool {
 func localBindings(body *ast.BlockStmt) map[string]bool {
 	locals := make(map[string]bool)
 	ast.Inspect(body, func(node ast.Node) bool {
-		switch item := node.(type) {
-		case *ast.AssignStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range item.Lhs {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
-						locals[ident.Name] = true
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, ident := range item.Names {
-				locals[ident.Name] = true
-			}
-		case *ast.RangeStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range []ast.Expr{item.Key, item.Value} {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
-						locals[ident.Name] = true
-					}
-				}
-			}
-		}
+		addLocalBindingsAt(node, locals)
 		return true
 	})
 	return locals
+}
+
+func addLocalBindingsAt(node ast.Node, locals map[string]bool) {
+	switch item := node.(type) {
+	case *ast.AssignStmt:
+		if item.Tok == token.DEFINE {
+			addIdentifierBindings(item.Lhs, locals)
+		}
+	case *ast.ValueSpec:
+		for _, ident := range item.Names {
+			locals[ident.Name] = true
+		}
+	case *ast.RangeStmt:
+		if item.Tok == token.DEFINE {
+			addIdentifierBindings([]ast.Expr{item.Key, item.Value}, locals)
+		}
+	}
+}
+
+func addIdentifierBindings(expressions []ast.Expr, locals map[string]bool) {
+	for _, expr := range expressions {
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
+			locals[ident.Name] = true
+		}
+	}
 }
 
 func rejectShadowedNames(stmt ast.Stmt, allowed, locals map[string]bool) error {

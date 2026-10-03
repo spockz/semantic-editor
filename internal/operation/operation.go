@@ -10,7 +10,6 @@ import (
 	"slices"
 
 	"semedit/internal/backend"
-	"semedit/internal/capability"
 )
 
 // Entry is the type-erased view of an operation stored in the registry.
@@ -167,142 +166,11 @@ func NewRegistry() *Registry {
 // It is a function rather than a Registry method because Go methods cannot declare type parameters.
 // Type erasure lives only in the Parse, Invoke, and Format closures built here.
 func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
-	if err := ValidateParameterContracts(def.Params); err != nil {
-		return fmt.Errorf("register %q parameters: %w", def.Key, err)
-	}
-	if err := validateDefOutput(def); err != nil {
+	if err := validateRegistration(registry, def); err != nil {
 		return err
 	}
-	if registry == nil {
-		return fmt.Errorf("register %q: %w", def.Key, ErrInvalidDefinition)
-	}
-	if def.Key == "" || def.Parse == nil {
-		return fmt.Errorf("register %q: %w", def.Key, ErrInvalidDefinition)
-	}
-	if _, exists := registry.byKey[def.Key]; exists {
-		return fmt.Errorf("register %q: %w", def.Key, ErrDuplicateOperation)
-	}
-	if def.MCPName != "" {
-		if _, exists := registry.byMCP[def.MCPName]; exists {
-			return fmt.Errorf("register MCP tool %q: %w", def.MCPName, ErrDuplicateOperation)
-		}
-	}
-	if def.CLIName != "" {
-		if _, exists := registry.byCLI[def.CLIName]; exists {
-			return fmt.Errorf("register CLI command %q: %w", def.CLIName, ErrDuplicateOperation)
-		}
-	}
-	languages := make([]backend.LanguageID, 0, len(def.Handlers))
-	for language := range def.Handlers {
-		languages = append(languages, language)
-	}
-	slices.Sort(languages)
-	entry := Entry{
-		Key:           def.Key,
-		VariantVerb:   def.VariantVerb,
-		VariantKind:   def.VariantKind,
-		Summary:       def.Summary,
-		Params:        append([]ParameterContract(nil), def.Params...),
-		Level:         def.Level,
-		CLIName:       def.CLIName,
-		MCPName:       def.MCPName,
-		PlacementKey:  def.PlacementKey,
-		Batchable:     def.Batchable,
-		BufferedBatch: def.BufferedBatch,
-		ReadOnly:      def.ReadOnly,
-		Languages:     languages,
-		ExampleRaw:    cloneRaw(def.ExampleRaw),
-		Output:        def.Output,
-		ErrorOutput:   def.ErrorOutput,
-		Parse: func(raw map[string]any) (any, error) {
-			if err := ValidateParameterValues(raw, def.Params); err != nil {
-				return nil, err
-			}
-			request, err := def.Parse(raw)
-			if err != nil {
-				return nil, err
-			}
-			return request, nil
-		},
-		Invoke: func(cc CallContext, raw map[string]any) (any, error) {
-			if err := ValidateParameterValues(raw, def.Params); err != nil {
-				return nil, err
-			}
-			request, err := def.Parse(raw)
-			if err != nil {
-				return nil, err
-			}
-			ctx := cc.Ctx
-			if ctx == nil {
-				ctx = context.Background()
-			}
-			project := effectiveProject(cc, projectOf(request))
-			if def.PrepareProject != nil {
-				project, err = def.PrepareProject(project)
-				if err != nil {
-					return nil, fmt.Errorf("prepare %q project: %w", def.Key, err)
-				}
-			}
-			setProject(&request, project)
-			// A lone LanguageAuto handler marks a language-independent operation:
-			// invoke directly without backend language resolution.
-			if len(def.Handlers) == 1 {
-				if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-					result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
-					if err != nil {
-						return nil, err
-					}
-					return result, nil
-				}
-			}
-			language, err := resolveLanguage(cc, project)
-			if err != nil {
-				if def.Key == capability.OpVerify {
-					if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-						return invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
-					}
-				}
-				return nil, err
-			}
-			if handler, ok := def.Handlers[language]; ok && handler != nil {
-				result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
-				if err != nil {
-					return nil, err
-				}
-				return result, nil
-			}
-			// LanguageAuto keys a language-independent handler used when resolution
-			// yields no dedicated implementation (workspace-lifetime operations).
-			if handler, ok := def.Handlers[backend.LanguageAuto]; ok && handler != nil {
-				result, err := invokeHandler(ctx, cc, request, handler, !def.ReadOnly)
-				if err != nil {
-					return nil, err
-				}
-				return result, nil
-			}
-			return nil, fmt.Errorf("dispatch %q for language %q: %w", def.Key, language, ErrUnsupportedLanguage)
-		},
-		Format: func(value any) (string, error) {
-			result, ok := value.(Res)
-			if !ok {
-				return "", fmt.Errorf("format %q: unexpected result type %T: %w", def.Key, value, ErrInvalidDefinition)
-			}
-			if def.Format == nil {
-				return fmt.Sprintf("%v", result), nil
-			}
-			return def.Format(result)
-		},
-	}
-	entry.FinalizeOutput = finalizeOutputHook(def)
-	entry.ProjectOutput = projectOutputHook(def)
-	entry.ProjectErrorOutput = projectErrorOutputHook(def)
-	registry.byKey[entry.Key] = entry
-	if entry.MCPName != "" {
-		registry.byMCP[entry.MCPName] = entry
-	}
-	if entry.CLIName != "" {
-		registry.byCLI[entry.CLIName] = entry
-	}
+	entry := buildRegisteredEntry(def)
+	publishRegisteredEntry(registry, entry)
 	return nil
 }
 

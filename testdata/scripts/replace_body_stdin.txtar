@@ -1,4 +1,8 @@
 # Multiline function-body source arrives directly on stdin and preserves quotes and backslashes.
+stdin injected-body.txt
+! exec semedit replace-body --file api/text.go --symbol Message --body -
+stderr 'replacement body must remain inside its function wrapper'
+cmp api/text.go want/api/text_before.go
 stdin body.txt
 exec semedit replace-body --file api/text.go --symbol Message --body -
 stdout 'Successfully replaced body of Message'
@@ -19,6 +23,17 @@ func Message(value string) string {
 -- body.txt --
 value = value + "!"
 return value + ` "quoted" \\ slash`
+-- injected-body.txt --
+return value
+}
+func Injected() {
+
+-- want/api/text_before.go --
+package api
+
+func Message(value string) string {
+	return ""
+}
 
 -- want/api/text.go --
 package api

@@ -58,7 +58,10 @@ func InsertConstruct(ctx context.Context, filePath string, source string, opts I
 	} else if err := validateInsertConstructKind(source, kind, opts); err != nil {
 		return InsertConstructResult{}, err
 	}
+	return insertConstructByKind(ctx, filePath, source, opts, kind)
+}
 
+func insertConstructByKind(ctx context.Context, filePath, source string, opts InsertConstructOptions, kind ConstructKind) (InsertConstructResult, error) {
 	switch kind {
 	case backend.ConstructFunction, backend.ConstructMethod:
 		err := insertFunctionImpl(ctx, filePath, source, FunctionOptions{
@@ -89,38 +92,7 @@ func InsertConstruct(ctx context.Context, filePath string, source string, opts I
 		return InsertConstructResult{}, err
 
 	case backend.ConstructCase:
-		placement := opts.CasePlacement
-		if placement == "" {
-			switch opts.Placement {
-			case "first":
-				placement = CasePlacementFirst
-			case "last":
-				placement = CasePlacementLast
-			case "before", "before_symbol":
-				placement = CasePlacementBefore
-			case "after", "after_symbol":
-				placement = CasePlacementAfter
-			case "before_default":
-				placement = CasePlacementBeforeDefault
-			default:
-				placement = ""
-			}
-		}
-		anchorCase := opts.AnchorCase
-		if anchorCase == "" {
-			anchorCase = opts.TargetSymbol
-		}
-		discriminator := opts.SwitchOn
-		if discriminator == "" {
-			discriminator = opts.Discriminator
-		}
-		diff, err := insertCaseImpl(ctx, filePath, opts.Function, discriminator, source, CaseOptions{
-			Placement:           placement,
-			AnchorCase:          anchorCase,
-			SwitchPath:          opts.SwitchPath,
-			AutoOrganizeImports: opts.AutoOrganizeImports,
-		})
-		return InsertConstructResult{Diff: diff}, err
+		return insertConstructCase(ctx, filePath, source, opts)
 
 	case backend.ConstructDeclaration:
 		err := insertDeclarationImpl(ctx, filePath, source, Options{
@@ -139,6 +111,45 @@ func InsertConstruct(ctx context.Context, filePath string, source string, opts I
 
 	default:
 		return InsertConstructResult{}, fmt.Errorf("unsupported Go construct insertion kind: %q", kind)
+	}
+}
+
+func insertConstructCase(ctx context.Context, filePath, source string, opts InsertConstructOptions) (InsertConstructResult, error) {
+	placement := opts.CasePlacement
+	if placement == "" {
+		placement = casePlacementFromGeneric(opts.Placement)
+	}
+	anchorCase := opts.AnchorCase
+	if anchorCase == "" {
+		anchorCase = opts.TargetSymbol
+	}
+	discriminator := opts.SwitchOn
+	if discriminator == "" {
+		discriminator = opts.Discriminator
+	}
+	diff, err := insertCaseImpl(ctx, filePath, opts.Function, discriminator, source, CaseOptions{
+		Placement:           placement,
+		AnchorCase:          anchorCase,
+		SwitchPath:          opts.SwitchPath,
+		AutoOrganizeImports: opts.AutoOrganizeImports,
+	})
+	return InsertConstructResult{Diff: diff}, err
+}
+
+func casePlacementFromGeneric(placement Placement) CasePlacement {
+	switch placement {
+	case "first":
+		return CasePlacementFirst
+	case "last":
+		return CasePlacementLast
+	case "before", "before_symbol":
+		return CasePlacementBefore
+	case "after", "after_symbol":
+		return CasePlacementAfter
+	case "before_default":
+		return CasePlacementBeforeDefault
+	default:
+		return ""
 	}
 }
 

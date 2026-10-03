@@ -102,64 +102,89 @@ func rawCommentGroupEnd(source []byte, fset *token.FileSet, group *ast.CommentGr
 }
 
 func findDocCommentTarget(file *ast.File, symbol string) (ast.Node, *ast.CommentGroup, error) {
-	var target ast.Node
-	var doc *ast.CommentGroup
+	var target docCommentCandidate
 	for _, decl := range file.Decls {
-		switch value := decl.(type) {
-		case *ast.FuncDecl:
-			if value.Recv == nil && value.Name.Name == symbol {
-				if target != nil {
-					return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
-				}
-				target, doc = value, value.Doc
-			}
-		case *ast.GenDecl:
-			for _, spec := range value.Specs {
-				name, specDoc, err := commentSpecName(spec, symbol)
-				if err != nil {
-					return nil, nil, err
-				}
-				if name != symbol {
-					continue
-				}
-				if len(value.Specs) != 1 {
-					return nil, nil, fmt.Errorf("declaration %q is grouped; comment ownership is unsupported", symbol)
-				}
-				if target != nil {
-					return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
-				}
-				target, doc = value, value.Doc
-				if doc == nil {
-					doc = specDoc
-				}
-			}
+		candidate, err := docCommentInDeclaration(decl, symbol)
+		if err != nil {
+			return nil, nil, err
 		}
+		if !candidate.found {
+			continue
+		}
+		if target.found {
+			return nil, nil, fmt.Errorf("declaration %q is ambiguous", symbol)
+		}
+		target = candidate
 	}
-	if target == nil {
+	if !target.found {
 		return nil, nil, fmt.Errorf("top-level declaration %q not found", symbol)
 	}
-	return target, doc, nil
+	return target.node, target.doc, nil
 }
 
-func commentSpecName(spec ast.Spec, symbol string) (string, *ast.CommentGroup, error) {
+type docCommentCandidate struct {
+	node  ast.Node
+	doc   *ast.CommentGroup
+	found bool
+}
+
+func docCommentInDeclaration(decl ast.Decl, symbol string) (docCommentCandidate, error) {
+	switch value := decl.(type) {
+	case *ast.FuncDecl:
+		if value.Recv == nil && value.Name.Name == symbol {
+			return docCommentCandidate{node: value, doc: value.Doc, found: true}, nil
+		}
+	case *ast.GenDecl:
+		return docCommentInGeneralDeclaration(value, symbol)
+	}
+	return docCommentCandidate{}, nil
+}
+
+func docCommentInGeneralDeclaration(decl *ast.GenDecl, symbol string) (docCommentCandidate, error) {
+	for _, spec := range decl.Specs {
+		identity, err := commentSpecIdentity(spec, symbol)
+		if err != nil {
+			return docCommentCandidate{}, err
+		}
+		if identity.name != symbol {
+			continue
+		}
+		if len(decl.Specs) != 1 {
+			return docCommentCandidate{}, fmt.Errorf("declaration %q is grouped; comment ownership is unsupported", symbol)
+		}
+		doc := decl.Doc
+		if doc == nil {
+			doc = identity.doc
+		}
+		return docCommentCandidate{node: decl, doc: doc, found: true}, nil
+	}
+	return docCommentCandidate{}, nil
+}
+
+type commentSpec struct {
+	name string
+	doc  *ast.CommentGroup
+}
+
+func commentSpecIdentity(spec ast.Spec, symbol string) (commentSpec, error) {
 	switch item := spec.(type) {
 	case *ast.TypeSpec:
-		return item.Name.Name, item.Doc, nil
+		return commentSpec{name: item.Name.Name, doc: item.Doc}, nil
 	case *ast.ValueSpec:
 		if len(item.Names) > 1 {
 			for _, ident := range item.Names {
 				if ident.Name == symbol {
-					return "", nil, fmt.Errorf("declaration %q shares a ValueSpec; comment ownership is unsupported", symbol)
+					return commentSpec{}, fmt.Errorf("declaration %q shares a ValueSpec; comment ownership is unsupported", symbol)
 				}
 			}
 		}
 		for _, ident := range item.Names {
 			if ident.Name == symbol {
-				return ident.Name, item.Doc, nil
+				return commentSpec{name: ident.Name, doc: item.Doc}, nil
 			}
 		}
 	}
-	return "", nil, nil
+	return commentSpec{}, nil
 }
 
 func validateDocCommentOwnership(source []byte, fset *token.FileSet, file *ast.File, target ast.Node, doc *ast.CommentGroup, symbol string) error {

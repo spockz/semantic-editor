@@ -9,7 +9,7 @@ Whole-function body replacement is unnecessarily broad for localized edits, whil
 
 ## Decision
 
-The generic lifecycle uses four registry operations: insert_construct, replace_construct, remove_construct, and move_construct. Each accepts a backend-supported kind. Construct kinds and selector requirements are declared per operation and backend, and MCP schemas are derived from those executable capabilities. This does not imply support for every kind or language.
+The generic lifecycle uses four registry operations: insert_construct, replace_construct, remove_construct, and move_construct. Insert, replace, and remove accept a backend-supported kind; move selects a named declaration by symbol and has no kind parameter. Construct kinds and selector requirements are declared per operation and backend, and MCP schemas are derived from those executable capabilities. This does not imply support for every kind or language.
 
 replace_construct replaces one selected construct in place. A named declaration is selected by symbol and does not require in_function. Go declaration replacement currently includes functions, methods, types, constants, and variables; the new declaration must preserve the selected name and collisions fail before mutation. Nested constructs use in_function, kind, and their applicable discriminator or construct_path.
 
