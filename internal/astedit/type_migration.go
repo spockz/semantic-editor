@@ -39,12 +39,12 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 	if !moveWithin(workspaceRoot, moduleRoot) || !moveWithin(moduleRoot, targetPath) {
 		return SemanticEditPlan{}, fmt.Errorf("type migration requires an existing Go file in the selected workspace module")
 	}
-	if err := rejectMoveSymlinkPath(moduleRoot, targetPath); err != nil {
-		return SemanticEditPlan{}, err
+	if pathErr := rejectMoveSymlinkPath(moduleRoot, targetPath); pathErr != nil {
+		return SemanticEditPlan{}, pathErr
 	}
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return SemanticEditPlan{}, err
+		if authorizationErr := buffer.AuthorizeWrites(ctx, moduleRoot); authorizationErr != nil {
+			return SemanticEditPlan{}, authorizationErr
 		}
 	}
 	readSet, err := inspectMoveModuleFiles(ctx, moduleRoot, targetPath, targetPath, symbol)
@@ -62,8 +62,8 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 	if err != nil {
 		return SemanticEditPlan{}, fmt.Errorf("load type-migration package types: %w", err)
 	}
-	if err := validateRefactorPackages(pkgs, "type migration"); err != nil {
-		return SemanticEditPlan{}, err
+	if packageErr := validateRefactorPackages(pkgs, "type migration"); packageErr != nil {
+		return SemanticEditPlan{}, packageErr
 	}
 	readSet, err = completeRefactorReadSet(ctx, moduleRoot, readSet, pkgs)
 	if err != nil {
@@ -73,8 +73,8 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 	if err != nil {
 		return SemanticEditPlan{}, fmt.Errorf("reload type-migration package types from captured inputs: %w", err)
 	}
-	if err := validateRefactorPackages(pkgs, "type migration"); err != nil {
-		return SemanticEditPlan{}, err
+	if packageErr := validateRefactorPackages(pkgs, "type migration"); packageErr != nil {
+		return SemanticEditPlan{}, packageErr
 	}
 	pkg := packageForMoveFile(pkgs, targetPath)
 	if pkg == nil {
@@ -99,8 +99,8 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 		}
 		return SemanticEditPlan{}, fmt.Errorf("desired expression %q does not denote a Go type", desiredType)
 	}
-	if _, err := PlanAliasTypeMigration(currentType.String(), desiredType, currentType, desired.Type); err != nil {
-		return SemanticEditPlan{}, err
+	if _, validationErr := PlanAliasTypeMigration(currentType.String(), desiredType, currentType, desired.Type); validationErr != nil {
+		return SemanticEditPlan{}, validationErr
 	}
 	start, end := pkg.Fset.Position(field.Type.Pos()).Offset, pkg.Fset.Position(field.Type.End()).Offset
 	if start < 0 || end > len(source) || start >= end {

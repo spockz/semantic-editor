@@ -17,6 +17,14 @@ import (
 	"semedit/internal/symbol"
 )
 
+type parsedFunctionReplacement struct {
+	receiver    string
+	name        string
+	fset        *token.FileSet
+	source      string
+	declaration *ast.FuncDecl
+}
+
 func replaceDeclarationConstruct(ctx context.Context, filePath, symbolQuery string, kind ConstructKind, source string, opts ConstructOptions) (string, error) {
 	if strings.TrimSpace(symbolQuery) == "" {
 		return "", fmt.Errorf("symbol is required for %s replacement", kind)
@@ -66,71 +74,30 @@ func replaceDeclarationConstruct(ctx context.Context, filePath, symbolQuery stri
 }
 
 func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []byte, fset *token.FileSet, file *ast.File, symbolQuery string, kind ConstructKind, source string, opts ConstructOptions) (string, error) {
-	receiver, name, err := symbol.ParseIdentifier(symbolQuery)
+	replacement, err := parseFunctionReplacement(symbolQuery, kind, source)
 	if err != nil {
-		return "", fmt.Errorf("parse symbol %q: %w", symbolQuery, err)
+		return "", err
 	}
-	replacementFset := token.NewFileSet()
-	replacementSource := strings.TrimSpace(source)
-	if !strings.HasPrefix(replacementSource, "package ") {
-		replacementSource = "package replacement\n\n" + replacementSource
-	}
-	replacementFile, err := parser.ParseFile(replacementFset, "replacement.go", []byte(replacementSource), parser.ParseComments|parser.AllErrors)
+	target, err := findFunctionConstructTarget(file, replacement, symbolQuery, kind, cleanPath)
 	if err != nil {
-		return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
+		return "", err
 	}
-	if len(replacementFile.Decls) != 1 {
-		return "", ErrMultipleDeclarations
-	}
-	replacement, ok := replacementFile.Decls[0].(*ast.FuncDecl)
-	if !ok {
-		return "", fmt.Errorf("replacement source must be one function or method declaration")
-	}
-	if (kind == ConstructMethod) != (replacement.Recv != nil) || replacement.Name.Name != name {
-		return "", fmt.Errorf("replacement must preserve the selected %s symbol %q", kind, symbolQuery)
-	}
-	if kind == ConstructMethod && extractReceiverName(replacement.Recv) != receiver {
-		return "", fmt.Errorf("replacement method receiver must preserve %q", receiver)
-	}
-	var target *ast.FuncDecl
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != name || extractReceiverName(fn.Recv) != receiver || (kind == ConstructMethod) != (fn.Recv != nil) {
-			continue
-		}
-		if target != nil {
-			return "", fmt.Errorf("symbol %q is ambiguous in %s", symbolQuery, cleanPath)
-		}
-		target = fn
-	}
-	if target == nil {
-		return "", fmt.Errorf("%s %q not found in %s", kind, symbolQuery, cleanPath)
-	}
-	if kind == ConstructMethod && receiverTypeKey(target.Recv) != receiverTypeKey(replacement.Recv) {
+	if kind == ConstructMethod && receiverTypeKey(target.Recv) != receiverTypeKey(replacement.declaration.Recv) {
 		return "", fmt.Errorf("replacement method receiver must preserve the selected receiver syntax")
 	}
 	filtered := *file
 	filtered.Decls = slices.DeleteFunc(slices.Clone(file.Decls), func(decl ast.Decl) bool { return decl == target })
-	if err := checkConstructDeclarationCollision(ctx, cleanPath, &filtered, replacement); err != nil {
-		return "", fmt.Errorf("check replacement declaration collision: %w", err)
+	if collisionErr := checkConstructDeclarationCollision(ctx, cleanPath, &filtered, replacement.declaration); collisionErr != nil {
+		return "", fmt.Errorf("check replacement declaration collision: %w", collisionErr)
 	}
 	startPos := target.Pos()
-	if target.Doc != nil && replacement.Doc != nil {
+	if target.Doc != nil && replacement.declaration.Doc != nil {
 		startPos = target.Doc.Pos()
 	}
 	start, end := fset.Position(startPos).Offset, fset.Position(target.End()).Offset
-	replacementStart := replacementFset.Position(replacement.Pos()).Offset
-	replacementEnd := replacementFset.Position(replacement.End()).Offset
-	if replacement.Doc != nil {
-		replacementStart = replacementFset.Position(replacement.Doc.Pos()).Offset
-	}
-	replacementBytesInput := []byte(replacementSource)
-	if replacementStart < 0 || replacementEnd > len(replacementBytesInput) || replacementStart >= replacementEnd {
-		return "", fmt.Errorf("replacement function source span is invalid")
-	}
-	replacementBytes, err := format.Source(replacementBytesInput[replacementStart:replacementEnd])
+	replacementBytes, err := functionReplacementBytes(replacement)
 	if err != nil {
-		return "", fmt.Errorf("format replacement function: %w", err)
+		return "", err
 	}
 	updated := replaceBytes(content, start, end, replacementBytes)
 	formatted, err := format.Source(updated)
@@ -158,6 +125,71 @@ func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []b
 		}
 	}
 	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[start:end])), strings.TrimSpace(string(replacementBytes))), nil
+}
+
+func parseFunctionReplacement(symbolQuery string, kind ConstructKind, source string) (parsedFunctionReplacement, error) {
+	receiver, name, err := symbol.ParseIdentifier(symbolQuery)
+	if err != nil {
+		return parsedFunctionReplacement{}, fmt.Errorf("parse symbol %q: %w", symbolQuery, err)
+	}
+	replacementSource := strings.TrimSpace(source)
+	if !strings.HasPrefix(replacementSource, "package ") {
+		replacementSource = "package replacement\n\n" + replacementSource
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "replacement.go", []byte(replacementSource), parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return parsedFunctionReplacement{}, &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
+	}
+	if len(file.Decls) != 1 {
+		return parsedFunctionReplacement{}, ErrMultipleDeclarations
+	}
+	declaration, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok {
+		return parsedFunctionReplacement{}, fmt.Errorf("replacement source must be one function or method declaration")
+	}
+	if (kind == ConstructMethod) != (declaration.Recv != nil) || declaration.Name.Name != name {
+		return parsedFunctionReplacement{}, fmt.Errorf("replacement must preserve the selected %s symbol %q", kind, symbolQuery)
+	}
+	if kind == ConstructMethod && extractReceiverName(declaration.Recv) != receiver {
+		return parsedFunctionReplacement{}, fmt.Errorf("replacement method receiver must preserve %q", receiver)
+	}
+	return parsedFunctionReplacement{receiver: receiver, name: name, fset: fset, source: replacementSource, declaration: declaration}, nil
+}
+
+func findFunctionConstructTarget(file *ast.File, replacement parsedFunctionReplacement, symbolQuery string, kind ConstructKind, cleanPath string) (*ast.FuncDecl, error) {
+	var target *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != replacement.name || extractReceiverName(function.Recv) != replacement.receiver || (kind == ConstructMethod) != (function.Recv != nil) {
+			continue
+		}
+		if target != nil {
+			return nil, fmt.Errorf("symbol %q is ambiguous in %s", symbolQuery, cleanPath)
+		}
+		target = function
+	}
+	if target == nil {
+		return nil, fmt.Errorf("%s %q not found in %s", kind, symbolQuery, cleanPath)
+	}
+	return target, nil
+}
+
+func functionReplacementBytes(replacement parsedFunctionReplacement) ([]byte, error) {
+	start := replacement.fset.Position(replacement.declaration.Pos()).Offset
+	end := replacement.fset.Position(replacement.declaration.End()).Offset
+	if replacement.declaration.Doc != nil {
+		start = replacement.fset.Position(replacement.declaration.Doc.Pos()).Offset
+	}
+	source := []byte(replacement.source)
+	if start < 0 || end > len(source) || start >= end {
+		return nil, fmt.Errorf("replacement function source span is invalid")
+	}
+	formatted, err := format.Source(source[start:end])
+	if err != nil {
+		return nil, fmt.Errorf("format replacement function: %w", err)
+	}
+	return formatted, nil
 }
 
 func namedDeclarationKind(file *ast.File, name string) (ConstructKind, bool, error) {

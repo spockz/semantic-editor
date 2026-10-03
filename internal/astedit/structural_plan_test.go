@@ -238,8 +238,8 @@ func TestStructuralSourcePlanners(t *testing.T) {
 		} {
 			for _, replacement := range []string{"new comment", ""} {
 				before := []byte(directiveSource)
-				_, err := PlanSetDocComment(before, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: replacement}})
-				if err == nil {
+				_, planErr := PlanSetDocComment(before, SetDocCommentIntent{Symbol: "Settings", Comment: OptionalString{Present: true, Value: replacement}})
+				if planErr == nil {
 					t.Fatalf("directive doc was editable with replacement %q", replacement)
 				}
 				if string(before) != directiveSource {
@@ -375,8 +375,8 @@ func TestDocCommentBlockCRLFRawRange(t *testing.T) {
 	if fn.Doc == nil || fn.Doc.Text() != "New documentation.\n" || strings.Contains(string(set.Source), "*/") {
 		t.Fatalf("replacement comment was not attached or old raw terminator remains:\n%s", set.Source)
 	}
-	if err := typeCheckPlannedSource(t, set.Source); err != nil {
-		t.Fatalf("updated CRLF comment source did not type-check: %v", err)
+	if typeCheckErr := typeCheckPlannedSource(t, set.Source); typeCheckErr != nil {
+		t.Fatalf("updated CRLF comment source did not type-check: %v", typeCheckErr)
 	}
 	empty := OptionalString{Present: true, Value: ""}
 	removed, err := PlanSetDocComment(set.Source, SetDocCommentIntent{Symbol: "f", Comment: empty})

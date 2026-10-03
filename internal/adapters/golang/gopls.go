@@ -86,21 +86,21 @@ func renameSelected(ctx context.Context, workDir string, selected backend.Symbol
 			return err
 		}
 		for path, source := range expected {
-			canonical, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return fmt.Errorf("resolve rename lookup input: %w", err)
+			canonical, pathErr := filepath.EvalSymlinks(path)
+			if pathErr != nil {
+				return fmt.Errorf("resolve rename lookup input: %w", pathErr)
 			}
-			info, err := os.Stat(canonical)
-			if err != nil {
-				return fmt.Errorf("stat rename lookup input: %w", err)
+			info, statErr := os.Stat(canonical)
+			if statErr != nil {
+				return fmt.Errorf("stat rename lookup input: %w", statErr)
 			}
 			if !info.Mode().IsRegular() {
 				return errors.New("rename lookup input is not a regular file")
 			}
 			// #nosec G304 -- inputs come from the backend's exact resolver snapshot.
-			input, err := sourcebuf.ReadFile(ctx, canonical)
-			if err != nil {
-				return fmt.Errorf("read rename lookup input: %w", err)
+			input, inputErr := sourcebuf.ReadFile(ctx, canonical)
+			if inputErr != nil {
+				return fmt.Errorf("read rename lookup input: %w", inputErr)
 			}
 			if !bytes.Equal(input, source) {
 				return errors.New("rename analysis input changed since symbol lookup")

@@ -339,8 +339,8 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 		}
 		session := b.session
 		uri := pathutil.FileURI(file)
-		if err := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); err != nil {
-			return nil, &RustError{Op: "didOpen", File: file, Err: err}
+		if openErr := session.Notify(ctx, "textDocument/didOpen", map[string]any{lspTextDocumentKey: map[string]any{"uri": uri, "languageId": "rust", "version": 1, "text": string(source)}}); openErr != nil {
+			return nil, &RustError{Op: "didOpen", File: file, Err: openErr}
 		}
 		raw, err := session.Request(ctx, "textDocument/documentSymbol", map[string]any{lspTextDocumentKey: map[string]string{"uri": uri}})
 		if err != nil {
@@ -350,8 +350,8 @@ func (b *RustBackend) Rename(ctx context.Context, request neutralbackend.RenameR
 		if err != nil {
 			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
 		}
-		if err := validateRustDocumentSymbolURI(symbols, uri); err != nil {
-			return nil, &RustError{Op: "documentSymbol", File: file, Err: err}
+		if uriErr := validateRustDocumentSymbolURI(symbols, uri); uriErr != nil {
+			return nil, &RustError{Op: "documentSymbol", File: file, Err: uriErr}
 		}
 		lookup, err := selectRustSymbol(request.Symbol, root, file, source, symbols)
 		if err != nil {
@@ -957,8 +957,8 @@ func (b *RustBackend) Outline(ctx context.Context, request neutralbackend.Outlin
 		return nil, fmt.Errorf("inspect outline path: %w", err)
 	}
 	request.Path = selected
-	if err := readlsp.ValidateOutlineRequest(request, info.IsDir()); err != nil {
-		return nil, err
+	if requestErr := readlsp.ValidateOutlineRequest(request, info.IsDir()); requestErr != nil {
+		return nil, requestErr
 	}
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("rust outline requires a regular source file")

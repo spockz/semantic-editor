@@ -224,9 +224,9 @@ func newInstallCommand(workDir string) *cobra.Command {
 func newIntegrationStatusCommand(workDir string) *cobra.Command {
 	var scope, workspace string
 	cmd := &cobra.Command{Use: "status TARGET", Short: "Report native semedit harness integration status", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		target, err := targetArgs(args)
-		if err != nil {
-			return err
+		target, targetErr := targetArgs(args)
+		if targetErr != nil {
+			return targetErr
 		}
 		if workspace == "" {
 			workspace = workDir
@@ -293,12 +293,12 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cc := operation.NewCallContext(workDir, backend.ProjectContext{})
 			cc.Ctx = cmd.Context()
-			raw, err := rawParams(entry, values, func(name string) bool { return cmd.Flags().Changed(name) })
-			if err != nil {
-				return err
+			raw, paramsErr := rawParams(entry, values, func(name string) bool { return cmd.Flags().Changed(name) })
+			if paramsErr != nil {
+				return paramsErr
 			}
-			if err := expandStdinPayloads(entry, raw, cmd.InOrStdin()); err != nil {
-				return err
+			if stdinErr := expandStdinPayloads(entry, raw, cmd.InOrStdin()); stdinErr != nil {
+				return stdinErr
 			}
 			result, err := registry.Dispatch(cc, entry.Key, raw)
 			if err != nil {

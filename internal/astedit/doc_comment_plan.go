@@ -38,8 +38,8 @@ func PlanSetDocComment(source []byte, intent SetDocCommentIntent) (SourcePlan, e
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	if err := validateDocCommentOwnership(source, fset, file, target, doc, intent.Symbol); err != nil {
-		return SourcePlan{}, err
+	if ownershipErr := validateDocCommentOwnership(source, fset, file, target, doc, intent.Symbol); ownershipErr != nil {
+		return SourcePlan{}, ownershipErr
 	}
 	newline := "\n"
 	if bytes.Contains(source, []byte("\r\n")) {

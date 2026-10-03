@@ -35,143 +35,195 @@ const (
 
 // PlanInsertStatement plans a direct call or assignment insertion without publication.
 func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePlan, error) {
-	if intent.Function == "" || intent.Source == "" {
-		return SourcePlan{}, fmt.Errorf("function and source are required")
-	}
-	anchorMode := intent.Anchor
-	if anchorMode == "" {
-		switch intent.Placement {
-		case StatementBefore:
-			anchorMode = "before"
-		case StatementAfter:
-			anchorMode = "after"
-		case "":
-			anchorMode = "end"
-		default:
-			anchorMode = string(intent.Placement)
-		}
-	}
-	if !slices.Contains([]string{"start", "end", "before_return", "before", "after"}, anchorMode) {
-		return SourcePlan{}, fmt.Errorf("unsupported statement anchor %q", anchorMode)
-	}
-	if (anchorMode == "before" || anchorMode == "after") && intent.Discriminator == "" {
-		return SourcePlan{}, fmt.Errorf("discriminator is required for %s insertion", anchorMode)
-	}
-	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
+	anchorMode, err := validateInsertStatementIntent(source, intent)
+	if err != nil {
 		return SourcePlan{}, err
 	}
 	fset, file, err := parsePlanSource(source)
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	functionName := intent.Function
-	ownerSelector := ""
-	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
-		ownerSelector, functionName = functionName[:dot], functionName[dot+1:]
-	}
-	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
-		return SourcePlan{}, fmt.Errorf("function selector %q is invalid", intent.Function)
-	}
-	var owner *ast.FuncDecl
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name.Name != functionName {
-			continue
-		}
-		if !matchesFunctionOwner(fn, ownerSelector) {
-			continue
-		}
-		if owner != nil {
-			return SourcePlan{}, fmt.Errorf("function selector %q is ambiguous in this file", intent.Function)
-		}
-		owner = fn
-	}
-	if owner == nil || owner.Body == nil {
-		return SourcePlan{}, fmt.Errorf("function %q not found", intent.Function)
-	}
 	_, err = parseSingleDirectStatement(intent.Source)
 	if err != nil {
 		return SourcePlan{}, fmt.Errorf("validate inserted statement: %w", err)
 	}
-	var anchor ast.Stmt
-	switch anchorMode {
+	owner, err := findInsertStatementOwner(file, intent.Function)
+	if err != nil {
+		return SourcePlan{}, err
+	}
+	selection, err := resolveInsertStatementAnchor(source, fset, file, owner, intent, anchorMode)
+	if err != nil {
+		return SourcePlan{}, err
+	}
+	return buildInsertStatementPlan(source, fset, owner, intent, selection)
+}
+
+func validateInsertStatementIntent(source []byte, intent InsertStatementIntent) (string, error) {
+	if intent.Function == "" || intent.Source == "" {
+		return "", fmt.Errorf("function and source are required")
+	}
+	anchorMode := resolveInsertStatementAnchorMode(intent.Anchor, intent.Placement)
+	if !slices.Contains([]string{"start", "end", "before_return", "before", "after"}, anchorMode) {
+		return "", fmt.Errorf("unsupported statement anchor %q", anchorMode)
+	}
+	if (anchorMode == "before" || anchorMode == "after") && intent.Discriminator == "" {
+		return "", fmt.Errorf("discriminator is required for %s insertion", anchorMode)
+	}
+	if err := validateRevisionBoundSelector(source, intent.ConstructPath, intent.ExpectedRevision); err != nil {
+		return "", err
+	}
+	return anchorMode, nil
+}
+
+func resolveInsertStatementAnchorMode(anchor string, placement StatementPlacement) string {
+	if anchor != "" {
+		return anchor
+	}
+	switch placement {
+	case StatementBefore:
+		return "before"
+	case StatementAfter:
+		return "after"
+	case "":
+		return "end"
+	default:
+		return string(placement)
+	}
+}
+
+func findInsertStatementOwner(file *ast.File, selector string) (*ast.FuncDecl, error) {
+	functionName, ownerSelector := splitFunctionOwnerSelector(selector)
+	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
+		return nil, fmt.Errorf("function selector %q is invalid", selector)
+	}
+	var owner *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if !ok || function.Name.Name != functionName || !matchesFunctionOwner(function, ownerSelector) {
+			continue
+		}
+		if owner != nil {
+			return nil, fmt.Errorf("function selector %q is ambiguous in this file", selector)
+		}
+		owner = function
+	}
+	if owner == nil || owner.Body == nil {
+		return nil, fmt.Errorf("function %q not found", selector)
+	}
+	return owner, nil
+}
+
+func splitFunctionOwnerSelector(selector string) (string, string) {
+	functionName := selector
+	ownerSelector := ""
+	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
+		ownerSelector, functionName = functionName[:dot], functionName[dot+1:]
+	}
+	return functionName, ownerSelector
+}
+
+type insertStatementAnchor struct {
+	statement ast.Stmt
+	mode      string
+}
+
+func resolveInsertStatementAnchor(source []byte, fset *token.FileSet, file *ast.File, owner *ast.FuncDecl, intent InsertStatementIntent, mode string) (insertStatementAnchor, error) {
+	if mode == "before" || mode == "after" {
+		return selectDirectStatementAnchor(source, fset, file, owner, intent, mode)
+	}
+	return selectConvenienceStatementAnchor(owner, intent.Function, mode)
+}
+
+func selectConvenienceStatementAnchor(owner *ast.FuncDecl, function, mode string) (insertStatementAnchor, error) {
+	selection := insertStatementAnchor{mode: mode}
+	switch mode {
 	case "start":
 		if len(owner.Body.List) > 0 {
-			anchor = owner.Body.List[0]
+			selection.statement = owner.Body.List[0]
 		}
 	case "end":
 		if len(owner.Body.List) > 0 {
-			anchor = owner.Body.List[len(owner.Body.List)-1]
-			if isInsertTerminal(anchor) {
-				anchorMode = "before"
+			selection.statement = owner.Body.List[len(owner.Body.List)-1]
+			if isInsertTerminal(selection.statement) {
+				selection.mode = "before"
 			}
 		}
 	case "before_return":
-		for _, stmt := range slices.Backward(owner.Body.List) {
-			if _, ok := stmt.(*ast.ReturnStmt); ok {
-				anchor, anchorMode = stmt, "before"
+		for _, statement := range slices.Backward(owner.Body.List) {
+			if _, ok := statement.(*ast.ReturnStmt); ok {
+				selection.statement, selection.mode = statement, "before"
 				break
 			}
 		}
-		if anchor == nil {
-			return SourcePlan{}, fmt.Errorf("function %q has no direct return statement", intent.Function)
-		}
-	case "before", "after":
-		candidates, _ := collectStatementExpressionCandidates(fset, source, file, owner)
-		matches := make([]constructCandidate, 0, 1)
-		for _, candidate := range candidates {
-			if !isDirectOwnerStatementCandidate(candidate) || candidate.key != normalizeConstructSelector(intent.Discriminator) {
-				continue
-			}
-			matches = append(matches, candidate)
-		}
-		if intent.ConstructPath.Present {
-			matches = slices.DeleteFunc(matches, func(candidate constructCandidate) bool { return candidate.path != intent.ConstructPath.Value })
-		}
-		if len(matches) == 0 {
-			if intent.ConstructPath.Present {
-				return SourcePlan{}, fmt.Errorf("construct_path %q does not select a direct statement anchor %q", intent.ConstructPath.Value, intent.Discriminator)
-			}
-			return SourcePlan{}, fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
-		}
-		if len(matches) > 1 {
-			return SourcePlan{}, fmt.Errorf("ambiguous statement anchor %q; select construct_path with expected_revision %q from:\n%s", intent.Discriminator, goReadRevision(source), formatSpanCandidates(fset, matches))
-		}
-		selected := matches[0]
-		if selected.class != "statement" {
-			return SourcePlan{}, fmt.Errorf("construct_path %s selects an expression, not a direct statement anchor", selected.path)
-		}
-		anchor, _ = selected.node.(ast.Stmt)
-		for _, stmt := range owner.Body.List {
-			if stmt == anchor {
-				break
-			}
+		if selection.statement == nil {
+			return insertStatementAnchor{}, fmt.Errorf("function %q has no direct return statement", function)
 		}
 	}
-	if anchor == nil && (anchorMode == "start" || anchorMode == "end") {
+	return selection, nil
+}
+
+func selectDirectStatementAnchor(source []byte, fset *token.FileSet, file *ast.File, owner *ast.FuncDecl, intent InsertStatementIntent, mode string) (insertStatementAnchor, error) {
+	candidates, _ := collectStatementExpressionCandidates(fset, source, file, owner)
+	matches := matchingDirectStatementCandidates(candidates, intent)
+	if len(matches) == 0 {
+		return insertStatementAnchor{}, missingDirectStatementAnchorError(intent)
+	}
+	if len(matches) > 1 {
+		return insertStatementAnchor{}, fmt.Errorf("ambiguous statement anchor %q; select construct_path with expected_revision %q from:\n%s", intent.Discriminator, goReadRevision(source), formatSpanCandidates(fset, matches))
+	}
+	selected := matches[0]
+	if selected.class != "statement" {
+		return insertStatementAnchor{}, fmt.Errorf("construct_path %s selects an expression, not a direct statement anchor", selected.path)
+	}
+	statement, _ := selected.node.(ast.Stmt)
+	return insertStatementAnchor{statement: statement, mode: mode}, nil
+}
+
+func matchingDirectStatementCandidates(candidates []constructCandidate, intent InsertStatementIntent) []constructCandidate {
+	matches := make([]constructCandidate, 0, 1)
+	for _, candidate := range candidates {
+		if isDirectOwnerStatementCandidate(candidate) && candidate.key == normalizeConstructSelector(intent.Discriminator) {
+			matches = append(matches, candidate)
+		}
+	}
+	if intent.ConstructPath.Present {
+		matches = slices.DeleteFunc(matches, func(candidate constructCandidate) bool { return candidate.path != intent.ConstructPath.Value })
+	}
+	return matches
+}
+
+func missingDirectStatementAnchorError(intent InsertStatementIntent) error {
+	if intent.ConstructPath.Present {
+		return fmt.Errorf("construct_path %q does not select a direct statement anchor %q", intent.ConstructPath.Value, intent.Discriminator)
+	}
+	return fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
+}
+
+func buildInsertStatementPlan(source []byte, fset *token.FileSet, owner *ast.FuncDecl, intent InsertStatementIntent, selection insertStatementAnchor) (SourcePlan, error) {
+	if selection.statement == nil && (selection.mode == "start" || selection.mode == "end") {
 		offset, indent := emptyBlockInsertionOffset(source, fset, owner.Body)
 		newline := sourceNewline(source)
 		updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.Source)+newline))
 		return newSourcePlan(source, updated, PlanSelection{Kind: "statement", Owner: intent.Function}, ProofCompleteSourceSet), nil
 	}
-	if err := requireDedicatedStatementLine(source, fset, owner.Body, anchor); err != nil {
+	if err := requireDedicatedStatementLine(source, fset, owner.Body, selection.statement); err != nil {
 		return SourcePlan{}, err
 	}
 	var offset int
 	var indent string
-	if anchorMode == "start" || anchorMode == "before" {
-		offset, indent = fieldLineStart(source, fset.Position(anchor.Pos()).Offset)
+	if selection.mode == "start" || selection.mode == "before" {
+		offset, indent = fieldLineStart(source, fset.Position(selection.statement.Pos()).Offset)
 	} else {
-		if isInsertTerminal(anchor) {
+		if isInsertTerminal(selection.statement) {
 			return SourcePlan{}, fmt.Errorf("cannot insert after a terminal return, panic, or branch statement")
 		}
-		offset, indent = fieldLineEnd(source, fset.Position(anchor.End()).Offset)
+		offset, indent = fieldLineEnd(source, fset.Position(selection.statement.End()).Offset)
 	}
 	newline := sourceNewline(source)
 	updated := spliceSource(source, offset, offset, []byte(indent+strings.TrimSpace(intent.Source)+newline))
 	return newSourcePlan(source, updated, PlanSelection{
 		Kind: "statement", Owner: intent.Function, Target: intent.Discriminator,
-		Start: fset.Position(anchor.Pos()).Offset, End: fset.Position(anchor.End()).Offset,
+		Start: fset.Position(selection.statement.Pos()).Offset, End: fset.Position(selection.statement.End()).Offset,
 	}, ProofCompleteSourceSet, ProofBlockBinding, ProofControlFlowSet), nil
 }
 

@@ -104,45 +104,66 @@ func validateBatchMoveTargets(workDir, sourcePath, destinationPath string) error
 		return fmt.Errorf("resolve batch workspace root symlinks: %w", err)
 	}
 	for _, target := range []string{sourcePath, destinationPath} {
-		absolute, err := filepath.Abs(target)
+		if targetErr := validateBatchMovePath(rootPath, root, target); targetErr != nil {
+			return targetErr
+		}
+	}
+	return nil
+}
+
+func validateBatchMovePath(rootPath, root, target string) error {
+	absolute, err := filepath.Abs(target)
+	if err != nil {
+		return fmt.Errorf("resolve batch move path %q: %w", target, err)
+	}
+	lexicalRelative, err := filepath.Rel(rootPath, absolute)
+	if err != nil || lexicalRelative == "." || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("batch move path %q must remain inside the workspace", target)
+	}
+	if symlinkErr := rejectBatchMoveSymlinkComponents(rootPath, lexicalRelative, target); symlinkErr != nil {
+		return symlinkErr
+	}
+	resolved, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return fmt.Errorf("resolve batch move path %q: %w", target, err)
+	}
+	if relativeErr := validateBatchMoveRelative(root, resolved, target); relativeErr != nil {
+		return relativeErr
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return fmt.Errorf("inspect batch move file %q: %w", target, err)
+	}
+	if !info.Mode().IsRegular() || filepath.Ext(resolved) != ".go" {
+		return fmt.Errorf("batch move path %q must be a regular Go source file", target)
+	}
+	return nil
+}
+
+func rejectBatchMoveSymlinkComponents(rootPath, relative, target string) error {
+	current := rootPath
+	for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
 		if err != nil {
-			return fmt.Errorf("resolve batch move path %q: %w", target, err)
+			return fmt.Errorf("inspect batch move path %q: %w", target, err)
 		}
-		lexicalRelative, err := filepath.Rel(rootPath, absolute)
-		if err != nil || lexicalRelative == "." || lexicalRelative == ".." || strings.HasPrefix(lexicalRelative, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("batch move path %q must remain inside the workspace", target)
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("batch move path %q cannot contain symlink components", target)
 		}
-		current := rootPath
-		for component := range strings.SplitSeq(lexicalRelative, string(filepath.Separator)) {
-			current = filepath.Join(current, component)
-			info, err := os.Lstat(current)
-			if err != nil {
-				return fmt.Errorf("inspect batch move path %q: %w", target, err)
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				return fmt.Errorf("batch move path %q cannot contain symlink components", target)
-			}
-		}
-		resolved, err := filepath.EvalSymlinks(absolute)
-		if err != nil {
-			return fmt.Errorf("resolve batch move path %q: %w", target, err)
-		}
-		relative, err := filepath.Rel(root, resolved)
-		if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return fmt.Errorf("batch move path %q must resolve inside the workspace", target)
-		}
-		for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
-			switch component {
-			case ".git", ".scratch", "vendor", "node_modules":
-				return fmt.Errorf("batch move path %q is outside the captured workspace files", target)
-			}
-		}
-		info, err := os.Stat(resolved)
-		if err != nil {
-			return fmt.Errorf("inspect batch move file %q: %w", target, err)
-		}
-		if !info.Mode().IsRegular() || filepath.Ext(resolved) != ".go" {
-			return fmt.Errorf("batch move path %q must be a regular Go source file", target)
+	}
+	return nil
+}
+
+func validateBatchMoveRelative(root, resolved, target string) error {
+	relative, err := filepath.Rel(root, resolved)
+	if err != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("batch move path %q must resolve inside the workspace", target)
+	}
+	for component := range strings.SplitSeq(relative, string(filepath.Separator)) {
+		switch component {
+		case ".git", ".scratch", "vendor", "node_modules":
+			return fmt.Errorf("batch move path %q is outside the captured workspace files", target)
 		}
 	}
 	return nil

@@ -20,9 +20,9 @@ func TestFindReferencesHonorsReadOnlyModuleFlags(t *testing.T) {
 		"go.sum":     "github.com/rogpeppe/go-internal v1.16.0 h1:O9DK+vNMDVGLr2BeZqmpLeMjiMNkuXfcqntWbZV6S5g=\n",
 		"api/api.go": "package api\nimport \"github.com/BurntSushi/toml\"\ntype Config struct { Name string }\nfunc Decode(data []byte) (Config, error) { var config Config; err := toml.Unmarshal(data, &config); return config, err }\n",
 	})
-	cacheOutput, err := exec.Command("go", "env", "GOMODCACHE").Output()
-	if err != nil {
-		t.Fatalf("read Go module cache: %v", err)
+	cacheOutput, cacheErr := exec.Command("go", "env", "GOMODCACHE").Output()
+	if cacheErr != nil {
+		t.Fatalf("read Go module cache: %v", cacheErr)
 	}
 	cachedModule := filepath.Join(strings.TrimSpace(string(cacheOutput)), "github.com", "!burnt!sushi", "toml@v1.6.0")
 	if _, err := os.Stat(cachedModule); os.IsNotExist(err) {
@@ -58,12 +58,12 @@ func TestFindReferencesHonorsReadOnlyModuleFlags(t *testing.T) {
 		before = append(before, manifestState{path: path, content: content, modTime: info.ModTime()})
 	}
 
-	_, err = (GoBackend{}).FindReferences(context.Background(), backend.ReferencesRequest{
+	_, referencesErr := (GoBackend{}).FindReferences(context.Background(), backend.ReferencesRequest{
 		Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo},
 		Symbol:  "Decode",
 	})
-	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "sum") {
-		t.Fatalf("FindReferences() error = %v, want missing-sum failure under read-only module loading", err)
+	if referencesErr == nil || !strings.Contains(strings.ToLower(referencesErr.Error()), "sum") {
+		t.Fatalf("FindReferences() error = %v, want missing-sum failure under read-only module loading", referencesErr)
 	}
 	for _, expected := range before {
 		content, err := os.ReadFile(expected.path)

@@ -653,9 +653,9 @@ func Local() int { return 1 }
 		}
 	}
 	read := func(name string) string {
-		content, err := os.ReadFile(filepath.Join(root, name))
-		if err != nil {
-			t.Fatalf("read %s: %v", name, err)
+		content, readErr := os.ReadFile(filepath.Join(root, name))
+		if readErr != nil {
+			t.Fatalf("read %s: %v", name, readErr)
 		}
 		return string(content)
 	}

@@ -47,8 +47,8 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 		t.Fatalf("critical prefix label missing: %q", prefix)
 	}
 	var projected map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(prefix, label)), &projected); err != nil {
-		t.Fatalf("decode critical projection: %v", err)
+	if decodeErr := json.Unmarshal([]byte(strings.TrimPrefix(prefix, label)), &projected); decodeErr != nil {
+		t.Fatalf("decode critical projection: %v", decodeErr)
 	}
 	result := projected["result"].(map[string]any)
 	if result["status"] != "applied" {
@@ -103,8 +103,8 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 		t.Fatalf("critical text missing body separator: %q", text)
 	}
 	var projection map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimPrefix(prefix, "Critical result (JSON): ")), &projection); err != nil {
-		t.Fatalf("decode critical projection: %v", err)
+	if decodeErr := json.Unmarshal([]byte(strings.TrimPrefix(prefix, "Critical result (JSON): ")), &projection); decodeErr != nil {
+		t.Fatalf("decode critical projection: %v", decodeErr)
 	}
 	result := projection["result"].(map[string]any)
 	for _, field := range []string{"function_target", "changes"} {
@@ -259,8 +259,8 @@ func TestCriticalNativeFieldsExposeExactDiagnosticResult(t *testing.T) {
 	var gotDelta map[string]any
 	decoder := json.NewDecoder(strings.NewReader(string(encoded)))
 	decoder.UseNumber()
-	if err := decoder.Decode(&gotDelta); err != nil {
-		t.Fatalf("decode diagnostic delta: %v", err)
+	if decodeErr := decoder.Decode(&gotDelta); decodeErr != nil {
+		t.Fatalf("decode diagnostic delta: %v", decodeErr)
 	}
 	wantDelta := map[string]any{"net_delta": json.Number("1"), "introduced": []any{"new diagnostic"}, "resolved": []any{}}
 	if !reflect.DeepEqual(gotDelta, wantDelta) {

@@ -285,8 +285,8 @@ func (b *KotlinBackend) Verify(ctx context.Context, request neutralbackend.Verif
 	if b.session != nil && b.root != root {
 		return nil, &KotlinError{Op: "verify", Workspace: root, Err: ErrKotlinSessionConflict}
 	}
-	if err := b.ensureSession(ctx, root, request.Project.Kotlin); err != nil {
-		return nil, err
+	if sessionErr := b.ensureSession(ctx, root, request.Project.Kotlin); sessionErr != nil {
+		return nil, sessionErr
 	}
 	scratchFile, err := b.copySelectedFile(root, file, source)
 	if err != nil {
@@ -296,8 +296,8 @@ func (b *KotlinBackend) Verify(ctx context.Context, request neutralbackend.Verif
 	if selector, ok := b.session.(interface{ SelectDiagnosticsURI(string) }); ok {
 		selector.SelectDiagnosticsURI(uri)
 	}
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "kotlin", "version": 1, "text": string(source)}}); err != nil {
-		return nil, err
+	if openErr := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "languageId": "kotlin", "version": 1, "text": string(source)}}); openErr != nil {
+		return nil, openErr
 	}
 	diagnosticCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -340,8 +340,8 @@ func (b *KotlinBackend) Outline(ctx context.Context, request neutralbackend.Outl
 	if err != nil {
 		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: err}
 	}
-	if err := readlsp.ValidateOutlineRequest(request, directory); err != nil {
-		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: err}
+	if requestErr := readlsp.ValidateOutlineRequest(request, directory); requestErr != nil {
+		return nil, &neutralbackend.Error{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Err: requestErr}
 	}
 	if !project.WorkspaceTrust.Allows(root) {
 		return nil, &neutralbackend.WorkspaceTrustError{Operation: neutralbackend.OperationOutline, Language: neutralbackend.LanguageKotlin, Workspace: root}
@@ -455,18 +455,18 @@ func (b *KotlinBackend) copySelectedFile(root, file string, source []byte) (stri
 }
 
 func (b *KotlinBackend) requestDocumentSymbols(ctx context.Context, root, file string, source []byte, config neutralbackend.KotlinConfig, operation string) (json.RawMessage, string, error) {
-	if err := b.ensureSession(ctx, root, config); err != nil {
-		return nil, "", err
+	if sessionErr := b.ensureSession(ctx, root, config); sessionErr != nil {
+		return nil, "", sessionErr
 	}
 	scratchFile, err := b.copySelectedFile(root, file, source)
 	if err != nil {
 		return nil, "", err
 	}
 	uri := pathutil.FileURI(scratchFile)
-	if err := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
+	if openErr := b.session.Notify(ctx, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{
 		"uri": uri, "languageId": "kotlin", "version": 1, "text": string(source),
-	}}); err != nil {
-		return nil, "", &KotlinError{Op: operation + " didOpen", File: file, Err: err}
+	}}); openErr != nil {
+		return nil, "", &KotlinError{Op: operation + " didOpen", File: file, Err: openErr}
 	}
 	raw, err := b.session.Request(ctx, "textDocument/documentSymbol", map[string]any{"textDocument": map[string]string{"uri": uri}})
 	if err != nil {
@@ -499,11 +499,11 @@ func defaultKotlinSessionFactory(ctx context.Context, root string, config neutra
 	cmd.Dir = root
 	home := filepath.Join(root, ".home")
 	configHome := filepath.Join(root, ".config")
-	if err := os.MkdirAll(home, 0o700); err != nil {
-		return nil, err
+	if homeErr := os.MkdirAll(home, 0o700); homeErr != nil {
+		return nil, homeErr
 	}
-	if err := os.MkdirAll(configHome, 0o700); err != nil {
-		return nil, err
+	if configErr := os.MkdirAll(configHome, 0o700); configErr != nil {
+		return nil, configErr
 	}
 	cmd.Env = filteredKotlinEnvironment(os.Environ(), home, configHome)
 	processSession := &kotlinProcessSession{root: root, reports: make(map[string]kotlinDiagnosticReceipt), wake: make(chan struct{}, 1)}

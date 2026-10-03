@@ -148,11 +148,11 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 	if added.SourceIndex != nil || !signatureIdentifier(added.Name) || added.Name == "_" || added.Type == "" || added.Variadic {
 		return SignaturePlan{}, fmt.Errorf("change signature: one valid non-variadic appended parameter is required")
 	}
-	if err := signatureParseType(added.Type); err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: invalid appended parameter type: %w", err)
+	if typeErr := signatureParseType(added.Type); typeErr != nil {
+		return SignaturePlan{}, fmt.Errorf("change signature: invalid appended parameter type: %w", typeErr)
 	}
-	if err := signatureClosedArgument(added.Argument); err != nil {
-		return SignaturePlan{}, fmt.Errorf("change signature: appended argument is unsupported: %w", err)
+	if argumentErr := signatureClosedArgument(added.Argument); argumentErr != nil {
+		return SignaturePlan{}, fmt.Errorf("change signature: appended argument is unsupported: %w", argumentErr)
 	}
 	for _, parameter := range oldParameters {
 		if parameter.Name == added.Name {

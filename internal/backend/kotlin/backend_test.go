@@ -291,19 +291,19 @@ func TestOutlineMapsExactSnapshotAndCanonicalKinds(t *testing.T) {
 		Project: neutralbackend.ProjectContext{RootDir: root, File: file, WorkspaceTrust: neutralbackend.NewWorkspaceTrust(root, true)},
 		Path:    file, IncludeUnexported: true,
 	}
-	result, err := underTest.Outline(context.Background(), request)
-	if err != nil {
-		t.Fatal(err)
+	result, outlineErr := underTest.Outline(context.Background(), request)
+	if outlineErr != nil {
+		t.Fatal(outlineErr)
 	}
 	if session == nil || !session.closed || session.text != string(source) || session.uri == "" {
 		t.Fatalf("session did not receive and close over exact snapshot: %#v", session)
 	}
-	entries, err := os.ReadDir(filepath.Join(root, ".scratch"))
-	if err != nil || len(entries) != 0 {
-		t.Fatalf("request scratch was not cleaned: %v, %v", entries, err)
+	entries, readErr := os.ReadDir(filepath.Join(root, ".scratch"))
+	if readErr != nil || len(entries) != 0 {
+		t.Fatalf("request scratch was not cleaned: %v, %v", entries, readErr)
 	}
-	if _, err := os.Stat(scratch); !os.IsNotExist(err) {
-		t.Fatalf("isolated server workspace still exists: %q, %v", scratch, err)
+	if _, statErr := os.Stat(scratch); !os.IsNotExist(statErr) {
+		t.Fatalf("isolated server workspace still exists: %q, %v", scratch, statErr)
 	}
 	if len(result.Files) != 1 || result.Files[0].File != "Widget.kt" || result.Files[0].Symbols == nil {
 		t.Fatalf("outline file metadata = %#v", result.Files)

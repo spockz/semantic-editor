@@ -150,13 +150,13 @@ func snapshotBatchWorkspace(root string) (map[string]string, error) {
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return fmt.Errorf("relativize %s: %w", path, err)
+		rel, relativeErr := filepath.Rel(root, path)
+		if relativeErr != nil {
+			return fmt.Errorf("relativize %s: %w", path, relativeErr)
 		}
-		data, err := workspace.ReadFile(rel)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", rel, err)
+		data, readErr := workspace.ReadFile(rel)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", rel, readErr)
 		}
 		files[filepath.ToSlash(rel)] = string(data)
 		return nil

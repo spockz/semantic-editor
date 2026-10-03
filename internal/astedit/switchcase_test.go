@@ -255,8 +255,8 @@ func Route(mode string) string {
 	if string(content) != initial {
 		t.Fatalf("ambiguous request changed file:\n%s", content)
 	}
-	if _, err := astedit.InsertCase(context.Background(), filePath, "Route", "mode", `case "new": return "new"`, astedit.CaseOptions{SwitchPath: "0.1"}); err != nil {
-		t.Fatalf("InsertCase with suggested nested path failed: %v", err)
+	if _, insertErr := astedit.InsertCase(context.Background(), filePath, "Route", "mode", `case "new": return "new"`, astedit.CaseOptions{SwitchPath: "0.1"}); insertErr != nil {
+		t.Fatalf("InsertCase with suggested nested path failed: %v", insertErr)
 	}
 	content, err = os.ReadFile(filePath)
 	if err != nil {
@@ -309,9 +309,9 @@ func Route(mode string, input any) string {
 		t.Fatalf("switch_on=mode should select only the ordinary mode switch:\n%s", updated)
 	}
 
-	if _, err := astedit.InsertCase(context.Background(), filePath, "Route", "input", `case bool:
-		return "bool"`, astedit.CaseOptions{}); err != nil {
-		t.Fatalf("InsertCase on type-switch asserted expression failed: %v", err)
+	if _, insertErr := astedit.InsertCase(context.Background(), filePath, "Route", "input", `case bool:
+		return "bool"`, astedit.CaseOptions{}); insertErr != nil {
+		t.Fatalf("InsertCase on type-switch asserted expression failed: %v", insertErr)
 	}
 	content, err = os.ReadFile(filePath)
 	if err != nil {

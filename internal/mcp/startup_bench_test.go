@@ -57,9 +57,9 @@ func BenchmarkMCPColdStartupVerify(b *testing.B) {
 				b.Fatal(err)
 			}
 		}
-		entries, err := os.ReadDir(dirs["GOMODCACHE"])
-		if err != nil || len(entries) != 0 {
-			b.Fatalf("module cache is not empty before iteration: entries=%d err=%v", len(entries), err)
+		entries, cacheReadErr := os.ReadDir(dirs["GOMODCACHE"])
+		if cacheReadErr != nil || len(entries) != 0 {
+			b.Fatalf("module cache is not empty before iteration: entries=%d err=%v", len(entries), cacheReadErr)
 		}
 		cmd := exec.Command(binary, "mcp", "--profile", "full")
 		cmd.Dir = workspace
@@ -78,15 +78,15 @@ func BenchmarkMCPColdStartupVerify(b *testing.B) {
 
 		b.StartTimer()
 		started := time.Now()
-		if err := cmd.Start(); err != nil {
-			b.Fatal(err)
+		if startErr := cmd.Start(); startErr != nil {
+			b.Fatal(startErr)
 		}
 		spawned := time.Now()
 		startupTotal += spawned.Sub(started)
-		if _, err := io.WriteString(stdin, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n"); err != nil {
+		if _, writeErr := io.WriteString(stdin, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\"}}\n"); writeErr != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			b.Fatalf("write initialize: %v", err)
+			b.Fatalf("write initialize: %v", writeErr)
 		}
 		initLine, err := reader.ReadString('\n')
 		initAt := time.Now()
@@ -101,10 +101,10 @@ func BenchmarkMCPColdStartupVerify(b *testing.B) {
 			_ = cmd.Wait()
 			b.Fatalf("invalid initialize response: %s", initLine)
 		}
-		if _, err := io.WriteString(stdin, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_verify\",\"arguments\":{\"path\":\".\",\"language\":\"go\",\"check_only\":true}}}\n"); err != nil {
+		if _, writeErr := io.WriteString(stdin, "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"semantic_verify\",\"arguments\":{\"path\":\".\",\"language\":\"go\",\"check_only\":true}}}\n"); writeErr != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
-			b.Fatalf("write semantic_verify: %v", err)
+			b.Fatalf("write semantic_verify: %v", writeErr)
 		}
 		verifyLine, err := reader.ReadString('\n')
 		verifyAt := time.Now()

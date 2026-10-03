@@ -42,117 +42,165 @@ type extractionOutput struct {
 	typeName string
 }
 
+type extractionInput struct {
+	ctx         context.Context
+	cleanPath   string
+	ownedBuffer *sourcebuf.Buffer
+	standalone  bool
+	content     []byte
+	fset        *token.FileSet
+	file        *ast.File
+	target      *ast.FuncDecl
+	selected    []ast.Stmt
+}
+
+type extractionCandidate struct {
+	source      []byte
+	declaration string
+}
+
 // ExtractFunction moves consecutive top-level call statements, optionally
 // preceded by one supported local declaration, into a helper.
 func ExtractFunction(ctx context.Context, filePath, owner, helper string, opts ExtractOptions) (string, error) {
-	if opts.Kind != ExtractKindFunction && opts.Kind != ExtractMethod {
-		return "", fmt.Errorf("unsupported extraction kind %q", opts.Kind)
-	}
-	if opts.StartLine <= 0 || opts.EndLine < opts.StartLine {
-		return "", fmt.Errorf("start_line and end_line must describe a positive ordered line range")
-	}
-	if !token.IsIdentifier(helper) || token.Lookup(helper).IsKeyword() || helper == "_" {
-		return "", fmt.Errorf("symbol %q is not a valid helper identifier", helper)
-	}
-	if types.Universe.Lookup(helper) != nil {
-		return "", fmt.Errorf("cannot extract: helper name %q collides with a predeclared Go identifier", helper)
-	}
-	cleanPath := filepath.Clean(filePath)
-	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
-	if err != nil {
+	if err := validateExtractRequest(helper, opts); err != nil {
 		return "", err
 	}
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	input, inputErr := loadExtractionInput(ctx, filePath, owner, opts)
+	if inputErr != nil {
+		return "", inputErr
+	}
+	candidate, planErr := planExtraction(input, owner, helper, opts)
+	if planErr != nil {
+		return "", planErr
+	}
+	return publishExtraction(input, candidate, owner)
+}
+
+func validateExtractRequest(helper string, opts ExtractOptions) error {
+	if opts.Kind != ExtractKindFunction && opts.Kind != ExtractMethod {
+		return fmt.Errorf("unsupported extraction kind %q", opts.Kind)
+	}
+	if opts.StartLine <= 0 || opts.EndLine < opts.StartLine {
+		return fmt.Errorf("start_line and end_line must describe a positive ordered line range")
+	}
+	if !token.IsIdentifier(helper) || token.Lookup(helper).IsKeyword() || helper == "_" {
+		return fmt.Errorf("symbol %q is not a valid helper identifier", helper)
+	}
+	if types.Universe.Lookup(helper) != nil {
+		return fmt.Errorf("cannot extract: helper name %q collides with a predeclared Go identifier", helper)
+	}
+	return nil
+}
+
+func loadExtractionInput(ctx context.Context, filePath, owner string, opts ExtractOptions) (extractionInput, error) {
+	input := extractionInput{cleanPath: filepath.Clean(filePath)}
+	preparedCtx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, input.cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("read extraction target: %w", err)
+		return extractionInput{}, err
+	}
+	input.ctx, input.ownedBuffer, input.standalone = preparedCtx, ownedBuffer, standalone
+	input.content, err = sourcebuf.ReadFile(input.ctx, input.cleanPath)
+	if err != nil {
+		return extractionInput{}, fmt.Errorf("read extraction target: %w", err)
 	}
 	recv, name, err := symbol.ParseIdentifier(owner)
 	if err != nil {
-		return "", fmt.Errorf("parse in_function selector: %w", err)
+		return extractionInput{}, fmt.Errorf("parse in_function selector: %w", err)
 	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
+	input.fset = token.NewFileSet()
+	input.file, err = parser.ParseFile(input.fset, input.cleanPath, input.content, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+		return extractionInput{}, &SyntaxError{File: input.cleanPath, Pos: extractSyntaxPosition(input.fset, err), Cause: err, Err: ErrSyntax}
 	}
-	target := findExtractOwner(file, name, recv)
-	if target == nil {
-		return "", &symbol.SymbolError{Op: "extract_function", File: cleanPath, Symbol: owner, Err: symbol.ErrNotFound}
+	input.target = findExtractOwner(input.file, name, recv)
+	if input.target == nil {
+		return extractionInput{}, &symbol.SymbolError{Op: "extract_function", File: input.cleanPath, Symbol: owner, Err: symbol.ErrNotFound}
 	}
-	if err := validateExtractOwner(file, target, owner, opts.Kind); err != nil {
-		return "", err
+	if ownerErr := validateExtractOwner(input.file, input.target, owner, opts.Kind); ownerErr != nil {
+		return extractionInput{}, ownerErr
 	}
-	selected, err := selectExtractStatements(fset, target.Body, owner, opts)
+	input.selected, err = selectExtractStatements(input.fset, input.target.Body, owner, opts)
 	if err != nil {
-		return "", err
+		return extractionInput{}, err
 	}
-	collides, err := helperNameExists(ctx, cleanPath, file.Name.Name, helper, opts.Kind, target)
+	return input, nil
+}
+
+func planExtraction(input extractionInput, owner, helper string, opts ExtractOptions) (extractionCandidate, error) {
+	collides, err := helperNameExists(input.ctx, input.cleanPath, input.file.Name.Name, helper, opts.Kind, input.target)
 	if err != nil {
-		return "", err
+		return extractionCandidate{}, err
 	}
 	if collides {
-		return "", fmt.Errorf("cannot extract: package declaration %q already exists", helper)
+		return extractionCandidate{}, fmt.Errorf("cannot extract: package declaration %q already exists", helper)
 	}
-	outputs, err := extractOutputs(fset, target, selected)
+	outputs, err := extractOutputs(input.fset, input.target, input.selected)
 	if err != nil {
-		return "", fmt.Errorf("cannot extract %s: %w", owner, err)
+		return extractionCandidate{}, fmt.Errorf("cannot extract %s: %w", owner, err)
 	}
-	if err := validateOutputAliases(selected, outputs, owner); err != nil {
-		return "", err
-	} else if err := validateOutputTypeNames(ctx, cleanPath, file, outputs, owner, content); err != nil {
-		return "", err
+	if aliasErr := validateOutputAliases(input.selected, outputs, owner); aliasErr != nil {
+		return extractionCandidate{}, aliasErr
 	}
-	params, err := extractionParameters(fset, target, selected, opts.Kind, outputs)
+	if typeNameErr := validateOutputTypeNames(input.ctx, input.cleanPath, input.file, outputs, owner, input.content); typeNameErr != nil {
+		return extractionCandidate{}, typeNameErr
+	}
+	params, err := extractionParameters(input.fset, input.target, input.selected, opts.Kind, outputs)
 	if err != nil {
-		return "", fmt.Errorf("cannot extract %s: %w", owner, err)
+		return extractionCandidate{}, fmt.Errorf("cannot extract %s: %w", owner, err)
 	}
-	if err := validateForwardedNames(target, selected, params.names, owner); err != nil {
-		return "", err
+	if forwardedErr := validateForwardedNames(input.target, input.selected, params.names, owner); forwardedErr != nil {
+		return extractionCandidate{}, forwardedErr
 	}
-	if err := validateExtractedScope(file, target, selected, params.names, outputs, owner); err != nil {
-		return "", err
+	if scopeErr := validateExtractedScope(input.file, input.target, input.selected, params.names, outputs, owner); scopeErr != nil {
+		return extractionCandidate{}, scopeErr
 	}
-	selectedSource := strings.TrimSpace(string(content[fset.Position(selected[0].Pos()).Offset:fset.Position(selected[len(selected)-1].End()).Offset]))
-	callSource := extractionCall(target, helper, params.names, outputs, opts.Kind)
-	declSource, err := extractionDeclaration(fset, target, helper, opts.Kind, params.declarations, outputs, selectedSource)
+	selected := input.selected
+	selectedSource := strings.TrimSpace(string(input.content[input.fset.Position(selected[0].Pos()).Offset:input.fset.Position(selected[len(selected)-1].End()).Offset]))
+	callSource := extractionCall(input.target, helper, params.names, outputs, opts.Kind)
+	declaration, err := extractionDeclaration(input.fset, input.target, helper, opts.Kind, params.declarations, outputs, selectedSource)
 	if err != nil {
-		return "", err
+		return extractionCandidate{}, err
 	}
-	updated, err := rewriteExtractedStatements(content, fset, target, selected, callSource, declSource, owner)
+	source, err := rewriteExtractedStatements(input.content, input.fset, input.target, selected, callSource, declaration, owner)
 	if err != nil {
-		return "", err
+		return extractionCandidate{}, err
 	}
-	formatted, err := format.Source(updated)
+	return extractionCandidate{source: source, declaration: declaration}, nil
+}
+
+func publishExtraction(input extractionInput, candidate extractionCandidate, owner string) (string, error) {
+	formatted, err := format.Source(candidate.source)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Snippet: declSource, Cause: err, Err: ErrSyntax}
+		return "", &SyntaxError{File: input.cleanPath, Snippet: candidate.declaration, Cause: err, Err: ErrSyntax}
 	}
 	formatted = normalizeExtractionNewlines(formatted)
-	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
-		return "", &SyntaxError{File: cleanPath, Snippet: declSource, Cause: err, Err: ErrSyntax}
+	if _, parseErr := parser.ParseFile(token.NewFileSet(), input.cleanPath, formatted, parser.ParseComments|parser.AllErrors); parseErr != nil {
+		return "", &SyntaxError{File: input.cleanPath, Snippet: candidate.declaration, Cause: parseErr, Err: ErrSyntax}
 	}
-	current, err := sourcebuf.ReadFile(ctx, cleanPath)
+	current, err := sourcebuf.ReadFile(input.ctx, input.cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
 	}
-	if err := validateExtractionCandidate(ctx, cleanPath, formatted); err != nil {
-		return "", err
-	} else if !bytes.Equal(current, content) {
+	if validateErr := validateExtractionCandidate(input.ctx, input.cleanPath, formatted); validateErr != nil {
+		return "", validateErr
+	}
+	if !bytes.Equal(current, input.content) {
 		return "", fmt.Errorf("cannot extract %s: source changed during extraction", owner)
 	}
-	buffer := sourcebuf.FromContext(ctx)
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
-		return "", fmt.Errorf("apply extracted source after compiler preflight: %w", err)
+	buffer := sourcebuf.FromContext(input.ctx)
+	if applyErr := buffer.Apply(input.ctx, []sourcebuf.Change{{Path: input.cleanPath, Before: input.content, After: formatted}}); applyErr != nil {
+		return "", fmt.Errorf("apply extracted source after compiler preflight: %w", applyErr)
 	}
-	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
+	finalSource, err := sourcebuf.ReadFile(input.ctx, input.cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
 	}
-	if standalone {
-		if err := ownedBuffer.Flush(ctx); err != nil {
+	if input.standalone {
+		if err := input.ownedBuffer.Flush(input.ctx); err != nil {
 			return "", fmt.Errorf("publish extracted source: %w", err)
 		}
 	}
-	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(finalSource)), nil
+	return UnifiedDiff(filepath.Base(input.cleanPath), string(input.content), string(finalSource)), nil
 }
 
 func validateOutputAliases(selected []ast.Stmt, outputs []extractionOutput, owner string) error {
@@ -229,6 +277,19 @@ func validateExtractOwner(file *ast.File, target *ast.FuncDecl, owner string, ki
 }
 
 func selectExtractStatements(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, error) {
+	selected, err := findExtractStatementRange(fset, body, owner, opts)
+	if err != nil {
+		return nil, err
+	}
+	for i, stmt := range selected {
+		if err := validateExtractStatement(fset, stmt, i, len(selected), owner, opts); err != nil {
+			return nil, err
+		}
+	}
+	return selected, nil
+}
+
+func findExtractStatementRange(fset *token.FileSet, body *ast.BlockStmt, owner string, opts ExtractOptions) ([]ast.Stmt, error) {
 	startIdx, endIdx := -1, -1
 	for i, stmt := range body.List {
 		pos, end := fset.Position(stmt.Pos()), fset.Position(stmt.End())
@@ -248,33 +309,41 @@ func selectExtractStatements(fset *token.FileSet, body *ast.BlockStmt, owner str
 	if startIdx < 0 || endIdx < 0 || endIdx < startIdx {
 		return nil, fmt.Errorf("line range %d-%d does not select a contiguous top-level statement region in %s", opts.StartLine, opts.EndLine, owner)
 	}
-	selected := body.List[startIdx : endIdx+1]
-	for i, stmt := range selected {
-		switch item := stmt.(type) {
-		case *ast.ExprStmt:
-			if _, ok := item.X.(*ast.CallExpr); !ok {
-				return nil, fmt.Errorf("cannot extract %s: selected statement on line %d is not a call expression", owner, fset.Position(stmt.Pos()).Line)
-			}
-		case *ast.AssignStmt:
-			if i != 0 || item.Tok != token.DEFINE || len(item.Lhs) == 0 || len(item.Lhs) != len(item.Rhs) {
-				return nil, fmt.Errorf("cannot extract %s: only one leading := declaration with matching named results is supported", owner)
-			}
-			seen := make(map[string]bool, len(item.Lhs))
-			for _, lhs := range item.Lhs {
-				ident, ok := lhs.(*ast.Ident)
-				if !ok || ident.Name == "_" || seen[ident.Name] {
-					return nil, fmt.Errorf("cannot extract %s: extraction results must be distinct named local variables", owner)
-				}
-				seen[ident.Name] = true
-			}
-		default:
-			return nil, fmt.Errorf("cannot extract %s: selected statement on line %d is not a call or supported local declaration", owner, fset.Position(stmt.Pos()).Line)
+	return body.List[startIdx : endIdx+1], nil
+}
+
+func validateExtractStatement(fset *token.FileSet, stmt ast.Stmt, index, count int, owner string, opts ExtractOptions) error {
+	switch item := stmt.(type) {
+	case *ast.ExprStmt:
+		if _, ok := item.X.(*ast.CallExpr); !ok {
+			return fmt.Errorf("cannot extract %s: selected statement on line %d is not a call expression", owner, fset.Position(stmt.Pos()).Line)
 		}
-		if i == 0 && fset.Position(stmt.Pos()).Line != opts.StartLine || i == len(selected)-1 && fset.Position(stmt.End()).Line != opts.EndLine {
-			return nil, fmt.Errorf("line range %d-%d must match statement boundaries exactly", opts.StartLine, opts.EndLine)
+	case *ast.AssignStmt:
+		if index != 0 || item.Tok != token.DEFINE || len(item.Lhs) == 0 || len(item.Lhs) != len(item.Rhs) {
+			return fmt.Errorf("cannot extract %s: only one leading := declaration with matching named results is supported", owner)
 		}
+		if err := validateExtractionResultNames(item.Lhs, owner); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("cannot extract %s: selected statement on line %d is not a call or supported local declaration", owner, fset.Position(stmt.Pos()).Line)
 	}
-	return selected, nil
+	if index == 0 && fset.Position(stmt.Pos()).Line != opts.StartLine || index == count-1 && fset.Position(stmt.End()).Line != opts.EndLine {
+		return fmt.Errorf("line range %d-%d must match statement boundaries exactly", opts.StartLine, opts.EndLine)
+	}
+	return nil
+}
+
+func validateExtractionResultNames(lhs []ast.Expr, owner string) error {
+	seen := make(map[string]bool, len(lhs))
+	for _, expression := range lhs {
+		ident, ok := expression.(*ast.Ident)
+		if !ok || ident.Name == "_" || seen[ident.Name] {
+			return fmt.Errorf("cannot extract %s: extraction results must be distinct named local variables", owner)
+		}
+		seen[ident.Name] = true
+	}
+	return nil
 }
 
 func validateExtractedScope(file *ast.File, target *ast.FuncDecl, selected []ast.Stmt, params []string, outputs []extractionOutput, owner string) error {
@@ -929,34 +998,56 @@ func helperNameExists(ctx context.Context, filePath, packageName, helper string,
 		if parsed.Name.Name != packageName {
 			continue
 		}
-		for _, decl := range parsed.Decls {
-			switch node := decl.(type) {
-			case *ast.FuncDecl:
-				if node.Name.Name == helper {
-					if kind == ExtractKindFunction && node.Recv == nil || kind == ExtractMethod && node.Recv != nil && extractReceiverName(node.Recv) == extractReceiverName(owner.Recv) {
-						return true, nil
-					}
-				}
-			case *ast.GenDecl:
-				if kind == ExtractMethod {
-					continue
-				}
-				for _, spec := range node.Specs {
-					switch item := spec.(type) {
-					case *ast.TypeSpec:
-						if item.Name.Name == helper {
-							return true, nil
-						}
-					case *ast.ValueSpec:
-						if slices.ContainsFunc(item.Names, func(name *ast.Ident) bool { return name.Name == helper }) {
-							return true, nil
-						}
-					}
-				}
-			}
+		if packageDeclaresExtractionHelper(parsed, helper, kind, extractReceiverName(owner.Recv)) {
+			return true, nil
 		}
 	}
 	return false, nil
+}
+
+func packageDeclaresExtractionHelper(file *ast.File, helper string, kind ExtractKind, receiver string) bool {
+	for _, decl := range file.Decls {
+		if declarationMatchesExtractionHelper(decl, helper, kind, receiver) {
+			return true
+		}
+	}
+	return false
+}
+
+func declarationMatchesExtractionHelper(decl ast.Decl, helper string, kind ExtractKind, receiver string) bool {
+	switch node := decl.(type) {
+	case *ast.FuncDecl:
+		if node.Name.Name != helper {
+			return false
+		}
+		if kind == ExtractKindFunction {
+			return node.Recv == nil
+		}
+		return node.Recv != nil && extractReceiverName(node.Recv) == receiver
+	case *ast.GenDecl:
+		if kind == ExtractMethod {
+			return false
+		}
+		return generalDeclarationMatchesHelper(node, helper)
+	default:
+		return false
+	}
+}
+
+func generalDeclarationMatchesHelper(decl *ast.GenDecl, helper string) bool {
+	for _, spec := range decl.Specs {
+		switch item := spec.(type) {
+		case *ast.TypeSpec:
+			if item.Name.Name == helper {
+				return true
+			}
+		case *ast.ValueSpec:
+			if slices.ContainsFunc(item.Names, func(name *ast.Ident) bool { return name.Name == helper }) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateExtractionCandidate(ctx context.Context, filePath string, source []byte) error {

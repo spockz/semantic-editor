@@ -1,0 +1,44 @@
+# The exact field selection must continue through earlier unrelated type groups.
+exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+cmp cache.go .scratch/want/cache.go
+stdout 'Extracted selected fields into a composed Go struct type.'
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypeorder
+
+go 1.24
+-- cache.go --
+package cache
+
+type unrelated struct {
+	value string
+}
+
+type cache struct {
+	entries map[string]int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.entries[key]
+	return value, ok
+}
+-- .scratch/want/cache.go --
+package cache
+
+type unrelated struct {
+	value string
+}
+
+type cache struct {
+	state cacheState
+}
+
+type cacheState struct {
+	entries map[string]int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.state.entries[key]
+	return value, ok
+}

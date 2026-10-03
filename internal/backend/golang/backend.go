@@ -273,12 +273,12 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 	}
 	if !request.DeferFormatting && len(changedPaths) > 0 {
 		if request.OrganizeImports {
-			if err := pipeline.OrganizeImports(ctx, request.Project.RootDir, changedPaths...); err != nil {
-				return nil, fmt.Errorf("organize imports after rename: %w", err)
+			if organizeErr := pipeline.OrganizeImports(ctx, request.Project.RootDir, changedPaths...); organizeErr != nil {
+				return nil, fmt.Errorf("organize imports after rename: %w", organizeErr)
 			}
 		} else {
-			if err := pipeline.Format(ctx, request.Project.RootDir, changedPaths...); err != nil {
-				return nil, fmt.Errorf("format after rename: %w", err)
+			if formatErr := pipeline.Format(ctx, request.Project.RootDir, changedPaths...); formatErr != nil {
+				return nil, fmt.Errorf("format after rename: %w", formatErr)
 			}
 		}
 	}
