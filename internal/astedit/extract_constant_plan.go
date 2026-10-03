@@ -30,8 +30,8 @@ func PlanConstantExtraction(source []byte, fset *token.FileSet, file *ast.File, 
 	if err != nil {
 		return ConstantExtractionPlan{}, err
 	}
-	if err := validateConstantNameScope(file, info, scope, owner, name); err != nil {
-		return ConstantExtractionPlan{}, err
+	if scopeErr := validateConstantNameScope(file, info, scope, owner, name); scopeErr != nil {
+		return ConstantExtractionPlan{}, scopeErr
 	}
 	details, err := inspectConstantExpression(source, fset, file, info, expr)
 	if err != nil {
