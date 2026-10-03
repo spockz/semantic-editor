@@ -91,8 +91,12 @@ func prepareImplementContract(ctx context.Context, cc CallContext, request imple
 		}
 	}
 	return implementContractPlan{
-		snapshot: snapshot, selected: selected, contractPath: contractPath, destination: destination,
-		contractPkg: contractPackage, plannedChanges: planned,
+		snapshot:       snapshot,
+		selected:       selected,
+		contractPath:   contractPath,
+		destination:    destination,
+		contractPkg:    contractPackage,
+		plannedChanges: planned,
 	}, nil
 }
 
