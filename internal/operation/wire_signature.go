@@ -71,10 +71,27 @@ func signatureOutputContract() OperationOutputContract {
 	}}
 }
 
-func finalizedSignatureFunctionTarget(ctx context.Context, cc CallContext, result structuralPlanResult) (*SymbolTarget, error) {
+type signatureFunctionTargetProof struct {
+	Target SymbolTarget
+	Proven bool
+}
+
+func finalizedSignatureFunctionTarget(ctx context.Context, cc CallContext, result structuralPlanResult) (signatureFunctionTargetProof, error) {
 	if cc.InBatch || result.Receipt.Status == EditAppliedWorking || result.Edit.Symbol == "" {
-		return nil, nil
+		return signatureFunctionTargetProof{}, nil
 	}
+	candidate, found := uniqueSignatureFunctionCandidate(result)
+	if !found || candidate.ExpectedRevision == nil {
+		return signatureFunctionTargetProof{}, nil
+	}
+	live, err := signatureFunctionCandidateSurvives(ctx, cc.WorkDir, candidate, result.Edit.Symbol)
+	if err != nil {
+		return signatureFunctionTargetProof{}, err
+	}
+	return signatureFunctionTargetProof{Target: candidate, Proven: live}, nil
+}
+
+func uniqueSignatureFunctionCandidate(result structuralPlanResult) (SymbolTarget, bool) {
 	var candidate SymbolTarget
 	matches := 0
 	for _, continuation := range result.Receipt.Continuations {
@@ -83,31 +100,29 @@ func finalizedSignatureFunctionTarget(ctx context.Context, cc CallContext, resul
 			matches++
 		}
 	}
-	if matches != 1 || candidate.ExpectedRevision == nil {
-		return nil, nil
-	}
-	actual, exists, err := receiptFileRevision(ctx, cc.WorkDir, candidate.File, false)
+	return candidate, matches == 1
+}
+
+func signatureFunctionCandidateSurvives(ctx context.Context, root string, candidate SymbolTarget, symbol string) (bool, error) {
+	actual, exists, err := receiptFileRevision(ctx, root, candidate.File, false)
 	if err != nil {
-		return nil, fmt.Errorf("verify finalized signature function target: %w", err)
+		return false, fmt.Errorf("verify finalized signature function target: %w", err)
 	}
 	if !exists || actual.Revision != *candidate.ExpectedRevision {
-		return nil, nil
+		return false, nil
 	}
-	source, err := sourcebuf.ReadFile(ctx, resolveWorkPath(cc.WorkDir, candidate.File))
+	source, err := sourcebuf.ReadFile(ctx, resolveWorkPath(root, candidate.File))
 	if err != nil {
-		return nil, fmt.Errorf("read finalized signature function target: %w", err)
+		return false, fmt.Errorf("read finalized signature function target: %w", err)
 	}
 	if structuralRevision(source) != actual.Revision {
-		return nil, nil
+		return false, nil
 	}
-	liveFunction, err := signatureSourceHasFreeFunction(source, candidate.File, result.Edit.Symbol)
+	liveFunction, err := signatureSourceHasFreeFunction(source, candidate.File, symbol)
 	if err != nil {
-		return nil, fmt.Errorf("parse finalized signature function target: %w", err)
+		return false, fmt.Errorf("parse finalized signature function target: %w", err)
 	}
-	if !liveFunction {
-		return nil, nil
-	}
-	return &candidate, nil
+	return liveFunction, nil
 }
 
 func signatureSourceHasFreeFunction(source []byte, filename, symbol string) (bool, error) {
@@ -172,9 +187,12 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 				return structuralPlanResult{}, fmt.Errorf("finalize change-signature receipt: %w", err)
 			}
 			result.Receipt = receipt
-			result.FunctionTarget, err = finalizedSignatureFunctionTarget(ctx, cc, result)
+			functionTarget, err := finalizedSignatureFunctionTarget(ctx, cc, result)
 			if err != nil {
 				return structuralPlanResult{}, fmt.Errorf("finalize signature function target: %w", err)
+			}
+			if functionTarget.Proven {
+				result.FunctionTarget = &functionTarget.Target
 			}
 			return result, nil
 		},

@@ -45,9 +45,12 @@ func signatureExpansionDef(key, cliName, mcpName, summary string, params []Param
 				return structuralPlanResult{}, fmt.Errorf("finalize signature expansion receipt: %w", err)
 			}
 			result.Receipt = receipt
-			result.FunctionTarget, err = finalizedSignatureFunctionTarget(ctx, cc, result)
+			functionTarget, err := finalizedSignatureFunctionTarget(ctx, cc, result)
 			if err != nil {
 				return structuralPlanResult{}, fmt.Errorf("finalize signature function target: %w", err)
+			}
+			if functionTarget.Proven {
+				result.FunctionTarget = &functionTarget.Target
 			}
 			return result, nil
 		},

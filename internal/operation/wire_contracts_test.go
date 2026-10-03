@@ -98,7 +98,7 @@ func TestFinalizedSignatureTargetRequiresTheSurvivingFunction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("finalizedSignatureFunctionTarget() error = %v", err)
 			}
-			if (target != nil) != test.wantLive {
+			if target.Proven != test.wantLive {
 				t.Fatalf("finalized target = %#v, want live %v", target, test.wantLive)
 			}
 		})
@@ -112,12 +112,12 @@ func TestFinalizedSignatureTargetRequiresTheSurvivingFunction(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "write.go"), []byte("package demo\nfunc write() {}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root}, result); err != nil || target != nil {
+	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root}, result); err != nil || target.Proven {
 		t.Fatalf("stale finalized target = %#v, %v; want no target", target, err)
 	}
 	result.Receipt.Status = EditAppliedWorking
 	result.Receipt.Continuations = nil
-	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root, InBatch: true}, result); err != nil || target != nil {
+	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root, InBatch: true}, result); err != nil || target.Proven {
 		t.Fatalf("buffered finalized target = %#v, %v; want no live target", target, err)
 	}
 }
@@ -149,6 +149,13 @@ func TestSignatureContinuationContractSeparatesReceiptInspectionFromFunctionEdit
 	registry := DefaultRegistry()
 	producers := []string{signatureChangeConsumer, introduceParameterConsumer, introduceParameterObjectConsumer}
 	functionConsumers := append(append([]string(nil), producers...), signatureReplaceBodyConsumer)
+	assertSignatureProducerContinuations(t, registry, producers, functionConsumers)
+	assertSignatureInspectionSources(t, registry, producers)
+	assertSignatureReplaceBodySources(t, registry)
+}
+
+func assertSignatureProducerContinuations(t *testing.T, registry *Registry, producers, functionConsumers []string) {
+	t.Helper()
 	for _, producerName := range producers {
 		producer, ok := registry.LookupMCP(producerName)
 		if !ok || producer.Output == nil || producer.Output.ResultSchema == nil {
@@ -200,7 +207,10 @@ func TestSignatureContinuationContractSeparatesReceiptInspectionFromFunctionEdit
 			}
 		}
 	}
+}
 
+func assertSignatureInspectionSources(t *testing.T, registry *Registry, producers []string) {
+	t.Helper()
 	inspect, ok := registry.LookupMCP("semantic_inspect_symbol")
 	if !ok {
 		t.Fatal("inspect tool missing")
@@ -231,7 +241,10 @@ func TestSignatureContinuationContractSeparatesReceiptInspectionFromFunctionEdit
 			}
 		}
 	}
+}
 
+func assertSignatureReplaceBodySources(t *testing.T, registry *Registry) {
+	t.Helper()
 	replaceBody, ok := registry.LookupMCP(signatureReplaceBodyConsumer)
 	if !ok {
 		t.Fatal("replace-body tool missing")
