@@ -13,14 +13,38 @@ import (
 	"semedit/internal/contractplan"
 )
 
+type implementContractPlan struct {
+	snapshot       *contractSnapshot
+	selected       string
+	contractPath   string
+	destination    string
+	contractPkg    *packages.Package
+	plannedChanges contractplan.Plan
+}
+
 func runImplementContract(ctx context.Context, cc CallContext, request implementContractRequest) (contractOutput, error) {
+	plan, err := prepareImplementContract(ctx, cc, request)
+	if err != nil {
+		return contractOutput{}, err
+	}
+	result, err := finishImplementContract(ctx, request, plan)
+	if err != nil {
+		return contractOutput{}, err
+	}
+	if err := addImplementContractContinuations(&result, request, plan); err != nil {
+		return contractOutput{}, err
+	}
+	return result, nil
+}
+
+func prepareImplementContract(ctx context.Context, cc CallContext, request implementContractRequest) (implementContractPlan, error) {
 	workspace := cc.WorkDir
 	if workspace == "" {
 		workspace = cc.Project.RootDir
 	}
 	selected, err := canonicalContractPath(workspace, request.File)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	contractInput := request.ContractFile
 	if contractInput == "" {
@@ -28,7 +52,7 @@ func runImplementContract(ctx context.Context, cc CallContext, request implement
 	}
 	contractPath, err := canonicalContractPath(workspace, contractInput)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	destinationInput := request.DestinationFile
 	if destinationInput == "" {
@@ -36,46 +60,53 @@ func runImplementContract(ctx context.Context, cc CallContext, request implement
 	}
 	destination, err := canonicalContractPath(workspace, destinationInput)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	snapshot, err := loadContractSnapshot(ctx, workspace, []string{selected, contractPath, destination})
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	concretePackage, concrete, err := findContractType(snapshot, selected, request.Symbol)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	contractPackage, contract, err := findContractType(snapshot, contractPath, request.Contract)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
 	if snapshot.packageForFile(destination) != concretePackage {
-		return contractOutput{}, fmt.Errorf("method destination must be an existing file in the concrete type package")
+		return implementContractPlan{}, fmt.Errorf("method destination must be an existing file in the concrete type package")
 	}
 	imports, err := contractImportBindings(concretePackage, snapshot.Syntax[destination])
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
-	plan, err := contractplan.PlanImplementContract(concretePackage.Types, concretePackage.Types, concrete, contract, request.ReceiverKind, request.BodyPolicy, imports)
+	planned, err := contractplan.PlanImplementContract(concretePackage.Types, concretePackage.Types, concrete, contract, request.ReceiverKind, request.BodyPolicy, imports)
 	if err != nil {
-		return contractOutput{}, err
+		return implementContractPlan{}, err
 	}
-	if plan.Declaration != "" {
+	if planned.Declaration != "" {
 		if err := requirePanicBuiltin(concretePackage, imports); err != nil {
-			return contractOutput{}, err
+			return implementContractPlan{}, err
 		}
 	}
-	result, err := finishContractPlan(ctx, snapshot, destination, selected, request.Symbol, request.ExpectedRevision, plan, func(finalPackage *packages.Package) error {
-		finalConcrete, err := contractTypeInFile(finalPackage, selected, request.Symbol)
+	return implementContractPlan{
+		snapshot: snapshot, selected: selected, contractPath: contractPath, destination: destination,
+		contractPkg: contractPackage, plannedChanges: planned,
+	}, nil
+}
+
+func finishImplementContract(ctx context.Context, request implementContractRequest, plan implementContractPlan) (contractOutput, error) {
+	return finishContractPlan(ctx, plan.snapshot, plan.destination, plan.selected, request.Symbol, request.ExpectedRevision, plan.plannedChanges, func(finalPackage *packages.Package) error {
+		finalConcrete, err := contractTypeInFile(finalPackage, plan.selected, request.Symbol)
 		if err != nil {
 			return fmt.Errorf("final concrete type identity: %w", err)
 		}
-		finalContractPackage := snapshot.ByPath[contractPackage.PkgPath]
+		finalContractPackage := plan.snapshot.ByPath[plan.contractPkg.PkgPath]
 		if finalContractPackage == nil || finalContractPackage.Types == nil {
-			return fmt.Errorf("contract package %q disappeared from the final package load", contractPackage.PkgPath)
+			return fmt.Errorf("contract package %q disappeared from the final package load", plan.contractPkg.PkgPath)
 		}
-		finalContract, err := contractTypeInFile(finalContractPackage, contractPath, request.Contract)
+		finalContract, err := contractTypeInFile(finalContractPackage, plan.contractPath, request.Contract)
 		if err != nil {
 			return err
 		}
@@ -92,25 +123,28 @@ func runImplementContract(ctx context.Context, cc CallContext, request implement
 		}
 		return nil
 	})
-	if err != nil {
-		return contractOutput{}, err
-	}
-	selectedRevision := contractDigest(snapshot.Contents[selected])
-	if selected == destination && len(result.Changes) > 0 {
-		selectedRevision = changedContractRevision(result.Changes, displayWorkPath(snapshot.Root, selected))
+}
+
+func addImplementContractContinuations(result *contractOutput, request implementContractRequest, plan implementContractPlan) error {
+	selectedDisplay := displayWorkPath(plan.snapshot.Root, plan.selected)
+	selectedRevision := contractDigest(plan.snapshot.Contents[plan.selected])
+	if plan.selected == plan.destination && len(result.Changes) > 0 {
+		selectedRevision = changedContractRevision(result.Changes, selectedDisplay)
 		if selectedRevision == "" {
-			return contractOutput{}, fmt.Errorf("changed concrete type file %q lacks final revision evidence", displayWorkPath(snapshot.Root, selected))
+			return fmt.Errorf("changed concrete type file %q lacks final revision evidence", selectedDisplay)
 		}
 	}
-	result.ReceiptCandidates = []SymbolTarget{{File: displayWorkPath(snapshot.Root, selected), Symbol: request.Symbol, ExpectedRevision: &selectedRevision}}
-	if len(plan.Methods) > 0 {
-		destinationRevision := changedContractRevision(result.Changes, displayWorkPath(snapshot.Root, destination))
-		if destinationRevision == "" {
-			return contractOutput{}, fmt.Errorf("generated method destination lacks planned revision evidence")
-		}
-		result.ReceiptCandidates = appendGeneratedMethodContinuations(result, plan.Methods, request.Symbol, request.ReceiverKind, displayWorkPath(snapshot.Root, destination), destinationRevision)
+	result.ReceiptCandidates = []SymbolTarget{{File: selectedDisplay, Symbol: request.Symbol, ExpectedRevision: &selectedRevision}}
+	if len(plan.plannedChanges.Methods) == 0 {
+		return nil
 	}
-	return result, nil
+	destinationDisplay := displayWorkPath(plan.snapshot.Root, plan.destination)
+	destinationRevision := changedContractRevision(result.Changes, destinationDisplay)
+	if destinationRevision == "" {
+		return fmt.Errorf("generated method destination lacks planned revision evidence")
+	}
+	result.ReceiptCandidates = appendGeneratedMethodContinuations(*result, plan.plannedChanges.Methods, request.Symbol, request.ReceiverKind, destinationDisplay, destinationRevision)
+	return nil
 }
 
 func changedContractRevision(changes []contractRevision, path string) string {
