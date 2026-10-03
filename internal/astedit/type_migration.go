@@ -13,130 +13,185 @@ import (
 	"strings"
 
 	"semedit/internal/sourcebuf"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // PlanAliasTypeMigrationOverlay changes one private struct field to a type with exact identity after alias resolution.
 func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, symbol, desiredType, expectedRevision string) (SemanticEditPlan, error) {
-	ownerName, fieldName, ok := strings.Cut(symbol, ".")
+	target, err := resolveTypeMigrationTarget(workspaceRoot, file, symbol, desiredType)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
+	inputs, err := captureTypeMigrationInputs(ctx, target, expectedRevision)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
+	change, after, err := buildTypeMigrationChange(inputs)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
+	if validationErr := validateTypeMigrationChange(ctx, target, after); validationErr != nil {
+		return SemanticEditPlan{}, validationErr
+	}
+	inputs.readSet, err = completeRefactorReadSet(ctx, target.moduleRoot, inputs.readSet, inputs.packages)
+	if err != nil {
+		return SemanticEditPlan{}, err
+	}
+	if err := assertRefactorReadSet(ctx, inputs.readSet); err != nil {
+		return SemanticEditPlan{}, err
+	}
+	return SemanticEditPlan{
+		Change:  change,
+		ReadSet: inputs.readSet,
+		Diff:    UnifiedDiff(target.path, string(inputs.source), string(after)),
+	}, nil
+}
+
+type typeMigrationTarget struct {
+	path        string
+	moduleRoot  string
+	ownerName   string
+	fieldName   string
+	desiredType string
+}
+
+func resolveTypeMigrationTarget(workspaceRoot, file, symbolName, desiredType string) (typeMigrationTarget, error) {
+	ownerName, fieldName, ok := strings.Cut(symbolName, ".")
 	if !ok || !token.IsIdentifier(ownerName) || !token.IsIdentifier(fieldName) || strings.Contains(fieldName, ".") {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target must be one qualified struct field, such as Settings.timeout")
+		return typeMigrationTarget{}, fmt.Errorf("type migration target must be one qualified struct field, such as Settings.timeout")
 	}
 	if !token.IsIdentifier(desiredType) {
-		return SemanticEditPlan{}, fmt.Errorf("bounded type migration accepts one unqualified Go type name")
+		return typeMigrationTarget{}, fmt.Errorf("bounded type migration accepts one unqualified Go type name")
 	}
 	workspaceRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("resolve workspace root: %w", err)
+		return typeMigrationTarget{}, fmt.Errorf("resolve workspace root: %w", err)
 	}
 	targetPath, err := filepath.Abs(filepath.Join(workspaceRoot, file))
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("resolve type migration file: %w", err)
+		return typeMigrationTarget{}, fmt.Errorf("resolve type migration file: %w", err)
 	}
 	moduleRoot, err := moveModuleRoot(targetPath)
 	if err != nil {
-		return SemanticEditPlan{}, err
+		return typeMigrationTarget{}, err
 	}
 	if !moveWithin(workspaceRoot, moduleRoot) || !moveWithin(moduleRoot, targetPath) {
-		return SemanticEditPlan{}, fmt.Errorf("type migration requires an existing Go file in the selected workspace module")
+		return typeMigrationTarget{}, fmt.Errorf("type migration requires an existing Go file in the selected workspace module")
 	}
 	if pathErr := rejectMoveSymlinkPath(moduleRoot, targetPath); pathErr != nil {
-		return SemanticEditPlan{}, pathErr
+		return typeMigrationTarget{}, pathErr
 	}
+	return typeMigrationTarget{path: targetPath, moduleRoot: moduleRoot, ownerName: ownerName, fieldName: fieldName, desiredType: desiredType}, nil
+}
+
+type typeMigrationInputs struct {
+	target   typeMigrationTarget
+	readSet  map[string][]byte
+	source   []byte
+	packages []*packages.Package
+	pkg      *packages.Package
+	field    *ast.Field
+}
+
+func captureTypeMigrationInputs(ctx context.Context, target typeMigrationTarget, expectedRevision string) (typeMigrationInputs, error) {
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		if authorizationErr := buffer.AuthorizeWrites(ctx, moduleRoot); authorizationErr != nil {
-			return SemanticEditPlan{}, authorizationErr
+		if authorizationErr := buffer.AuthorizeWrites(ctx, target.moduleRoot); authorizationErr != nil {
+			return typeMigrationInputs{}, authorizationErr
 		}
 	}
-	readSet, err := inspectMoveModuleFiles(ctx, moduleRoot, targetPath, targetPath, symbol)
+	readSet, err := inspectMoveModuleFiles(ctx, target.moduleRoot, target.path, target.path, target.ownerName+"."+target.fieldName)
 	if err != nil {
-		return SemanticEditPlan{}, err
+		return typeMigrationInputs{}, err
 	}
-	source, ok := readSet[targetPath]
+	source, ok := readSet[target.path]
 	if !ok {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target is not an existing Go source file")
+		return typeMigrationInputs{}, fmt.Errorf("type migration target is not an existing Go source file")
 	}
 	if expectedRevision != "" && revisionOf(source) != expectedRevision {
-		return SemanticEditPlan{}, fmt.Errorf("expected_revision does not match captured type source")
+		return typeMigrationInputs{}, fmt.Errorf("expected_revision does not match captured type source")
 	}
-	pkgs, err := loadMovePackages(ctx, moduleRoot, readSet)
+	pkgSet, err := loadMovePackages(ctx, target.moduleRoot, readSet)
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("load type-migration package types: %w", err)
+		return typeMigrationInputs{}, fmt.Errorf("load type-migration package types: %w", err)
 	}
-	if packageErr := validateRefactorPackages(pkgs, "type migration"); packageErr != nil {
-		return SemanticEditPlan{}, packageErr
+	if packageErr := validateRefactorPackages(pkgSet, "type migration"); packageErr != nil {
+		return typeMigrationInputs{}, packageErr
 	}
-	readSet, err = completeRefactorReadSet(ctx, moduleRoot, readSet, pkgs)
+	readSet, err = completeRefactorReadSet(ctx, target.moduleRoot, readSet, pkgSet)
 	if err != nil {
-		return SemanticEditPlan{}, err
+		return typeMigrationInputs{}, err
 	}
-	pkgs, err = loadMovePackages(ctx, moduleRoot, readSet)
+	pkgSet, err = loadMovePackages(ctx, target.moduleRoot, readSet)
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("reload type-migration package types from captured inputs: %w", err)
+		return typeMigrationInputs{}, fmt.Errorf("reload type-migration package types from captured inputs: %w", err)
 	}
-	if packageErr := validateRefactorPackages(pkgs, "type migration"); packageErr != nil {
-		return SemanticEditPlan{}, packageErr
+	if packageErr := validateRefactorPackages(pkgSet, "type migration"); packageErr != nil {
+		return typeMigrationInputs{}, packageErr
 	}
-	pkg := packageForMoveFile(pkgs, targetPath)
+	pkg := packageForMoveFile(pkgSet, target.path)
 	if pkg == nil {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target is not in an active Go package")
+		return typeMigrationInputs{}, fmt.Errorf("type migration target is not in an active Go package")
 	}
-	fileNode := syntaxForMoveFile(pkg, targetPath)
+	fileNode := syntaxForMoveFile(pkg, target.path)
 	if fileNode == nil {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target file is not active in the loaded package")
+		return typeMigrationInputs{}, fmt.Errorf("type migration target file is not active in the loaded package")
 	}
-	field, err := findPrivateStructField(fileNode, targetPath, ownerName, fieldName, pkg.Fset)
+	field, err := findPrivateStructField(fileNode, target.path, target.ownerName, target.fieldName, pkg.Fset)
 	if err != nil {
-		return SemanticEditPlan{}, err
+		return typeMigrationInputs{}, err
 	}
-	if identifier, ok := field.Type.(*ast.Ident); ok && identifier.Name == desiredType {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target already uses the requested spelling")
+	return typeMigrationInputs{target: target, readSet: readSet, source: source, packages: pkgSet, pkg: pkg, field: field}, nil
+}
+
+func buildTypeMigrationChange(inputs typeMigrationInputs) (sourcebuf.Change, []byte, error) {
+	field := inputs.field
+	if identifier, ok := field.Type.(*ast.Ident); ok && identifier.Name == inputs.target.desiredType {
+		return sourcebuf.Change{}, nil, fmt.Errorf("type migration target already uses the requested spelling")
 	}
-	currentType := pkg.TypesInfo.TypeOf(field.Type)
-	desired, err := types.Eval(pkg.Fset, pkg.Types, field.Type.Pos(), desiredType)
+	currentType := inputs.pkg.TypesInfo.TypeOf(field.Type)
+	desired, err := types.Eval(inputs.pkg.Fset, inputs.pkg.Types, field.Type.Pos(), inputs.target.desiredType)
 	if err != nil || !desired.IsType() {
 		if err != nil {
-			return SemanticEditPlan{}, fmt.Errorf("resolve desired type %q in package scope: %w", desiredType, err)
+			return sourcebuf.Change{}, nil, fmt.Errorf("resolve desired type %q in package scope: %w", inputs.target.desiredType, err)
 		}
-		return SemanticEditPlan{}, fmt.Errorf("desired expression %q does not denote a Go type", desiredType)
+		return sourcebuf.Change{}, nil, fmt.Errorf("desired expression %q does not denote a Go type", inputs.target.desiredType)
 	}
-	if _, validationErr := PlanAliasTypeMigration(currentType.String(), desiredType, currentType, desired.Type); validationErr != nil {
-		return SemanticEditPlan{}, validationErr
+	if _, validationErr := PlanAliasTypeMigration(currentType.String(), inputs.target.desiredType, currentType, desired.Type); validationErr != nil {
+		return sourcebuf.Change{}, nil, validationErr
 	}
-	start, end := pkg.Fset.Position(field.Type.Pos()).Offset, pkg.Fset.Position(field.Type.End()).Offset
-	if start < 0 || end > len(source) || start >= end {
-		return SemanticEditPlan{}, fmt.Errorf("type migration field selector has an invalid source range")
+	start, end := inputs.pkg.Fset.Position(field.Type.Pos()).Offset, inputs.pkg.Fset.Position(field.Type.End()).Offset
+	if start < 0 || end > len(inputs.source) || start >= end {
+		return sourcebuf.Change{}, nil, fmt.Errorf("type migration field selector has an invalid source range")
 	}
-	after := make([]byte, 0, len(source)+len(desiredType)-(end-start))
-	after = append(after, source[:start]...)
-	after = append(after, desiredType...)
-	after = append(after, source[end:]...)
-	change := sourcebuf.Change{Path: targetPath, Before: bytes.Clone(source), After: after}
-	postPackages, err := typecheckMoveOverlay(ctx, moduleRoot, map[string][]byte{targetPath: after})
+	after := make([]byte, 0, len(inputs.source)+len(inputs.target.desiredType)-(end-start))
+	after = append(after, inputs.source[:start]...)
+	after = append(after, inputs.target.desiredType...)
+	after = append(after, inputs.source[end:]...)
+	change := sourcebuf.Change{Path: inputs.target.path, Before: bytes.Clone(inputs.source), After: after}
+	return change, after, nil
+}
+
+func validateTypeMigrationChange(ctx context.Context, target typeMigrationTarget, after []byte) error {
+	postPackages, err := typecheckMoveOverlay(ctx, target.moduleRoot, map[string][]byte{target.path: after})
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("type migration preflight: %w", err)
+		return fmt.Errorf("type migration preflight: %w", err)
 	}
-	postPkg := packageForMoveFile(postPackages, targetPath)
-	postFile := syntaxForMoveFile(postPkg, targetPath)
+	postPkg := packageForMoveFile(postPackages, target.path)
+	postFile := syntaxForMoveFile(postPkg, target.path)
 	if postPkg == nil || postFile == nil {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target disappeared during preflight")
+		return fmt.Errorf("type migration target disappeared during preflight")
 	}
-	postField, err := findPrivateStructField(postFile, targetPath, ownerName, fieldName, postPkg.Fset)
+	postField, err := findPrivateStructField(postFile, target.path, target.ownerName, target.fieldName, postPkg.Fset)
 	if err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("type migration target disappeared during preflight: %w", err)
+		return fmt.Errorf("type migration target disappeared during preflight: %w", err)
 	}
 	postType := postPkg.TypesInfo.TypeOf(postField.Type)
-	postDesired, evalErr := types.Eval(postPkg.Fset, postPkg.Types, postField.Type.Pos(), desiredType)
+	postDesired, evalErr := types.Eval(postPkg.Fset, postPkg.Types, postField.Type.Pos(), target.desiredType)
 	if postType == nil || evalErr != nil || !postDesired.IsType() || !types.Identical(types.Unalias(postType), types.Unalias(postDesired.Type)) {
-		return SemanticEditPlan{}, fmt.Errorf("type migration result does not retain the resolved desired type")
+		return fmt.Errorf("type migration result does not retain the resolved desired type")
 	}
-	readSet, err = completeRefactorReadSet(ctx, moduleRoot, readSet, pkgs)
-	if err != nil {
-		return SemanticEditPlan{}, err
-	}
-	if err := assertRefactorReadSet(ctx, readSet); err != nil {
-		return SemanticEditPlan{}, err
-	}
-	return SemanticEditPlan{Change: change, ReadSet: readSet, Diff: UnifiedDiff(targetPath, string(source), string(after))}, nil
+	return nil
 }
 
 func findPrivateStructField(file *ast.File, path, ownerName, fieldName string, fset *token.FileSet) (*ast.Field, error) {
