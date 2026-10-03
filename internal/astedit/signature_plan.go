@@ -448,36 +448,65 @@ func signatureIdentifier(value string) bool {
 
 func signatureNoPackageNameCollision(inputs []SignatureSourceFile, name string) error {
 	for _, input := range inputs {
-		fset := token.NewFileSet()
-		file, err := parser.ParseFile(fset, input.File, input.Source, parser.ParseComments|parser.AllErrors)
+		file, err := parseSignatureSource(input)
 		if err != nil {
 			return fmt.Errorf("introduce parameter object: parse read-set file %q: %w", input.File, err)
 		}
-		for _, decl := range file.Decls {
-			switch value := decl.(type) {
-			case *ast.FuncDecl:
-				if value.Name.Name == name {
-					return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-				}
-			case *ast.GenDecl:
-				for _, spec := range value.Specs {
-					switch item := spec.(type) {
-					case *ast.TypeSpec:
-						if item.Name.Name == name {
-							return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-						}
-					case *ast.ValueSpec:
-						for _, identifier := range item.Names {
-							if identifier.Name == name {
-								return fmt.Errorf("introduce parameter object: package name %q already exists", name)
-							}
-						}
-					}
-				}
-			}
+		if signatureFileDeclaresName(file, name) {
+			return fmt.Errorf("introduce parameter object: package name %q already exists", name)
 		}
 	}
 	return nil
+}
+
+func parseSignatureSource(input SignatureSourceFile) (*ast.File, error) {
+	fset := token.NewFileSet()
+	return parser.ParseFile(fset, input.File, input.Source, parser.ParseComments|parser.AllErrors)
+}
+
+func signatureFileDeclaresName(file *ast.File, name string) bool {
+	for _, declaration := range file.Decls {
+		if signatureDeclarationDeclaresName(declaration, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func signatureDeclarationDeclaresName(declaration ast.Decl, name string) bool {
+	switch value := declaration.(type) {
+	case *ast.FuncDecl:
+		return value.Name.Name == name
+	case *ast.GenDecl:
+		return signatureGroupDeclaresName(value, name)
+	default:
+		return false
+	}
+}
+
+func signatureGroupDeclaresName(group *ast.GenDecl, name string) bool {
+	for _, spec := range group.Specs {
+		switch item := spec.(type) {
+		case *ast.TypeSpec:
+			if item.Name.Name == name {
+				return true
+			}
+		case *ast.ValueSpec:
+			if signatureValueSpecDeclaresName(item, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func signatureValueSpecDeclaresName(spec *ast.ValueSpec, name string) bool {
+	for _, identifier := range spec.Names {
+		if identifier.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func signatureAppendDeclaration(source []byte, declaration string) string {
