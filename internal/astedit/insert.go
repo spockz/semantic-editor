@@ -2,20 +2,16 @@
 package astedit
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"slices"
 	"strings"
 
 	"semedit/internal/backend"
-	"semedit/internal/pipeline"
-	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
@@ -56,94 +52,22 @@ func InsertDeclaration(ctx context.Context, filePath string, source string, opts
 
 // InsertDeclaration parses and injects one or more top-level declarations into filePath.
 func insertDeclarationImpl(ctx context.Context, filePath string, source string, opts Options) error {
-	source = strings.TrimSpace(source)
-	if (strings.HasPrefix(source, "\"") && strings.HasSuffix(source, "\"")) ||
-		(strings.HasPrefix(source, "'") && strings.HasSuffix(source, "'")) {
-		source = source[1 : len(source)-1]
-	}
+	source = normalizeDeclarationSnippet(source)
 	opts.TargetSymbol = strings.Trim(strings.TrimSpace(opts.TargetSymbol), `"'`)
-
-	cleanPath := filepath.Clean(filePath)
-	content, err := sourcebuf.ReadFile(ctx, cleanPath)
+	target, err := readDeclarationTarget(ctx, filePath)
 	if err != nil {
-		return fmt.Errorf("read target file: %w", err)
+		return err
 	}
-
-	snippetDecls, err := verifySnippetSyntax(source, opts.Visibility)
+	if _, syntaxErr := verifySnippetSyntax(source, opts.Visibility); syntaxErr != nil {
+		return fmt.Errorf("validate snippet: %w", syntaxErr)
+	}
+	insertOffset, err := calculateInsertionOffset(target.set, target.file, target.content, opts)
 	if err != nil {
-		return fmt.Errorf("validate snippet: %w", err)
+		return fmt.Errorf("calculate insertion offset: %w", annotatePlacementError(err, target.path, target.set, target.file))
 	}
-
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments|parser.AllErrors)
-	if err != nil {
-		return fmt.Errorf("parse target file before insertion: %w", err)
-	}
-
-	insertOffset, err := calculateInsertionOffset(fset, fileNode, content, opts)
-	if err != nil {
-		if pErr, ok := errors.AsType[*PlacementError](err); ok {
-			if pErr.File == "" {
-				pErr.File = cleanPath
-			}
-			if !pErr.Pos.IsValid() && fileNode != nil && fileNode.Package.IsValid() {
-				pErr.Pos = fset.Position(fileNode.Package)
-			}
-		}
-		return fmt.Errorf("calculate insertion offset: %w", err)
-	}
-
-	insertOffset = normalizeInsertionOffset(fset, fileNode, content, insertOffset)
-
-	var newContent bytes.Buffer
-	newContent.Write(content[:insertOffset])
-
-	snippetText := strings.TrimSpace(source)
-
-	if strings.HasPrefix(snippetText, "package ") {
-		lines := strings.SplitN(snippetText, "\n", 2)
-		if len(lines) > 1 {
-			snippetText = strings.TrimSpace(lines[1])
-		}
-	}
-
-	if insertOffset > 0 {
-		prev := content[:insertOffset]
-		if !bytes.HasSuffix(prev, []byte("\n\n")) {
-			if bytes.HasSuffix(prev, []byte("\n")) {
-				newContent.WriteString("\n")
-			} else {
-				newContent.WriteString("\n\n")
-			}
-		}
-	}
-
-	newContent.WriteString(snippetText)
-	newContent.WriteString("\n\n")
-
-	rest := content[insertOffset:]
-
-	restTrimmed := bytes.TrimLeft(rest, "\r\n")
-	newContent.Write(restTrimmed)
-
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, newContent.Bytes()); err != nil {
-		return fmt.Errorf("write atomic: %w", err)
-	}
-
-	dir := filepath.Dir(cleanPath)
-	if opts.AutoOrganizeImports {
-		if err := pipeline.OrganizeImports(ctx, dir, cleanPath); err != nil {
-			_ = pipeline.Format(ctx, dir, cleanPath)
-			return fmt.Errorf("organize imports: %w", err)
-		}
-	} else {
-		if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
-			return fmt.Errorf("format file: %w", err)
-		}
-	}
-
-	_ = snippetDecls
-	return nil
+	insertOffset = normalizeInsertionOffset(target.set, target.file, target.content, insertOffset)
+	updated := insertDeclarationText(target.content, source, insertOffset)
+	return publishInsertedDeclaration(ctx, target.path, updated, opts.AutoOrganizeImports)
 }
 
 func verifySnippetSyntax(source string, expectedVisibility string) ([]ast.Decl, error) {

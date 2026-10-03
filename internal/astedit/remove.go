@@ -219,8 +219,8 @@ func scanModuleSources(ctx context.Context, root, target string, targetOffset in
 		return scanModuleSourceEntry(ctx, root, rootFS, target, targetOffset, targetName, targetContent, &scan, path, entry, walkErr)
 	})
 	closeErr := rootFS.Close()
-	if err == nil && closeErr != nil {
-		err = fmt.Errorf("close module root %s: %w", root, closeErr)
+	if closeErr != nil {
+		err = errors.Join(err, fmt.Errorf("close module root %s: %w", root, closeErr))
 	}
 	return scan, err
 }
@@ -314,11 +314,15 @@ func readModuleSource(ctx context.Context, rootFS *os.Root, path moduleSourcePat
 	}
 	data, readErr := io.ReadAll(file)
 	closeErr := file.Close()
+	var resultErr error
 	if readErr != nil {
-		return nil, fmt.Errorf("read %s: %w", path.absolute, readErr)
+		resultErr = fmt.Errorf("read %s: %w", path.absolute, readErr)
 	}
 	if closeErr != nil {
-		return nil, fmt.Errorf("close %s: %w", path.absolute, closeErr)
+		resultErr = errors.Join(resultErr, fmt.Errorf("close %s: %w", path.absolute, closeErr))
+	}
+	if resultErr != nil {
+		return nil, resultErr
 	}
 	return data, nil
 }
