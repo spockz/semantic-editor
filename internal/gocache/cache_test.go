@@ -44,8 +44,8 @@ func TestGoSubprocessTemporaryFiles(t *testing.T) {
 	}
 	path := string(output)
 	defer func() {
-		if err := os.Remove(path); err != nil {
-			t.Error(err)
+		if removeErr := os.Remove(path); removeErr != nil {
+			t.Error(removeErr)
 		}
 	}()
 	expected := filepath.Join(workspace, ".scratch", "go", "tmp")

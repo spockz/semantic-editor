@@ -24,9 +24,9 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		if workDir == "" {
 			return nil, fmt.Errorf("go workspace directory is empty")
 		}
-		root, err := filepath.Abs(workDir)
-		if err != nil {
-			return nil, fmt.Errorf("resolve Go workspace directory: %w", err)
+		root, resolveErr := filepath.Abs(workDir)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("resolve Go workspace directory: %w", resolveErr)
 		}
 		baseDir = filepath.Join(root, ".scratch", "go")
 	} else {

@@ -386,7 +386,9 @@ func TestAgyToolCallOutcomes(t *testing.T) {
 {"type":"GENERIC","status":"FAILED","content":"server rejected the request"}`)
 
 	res := &RunResult{}
-	parseAgyTranscript(transcript, res)
+	if err := parseAgyTranscript(transcript, res); err != nil {
+		t.Fatalf("parse Agy transcript: %v", err)
+	}
 
 	if got, want := res.ToolCount, 2; got != want {
 		t.Fatalf("tool count = %d, want %d", got, want)

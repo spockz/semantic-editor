@@ -26,8 +26,8 @@ func TestWriteAtomicCheckedRejectsStagedConflict(t *testing.T) {
 		if len(entries) != 2 {
 			t.Fatalf("check must run after staging: %v", entries)
 		}
-		if err := atomicfile.WriteAtomic(target, []byte("concurrent change")); err != nil {
-			return err
+		if writeErr := atomicfile.WriteAtomic(target, []byte("concurrent change")); writeErr != nil {
+			return writeErr
 		}
 		current, err := os.ReadFile(target)
 		if err != nil {

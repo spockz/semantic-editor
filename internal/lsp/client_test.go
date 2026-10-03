@@ -47,9 +47,11 @@ func TestProcessClientCapturesStderrWithoutOverwritingCallerWriter(t *testing.T)
 		t.Fatal(err)
 	}
 	client.Start()
-	_ = client.Wait()
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
+	if waitErr := client.Wait(); waitErr != nil && !errors.Is(waitErr, io.EOF) {
+		t.Fatal(waitErr)
+	}
+	if closeErr := client.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	if client.StderrCapture() == nil || string(client.StderrCapture().Bytes()) != "process-error" {
 		t.Fatalf("captured stderr = %#v", client.StderrCapture())
@@ -63,9 +65,11 @@ func TestProcessClientCapturesStderrWithoutOverwritingCallerWriter(t *testing.T)
 		t.Fatal(err)
 	}
 	client.Start()
-	_ = client.Wait()
-	if err := client.Close(); err != nil {
-		t.Fatal(err)
+	if waitErr := client.Wait(); waitErr != nil && !errors.Is(waitErr, io.EOF) {
+		t.Fatal(waitErr)
+	}
+	if closeErr := client.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
 	if client.StderrCapture() != nil || caller.String() != "caller-error" {
 		t.Fatalf("caller stderr = %q capture=%#v", caller.String(), client.StderrCapture())
