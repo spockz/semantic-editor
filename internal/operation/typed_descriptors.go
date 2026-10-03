@@ -460,61 +460,87 @@ func ValidateOutputContract(contract OperationOutputContract) error {
 	}
 	seenFields := make(map[string]struct{}, len(contract.Continuations))
 	for index, continuation := range contract.Continuations {
-		if (continuation.Field == "") == (continuation.Path == "") {
-			return fmt.Errorf("continuation %d must declare exactly one field or result path", index)
+		if err := validateOutputContinuation(contract, continuation, index, seenFields); err != nil {
+			return err
 		}
-		identity := continuation.Field
-		if continuation.Path != "" {
-			identity = continuation.Path
-			if contract.ResultSchema == nil {
-				return fmt.Errorf("continuation %q requires a result schema", continuation.Path)
-			}
-			fieldSchema, err := SchemaAtResultPath(*contract.ResultSchema, continuation.Path)
-			if err != nil {
-				return fmt.Errorf("continuation path %q: %w", continuation.Path, err)
-			}
-			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
-				return fmt.Errorf("continuation path %q schema disagrees with its result field", continuation.Path)
-			}
+	}
+	return nil
+}
+
+func validateOutputContinuation(contract OperationOutputContract, continuation OutputContinuation, index int, seen map[string]struct{}) error {
+	if (continuation.Field == "") == (continuation.Path == "") {
+		return fmt.Errorf("continuation %d must declare exactly one field or result path", index)
+	}
+	identity, err := validateContinuationPath(contract.ResultSchema, continuation)
+	if err != nil {
+		return err
+	}
+	if _, ok := seen[identity]; ok {
+		return fmt.Errorf("continuation %q is repeated", identity)
+	}
+	seen[identity] = struct{}{}
+	if err := ValidateSchema(continuation.Schema); err != nil {
+		return fmt.Errorf("continuation %q schema: %w", continuation.Field, err)
+	}
+	if continuation.Role != RoleTarget && continuation.Role != RoleSelector {
+		return fmt.Errorf("continuation %q has non-live role %q", continuation.Field, continuation.Role)
+	}
+	return validateContinuationConsumers(continuation)
+}
+
+func validateContinuationPath(resultSchema *ValueSchema, continuation OutputContinuation) (string, error) {
+	identity := continuation.Field
+	if continuation.Path != "" {
+		identity = continuation.Path
+		if err := validateContinuationSchemaPath(resultSchema, continuation.Path, continuation.Schema, "path"); err != nil {
+			return "", err
 		}
-		if continuation.Field != "" {
-			if contract.ResultSchema == nil {
-				return fmt.Errorf("continuation %q requires a result schema", continuation.Field)
-			}
-			fieldSchema, err := SchemaAtResultPath(*contract.ResultSchema, "result."+continuation.Field)
-			if err != nil {
-				return fmt.Errorf("continuation field %q: %w", continuation.Field, err)
-			}
-			if !SchemasEquivalent(fieldSchema, continuation.Schema) {
-				return fmt.Errorf("continuation field %q schema disagrees with its result field", continuation.Field)
-			}
-			if continuation.Optional && slices.Contains(contract.ResultSchema.Required, continuation.Field) {
-				return fmt.Errorf("optional continuation field %q is required by its result schema", continuation.Field)
-			}
+	}
+	if continuation.Field != "" {
+		if resultSchema == nil {
+			return "", fmt.Errorf("continuation %q requires a result schema", continuation.Field)
 		}
-		if _, ok := seenFields[identity]; ok {
-			return fmt.Errorf("continuation %q is repeated", identity)
+		fieldSchema, err := SchemaAtResultPath(*resultSchema, "result."+continuation.Field)
+		if err != nil {
+			return "", fmt.Errorf("continuation field %q: %w", continuation.Field, err)
 		}
-		seenFields[identity] = struct{}{}
-		if err := ValidateSchema(continuation.Schema); err != nil {
-			return fmt.Errorf("continuation %q schema: %w", continuation.Field, err)
+		if !SchemasEquivalent(fieldSchema, continuation.Schema) {
+			return "", fmt.Errorf("continuation field %q schema disagrees with its result field", continuation.Field)
 		}
-		if continuation.Role != RoleTarget && continuation.Role != RoleSelector {
-			return fmt.Errorf("continuation %q has non-live role %q", continuation.Field, continuation.Role)
+		if continuation.Optional && slices.Contains(resultSchema.Required, continuation.Field) {
+			return "", fmt.Errorf("optional continuation field %q is required by its result schema", continuation.Field)
 		}
-		if len(continuation.Consumers) == 0 {
-			return fmt.Errorf("continuation %q has no consumer tools", continuation.Field)
+	}
+	return identity, nil
+}
+
+func validateContinuationSchemaPath(resultSchema *ValueSchema, path string, schema ValueSchema, label string) error {
+	if resultSchema == nil {
+		return fmt.Errorf("continuation %q requires a result schema", path)
+	}
+	fieldSchema, err := SchemaAtResultPath(*resultSchema, path)
+	if err != nil {
+		return fmt.Errorf("continuation %s %q: %w", label, path, err)
+	}
+	if !SchemasEquivalent(fieldSchema, schema) {
+		return fmt.Errorf("continuation %s %q schema disagrees with its result field", label, path)
+	}
+	return nil
+}
+
+func validateContinuationConsumers(continuation OutputContinuation) error {
+	if len(continuation.Consumers) == 0 {
+		return fmt.Errorf("continuation %q has no consumer tools", continuation.Field)
+	}
+	seen := make(map[string]struct{}, len(continuation.Consumers))
+	for _, consumer := range continuation.Consumers {
+		if consumer == "" {
+			return fmt.Errorf("continuation %q has an empty consumer name", continuation.Field)
 		}
-		seenConsumers := make(map[string]struct{}, len(continuation.Consumers))
-		for _, consumer := range continuation.Consumers {
-			if consumer == "" {
-				return fmt.Errorf("continuation %q has an empty consumer name", continuation.Field)
-			}
-			if _, ok := seenConsumers[consumer]; ok {
-				return fmt.Errorf("continuation %q repeats consumer %q", continuation.Field, consumer)
-			}
-			seenConsumers[consumer] = struct{}{}
+		if _, ok := seen[consumer]; ok {
+			return fmt.Errorf("continuation %q repeats consumer %q", continuation.Field, consumer)
 		}
+		seen[consumer] = struct{}{}
 	}
 	return nil
 }

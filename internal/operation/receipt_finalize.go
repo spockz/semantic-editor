@@ -27,116 +27,176 @@ type ContinuationResolver func(context.Context, SymbolTarget) (SymbolTarget, boo
 
 // FinalizeEditReceipt derives final revisions from the selected disk or batch working view.
 func FinalizeEditReceipt(ctx context.Context, root string, inBatch bool, draft EditReceiptDraft, resolve ContinuationResolver) (EditReceipt, error) {
-	if draft.Operation == "" {
-		return EditReceipt{}, fmt.Errorf("finalize receipt: operation is empty")
+	receipt, complete, err := prepareReceipt(draft, inBatch)
+	if err != nil || complete {
+		return receipt, err
 	}
-	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: draft.Operation, ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
-	if inBatch && draft.Status != EditRefused && draft.Status != EditNoOp {
-		receipt.Status = EditAppliedWorking
+	changes, err := reconcileReceiptChanges(ctx, root, inBatch, draft.PlannedChanges, &receipt)
+	if err != nil {
+		return EditReceipt{}, err
 	}
-	switch receipt.Status {
-	case EditRefused, EditNoOp, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
-	default:
-		return EditReceipt{}, fmt.Errorf("finalize receipt: unsupported outcome %q", receipt.Status)
-	}
-	if err := validateFileRevisions(receipt.ReadSet, "read_set"); err != nil {
-		return EditReceipt{}, fmt.Errorf("finalize receipt read set: %w", err)
-	}
-	if receipt.Status == EditRefused {
-		if len(draft.PlannedChanges) != 0 || len(draft.Continuations) != 0 {
-			return EditReceipt{}, fmt.Errorf("refused receipt cannot contain planned changes or continuations: %w", ErrInvalidDefinition)
-		}
-		if err := ValidateEditReceipt(receipt); err != nil {
-			return EditReceipt{}, fmt.Errorf("validate finalized receipt: %w", err)
-		}
-		return receipt, nil
-	}
-	if err := validateFileRevisions(draft.PlannedChanges, "planned_changes"); err != nil {
-		return EditReceipt{}, fmt.Errorf("finalize planned changes: %w", err)
-	}
-	if receipt.Status == EditNoOp && len(draft.PlannedChanges) != 0 {
-		return EditReceipt{}, fmt.Errorf("no-op receipt cannot contain planned changes: %w", ErrInvalidDefinition)
-	}
-	readRevisions := make(map[string]string, len(receipt.ReadSet))
-	for _, revision := range receipt.ReadSet {
-		readRevisions[revision.Path] = revision.Revision
-	}
-	expectedChanges := 0
-	confirmedChanges := 0
-	publicationUncertain := false
-	knownUnchanged := true
-	for _, planned := range draft.PlannedChanges {
-		if readRevisions[planned.Path] == planned.Revision {
-			continue
-		}
-		expectedChanges++
-		actual, exists, err := receiptFileRevision(ctx, root, planned.Path, inBatch)
+	setPublicationStatus(&receipt, inBatch, changes)
+	if shouldResolveContinuations(receipt, inBatch, resolve) {
+		continuations, err := resolveReceiptContinuations(ctx, root, draft.Continuations, resolve)
 		if err != nil {
-			return EditReceipt{}, fmt.Errorf("finalize changed file %q: %w", planned.Path, err)
+			return EditReceipt{}, err
 		}
-		if exists && actual.Revision == planned.Revision {
-			receipt.Changes = append(receipt.Changes, actual)
-			confirmedChanges++
-			continue
-		}
-		if exists && readRevisions[planned.Path] != "" && actual.Revision == readRevisions[planned.Path] {
-			continue
-		}
-		knownUnchanged = false
-		publicationUncertain = true
-		if exists {
-			receipt.Changes = append(receipt.Changes, actual)
-		}
-	}
-	if !inBatch && expectedChanges > confirmedChanges {
-		if confirmedChanges > 0 || publicationUncertain {
-			receipt.Status = EditPartiallyPublished
-		} else if knownUnchanged {
-			receipt.Status = EditRefused
-		}
-	}
-	if receipt.Status != EditRefused && receipt.Status != EditAppliedWorking && !inBatch && resolve != nil {
-		for index, candidate := range draft.Continuations {
-			if err := ValidateSymbolTarget(candidate); err != nil {
-				return EditReceipt{}, fmt.Errorf("receipt continuation %d: %w", index, err)
-			}
-			if candidate.ExpectedRevision == nil {
-				continue
-			}
-			candidateFile, exists, err := receiptFileRevision(ctx, root, candidate.File, false)
-			if err != nil {
-				return EditReceipt{}, fmt.Errorf("verify receipt candidate %d: %w", index, err)
-			}
-			if !exists || candidateFile.Revision != *candidate.ExpectedRevision {
-				continue
-			}
-			resolved, live, err := resolve(ctx, candidate)
-			if err != nil {
-				return EditReceipt{}, fmt.Errorf("resolve receipt continuation %d: %w", index, err)
-			}
-			if !live {
-				continue
-			}
-			if err := ValidateSymbolTarget(resolved); err != nil {
-				return EditReceipt{}, fmt.Errorf("resolved receipt continuation %d: %w", index, err)
-			}
-			fileRevision, exists, err := receiptFileRevision(ctx, root, resolved.File, false)
-			if err != nil {
-				return EditReceipt{}, fmt.Errorf("verify receipt continuation %d: %w", index, err)
-			}
-			if !exists {
-				continue
-			}
-			resolved.File = fileRevision.Path
-			revision := fileRevision.Revision
-			resolved.ExpectedRevision = &revision
-			receipt.Continuations = append(receipt.Continuations, resolved)
-		}
+		receipt.Continuations = continuations
 	}
 	if err := ValidateEditReceipt(receipt); err != nil {
 		return EditReceipt{}, fmt.Errorf("validate finalized receipt: %w", err)
 	}
 	return receipt, nil
+}
+
+func prepareReceipt(draft EditReceiptDraft, inBatch bool) (EditReceipt, bool, error) {
+	if draft.Operation == "" {
+		return EditReceipt{}, false, fmt.Errorf("finalize receipt: operation is empty")
+	}
+	receipt := EditReceipt{SchemaVersion: "semedit.edit-receipt/v1", Status: draft.Status, Operation: draft.Operation, ReadSet: append([]FileRevision(nil), draft.ReadSet...)}
+	if inBatch && draft.Status != EditRefused && draft.Status != EditNoOp {
+		receipt.Status = EditAppliedWorking
+	}
+	if err := validateReceiptStatus(receipt.Status); err != nil {
+		return EditReceipt{}, false, err
+	}
+	if err := validateFileRevisions(receipt.ReadSet, "read_set"); err != nil {
+		return EditReceipt{}, false, fmt.Errorf("finalize receipt read set: %w", err)
+	}
+	if receipt.Status == EditRefused {
+		if len(draft.PlannedChanges) != 0 || len(draft.Continuations) != 0 {
+			return EditReceipt{}, false, fmt.Errorf("refused receipt cannot contain planned changes or continuations: %w", ErrInvalidDefinition)
+		}
+		if err := ValidateEditReceipt(receipt); err != nil {
+			return EditReceipt{}, false, fmt.Errorf("validate finalized receipt: %w", err)
+		}
+		return receipt, true, nil
+	}
+	if err := validateFileRevisions(draft.PlannedChanges, "planned_changes"); err != nil {
+		return EditReceipt{}, false, fmt.Errorf("finalize planned changes: %w", err)
+	}
+	if receipt.Status == EditNoOp && len(draft.PlannedChanges) != 0 {
+		return EditReceipt{}, false, fmt.Errorf("no-op receipt cannot contain planned changes: %w", ErrInvalidDefinition)
+	}
+	return receipt, false, nil
+}
+
+func validateReceiptStatus(status EditStatus) error {
+	switch status {
+	case EditRefused, EditNoOp, EditAppliedWorking, EditPersisted, EditPersistedWithDiagnostics, EditPartiallyPublished:
+		return nil
+	default:
+		return fmt.Errorf("finalize receipt: unsupported outcome %q", status)
+	}
+}
+
+type receiptChangeSummary struct {
+	expectedChanges    int
+	confirmedChanges   int
+	publicationUnclear bool
+	knownUnchanged     bool
+}
+
+func reconcileReceiptChanges(ctx context.Context, root string, inBatch bool, planned []FileRevision, receipt *EditReceipt) (receiptChangeSummary, error) {
+	readRevisions := make(map[string]string, len(receipt.ReadSet))
+	for _, revision := range receipt.ReadSet {
+		readRevisions[revision.Path] = revision.Revision
+	}
+	summary := receiptChangeSummary{knownUnchanged: true}
+	for _, change := range planned {
+		if readRevisions[change.Path] == change.Revision {
+			continue
+		}
+		summary.expectedChanges++
+		actual, exists, err := receiptFileRevision(ctx, root, change.Path, inBatch)
+		if err != nil {
+			return receiptChangeSummary{}, fmt.Errorf("finalize changed file %q: %w", change.Path, err)
+		}
+		if exists && actual.Revision == change.Revision {
+			receipt.Changes = append(receipt.Changes, actual)
+			summary.confirmedChanges++
+			continue
+		}
+		if exists && readRevisions[change.Path] != "" && actual.Revision == readRevisions[change.Path] {
+			continue
+		}
+		summary.knownUnchanged = false
+		summary.publicationUnclear = true
+		if exists {
+			receipt.Changes = append(receipt.Changes, actual)
+		}
+	}
+	return summary, nil
+}
+
+func setPublicationStatus(receipt *EditReceipt, inBatch bool, changes receiptChangeSummary) {
+	if inBatch || changes.expectedChanges <= changes.confirmedChanges {
+		return
+	}
+	if changes.confirmedChanges > 0 || changes.publicationUnclear {
+		receipt.Status = EditPartiallyPublished
+	} else if changes.knownUnchanged {
+		receipt.Status = EditRefused
+	}
+}
+
+func shouldResolveContinuations(receipt EditReceipt, inBatch bool, resolve ContinuationResolver) bool {
+	return receipt.Status != EditRefused && receipt.Status != EditAppliedWorking && !inBatch && resolve != nil
+}
+
+func resolveReceiptContinuations(ctx context.Context, root string, candidates []SymbolTarget, resolve ContinuationResolver) ([]SymbolTarget, error) {
+	var continuations []SymbolTarget
+	for index, candidate := range candidates {
+		resolved, live, err := resolveReceiptCandidate(ctx, root, index, candidate, resolve)
+		if err != nil {
+			return nil, err
+		}
+		if live {
+			continuations = append(continuations, resolved)
+		}
+	}
+	return continuations, nil
+}
+
+func resolveReceiptCandidate(ctx context.Context, root string, index int, candidate SymbolTarget, resolve ContinuationResolver) (SymbolTarget, bool, error) {
+	if err := ValidateSymbolTarget(candidate); err != nil {
+		return SymbolTarget{}, false, fmt.Errorf("receipt continuation %d: %w", index, err)
+	}
+	if candidate.ExpectedRevision == nil {
+		return SymbolTarget{}, false, nil
+	}
+	candidateFile, exists, err := receiptFileRevision(ctx, root, candidate.File, false)
+	if err != nil {
+		return SymbolTarget{}, false, fmt.Errorf("verify receipt candidate %d: %w", index, err)
+	}
+	if !exists || candidateFile.Revision != *candidate.ExpectedRevision {
+		return SymbolTarget{}, false, nil
+	}
+	resolved, live, err := resolve(ctx, candidate)
+	if err != nil {
+		return SymbolTarget{}, false, fmt.Errorf("resolve receipt continuation %d: %w", index, err)
+	}
+	if !live {
+		return SymbolTarget{}, false, nil
+	}
+	return refreshReceiptContinuation(ctx, root, index, resolved)
+}
+
+func refreshReceiptContinuation(ctx context.Context, root string, index int, resolved SymbolTarget) (SymbolTarget, bool, error) {
+	if err := ValidateSymbolTarget(resolved); err != nil {
+		return SymbolTarget{}, false, fmt.Errorf("resolved receipt continuation %d: %w", index, err)
+	}
+	fileRevision, exists, err := receiptFileRevision(ctx, root, resolved.File, false)
+	if err != nil {
+		return SymbolTarget{}, false, fmt.Errorf("verify receipt continuation %d: %w", index, err)
+	}
+	if !exists {
+		return SymbolTarget{}, false, nil
+	}
+	resolved.File = fileRevision.Path
+	revision := fileRevision.Revision
+	resolved.ExpectedRevision = &revision
+	return resolved, true, nil
 }
 
 func receiptFileRevision(ctx context.Context, root, relative string, inBatch bool) (FileRevision, bool, error) {
