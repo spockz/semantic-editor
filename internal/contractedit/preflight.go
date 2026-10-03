@@ -71,6 +71,9 @@ func PreflightCandidate(ctx context.Context, snapshot *Snapshot, destination str
 	if loadErr != nil {
 		return nil, loadErr
 	}
+	if replacementErr := rejectLocalReplacementModules(loaded); replacementErr != nil {
+		return nil, replacementErr
+	}
 	if symlinkErr := validateTestSymlinks(snapshot.Root, state.destinationDirectory); symlinkErr != nil {
 		return nil, fmt.Errorf("revalidate contract test sources: %w", symlinkErr)
 	}
