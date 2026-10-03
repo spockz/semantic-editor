@@ -318,9 +318,9 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 			t.Fatal(err)
 		}
 	}
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
+	exe, executableErr := os.Executable()
+	if executableErr != nil {
+		t.Fatal(executableErr)
 	}
 	script := "#!/bin/sh\nSEMEDIT_TEST_PROCESS=provider exec '" + strings.ReplaceAll(exe, "'", "'\\''") + "' -test.run=^TestBenchmarkProcessHelper$ -- \"$@\"\n"
 	provider := filepath.Join(bin, "codex")
@@ -332,9 +332,9 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 		t.Fatal(err)
 	}
 	outputPath := filepath.Join(root, "output.log")
-	output, err := os.Create(outputPath)
-	if err != nil {
-		t.Fatal(err)
+	output, outputErr := os.Create(outputPath)
+	if outputErr != nil {
+		t.Fatal(outputErr)
 	}
 	resultPath := filepath.Join(root, "result.json")
 	args := make([]string, 0, 13+len(extra))
@@ -349,17 +349,17 @@ func runCLITrial(t *testing.T, extra []string, malformed bool) cliTrial {
 	command.Stdout = output
 	command.Stderr = output
 	runErr := command.Run()
-	if err := output.Close(); err != nil {
-		t.Fatal(err)
+	if closeErr := output.Close(); closeErr != nil {
+		t.Fatal(closeErr)
 	}
-	out, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatal(err)
+	out, readErr := os.ReadFile(outputPath)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	trial := cliTrial{Output: string(out), Err: runErr}
-	logs, err := filepath.Glob(filepath.Join(evidence, "*.json"))
-	if err != nil {
-		t.Fatal(err)
+	logs, globErr := filepath.Glob(filepath.Join(evidence, "*.json"))
+	if globErr != nil {
+		t.Fatal(globErr)
 	}
 	for _, log := range logs {
 		data, err := os.ReadFile(log)

@@ -21,9 +21,9 @@ func TestAgentSessionSeparatesDiagnosticTurnsFromTaskTelemetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &behavioralSessionProvider{}
-	session, err := newAgentSession(provider, root, "session-test", workDir)
-	if err != nil {
-		t.Fatal(err)
+	session, sessionErr := newAgentSession(provider, root, "session-test", workDir)
+	if sessionErr != nil {
+		t.Fatal(sessionErr)
 	}
 	taskResult := &RunResult{}
 	taskStarted := time.Now()
@@ -74,9 +74,9 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(workDir, ".scratch"), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	session, err := newAgentSession(&behavioralSessionProvider{}, root, "metrics-session", workDir)
-	if err != nil {
-		t.Fatal(err)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "metrics-session", workDir)
+	if sessionErr != nil {
+		t.Fatal(sessionErr)
 	}
 	session.execution = AgentExecution{Task: &Task{}, Arm: ArmSemedit}
 	session.result = &RunResult{}
@@ -89,9 +89,9 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 		{"sequence": 1, "tool": "semantic_rename", "completed_at": taskFinishedAt.Add(-time.Millisecond), "metrics": map[string]any{"total_ms": 1250}},
 		{"sequence": 2, "tool": "semantic_lookup", "completed_at": taskFinishedAt.Add(time.Millisecond), "metrics": map[string]any{"total_ms": 10}},
 	}
-	data, err := json.Marshal(records)
-	if err != nil {
-		t.Fatal(err)
+	data, marshalErr := json.Marshal(records)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
 	}
 	if err := pipeline.WriteAtomic(benchmarkMCPMetricsPath(workDir), data); err != nil {
 		t.Fatal(err)
@@ -106,14 +106,14 @@ func TestAgentSessionRetainsTaskMCPMetricsAfterCleanup(t *testing.T) {
 	if metricsPath == "" {
 		t.Fatal("result provenance omitted retained MCP metrics path")
 	}
-	data, err = os.ReadFile(metricsPath)
-	if err != nil {
-		t.Fatal(err)
+	retainedData, readErr := os.ReadFile(metricsPath)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	var retained []struct {
 		Tool string `json:"tool"`
 	}
-	if err := json.Unmarshal(data, &retained); err != nil {
+	if err := json.Unmarshal(retainedData, &retained); err != nil {
 		t.Fatal(err)
 	}
 	if len(retained) != 1 || retained[0].Tool != "semantic_rename" {

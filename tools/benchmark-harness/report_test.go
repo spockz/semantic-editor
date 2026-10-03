@@ -548,9 +548,9 @@ func TestRestrictionPoliciesKeepReportsAndFilesDistinct(t *testing.T) {
 			t.Errorf("missing policy %q", policy)
 		}
 	}
-	data, err := json.Marshal(report)
-	if err != nil {
-		t.Fatal(err)
+	data, marshalErr := json.Marshal(report)
+	if marshalErr != nil {
+		t.Fatal(marshalErr)
 	}
 	var wire struct {
 		FormatVersion int    `json:"format_version"`
