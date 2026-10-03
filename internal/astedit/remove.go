@@ -350,7 +350,7 @@ func findStatementOrExpressionRemoveTarget(fset *token.FileSet, file *ast.File, 
 	if err != nil {
 		return removeTarget{}, err
 	}
-	candidates := collectStatementExpressionCandidates(fset, content, owner.Body)
+	candidates := collectStatementExpressionCandidates(fset, content, file, owner)
 	var directMatches []constructCandidate
 	var expressionMatches []constructCandidate
 	for _, candidate := range candidates {

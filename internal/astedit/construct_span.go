@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"go/ast"
 	"go/format"
+	"go/importer"
 	"go/parser"
+	"go/scanner"
 	"go/token"
+	"go/types"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,7 +42,7 @@ func replaceStatementOrExpression(ctx context.Context, filePath, ownerName, disc
 	if err != nil {
 		return "", err
 	}
-	candidates := collectStatementExpressionCandidates(fset, content, owner.Body)
+	candidates := collectStatementExpressionCandidates(fset, content, file, owner)
 	matches := make([]constructCandidate, 0, 1)
 	for _, candidate := range candidates {
 		if candidate.key == normalizeConstructSelector(discriminator) {
@@ -125,11 +128,12 @@ func findConstructOwner(file *ast.File, ownerName string) (*ast.FuncDecl, error)
 	return matches[0], nil
 }
 
-func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, body *ast.BlockStmt) []constructCandidate {
+func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, file *ast.File, owner *ast.FuncDecl) []constructCandidate {
 	var candidates []constructCandidate
+	info := collectExpressionTypes(fset, file, owner)
 	var walkBlock func(*ast.BlockStmt, string)
 	var walkStmt func(ast.Stmt, string)
-	addExprRoot := makeSpanExpressionAdder(fset, &candidates)
+	addExprRoot := makeSpanExpressionAdder(fset, &candidates, info)
 	walkBlock = func(block *ast.BlockStmt, prefix string) {
 		if block == nil {
 			return
@@ -146,22 +150,97 @@ func collectStatementExpressionCandidates(fset *token.FileSet, source []byte, bo
 		addStatementExpressionRoots(stmt, path, addExprRoot)
 		walkConstructStatementChildren(stmt, path, walkBlock, walkStmt, addExprRoot)
 	}
-	walkBlock(body, "")
+	if owner != nil {
+		walkBlock(owner.Body, "")
+	}
 	return candidates
 }
 
-func makeSpanExpressionAdder(fset *token.FileSet, candidates *[]constructCandidate) func(ast.Expr, string) {
+// Partial type information remains useful, while a missing fact stays ambiguous.
+type constructTypeFacts struct {
+	info *types.Info
+	// checkErr records whether this snapshot is partial.
+	checkErr error
+}
+
+func collectExpressionTypes(fset *token.FileSet, file *ast.File, owner *ast.FuncDecl) constructTypeFacts {
+	info := &types.Info{
+		Types: make(map[ast.Expr]types.TypeAndValue),
+		Uses:  make(map[*ast.Ident]types.Object),
+	}
+	if file == nil || owner == nil || !needsExpressionTypeInfo(owner.Body) {
+		return constructTypeFacts{info: info}
+	}
+	config := types.Config{Importer: importer.Default()}
+	_, checkErr := config.Check(file.Name.Name, fset, []*ast.File{file}, info)
+	return constructTypeFacts{info: info, checkErr: checkErr}
+}
+
+func needsExpressionTypeInfo(body *ast.BlockStmt) bool {
+	needsInfo := false
+	ast.Inspect(body, func(node ast.Node) bool {
+		if needsInfo {
+			return false
+		}
+		switch value := node.(type) {
+		case *ast.IndexExpr:
+			needsInfo = true
+		case *ast.CallExpr:
+			if ident, ok := value.Fun.(*ast.Ident); ok && (ident.Name == "make" || ident.Name == "new") {
+				needsInfo = true
+			}
+		}
+		return true
+	})
+	return needsInfo
+}
+
+func isKnownType(facts constructTypeFacts, expr ast.Expr) bool {
+	if facts.info == nil {
+		return false
+	}
+	value, ok := facts.info.Types[expr]
+	return ok && value.IsType()
+}
+
+func isKnownValue(facts constructTypeFacts, expr ast.Expr) bool {
+	if facts.info == nil {
+		return false
+	}
+	value, ok := facts.info.Types[expr]
+	return ok && value.IsValue()
+}
+
+func isSyntacticType(expr ast.Expr) bool {
+	for {
+		paren, ok := expr.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		expr = paren.X
+	}
+	switch expr.(type) {
+	case *ast.ArrayType, *ast.MapType, *ast.FuncType, *ast.ChanType, *ast.StructType, *ast.InterfaceType:
+		return true
+	default:
+		return false
+	}
+}
+
+func makeSpanExpressionAdder(fset *token.FileSet, candidates *[]constructCandidate, info constructTypeFacts) func(ast.Expr, string) {
 	var add func(ast.Expr, string)
 	add = func(root ast.Expr, path string) {
 		if root == nil {
 			return
 		}
-		if _, excluded := root.(*ast.KeyValueExpr); !excluded {
-			if _, excluded := root.(*ast.Ellipsis); !excluded {
-				*candidates = append(*candidates, constructCandidate{node: root, path: path, key: strings.TrimSpace(nodeText(fset, root)), class: "expression"})
+		if !isSyntacticType(root) && !isKnownType(info, root) {
+			if _, excluded := root.(*ast.KeyValueExpr); !excluded {
+				if _, excluded := root.(*ast.Ellipsis); !excluded {
+					*candidates = append(*candidates, constructCandidate{node: root, path: path, key: strings.TrimSpace(nodeText(fset, root)), class: "expression"})
+				}
 			}
 		}
-		for index, child := range expressionChildren(root) {
+		for index, child := range expressionChildren(root, info) {
 			add(child, childLoopPath(path, index))
 		}
 	}
@@ -207,6 +286,9 @@ func addStatementExpressionRoots(stmt ast.Stmt, path string, addExprRoot func(as
 	case *ast.SwitchStmt:
 		roots = append(roots, value.Tag)
 		addStatementExpressionRoots(value.Init, path+".init", addExprRoot)
+	case *ast.TypeSwitchStmt:
+		addStatementExpressionRoots(value.Init, path+".init", addExprRoot)
+		addStatementExpressionRoots(value.Assign, path+".assign", addExprRoot)
 	case *ast.DeclStmt:
 		if decl, ok := value.Decl.(*ast.GenDecl); ok {
 			for _, spec := range decl.Specs {
@@ -257,7 +339,9 @@ func walkConstructStatementChildren(stmt ast.Stmt, path string, walkBlock func(*
 	case *ast.SelectStmt:
 		for index, item := range value.Body.List {
 			if clause, ok := item.(*ast.CommClause); ok {
-				walkBlock(&ast.BlockStmt{List: clause.Body}, childLoopPath(path, index))
+				clausePath := childLoopPath(path, index)
+				addStatementExpressionRoots(clause.Comm, clausePath+".comm", addExprRoot)
+				walkBlock(&ast.BlockStmt{List: clause.Body}, clausePath)
 			}
 		}
 	case *ast.LabeledStmt:
@@ -265,16 +349,23 @@ func walkConstructStatementChildren(stmt ast.Stmt, path string, walkBlock func(*
 	}
 }
 
-func expressionChildren(expr ast.Expr) []ast.Expr {
+func expressionChildren(expr ast.Expr, info constructTypeFacts) []ast.Expr {
 	switch value := expr.(type) {
 	case *ast.BinaryExpr:
 		return []ast.Expr{value.X, value.Y}
 	case *ast.CallExpr:
+		if isBuiltinTypeConstructor(info, value) && len(value.Args) > 0 {
+			return value.Args[1:]
+		}
 		return value.Args
 	case *ast.SelectorExpr:
 		return []ast.Expr{value.X}
 	case *ast.IndexExpr:
-		return []ast.Expr{value.X}
+		children := []ast.Expr{value.X}
+		if isKnownValue(info, value.Index) {
+			children = append(children, value.Index)
+		}
+		return children
 	case *ast.IndexListExpr:
 		return []ast.Expr{value.X}
 	case *ast.SliceExpr:
@@ -308,6 +399,22 @@ func expressionChildren(expr ast.Expr) []ast.Expr {
 	}
 }
 
+func isBuiltinTypeConstructor(info constructTypeFacts, call *ast.CallExpr) bool {
+	ident, ok := call.Fun.(*ast.Ident)
+	if !ok || (ident.Name != "make" && ident.Name != "new") {
+		return false
+	}
+	if info.info != nil {
+		if _, ok := info.info.Uses[ident].(*types.Builtin); ok {
+			return true
+		}
+		if info.info.Uses[ident] != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func normalizeConstructSelector(source string) string {
 	trimmed := strings.TrimSpace(source)
 	if expr, err := parser.ParseExpr(trimmed); err == nil {
@@ -337,29 +444,46 @@ func parseSpanReplacement(class, source string) (string, error) {
 		return "", ErrEmptySnippet
 	}
 	if class == "expression" {
-		expr, err := parser.ParseExpr(trimmed)
+		fset := token.NewFileSet()
+		expr, err := parser.ParseExprFrom(fset, "snippet.go", trimmed, parser.ParseComments)
 		if err != nil {
 			return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
 		}
+		if isSyntacticType(expr) {
+			return "", fmt.Errorf("expression replacement cannot be a type expression")
+		}
 		if _, isCall := expr.(*ast.CallExpr); isCall {
+			if hasTrailingLineComment(trimmed, fset.Position(expr.End()).Offset) {
+				return "", fmt.Errorf("call expression replacement cannot safely preserve a trailing line comment")
+			}
 			return trimmed, nil
 		}
 		return "(" + trimmed + ")", nil
 	}
-	file, err := parser.ParseFile(token.NewFileSet(), "statement.go", []byte("package p\nfunc _(){\n"+trimmed+"\n}"), parser.ParseComments|parser.AllErrors)
+	endOffset, err := parseSingleDirectStatement(trimmed)
 	if err != nil {
 		return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
 	}
-	fn := file.Decls[0].(*ast.FuncDecl)
-	if len(fn.Body.List) != 1 {
-		return "", fmt.Errorf("statement replacement must contain exactly one statement or block")
+	if hasTrailingLineComment(trimmed, endOffset) {
+		return "", fmt.Errorf("statement replacement cannot safely preserve a trailing line comment")
 	}
-	node := fn.Body.List[0]
-	var buf strings.Builder
-	if err := format.Node(&buf, token.NewFileSet(), node); err != nil {
-		return "", fmt.Errorf("format replacement statement: %w", err)
+	return trimmed, nil
+}
+
+func hasTrailingLineComment(source string, endOffset int) bool {
+	fset := token.NewFileSet()
+	file := fset.AddFile("comment-scan.go", -1, len(source))
+	var scan scanner.Scanner
+	scan.Init(file, []byte(source), nil, scanner.ScanComments)
+	for {
+		pos, tok, lit := scan.Scan()
+		if tok == token.EOF {
+			return false
+		}
+		if tok == token.COMMENT && strings.HasPrefix(lit, "//") && file.Offset(pos) >= endOffset {
+			return true
+		}
 	}
-	return buf.String(), nil
 }
 
 func formatSpanCandidates(fset *token.FileSet, candidates []constructCandidate) string {
