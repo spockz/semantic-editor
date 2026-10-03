@@ -3,6 +3,7 @@ package astedit
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"go/format"
 	"go/parser"
@@ -14,6 +15,8 @@ import (
 	"semedit/internal/pipeline"
 	"semedit/internal/telemetry"
 )
+
+var errInvalidSiblingGoSyntax = errors.New("invalid sibling Go syntax")
 
 // ScaffoldOptions configures new file scaffolding behavior.
 type ScaffoldOptions struct {
@@ -72,34 +75,53 @@ func inferScaffoldPackageName(path string) (string, error) {
 	dir := filepath.Dir(path)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return "", fmt.Errorf("%w: %s", ErrInferNoSiblings, dir)
+		return "", fmt.Errorf("%w: read sibling directory %s: %w", ErrInferNoSiblings, dir, err)
 	}
 	baseName := filepath.Base(path)
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") || entry.Name() == baseName {
 			continue
 		}
-		name := parseSiblingPackage(filepath.Join(dir, entry.Name()))
-		if name != "" {
-			return name, nil
+		result := parseSiblingPackage(filepath.Join(dir, entry.Name()))
+		if errors.Is(result.err, errInvalidSiblingGoSyntax) {
+			continue
+		}
+		if result.err != nil {
+			return "", result.err
+		}
+		if result.name != "" {
+			return result.name, nil
 		}
 	}
 	return "", fmt.Errorf("%w: in %s", ErrInferNoSiblings, dir)
 }
 
-func parseSiblingPackage(path string) string {
-	fset := token.NewFileSet()
-	node, err := parser.ParseFile(fset, path, nil, parser.PackageClauseOnly)
-	if err != nil || node.Name == nil {
-		return ""
+type siblingPackageResult struct {
+	name string
+	err  error
+}
+
+func parseSiblingPackage(path string) siblingPackageResult {
+	// #nosec G304 -- the path comes from an enumerated entry under the requested target directory; read errors propagate.
+	source, err := os.ReadFile(path)
+	if err != nil {
+		return siblingPackageResult{err: fmt.Errorf("read sibling Go file %q: %w", path, err)}
 	}
-	return node.Name.Name
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, path, source, parser.PackageClauseOnly)
+	if err != nil {
+		return siblingPackageResult{err: fmt.Errorf("%w: %w", errInvalidSiblingGoSyntax, err)}
+	}
+	if node.Name == nil {
+		return siblingPackageResult{}
+	}
+	return siblingPackageResult{name: node.Name.Name}
 }
 
 func validateScaffoldPackageName(name string) error {
 	fset := token.NewFileSet()
 	if _, err := parser.ParseFile(fset, "dummy.go", "package "+name+"\n", parser.PackageClauseOnly); err != nil {
-		return fmt.Errorf("%w: invalid package name %q", ErrSyntax, name)
+		return fmt.Errorf("%w: invalid package name %q: %w", ErrSyntax, name, err)
 	}
 	return nil
 }

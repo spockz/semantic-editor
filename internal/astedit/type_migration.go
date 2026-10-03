@@ -27,11 +27,11 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	change, after, err := buildTypeMigrationChange(inputs)
+	changeResult, err := buildTypeMigrationChange(inputs)
 	if err != nil {
 		return SemanticEditPlan{}, err
 	}
-	if validationErr := validateTypeMigrationChange(ctx, target, after); validationErr != nil {
+	if validationErr := validateTypeMigrationChange(ctx, target, changeResult.after); validationErr != nil {
 		return SemanticEditPlan{}, validationErr
 	}
 	inputs.readSet, err = completeRefactorReadSet(ctx, target.moduleRoot, inputs.readSet, inputs.packages)
@@ -42,9 +42,9 @@ func PlanAliasTypeMigrationOverlay(ctx context.Context, workspaceRoot, file, sym
 		return SemanticEditPlan{}, err
 	}
 	return SemanticEditPlan{
-		Change:  change,
+		Change:  changeResult.change,
 		ReadSet: inputs.readSet,
-		Diff:    UnifiedDiff(target.path, string(inputs.source), string(after)),
+		Diff:    UnifiedDiff(target.path, string(inputs.source), string(changeResult.after)),
 	}, nil
 }
 
@@ -144,32 +144,37 @@ func captureTypeMigrationInputs(ctx context.Context, target typeMigrationTarget,
 	return typeMigrationInputs{target: target, readSet: readSet, source: source, packages: pkgSet, pkg: pkg, field: field}, nil
 }
 
-func buildTypeMigrationChange(inputs typeMigrationInputs) (sourcebuf.Change, []byte, error) {
+type typeMigrationChange struct {
+	change sourcebuf.Change
+	after  []byte
+}
+
+func buildTypeMigrationChange(inputs typeMigrationInputs) (typeMigrationChange, error) {
 	field := inputs.field
 	if identifier, ok := field.Type.(*ast.Ident); ok && identifier.Name == inputs.target.desiredType {
-		return sourcebuf.Change{}, nil, fmt.Errorf("type migration target already uses the requested spelling")
+		return typeMigrationChange{}, fmt.Errorf("type migration target already uses the requested spelling")
 	}
 	currentType := inputs.pkg.TypesInfo.TypeOf(field.Type)
 	desired, err := types.Eval(inputs.pkg.Fset, inputs.pkg.Types, field.Type.Pos(), inputs.target.desiredType)
 	if err != nil || !desired.IsType() {
 		if err != nil {
-			return sourcebuf.Change{}, nil, fmt.Errorf("resolve desired type %q in package scope: %w", inputs.target.desiredType, err)
+			return typeMigrationChange{}, fmt.Errorf("resolve desired type %q in package scope: %w", inputs.target.desiredType, err)
 		}
-		return sourcebuf.Change{}, nil, fmt.Errorf("desired expression %q does not denote a Go type", inputs.target.desiredType)
+		return typeMigrationChange{}, fmt.Errorf("desired expression %q does not denote a Go type", inputs.target.desiredType)
 	}
 	if _, validationErr := PlanAliasTypeMigration(currentType.String(), inputs.target.desiredType, currentType, desired.Type); validationErr != nil {
-		return sourcebuf.Change{}, nil, validationErr
+		return typeMigrationChange{}, validationErr
 	}
 	start, end := inputs.pkg.Fset.Position(field.Type.Pos()).Offset, inputs.pkg.Fset.Position(field.Type.End()).Offset
 	if start < 0 || end > len(inputs.source) || start >= end {
-		return sourcebuf.Change{}, nil, fmt.Errorf("type migration field selector has an invalid source range")
+		return typeMigrationChange{}, fmt.Errorf("type migration field selector has an invalid source range")
 	}
 	after := make([]byte, 0, len(inputs.source)+len(inputs.target.desiredType)-(end-start))
 	after = append(after, inputs.source[:start]...)
 	after = append(after, inputs.target.desiredType...)
 	after = append(after, inputs.source[end:]...)
 	change := sourcebuf.Change{Path: inputs.target.path, Before: bytes.Clone(inputs.source), After: after}
-	return change, after, nil
+	return typeMigrationChange{change: change, after: after}, nil
 }
 
 func validateTypeMigrationChange(ctx context.Context, target typeMigrationTarget, after []byte) error {
@@ -210,7 +215,7 @@ func findPrivateStructField(file *ast.File, path, ownerName, fieldName string, f
 			if !ok {
 				return nil, fmt.Errorf("type migration owner %q is not a struct", ownerName)
 			}
-			result, err := matchingPrivateStructField(structure, fieldName)
+			result, err := matchingPrivateStructField(structure, ownerName, fieldName)
 			if err != nil {
 				return nil, err
 			}
@@ -233,7 +238,8 @@ type privateStructFieldResult struct {
 	found bool
 }
 
-func matchingPrivateStructField(structure *ast.StructType, fieldName string) (privateStructFieldResult, error) {
+func matchingPrivateStructField(structure *ast.StructType, ownerName, fieldName string) (privateStructFieldResult, error) {
+	var found *ast.Field
 	for _, field := range structure.Fields.List {
 		if len(field.Names) != 1 && containsFieldName(field.Names, fieldName) {
 			return privateStructFieldResult{}, fmt.Errorf("type migration refuses grouped struct fields")
@@ -245,8 +251,14 @@ func matchingPrivateStructField(structure *ast.StructType, fieldName string) (pr
 			if ast.IsExported(name.Name) {
 				return privateStructFieldResult{}, fmt.Errorf("type migration supports only unexported struct fields")
 			}
-			return privateStructFieldResult{field: field, found: true}, nil
+			if found != nil {
+				return privateStructFieldResult{}, fmt.Errorf("type migration field %s.%s is ambiguous", ownerName, fieldName)
+			}
+			found = field
 		}
+	}
+	if found != nil {
+		return privateStructFieldResult{field: found, found: true}, nil
 	}
 	return privateStructFieldResult{}, nil
 }

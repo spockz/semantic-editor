@@ -214,32 +214,43 @@ func PlanChangeSignature(request SignatureChangeRequest, proof SignatureCallSetP
 
 // PlanIntroduceParameter plans a typed constant move and its caller updates.
 func PlanIntroduceParameter(request IntroduceParameterRequest, proof SignatureCallSetProof) (SignaturePlan, error) {
-	if request.Expression == "" || request.ParameterName == "" {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: selected expression and parameter name are required")
-	}
-	evidence := request.Constant
-	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
-	}
-	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
-	}
-	added := false
-	for _, mapping := range request.Signature.Parameters {
-		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
-			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
-				return SignaturePlan{}, fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
-			}
-			added = true
-		}
-	}
-	if !added {
-		return SignaturePlan{}, fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	if err := validateIntroducedParameterEvidence(request); err != nil {
+		return SignaturePlan{}, err
 	}
 	plan, err := PlanChangeSignature(request.Signature, proof)
 	if err != nil {
 		return SignaturePlan{}, err
 	}
+	return replaceIntroducedParameterExpression(plan, request)
+}
+
+func validateIntroducedParameterEvidence(request IntroduceParameterRequest) error {
+	if request.Expression == "" || request.ParameterName == "" {
+		return fmt.Errorf("introduce parameter: selected expression and parameter name are required")
+	}
+	evidence := request.Constant
+	if evidence.Type == "" || evidence.SelectedValue == "" || evidence.SelectedValue != evidence.ArgumentValue || evidence.MutableRead || evidence.HasSideEffects {
+		return fmt.Errorf("introduce parameter: equal typed constant values and side-effect-free timing proof are required")
+	}
+	if err := signatureClosedArgument(evidence.ArgumentSource); err != nil {
+		return fmt.Errorf("introduce parameter: caller argument is unsupported: %w", err)
+	}
+	added := false
+	for _, mapping := range request.Signature.Parameters {
+		if mapping.SourceIndex == nil && mapping.Name == request.ParameterName {
+			if mapping.Argument != evidence.ArgumentSource || mapping.Type != evidence.Type {
+				return fmt.Errorf("introduce parameter: appended mapping must match the typed constant evidence")
+			}
+			added = true
+		}
+	}
+	if !added {
+		return fmt.Errorf("introduce parameter: signature must append the evidenced parameter")
+	}
+	return nil
+}
+
+func replaceIntroducedParameterExpression(plan SignaturePlan, request IntroduceParameterRequest) (SignaturePlan, error) {
 	var target *SignaturePlannedFile
 	for index := range plan.Files {
 		if plan.Files[index].File == request.Signature.File {
@@ -448,61 +459,22 @@ func signatureIdentifier(value string) bool {
 
 func signatureNoPackageNameCollision(inputs []SignatureSourceFile, name string) error {
 	for _, input := range inputs {
-		file, err := parseSignatureSource(input)
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, input.File, input.Source, parser.ParseComments|parser.AllErrors)
 		if err != nil {
 			return fmt.Errorf("introduce parameter object: parse read-set file %q: %w", input.File, err)
 		}
-		if signatureFileDeclaresName(file, name) {
+		if packageDeclaresName(file.Decls, name) || signatureHasMethodName(file, name) {
 			return fmt.Errorf("introduce parameter object: package name %q already exists", name)
 		}
 	}
 	return nil
 }
 
-func parseSignatureSource(input SignatureSourceFile) (*ast.File, error) {
-	fset := token.NewFileSet()
-	return parser.ParseFile(fset, input.File, input.Source, parser.ParseComments|parser.AllErrors)
-}
-
-func signatureFileDeclaresName(file *ast.File, name string) bool {
+func signatureHasMethodName(file *ast.File, name string) bool {
 	for _, declaration := range file.Decls {
-		if signatureDeclarationDeclaresName(declaration, name) {
-			return true
-		}
-	}
-	return false
-}
-
-func signatureDeclarationDeclaresName(declaration ast.Decl, name string) bool {
-	switch value := declaration.(type) {
-	case *ast.FuncDecl:
-		return value.Name.Name == name
-	case *ast.GenDecl:
-		return signatureGroupDeclaresName(value, name)
-	default:
-		return false
-	}
-}
-
-func signatureGroupDeclaresName(group *ast.GenDecl, name string) bool {
-	for _, spec := range group.Specs {
-		switch item := spec.(type) {
-		case *ast.TypeSpec:
-			if item.Name.Name == name {
-				return true
-			}
-		case *ast.ValueSpec:
-			if signatureValueSpecDeclaresName(item, name) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func signatureValueSpecDeclaresName(spec *ast.ValueSpec, name string) bool {
-	for _, identifier := range spec.Names {
-		if identifier.Name == name {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv != nil && nodeDeclaresName(function, name) {
 			return true
 		}
 	}
