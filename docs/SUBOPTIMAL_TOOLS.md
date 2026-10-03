@@ -3608,3 +3608,19 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: intermediate compiler diagnostics reported undefined `retErr`, a root handle passed to the old string parameter, and undefined `workspaceRoot` and `fs`.
 - Workaround: complete the named return and root-parameter signature changes with targeted patches, then organize the required imports before verification.
 - Root cause: caller published new bodies before their required signatures and imports; the body-only operation does not change declaration signatures.
+
+## 2026-10-03: Coordinator inspection guessed absent declarations
+
+- Tool: `semantic_inspect_symbol`.
+- Targets: `internal/backend/backend.go` (`StructureRequest`) and `internal/operation/profiles.go` (`ToolProfile`).
+- Observed: both requests reported symbol not found.
+- Workaround: use names returned by declaration outlines and inspect the registry's actual request and profile declarations.
+- Root cause: the coordinator inferred names without checking the outline first; the actual profile type is `Profile`.
+
+## 2026-10-03: Independent construct review timed out
+
+- Tool: `codex_ask` with a read-only Terra review request.
+- Targets: the integration worktree's `internal/astedit/construct_span.go` and `internal/astedit/construct_declaration.go`.
+- Observed: the request exceeded its deadline without returning review findings.
+- Workaround: continue coordinator review and require worker fixes plus observable contract tests; do not treat the missing response as approval.
+- Root cause: the review service did not complete within its request deadline; no narrower cause is established.
