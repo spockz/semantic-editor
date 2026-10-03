@@ -91,18 +91,18 @@ func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
 
 func TestInsertFieldRegistryRejectsLeadingDotQualifierWithoutWriting(t *testing.T) {
 	t.Parallel()
-	root, path, before := newStructuralFieldFixture(t)
-	err := invokeStructuralFieldInsert(root, ".t", ".t.extra")
+	invalidFixture := newStructuralFieldFixture(t)
+	err := invokeStructuralFieldInsert(invalidFixture.Root, ".t", ".t.extra")
 	if err == nil || !strings.Contains(err.Error(), "invalid package qualifier") {
 		t.Fatalf("leading-dot in_type error = %v, want invalid package qualifier refusal", err)
 	}
-	assertSourceBytes(t, path, before, "source changed after invalid in_type")
+	assertSourceBytes(t, invalidFixture.Path, invalidFixture.Before, "source changed after invalid in_type")
 
-	validRoot, validPath, _ := newStructuralFieldFixture(t)
-	if err := invokeStructuralFieldInsert(validRoot, "t", "t.extra"); err != nil {
+	validFixture := newStructuralFieldFixture(t)
+	if err := invokeStructuralFieldInsert(validFixture.Root, "t", "t.extra"); err != nil {
 		t.Fatalf("valid field insertion rejected: %v", err)
 	}
-	updated, readErr := os.ReadFile(validPath)
+	updated, readErr := os.ReadFile(validFixture.Path)
 	if readErr != nil {
 		t.Fatalf("read valid field insertion result: %v", readErr)
 	}
@@ -111,14 +111,20 @@ func TestInsertFieldRegistryRejectsLeadingDotQualifierWithoutWriting(t *testing.
 	}
 }
 
-func newStructuralFieldFixture(t *testing.T) (string, string, []byte) {
+type structuralFieldFixture struct {
+	Root   string
+	Path   string
+	Before []byte
+}
+
+func newStructuralFieldFixture(t *testing.T) structuralFieldFixture {
 	t.Helper()
 	root := t.TempDir()
 	writeFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/fieldselector\n\ngo 1.24\n")
 	path := filepath.Join(root, "types.go")
-	before := []byte("package fieldselector\n\ntype t struct { existing int }\n")
+	before := []byte("package fieldselector\n\ntype t struct {\n\texisting int\n}\n")
 	writeFixtureFile(t, path, string(before))
-	return root, path, before
+	return structuralFieldFixture{Root: root, Path: path, Before: before}
 }
 
 func invokeStructuralFieldInsert(root, inType, symbol string) error {

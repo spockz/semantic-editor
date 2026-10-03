@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -132,11 +133,11 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 		}
 		request, err := decodeFakeLSPRequest(payload)
 		if err != nil {
-			continue
+			failFakeLanguageServer(err)
 		}
 		if len(request.ID) == 0 {
 			if !handleFakeLanguageNotification(writer, state, request) {
-				return
+				failFakeLanguageServer(errors.New("fake language server rejected notification"))
 			}
 			continue
 		}
@@ -144,10 +145,17 @@ func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 		if !keepRunning {
 			return
 		}
-		if writeFakeLSPResponse(writer, request.ID, result) != nil {
-			return
+		if err := writeFakeLSPResponse(writer, request.ID, result); err != nil {
+			failFakeLanguageServer(err)
 		}
 	}
+}
+
+func failFakeLanguageServer(err error) {
+	if _, writeErr := fmt.Fprintln(os.Stderr, "fake language server:", err); writeErr != nil {
+		os.Exit(2)
+	}
+	os.Exit(2)
 }
 
 type fakeLSPRequest struct {
@@ -217,7 +225,12 @@ func fakeTextDocumentParams(raw json.RawMessage) struct {
 			URI string `json:"uri"`
 		} `json:"textDocument"`
 	}
-	_ = json.Unmarshal(raw, &params)
+	if err := json.Unmarshal(raw, &params); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake text document params: %w", err))
+	}
+	if params.TextDocument.URI == "" {
+		failFakeLanguageServer(errors.New("fake text document params missing URI"))
+	}
 	return params.TextDocument
 }
 
@@ -226,9 +239,17 @@ func writeFakeDiagnostics(writer *lsp.FrameWriter, uri string, version *int, dia
 	if version != nil {
 		paramsValue["version"] = *version
 	}
-	params, _ := json.Marshal(paramsValue)
-	notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
-	_ = writer.WriteMessage(notification)
+	params, err := json.Marshal(paramsValue)
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("encode fake diagnostics params: %w", err))
+	}
+	notification, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("encode fake diagnostics notification: %w", err))
+	}
+	if err := writer.WriteMessage(notification); err != nil {
+		failFakeLanguageServer(fmt.Errorf("write fake diagnostics notification: %w", err))
+	}
 }
 
 func handleFakeDocumentChange(writer *lsp.FrameWriter, state fakeLanguageServerState, raw json.RawMessage) bool {
@@ -238,7 +259,9 @@ func handleFakeDocumentChange(writer *lsp.FrameWriter, state fakeLanguageServerS
 			Version int    `json:"version"`
 		} `json:"textDocument"`
 	}
-	_ = json.Unmarshal(raw, &change)
+	if err := json.Unmarshal(raw, &change); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake document change: %w", err))
+	}
 	if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!state.formattingSeen || !state.codeActionSeen) {
 		return false
 	}
@@ -310,7 +333,12 @@ func fakeRenameEdit(symbol fakeDocumentSymbol, raw json.RawMessage) map[string]a
 		} `json:"textDocument"`
 		NewName string `json:"newName"`
 	}
-	_ = json.Unmarshal(raw, &params)
+	if err := json.Unmarshal(raw, &params); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake rename params: %w", err))
+	}
+	if params.TextDocument.URI == "" || params.NewName == "" {
+		failFakeLanguageServer(errors.New("fake rename params missing URI or new name"))
+	}
 	uri := params.TextDocument.URI
 	if parsed, err := url.Parse(uri); err == nil {
 		uri = parsed.String()

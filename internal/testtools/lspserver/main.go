@@ -40,7 +40,10 @@ func serve(input io.Reader, output io.Writer, server string) error {
 		if consumed {
 			continue
 		}
-		result, shutdown := handleRequest(server, request, state)
+		result, shutdown, err := handleRequest(server, request, state)
+		if err != nil {
+			return err
+		}
 		if err := write(writer, message{JSONRPC: "2.0", ID: request.ID, Result: result}); err != nil {
 			return err
 		}
@@ -108,7 +111,9 @@ func handleNotification(writer *bufio.Writer, server string, request message, st
 		return false, nil
 	}
 	if request.Method == "textDocument/didOpen" {
-		state.observeOpenedDocument(request.Params)
+		if err := state.observeOpenedDocument(request.Params); err != nil {
+			return true, err
+		}
 		if server == "bash-language-server" {
 			if err := publishEmptyDiagnostics(writer, request.Params); err != nil {
 				return true, err
@@ -118,18 +123,21 @@ func handleNotification(writer *bufio.Writer, server string, request message, st
 	return true, nil
 }
 
-func (state *serverState) observeOpenedDocument(params json.RawMessage) {
+func (state *serverState) observeOpenedDocument(params json.RawMessage) error {
 	var opened struct {
 		TextDocument struct {
 			Text string `json:"text"`
 		} `json:"textDocument"`
 	}
-	_ = json.Unmarshal(params, &opened)
+	if err := json.Unmarshal(params, &opened); err != nil {
+		return fmt.Errorf("decode didOpen params: %w", err)
+	}
 	text := opened.TextDocument.Text
 	state.ambiguous = strings.Contains(text, "SEMEDIT_TEST_AMBIGUOUS")
 	state.included = strings.Contains(text, "include ")
 	state.conditional = strings.Contains(text, "ifeq (")
 	state.functionDeclarations = strings.Contains(text, "function fun()")
+	return nil
 }
 
 func publishEmptyDiagnostics(writer *bufio.Writer, params json.RawMessage) error {
@@ -138,35 +146,50 @@ func publishEmptyDiagnostics(writer *bufio.Writer, params json.RawMessage) error
 			URI string `json:"uri"`
 		} `json:"textDocument"`
 	}
-	_ = json.Unmarshal(params, &opened)
+	if err := json.Unmarshal(params, &opened); err != nil {
+		return fmt.Errorf("decode didOpen diagnostics params: %w", err)
+	}
+	if opened.TextDocument.URI == "" {
+		return fmt.Errorf("didOpen diagnostics missing document URI")
+	}
 	result := map[string]any{"uri": opened.TextDocument.URI, "version": 1, "diagnostics": []any{}}
-	return write(writer, message{JSONRPC: "2.0", Method: "textDocument/publishDiagnostics", Params: mustJSON(result)})
+	paramsJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("encode empty diagnostics: %w", err)
+	}
+	return write(writer, message{JSONRPC: "2.0", Method: "textDocument/publishDiagnostics", Params: paramsJSON})
 }
 
-func handleRequest(server string, request message, state serverState) (any, bool) {
+func handleRequest(server string, request message, state serverState) (any, bool, error) {
 	switch request.Method {
 	case "initialize":
-		return map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "documentSymbolProvider": true}}, false
+		return map[string]any{"capabilities": map[string]any{"positionEncoding": "utf-16", "documentSymbolProvider": true}}, false, nil
 	case "textDocument/documentSymbol":
-		return documentSymbols(server, request.Params, state), false
+		symbols, err := documentSymbols(server, request.Params, state)
+		return symbols, false, err
 	case "shutdown":
-		return nil, true
+		return nil, true, nil
 	default:
-		return map[string]any{}, false
+		return map[string]any{}, false, nil
 	}
 }
 
-func documentSymbols(server string, params json.RawMessage, state serverState) any {
+func documentSymbols(server string, params json.RawMessage, state serverState) (any, error) {
 	var document struct {
 		TextDocument struct {
 			URI string `json:"uri"`
 		} `json:"textDocument"`
 	}
-	_ = json.Unmarshal(params, &document)
-	if server == "bash-language-server" {
-		return bashDocumentSymbols(document.TextDocument.URI, state)
+	if err := json.Unmarshal(params, &document); err != nil {
+		return nil, fmt.Errorf("decode documentSymbol params: %w", err)
 	}
-	return makeDocumentSymbols(document.TextDocument.URI, state)
+	if document.TextDocument.URI == "" {
+		return nil, fmt.Errorf("documentSymbol params missing document URI")
+	}
+	if server == "bash-language-server" {
+		return bashDocumentSymbols(document.TextDocument.URI, state), nil
+	}
+	return makeDocumentSymbols(document.TextDocument.URI, state), nil
 }
 
 func bashDocumentSymbols(uri string, state serverState) []any {
@@ -185,6 +208,9 @@ func bashDocumentSymbols(uri string, state serverState) []any {
 
 func makeDocumentSymbols(uri string, state serverState) []any {
 	symbol := map[string]any{"name": "all", "kind": 12, "range": rng(0, 0, 4), "selectionRange": rng(0, 0, 3)}
+	if strings.HasSuffix(uri, "/Read.mk") {
+		symbol["range"] = map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 2, "character": 10}}
+	}
 	if state.ambiguous {
 		return []any{symbol, symbol}
 	}
@@ -196,9 +222,6 @@ func makeDocumentSymbols(uri string, state serverState) []any {
 	}
 	if strings.HasSuffix(uri, "/Variables.mk") {
 		return []any{map[string]any{"name": "X", "kind": 13, "range": rng(0, 0, 5), "selectionRange": rng(0, 0, 1)}}
-	}
-	if strings.HasSuffix(uri, "/Read.mk") {
-		symbol["range"] = map[string]any{"start": map[string]int{"line": 0, "character": 0}, "end": map[string]int{"line": 2, "character": 10}}
 	}
 	return []any{symbol}
 }
@@ -214,7 +237,6 @@ func makeConditionalSymbol() map[string]any {
 func rng(line, start, end int) map[string]any {
 	return map[string]any{"start": map[string]int{"line": line, "character": start}, "end": map[string]int{"line": line, "character": end}}
 }
-func mustJSON(v any) json.RawMessage { raw, _ := json.Marshal(v); return raw }
 func write(w *bufio.Writer, m message) error {
 	data, err := json.Marshal(m)
 	if err != nil {

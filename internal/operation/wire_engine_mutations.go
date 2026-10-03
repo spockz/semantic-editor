@@ -275,7 +275,7 @@ func runReplaceBody(ctx context.Context, cc CallContext, req ReplaceBodyReq) (Fi
 func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 	return Def[ReplaceBodyReq, FileEditRes]{
 		Key: "replace_body", VariantVerb: "replace", VariantKind: "function",
-		Summary: "Use this tool instead of text editing or replacing the entire declaration when changing the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
+		Summary: "Use this tool instead of text editing or replacing the entire declaration when changing the body of an existing Go function or method by name. The new body is provided as bare statements (no surrounding braces). Use semantic_replace_construct for replacing a declaration or selecting a statement/expression slot. Validates and formats in memory before writing; leaves the file untouched on any syntax error." + automaticVerificationGuidance,
 		Params:  replaceBodyParams,
 		Level:   LevelFile,
 		CLIName: "replace-body",
@@ -470,7 +470,7 @@ func runInsertCase(ctx context.Context, cc CallContext, req InsertCaseReq) (File
 func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 	return Def[InsertCaseReq, FileEditRes]{
 		Key: "insert_case", VariantVerb: "insert", VariantKind: "case",
-		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Supply the existing in_function selector and, for tagged switches, the exact discriminator expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy construct_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
+		Summary: "Use this tool instead of text editing when adding one case clause to an existing Go switch. Use semantic_insert_construct for the generic insertion interface. Supply the existing in_function selector and, for tagged switches, the exact discriminator expression (for example request.Method); kind=case alone does not identify the target switch. If multiple switches match, copy construct_path from the ambiguity diagnostic. The case value is a complete clause including its colon and statements.",
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",
@@ -557,7 +557,7 @@ func runReplaceConstruct(ctx context.Context, cc CallContext, req ReplaceConstru
 func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 	return Def[ReplaceConstructReq, FileEditRes]{
 		Key:     "replace_construct",
-		Summary: "Use this tool instead of replacing a whole function body to update one selected construct by kind. Use symbol for named declarations or in_function plus discriminator for nested targets. semantic_replace_body preserves a function signature when only its body changes.",
+		Summary: "Use this tool instead of replacing a whole function body to update one selected construct by kind. For kind=statement/expression, the discriminator selects a source span and the tool chooses the whole statement or an inner expression slot, such as an assignment, call argument, literal, or condition, from the source shape. Use symbol for named declarations or in_function plus discriminator for nested targets. semantic_replace_body preserves a function signature when only its body changes.",
 		Params:  replaceConstructParams,
 		Level:   LevelFile,
 		CLIName: "replace-construct",
