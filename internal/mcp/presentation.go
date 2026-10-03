@@ -200,6 +200,7 @@ func presentationFieldPriority(key string) (int, bool) {
 		"failure":                     11,
 		"formatted":                   12,
 		"scope":                       13,
+		"function_target":             14,
 		"result":                      14,
 		"receipt":                     15,
 		"edit_receipt":                16,
@@ -226,6 +227,7 @@ func presentationFieldPriority(key string) (int, bool) {
 
 func deleteBatchWorkingContinuations(result map[string]any) {
 	delete(result, "continuations")
+	delete(result, "function_target")
 	for _, key := range []string{"receipt", "edit_receipt"} {
 		if receipt, ok := result[key].(map[string]any); ok {
 			delete(receipt, "continuations")

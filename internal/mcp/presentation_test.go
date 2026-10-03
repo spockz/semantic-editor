@@ -85,6 +85,69 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 	}
 }
 
+func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *testing.T) {
+	target := map[string]any{"file": "main.go", "symbol": "update", "expected_revision": "rev-4"}
+	structured := map[string]any{
+		"result": map[string]any{
+			"status": "applied", "function_target": target,
+			"changes": []any{map[string]any{"file": "main.go", "revision": "rev-5"}},
+		},
+		"read_set": map[string]any{"analysis": strings.Repeat("bulk", 512)},
+	}
+	text, err := criticalText(structured, "formatter output")
+	if err != nil {
+		t.Fatalf("criticalText() error = %v", err)
+	}
+	prefix, _, ok := strings.Cut(text, "\n\n")
+	if !ok {
+		t.Fatalf("critical text missing body separator: %q", text)
+	}
+	var projection map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(prefix, "Critical result (JSON): ")), &projection); err != nil {
+		t.Fatalf("decode critical projection: %v", err)
+	}
+	result := projection["result"].(map[string]any)
+	for _, field := range []string{"function_target", "changes"} {
+		if _, exists := result[field]; !exists {
+			t.Fatalf("critical projection missing %s: %#v", field, result)
+		}
+	}
+	if _, exists := projection["read_set"]; !exists {
+		t.Fatalf("critical projection missing top-level read_set: %#v", projection)
+	}
+	for _, field := range []string{`"read_set"`, `"changes"`} {
+		if strings.Index(prefix, `"function_target"`) > strings.Index(prefix, field) {
+			t.Fatalf("function target must precede %s: %q", field, prefix)
+		}
+	}
+	if !reflect.DeepEqual(result["function_target"], map[string]any{
+		"file": "main.go", "symbol": "update", "expected_revision": "rev-4",
+	}) {
+		t.Fatalf("function target identity or companion revision changed: %#v", result["function_target"])
+	}
+
+	batchText, err := criticalText(map[string]any{"result": &BatchResponse{
+		Status: "ok",
+		Results: []BatchResult{{
+			Tool: "semantic_change_signature", Status: "ok",
+			Result: json.RawMessage(`{"status":"applied_working","function_target":{"file":"main.go","symbol":"update","expected_revision":"working-rev"}}`),
+		}},
+		FinalDiff: "large final diff",
+	}}, "")
+	if err != nil {
+		t.Fatalf("criticalText() batch error = %v", err)
+	}
+	var batchProjection map[string]any
+	if err := json.Unmarshal([]byte(strings.TrimPrefix(batchText, "Critical result (JSON): ")), &batchProjection); err != nil {
+		t.Fatalf("decode batch critical projection: %v", err)
+	}
+	batchResult := batchProjection["result"].(map[string]any)
+	child := batchResult["results"].([]any)[0].(map[string]any)["result"].(map[string]any)
+	if _, exists := child["function_target"]; exists {
+		t.Fatalf("buffered batch child exposed a live function target in critical text: %#v", child)
+	}
+}
+
 func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *testing.T) {
 	record := map[string]any{"file": "main.go", "symbol": "Value", "expected_revision": "rev-3"}
 	changes := make([]any, 96)
