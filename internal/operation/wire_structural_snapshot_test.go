@@ -4,8 +4,8 @@ package operation
 
 import (
 	"context"
-	"go/parser"
-	"go/token"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,27 +48,42 @@ func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
 	if err := os.WriteFile(path, source, 0o600); err != nil {
 		t.Fatalf("write duplicate declarations: %v", err)
 	}
-	parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments|parser.AllErrors)
-	if parseErr != nil {
-		t.Fatalf("parse duplicate declarations: %v", parseErr)
+	hash := sha256.Sum256(source)
+	entry, ok := DefaultRegistry().LookupMCP(insertCompositeElementToolName)
+	if !ok {
+		t.Fatal("composite insert operation is not registered")
 	}
-	if _, ownerErr := structuralDeclarationOwner(parsed, "thing"); ownerErr == nil || !strings.Contains(ownerErr.Error(), "ambiguous") {
-		t.Fatalf("duplicate declaration owner error = %v, want ambiguity refusal", ownerErr)
+	draft := EditReceiptDraft{
+		Operation: "insert_composite_element",
+		Status:    EditPersisted,
+		PlannedChanges: []FileRevision{{
+			Path: "value.go", Revision: hex.EncodeToString(hash[:]),
+		}},
 	}
-	receipt := EditReceipt{Changes: []FileRevision{{Path: "value.go", Revision: structuralRevision(source)}}}
-	candidate := compositeSelectorCandidate{File: "value.go", Declaration: "thing", ElementSource: "1"}
-	_, live, err := resolveCompositeSelectorContinuation(context.Background(), root, candidate, receipt)
+	result := compositePlanResult{
+		Structural: structuralPlanResult{Edit: FileEditRes{Detail: "Appended one keyed composite element."}, Draft: draft},
+		Candidate:  compositeSelectorCandidate{File: "value.go", Declaration: "thing", ElementSource: "1"},
+	}
+	finalized, err := entry.FinalizeOutput(CallContext{WorkDir: root}, map[string]any{}, result)
 	if err != nil {
-		t.Fatalf("resolve duplicate declaration continuation: %v", err)
+		t.Fatalf("finalize duplicate declaration result: %v", err)
 	}
-	if live {
-		t.Fatal("duplicate declaration produced a live selector continuation")
+	projected, err := entry.ProjectOutput(finalized)
+	if err != nil {
+		t.Fatalf("project duplicate declaration result: %v", err)
+	}
+	output, ok := projected.(map[string]any)
+	if !ok {
+		t.Fatalf("projected composite result = %#v, want map", projected)
+	}
+	if _, exists := output["selector_continuations"]; exists {
+		t.Fatalf("duplicate declaration produced a live selector continuation: %#v", output)
 	}
 	after, readErr := os.ReadFile(path)
 	if readErr != nil {
 		t.Fatalf("read duplicate declarations after refusal: %v", readErr)
 	}
 	if string(after) != string(source) {
-		t.Fatal("continuation refusal changed the source")
+		t.Fatalf("continuation projection changed source bytes: %q", after)
 	}
 }
