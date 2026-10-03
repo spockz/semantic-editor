@@ -98,9 +98,9 @@ func renameSelected(ctx context.Context, workDir string, selected backend.Symbol
 				return errors.New("rename lookup input is not a regular file")
 			}
 			// #nosec G304 -- inputs come from the backend's exact resolver snapshot.
-			input, err := sourcebuf.ReadFile(ctx, canonical)
-			if err != nil {
-				return fmt.Errorf("read rename lookup input: %w", err)
+			input, inputErr := sourcebuf.ReadFile(ctx, canonical)
+			if inputErr != nil {
+				return fmt.Errorf("read rename lookup input: %w", inputErr)
 			}
 			if !bytes.Equal(input, source) {
 				return errors.New("rename analysis input changed since symbol lookup")

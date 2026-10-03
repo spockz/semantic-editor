@@ -109,14 +109,14 @@ func (b testBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.D
 }
 
 func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
-	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
-	if err != nil {
-		t.Fatalf("NewRegistry failed: %v", err)
+	registry, registryErr := backend.NewRegistry(gobackend.NewGoBackend())
+	if registryErr != nil {
+		t.Fatalf("NewRegistry failed: %v", registryErr)
 	}
 
-	selected, err := registry.Select(backend.ProjectContext{Language: backend.LanguageGo})
-	if err != nil {
-		t.Fatalf("explicit selection failed: %v", err)
+	selected, selectionErr := registry.Select(backend.ProjectContext{Language: backend.LanguageGo})
+	if selectionErr != nil {
+		t.Fatalf("explicit selection failed: %v", selectionErr)
 	}
 	if selected.Language() != backend.LanguageGo {
 		t.Fatalf("selected language = %q, want %q", selected.Language(), backend.LanguageGo)
@@ -129,25 +129,25 @@ func TestRegistrySelectsExplicitAndAutoGoBackend(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatalf("write source: %v", err)
 	}
-	selected, err = registry.Select(backend.ProjectContext{RootDir: root})
-	if err != nil || selected.Language() != backend.LanguageGo {
-		t.Fatalf("auto selection = %v, backend = %v", err, selected)
+	selected, selectionErr = registry.Select(backend.ProjectContext{RootDir: root})
+	if selectionErr != nil || selected.Language() != backend.LanguageGo {
+		t.Fatalf("auto selection = %v, backend = %v", selectionErr, selected)
 	}
 
 	sourceLess := t.TempDir()
 	if err := os.WriteFile(filepath.Join(sourceLess, "go.mod"), []byte("module empty\n"), 0o600); err != nil {
 		t.Fatalf("write source-less module: %v", err)
 	}
-	_, err = registry.Select(backend.ProjectContext{RootDir: sourceLess})
-	if err == nil || !errors.Is(err, backend.ErrLanguageUndetected) {
-		t.Fatalf("auto selection without source files error = %v", err)
+	_, sourceLessErr := registry.Select(backend.ProjectContext{RootDir: sourceLess})
+	if sourceLessErr == nil || !errors.Is(sourceLessErr, backend.ErrLanguageUndetected) {
+		t.Fatalf("auto selection without source files error = %v", sourceLessErr)
 	}
 }
 
 func TestRegistryAutoSelectionIgnoresDetectedLanguagesWithoutBackends(t *testing.T) {
-	registry, err := backend.NewRegistry(gobackend.NewGoBackend())
-	if err != nil {
-		t.Fatal(err)
+	registry, registryErr := backend.NewRegistry(gobackend.NewGoBackend())
+	if registryErr != nil {
+		t.Fatal(registryErr)
 	}
 	root := t.TempDir()
 	for name, source := range map[string]string{
@@ -438,17 +438,17 @@ func TestReadServiceChecksCapabilityInterfaceAndTrust(t *testing.T) {
 			capabilities: backend.NewCapabilitiesRequiringWorkspaceTrust(backend.OperationInspect),
 			result:       result,
 		}
-		registry, err := backend.NewRegistry(reader)
-		if err != nil {
-			t.Fatal(err)
+		registry, registryErr := backend.NewRegistry(reader)
+		if registryErr != nil {
+			t.Fatal(registryErr)
 		}
 		service := backend.NewService(registry)
 		request := backend.InspectRequest{
 			Project: backend.ProjectContext{RootDir: root, Language: "external"},
 			Symbol:  "(*Server).Serve",
 		}
-		if _, err := service.Inspect(context.Background(), request); !errors.Is(err, backend.ErrWorkspaceTrustRequired) {
-			t.Fatalf("untrusted Inspect error = %v, want ErrWorkspaceTrustRequired", err)
+		if _, inspectErr := service.Inspect(context.Background(), request); !errors.Is(inspectErr, backend.ErrWorkspaceTrustRequired) {
+			t.Fatalf("untrusted Inspect error = %v, want ErrWorkspaceTrustRequired", inspectErr)
 		}
 		request.Project.WorkspaceTrust = backend.NewWorkspaceTrust(root, true)
 		got, err := service.Inspect(context.Background(), request)
