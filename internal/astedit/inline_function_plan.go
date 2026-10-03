@@ -17,71 +17,116 @@ type InlineFunctionPlan struct {
 	Replacement string
 }
 
+type inlineFunctionSources struct {
+	caller       *ast.File
+	callerSet    *token.FileSet
+	callee       *ast.File
+	callerSource string
+}
+
+type inlineCallee struct {
+	literal    *ast.BasicLit
+	resultType string
+}
+
 // PlanInlineFunction plans a direct zero-argument return inline and preserves its declared built-in result type.
 func PlanInlineFunction(callerSource, calleeSource, calleeName, ownerName, discriminator string) (InlineFunctionPlan, error) {
+	sources, err := parseInlineFunctionSources(callerSource, calleeSource)
+	if err != nil {
+		return InlineFunctionPlan{}, err
+	}
+	callee, err := resolveInlineCallee(sources.callee, calleeName)
+	if err != nil {
+		return InlineFunctionPlan{}, err
+	}
+	owner, err := resolveInlineOwner(sources.caller, ownerName)
+	if err != nil {
+		return InlineFunctionPlan{}, err
+	}
+	if inlineDeclares(owner, calleeName) || inlineDeclares(owner, callee.resultType) || inlineImportShadows(sources.caller, calleeName) || inlineImportShadows(sources.caller, callee.resultType) {
+		return InlineFunctionPlan{}, fmt.Errorf("callee or result type is shadowed at the call site")
+	}
+	call, err := resolveInlineCall(sources, owner, calleeName, discriminator)
+	if err != nil {
+		return InlineFunctionPlan{}, err
+	}
+	start := sources.callerSet.Position(call.Pos()).Offset
+	end := sources.callerSet.Position(call.End()).Offset
+	return InlineFunctionPlan{Start: start, End: end, Replacement: callee.resultType + "(" + callee.literal.Value + ")"}, nil
+}
+
+func parseInlineFunctionSources(callerSource, calleeSource string) (inlineFunctionSources, error) {
 	callerSet := token.NewFileSet()
 	caller, err := parser.ParseFile(callerSet, "caller.go", callerSource, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return InlineFunctionPlan{}, fmt.Errorf("parse caller: %w", err)
+		return inlineFunctionSources{}, fmt.Errorf("parse caller: %w", err)
 	}
-	calleeSet := token.NewFileSet()
-	callee, err := parser.ParseFile(calleeSet, "callee.go", calleeSource, parser.ParseComments|parser.AllErrors)
+	callee, err := parser.ParseFile(token.NewFileSet(), "callee.go", calleeSource, parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return InlineFunctionPlan{}, fmt.Errorf("parse callee: %w", err)
+		return inlineFunctionSources{}, fmt.Errorf("parse callee: %w", err)
 	}
 	if caller.Name.Name != callee.Name.Name {
-		return InlineFunctionPlan{}, fmt.Errorf("inline function requires caller and callee in the same package")
+		return inlineFunctionSources{}, fmt.Errorf("inline function requires caller and callee in the same package")
 	}
+	return inlineFunctionSources{caller: caller, callerSet: callerSet, callee: callee, callerSource: callerSource}, nil
+}
+
+func resolveInlineCallee(file *ast.File, calleeName string) (inlineCallee, error) {
 	var target *ast.FuncDecl
-	for _, declaration := range callee.Decls {
+	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if !ok || function.Name.Name != calleeName {
 			continue
 		}
 		if target != nil {
-			return InlineFunctionPlan{}, fmt.Errorf("callee %q is ambiguous", calleeName)
+			return inlineCallee{}, fmt.Errorf("callee %q is ambiguous", calleeName)
 		}
 		target = function
 	}
 	if target == nil || target.Body == nil {
-		return InlineFunctionPlan{}, fmt.Errorf("callee %q is not a function with a body", calleeName)
+		return inlineCallee{}, fmt.Errorf("callee %q is not a function with a body", calleeName)
 	}
 	if target.Recv != nil || target.Type.TypeParams != nil && len(target.Type.TypeParams.List) != 0 || target.Type.Params.NumFields() != 0 || target.Type.Results.NumFields() != 1 || len(target.Type.Results.List[0].Names) != 0 {
-		return InlineFunctionPlan{}, fmt.Errorf("callee must be a non-generic, non-method, zero-argument function with one unnamed result")
+		return inlineCallee{}, fmt.Errorf("callee must be a non-generic, non-method, zero-argument function with one unnamed result")
 	}
 	if len(target.Body.List) != 1 {
-		return InlineFunctionPlan{}, fmt.Errorf("callee body must contain exactly one return statement")
+		return inlineCallee{}, fmt.Errorf("callee body must contain exactly one return statement")
 	}
 	returned, ok := target.Body.List[0].(*ast.ReturnStmt)
 	if !ok || len(returned.Results) != 1 {
-		return InlineFunctionPlan{}, fmt.Errorf("callee body must return one value directly")
+		return inlineCallee{}, fmt.Errorf("callee body must return one value directly")
 	}
 	literal, ok := returned.Results[0].(*ast.BasicLit)
 	if !ok {
-		return InlineFunctionPlan{}, fmt.Errorf("callee return expression must be a literal to preserve lexical binding and evaluation")
+		return inlineCallee{}, fmt.Errorf("callee return expression must be a literal to preserve lexical binding and evaluation")
 	}
 	resultType, ok := target.Type.Results.List[0].Type.(*ast.Ident)
-	if !ok || !inlineLiteralMatchesType(literal, resultType.Name) || inlineImportShadows(callee, resultType.Name) {
-		return InlineFunctionPlan{}, fmt.Errorf("callee result must be a supported built-in type compatible with its literal return")
+	if !ok || !inlineLiteralMatchesType(literal, resultType.Name) || inlineImportShadows(file, resultType.Name) {
+		return inlineCallee{}, fmt.Errorf("callee result must be a supported built-in type compatible with its literal return")
 	}
+	return inlineCallee{literal: literal, resultType: resultType.Name}, nil
+}
+
+func resolveInlineOwner(file *ast.File, ownerName string) (*ast.FuncDecl, error) {
 	var owner *ast.FuncDecl
-	for _, declaration := range caller.Decls {
+	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
 		if ok && function.Name.Name == ownerName && function.Recv == nil {
 			if owner != nil {
-				return InlineFunctionPlan{}, fmt.Errorf("caller %q is ambiguous", ownerName)
+				return nil, fmt.Errorf("caller %q is ambiguous", ownerName)
 			}
 			owner = function
 		}
 	}
 	if owner == nil || owner.Body == nil {
-		return InlineFunctionPlan{}, fmt.Errorf("caller %q is not a function with a body", ownerName)
+		return nil, fmt.Errorf("caller %q is not a function with a body", ownerName)
 	}
-	if inlineDeclares(owner, calleeName) || inlineDeclares(owner, resultType.Name) || inlineImportShadows(caller, calleeName) || inlineImportShadows(caller, resultType.Name) {
-		return InlineFunctionPlan{}, fmt.Errorf("callee or result type is shadowed at the call site")
-	}
-	if inlineMatchingCallCount(owner, callerSet, callerSource, calleeName, discriminator) != 1 {
-		return InlineFunctionPlan{}, fmt.Errorf("call-site discriminator must identify exactly one matching call in caller %q", ownerName)
+	return owner, nil
+}
+
+func resolveInlineCall(sources inlineFunctionSources, owner *ast.FuncDecl, calleeName, discriminator string) (*ast.CallExpr, error) {
+	if inlineMatchingCallCount(owner, sources.callerSet, sources.callerSource, calleeName, discriminator) != 1 {
+		return nil, fmt.Errorf("call-site discriminator must identify exactly one matching call in caller %q", owner.Name.Name)
 	}
 	var call *ast.CallExpr
 	for _, statement := range owner.Body.List {
@@ -97,19 +142,17 @@ func PlanInlineFunction(callerSource, calleeSource, calleeName, ownerName, discr
 		if !ok || identifier.Name != calleeName {
 			continue
 		}
-		start := callerSet.Position(candidate.Pos()).Offset
-		end := callerSet.Position(candidate.End()).Offset
-		if callerSource[start:end] != discriminator {
+		start := sources.callerSet.Position(candidate.Pos()).Offset
+		end := sources.callerSet.Position(candidate.End()).Offset
+		if sources.callerSource[start:end] != discriminator {
 			continue
 		}
 		call = candidate
 	}
 	if call == nil {
-		return InlineFunctionPlan{}, fmt.Errorf("the selected call must be the entire expression of a single-value return")
+		return nil, fmt.Errorf("the selected call must be the entire expression of a single-value return")
 	}
-	start := callerSet.Position(call.Pos()).Offset
-	end := callerSet.Position(call.End()).Offset
-	return InlineFunctionPlan{Start: start, End: end, Replacement: resultType.Name + "(" + literal.Value + ")"}, nil
+	return call, nil
 }
 
 func inlineDeclares(function *ast.FuncDecl, name string) bool {
