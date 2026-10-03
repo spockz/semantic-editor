@@ -507,67 +507,79 @@ func goReceiverName(receiver *ast.FieldList) string {
 
 func outlineFilteredTypeSignature(parsed *goReadSource, declaration *ast.GenDecl, spec *ast.TypeSpec, kinds map[string]bool, includeUnexported bool) (string, error) {
 	filtered := *spec
-	switch node := spec.Type.(type) {
-	case *ast.StructType:
-		copyType := *node
-		copyFields := *node.Fields
-		copyFields.List = make([]*ast.Field, 0, len(node.Fields.List))
-		if len(kinds) == 0 || kinds["field"] {
-			for _, field := range node.Fields.List {
-				copyField := *field
-				if len(field.Names) > 0 {
-					copyField.Names = make([]*ast.Ident, 0, len(field.Names))
-					for _, name := range field.Names {
-						if includeUnexported || ast.IsExported(name.Name) {
-							copyField.Names = append(copyField.Names, name)
-						}
-					}
-					if len(copyField.Names) == 0 {
-						continue
-					}
-				} else if !includeUnexported && !embeddedGoNameExported(field.Type) {
-					continue
-				}
-				copyFields.List = append(copyFields.List, &copyField)
-			}
-		}
-		copyType.Fields = &copyFields
-		filtered.Type = &copyType
-	case *ast.InterfaceType:
-		copyType := *node
-		copyMethods := *node.Methods
-		copyMethods.List = make([]*ast.Field, 0, len(node.Methods.List))
-		for _, field := range node.Methods.List {
-			copyField := *field
-			if len(field.Names) > 0 {
-				if len(kinds) > 0 && !kinds["method"] {
-					continue
-				}
-				copyField.Names = make([]*ast.Ident, 0, len(field.Names))
-				for _, name := range field.Names {
-					if includeUnexported || ast.IsExported(name.Name) {
-						copyField.Names = append(copyField.Names, name)
-					}
-				}
-				if len(copyField.Names) == 0 {
-					continue
-				}
-			} else {
-				if len(kinds) > 0 && !kinds["type"] {
-					continue
-				}
-				if !includeUnexported && !embeddedGoNameExported(field.Type) {
-					continue
-				}
-			}
-			copyMethods.List = append(copyMethods.List, &copyField)
-		}
-		copyType.Methods = &copyMethods
-		filtered.Type = &copyType
-	}
+	filtered.Type = filteredOutlineType(spec.Type, kinds, includeUnexported)
 	copyDecl := *declaration
 	copyDecl.Doc = nil
 	copyDecl.Specs = []ast.Spec{&filtered}
 	copyDecl.Lparen = token.NoPos
 	return goReadFormattedNode(parsed.fset, &copyDecl)
+}
+
+func filteredOutlineType(node ast.Expr, kinds map[string]bool, includeUnexported bool) ast.Expr {
+	switch value := node.(type) {
+	case *ast.StructType:
+		copyType := *value
+		copyFields := *value.Fields
+		copyFields.List = filteredStructFields(value.Fields.List, kinds, includeUnexported)
+		copyType.Fields = &copyFields
+		return &copyType
+	case *ast.InterfaceType:
+		copyType := *value
+		copyMethods := *value.Methods
+		copyMethods.List = filteredInterfaceMethods(value.Methods.List, kinds, includeUnexported)
+		copyType.Methods = &copyMethods
+		return &copyType
+	default:
+		return node
+	}
+}
+
+func filteredStructFields(fields []*ast.Field, kinds map[string]bool, includeUnexported bool) []*ast.Field {
+	filtered := make([]*ast.Field, 0, len(fields))
+	if !outlineKindMatches(kinds, "field") {
+		return filtered
+	}
+	for _, field := range fields {
+		copyField := *field
+		if len(field.Names) > 0 {
+			copyField.Names = filteredOutlineNames(field.Names, includeUnexported)
+			if len(copyField.Names) == 0 {
+				continue
+			}
+		} else if !includeUnexported && !embeddedGoNameExported(field.Type) {
+			continue
+		}
+		filtered = append(filtered, &copyField)
+	}
+	return filtered
+}
+
+func filteredInterfaceMethods(fields []*ast.Field, kinds map[string]bool, includeUnexported bool) []*ast.Field {
+	filtered := make([]*ast.Field, 0, len(fields))
+	for _, field := range fields {
+		copyField := *field
+		if len(field.Names) > 0 {
+			if !outlineKindMatches(kinds, "method") {
+				continue
+			}
+			copyField.Names = filteredOutlineNames(field.Names, includeUnexported)
+			if len(copyField.Names) == 0 {
+				continue
+			}
+		} else if !outlineKindMatches(kinds, "type") || !includeUnexported && !embeddedGoNameExported(field.Type) {
+			continue
+		}
+		filtered = append(filtered, &copyField)
+	}
+	return filtered
+}
+
+func filteredOutlineNames(names []*ast.Ident, includeUnexported bool) []*ast.Ident {
+	filtered := make([]*ast.Ident, 0, len(names))
+	for _, name := range names {
+		if includeUnexported || ast.IsExported(name.Name) {
+			filtered = append(filtered, name)
+		}
+	}
+	return filtered
 }
