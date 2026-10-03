@@ -101,66 +101,93 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	if !validConstructKind(kind) {
 		return "", fmt.Errorf("unsupported Go construct kind %q", kind)
 	}
+	return replaceControlConstruct(ctx, filePath, funcName, kind, discriminator, source, opts)
+}
+
+func replaceControlConstruct(ctx context.Context, filePath, funcName string, kind ConstructKind, discriminator, source string, opts ConstructOptions) (string, error) {
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
 	}
-	recv, name, err := symbol.ParseIdentifier(funcName)
+	fileSet := token.NewFileSet()
+	fileNode, err := parser.ParseFile(fileSet, cleanPath, content, parser.ParseComments)
 	if err != nil {
-		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: err}
+		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fileSet, err), Cause: err, Err: ErrSyntax}
 	}
-	fset := token.NewFileSet()
-	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments)
+	target, err := findControlConstructOwner(fileSet, fileNode, filePath, funcName)
 	if err != nil {
-		return "", &SyntaxError{File: cleanPath, Pos: extractSyntaxPosition(fset, err), Cause: err, Err: ErrSyntax}
+		return "", err
 	}
-	var target *ast.FuncDecl
-	for _, decl := range fileNode.Decls {
+	selected, err := selectControlConstruct(fileSet, target.Body, funcName, kind, discriminator, opts.ConstructPath)
+	if err != nil {
+		return "", err
+	}
+	replacement, err := parseConstructReplacement(kind, source)
+	if err != nil {
+		return "", err
+	}
+	return publishControlConstruct(ctx, cleanPath, funcName, source, content, fileSet, selected.node, replacement, opts.AutoOrganizeImports)
+}
+
+func findControlConstructOwner(fset *token.FileSet, file *ast.File, filePath, query string) (*ast.FuncDecl, error) {
+	receiver, name, err := symbol.ParseIdentifier(query)
+	if err != nil {
+		return nil, &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: query, Err: err}
+	}
+	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if ok && fn.Name.Name == name && extractReceiverName(fn.Recv) == recv {
-			target = fn
-			break
+		if !ok || fn.Name.Name != name || extractReceiverName(fn.Recv) != receiver {
+			continue
+		}
+		if fn.Body == nil {
+			return nil, &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: query, Pos: fset.Position(fn.Pos()), Err: ErrNoBody}
+		}
+		return fn, nil
+	}
+	return nil, &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: query, Err: symbol.ErrNotFound}
+}
+
+func selectControlConstruct(fset *token.FileSet, body *ast.BlockStmt, owner string, kind ConstructKind, discriminator, path string) (constructCandidate, error) {
+	candidates := collectConstructCandidates(fset, body, kind)
+	matches := matchingConstructs(fset, candidates, kind, discriminator)
+	if path != "" {
+		matches = candidatesAtPath(matches, path)
+		if len(matches) == 0 {
+			return constructCandidate{}, fmt.Errorf("construct_path %q does not select %s %q in %s; available candidates:\n%s", path, kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind))
 		}
 	}
-	if target == nil {
-		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: symbol.ErrNotFound}
+	if len(matches) == 0 {
+		return constructCandidate{}, fmt.Errorf("%s %q not found in %s; available candidates (select an if by its condition or short initializer, or set construct_path):\n%s", kind, discriminator, owner, formatConstructCandidates(fset, candidates, kind))
 	}
-	if target.Body == nil {
-		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Pos: fset.Position(target.Pos()), Err: ErrNoBody}
+	if len(matches) > 1 {
+		return constructCandidate{}, fmt.Errorf("ambiguous %s %q in %s; set construct_path to one of:\n%s", kind, discriminator, owner, formatConstructCandidates(fset, matches, kind))
 	}
-	candidates := collectConstructCandidates(fset, target.Body, kind)
+	return matches[0], nil
+}
+
+func matchingConstructs(fset *token.FileSet, candidates []constructCandidate, kind ConstructKind, discriminator string) []constructCandidate {
 	var matches []constructCandidate
 	for _, candidate := range candidates {
 		if discriminator == "" || candidateMatches(fset, candidate, kind, discriminator) {
 			matches = append(matches, candidate)
 		}
 	}
-	if opts.ConstructPath != "" {
-		var selected []constructCandidate
-		for _, candidate := range matches {
-			if candidate.path == opts.ConstructPath {
-				selected = append(selected, candidate)
-			}
+	return matches
+}
+
+func candidatesAtPath(candidates []constructCandidate, path string) []constructCandidate {
+	var selected []constructCandidate
+	for _, candidate := range candidates {
+		if candidate.path == path {
+			selected = append(selected, candidate)
 		}
-		if len(selected) == 0 {
-			return "", fmt.Errorf("construct_path %q does not select %s %q in %s; available candidates:\n%s", opts.ConstructPath, kind, discriminator, funcName, formatConstructCandidates(fset, candidates, kind))
-		}
-		matches = selected
 	}
-	if len(matches) == 0 {
-		return "", fmt.Errorf("%s %q not found in %s; available candidates (select an if by its condition or short initializer, or set construct_path):\n%s", kind, discriminator, funcName, formatConstructCandidates(fset, candidates, kind))
-	}
-	if len(matches) > 1 {
-		return "", fmt.Errorf("ambiguous %s %q in %s; set construct_path to one of:\n%s", kind, discriminator, funcName, formatConstructCandidates(fset, matches, kind))
-	}
-	replacement, err := parseConstructReplacement(kind, source)
-	if err != nil {
-		return "", err
-	}
-	selected := matches[0].node
-	start, end := fset.Position(selected.Pos()).Offset, fset.Position(selected.End()).Offset
-	oldText := string(content[start:end])
+	return selected
+}
+
+func publishControlConstruct(ctx context.Context, cleanPath, owner, source string, content []byte, fset *token.FileSet, node ast.Node, replacement string, organizeImports bool) (string, error) {
+	start, end := fset.Position(node.Pos()).Offset, fset.Position(node.End()).Offset
 	updated := replaceBytes(content, start, end, []byte(replacement))
 	formatted, err := format.Source(updated)
 	if err != nil {
@@ -176,104 +203,126 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if opts.AutoOrganizeImports {
+	if organizeImports {
 		if err := pipeline.OrganizeImports(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)
 		}
 	}
-	return UnifiedDiff(funcName, strings.TrimSpace(oldText), strings.TrimSpace(replacement)), nil
+	return UnifiedDiff(owner, strings.TrimSpace(string(content[start:end])), strings.TrimSpace(replacement)), nil
 }
 
 func validConstructKind(kind ConstructKind) bool {
 	return slices.Contains(GoReplaceConstructKinds, kind)
 }
 
+type constructCandidateWalker struct {
+	fset *token.FileSet
+	kind ConstructKind
+	list []constructCandidate
+}
+
 func collectConstructCandidates(fset *token.FileSet, body *ast.BlockStmt, kind ConstructKind) []constructCandidate {
-	var out []constructCandidate
-	var walkBlock func(*ast.BlockStmt, string)
-	var walkStmt func(ast.Stmt, string)
-	walkBlock = func(block *ast.BlockStmt, prefix string) {
-		if block == nil {
-			return
-		}
-		for i, stmt := range block.List {
-			walkStmt(stmt, childLoopPath(prefix, i))
+	walker := constructCandidateWalker{fset: fset, kind: kind}
+	walker.walkBlock(body, "")
+	return walker.list
+}
+
+func (walker *constructCandidateWalker) walkBlock(block *ast.BlockStmt, prefix string) {
+	if block == nil {
+		return
+	}
+	for index, stmt := range block.List {
+		walker.walkStatement(stmt, childLoopPath(prefix, index))
+	}
+}
+
+func (walker *constructCandidateWalker) walkStatement(stmt ast.Stmt, path string) {
+	switch node := stmt.(type) {
+	case *ast.ForStmt:
+		walker.walkLoop(node, path)
+	case *ast.RangeStmt:
+		walker.walkLoop(node, path)
+	case *ast.IfStmt:
+		walker.walkIf(node, path)
+	case *ast.BlockStmt:
+		walker.walkBlock(node, childLoopPath(path, 0))
+	case *ast.SwitchStmt:
+		walker.walkSwitch(node.Body.List, path)
+	case *ast.TypeSwitchStmt:
+		walker.walkSwitch(node.Body.List, path)
+	case *ast.SelectStmt:
+		walker.walkSelect(node, path)
+	case *ast.DeferStmt:
+		if walker.kind == ConstructDefer {
+			walker.add(node, nodeText(walker.fset, node.Call), path)
 		}
 	}
-	walkStmt = func(stmt ast.Stmt, path string) {
-		addAt := func(node ast.Node, key, candidatePath string) {
-			out = append(out, constructCandidate{node: node, path: candidatePath, key: key, class: "construct"})
-		}
-		add := func(node ast.Node, key string) {
-			addAt(node, key, path)
-		}
-		switch n := stmt.(type) {
-		case *ast.ForStmt, *ast.RangeStmt:
-			if kind == ConstructLoop {
-				add(stmt, loopHeader(fset, stmt))
-			}
-			var nested *ast.BlockStmt
-			switch x := stmt.(type) {
-			case *ast.ForStmt:
-				nested = x.Body
-			case *ast.RangeStmt:
-				nested = x.Body
-			}
-			walkBlock(nested, childLoopPath(path, 0))
-		case *ast.IfStmt:
-			if kind == ConstructIf {
-				add(n, nodeText(fset, n.Cond))
-			}
-			walkBlock(n.Body, childLoopPath(path, 0))
-			if n.Else != nil {
-				elsePath := childLoopPath(path, 1)
-				if block, ok := n.Else.(*ast.BlockStmt); ok {
-					if kind == ConstructElse {
-						addAt(block, nodeText(fset, n.Cond), elsePath)
-					}
-					walkBlock(block, childLoopPath(elsePath, 0))
-				} else {
-					walkStmt(n.Else, elsePath)
-				}
-			}
-		case *ast.BlockStmt:
-			walkBlock(n, childLoopPath(path, 0))
-		case *ast.SwitchStmt, *ast.TypeSwitchStmt:
-			var list []ast.Stmt
-			switch x := stmt.(type) {
-			case *ast.SwitchStmt:
-				list = x.Body.List
-			case *ast.TypeSwitchStmt:
-				list = x.Body.List
-			}
-			for i, item := range list {
-				if clause, ok := item.(*ast.CaseClause); ok {
-					clausePath := childLoopPath(path, i)
-					if kind == ConstructCase {
-						addAt(clause, caseHeader(fset, clause), clausePath)
-					}
-					walkBlock(&ast.BlockStmt{List: clause.Body}, clausePath)
-				}
-			}
-		case *ast.SelectStmt:
-			for i, item := range n.Body.List {
-				if clause, ok := item.(*ast.CommClause); ok {
-					clausePath := childLoopPath(path, i)
-					if kind == ConstructSelect {
-						addAt(clause, commHeader(fset, clause), clausePath)
-					}
-					walkBlock(&ast.BlockStmt{List: clause.Body}, clausePath)
-				}
-			}
-		case *ast.DeferStmt:
-			if kind == ConstructDefer {
-				add(n, nodeText(fset, n.Call))
-			}
-		}
+}
+
+func (walker *constructCandidateWalker) walkLoop(stmt ast.Stmt, path string) {
+	if walker.kind == ConstructLoop {
+		walker.add(stmt, loopHeader(walker.fset, stmt), path)
 	}
-	walkBlock(body, "")
-	return out
+	var body *ast.BlockStmt
+	switch loop := stmt.(type) {
+	case *ast.ForStmt:
+		body = loop.Body
+	case *ast.RangeStmt:
+		body = loop.Body
+	}
+	walker.walkBlock(body, childLoopPath(path, 0))
+}
+
+func (walker *constructCandidateWalker) walkIf(node *ast.IfStmt, path string) {
+	if walker.kind == ConstructIf {
+		walker.add(node, nodeText(walker.fset, node.Cond), path)
+	}
+	walker.walkBlock(node.Body, childLoopPath(path, 0))
+	if node.Else == nil {
+		return
+	}
+	elsePath := childLoopPath(path, 1)
+	if block, ok := node.Else.(*ast.BlockStmt); ok {
+		if walker.kind == ConstructElse {
+			walker.add(block, nodeText(walker.fset, node.Cond), elsePath)
+		}
+		walker.walkBlock(block, childLoopPath(elsePath, 0))
+		return
+	}
+	walker.walkStatement(node.Else, elsePath)
+}
+
+func (walker *constructCandidateWalker) walkSwitch(clauses []ast.Stmt, path string) {
+	for index, stmt := range clauses {
+		clause, ok := stmt.(*ast.CaseClause)
+		if !ok {
+			continue
+		}
+		clausePath := childLoopPath(path, index)
+		if walker.kind == ConstructCase {
+			walker.add(clause, caseHeader(walker.fset, clause), clausePath)
+		}
+		walker.walkBlock(&ast.BlockStmt{List: clause.Body}, clausePath)
+	}
+}
+
+func (walker *constructCandidateWalker) walkSelect(node *ast.SelectStmt, path string) {
+	for index, stmt := range node.Body.List {
+		clause, ok := stmt.(*ast.CommClause)
+		if !ok {
+			continue
+		}
+		clausePath := childLoopPath(path, index)
+		if walker.kind == ConstructSelect {
+			walker.add(clause, commHeader(walker.fset, clause), clausePath)
+		}
+		walker.walkBlock(&ast.BlockStmt{List: clause.Body}, clausePath)
+	}
+}
+
+func (walker *constructCandidateWalker) add(node ast.Node, key, path string) {
+	walker.list = append(walker.list, constructCandidate{node: node, path: path, key: key, class: "construct"})
 }
 
 func candidateMatches(fset *token.FileSet, c constructCandidate, kind ConstructKind, selector string) bool {
@@ -335,6 +384,22 @@ func parseConstructReplacement(kind ConstructKind, source string) (string, error
 	if trimmed == "" {
 		return "", ErrEmptySnippet
 	}
+	stub, want := constructReplacementWrapper(kind, trimmed)
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "snippet", stub, parser.ParseComments)
+	if err != nil {
+		return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	node := constructReplacementNode(kind, fn)
+	if node == nil {
+		return "", fmt.Errorf("replacement must be one complete Go %s construct", want)
+	}
+	start, end := fset.Position(node.Pos()).Offset, fset.Position(node.End()).Offset
+	return strings.TrimSpace(stub[start:end]), nil
+}
+
+func constructReplacementWrapper(kind ConstructKind, trimmed string) (string, string) {
 	var stub, want string
 	switch kind {
 	case ConstructLoop:
@@ -356,57 +421,86 @@ func parseConstructReplacement(kind ConstructKind, source string) (string, error
 		stub = "package p\nfunc _(){\n" + trimmed + "\n}"
 		want = "defer"
 	}
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, "snippet", stub, parser.ParseComments)
-	if err != nil {
-		return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
-	}
-	fn := file.Decls[0].(*ast.FuncDecl)
-	var node ast.Node
+	return stub, want
+}
+
+func constructReplacementNode(kind ConstructKind, fn *ast.FuncDecl) ast.Node {
 	switch kind {
-	case ConstructLoop, ConstructIf, ConstructDefer:
-		if len(fn.Body.List) == 1 {
-			node = fn.Body.List[0]
-		}
-		if kind == ConstructLoop {
-			if _, ok := node.(*ast.ForStmt); !ok {
-				if _, ok := node.(*ast.RangeStmt); !ok {
-					node = nil
-				}
-			}
-		}
-		if kind == ConstructIf {
-			if _, ok := node.(*ast.IfStmt); !ok {
-				node = nil
-			}
-		}
-		if kind == ConstructDefer {
-			if _, ok := node.(*ast.DeferStmt); !ok {
-				node = nil
-			}
-		}
+	case ConstructLoop:
+		return singleLoopStatement(fn)
+	case ConstructIf:
+		return singleIfStatement(fn)
+	case ConstructDefer:
+		return singleDeferStatement(fn)
 	case ConstructElse:
-		if len(fn.Body.List) == 1 {
-			if n, ok := fn.Body.List[0].(*ast.IfStmt); ok {
-				if _, ok = n.Else.(*ast.BlockStmt); ok {
-					node = n.Else
-				}
-			}
-		}
+		return singleElseBlock(fn)
 	case ConstructCase:
-		if n, ok := fn.Body.List[0].(*ast.SwitchStmt); ok && len(n.Body.List) == 1 {
-			node, _ = n.Body.List[0].(*ast.CaseClause)
-		}
+		return singleCaseClause(fn)
 	case ConstructSelect:
-		if n, ok := fn.Body.List[0].(*ast.SelectStmt); ok && len(n.Body.List) == 1 {
-			node, _ = n.Body.List[0].(*ast.CommClause)
-		}
+		return singleCommClause(fn)
 	}
-	if node == nil {
-		return "", fmt.Errorf("replacement must be one complete Go %s construct", want)
+	return nil
+}
+
+func singleLoopStatement(fn *ast.FuncDecl) ast.Node {
+	stmt := singleBodyStatement(fn)
+	if _, ok := stmt.(*ast.ForStmt); ok {
+		return stmt
 	}
-	start, end := fset.Position(node.Pos()).Offset, fset.Position(node.End()).Offset
-	return strings.TrimSpace(stub[start:end]), nil
+	if _, ok := stmt.(*ast.RangeStmt); ok {
+		return stmt
+	}
+	return nil
+}
+
+func singleIfStatement(fn *ast.FuncDecl) ast.Node {
+	stmt := singleBodyStatement(fn)
+	if _, ok := stmt.(*ast.IfStmt); ok {
+		return stmt
+	}
+	return nil
+}
+
+func singleDeferStatement(fn *ast.FuncDecl) ast.Node {
+	stmt := singleBodyStatement(fn)
+	if _, ok := stmt.(*ast.DeferStmt); ok {
+		return stmt
+	}
+	return nil
+}
+
+func singleElseBlock(fn *ast.FuncDecl) ast.Node {
+	conditional, ok := singleBodyStatement(fn).(*ast.IfStmt)
+	if !ok {
+		return nil
+	}
+	block, _ := conditional.Else.(*ast.BlockStmt)
+	return block
+}
+
+func singleCaseClause(fn *ast.FuncDecl) ast.Node {
+	switchNode, ok := singleBodyStatement(fn).(*ast.SwitchStmt)
+	if !ok || len(switchNode.Body.List) != 1 {
+		return nil
+	}
+	clause, _ := switchNode.Body.List[0].(*ast.CaseClause)
+	return clause
+}
+
+func singleCommClause(fn *ast.FuncDecl) ast.Node {
+	selectNode, ok := singleBodyStatement(fn).(*ast.SelectStmt)
+	if !ok || len(selectNode.Body.List) != 1 {
+		return nil
+	}
+	clause, _ := selectNode.Body.List[0].(*ast.CommClause)
+	return clause
+}
+
+func singleBodyStatement(fn *ast.FuncDecl) ast.Stmt {
+	if fn.Body == nil || len(fn.Body.List) != 1 {
+		return nil
+	}
+	return fn.Body.List[0]
 }
 
 func nodeText(fset *token.FileSet, node ast.Node) string {
