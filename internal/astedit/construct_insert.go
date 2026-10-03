@@ -149,8 +149,12 @@ func validateInsertConstructKind(source string, kind ConstructKind, opts InsertC
 		if !strings.HasPrefix(candidate, "package ") {
 			candidate = "package p\n" + candidate
 		}
-		file, err := parser.ParseFile(token.NewFileSet(), "insert.go", []byte(candidate), parser.ParseComments|parser.AllErrors)
-		if err != nil || len(file.Decls) != 1 {
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, "insert.go", []byte(candidate), parser.ParseComments|parser.AllErrors)
+		if err != nil {
+			return &SyntaxError{File: "snippet", Pos: extractSyntaxPosition(fset, err), Snippet: source, Cause: err, Err: ErrSyntax}
+		}
+		if len(file.Decls) != 1 {
 			return fmt.Errorf("%s insertion requires exactly one function declaration", kind)
 		}
 		fn, ok := file.Decls[0].(*ast.FuncDecl)

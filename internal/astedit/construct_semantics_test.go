@@ -4,6 +4,7 @@ package astedit
 import (
 	"context"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"os"
@@ -83,6 +84,62 @@ func TestReplaceConstructPreservesReplacementComments(t *testing.T) {
 	if !strings.Contains(string(updated), "/* retained */") {
 		t.Fatalf("replacement comment was discarded: %s", updated)
 	}
+}
+
+func TestReplaceConstructRejectsTrailingLineCommentWithoutWrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "main.go")
+	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn value + 1\n}\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "value", "next() // retained", ConstructOptions{ConstructPath: "0.e0.0"})
+	if err == nil || !strings.Contains(err.Error(), "trailing line comment") {
+		t.Fatalf("unsafe trailing line comment was not refused: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("refused replacement changed the file")
+	}
+}
+
+func TestReplaceConstructPreservesStatementCommentsAndRejectsUnsafeLineComment(t *testing.T) {
+	t.Run("nested block comment survives", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "main.go")
+		writeConstructFixture(t, path, "package p\nfunc run() {\n\told()\n\tother()\n}\n")
+		if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "old()", "if true { /* keep */ next() }", ConstructOptions{ConstructPath: "0"}); err != nil {
+			t.Fatalf("replace statement: %v", err)
+		}
+		updated, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(updated), "/* keep */") || !strings.Contains(string(updated), "other()") {
+			t.Fatalf("replacement comment or sibling statement was lost: %s", updated)
+		}
+	})
+	t.Run("trailing line comment is refused without write", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "main.go")
+		writeConstructFixture(t, path, "package p\nfunc run() { old(); other() }\n")
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "old()", "next() // keep", ConstructOptions{ConstructPath: "0"})
+		if err == nil || !strings.Contains(err.Error(), "trailing line comment") {
+			t.Fatalf("unsafe trailing statement comment was not refused: %v", err)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(after) != string(before) {
+			t.Fatal("refused replacement changed the file")
+		}
+	})
 }
 
 func TestReplaceConstructExpressionKeepsReplacementPrecedence(t *testing.T) {
@@ -200,6 +257,18 @@ func TestReplaceConstructFindsHeaderInitializerAndAssignmentIndexExpressions(t *
 		name, source, selector, replacement, path string
 	}{
 		{
+			name: "return runtime index", source: "package p\nfunc run(items []int) int {\n\treturn items[17]\n}\n",
+			selector: "17", replacement: "18", path: "0.e0.1",
+		},
+		{
+			name: "return index variable", source: "package p\nfunc run(items []int, index int) int {\n\treturn items[index]\n}\n",
+			selector: "index", replacement: "index + 1", path: "0.e0.1",
+		},
+		{
+			name: "return call index", source: "package p\nfunc index() int { return 1 }\nfunc run(items []int) int {\n\treturn items[index()]\n}\n",
+			selector: "index()", replacement: "len(items)", path: "0.e0.1",
+		},
+		{
 			name: "if initializer RHS", source: "package p\nfunc run() {\n\tif x := compute(7); x > 0 { return }\n}\n",
 			selector: "7", replacement: "8", path: "0.init.e0.0",
 		},
@@ -218,8 +287,153 @@ func TestReplaceConstructFindsHeaderInitializerAndAssignmentIndexExpressions(t *
 			if err != nil {
 				t.Fatal(err)
 			}
-			assertConstructTestLiteral(t, updated, test.name, test.replacement)
+			switch test.name {
+			case "return runtime index", "return index variable", "return call index":
+				assertReturnIndexOperand(t, updated, test.replacement)
+			default:
+				assertConstructTestLiteral(t, updated, test.name, test.replacement)
+			}
 		})
+	}
+}
+
+func assertReturnIndexOperand(t *testing.T, source []byte, want string) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fn *ast.FuncDecl
+	for _, decl := range file.Decls {
+		candidate, ok := decl.(*ast.FuncDecl)
+		if ok && candidate.Name.Name == "run" {
+			fn = candidate
+			break
+		}
+	}
+	if fn == nil {
+		t.Fatal("run function is missing")
+	}
+	returned := fn.Body.List[0].(*ast.ReturnStmt)
+	index := returned.Results[0].(*ast.IndexExpr)
+	operand := index.Index
+	for {
+		parenthesized, ok := operand.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		operand = parenthesized.X
+	}
+	var actual strings.Builder
+	if err := format.Node(&actual, fset, operand); err != nil {
+		t.Fatal(err)
+	}
+	if actual.String() != want {
+		t.Fatalf("index operand=%q, want %q; source=%s", actual.String(), want, source)
+	}
+}
+
+func TestReplaceConstructIncludesSelectAndTypeSwitchRuntimeHeaders(t *testing.T) {
+	for _, test := range []struct {
+		name, source, selector, replacement, path, want string
+	}{
+		{
+			name: "select send value", source: "package p\nfunc run(ch chan int) {\n\tselect { case ch <- 17: }\n}\n",
+			selector: "17", replacement: "18", path: "0.0.comm.e1", want: "ch <- (18)",
+		},
+		{
+			name: "type switch guard", source: "package p\nfunc run(value any, other any) {\n\tswitch x := value.(type) { case int: _ = x }\n}\n",
+			selector: "value", replacement: "other", path: "0.assign.e0.0", want: "(other).(type)",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "main.go")
+			writeConstructFixture(t, path, test.source)
+			if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, test.selector, test.replacement, ConstructOptions{ConstructPath: test.path}); err != nil {
+				t.Fatalf("replace header expression: %v", err)
+			}
+			updated, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(updated), test.want) {
+				t.Fatalf("replacement missing %q: %s", test.want, updated)
+			}
+		})
+	}
+}
+
+func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
+	for _, test := range []struct {
+		name, source, selector, path string
+	}{
+		{
+			name: "make type argument", source: "package p\nfunc run() { _ = make([]int, 0) }\n", selector: "[]int", path: "0.e0.0",
+		},
+		{
+			name: "generic type argument", source: "package p\nfunc identity[T any](value T) T { return value }\nfunc run() { _ = identity[int](0) }\n", selector: "int", path: "0.e0.0.1",
+		},
+		{
+			name: "make named type argument", source: "package p\ntype Values []int\nfunc run() { _ = make(Values, 0) }\n", selector: "Values", path: "0.e0.0",
+		},
+		{
+			name: "new named type argument", source: "package p\ntype Value struct{}\nfunc run() { _ = new(Value) }\n", selector: "Value", path: "0.e0.0",
+		},
+		{
+			name: "unresolved imported make type argument", source: "package p\nimport \"example.com/types\"\nfunc run() { _ = make(types.Slice, 0) }\n", selector: "types.Slice", path: "0.e0.0",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "main.go")
+			writeConstructFixture(t, path, test.source)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, test.selector, "replacement", ConstructOptions{ConstructPath: test.path})
+			if err == nil {
+				t.Fatal("type syntax was accepted as an expression slot")
+			}
+			after, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(after) != string(before) {
+				t.Fatal("rejected type-slot replacement changed the file")
+			}
+		})
+	}
+}
+
+func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "main.go")
+	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = make(17, 0) }\n")
+	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.0"}); err != nil {
+		t.Fatalf("replace shadowed make argument: %v", err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "main.go", updated, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := file.Decls[1].(*ast.FuncDecl)
+	call := fn.Body.List[0].(*ast.AssignStmt).Rhs[0].(*ast.CallExpr)
+	argument := call.Args[0]
+	for {
+		parenthesized, ok := argument.(*ast.ParenExpr)
+		if !ok {
+			break
+		}
+		argument = parenthesized.X
+	}
+	literal, ok := argument.(*ast.BasicLit)
+	if !ok || literal.Value != "18" {
+		t.Fatalf("shadowed make argument was not treated as a runtime value: %s", updated)
 	}
 }
 
@@ -271,6 +485,26 @@ func TestReplaceConstructRejectsStatementInjectionIntoExpressionWithoutWrite(t *
 	}
 	if string(after) != string(before) {
 		t.Fatal("invalid replacement changed the file")
+	}
+}
+
+func TestReplaceConstructRejectsTypeSyntaxInExpressionSlot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "main.go")
+	writeConstructFixture(t, path, "package p\nfunc run() any {\n\treturn value\n}\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "value", "[]int", ConstructOptions{ConstructPath: "0.e0"})
+	if err == nil || !strings.Contains(err.Error(), "type expression") {
+		t.Fatalf("type syntax was accepted as an expression replacement: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatal("rejected type syntax changed the file")
 	}
 }
 
@@ -337,6 +571,58 @@ func TestRemoveConstructUniqueCallUsesDirectStatementTarget(t *testing.T) {
 	}
 	if strings.Contains(string(updated), "release()") || !strings.Contains(string(updated), "before()") || !strings.Contains(string(updated), "after()") {
 		t.Fatalf("direct statement removal changed wrong syntax: %s", updated)
+	}
+}
+
+func TestInsertConstructRejectsStatementsEscapingWrapper(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "main.go")
+	writeConstructFixture(t, path, "package p\nfunc run() {\n\tkeep()\n}\n")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = InsertConstruct(context.Background(), path, "next()\n}\nfunc injected() {}\nfunc _() {", InsertConstructOptions{
+		Kind: backend.ConstructStatementOrExpr, Function: "run", Anchor: "end",
+	})
+	if err == nil {
+		t.Fatalf("escaping declaration was not rejected: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("rejected snippet changed target file: %s", after)
+	}
+}
+
+func TestStatementInsertionAnchorsPreserveExistingCalls(t *testing.T) {
+	source := []byte("package p\nfunc run() {\n\tflush()\n\treturn\n}\n")
+	for _, intent := range []InsertStatementIntent{
+		{Function: "run", Anchor: "before", Discriminator: "flush()", Source: "record()"},
+		{Function: "run", Anchor: "start", Source: "firstRecord()"},
+		{Function: "run", Anchor: "end", Source: "lastRecord()"},
+		{Function: "run", Anchor: "before_return", Source: "returnRecord()"},
+		{Function: "run", Anchor: "after", Discriminator: "flush()", Source: "afterFlush()"},
+	} {
+		plan, err := PlanInsertStatement(source, intent)
+		if err != nil {
+			t.Fatalf("anchor %q: %v", intent.Anchor, err)
+		}
+		source = plan.Source
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", source, parser.ParseComments)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fn := file.Decls[0].(*ast.FuncDecl)
+	if len(fn.Body.List) != 7 {
+		t.Fatalf("got %d direct statements, want 7: %s", len(fn.Body.List), source)
+	}
+	for _, name := range []string{"flush", "record", "firstRecord", "lastRecord", "returnRecord", "afterFlush"} {
+		if !strings.Contains(string(source), name+"()") {
+			t.Fatalf("existing or inserted call %q missing: %s", name, source)
+		}
 	}
 }
 

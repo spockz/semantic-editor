@@ -1,5 +1,4 @@
 // This file plans one direct call or assignment insertion without changing files or claiming control-flow equivalence.
-
 package astedit
 
 import (
@@ -14,10 +13,8 @@ import (
 
 type (
 	// StatementPlacement selects the side of a direct anchor statement.
-	// StatementPlacement selects the side of a direct anchor statement.
 	StatementPlacement string
 
-	// InsertStatementIntent supplies one direct statement and its exact owner anchor.
 	// InsertStatementIntent supplies one direct statement and its exact owner anchor.
 	InsertStatementIntent struct {
 		Function         string
@@ -31,13 +28,11 @@ type (
 )
 
 // Statement positions are relative to one live direct statement.
-// Statement positions are relative to one live direct statement.
 const (
 	StatementBefore StatementPlacement = "before_construct"
 	StatementAfter  StatementPlacement = "after_construct"
 )
 
-// PlanInsertStatement plans a direct call or assignment insertion without publication.
 // PlanInsertStatement plans a direct call or assignment insertion without publication.
 func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePlan, error) {
 	if intent.Function == "" || intent.Source == "" {
@@ -122,7 +117,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 			return SourcePlan{}, fmt.Errorf("function %q has no direct return statement", intent.Function)
 		}
 	case "before", "after":
-		candidates := collectStatementExpressionCandidates(fset, source, owner.Body)
+		candidates := collectStatementExpressionCandidates(fset, source, file, owner)
 		matches := make([]constructCandidate, 0, 1)
 		for _, candidate := range candidates {
 			if !isDirectOwnerStatementCandidate(candidate) || candidate.key != normalizeConstructSelector(intent.Discriminator) {
@@ -257,14 +252,20 @@ func requireDedicatedStatementLine(source []byte, fset *token.FileSet, block *as
 	return nil
 }
 
-func parseSingleDirectStatement(source string) (ast.Stmt, error) {
-	file, err := parser.ParseFile(token.NewFileSet(), "statement.go", []byte("package p\nfunc _() {\n"+source+"\n}"), parser.ParseComments|parser.AllErrors)
+func parseSingleDirectStatement(source string) (int, error) {
+	const wrapperPrefix = "package p\nfunc _() {\n"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "statement.go", []byte(wrapperPrefix+source+"\n}"), parser.ParseComments|parser.AllErrors)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	fn := file.Decls[0].(*ast.FuncDecl)
-	if len(fn.Body.List) != 1 {
-		return nil, fmt.Errorf("expected exactly one statement")
+	if len(file.Decls) != 1 {
+		return 0, fmt.Errorf("expected exactly one statement and no declarations outside the wrapper function")
 	}
-	return fn.Body.List[0], nil
+	fn, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || fn.Name.Name != "_" || fn.Recv != nil || len(fn.Body.List) != 1 {
+		return 0, fmt.Errorf("expected exactly one statement")
+	}
+	endOffset := fset.Position(fn.Body.List[0].End()).Offset - len(wrapperPrefix)
+	return endOffset, nil
 }
