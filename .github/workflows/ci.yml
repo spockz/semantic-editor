@@ -1,0 +1,55 @@
+# Keep pull requests and main pushes on the same repository checks as local development.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GOENV: ${{ github.workspace }}/.scratch/go/env
+      GOCACHE: ${{ github.workspace }}/.scratch/go/build
+      GOMODCACHE: ${{ github.workspace }}/.scratch/go/mod
+      GOTMPDIR: ${{ github.workspace }}/.scratch/go/tmp
+      GOBIN: ${{ github.workspace }}/.scratch/go/bin
+      GOPATH: ${{ github.workspace }}/.scratch/go
+      GOFLAGS: ""
+      GOWORK: "off"
+      GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.scratch/golangci-lint-cache
+      HUGO_CACHEDIR: ${{ github.workspace }}/.scratch/hugo-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare project-local caches
+        run: mkdir -p "$GOCACHE" "$GOMODCACHE" "$GOTMPDIR" "$GOBIN" "$GOLANGCI_LINT_CACHE" "$HUGO_CACHEDIR"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install configured tools
+        run: make tools
+
+      - name: Read Hugo version
+        id: hugo-version
+        run: echo "version=$(tr -d ' \t\r\n' < .hugo-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: ${{ steps.hugo-version.outputs.version }}
+          extended: true
+
+      - name: Run checks and tests
+        run: make check

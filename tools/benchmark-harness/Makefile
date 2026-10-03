@@ -3,6 +3,19 @@ SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null || pwd)
+GO_SCRATCH ?= $(REPO_ROOT)/.scratch/go
+export GOENV := $(GO_SCRATCH)/env
+export GOCACHE := $(GO_SCRATCH)/build
+export GOMODCACHE := $(GO_SCRATCH)/mod
+export GOTMPDIR := $(GO_SCRATCH)/tmp
+export GOBIN := $(GO_SCRATCH)/bin
+export GOPATH := $(GO_SCRATCH)
+export GOFLAGS :=
+export GOWORK := off
+export GOLANGCI_LINT_CACHE := $(REPO_ROOT)/.scratch/golangci-lint-cache
+ifeq ($(MAKELEVEL),0)
+export PATH := $(REPO_ROOT)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
+endif
 BENCH_DIR ?= $(REPO_ROOT)/testdata/bench
 OUT_DIR ?= $(REPO_ROOT)/data/benchmarks/results
 RUN_ID ?= run-$(shell date -u '+%Y%m%dT%H%M%SZ')
@@ -25,6 +38,10 @@ ifndef .DEFAULT_GOAL
 .DEFAULT_GOAL := bench-help
 endif
 
+.PHONY: bench-go-env
+bench-go-env:
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOLANGCI_LINT_CACHE)"
+
 .PHONY: bench-help
 bench-help: ## Show benchmark harness commands and usage examples
 	@echo "Benchmark Harness Commands:"
@@ -44,18 +61,18 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make docgen"
 
 .PHONY: list-benchmarks bench-list
-list-benchmarks: ## List all available benchmark tasks and prompt variants
+list-benchmarks: bench-go-env ## List all available benchmark tasks and prompt variants
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness --list --dir "$(BENCH_DIR)"
 
 bench-list: list-benchmarks ## Alias for list-benchmarks
 
 .PHONY: bench-test
-bench-test: ## Run unit and oracle tests for benchmark harness
+bench-test: bench-go-env ## Run unit and oracle tests for benchmark harness
 	@echo "==> Testing benchmark harness..."
 	cd "$(REPO_ROOT)" && go test -v ./tools/benchmark-harness
 
 .PHONY: bench-build
-bench-build: ## Compile standalone benchmark harness binary (.scratch/bin/benchmark-harness)
+bench-build: bench-go-env ## Compile standalone benchmark harness binary (.scratch/bin/benchmark-harness)
 	@echo "==> Building benchmark harness..."
 	@mkdir -p "$(REPO_ROOT)/.scratch/bin"
 	cd "$(REPO_ROOT)" && go build -o "$(REPO_ROOT)/.scratch/bin/benchmark-harness" ./tools/benchmark-harness
@@ -67,7 +84,7 @@ build: bench-build ## Build benchmark harness binary
 endif
 
 .PHONY: bench-all
-bench-all: ## Run all benchmarks in small and large context with all prompt variants
+bench-all: bench-go-env ## Run all benchmarks in small and large context with all prompt variants
 	@echo "==> Running all benchmarks for target $(TARGET) across variants $(VARIANTS)..."
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness \
 		--target "$(TARGET)" \
@@ -85,7 +102,7 @@ bench-all: ## Run all benchmarks in small and large context with all prompt vari
 		--run-id "$(RUN_ID)"
 
 .PHONY: bench
-bench: ## Run a specific benchmark in small and large context (e.g. make bench TASK=generate_template_main)
+bench: bench-go-env ## Run a specific benchmark in small and large context (e.g. make bench TASK=generate_template_main)
 	@echo "==> Running benchmark $(TASK) for target $(TARGET) across variants $(VARIANTS)..."
 	cd "$(REPO_ROOT)" && go run ./tools/benchmark-harness \
 		--target "$(TARGET)" \
