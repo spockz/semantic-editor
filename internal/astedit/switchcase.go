@@ -193,7 +193,10 @@ func locateSwitch(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, swit
 		}
 	}
 
-	matches := collectSwitchMatches(fset, body, targetSwitchOn, canonicalTarget)
+	matches, err := collectSwitchMatches(fset, body, targetSwitchOn, canonicalTarget)
+	if err != nil {
+		return nil, err
+	}
 	if len(matches) == 0 {
 		return nil, ErrSwitchNotFound
 	}
@@ -237,67 +240,88 @@ type switchMatch struct {
 	children []switchMatch
 }
 
-func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) []switchMatch {
+func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) ([]switchMatch, error) {
 	var matches []switchMatch
+	var visitErr error
 	ast.Inspect(body, func(n ast.Node) bool {
-		if matchedBody := matchingSwitchBody(fset, n, targetSwitchOn, canonicalTarget); matchedBody != nil {
-			matches = append(matches, switchMatch{body: matchedBody})
+		result, err := matchingSwitchBody(fset, n, targetSwitchOn, canonicalTarget)
+		if err != nil {
+			visitErr = err
+			return false
+		}
+		if result.matched {
+			matches = append(matches, switchMatch{body: result.body})
 			return false
 		}
 		return true
 	})
+	if visitErr != nil {
+		return nil, visitErr
+	}
 	for i := range matches {
-		matches[i].children = collectSwitchMatches(fset, matches[i].body, targetSwitchOn, canonicalTarget)
+		children, err := collectSwitchMatches(fset, matches[i].body, targetSwitchOn, canonicalTarget)
+		if err != nil {
+			return nil, err
+		}
+		matches[i].children = children
 	}
 	assignSwitchPaths(matches, "")
-	return matches
+	return matches, nil
 }
 
-func matchingSwitchBody(fset *token.FileSet, node ast.Node, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+type switchMatchResult struct {
+	body    *ast.BlockStmt
+	matched bool
+}
+
+func matchingSwitchBody(fset *token.FileSet, node ast.Node, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
 	switch statement := node.(type) {
 	case *ast.SwitchStmt:
 		return matchingExpressionSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
 	case *ast.TypeSwitchStmt:
 		return matchingTypeSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
 	default:
-		return nil
+		return switchMatchResult{}, nil
 	}
 }
 
-func matchingExpressionSwitchBody(fset *token.FileSet, statement *ast.SwitchStmt, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+func matchingExpressionSwitchBody(fset *token.FileSet, statement *ast.SwitchStmt, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
 	if targetSwitchOn == "" {
 		if statement.Tag == nil {
-			return statement.Body
+			return switchMatchResult{body: statement.Body, matched: true}, nil
 		}
-		return nil
+		return switchMatchResult{}, nil
 	}
 	if statement.Tag == nil {
-		return nil
+		return switchMatchResult{}, nil
 	}
 	var formatted bytes.Buffer
 	if err := format.Node(&formatted, fset, statement.Tag); err != nil {
-		return nil
+		return switchMatchResult{}, fmt.Errorf("format expression switch selector: %w", err)
 	}
 	text := formatted.String()
 	if text == canonicalTarget || strings.TrimSpace(text) == canonicalTarget {
-		return statement.Body
+		return switchMatchResult{body: statement.Body, matched: true}, nil
 	}
-	return nil
+	return switchMatchResult{}, nil
 }
 
-func matchingTypeSwitchBody(fset *token.FileSet, statement *ast.TypeSwitchStmt, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+func matchingTypeSwitchBody(fset *token.FileSet, statement *ast.TypeSwitchStmt, targetSwitchOn, canonicalTarget string) (switchMatchResult, error) {
 	if targetSwitchOn == "" || statement.Assign == nil {
-		return nil
+		return switchMatchResult{}, nil
 	}
 	selector := typeSwitchSelector(statement.Assign)
 	if selector == nil {
-		return nil
+		return switchMatchResult{}, nil
 	}
 	var formatted bytes.Buffer
-	if format.Node(&formatted, fset, selector) != nil || formatted.String() != canonicalTarget {
-		return nil
+	if err := format.Node(&formatted, fset, selector); err != nil {
+		return switchMatchResult{}, fmt.Errorf("format type switch selector: %w", err)
 	}
-	return statement.Body
+	if formatted.String() != canonicalTarget {
+		return switchMatchResult{}, nil
+	}
+	return switchMatchResult{body: statement.Body, matched: true}, nil
 }
 
 func typeSwitchSelector(assign ast.Stmt) ast.Expr {
