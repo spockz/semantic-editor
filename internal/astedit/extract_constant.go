@@ -96,19 +96,27 @@ type constantPackageInputs struct {
 }
 
 func selectConstantPackageInputs(loaded []*packages.Package, targetPath string) (constantPackageInputs, error) {
+	var selected constantPackageInputs
 	for _, pkg := range loaded {
 		if pkg.Types == nil || pkg.TypesInfo == nil || pkg.Fset == nil {
 			continue
 		}
 		for index, path := range pkg.CompiledGoFiles {
 			absolute, err := filepath.Abs(path)
-			if err != nil || filepath.Clean(absolute) != targetPath || index >= len(pkg.Syntax) {
+			if err != nil {
+				return constantPackageInputs{}, fmt.Errorf("resolve constant extraction package path %q: %w", path, err)
+			}
+			if filepath.Clean(absolute) != targetPath || index >= len(pkg.Syntax) {
 				continue
 			}
-			return constantPackageInputs{fset: pkg.Fset, syntax: pkg.Syntax[index], info: pkg.TypesInfo, scope: pkg.Types.Scope()}, nil
+			selected = constantPackageInputs{fset: pkg.Fset, syntax: pkg.Syntax[index], info: pkg.TypesInfo, scope: pkg.Types.Scope()}
+			break
 		}
 	}
-	return constantPackageInputs{}, fmt.Errorf("constant extraction target %q is not in a buildable Go package", targetPath)
+	if selected.syntax == nil {
+		return constantPackageInputs{}, fmt.Errorf("constant extraction target %q is not in a buildable Go package", targetPath)
+	}
+	return selected, nil
 }
 
 func selectConstantExpression(fset *token.FileSet, body *ast.BlockStmt, source []byte, discriminator string) (ast.Expr, error) {
