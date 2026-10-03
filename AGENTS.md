@@ -69,10 +69,11 @@ When developing or refactoring code inside this repository, agents must dogfood 
 * **Declaration Outline**: Use `semantic_outline` to inspect hierarchical symbol trees for a file or directory with elided function bodies.
 * **References & Usages**: Use `semantic_find_references` to discover call sites, type usages, parameter bindings, and field accesses.
 * **Renaming**: Use `semantic_rename` for function, method, type, or variable renames instead of search-and-replace.
-* **Function/Method Bodies**: Use `semantic_replace_body` to modify existing function implementations rather than editing entire blocks.
+* **Construct Lifecycle**: Use `semantic_insert_construct` and `semantic_replace_construct` to insert or mutate inner control flow, clauses, branches, loops, and statement/expressions rather than rewriting entire function bodies or text blocks.
+* **Function/Method Bodies**: Use `semantic_replace_body` to modify complete function implementations when whole-body replacement is necessary.
 * **New Files**: Use `semantic_scaffold_file` to initialize new source files with inferred package headers.
 * **Declarations & Imports**: Use `semantic_insert_declaration`, `semantic_insert_function`, `semantic_insert_type`, `semantic_insert_decl`, and `semantic_organize_imports`.
-* **Switch Statements**: Use `semantic_insert_case` to add dispatch branches.
+* **Switch Statements**: Use `semantic_insert_construct` with `kind: "clause"` or `semantic_insert_case` to add dispatch branches.
 * **Dependencies**: Use `semantic_add_build_dependency` to add external Go modules and tidy `go.mod`.
 * **Verification & Diagnostics**: Use `semantic_verify` to confirm workspace cleanliness after modifications.
 * **Composite Refactorings**: Use `semantic_batch` to execute multiple semantic transformations in sequence.
