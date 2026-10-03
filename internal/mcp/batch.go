@@ -387,7 +387,7 @@ func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) (
 	for index := range prepared {
 		entry := &prepared[index]
 		if len(entry.Params) == 0 || strings.TrimSpace(string(entry.Params)) == "null" {
-			return nil, fmt.Errorf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)
+			return nil, fmt.Errorf("edit %d params for %s must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index, entry.Tool)
 		}
 		var child map[string]any
 		if err := decodeArgumentObject(entry.Params, &child); err != nil {
