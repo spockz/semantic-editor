@@ -125,7 +125,10 @@ func ReplaceBody(ctx context.Context, filePath, symbolQuery, bodySource string, 
 			Err:     ErrSyntax,
 		}
 	}
-
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("prune orphan imports: %w", err)
+	}
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}

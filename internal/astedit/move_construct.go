@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"semedit/internal/gocache"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
@@ -621,8 +622,13 @@ func resolveMoveImportName(ctx context.Context, workingDir, importPath string) (
 	}
 
 	// #nosec G204 -- executable is fixed to go; importPath is one parsed import literal.
-	command := exec.CommandContext(ctx, "go", "list", "-f", "{{.Name}}", importPath)
+	command := exec.CommandContext(ctx, "go", "list", "-mod=readonly", "-f", "{{.Name}}", importPath)
 	command.Dir = workingDir
+	environment, err := gocache.Environment(ctx, workingDir)
+	if err != nil {
+		return "", fmt.Errorf("configure Go state for package-name lookup: %w", err)
+	}
+	command.Env = environment
 	output, err := command.Output()
 	if err != nil {
 		return "", fmt.Errorf("cannot resolve package name for import %q; refusing move: %w", importPath, err)
@@ -708,6 +714,9 @@ func cleanupMoveImports(ctx context.Context, path string, content []byte) ([]byt
 		importPath, err := strconv.Unquote(spec.Path.Value)
 		if err != nil {
 			return nil, fmt.Errorf("decode move import: %w", err)
+		}
+		if importPath == "C" {
+			continue
 		}
 		var name string
 		if spec.Name != nil {

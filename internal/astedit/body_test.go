@@ -44,8 +44,6 @@ func Calculate(a, b int) int {
 
 	expected := `package main
 
-import "fmt"
-
 func Calculate(a, b int) int {
 	return a * b
 }
@@ -164,20 +162,84 @@ func PrintMsg(s string) {
 	if err := os.WriteFile(filePath, []byte(initial), 0o600); err != nil {
 		t.Fatalf("write file: %v", err)
 	}
-
-	_, err := astedit.ReplaceBody(context.Background(), filePath, "PrintMsg", `fmt.Println(s)`, astedit.BodyOptions{
-		AutoOrganizeImports: true,
-	})
+	_, err := astedit.ReplaceBody(context.Background(), filePath, "PrintMsg", `fmt.Println(s)`, astedit.BodyOptions{AutoOrganizeImports: true})
 	if err != nil {
 		t.Fatalf("ReplaceBody with auto imports failed: %v", err)
 	}
-
 	updated, err := os.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		t.Fatalf("read file: %v", err)
 	}
-
 	if strings.Contains(string(updated), `"strings"`) {
 		t.Errorf("expected unused import 'strings' to be removed by AutoOrganizeImports:\n%s", string(updated))
+	}
+}
+
+func TestReplaceBodyPrunesImportsUsingResolvedPackageName(t *testing.T) {
+	root := t.TempDir()
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatalf("create directory: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+	write(filepath.Join(root, "go.mod"), "module example.com/body\n\ngo 1.23\n")
+	write(filepath.Join(root, "renamed", "package.go"), "package actualname\n\nfunc Value() string { return \"x\" }\n")
+	file := filepath.Join(root, "body.go")
+	write(file, `package body
+
+import (
+	text "strings"
+	"example.com/body/renamed"
+)
+
+func Value(input string) string {
+	return renamed.Value() + text.TrimSpace(input)
+}
+`)
+	if _, err := astedit.ReplaceBody(context.Background(), file, "Value", "return text.TrimSpace(input)", astedit.BodyOptions{}); err != nil {
+		t.Fatalf("ReplaceBody: %v", err)
+	}
+	updated, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	if strings.Contains(string(updated), "example.com/body/renamed") || !strings.Contains(string(updated), `text "strings"`) {
+		t.Fatalf("imports were not pruned by resolved package name while retaining the used import:\n%s", updated)
+	}
+}
+
+func TestReplaceBodyPrunesOrdinaryImportsAndPreservesCgo(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "body.go")
+	initial := `package body
+
+/*
+#include <stdlib.h>
+*/
+import "C"
+
+import "fmt"
+
+func Value() int { fmt.Println("old"); return 1 }
+`
+	if err := os.WriteFile(file, []byte(initial), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	if _, err := astedit.ReplaceBody(context.Background(), file, "Value", "return 2", astedit.BodyOptions{}); err != nil {
+		t.Fatalf("ReplaceBody: %v", err)
+	}
+	updated, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read result: %v", err)
+	}
+	if !strings.Contains(string(updated), "#include <stdlib.h>") || !strings.Contains(string(updated), `import "C"`) {
+		t.Fatalf("cgo preamble or pseudo-import was removed:\n%s", updated)
+	}
+	if strings.Contains(string(updated), `"fmt"`) {
+		t.Fatalf("orphaned fmt import was retained:\n%s", updated)
 	}
 }
