@@ -1029,17 +1029,14 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 // DefaultRegistry constructs the registry with lookup, rename, and verify operations wired to backend leaves.
 func DefaultRegistry() *Registry {
 	registry := NewRegistry()
-	if err := Register(registry, lookupDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, referencesDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, renameDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, verifyDef()); err != nil {
-		panic(err)
+	for _, register := range []func(*Registry) error{
+		registerNavigationOps,
+		registerRenameOps,
+		registerVerificationOps,
+	} {
+		if err := register(registry); err != nil {
+			panic(err)
+		}
 	}
 	if err := registerReadInspectOps(registry); err != nil {
 		panic(err)
@@ -1057,131 +1054,4 @@ func DefaultRegistry() *Registry {
 		panic(err)
 	}
 	return registry
-}
-
-func parseReadProject(raw map[string]any, file string) (backend.ProjectContext, error) {
-	config, err := parseReadProjectConfiguration(raw)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	return backend.ProjectContext{
-		File:              file,
-		Language:          config.language,
-		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: config.trusted},
-		Java:              config.java,
-		Scala:             config.scala,
-		Haskell:           config.haskell,
-		HaskellStandalone: config.haskell.Standalone,
-		Kotlin:            config.kotlin,
-		Bash:              config.bash,
-		Make:              config.make,
-		KotlinBin:         config.kotlin.KotlinBin,
-	}, nil
-}
-
-type readProjectConfiguration struct {
-	language backend.LanguageID
-	trusted  bool
-	java     backend.JavaConfig
-	scala    backend.ScalaConfig
-	haskell  backend.HaskellConfig
-	kotlin   backend.KotlinConfig
-	bash     backend.BashConfig
-	make     backend.MakeConfig
-}
-
-func parseReadProjectConfiguration(raw map[string]any) (readProjectConfiguration, error) {
-	language, err := ParseEnum(raw, "language", "language", languageEnums, false, "")
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	trusted, err := ParseBool(raw, wireTrustWorkspace, wireCLITrustWorkspace, false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	javaScala, err := parseReadJavaScala(raw)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	tools, err := parseReadProjectTools(raw)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	return readProjectConfiguration{
-		language: backend.LanguageID(language), trusted: trusted,
-		java: javaScala.java, scala: javaScala.scala,
-		haskell: tools.haskell, kotlin: tools.kotlin, bash: tools.bash, make: tools.make,
-	}, nil
-}
-
-func parseReadJavaScala(raw map[string]any) (readProjectConfiguration, error) {
-	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	metalsHome, err := ParseString(raw, "metals_home", "metals-home", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	metalsBin, err := ParseString(raw, "metals_bin", "metals-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	javaVersion, err := ParseString(raw, "java_version", "java-version", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	return readProjectConfiguration{
-		java:  backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
-		scala: backend.ScalaConfig{MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion},
-	}, nil
-}
-
-func parseReadProjectTools(raw map[string]any) (readProjectConfiguration, error) {
-	standalone, err := ParseBool(raw, "standalone_haskell", "haskell-standalone", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	ghcBin, err := ParseString(raw, "ghc_bin", "ghc-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	hlsBin, err := ParseString(raw, "hls_bin", "hls-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	ghcVersion, err := ParseString(raw, "ghc_version", "ghc-version", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	hlsVersion, err := ParseString(raw, "hls_version", "hls-version", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	kotlinBin, err := ParseString(raw, "kotlin_bin", "kotlin-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
-	if err != nil {
-		return readProjectConfiguration{}, err
-	}
-	return readProjectConfiguration{
-		haskell: backend.HaskellConfig{Standalone: standalone, GHCBin: ghcBin, HLSBin: hlsBin, GHCVersion: ghcVersion, HLSVersion: hlsVersion},
-		kotlin:  backend.KotlinConfig{KotlinBin: kotlinBin},
-		bash:    backend.BashConfig{BashBin: bashBin},
-		make:    backend.MakeConfig{MakeBin: makeBin},
-	}, nil
 }
