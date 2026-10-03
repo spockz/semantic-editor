@@ -91,19 +91,19 @@ func verifySafeDeleteTarget(ctx context.Context, root, targetPath string, target
 	if problem := safeDeletePackageProblem(pkgs, root); problem != "" {
 		return "cannot prove safe deletion across active Go packages: " + problem, nil
 	}
-	targetObject, targetPkg, initializerRefusal := safeDeleteDefinition(pkgs, root, targetPath, target)
-	if initializerRefusal != "" {
-		return initializerRefusal, nil
+	definition := safeDeleteDefinition(pkgs, root, targetPath, target)
+	if definition.initializerRefusal != "" {
+		return definition.initializerRefusal, nil
 	}
-	if targetObject == nil {
+	if definition.object == nil {
 		return "target is not present in an active, successfully type-checked package", nil
 	}
 	if target.kind == "function" {
-		if _, ok := targetObject.(*types.Func); !ok {
+		if _, ok := definition.object.(*types.Func); !ok {
 			return "target does not resolve to a free function", nil
 		}
 	}
-	if safeDeleteHasReference(pkgs, root, targetPath, target, targetObject, targetPkg) {
+	if safeDeleteHasReference(pkgs, root, targetPath, target, definition.object, definition.packagePath) {
 		return fmt.Sprintf("safe_delete found a compiler-resolved reference to %q", target.name), nil
 	}
 	if problem := safeDeleteImportProblem(pkgs, targetPath, target); problem != "" {
@@ -143,61 +143,71 @@ func safeDeletePackageProblem(pkgs []*packages.Package, root string) string {
 	return problem
 }
 
-func safeDeleteDefinition(pkgs []*packages.Package, root, targetPath string, target safeDeleteTarget) (types.Object, string, string) {
-	var selected types.Object
-	packagePath := ""
-	refusal := ""
+type safeDeleteTargetDefinition struct {
+	object             types.Object
+	packagePath        string
+	initializerRefusal string
+}
+
+func safeDeleteDefinition(pkgs []*packages.Package, root, targetPath string, target safeDeleteTarget) safeDeleteTargetDefinition {
+	definition := safeDeleteTargetDefinition{}
 	packages.Visit(pkgs, func(pkg *packages.Package) bool {
 		if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
 			return true
 		}
-		object, effectful := safeDeleteDefinitionInPackage(pkg, targetPath, target)
-		if effectful {
-			refusal = "variable initializer is not proven to be effect-free"
+		result := safeDeleteDefinitionInPackage(pkg, targetPath, target)
+		if result.effectfulInitializer {
+			definition.initializerRefusal = "variable initializer is not proven to be effect-free"
 		}
-		if object != nil {
-			selected, packagePath = object, pkg.PkgPath
+		if result.object != nil {
+			definition.object, definition.packagePath = result.object, pkg.PkgPath
 		}
 		return true
 	}, nil)
-	return selected, packagePath, refusal
+	return definition
 }
 
-func safeDeleteDefinitionInPackage(pkg *packages.Package, targetPath string, target safeDeleteTarget) (types.Object, bool) {
+func safeDeleteDefinitionInPackage(pkg *packages.Package, targetPath string, target safeDeleteTarget) safeDeleteDefinitionResult {
 	for index, compiled := range pkg.CompiledGoFiles {
 		if filepath.Clean(compiled) != filepath.Clean(targetPath) || index >= len(pkg.Syntax) {
 			continue
 		}
 		for _, declaration := range pkg.Syntax[index].Decls {
-			object, effectful := safeDeleteDefinitionInDecl(pkg, declaration, target)
-			if object != nil || effectful {
-				return object, effectful
+			result := safeDeleteDefinitionInDecl(pkg, declaration, target)
+			if result.matched {
+				return result
 			}
 		}
 	}
-	return nil, false
+	return safeDeleteDefinitionResult{}
 }
 
-func safeDeleteDefinitionInDecl(pkg *packages.Package, declaration ast.Decl, target safeDeleteTarget) (types.Object, bool) {
+type safeDeleteDefinitionResult struct {
+	object               types.Object
+	effectfulInitializer bool
+	matched              bool
+}
+
+func safeDeleteDefinitionInDecl(pkg *packages.Package, declaration ast.Decl, target safeDeleteTarget) safeDeleteDefinitionResult {
 	switch node := declaration.(type) {
 	case *ast.FuncDecl:
 		return safeDeleteFunctionDefinition(pkg.TypesInfo, node, target)
 	case *ast.GenDecl:
 		return safeDeleteGroupDefinition(pkg, node, target)
 	}
-	return nil, false
+	return safeDeleteDefinitionResult{}
 }
 
-func safeDeleteFunctionDefinition(info *types.Info, function *ast.FuncDecl, target safeDeleteTarget) (types.Object, bool) {
+func safeDeleteFunctionDefinition(info *types.Info, function *ast.FuncDecl, target safeDeleteTarget) safeDeleteDefinitionResult {
 	if target.kind == "function" && function.Name.Name == target.name {
-		return info.Defs[function.Name], false
+		return safeDeleteDefinitionResult{object: info.Defs[function.Name], matched: true}
 	}
-	return nil, false
+	return safeDeleteDefinitionResult{}
 }
 
-func safeDeleteGroupDefinition(pkg *packages.Package, group *ast.GenDecl, target safeDeleteTarget) (types.Object, bool) {
+func safeDeleteGroupDefinition(pkg *packages.Package, group *ast.GenDecl, target safeDeleteTarget) safeDeleteDefinitionResult {
 	if target.kind != "value" && target.kind != "constant" {
-		return nil, false
+		return safeDeleteDefinitionResult{}
 	}
 	for _, spec := range group.Specs {
 		value, ok := spec.(*ast.ValueSpec)
@@ -205,20 +215,14 @@ func safeDeleteGroupDefinition(pkg *packages.Package, group *ast.GenDecl, target
 			continue
 		}
 		result := safeDeleteValueDefinition(pkg, group, value, target)
-		if result.found {
-			return result.object, result.effectful
+		if result.matched {
+			return result
 		}
 	}
-	return nil, false
+	return safeDeleteDefinitionResult{}
 }
 
-type safeDeleteValueDefinitionResult struct {
-	object    types.Object
-	effectful bool
-	found     bool
-}
-
-func safeDeleteValueDefinition(pkg *packages.Package, group *ast.GenDecl, value *ast.ValueSpec, target safeDeleteTarget) safeDeleteValueDefinitionResult {
+func safeDeleteValueDefinition(pkg *packages.Package, group *ast.GenDecl, value *ast.ValueSpec, target safeDeleteTarget) safeDeleteDefinitionResult {
 	for _, name := range value.Names {
 		if name.Name != target.name {
 			continue
@@ -226,17 +230,17 @@ func safeDeleteValueDefinition(pkg *packages.Package, group *ast.GenDecl, value 
 		object := pkg.TypesInfo.Defs[name]
 		if target.kind == "constant" {
 			if _, ok := object.(*types.Const); ok {
-				return safeDeleteValueDefinitionResult{object: object, found: true}
+				return safeDeleteDefinitionResult{object: object, matched: true}
 			}
-			return safeDeleteValueDefinitionResult{found: true}
+			return safeDeleteDefinitionResult{matched: true}
 		}
 		variable, ok := object.(*types.Var)
 		if !ok {
-			return safeDeleteValueDefinitionResult{found: true}
+			return safeDeleteDefinitionResult{matched: true}
 		}
-		return safeDeleteValueDefinitionResult{object: object, effectful: !safeDeleteVariableInitializer(pkg, group, value, variable), found: true}
+		return safeDeleteDefinitionResult{object: object, effectfulInitializer: !safeDeleteVariableInitializer(pkg, group, value, variable), matched: true}
 	}
-	return safeDeleteValueDefinitionResult{}
+	return safeDeleteDefinitionResult{}
 }
 
 func safeDeleteHasReference(pkgs []*packages.Package, root, targetPath string, target safeDeleteTarget, targetObject types.Object, targetPkg string) bool {
@@ -288,9 +292,9 @@ func safeDeletePackageReferenceTarget(pkg *packages.Package, targetPath string, 
 			continue
 		}
 		for _, declaration := range file.Decls {
-			object, matched := safeDeleteDefinitionInDecl(pkg, declaration, target)
-			if matched && object != nil {
-				selected = safeDeleteReferenceTarget{declaration: declaration, object: object}
+			result := safeDeleteDefinitionInDecl(pkg, declaration, target)
+			if result.matched && result.object != nil {
+				selected = safeDeleteReferenceTarget{declaration: declaration, object: result.object}
 			}
 		}
 	}
@@ -356,8 +360,8 @@ func safeDeletePackageImportProblem(pkg *packages.Package, targetPath string, ta
 
 func safeDeleteSelectedDeclaration(pkg *packages.Package, file *ast.File, target safeDeleteTarget) ast.Node {
 	for _, declaration := range file.Decls {
-		object, _ := safeDeleteDefinitionInDecl(pkg, declaration, target)
-		if object != nil {
+		result := safeDeleteDefinitionInDecl(pkg, declaration, target)
+		if result.matched && result.object != nil {
 			return declaration
 		}
 	}
