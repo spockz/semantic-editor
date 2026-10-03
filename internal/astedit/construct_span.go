@@ -391,8 +391,18 @@ func expressionChildren(expr ast.Expr, info constructTypeFacts) []ast.Expr {
 	case *ast.BinaryExpr:
 		return []ast.Expr{value.X, value.Y}
 	case *ast.CallExpr:
-		if isBuiltinTypeConstructor(info, value) && len(value.Args) > 0 {
-			return value.Args[1:]
+		if isBuiltinTypeConstructor(info, value) {
+			ident, _ := typeConstructorIdent(value)
+			switch ident.Name {
+			case "make":
+				if len(value.Args) > 0 {
+					return value.Args[1:]
+				}
+			case "new":
+				if len(value.Args) > 0 && !isKnownValue(info, value.Args[0]) {
+					return value.Args[1:]
+				}
+			}
 		}
 		return value.Args
 	case *ast.SelectorExpr:

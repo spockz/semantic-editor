@@ -1,4 +1,4 @@
-// This file plans one direct call or assignment insertion without changing files or claiming control-flow equivalence.
+// Package astedit plans direct statement insertions without claiming control-flow equivalence.
 package astedit
 
 import (
