@@ -77,8 +77,8 @@ func PlanInsertCompositeElement(source []byte, intent InsertElementIntent) (Sour
 	if err != nil {
 		return SourcePlan{}, err
 	}
-	if err := validateTypedElement(source, fset, literal, keyed, keySource, intent.TypeContext); err != nil {
-		return SourcePlan{}, err
+	if validationErr := validateTypedElement(source, fset, literal, keyed, keySource, intent.TypeContext); validationErr != nil {
+		return SourcePlan{}, validationErr
 	}
 	updated, err := appendCompositeElement(source, fset, literal, strings.TrimSpace(intent.Source))
 	if err != nil {

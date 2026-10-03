@@ -62,11 +62,11 @@ func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, c
 	if !moveWithin(workspaceRoot, moduleRoot) || !moveWithin(moduleRoot, calleePath) || !moveWithin(moduleRoot, callerPath) {
 		return SemanticEditPlan{}, fmt.Errorf("inline function requires existing caller and callee files within the selected workspace module")
 	}
-	if err := rejectMoveSymlinkPath(moduleRoot, calleePath); err != nil {
-		return SemanticEditPlan{}, err
+	if calleePathErr := rejectMoveSymlinkPath(moduleRoot, calleePath); calleePathErr != nil {
+		return SemanticEditPlan{}, calleePathErr
 	}
-	if err := rejectMoveSymlinkPath(moduleRoot, callerPath); err != nil {
-		return SemanticEditPlan{}, err
+	if callerPathErr := rejectMoveSymlinkPath(moduleRoot, callerPath); callerPathErr != nil {
+		return SemanticEditPlan{}, callerPathErr
 	}
 	readSet, packagesInScope, pkg, err := captureInlinePackage(ctx, moduleRoot, calleePath, callerPath, calleeSymbol, opts)
 	if err != nil {
@@ -125,8 +125,8 @@ func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, c
 	after = append(after, callerSource[:start]...)
 	after = append(after, replacement...)
 	after = append(after, callerSource[end:]...)
-	if _, err := parser.ParseFile(token.NewFileSet(), callerPath, after, parser.ParseComments|parser.AllErrors); err != nil {
-		return SemanticEditPlan{}, fmt.Errorf("parse inlined caller: %w", err)
+	if _, parseErr := parser.ParseFile(token.NewFileSet(), callerPath, after, parser.ParseComments|parser.AllErrors); parseErr != nil {
+		return SemanticEditPlan{}, fmt.Errorf("parse inlined caller: %w", parseErr)
 	}
 	change := sourcebuf.Change{Path: callerPath, Before: bytes.Clone(callerSource), After: after}
 	postPackages, err := typecheckMoveOverlay(ctx, moduleRoot, map[string][]byte{callerPath: after})
@@ -159,8 +159,8 @@ func PlanInlineFunctionOverlay(ctx context.Context, workspaceRoot, calleeFile, c
 
 func captureInlinePackage(ctx context.Context, moduleRoot, calleePath, callerPath, calleeSymbol string, opts InlineFunctionOptions) (map[string][]byte, []*packages.Package, *packages.Package, error) {
 	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		if err := buffer.AuthorizeWrites(ctx, moduleRoot); err != nil {
-			return nil, nil, nil, err
+		if authorizationErr := buffer.AuthorizeWrites(ctx, moduleRoot); authorizationErr != nil {
+			return nil, nil, nil, authorizationErr
 		}
 	}
 	readSet, err := inspectMoveModuleFiles(ctx, moduleRoot, calleePath, callerPath, calleeSymbol)
@@ -185,8 +185,8 @@ func captureInlinePackage(ctx context.Context, moduleRoot, calleePath, callerPat
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("load inline-function package types: %w", err)
 	}
-	if err := validateRefactorPackages(pkgs, "inline function"); err != nil {
-		return nil, nil, nil, err
+	if packageErr := validateRefactorPackages(pkgs, "inline function"); packageErr != nil {
+		return nil, nil, nil, packageErr
 	}
 	readSet, err = completeRefactorReadSet(ctx, moduleRoot, readSet, pkgs)
 	if err != nil {

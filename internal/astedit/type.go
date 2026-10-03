@@ -49,11 +49,11 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 		return fmt.Errorf("validate type snippet: %w", err)
 	}
 
-	if err := ValidateAccess(DefaultBackend, opts.AccessModifier, typeName); err != nil {
-		if visErr, ok := errors.AsType[*VisibilityMismatchError](err); ok {
+	if accessErr := ValidateAccess(DefaultBackend, opts.AccessModifier, typeName); accessErr != nil {
+		if visErr, ok := errors.AsType[*VisibilityMismatchError](accessErr); ok {
 			visErr.File = "snippet"
 		}
-		return fmt.Errorf("validate access modifier: %w", err)
+		return fmt.Errorf("validate access modifier: %w", accessErr)
 	}
 
 	effectiveAccess, err := ResolveAccess(DefaultBackend, opts.AccessModifier, typeName)
@@ -66,8 +66,8 @@ func insertTypeImpl(ctx context.Context, filePath string, source string, opts Ty
 	if err != nil {
 		return fmt.Errorf("parse target file before insertion: %w", err)
 	}
-	if err := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, genDecl); err != nil {
-		return fmt.Errorf("check declaration collision: %w", err)
+	if collisionErr := checkConstructDeclarationCollision(ctx, cleanPath, fileNode, genDecl); collisionErr != nil {
+		return fmt.Errorf("check declaration collision: %w", collisionErr)
 	}
 
 	insertOffset, err := calculateTypeOffset(fset, fileNode, content, genDecl, typeName, effectiveAccess, opts)
