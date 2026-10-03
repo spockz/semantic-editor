@@ -4,6 +4,8 @@ package operation
 
 import (
 	"context"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,5 +37,38 @@ func TestStructuralNoopRejectsManifestDrift(t *testing.T) {
 	}
 	if changed {
 		t.Fatal("no-op output reported a source change")
+	}
+}
+
+func TestCompositeContinuationRejectsDuplicateOwnerSpecs(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	source := []byte("package p\n\nvar (\n\tthing = []int{1}\n\tthing = []int{2}\n)\n")
+	path := filepath.Join(root, "value.go")
+	if err := os.WriteFile(path, source, 0o600); err != nil {
+		t.Fatalf("write duplicate declarations: %v", err)
+	}
+	parsed, parseErr := parser.ParseFile(token.NewFileSet(), path, source, parser.ParseComments|parser.AllErrors)
+	if parseErr != nil {
+		t.Fatalf("parse duplicate declarations: %v", parseErr)
+	}
+	if _, ownerErr := structuralDeclarationOwner(parsed, "thing"); ownerErr == nil || !strings.Contains(ownerErr.Error(), "ambiguous") {
+		t.Fatalf("duplicate declaration owner error = %v, want ambiguity refusal", ownerErr)
+	}
+	receipt := EditReceipt{Changes: []FileRevision{{Path: "value.go", Revision: structuralRevision(source)}}}
+	candidate := compositeSelectorCandidate{File: "value.go", Declaration: "thing", ElementSource: "1"}
+	_, live, err := resolveCompositeSelectorContinuation(context.Background(), root, candidate, receipt)
+	if err != nil {
+		t.Fatalf("resolve duplicate declaration continuation: %v", err)
+	}
+	if live {
+		t.Fatal("duplicate declaration produced a live selector continuation")
+	}
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("read duplicate declarations after refusal: %v", readErr)
+	}
+	if string(after) != string(source) {
+		t.Fatal("continuation refusal changed the source")
 	}
 }

@@ -371,28 +371,37 @@ func structuralFunctionMatches(function *ast.FuncDecl, name string) bool {
 }
 
 func structuralSpecOwner(specs []ast.Spec, name string) (structuralDeclarationMatch, error) {
+	var selected structuralDeclarationMatch
 	for _, spec := range specs {
-		matched, shared := structuralSpecMatches(spec, name)
-		if shared {
+		match := structuralSpecMatches(spec, name)
+		if match.SharedValueSpec {
 			return structuralDeclarationMatch{}, fmt.Errorf("declaration %q shares a ValueSpec", name)
 		}
-		if matched {
-			return structuralDeclarationMatch{Node: spec, Found: true}, nil
+		if match.Found {
+			if selected.Found {
+				return structuralDeclarationMatch{}, fmt.Errorf("declaration %q is ambiguous", name)
+			}
+			selected = structuralDeclarationMatch{Node: spec, Found: true}
 		}
 	}
-	return structuralDeclarationMatch{}, nil
+	return selected, nil
 }
 
-func structuralSpecMatches(spec ast.Spec, name string) (matched, shared bool) {
+type structuralSpecMatch struct {
+	Found           bool
+	SharedValueSpec bool
+}
+
+func structuralSpecMatches(spec ast.Spec, name string) structuralSpecMatch {
 	switch item := spec.(type) {
 	case *ast.TypeSpec:
-		return item.Name.Name == name, false
+		return structuralSpecMatch{Found: item.Name.Name == name}
 	case *ast.ValueSpec:
 		if slices.ContainsFunc(item.Names, func(identifier *ast.Ident) bool { return identifier.Name == name }) {
-			return len(item.Names) == 1, len(item.Names) != 1
+			return structuralSpecMatch{Found: len(item.Names) == 1, SharedValueSpec: len(item.Names) != 1}
 		}
 	}
-	return false, false
+	return structuralSpecMatch{}
 }
 
 func canonicalCompositeElement(source string) (string, error) {
