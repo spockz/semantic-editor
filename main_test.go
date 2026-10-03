@@ -114,147 +114,154 @@ func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 }
 
 func TestREQ002REQ006PublicRegistryAndCLIContractCoverage(t *testing.T) {
-	type fixture struct {
-		comment string
-		files   map[string]string
-	}
+	fixtures := loadPublicFixtures(t)
+	registry := operation.DefaultRegistry()
+	assertRegistryCommandCoverage(t, registry, fixtures)
+	assertBatchFixtureCoverage(t, fixtures)
+	assertFullCatalogCoverage(t, registry, fixtures)
+}
 
+type publicFixture struct {
+	comment string
+	files   map[string]string
+}
+
+func loadPublicFixtures(t *testing.T) []publicFixture {
+	t.Helper()
 	entries, err := os.ReadDir(filepath.Join("testdata", "scripts"))
 	if err != nil {
 		t.Fatalf("read script fixtures: %v", err)
 	}
-	fixtures := make([]fixture, 0, len(entries))
+	fixtures := make([]publicFixture, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() || filepath.Ext(entry.Name()) != ".txtar" {
 			continue
 		}
-		data, err := os.ReadFile(filepath.Join("testdata", "scripts", entry.Name()))
-		if err != nil {
-			t.Fatalf("read fixture %s: %v", entry.Name(), err)
+		data, readErr := os.ReadFile(filepath.Join("testdata", "scripts", entry.Name()))
+		if readErr != nil {
+			t.Fatalf("read fixture %s: %v", entry.Name(), readErr)
 		}
 		archive := txtar.Parse(data)
 		files := make(map[string]string, len(archive.Files))
 		for _, file := range archive.Files {
 			files[filepath.ToSlash(file.Name)] = string(file.Data)
 		}
-		fixtures = append(fixtures, fixture{comment: string(archive.Comment), files: files})
+		fixtures = append(fixtures, publicFixture{comment: string(archive.Comment), files: files})
 	}
+	return fixtures
+}
 
-	supportsLanguage := func(candidate fixture, commandLine string, language backend.LanguageID) bool {
-		languageFlag := regexp.MustCompile(`(?:^|\s)--language(?:=|\s+)([a-z-]+)(?:\s|$)`)
-		if match := languageFlag.FindStringSubmatch(commandLine); match != nil {
-			return backend.LanguageID(match[1]) == language
-		}
-		hasExtension := func(extension string) bool {
-			for name := range candidate.files {
-				if filepath.Ext(name) == extension {
-					return true
-				}
-			}
-			return false
-		}
-		switch language {
-		case backend.LanguageAuto:
-			return true
-		case backend.LanguageGo:
-			_, ok := candidate.files["go.mod"]
-			return ok
-		case backend.LanguageJava:
-			_, hasPOM := candidate.files["pom.xml"]
-			return hasPOM || hasExtension(".java")
-		case backend.LanguageRust:
-			_, hasCargo := candidate.files["Cargo.toml"]
-			return hasCargo || hasExtension(".rs")
-		case backend.LanguageScala:
-			return hasExtension(".scala")
-		case backend.LanguageHaskell:
-			return hasExtension(".hs")
-		case backend.LanguageKotlin:
-			return hasExtension(".kt") || hasExtension(".kts")
-		case backend.LanguageBash:
-			return hasExtension(".sh") || hasExtension(".bash")
-		case backend.LanguageMake:
-			for name := range candidate.files {
-				base := strings.ToLower(filepath.Base(name))
-				if base == "makefile" || base == "gnumakefile" || filepath.Ext(strings.ToLower(name)) == ".mk" {
-					return true
-				}
-			}
-			return false
-		default:
-			return false
-		}
-	}
-
-	registry := operation.DefaultRegistry()
+func assertRegistryCommandCoverage(t *testing.T, registry *operation.Registry, fixtures []publicFixture) {
+	t.Helper()
 	for _, registered := range registry.All() {
 		if registered.CLIName == "" {
 			continue
 		}
 		command := regexp.MustCompile(`(?m)^\s*!?\s*(?:exec\s+)?semedit\s+` + regexp.QuoteMeta(registered.CLIName) + `(?:\s|$)`)
 		for _, language := range registered.Languages {
-			matched := false
-			for _, candidate := range fixtures {
-				for commandLine := range strings.SplitSeq(candidate.comment, "\n") {
-					if command.MatchString(commandLine) && supportsLanguage(candidate, commandLine, language) {
-						matched = true
-						break
-					}
-				}
-				if matched {
-					break
-				}
-			}
-			if !matched {
+			if !fixtureCoversLanguageCommand(fixtures, command, language) {
 				t.Errorf("no executable txtar covers registry command %q for supported language %q", registered.CLIName, language)
 			}
 		}
 	}
+}
 
-	// Batch is an MCP-layer operation rather than a registry entry.
-	batchCovered := false
+func fixtureCoversLanguageCommand(fixtures []publicFixture, command *regexp.Regexp, language backend.LanguageID) bool {
 	for _, candidate := range fixtures {
-		input, hasInput := candidate.files["input.json"]
-		if hasInput && strings.Contains(candidate.comment, "stdin input.json") &&
-			strings.Contains(candidate.comment, "exec semedit mcp") && strings.Contains(input, `"name":"semantic_batch"`) {
-			batchCovered = true
-			break
-		}
-	}
-	if !batchCovered {
-		t.Error("no executable txtar calls the MCP-only semantic_batch tool")
-	}
-
-	mcpToolListed := func(tool string) bool {
-		assertion := regexp.MustCompile(`(?m)^stdout .*` + regexp.QuoteMeta(tool) + `.*$`)
-		for _, candidate := range fixtures {
-			input, hasInput := candidate.files["input.json"]
-			if !hasInput || !strings.Contains(input, `"method":"tools/list"`) ||
-				!strings.Contains(candidate.comment, "exec semedit mcp --tool-profile full --live-reload") {
-				continue
-			}
-			if assertion.MatchString(candidate.comment) {
+		for commandLine := range strings.SplitSeq(candidate.comment, "\n") {
+			if command.MatchString(commandLine) && supportsFixtureLanguage(candidate, commandLine, language) {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+func supportsFixtureLanguage(candidate publicFixture, commandLine string, language backend.LanguageID) bool {
+	languageFlag := regexp.MustCompile(`(?:^|\s)--language(?:=|\s+)([a-z-]+)(?:\s|$)`)
+	if match := languageFlag.FindStringSubmatch(commandLine); match != nil {
+		return backend.LanguageID(match[1]) == language
+	}
+	switch language {
+	case backend.LanguageAuto:
+		return true
+	case backend.LanguageGo:
+		_, ok := candidate.files["go.mod"]
+		return ok
+	case backend.LanguageJava:
+		_, hasPOM := candidate.files["pom.xml"]
+		return hasPOM || fixtureHasExtension(candidate, ".java")
+	case backend.LanguageRust:
+		_, hasCargo := candidate.files["Cargo.toml"]
+		return hasCargo || fixtureHasExtension(candidate, ".rs")
+	case backend.LanguageScala:
+		return fixtureHasExtension(candidate, ".scala")
+	case backend.LanguageHaskell:
+		return fixtureHasExtension(candidate, ".hs")
+	case backend.LanguageKotlin:
+		return fixtureHasExtension(candidate, ".kt") || fixtureHasExtension(candidate, ".kts")
+	case backend.LanguageBash:
+		return fixtureHasExtension(candidate, ".sh") || fixtureHasExtension(candidate, ".bash")
+	case backend.LanguageMake:
+		return fixtureHasMakefile(candidate)
+	default:
 		return false
 	}
+}
 
-	// The full-profile MCP tools/list txtar must assert every registry tool and
-	// the MCP-only tools, including conditional live reload.
-	for _, registered := range registry.All() {
-		if registered.MCPName == "" {
-			continue
+func fixtureHasExtension(candidate publicFixture, extension string) bool {
+	for name := range candidate.files {
+		if filepath.Ext(name) == extension {
+			return true
 		}
-		if !mcpToolListed(registered.MCPName) {
+	}
+	return false
+}
+
+func fixtureHasMakefile(candidate publicFixture) bool {
+	for name := range candidate.files {
+		base := strings.ToLower(filepath.Base(name))
+		if base == "makefile" || base == "gnumakefile" || filepath.Ext(strings.ToLower(name)) == ".mk" {
+			return true
+		}
+	}
+	return false
+}
+
+func assertBatchFixtureCoverage(t *testing.T, fixtures []publicFixture) {
+	t.Helper()
+	for _, candidate := range fixtures {
+		input, hasInput := candidate.files["input.json"]
+		if hasInput && strings.Contains(candidate.comment, "stdin input.json") && strings.Contains(candidate.comment, "exec semedit mcp") && strings.Contains(input, `"name":"semantic_batch"`) {
+			return
+		}
+	}
+	t.Error("no executable txtar calls the MCP-only semantic_batch tool")
+}
+
+func assertFullCatalogCoverage(t *testing.T, registry *operation.Registry, fixtures []publicFixture) {
+	t.Helper()
+	for _, registered := range registry.All() {
+		if registered.MCPName != "" && !fixtureAssertsFullCatalogTool(fixtures, registered.MCPName) {
 			t.Errorf("no tools/list txtar asserts MCP tool %q", registered.MCPName)
 		}
 	}
 	for _, tool := range []string{"semantic_batch", "semantic_reload"} {
-		if !mcpToolListed(tool) {
+		if !fixtureAssertsFullCatalogTool(fixtures, tool) {
 			t.Errorf("no tools/list txtar asserts MCP-layer tool %q", tool)
 		}
 	}
+}
+
+func fixtureAssertsFullCatalogTool(fixtures []publicFixture, tool string) bool {
+	assertion := regexp.MustCompile(`(?m)^stdout .*` + regexp.QuoteMeta(tool) + `.*$`)
+	for _, candidate := range fixtures {
+		input, hasInput := candidate.files["input.json"]
+		if hasInput && strings.Contains(input, `"method":"tools/list"`) && strings.Contains(candidate.comment, "exec semedit mcp --tool-profile full --live-reload") && assertion.MatchString(candidate.comment) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
@@ -280,23 +287,7 @@ func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
 			return fmt.Errorf("read txtar %s: %w", path, err)
 		}
 		archive := txtar.Parse(data)
-		hasWantedFile := false
-		for _, file := range archive.Files {
-			for component := range strings.SplitSeq(filepath.ToSlash(file.Name), "/") {
-				if component == "want" || strings.HasPrefix(component, "want.") || strings.HasPrefix(component, "want_") {
-					hasWantedFile = true
-					break
-				}
-			}
-			if hasWantedFile {
-				break
-			}
-		}
-		hasAssertion := assertion.Match(archive.Comment) || failureExpectation.Match(archive.Comment)
-		if !hasAssertion && strings.HasPrefix(filepath.ToSlash(path), "testdata/bench/") {
-			hasAssertion = benchmarkOracle.Match(archive.Comment)
-		}
-		if !hasAssertion && !hasWantedFile {
+		if !txtarHasAssertion(path, archive, assertion, failureExpectation, benchmarkOracle) && !txtarHasWantedFile(archive.Files) {
 			t.Errorf("txtar %s has no test assertion or wanted file", path)
 		}
 		found++
@@ -308,6 +299,25 @@ func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
 	if found == 0 {
 		t.Fatal("no txtar fixtures found under testdata")
 	}
+}
+
+func txtarHasWantedFile(files []txtar.File) bool {
+	for _, file := range files {
+		for component := range strings.SplitSeq(filepath.ToSlash(file.Name), "/") {
+			if component == "want" || strings.HasPrefix(component, "want.") || strings.HasPrefix(component, "want_") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func txtarHasAssertion(path string, archive *txtar.Archive, assertion, failureExpectation, benchmarkOracle *regexp.Regexp) bool {
+	comment := archive.Comment
+	if assertion.Match(comment) || failureExpectation.Match(comment) {
+		return true
+	}
+	return strings.HasPrefix(filepath.ToSlash(path), "testdata/bench/") && benchmarkOracle.Match(comment)
 }
 
 func TestMCPLiveReloadFlag(t *testing.T) {

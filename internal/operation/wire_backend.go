@@ -1093,77 +1093,103 @@ func parseReadProject(raw map[string]any, file string) (backend.ProjectContext, 
 	if err != nil {
 		return backend.ProjectContext{}, err
 	}
-	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
+	java, scala, err := parseReadJavaScala(raw)
 	if err != nil {
 		return backend.ProjectContext{}, err
 	}
-	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	metalsHome, err := ParseString(raw, "metals_home", "metals-home", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	metalsBin, err := ParseString(raw, "metals_bin", "metals-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	javaVersion, err := ParseString(raw, "java_version", "java-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	standalone, err := ParseBool(raw, "standalone_haskell", "haskell-standalone", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	ghcBin, err := ParseString(raw, "ghc_bin", "ghc-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	hlsBin, err := ParseString(raw, "hls_bin", "hls-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	ghcVersion, err := ParseString(raw, "ghc_version", "ghc-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	hlsVersion, err := ParseString(raw, "hls_version", "hls-version", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	kotlinBin, err := ParseString(raw, "kotlin_bin", "kotlin-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
-	if err != nil {
-		return backend.ProjectContext{}, err
-	}
-	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
+	tools, err := parseReadProjectTools(raw)
 	if err != nil {
 		return backend.ProjectContext{}, err
 	}
 	return backend.ProjectContext{
-		File:           file,
-		Language:       backend.LanguageID(language),
-		WorkspaceTrust: backend.WorkspaceTrust{Trusted: trusted},
-		Java:           backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven},
-		Scala: backend.ScalaConfig{
-			MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion,
-		},
-		Haskell: backend.HaskellConfig{
-			Standalone: standalone, GHCBin: ghcBin, HLSBin: hlsBin, GHCVersion: ghcVersion, HLSVersion: hlsVersion,
-		},
-		HaskellStandalone: standalone,
-		Kotlin:            backend.KotlinConfig{KotlinBin: kotlinBin},
-		Bash:              backend.BashConfig{BashBin: bashBin},
-		Make:              backend.MakeConfig{MakeBin: makeBin},
-		KotlinBin:         kotlinBin,
+		File:              file,
+		Language:          backend.LanguageID(language),
+		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: trusted},
+		Java:              java,
+		Scala:             scala,
+		Haskell:           tools.haskell,
+		HaskellStandalone: tools.haskell.Standalone,
+		Kotlin:            tools.kotlin,
+		Bash:              tools.bash,
+		Make:              tools.make,
+		KotlinBin:         tools.kotlin.KotlinBin,
+	}, nil
+}
+
+func parseReadJavaScala(raw map[string]any) (backend.JavaConfig, backend.ScalaConfig, error) {
+	jdtlsHome, err := ParseString(raw, wireJDTLSHome, "jdtls-home", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	javaBin, err := ParseString(raw, "java_bin", "java-bin", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	importMaven, err := ParseBool(raw, wireImportMaven, "import-maven", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	metalsHome, err := ParseString(raw, "metals_home", "metals-home", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	metalsBin, err := ParseString(raw, "metals_bin", "metals-bin", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	javaVersion, err := ParseString(raw, "java_version", "java-version", false)
+	if err != nil {
+		return backend.JavaConfig{}, backend.ScalaConfig{}, err
+	}
+	return backend.JavaConfig{JDTLSHome: jdtlsHome, JavaBin: javaBin, ImportMaven: importMaven}, backend.ScalaConfig{
+		MetalsHome: metalsHome, MetalsBin: metalsBin, JavaBin: javaBin, JavaVersion: javaVersion,
+	}, nil
+}
+
+type readProjectTools struct {
+	haskell backend.HaskellConfig
+	kotlin  backend.KotlinConfig
+	bash    backend.BashConfig
+	make    backend.MakeConfig
+}
+
+func parseReadProjectTools(raw map[string]any) (readProjectTools, error) {
+	standalone, err := ParseBool(raw, "standalone_haskell", "haskell-standalone", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	ghcBin, err := ParseString(raw, "ghc_bin", "ghc-bin", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	hlsBin, err := ParseString(raw, "hls_bin", "hls-bin", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	ghcVersion, err := ParseString(raw, "ghc_version", "ghc-version", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	hlsVersion, err := ParseString(raw, "hls_version", "hls-version", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	kotlinBin, err := ParseString(raw, "kotlin_bin", "kotlin-bin", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	bashBin, err := ParseString(raw, "bash_bin", "bash-bin", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	makeBin, err := ParseString(raw, "make_bin", "make-bin", false)
+	if err != nil {
+		return readProjectTools{}, err
+	}
+	return readProjectTools{
+		haskell: backend.HaskellConfig{Standalone: standalone, GHCBin: ghcBin, HLSBin: hlsBin, GHCVersion: ghcVersion, HLSVersion: hlsVersion},
+		kotlin:  backend.KotlinConfig{KotlinBin: kotlinBin},
+		bash:    backend.BashConfig{BashBin: bashBin},
+		make:    backend.MakeConfig{MakeBin: makeBin},
 	}, nil
 }

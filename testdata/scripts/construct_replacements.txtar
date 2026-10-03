@@ -15,7 +15,7 @@ stderr 'ambiguous loop'
 cmp api/loops_test.go want/api/loops_before.go
 exec semedit replace-construct --file api/loops_test.go --in-function TestAmbiguousLoops --kind loop --discriminator item --construct-path 0 --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
 ! exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) == 0' --source 'if condition {}'
-stderr 'invalid.*else'
+stderr 'replacement must be one complete Go else construct'
 cmp api/messages_test.go want/api/messages_before.go
 exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind if --discriminator 'len(original) == 0' --source 'if len(original) > 0 { t.Log("present") } else { t.Log("fallback") }'
 exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) > 0' --source '{ t.Fatal("fallback") }'

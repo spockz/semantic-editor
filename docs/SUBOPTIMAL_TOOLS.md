@@ -3624,3 +3624,11 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed: the request exceeded its deadline without returning review findings.
 - Workaround: continue coordinator review and require worker fixes plus observable contract tests; do not treat the missing response as approval.
 - Root cause: the review service did not complete within its request deadline; no narrower cause is established.
+
+## 2026-10-03: semantic move could not resolve operation package dependencies
+
+- Tool: `semantic_move_construct` via the local `semedit move-construct` CLI.
+- Target: move `loadContractSnapshot` from `internal/operation/wire_contracts.go` to `internal/operation/wire_contract_snapshot.go`.
+- Observed failure: package name resolution for `golang.org/x/tools/go/packages` exited with status 1. After linking the cached tools module into the worktree-local cache, the CLI itself could not build because its local module cache lacked Cobra, TOML, YAML, `x/sync`, and `x/mod`; network resolution failed with DNS errors.
+- Workaround: use a targeted structural patch to split the operation files after verifying the affected tests.
+- Root cause: CLI semantic operations use the selected worktree's `.scratch/go/mod`, while the configured shared module cache contains the required dependencies. The worktree-local cache was incomplete and network access was unavailable.

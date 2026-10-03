@@ -758,53 +758,74 @@ func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 }
 
 func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
-	for _, test := range []struct{ name, file, destination string }{
-		{name: "file", file: "source-link.go", destination: "dest.go"},
-		{name: "directory", file: "source.go", destination: "linked/dest.go"},
+	for _, test := range []moveSymlinkCase{
+		{name: "file", source: "source-link.go", destination: "dest.go"},
+		{name: "directory", source: "source.go", destination: "linked/dest.go"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovesymlink\n\ngo 1.23\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "source.go"), []byte("package batchmovesymlink\n\nfunc MoveMe() int { return 3 }\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Mkdir(filepath.Join(root, "real"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(root, "real", "dest.go"), []byte("package batchmovesymlink\n"), 0o600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(filepath.Join(root, "source.go"), filepath.Join(root, "source-link.go")); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
-				t.Fatal(err)
-			}
-			sourceBefore := readFixtureFile(t, filepath.Join(root, "source.go"))
-			destinationBefore := readFixtureFile(t, filepath.Join(root, "real", "dest.go"))
-			file := test.file
-			if file == "" {
-				file = "source.go"
-			}
-			response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
-				Tool:   "semantic_move_construct",
-				Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, file, test.destination)),
-			}}, false)
-			if err == nil || !strings.Contains(err.Error(), "symlink") {
-				t.Fatalf("symlink move error = %v, response = %+v", err, response)
-			}
-			if sourceAfter := readFixtureFile(t, filepath.Join(root, "source.go")); !bytes.Equal(sourceBefore, sourceAfter) {
-				t.Fatalf("symlink refusal changed source: %q", sourceAfter)
-			}
-			if destinationAfter := readFixtureFile(t, filepath.Join(root, "real", "dest.go")); !bytes.Equal(destinationBefore, destinationAfter) {
-				t.Fatalf("symlink refusal changed destination: %q", destinationAfter)
-			}
+			assertMoveSymlinkRefused(t, test)
 		})
+	}
+}
+
+type moveSymlinkCase struct {
+	name        string
+	source      string
+	destination string
+}
+
+func assertMoveSymlinkRefused(t *testing.T, test moveSymlinkCase) {
+	t.Helper()
+	root := createMoveSymlinkWorkspace(t)
+	sourcePath := filepath.Join(root, "source.go")
+	destinationPath := filepath.Join(root, "real", "dest.go")
+	sourceBefore := readFixtureFile(t, sourcePath)
+	destinationBefore := readFixtureFile(t, destinationPath)
+	response, err := executeMoveSymlinkCase(root, test)
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlink move error = %v, response = %+v", err, response)
+	}
+	assertFixtureBytesUnchanged(t, sourcePath, sourceBefore, "source")
+	assertFixtureBytesUnchanged(t, destinationPath, destinationBefore, "destination")
+}
+
+func createMoveSymlinkWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	for path, content := range map[string]string{
+		"go.mod":       "module example.com/batchmovesymlink\n\ngo 1.23\n",
+		"source.go":    "package batchmovesymlink\n\nfunc MoveMe() int { return 3 }\n",
+		"dest.go":      "package batchmovesymlink\n",
+		"real/dest.go": "package batchmovesymlink\n",
+	} {
+		fullPath := filepath.Join(root, path)
+		if err := os.MkdirAll(filepath.Dir(fullPath), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fullPath, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(root, "source.go"), filepath.Join(root, "source-link.go")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func executeMoveSymlinkCase(root string, test moveSymlinkCase) (*mcp.BatchResponse, error) {
+	return mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+		Tool:   "semantic_move_construct",
+		Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, test.source, test.destination)),
+	}}, false)
+}
+
+func assertFixtureBytesUnchanged(t *testing.T, path string, before []byte, label string) {
+	t.Helper()
+	if after := readFixtureFile(t, path); !bytes.Equal(before, after) {
+		t.Fatalf("symlink refusal changed %s: %q", label, after)
 	}
 }
 
