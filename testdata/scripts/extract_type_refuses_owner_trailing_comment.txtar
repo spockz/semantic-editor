@@ -1,0 +1,21 @@
+# A trailing owner comment must remain attached to its original declaration.
+! exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'trailing comment'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypeownercomment
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+} // cache owns entries
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+} // cache owns entries

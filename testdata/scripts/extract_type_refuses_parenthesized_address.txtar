@@ -1,0 +1,25 @@
+# Parentheses do not make an address-taken field safe to move.
+! exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'address-taken'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypeparenaddr
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+
+func entries(c *cache) *map[string]int { return &((c.entries)) }
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+
+func entries(c *cache) *map[string]int { return &((c.entries)) }

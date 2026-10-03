@@ -23,13 +23,14 @@ import (
 )
 
 type structuralSnapshot struct {
-	Root     string
-	File     string
-	Sources  map[string][]byte
-	Packages []*packages.Package
-	Buffer   *sourcebuf.Buffer
-	Ctx      context.Context
-	owned    bool
+	Root          string
+	WorkspaceRoot string
+	File          string
+	Sources       map[string][]byte
+	Packages      []*packages.Package
+	Buffer        *sourcebuf.Buffer
+	Ctx           context.Context
+	owned         bool
 }
 
 func structuralModuleRoot(selected string) (string, error) {
@@ -153,6 +154,10 @@ func loadStructuralPackages(ctx context.Context, root string, extra map[string][
 }
 
 func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string) (*structuralSnapshot, error) {
+	workspaceRoot, err := filepath.Abs(cc.WorkDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve structural workspace root %q: %w", cc.WorkDir, err)
+	}
 	selected := resolveWorkPath(cc.WorkDir, file)
 	absolute, err := filepath.Abs(selected)
 	if err != nil {
@@ -186,7 +191,7 @@ func prepareStructuralSnapshot(ctx context.Context, cc CallContext, file string)
 	if analyzed, ok := sources[absolute]; !ok || !bytes.Equal(analyzed, selectedSource) {
 		return nil, fmt.Errorf("structural target %q is not bound to the analyzed package snapshot", file)
 	}
-	return &structuralSnapshot{Root: root, File: absolute, Sources: sources, Packages: loaded, Buffer: buffer, Ctx: ctx, owned: owned}, nil
+	return &structuralSnapshot{Root: root, WorkspaceRoot: workspaceRoot, File: absolute, Sources: sources, Packages: loaded, Buffer: buffer, Ctx: ctx, owned: owned}, nil
 }
 
 func (snapshot *structuralSnapshot) validateOutput(output []byte) error {

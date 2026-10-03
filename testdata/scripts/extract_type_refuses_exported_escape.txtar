@@ -1,0 +1,29 @@
+# Exported API signatures can expose this private owner to external consumers.
+! semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'referenced by an exported declaration'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypeescape
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+
+func newOpaqueCache() any { return &cache{} }
+
+func NewCache() any { return newOpaqueCache() }
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+
+func newOpaqueCache() any { return &cache{} }
+
+func NewCache() any { return newOpaqueCache() }

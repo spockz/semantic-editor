@@ -1,0 +1,96 @@
+# Typed field identity must keep a same-offset field on another struct unchanged with a same-package test variant and a later target file.
+exec semedit extract-type --file z_cache.go --symbol cacheState --in-type cache --members '[{"file":"z_cache.go","symbol":"cache.entries"}]' --field state
+cmp z_cache.go .scratch/want/z_cache.go
+cmp a_other.go .scratch/want/a_other.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extracttypesameoffset
+
+go 1.24
+-- a_other.go --
+package cache
+
+type other struct {
+	entries []int
+}
+-- z_cache.go --
+package cache
+
+type cache struct {
+	entries []int
+	limit   int
+}
+
+type observation struct {
+	other   other
+	current cache
+}
+
+func (o *observation) Count() int {
+	return len(o.other.entries) + len(o.current.entries)
+}
+
+func populatedObservation() observation {
+	value := observation{}
+	value.other.entries = []int{1}
+	value.current.entries = []int{2}
+	return value
+}
+
+-- z_cache_test.go --
+package cache
+
+import "testing"
+
+func TestExtractTypePreservesSameOffsetField(t *testing.T) {
+	value := populatedObservation()
+	if got := value.Count(); got != 2 {
+		t.Fatalf("Count() = %d, want 2", got)
+	}
+}
+-- .scratch/want/a_other.go --
+package cache
+
+type other struct {
+	entries []int
+}
+-- .scratch/want/z_cache.go --
+package cache
+
+type cache struct {
+	state cacheState
+	limit   int
+}
+
+type cacheState struct {
+	entries []int
+}
+
+type observation struct {
+	other   other
+	current cache
+}
+
+func (o *observation) Count() int {
+	return len(o.other.entries) + len(o.current.state.entries)
+}
+
+func populatedObservation() observation {
+	value := observation{}
+	value.other.entries = []int{1}
+	value.current.state.entries = []int{2}
+	return value
+}
+
+-- .scratch/want/z_cache_test.go --
+package cache
+
+import "testing"
+
+func TestExtractTypePreservesSameOffsetField(t *testing.T) {
+	value := populatedObservation()
+	if got := value.Count(); got != 2 {
+		t.Fatalf("Count() = %d, want 2", got)
+	}
+}

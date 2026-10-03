@@ -1,0 +1,43 @@
+# Extracts one direct private field and rewrites only typed selectors in the selected file.
+exec semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+cmp cache.go .scratch/want/cache.go
+stdout 'Extracted selected fields into a composed Go struct type.'
+
+-- go.mod --
+module example.com/extracttype
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+	limit   int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.entries[key]
+	if ok {
+		return value, true
+	}
+	return c.limit, false
+}
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	state cacheState
+	limit   int
+}
+
+type cacheState struct {
+	entries map[string]int
+}
+
+func (c *cache) Lookup(key string) (int, bool) {
+	value, ok := c.state.entries[key]
+	if ok {
+		return value, true
+	}
+	return c.limit, false
+}

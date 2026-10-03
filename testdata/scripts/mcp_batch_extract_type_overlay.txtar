@@ -1,0 +1,38 @@
+# A second extraction resolves the first child's generated type from the batch working overlay.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout 'applied_working'
+! stdout '"continuations":'
+cmp cache.go .scratch/want/cache.go
+
+-- go.mod --
+module example.com/extracttypebatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_extract_type","params":{"file":"cache.go","symbol":"cacheState","in_type":"cache","members":[{"file":"cache.go","symbol":"cache.entries"}],"field":"state"}},{"tool":"semantic_extract_type","params":{"file":"cache.go","symbol":"entryStore","in_type":"cacheState","members":[{"file":"cache.go","symbol":"cacheState.entries"}],"field":"store"}}]}}}
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+
+func (c *cache) Lookup(key string) int { return c.entries[key] }
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	state cacheState
+}
+
+type cacheState struct {
+	store entryStore
+}
+
+type entryStore struct {
+	entries map[string]int
+}
+
+func (c *cache) Lookup(key string) int { return c.state.store.entries[key] }

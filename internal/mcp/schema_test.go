@@ -220,6 +220,9 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 				switch name {
 				case "semantic_set_doc_comment", "semantic_insert_statement":
 					assertStructuralOutputSchema(t, tool["outputSchema"], name)
+
+				case "semantic_extract_type":
+					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 				case fieldInsertionToolName:
 					assertInsertFieldOutputSchema(t, tool["outputSchema"])
 				case "semantic_insert_composite_element":

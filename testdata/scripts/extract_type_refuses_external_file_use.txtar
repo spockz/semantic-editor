@@ -1,0 +1,30 @@
+# A same-package field reference outside the selected file refuses without changing either source.
+! semedit extract-type --file cache.go --symbol cacheState --in-type cache --members '[{"file":"cache.go","symbol":"cache.entries"}]' --field state
+stderr 'referenced outside the selected file'
+cmp cache.go .scratch/want/cache.go
+cmp use.go .scratch/want/use.go
+
+-- go.mod --
+module example.com/extracttype
+
+go 1.24
+-- cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+-- use.go --
+package cache
+
+func lookup(c *cache, key string) int { return c.entries[key] }
+-- .scratch/want/cache.go --
+package cache
+
+type cache struct {
+	entries map[string]int
+}
+-- .scratch/want/use.go --
+package cache
+
+func lookup(c *cache, key string) int { return c.entries[key] }
