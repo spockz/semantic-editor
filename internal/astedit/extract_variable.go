@@ -275,26 +275,8 @@ func variableNameVisible(file *ast.File, target *ast.FuncDecl, name string) bool
 		return true
 	}
 	for _, decl := range file.Decls {
-		switch declaration := decl.(type) {
-		case *ast.FuncDecl:
-			if declaration.Name.Name == name {
-				return true
-			}
-		case *ast.GenDecl:
-			for _, spec := range declaration.Specs {
-				switch item := spec.(type) {
-				case *ast.ValueSpec:
-					for _, ident := range item.Names {
-						if ident.Name == name {
-							return true
-						}
-					}
-				case *ast.TypeSpec:
-					if item.Name.Name == name {
-						return true
-					}
-				}
-			}
+		if nodeDeclaresName(decl, name) {
+			return true
 		}
 	}
 
