@@ -1,0 +1,98 @@
+# One buffered batch resolves local and imported parameter types in the selected subpackage despite an unrelated package's same-named type.
+stdin input.json
+exec semedit mcp
+stdout '"name":"semantic_introduce_parameter"'
+stdout '"isError":false'
+cmp service/service.go .scratch/want/service.go
+cmp service/calls.go .scratch/want/calls.go
+cmp service/other.go .scratch/want/other.go
+cmp service/service_test.go .scratch/want/service_test.go
+exec go test ./...
+-- go.mod --
+module example.com/introduceparameterscopebatch
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"service/calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_introduce_parameter","params":{"file":"service/service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}],"discriminator":"defaultMode"}},{"tool":"semantic_introduce_parameter","params":{"file":"service/service.go","symbol":"transformImported","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"step","type":"imported.Mode"},"argument":"4"}],"discriminator":"importedDefault"}},{"tool":"semantic_insert_function","params":{"file":"service/calls.go","source":"func later() int { return transform(9, 3) }"}}]}}}
+-- aother/mode.go --
+package aother
+
+type mode int
+-- types/mode.go --
+package types
+
+type Mode int
+-- service/service.go --
+package service
+
+import imported "example.com/introduceparameterscopebatch/types"
+
+type mode int
+
+const defaultMode mode = 3
+const importedDefault imported.Mode = 4
+
+func transform(id int) int { return id + int(defaultMode) }
+func transformImported(id int) int { return id + int(importedDefault) }
+-- service/calls.go --
+package service
+
+func first() int { return 0 }
+-- service/other.go --
+package service
+
+func second() int { return transform(2) }
+func secondImported() int { return transformImported(2) }
+-- service/service_test.go --
+package service
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(5); got != 8 {
+		t.Fatalf("transform(5) = %d, want 8", got)
+	}
+	if got := transformImported(5); got != 9 {
+		t.Fatalf("transformImported(5) = %d, want 9", got)
+	}
+}
+-- .scratch/want/service.go --
+package service
+
+import imported "example.com/introduceparameterscopebatch/types"
+
+type mode int
+
+const defaultMode mode = 3
+const importedDefault imported.Mode = 4
+
+func transform(id int, mode mode) int                  { return id + int(mode) }
+func transformImported(id int, step imported.Mode) int { return id + int(step) }
+-- .scratch/want/calls.go --
+package service
+
+func first() int {
+	return transform(7, 3)
+}
+
+func later() int { return transform(9, 3) }
+-- .scratch/want/other.go --
+package service
+
+func second() int         { return transform(2, 3) }
+func secondImported() int { return transformImported(2, 4) }
+-- .scratch/want/service_test.go --
+package service
+
+import "testing"
+
+func TestTransform(t *testing.T) {
+	if got := transform(5, 3); got != 8 {
+		t.Fatalf("transform(5) = %d, want 8", got)
+	}
+	if got := transformImported(5, 4); got != 9 {
+		t.Fatalf("transformImported(5) = %d, want 9", got)
+	}
+}

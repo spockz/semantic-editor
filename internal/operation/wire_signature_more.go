@@ -228,6 +228,8 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 	}
 	type typedExpressionEvidence struct {
 		typeAndValue types.TypeAndValue
+		ownerPackage *types.Package
+		ownerPos     token.Pos
 		fset         *token.FileSet
 	}
 	selectedByOccurrence := make(map[expressionOccurrence]typedExpressionEvidence)
@@ -258,9 +260,9 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 					start, end := pkg.Fset.Position(expr.Pos()).Offset, pkg.Fset.Position(expr.End()).Offset
 					if start >= 0 && end > start && end <= len(source) && string(source[start:end]) == strings.TrimSpace(expression) {
 						occurrence := expressionOccurrence{file: filepath.Clean(path), start: start, end: end}
-						evidence := typedExpressionEvidence{typeAndValue: pkg.TypesInfo.Types[expr], fset: pkg.Fset}
+						evidence := typedExpressionEvidence{typeAndValue: pkg.TypesInfo.Types[expr], ownerPackage: pkg.Types, ownerPos: function.Type.Pos(), fset: pkg.Fset}
 						if previous, found := selectedByOccurrence[occurrence]; found {
-							if previous.typeAndValue.Value == nil || previous.typeAndValue.Type == nil || evidence.typeAndValue.Value == nil || evidence.typeAndValue.Type == nil || previous.typeAndValue.Value.Kind() != evidence.typeAndValue.Value.Kind() || !constant.Compare(previous.typeAndValue.Value, token.EQL, evidence.typeAndValue.Value) || !equivalentSignatureVariantType(previous.typeAndValue.Type, previous.fset, evidence.typeAndValue.Type, evidence.fset) {
+							if previous.typeAndValue.Value == nil || previous.typeAndValue.Type == nil || evidence.typeAndValue.Value == nil || evidence.typeAndValue.Type == nil || previous.ownerPackage == nil || evidence.ownerPackage == nil || previous.ownerPackage.Path() != evidence.ownerPackage.Path() || previous.typeAndValue.Value.Kind() != evidence.typeAndValue.Value.Kind() || !constant.Compare(previous.typeAndValue.Value, token.EQL, evidence.typeAndValue.Value) || !equivalentSignatureVariantType(previous.typeAndValue.Type, previous.fset, evidence.typeAndValue.Type, evidence.fset) {
 								selectedByOccurrence[occurrence] = typedExpressionEvidence{}
 							}
 						} else {
@@ -276,40 +278,36 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant")
 	}
 	var selected types.TypeAndValue
+	var selectedOwner *types.Package
+	var selectedPosition token.Pos
+	var selectedFset *token.FileSet
 	for _, evidence := range selectedByOccurrence {
 		selected = evidence.typeAndValue
+		selectedOwner = evidence.ownerPackage
+		selectedPosition = evidence.ownerPos
+		selectedFset = evidence.fset
 	}
-	if selected.Value == nil || selected.Type == nil {
+	if selected.Value == nil || selected.Type == nil || selectedOwner == nil || !selectedPosition.IsValid() || selectedFset == nil {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant with consistent evidence across package variants")
 	}
 	if err := validateClosedSignatureArgument(argument); err != nil {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("validate constant caller argument: %w", err)
 	}
-	var argumentValue constant.Value
-	var argumentType types.Type
-	for _, pkg := range snapshot.Packages {
-		if pkg.Types == nil || pkg.Fset == nil {
-			continue
-		}
-		value, err := types.Eval(pkg.Fset, pkg.Types, token.NoPos, argument)
-		if err == nil && value.Value != nil {
-			argumentValue, argumentType = value.Value, value.Type
-			break
-		}
+	argumentResult, argumentErr := types.Eval(selectedFset, selectedOwner, selectedPosition, argument)
+	if argumentErr != nil {
+		return astedit.SignatureConstantEvidence{}, fmt.Errorf("evaluate caller constant in selected function scope: %w", argumentErr)
 	}
+	argumentValue, argumentType := argumentResult.Value, argumentResult.Type
 	if argumentValue == nil || argumentType == nil || selected.Value.Kind() != argumentValue.Kind() || !constant.Compare(selected.Value, token.EQL, argumentValue) {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("caller argument must be a compile-time constant with the selected expression's value")
 	}
+	targetResult, targetErr := types.Eval(selectedFset, selectedOwner, selectedPosition, parameterType)
+	if targetErr != nil {
+		return astedit.SignatureConstantEvidence{}, fmt.Errorf("evaluate parameter type in selected function scope: %w", targetErr)
+	}
 	var targetType types.Type
-	for _, pkg := range snapshot.Packages {
-		if pkg.Types == nil || pkg.Fset == nil {
-			continue
-		}
-		value, err := types.Eval(pkg.Fset, pkg.Types, token.NoPos, parameterType)
-		if err == nil && value.IsType() {
-			targetType = value.Type
-			break
-		}
+	if targetResult.IsType() {
+		targetType = targetResult.Type
 	}
 	if targetType == nil || !types.AssignableTo(selected.Type, targetType) || !types.AssignableTo(argumentType, targetType) {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected and caller constants must both be assignable to the appended parameter type")
