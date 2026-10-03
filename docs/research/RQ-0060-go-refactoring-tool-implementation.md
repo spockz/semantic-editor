@@ -43,7 +43,7 @@ Worker branches may advance while this document is edited. The coordinator's loc
 
 ## Reviewed flow checkpoint: 2026-10-03
 
-The remaining `flow-*` branches have completed the worker fix/review cycle. The coordinator combines their public implementations sequentially, preserving the newer mainline schema, session, buffer, and verification contracts. Independent semantic review approved signature evaluation in the selected package/file scope and the type-extraction identity, coordinate, address-taking, and comment safeguards.
+The remaining `flow-*` branches have completed the worker fix/review cycle. The coordinator combines their public implementations sequentially, preserving the newer mainline schema, session, buffer, and verification contracts. Independent semantic review approved signature evaluation in the selected package/file scope and the type-extraction identity, coordinate, address-taking, and comment safeguards. [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md) records the accepted signature bounds and separates the classified `function_target` from generic receipt identities routed to inspection.
 
 Final integration requires the combined `make check` with bounded package concurrency and a canonical project-local temporary directory before advancing main. The main checkout's benchmark-owner edits remain uncommitted and are preserved independently. This delivery covers the bounded advertised operations and their batches; it does not close the broader handovers below or resolve this research question.
 
