@@ -82,6 +82,13 @@ type renameSpanPlan struct {
 	selectedEdited bool
 }
 
+type preparedRename struct {
+	params  map[string]any
+	start   int
+	end     int
+	oldName string
+}
+
 func renameInSession(ctx context.Context, session *godiagnostics.Session, file string, line, column int, newName string) error {
 	return renameInSessionFiles(ctx, session, file, line, column, newName, nil)
 }
@@ -333,108 +340,107 @@ func renameInSessionFiles(ctx context.Context, session *godiagnostics.Session, f
 	if !pathutil.PathWithin(session.Root, document.Path) {
 		return errors.New("rename target is outside the module")
 	}
-	if !token.IsIdentifier(newName) || newName == "_" {
-		return fmt.Errorf("invalid rename identifier %q", newName)
-	}
-	if line < 1 || column < 1 {
-		return errors.New("invalid rename coordinate")
-	}
-	offset := 0
-	for n := 1; n < line; n++ {
-		next := bytes.IndexByte(document.Content[offset:], '\n')
-		if next < 0 {
-			return errors.New("rename line is outside source")
-		}
-		offset += next + 1
-	}
-	start := offset
-	offset += column - 1
-	end := bytes.IndexByte(document.Content[start:], '\n')
-	if end < 0 {
-		end = len(document.Content) - start
-	}
-	if offset > start+end || !utf8.Valid(document.Content[:offset]) {
-		return errors.New("rename column is outside a UTF-8 source boundary")
-	}
-	position := backend.PositionFromByteOffset(document.Content, offset)
-	params := map[string]any{"textDocument": map[string]any{"uri": document.URI}, "position": position}
-	raw, err := session.Request(ctx, "textDocument/prepareRename", params)
+	offset, err := selectedRenameOffset(document.Content, line, column, newName)
 	if err != nil {
-		return fmt.Errorf("prepare Go rename: %w", err)
+		return err
 	}
-	var prepared struct {
-		Range       *renameRange `json:"range"`
-		Placeholder string       `json:"placeholder"`
-	}
-	if decodeErr := json.Unmarshal(raw, &prepared); decodeErr != nil {
-		return fmt.Errorf("decode prepared rename: %w", decodeErr)
-	}
-	if prepared.Range == nil {
-		return errors.New("gopls declined rename")
-	}
-	begin, finish, err := renameOffsets(document.Content, prepared.Range)
+	prepared, err := prepareSelectedRename(ctx, session, document, offset)
 	if err != nil {
-		return fmt.Errorf("prepared rename range: %w", err)
+		return err
 	}
-	if offset < begin || offset >= finish || !token.IsIdentifier(string(document.Content[begin:finish])) || prepared.Placeholder != string(document.Content[begin:finish]) {
-		return errors.New("prepared rename does not match the selected identifier")
-	}
-	params["newName"] = newName
-	raw, err = session.Request(ctx, "textDocument/rename", params)
+	prepared.params["newName"] = newName
+	raw, err := session.Request(ctx, "textDocument/rename", prepared.params)
 	if err != nil {
 		return fmt.Errorf("request Go rename: %w", err)
 	}
-	outputs, err := planRenameEdits(session, raw, document, begin, finish, prepared.Placeholder, newName)
+	outputs, err := planRenameEdits(session, raw, document, prepared.start, prepared.end, prepared.oldName, newName)
 	if err != nil {
 		return err
 	}
 	if err := session.AssertCurrent(); err != nil {
 		return err
 	}
-	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
-		changes := make([]sourcebuf.Change, 0, len(outputs))
-		for _, output := range outputs {
-			changes = append(changes, sourcebuf.Change{Path: output.document.Path, Before: output.document.Content, After: output.content})
-		}
-		if err := buffer.Apply(ctx, changes); err != nil {
-			return err
-		}
-		if record != nil {
-			record(renameOutputFiles(outputs))
-		}
-		return nil
+	return publishRenameOutputs(ctx, session, outputs, record)
+}
+
+func selectedRenameOffset(source []byte, line, column int, newName string) (int, error) {
+	if !token.IsIdentifier(newName) || newName == "_" {
+		return 0, fmt.Errorf("invalid rename identifier %q", newName)
 	}
+	if line < 1 || column < 1 {
+		return 0, errors.New("invalid rename coordinate")
+	}
+	offset := 0
+	for n := 1; n < line; n++ {
+		next := bytes.IndexByte(source[offset:], '\n')
+		if next < 0 {
+			return 0, errors.New("rename line is outside source")
+		}
+		offset += next + 1
+	}
+	lineStart := offset
+	offset += column - 1
+	lineEnd := bytes.IndexByte(source[lineStart:], '\n')
+	if lineEnd < 0 {
+		lineEnd = len(source) - lineStart
+	}
+	if offset > lineStart+lineEnd || !utf8.Valid(source[:offset]) {
+		return 0, errors.New("rename column is outside a UTF-8 source boundary")
+	}
+	return offset, nil
+}
+
+func prepareSelectedRename(ctx context.Context, session *godiagnostics.Session, document godiagnostics.Document, offset int) (preparedRename, error) {
+	params := map[string]any{"textDocument": map[string]any{"uri": document.URI}, "position": backend.PositionFromByteOffset(document.Content, offset)}
+	raw, err := session.Request(ctx, "textDocument/prepareRename", params)
+	if err != nil {
+		return preparedRename{}, fmt.Errorf("prepare Go rename: %w", err)
+	}
+	var prepared struct {
+		Range       *renameRange `json:"range"`
+		Placeholder string       `json:"placeholder"`
+	}
+	if decodeErr := json.Unmarshal(raw, &prepared); decodeErr != nil {
+		return preparedRename{}, fmt.Errorf("decode prepared rename: %w", decodeErr)
+	}
+	if prepared.Range == nil {
+		return preparedRename{}, errors.New("gopls declined rename")
+	}
+	begin, finish, err := renameOffsets(document.Content, prepared.Range)
+	if err != nil {
+		return preparedRename{}, fmt.Errorf("prepared rename range: %w", err)
+	}
+	if offset < begin || offset >= finish || !token.IsIdentifier(string(document.Content[begin:finish])) || prepared.Placeholder != string(document.Content[begin:finish]) {
+		return preparedRename{}, errors.New("prepared rename does not match the selected identifier")
+	}
+	return preparedRename{params: params, start: begin, end: finish, oldName: prepared.Placeholder}, nil
+}
+
+func publishRenameOutputs(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string)) error {
+	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
+		return publishBufferedRename(ctx, buffer, outputs, record)
+	}
+	return publishDiskRename(ctx, session, outputs, record)
+}
+
+func publishBufferedRename(ctx context.Context, buffer *sourcebuf.Buffer, outputs []renameOutput, record func([]string)) error {
+	changes := make([]sourcebuf.Change, 0, len(outputs))
+	for _, output := range outputs {
+		changes = append(changes, sourcebuf.Change{Path: output.document.Path, Before: output.document.Content, After: output.content})
+	}
+	if err := buffer.Apply(ctx, changes); err != nil {
+		return err
+	}
+	if record != nil {
+		record(renameOutputFiles(outputs))
+	}
+	return nil
+}
+
+func publishDiskRename(ctx context.Context, session *godiagnostics.Session, outputs []renameOutput, record func([]string)) error {
 	published := make(map[string][]byte, len(outputs))
 	for index, output := range outputs {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("rename published %d of %d files: %w", index, len(outputs), err)
-		}
-		if err := session.AssertRevision(published); err != nil {
-			return fmt.Errorf("rename published %d of %d files: %w", index, len(outputs), err)
-		}
-		current, err := session.Snapshot(output.document.Path)
-		if err != nil {
-			return fmt.Errorf("rename published %d of %d files: %w", index, len(outputs), err)
-		}
-		if !bytes.Equal(current.Content, output.document.Content) {
-			return fmt.Errorf("rename published %d of %d files: source changed", index, len(outputs))
-		}
-		if err := sourcebuf.WriteFileChecked(ctx, output.document.Path, output.content, func() error {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			if err := session.AssertRevision(published); err != nil {
-				return err
-			}
-			current, err := session.Snapshot(output.document.Path)
-			if err != nil {
-				return err
-			}
-			if current.Path != output.document.Path || !os.SameFile(current.Info, output.document.Info) || !bytes.Equal(current.Content, output.document.Content) {
-				return errors.New("rename source changed during staging")
-			}
-			return nil
-		}); err != nil {
+		if err := writeRenameOutput(ctx, session, published, output); err != nil {
 			return fmt.Errorf("rename published %d of %d files: %w", index, len(outputs), err)
 		}
 		published[output.document.Path] = output.content
@@ -443,6 +449,38 @@ func renameInSessionFiles(ctx context.Context, session *godiagnostics.Session, f
 		record(renameOutputFiles(outputs))
 	}
 	return nil
+}
+
+func writeRenameOutput(ctx context.Context, session *godiagnostics.Session, published map[string][]byte, output renameOutput) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := session.AssertRevision(published); err != nil {
+		return err
+	}
+	current, err := session.Snapshot(output.document.Path)
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(current.Content, output.document.Content) {
+		return errors.New("source changed")
+	}
+	return sourcebuf.WriteFileChecked(ctx, output.document.Path, output.content, func() error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := session.AssertRevision(published); err != nil {
+			return err
+		}
+		staged, err := session.Snapshot(output.document.Path)
+		if err != nil {
+			return err
+		}
+		if staged.Path != output.document.Path || !os.SameFile(staged.Info, output.document.Info) || !bytes.Equal(staged.Content, output.document.Content) {
+			return errors.New("rename source changed during staging")
+		}
+		return nil
+	})
 }
 
 func renameOutputFiles(outputs []renameOutput) []string {
