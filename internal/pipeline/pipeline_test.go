@@ -49,9 +49,9 @@ func TestREQ004WriteAtomicPreservesPermissionsAndAdvancesMtime(t *testing.T) {
 	if err := os.Chmod(target, 0o640); err != nil {
 		t.Fatalf("chmod initial file: %v", err)
 	}
-	oldInfo, err := os.Stat(target)
-	if err != nil {
-		t.Fatalf("stat initial file: %v", err)
+	oldInfo, statErr := os.Stat(target)
+	if statErr != nil {
+		t.Fatalf("stat initial file: %v", statErr)
 	}
 	if err := pipeline.WriteAtomic(target, []byte("new")); err != nil {
 		t.Fatalf("atomic write failed: %v", err)
@@ -312,18 +312,20 @@ func TestOrganizeImportsReportKeepsOnlyWrittenPathsAndPartialWrites(t *testing.T
 }
 
 func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
+	root, fixtures, unformatted, outsideFile, emptyDir := createWorkspaceSelectionFixture(t)
+	assertWorkspaceFileSelection(t, root, emptyDir)
+	assertWorkspaceFormatting(t, root, emptyDir)
+	assertWorkspaceFormattedFiles(t, root, fixtures)
+	assertExplicitSymlinkBehavior(t, root, outsideFile, unformatted)
+}
+
+func createWorkspaceSelectionFixture(t *testing.T) (string, map[string][]byte, []byte, string, string) {
+	t.Helper()
 	root := t.TempDir()
 	t.Setenv("GOTMPDIR", filepath.Dir(root))
 	unformatted := []byte("package   main\n\nfunc   main(  )   {}\n")
 	invalid := []byte("package invalid {\n")
-	fixtures := map[string][]byte{
-		"valid.go":                      unformatted,
-		".scratch/cache.go":             invalid,
-		".git/generated.go":             invalid,
-		"vendor/module/dependency.go":   invalid,
-		"module-cache/example/cache.go": invalid,
-		"mod/build/ordinary.go":         unformatted,
-	}
+	fixtures := map[string][]byte{"valid.go": unformatted, ".scratch/cache.go": invalid, ".git/generated.go": invalid, "vendor/module/dependency.go": invalid, "module-cache/example/cache.go": invalid, "mod/build/ordinary.go": unformatted}
 	for name, data := range fixtures {
 		target := filepath.Join(root, name)
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
@@ -333,69 +335,73 @@ func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
 			t.Fatalf("write fixture %q: %v", name, err)
 		}
 	}
-	cacheRoot := filepath.Join(root, "module-cache")
-	t.Setenv("GOMODCACHE", cacheRoot)
-
-	outside := t.TempDir()
-	outsideFile := filepath.Join(outside, "outside.go")
+	t.Setenv("GOMODCACHE", filepath.Join(root, "module-cache"))
+	outsideFile := filepath.Join(t.TempDir(), "outside.go")
 	if err := os.WriteFile(outsideFile, unformatted, 0o640); err != nil {
 		t.Fatalf("write outside source: %v", err)
 	}
-	if err := os.Symlink(outside, filepath.Join(root, "linked-directory")); err != nil {
+	if err := os.Symlink(filepath.Dir(outsideFile), filepath.Join(root, "linked-directory")); err != nil {
 		t.Skipf("symlinks are unavailable: %v", err)
 	}
 	if err := os.Symlink(outsideFile, filepath.Join(root, "linked.go")); err != nil {
 		t.Skipf("file symlinks are unavailable: %v", err)
 	}
-
-	relativeFiles, err := pipeline.GoFiles(root, ".")
-	if err != nil {
-		t.Fatalf("select relative workspace root: %v", err)
-	}
-	if got, want := strings.Join(relativeFiles, ","), "mod/build/ordinary.go,valid.go"; got != want {
-		t.Fatalf("selected relative files = %q, want %q", got, want)
-	}
-	absoluteFiles, err := pipeline.GoFiles(root, root)
-	if err != nil {
-		t.Fatalf("select absolute workspace root: %v", err)
-	}
-	if len(absoluteFiles) != len(relativeFiles) || !filepath.IsAbs(absoluteFiles[0]) {
-		t.Fatalf("selected absolute files = %v, want two absolute source paths", absoluteFiles)
-	}
-	explicitScratch, err := pipeline.GoFiles(root, filepath.Join(".scratch", "cache.go"))
-	if err != nil {
-		t.Fatalf("select explicit scratch file: %v", err)
-	}
-	if len(explicitScratch) != 1 {
-		t.Fatalf("explicit scratch selection = %v, want its source file", explicitScratch)
-	}
 	emptyDir := filepath.Join(root, "empty")
 	if err := os.Mkdir(emptyDir, 0o700); err != nil {
 		t.Fatalf("create empty directory: %v", err)
 	}
-	emptyFiles, err := pipeline.GoFiles(root, emptyDir)
-	if err != nil {
-		t.Fatalf("select empty directory: %v", err)
+	return root, fixtures, unformatted, outsideFile, emptyDir
+}
+
+func assertWorkspaceFileSelection(t *testing.T, root, emptyDir string) {
+	t.Helper()
+	relativeFiles, selectErr := pipeline.GoFiles(root, ".")
+	if selectErr != nil {
+		t.Fatalf("select relative workspace root: %v", selectErr)
+	}
+	if got, want := strings.Join(relativeFiles, ","), "mod/build/ordinary.go,valid.go"; got != want {
+		t.Fatalf("selected relative files = %q, want %q", got, want)
+	}
+	absoluteFiles, absErr := pipeline.GoFiles(root, root)
+	if absErr != nil {
+		t.Fatalf("select absolute workspace root: %v", absErr)
+	}
+	if len(absoluteFiles) != len(relativeFiles) || !filepath.IsAbs(absoluteFiles[0]) {
+		t.Fatalf("selected absolute files = %v, want two absolute source paths", absoluteFiles)
+	}
+	scratchFiles, scratchErr := pipeline.GoFiles(root, filepath.Join(".scratch", "cache.go"))
+	if scratchErr != nil {
+		t.Fatalf("select explicit scratch file: %v", scratchErr)
+	}
+	if len(scratchFiles) != 1 {
+		t.Fatalf("explicit scratch selection = %v, want its source file", scratchFiles)
+	}
+	emptyFiles, emptyErr := pipeline.GoFiles(root, emptyDir)
+	if emptyErr != nil {
+		t.Fatalf("select empty directory: %v", emptyErr)
 	}
 	if len(emptyFiles) != 0 {
 		t.Fatalf("empty directory selected files: %v", emptyFiles)
 	}
+	if _, missingErr := pipeline.GoFiles(root, filepath.Join(root, "missing")); missingErr == nil {
+		t.Fatal("selecting a missing path succeeded")
+	}
+}
+
+func assertWorkspaceFormatting(t *testing.T, root, emptyDir string) {
+	t.Helper()
 	if err := pipeline.Format(context.Background(), root); err != nil {
 		t.Fatalf("format without paths: %v", err)
 	}
 	if err := pipeline.Format(context.Background(), root, emptyDir); err != nil {
 		t.Fatalf("format empty directory: %v", err)
 	}
-	if _, err := pipeline.GoFiles(root, filepath.Join(root, "missing")); err == nil {
-		t.Fatal("selecting a missing path succeeded")
-	}
 	if err := pipeline.Format(context.Background(), root, filepath.Join(root, "missing")); err == nil {
 		t.Fatal("formatting a missing path succeeded")
 	}
-
-	needsFormatting, err := pipeline.NeedsFormatting(context.Background(), root, ".")
-	if err != nil {
-		t.Fatalf("check workspace formatting: %v", err)
+	needsFormatting, checkErr := pipeline.NeedsFormatting(context.Background(), root, ".")
+	if checkErr != nil {
+		t.Fatalf("check workspace formatting: %v", checkErr)
 	}
 	if !needsFormatting {
 		t.Fatal("workspace with unformatted sources was reported formatted")
@@ -403,27 +409,30 @@ func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
 	if err := pipeline.Format(context.Background(), root, "."); err != nil {
 		t.Fatalf("format selected workspace sources: %v", err)
 	}
-	needsFormatting, err = pipeline.NeedsFormatting(context.Background(), root, ".")
-	if err != nil {
-		t.Fatalf("recheck workspace formatting: %v", err)
+	needsFormatting, checkErr = pipeline.NeedsFormatting(context.Background(), root, ".")
+	if checkErr != nil {
+		t.Fatalf("recheck workspace formatting: %v", checkErr)
 	}
 	if needsFormatting {
 		t.Fatal("workspace remains unformatted after formatting")
 	}
+}
 
+func assertWorkspaceFormattedFiles(t *testing.T, root string, fixtures map[string][]byte) {
+	t.Helper()
 	for name, want := range fixtures {
 		target := filepath.Join(root, name)
-		got, err := os.ReadFile(target)
-		if err != nil {
-			t.Fatalf("read fixture %q: %v", name, err)
+		got, readErr := os.ReadFile(target)
+		if readErr != nil {
+			t.Fatalf("read fixture %q: %v", name, readErr)
 		}
 		if name == "valid.go" || name == "mod/build/ordinary.go" {
 			if string(got) != "package main\n\nfunc main() {}\n" {
 				t.Errorf("formatted fixture %q = %q", name, got)
 			}
-			info, err := os.Stat(target)
-			if err != nil {
-				t.Fatalf("stat formatted fixture %q: %v", name, err)
+			info, statErr := os.Stat(target)
+			if statErr != nil {
+				t.Fatalf("stat formatted fixture %q: %v", name, statErr)
 			}
 			if gotMode := info.Mode().Perm(); gotMode != 0o640 {
 				t.Errorf("formatted fixture %q mode = %o, want %o", name, gotMode, 0o640)
@@ -434,23 +443,27 @@ func TestGoFilesWorkspaceSelectionAndFormat(t *testing.T) {
 			t.Errorf("excluded fixture %q changed: got %q, want %q", name, got, want)
 		}
 	}
-	gotOutside, err := os.ReadFile(outsideFile)
-	if err != nil {
-		t.Fatalf("read outside source: %v", err)
+}
+
+func assertExplicitSymlinkBehavior(t *testing.T, root, outsideFile string, original []byte) {
+	t.Helper()
+	gotOutside, readErr := os.ReadFile(outsideFile)
+	if readErr != nil {
+		t.Fatalf("read outside source: %v", readErr)
 	}
-	if !bytes.Equal(gotOutside, unformatted) {
+	if !bytes.Equal(gotOutside, original) {
 		t.Errorf("source reachable through symlinks changed: %q", gotOutside)
 	}
-	directoryLink, err := pipeline.GoFiles(root, filepath.Join(root, "linked-directory"))
-	if err != nil {
-		t.Fatalf("select explicit directory symlink: %v", err)
+	directoryLink, dirErr := pipeline.GoFiles(root, filepath.Join(root, "linked-directory"))
+	if dirErr != nil {
+		t.Fatalf("select explicit directory symlink: %v", dirErr)
 	}
 	if len(directoryLink) != 0 {
 		t.Fatalf("directory symlink selected files: %v", directoryLink)
 	}
-	explicitLink, err := pipeline.GoFiles(root, filepath.Join(root, "linked.go"))
-	if err != nil {
-		t.Fatalf("select explicit file symlink: %v", err)
+	explicitLink, fileErr := pipeline.GoFiles(root, filepath.Join(root, "linked.go"))
+	if fileErr != nil {
+		t.Fatalf("select explicit file symlink: %v", fileErr)
 	}
 	if len(explicitLink) != 1 {
 		t.Fatalf("explicit file symlink selection = %v, want one source", explicitLink)
