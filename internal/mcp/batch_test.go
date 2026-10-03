@@ -785,6 +785,8 @@ func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
 			if err := os.Symlink(filepath.Join(root, "real"), filepath.Join(root, "linked")); err != nil {
 				t.Fatal(err)
 			}
+			sourceBefore := readFixtureFile(t, filepath.Join(root, "source.go"))
+			destinationBefore := readFixtureFile(t, filepath.Join(root, "real", "dest.go"))
 			file := test.file
 			if file == "" {
 				file = "source.go"
@@ -793,12 +795,24 @@ func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
 				Tool:   "semantic_move_construct",
 				Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"destination_file":%q,"symbol":"MoveMe"}`, file, test.destination)),
 			}}, false)
-			if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "symlink") {
-				t.Fatalf("symlink move response = %+v, err = %v", response, err)
+			if err == nil || !strings.Contains(err.Error(), "symlink") {
+				t.Fatalf("symlink move error = %v, response = %+v", err, response)
 			}
-			if strings.Contains(response.FinalDiff, "func MoveMe") {
-				t.Fatalf("symlink refusal changed a target: %s", response.FinalDiff)
+			if sourceAfter := readFixtureFile(t, filepath.Join(root, "source.go")); !bytes.Equal(sourceBefore, sourceAfter) {
+				t.Fatalf("symlink refusal changed source: %q", sourceAfter)
+			}
+			if destinationAfter := readFixtureFile(t, filepath.Join(root, "real", "dest.go")); !bytes.Equal(destinationBefore, destinationAfter) {
+				t.Fatalf("symlink refusal changed destination: %q", destinationAfter)
 			}
 		})
 	}
+}
+
+func readFixtureFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

@@ -14,6 +14,9 @@ cmp api/settings.go want/api/settings.go
 stderr 'ambiguous loop'
 cmp api/loops_test.go want/api/loops_before.go
 exec semedit replace-construct --file api/loops_test.go --in-function TestAmbiguousLoops --kind loop --discriminator item --construct-path 0 --source 'for _, item := range []string{"chosen"} { t.Log(item) }'
+! exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) == 0' --source 'if condition {}'
+stderr 'invalid.*else'
+cmp api/messages_test.go want/api/messages_before.go
 exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind if --discriminator 'len(original) == 0' --source 'if len(original) > 0 { t.Log("present") } else { t.Log("fallback") }'
 exec semedit replace-construct --file api/messages_test.go --in-function TestMessages --kind else --discriminator 'len(original) > 0' --source '{ t.Fatal("fallback") }'
 cmp api/loops_test.go want/api/loops_test.go
@@ -73,6 +76,24 @@ func TestAmbiguousLoops(t *testing.T) {
 	}
 	for _, item := range []string{"second"} {
 		t.Log(item)
+	}
+}
+-- want/api/messages_before.go --
+package api
+
+import "testing"
+
+func TestMessages(t *testing.T) {
+	original := []string{"old"}
+	if len(original) == 0 {
+		t.Fatal("missing originals")
+	} else {
+		t.Log("fallback")
+	}
+	for _, want := range original {
+		if want == "" {
+			t.Fatal(want)
+		}
 	}
 }
 -- want/api/loops_before.go --
