@@ -85,11 +85,11 @@ func TestUndo_CleanRestore(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{
 		Label: "before-edit",
 	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if createErr != nil {
+		t.Fatalf("Create failed: %v", createErr)
 	}
 
 	// Modify file on disk
@@ -121,6 +121,61 @@ func TestUndo_CleanRestore(t *testing.T) {
 	}
 }
 
+func TestUndoReportsUnavailableDiagnosticsAfterRestore(t *testing.T) {
+	dir := t.TempDir()
+	binDir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(binDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goplsPath := filepath.Join(binDir, "gopls")
+	markerPath := filepath.Join(t.TempDir(), "gopls-invoked")
+	if err := os.WriteFile(goplsPath, []byte("#!/bin/sh\nprintf invoked > \"$SEMEDIT_GOPLS_MARKER\"\nexit 23\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SEMEDIT_GOPLS_MARKER", markerPath)
+	file := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module snapshot.test/fixture\n\ngo 1.27\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preimage := []byte("package main\n\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(file, preimage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	snapshotResult, createErr := snapshot.Create(context.Background(), dir, snapshot.CreateOptions{Label: "before-edit"})
+	if createErr != nil {
+		t.Fatal(createErr)
+	}
+	if writeErr := os.WriteFile(file, []byte("package main\n\nfunc Value() int { return 2 }\n"), 0o600); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	result, undoErr := snapshot.Undo(context.Background(), dir, snapshotResult.SnapshotID)
+	if undoErr != nil {
+		t.Fatalf("Undo failed: %v", undoErr)
+	}
+	if result.DiagnosticStatus != "unavailable" || result.DiagnosticError == "" || result.Delta != nil {
+		t.Fatalf("diagnostics outcome = status %q, error %q, delta %#v", result.DiagnosticStatus, result.DiagnosticError, result.Delta)
+	}
+	if !strings.Contains(result.DiagnosticError, "gopls") {
+		t.Fatalf("diagnostic error = %q, want gopls failure", result.DiagnosticError)
+	}
+	marker, markerErr := os.ReadFile(markerPath)
+	if markerErr != nil || string(marker) != "invoked" {
+		t.Fatalf("gopls failure marker = %q, error = %v", marker, markerErr)
+	}
+	if len(result.RestoredFiles) != 1 || result.RestoredFiles[0] != "main.go" {
+		t.Fatalf("restored files = %v", result.RestoredFiles)
+	}
+	// #nosec G304 -- test reads temporary workspace file
+	current, readErr := os.ReadFile(file)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(current, preimage) {
+		t.Fatalf("restored bytes = %q, want %q", current, preimage)
+	}
+}
+
 func TestUndo_ConflictDetection(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -132,11 +187,11 @@ func TestUndo_ConflictDetection(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{
 		Label: "pre-refactor",
 	})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if createErr != nil {
+		t.Fatalf("Create failed: %v", createErr)
 	}
 
 	// Apply intentional staged edit
@@ -195,9 +250,9 @@ func TestUndo_CorruptBlob(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "test"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
+	res, createErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "test"})
+	if createErr != nil {
+		t.Fatalf("Create: %v", createErr)
 	}
 
 	// Mutate on-disk file
@@ -205,9 +260,9 @@ func TestUndo_CorruptBlob(t *testing.T) {
 		t.Fatalf("edit: %v", err)
 	}
 
-	manifest, err := snapshot.GetManifest(dir, res.SnapshotID)
-	if err != nil {
-		t.Fatalf("GetManifest: %v", err)
+	manifest, manifestErr := snapshot.GetManifest(dir, res.SnapshotID)
+	if manifestErr != nil {
+		t.Fatalf("GetManifest: %v", manifestErr)
 	}
 	blobPath := filepath.Join(dir, ".scratch", "snapshots", res.SnapshotID, "blobs", manifest.Files[0].PreimageSHA256)
 
@@ -216,12 +271,12 @@ func TestUndo_CorruptBlob(t *testing.T) {
 		t.Fatalf("tamper blob: %v", err)
 	}
 
-	_, err = snapshot.Undo(ctx, dir, res.SnapshotID)
-	if err == nil {
+	_, undoErr := snapshot.Undo(ctx, dir, res.SnapshotID)
+	if undoErr == nil {
 		t.Fatalf("expected ErrCorruptBlob, got nil")
 	}
-	if !errors.Is(err, snapshot.ErrCorruptBlob) {
-		t.Errorf("expected ErrCorruptBlob, got: %v", err)
+	if !errors.Is(undoErr, snapshot.ErrCorruptBlob) {
+		t.Errorf("expected ErrCorruptBlob, got: %v", undoErr)
 	}
 }
 
@@ -235,9 +290,9 @@ func TestUndo_LatestResolution(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	_, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap1"})
-	if err != nil {
-		t.Fatalf("snap1: %v", err)
+	_, firstCreateErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap1"})
+	if firstCreateErr != nil {
+		t.Fatalf("snap1: %v", firstCreateErr)
 	}
 
 	time.Sleep(10 * time.Millisecond)
@@ -245,9 +300,9 @@ func TestUndo_LatestResolution(t *testing.T) {
 	if err := os.WriteFile(file1, []byte("v2"), 0o600); err != nil {
 		t.Fatalf("v2: %v", err)
 	}
-	snap2, err := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap2"})
-	if err != nil {
-		t.Fatalf("snap2: %v", err)
+	snap2, secondCreateErr := snapshot.Create(ctx, dir, snapshot.CreateOptions{Label: "snap2"})
+	if secondCreateErr != nil {
+		t.Fatalf("snap2: %v", secondCreateErr)
 	}
 
 	// Now modify to v3

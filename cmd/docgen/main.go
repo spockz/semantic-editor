@@ -9,36 +9,58 @@ import (
 )
 
 func main() {
-	rootDir, err := findRepoRoot()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error locating repo root: %v\n", err)
+	if err := runDocgen(os.Args[1:]); err != nil {
+		fmt.Fprintf(os.Stderr, "Error %v\n", err)
 		os.Exit(1)
 	}
+}
 
+func runDocgen(args []string) error {
+	rootDir, rootErr := findRepoRoot()
+	if rootErr != nil {
+		return fmt.Errorf("locating repo root: %w", rootErr)
+	}
+	outputDir, parseErr := parseOutputDir(rootDir, args)
+	if parseErr != nil {
+		return parseErr
+	}
+	if err := prepareOutputDirectories(outputDir); err != nil {
+		return err
+	}
+	if err := removeStaleDocumentation(outputDir); err != nil {
+		return err
+	}
+	return generateDocumentation(rootDir, outputDir)
+}
+
+func parseOutputDir(rootDir string, args []string) (string, error) {
 	outputDir := filepath.Join(rootDir, ".scratch", "docgen")
 	flags := flag.NewFlagSet("docgen", flag.ExitOnError)
 	flags.StringVar(&outputDir, "output-dir", outputDir, "directory for the generated Hugo source tree")
-	if err := flags.Parse(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
-		os.Exit(1)
+	if err := flags.Parse(args); err != nil {
+		return "", fmt.Errorf("parsing flags: %w", err)
 	}
+	return outputDir, nil
+}
+
+func prepareOutputDirectories(outputDir string) error {
 	if err := os.MkdirAll(filepath.Join(outputDir, "content", "docs"), 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating documentation source directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating documentation source directory: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Join(outputDir, "data"), 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating Hugo data directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating Hugo data directory: %w", err)
 	}
 	shortcodesDir := filepath.Join(outputDir, "layouts", "shortcodes")
 	if err := os.RemoveAll(shortcodesDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error removing stale generated shortcodes: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("removing stale generated shortcodes: %w", err)
 	}
 	if err := os.MkdirAll(shortcodesDir, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating Hugo shortcode directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating Hugo shortcode directory: %w", err)
 	}
+	return nil
+}
+
+func removeStaleDocumentation(outputDir string) error {
 	for _, stalePath := range []string{
 		filepath.Join(outputDir, "content", "docs", "index.md"),
 		filepath.Join(outputDir, "content", "docs", "getting-started"),
@@ -48,68 +70,88 @@ func main() {
 		filepath.Join(outputDir, "data", "landing.yaml"),
 	} {
 		if err := os.RemoveAll(stalePath); err != nil {
-			fmt.Fprintf(os.Stderr, "Error removing stale documentation output: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("removing stale documentation output: %w", err)
 		}
 	}
+	return nil
+}
 
-	// 1. Extract capabilities from code AST
-	capabilities, placements, err := extractCodeCapabilities(rootDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting code capabilities: %v\n", err)
-		os.Exit(1)
+func generateDocumentation(rootDir, outputDir string) error {
+	capabilities, placements, capabilitiesErr := extractCodeCapabilities(rootDir)
+	if capabilitiesErr != nil {
+		return fmt.Errorf("extracting code capabilities: %w", capabilitiesErr)
 	}
+	examples, examplesErr := extractTxtarExamples(rootDir)
+	if examplesErr != nil {
+		return fmt.Errorf("extracting txtar examples: %w", examplesErr)
+	}
+	if writeErr := writeReferenceDocumentation(outputDir, capabilities, placements, examples); writeErr != nil {
+		return writeErr
+	}
+	documentation, renderErr := renderBenchmarkDocumentation(rootDir)
+	if renderErr != nil {
+		return fmt.Errorf("rendering benchmark documentation: %w", renderErr)
+	}
+	if writeErr := writeBenchmarkDocumentation(rootDir, outputDir, documentation); writeErr != nil {
+		return writeErr
+	}
+	if err := writeLandingAssets(outputDir); err != nil {
+		return fmt.Errorf("writing landing assets: %w", err)
+	}
+	if err := writeHugoConfig(outputDir); err != nil {
+		return fmt.Errorf("writing Hugo configuration: %w", err)
+	}
+	fmt.Printf("Successfully synthesized Hugo documentation source: %s\n", filepath.Join(outputDir, "content", "docs", "reference.md"))
+	fmt.Printf("Extracted %d languages, %d placement modes, %d txtar workflows.\n", len(capabilities), len(placements), len(examples))
+	return nil
+}
 
-	// 2. Parse txtar test archives for real-world examples
-	examples, err := extractTxtarExamples(rootDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting txtar examples: %v\n", err)
-		os.Exit(1)
+func writeReferenceDocumentation(outputDir string, capabilities []CodeCapability, placements []string, examples []TxtarExample) error {
+	docsDir := filepath.Join(outputDir, "content", "docs")
+	if err := writeGeneratedFile(filepath.Join(docsDir, "reference.md"), []byte(renderMarkdown(capabilities, placements, examples))); err != nil {
+		return fmt.Errorf("writing Markdown output: %w", err)
 	}
+	if err := writeGeneratedFile(filepath.Join(docsDir, "getting-started.md"), []byte(renderGettingStarted())); err != nil {
+		return fmt.Errorf("writing getting started output: %w", err)
+	}
+	return nil
+}
 
-	// 3. Render Hugo source content
-	markdownContent := renderMarkdown(capabilities, placements, examples)
-	targetFile := filepath.Join(outputDir, "content", "docs", "reference.md")
-	if err := writeGeneratedFile(targetFile, []byte(markdownContent)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing Markdown output: %v\n", err)
-		os.Exit(1)
-	}
-	gettingStartedFile := filepath.Join(outputDir, "content", "docs", "getting-started.md")
-	if err := writeGeneratedFile(gettingStartedFile, []byte(renderGettingStarted())); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing getting started output: %v\n", err)
-		os.Exit(1)
-	}
-	benchmarkDocumentation, err := renderBenchmarkDocumentation(rootDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error rendering benchmark documentation: %v\n", err)
-		os.Exit(1)
-	}
+func writeBenchmarkDocumentation(rootDir, outputDir string, documentation benchmarkDocumentation) error {
 	if err := writeBenchmarkBrowserAssets(rootDir, outputDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error generating benchmark browser assets: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("generating benchmark browser assets: %w", err)
 	}
 	benchmarksDir := filepath.Join(outputDir, "content", "docs", "benchmarks")
 	if err := os.MkdirAll(benchmarksDir, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating benchmarks documentation directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating benchmarks documentation directory: %w", err)
 	}
-	if err := writeGeneratedFile(filepath.Join(benchmarksDir, "_index.md"), []byte(benchmarkDocumentation.Index)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing benchmarks index: %v\n", err)
-		os.Exit(1)
+	if err := writeGeneratedFile(filepath.Join(benchmarksDir, "_index.md"), []byte(documentation.Index)); err != nil {
+		return fmt.Errorf("writing benchmarks index: %w", err)
 	}
+	if err := writeBenchmarkAggregates(benchmarksDir, documentation.Aggregates); err != nil {
+		return err
+	}
+	if err := writeBenchmarkRuns(benchmarksDir, documentation.Runs); err != nil {
+		return err
+	}
+	return writeBenchmarkShortcode(outputDir)
+}
+
+func writeBenchmarkAggregates(benchmarksDir, content string) error {
 	aggregatesDir := filepath.Join(benchmarksDir, "aggregates")
 	if err := os.MkdirAll(aggregatesDir, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating benchmark aggregate directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating benchmark aggregate directory: %w", err)
 	}
-	if err := writeGeneratedFile(filepath.Join(aggregatesDir, "index.md"), []byte(benchmarkDocumentation.Aggregates)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing benchmark aggregates: %v\n", err)
-		os.Exit(1)
+	if err := writeGeneratedFile(filepath.Join(aggregatesDir, "index.md"), []byte(content)); err != nil {
+		return fmt.Errorf("writing benchmark aggregates: %w", err)
 	}
+	return nil
+}
+
+func writeBenchmarkRuns(benchmarksDir string, runs []benchmarkDocumentationRun) error {
 	runsDir := filepath.Join(benchmarksDir, "runs")
 	if err := os.MkdirAll(runsDir, 0o750); err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating benchmark runs directory: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("creating benchmark runs directory: %w", err)
 	}
 	if err := writeGeneratedFile(filepath.Join(runsDir, "_index.md"), []byte(`---
 title: "Benchmark runs"
@@ -119,35 +161,26 @@ weight: 22
 
 The [empirical benchmark overview](/docs/benchmarks/) links individual benchmark observations.
 `)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing benchmark runs index: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("writing benchmark runs index: %w", err)
 	}
-	for _, run := range benchmarkDocumentation.Runs {
+	for _, run := range runs {
 		runDir := filepath.Join(runsDir, run.ID)
 		if err := os.MkdirAll(runDir, 0o750); err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating benchmark run directory: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("creating benchmark run directory: %w", err)
 		}
 		if err := writeGeneratedFile(filepath.Join(runDir, "index.md"), []byte(renderBenchmarkRunDoc(run))); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing benchmark run %s: %v\n", run.ID, err)
-			os.Exit(1)
+			return fmt.Errorf("writing benchmark run %s: %w", run.ID, err)
 		}
 	}
-	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing benchmark shortcode: %v\n", err)
-		os.Exit(1)
-	}
-	if err := writeLandingAssets(outputDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing landing assets: %v\n", err)
-		os.Exit(1)
-	}
-	if err := writeHugoConfig(outputDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error writing Hugo configuration: %v\n", err)
-		os.Exit(1)
-	}
+	return nil
+}
 
-	fmt.Printf("Successfully synthesized Hugo documentation source: %s\n", targetFile)
-	fmt.Printf("Extracted %d languages, %d placement modes, %d txtar workflows.\n", len(capabilities), len(placements), len(examples))
+func writeBenchmarkShortcode(outputDir string) error {
+	shortcodesDir := filepath.Join(outputDir, "layouts", "shortcodes")
+	if err := writeGeneratedFile(filepath.Join(shortcodesDir, "benchmark-code.html"), []byte(benchmarkCodeShortcode)); err != nil {
+		return fmt.Errorf("writing benchmark shortcode: %w", err)
+	}
+	return nil
 }
 
 func findRepoRoot() (string, error) {

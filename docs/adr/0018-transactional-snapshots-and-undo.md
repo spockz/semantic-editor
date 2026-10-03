@@ -29,7 +29,7 @@ We introduce content-addressed pre-edit snapshotting and conflict-checked undo c
 
 3. **Interfaces**:
    * **MCP `semantic_snapshot`**: Captures pre-edit state of specified files or the workspace root, persists journal, and returns `snapshot_id`, `created_at`, and `captured_files`.
-   * **MCP `semantic_undo`**: Validates hashes, preflights writes, restores blobs atomically, runs compiler diagnostic deltas, and returns `restored_files`, `restored_diff`, and `diagnostics`. Annotated with `destructiveHint: true`.
+   * **MCP `semantic_undo`**: Validates hashes, preflights writes, restores blobs atomically, and returns `restored_files`, `restored_diff`, and `diagnostics`. It includes `diagnostic_status: "available"` and `delta` only when both before and after checks succeed. If either check fails, it reports `diagnostic_status: "unavailable"` and `diagnostic_error`, omitting `delta`; an applied restore remains applied. Annotated with `destructiveHint: true`.
    * **CLI `semedit snapshot`**: Captures snapshots with `--label`, `--desc`, `--paths`, and `--record-post`.
    * **CLI `semedit undo`**: Restores snapshots by ID or `"latest"`.
 
@@ -45,6 +45,7 @@ We introduce content-addressed pre-edit snapshotting and conflict-checked undo c
 3. **Atomic Restore Semantics**: Every restored file must be written via `pipeline.WriteAtomic` ensuring `fsync` and monotonically advancing `mtime` for language server cache invalidation.
 4. **Git Tree Preservation**: Snapshot storage operates purely within `.scratch/snapshots/` and must never invoke destructive git commands or create git stash commits.
 5. **Explicit Reversion Only**: In compliance with ADR-0004, the engine never rolls back automatically; rollback requires explicit user or agent invocation.
+6. **Diagnostics Are Explicit**: Undo never treats failed diagnostic checks as an empty delta. A diagnostic failure is reported separately and does not reverse an already applied restore.
 
 ---
 
