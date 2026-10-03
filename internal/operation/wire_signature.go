@@ -28,6 +28,26 @@ const signatureReplaceBodyConsumer = "semantic_replace_body"
 
 const signatureEditReceiptField = "edit_receipt"
 
+const introduceParameterConsumer = "semantic_introduce_parameter"
+
+const introduceParameterObjectConsumer = "semantic_introduce_parameter_object"
+
+func signatureTargetSourceFields(field string) []string {
+	return []string{
+		signatureChangeConsumer + ".result.function_target." + field,
+		introduceParameterConsumer + ".result.function_target." + field,
+		introduceParameterObjectConsumer + ".result.function_target." + field,
+	}
+}
+
+func signatureReceiptSourceFields(field string) []string {
+	return []string{
+		signatureChangeConsumer + ".result.edit_receipt.continuations[]." + field,
+		introduceParameterConsumer + ".result.edit_receipt.continuations[]." + field,
+		introduceParameterObjectConsumer + ".result.edit_receipt.continuations[]." + field,
+	}
+}
+
 type signatureCallTarget struct {
 	packagePath string
 	file        string
@@ -36,28 +56,98 @@ type signatureCallTarget struct {
 
 func signatureOutputContract() OperationOutputContract {
 	target := SymbolTargetSchema().Properties
+	inspectors := []string{"semantic_inspect_symbol"}
 	consumers := []string{signatureChangeConsumer, "semantic_introduce_parameter", "semantic_introduce_parameter_object", signatureReplaceBodyConsumer}
+	functionTarget := ValueSchema{Kind: SchemaObject, Properties: target, Required: []string{"file", "symbol", wireExpectedRevision}}
 	result := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
-		"result": {Kind: SchemaString}, "file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "diff": {Kind: SchemaString}, signatureEditReceiptField: EditReceiptSchema(),
+		"result": {Kind: SchemaString}, "file": {Kind: SchemaString}, "symbol": {Kind: SchemaString}, "diff": {Kind: SchemaString}, "function_target": functionTarget, signatureEditReceiptField: EditReceiptSchema(),
 	}, Required: []string{"result", signatureEditReceiptField}}
 	return OperationOutputContract{ResultSchema: &result, Continuations: []OutputContinuation{
-		{Path: "result.edit_receipt.continuations[].file", Schema: target["file"], Role: RoleTarget, Consumers: consumers},
-		{Path: "result.edit_receipt.continuations[].symbol", Schema: target["symbol"], Role: RoleTarget, Consumers: consumers},
-		{Path: "result.edit_receipt.continuations[].expected_revision", Schema: target["expected_revision"], Role: RoleTarget, Consumers: consumers},
+		{Path: "result.edit_receipt.continuations[].file", Schema: target["file"], Role: RoleTarget, Consumers: inspectors},
+		{Path: "result.edit_receipt.continuations[].symbol", Schema: target["symbol"], Role: RoleTarget, Consumers: inspectors},
+		{Path: "result.function_target.file", Schema: target["file"], Role: RoleTarget, Consumers: consumers, Optional: true},
+		{Path: "result.function_target.symbol", Schema: target["symbol"], Role: RoleTarget, Consumers: consumers, Optional: true},
+		{Path: "result.function_target.expected_revision", Schema: target[wireExpectedRevision], Role: RoleTarget, Consumers: consumers, Optional: true},
 	}}
+}
+
+func finalizedSignatureFunctionTarget(ctx context.Context, cc CallContext, result structuralPlanResult) (*SymbolTarget, error) {
+	if cc.InBatch || result.Receipt.Status == EditAppliedWorking || result.Edit.Symbol == "" {
+		return nil, nil
+	}
+	var candidate SymbolTarget
+	matches := 0
+	for _, continuation := range result.Receipt.Continuations {
+		if continuation.File == result.Edit.Display && continuation.Symbol == result.Edit.Symbol {
+			candidate = continuation
+			matches++
+		}
+	}
+	if matches != 1 || candidate.ExpectedRevision == nil {
+		return nil, nil
+	}
+	actual, exists, err := receiptFileRevision(ctx, cc.WorkDir, candidate.File, false)
+	if err != nil {
+		return nil, fmt.Errorf("verify finalized signature function target: %w", err)
+	}
+	if !exists || actual.Revision != *candidate.ExpectedRevision {
+		return nil, nil
+	}
+	source, err := sourcebuf.ReadFile(ctx, resolveWorkPath(cc.WorkDir, candidate.File))
+	if err != nil {
+		return nil, fmt.Errorf("read finalized signature function target: %w", err)
+	}
+	if structuralRevision(source) != actual.Revision {
+		return nil, nil
+	}
+	liveFunction, err := signatureSourceHasFreeFunction(source, candidate.File, result.Edit.Symbol)
+	if err != nil {
+		return nil, fmt.Errorf("parse finalized signature function target: %w", err)
+	}
+	if !liveFunction {
+		return nil, nil
+	}
+	return &candidate, nil
+}
+
+func signatureSourceHasFreeFunction(source []byte, filename, symbol string) (bool, error) {
+	parsed, err := parser.ParseFile(token.NewFileSet(), filename, source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return false, err
+	}
+	functionCount := 0
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && function.Name.Name == symbol && !token.IsExported(function.Name.Name) {
+			functionCount++
+		}
+	}
+	return functionCount == 1, nil
+}
+
+func projectSignatureExpansion(result structuralPlanResult) any {
+	out := map[string]any{"result": result.Edit.Detail, signatureEditReceiptField: result.Receipt}
+	if result.FunctionTarget != nil {
+		out["function_target"] = *result.FunctionTarget
+		out["file"], out["symbol"] = result.FunctionTarget.File, result.FunctionTarget.Symbol
+	}
+	if result.Edit.Diff != "" {
+		out["diff"] = result.Edit.Diff
+	}
+	return out
 }
 
 func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 	mapping := ParameterMappingSchema()
 	mappings := ValueSchema{Kind: SchemaArray, Items: &mapping}
 	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file", "semantic_change_signature.result.edit_receipt.continuations[].file"),
-		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated.", true, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol", "semantic_change_signature.result.edit_receipt.continuations[].symbol"),
+		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].file", "semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
+		structuralStringParam("symbol", "Target: private Go free function whose direct call arguments will be updated; copy its exact identity from semantic_lookup or a finalized function_target.", true, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].symbol", "semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
 		{Name: signatureParameters, JSONName: signatureParameters, CLIName: signatureParameters, Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: complete ordered parameter mapping; preserve every existing parameter by source_index and append one new mapping with a closed argument expression.", Schema: &mappings},
-		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from a live continuation for this file and symbol; stale revisions are refused.", false, true, RoleTarget, "semantic_inspect_symbol.result.continuations[].expected_revision", "semantic_change_signature.result.edit_receipt.continuations[].expected_revision"),
+		structuralStringParam(wireExpectedRevision, "Precondition: full-file revision copied from semantic_inspect_symbol or the same finalized function_target record for this file and symbol; stale revisions are refused.", false, true, RoleTarget, append([]string{"semantic_inspect_symbol.result.continuations[].expected_revision"}, signatureTargetSourceFields(wireExpectedRevision)...)...),
 	}
 	return Def[map[string]any, structuralPlanResult]{
-		Key: "change_signature", Summary: "Use this tool instead of manually editing one private, non-generic, non-variadic Go free-function signature and its callers. Preserve existing parameter order, names, types, and results, then append one parameter whose literal, nil, or Boolean argument is safe at every direct call. The complete active module call set includes same-package test variants. Function values, methods, exported functions, build-constrained references, and unresolved packages are refused. Standalone results contain a live continuation; buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
+		Key: "change_signature", Summary: "Use this tool instead of manually editing one private, non-generic, non-variadic Go free-function signature and its callers. Preserve existing parameter order, names, types, and results, then append one parameter whose literal, nil, or Boolean argument is safe at every direct call. The complete active module call set includes same-package test variants. Function values, methods, exported functions, build-constrained references, and unresolved packages are refused. Standalone results expose a finalized function_target; receipt continuations remain available for inspection. Buffered results report applied_working without claiming disk publication." + automaticVerificationGuidance,
 		Params: params, Level: LevelWorkspace, CLIName: "change-signature", MCPName: "semantic_change_signature", Batchable: true, BufferedBatch: true,
 		ExampleRaw: map[string]any{"file": "service.go", "symbol": "process", signatureParameters: []any{
 			map[string]any{wireSourceIndex: 0, "parameter": map[string]any{"name": "id", "type": "int"}},
@@ -82,18 +172,14 @@ func changeSignatureDef() Def[map[string]any, structuralPlanResult] {
 				return structuralPlanResult{}, fmt.Errorf("finalize change-signature receipt: %w", err)
 			}
 			result.Receipt = receipt
+			result.FunctionTarget, err = finalizedSignatureFunctionTarget(ctx, cc, result)
+			if err != nil {
+				return structuralPlanResult{}, fmt.Errorf("finalize signature function target: %w", err)
+			}
 			return result, nil
 		},
 		ProjectOutput: func(result structuralPlanResult) (any, error) {
-			out := map[string]any{"result": result.Edit.Detail, signatureEditReceiptField: result.Receipt}
-			if len(result.Receipt.Continuations) > 0 {
-				target := result.Receipt.Continuations[0]
-				out["file"], out["symbol"] = target.File, target.Symbol
-			}
-			if result.Edit.Diff != "" {
-				out["diff"] = result.Edit.Diff
-			}
-			return out, nil
+			return projectSignatureExpansion(result), nil
 		},
 	}
 }

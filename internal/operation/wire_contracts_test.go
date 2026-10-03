@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"semedit/internal/contractplan"
 	"semedit/internal/sourcebuf"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -66,6 +67,189 @@ func TestImplementContractRefusesShadowedBuiltinPanicWithoutPublishing(t *testin
 				t.Fatalf("source changed after refusal: %q", after)
 			}
 		})
+	}
+}
+
+func TestFinalizedSignatureTargetRequiresTheSurvivingFunction(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		wantLive bool
+	}{
+		{name: "function", source: "package demo\nfunc write() {}\n", wantLive: true},
+		{name: "same-name type only", source: "package demo\ntype write struct{}\n"},
+		{name: "method only", source: "package demo\ntype Writer struct{}\nfunc (Writer) write() {}\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "write.go")
+			if err := os.WriteFile(path, []byte(test.source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			revision := structuralRevision([]byte(test.source))
+			candidate := SymbolTarget{File: "write.go", Symbol: "write", ExpectedRevision: &revision}
+			typeCandidate := SymbolTarget{File: "write.go", Symbol: "writeOptions", ExpectedRevision: &revision}
+			result := structuralPlanResult{
+				Edit:    FileEditRes{Display: "write.go", Symbol: "write"},
+				Receipt: EditReceipt{Status: EditPersisted, Continuations: []SymbolTarget{typeCandidate, candidate}},
+			}
+			target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root}, result)
+			if err != nil {
+				t.Fatalf("finalizedSignatureFunctionTarget() error = %v", err)
+			}
+			if (target != nil) != test.wantLive {
+				t.Fatalf("finalized target = %#v, want live %v", target, test.wantLive)
+			}
+		})
+	}
+	staleRevision := "stale"
+	result := structuralPlanResult{
+		Edit:    FileEditRes{Display: "write.go", Symbol: "write"},
+		Receipt: EditReceipt{Status: EditPersisted, Continuations: []SymbolTarget{{File: "write.go", Symbol: "write", ExpectedRevision: &staleRevision}}},
+	}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "write.go"), []byte("package demo\nfunc write() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root}, result); err != nil || target != nil {
+		t.Fatalf("stale finalized target = %#v, %v; want no target", target, err)
+	}
+	result.Receipt.Status = EditAppliedWorking
+	result.Receipt.Continuations = nil
+	if target, err := finalizedSignatureFunctionTarget(context.Background(), CallContext{WorkDir: root, InBatch: true}, result); err != nil || target != nil {
+		t.Fatalf("buffered finalized target = %#v, %v; want no live target", target, err)
+	}
+}
+
+func TestSignatureProjectionUsesOnlyTypedFunctionTarget(t *testing.T) {
+	typeCandidate := SymbolTarget{File: "write.go", Symbol: "writeOptions"}
+	functionRevision := "rev-2"
+	functionCandidate := SymbolTarget{File: "write.go", Symbol: "write", ExpectedRevision: &functionRevision}
+	result := structuralPlanResult{
+		Edit:           FileEditRes{Display: "write.go", Symbol: "write"},
+		Receipt:        EditReceipt{Continuations: []SymbolTarget{typeCandidate, functionCandidate}},
+		FunctionTarget: &functionCandidate,
+	}
+	projected := projectSignatureExpansion(result).(map[string]any)
+	if projected["file"] != "write.go" || projected["symbol"] != "write" || projected["function_target"] != functionCandidate {
+		t.Fatalf("projected function target = %#v", projected)
+	}
+
+	result.FunctionTarget = nil
+	projected = projectSignatureExpansion(result).(map[string]any)
+	for _, field := range []string{"file", "symbol", "function_target"} {
+		if _, exists := projected[field]; exists {
+			t.Errorf("unproven primary field %q was projected: %#v", field, projected[field])
+		}
+	}
+}
+
+func TestSignatureContinuationContractSeparatesReceiptInspectionFromFunctionEdits(t *testing.T) {
+	registry := DefaultRegistry()
+	producers := []string{signatureChangeConsumer, introduceParameterConsumer, introduceParameterObjectConsumer}
+	functionConsumers := append(append([]string(nil), producers...), signatureReplaceBodyConsumer)
+	for _, producerName := range producers {
+		producer, ok := registry.LookupMCP(producerName)
+		if !ok || producer.Output == nil || producer.Output.ResultSchema == nil {
+			t.Fatalf("%s output contract missing", producerName)
+		}
+		functionTargetSchema, ok := producer.Output.ResultSchema.Properties["function_target"]
+		if !ok || slices.Contains(producer.Output.ResultSchema.Required, "function_target") || !slices.Contains(functionTargetSchema.Required, "expected_revision") {
+			t.Fatalf("%s function_target schema is not optional and fully guarded: %#v", producerName, functionTargetSchema)
+		}
+		paths := make(map[string]OutputContinuation)
+		for _, continuation := range producer.Output.Continuations {
+			paths[continuation.Path] = continuation
+		}
+		for _, field := range []string{"file", "symbol"} {
+			path := "result.edit_receipt.continuations[]." + field
+			continuation, exists := paths[path]
+			if !exists || !slices.Equal(continuation.Consumers, []string{"semantic_inspect_symbol"}) {
+				t.Errorf("%s generic receipt path %q consumers = %#v, exists %v", producerName, path, continuation.Consumers, exists)
+			}
+		}
+		if _, exists := paths["result.edit_receipt.continuations[].expected_revision"]; exists {
+			t.Errorf("%s generic receipt revision was advertised as a consumer input", producerName)
+		}
+		for _, field := range []string{"file", "symbol", "expected_revision"} {
+			path := "result.function_target." + field
+			continuation, exists := paths[path]
+			if !exists || !continuation.Optional || !slices.Equal(continuation.Consumers, functionConsumers) {
+				t.Errorf("%s function target path %q consumers = %#v optional=%v exists=%v", producerName, path, continuation.Consumers, continuation.Optional, exists)
+			}
+		}
+		for _, continuation := range producer.Output.Continuations {
+			source := producerName + "." + continuation.Path
+			for _, consumerName := range continuation.Consumers {
+				consumer, exists := registry.LookupMCP(consumerName)
+				if !exists {
+					t.Errorf("%s continuation names unknown consumer %q", continuation.Path, consumerName)
+					continue
+				}
+				compatible := false
+				for _, parameter := range consumer.Params {
+					if (parameter.Role == "" || parameter.Role == continuation.Role) && slices.Contains(parameter.SourceFields, source) {
+						compatible = true
+						break
+					}
+				}
+				if !compatible {
+					t.Errorf("%s continuation names consumer %q without a matching input field", continuation.Path, consumerName)
+				}
+			}
+		}
+	}
+
+	inspect, ok := registry.LookupMCP("semantic_inspect_symbol")
+	if !ok {
+		t.Fatal("inspect tool missing")
+	}
+	for _, field := range []string{"file", "symbol"} {
+		parameterName := field
+		var parameter *ParameterContract
+		for index := range inspect.Params {
+			if inspect.Params[index].JSONName == parameterName {
+				parameter = &inspect.Params[index]
+				break
+			}
+		}
+		if parameter == nil {
+			t.Fatalf("inspect %s parameter missing", field)
+		}
+		for _, producerName := range producers {
+			source := producerName + ".result.edit_receipt.continuations[]." + field
+			if !slices.Contains(parameter.SourceFields, source) {
+				t.Errorf("inspect %s omits generic receipt source %q", field, source)
+			}
+		}
+	}
+	for index := range inspect.Params {
+		for _, source := range signatureReceiptSourceFields("expected_revision") {
+			if slices.Contains(inspect.Params[index].SourceFields, source) {
+				t.Errorf("inspect accepts unsupported signature receipt revision source %q", source)
+			}
+		}
+	}
+
+	replaceBody, ok := registry.LookupMCP(signatureReplaceBodyConsumer)
+	if !ok {
+		t.Fatal("replace-body tool missing")
+	}
+	for index := range replaceBody.Params {
+		parameter := &replaceBody.Params[index]
+		if parameter.JSONName == wireExpectedRevision {
+			for _, source := range signatureTargetSourceFields(wireExpectedRevision) {
+				if !slices.Contains(parameter.SourceFields, source) {
+					t.Errorf("replace-body revision parameter omits function target source %q", source)
+				}
+			}
+			for _, source := range signatureReceiptSourceFields(wireExpectedRevision) {
+				if slices.Contains(parameter.SourceFields, source) {
+					t.Errorf("replace-body accepts generic receipt revision source %q", source)
+				}
+			}
+		}
 	}
 }
 
