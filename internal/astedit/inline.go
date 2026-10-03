@@ -257,41 +257,52 @@ func hasFunctionBinding(fn *ast.FuncDecl, name string) bool {
 func functionDeclaresName(fn *ast.FuncDecl, name string) bool {
 	found := false
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
-		switch item := node.(type) {
-		case *ast.AssignStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range item.Lhs {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-						found = true
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, ident := range item.Names {
-				if ident.Name == name {
-					found = true
-				}
-			}
-		case *ast.TypeSpec:
-			if item.Name.Name == name {
-				found = true
-			}
-		case *ast.RangeStmt:
-			for _, expr := range []ast.Expr{item.Key, item.Value} {
-				if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
-					found = true
-				}
-			}
-		case *ast.Field:
-			for _, ident := range item.Names {
-				if ident.Name == name {
-					found = true
-				}
-			}
-		}
+		found = nodeDeclaresName(node, name)
 		return !found
 	})
 	return found
+}
+
+func nodeDeclaresName(node ast.Node, name string) bool {
+	switch item := node.(type) {
+	case *ast.AssignStmt:
+		return item.Tok == token.DEFINE && expressionsDeclareName(item.Lhs, name)
+	case *ast.ValueSpec:
+		return identifiersContainName(item.Names, name)
+	case *ast.TypeSpec:
+		return item.Name.Name == name
+	case *ast.RangeStmt:
+		return expressionsDeclareName([]ast.Expr{item.Key, item.Value}, name)
+	case *ast.Field:
+		return identifiersContainName(item.Names, name)
+	case *ast.FuncDecl:
+		return item.Name.Name == name
+	case *ast.GenDecl:
+		for _, spec := range item.Specs {
+			if nodeDeclaresName(spec, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func expressionsDeclareName(expressions []ast.Expr, name string) bool {
+	for _, expr := range expressions {
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func identifiersContainName(identifiers []*ast.Ident, name string) bool {
+	for _, ident := range identifiers {
+		if ident.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func inlineSource(content []byte, fset *token.FileSet, fileNode *ast.File, target inlineTarget, positions []token.Pos, name string) ([]byte, error) {
