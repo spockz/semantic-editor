@@ -32,9 +32,9 @@ func TestAgentSessionCloseRemovesReadonlyCacheWithoutFollowingSymlinks(t *testin
 	if err := os.Symlink(outsideDir, link); err != nil {
 		t.Fatal(err)
 	}
-	session, err := newAgentSession(&behavioralSessionProvider{}, root, "readonly-cache", workDir)
-	if err != nil {
-		t.Fatal(err)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "readonly-cache", workDir)
+	if sessionErr != nil {
+		t.Fatal(sessionErr)
 	}
 	capturedWorkDir := filepath.Join(root, "captured-workspace")
 	if err := os.Rename(workDir, capturedWorkDir); err != nil {
@@ -78,9 +78,9 @@ func TestAgentSessionCloseRetainsReadonlyWorkspace(t *testing.T) {
 	if err := os.Chmod(readonlyDir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	session, err := newAgentSession(&behavioralSessionProvider{}, root, "retained-readonly", workDir)
-	if err != nil {
-		t.Fatal(err)
+	session, sessionErr := newAgentSession(&behavioralSessionProvider{}, root, "retained-readonly", workDir)
+	if sessionErr != nil {
+		t.Fatal(sessionErr)
 	}
 	session.execution = AgentExecution{Task: &Task{}}
 	session.retainWorkDir = true

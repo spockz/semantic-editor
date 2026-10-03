@@ -160,9 +160,9 @@ func openCodeEventType(event map[string]any) string {
 }
 
 func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm ArmType, target Target) (string, []string, error) {
-	goEnv, err := fixtureGoEnvironment(ctx, workDir)
-	if err != nil {
-		return "", nil, err
+	goEnv, envErr := fixtureGoEnvironment(ctx, workDir)
+	if envErr != nil {
+		return "", nil, envErr
 	}
 	configRoot := filepath.Join(workDir, ".scratch", "opencode")
 	configPath := filepath.Join(configRoot, "opencode.json")

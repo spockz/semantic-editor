@@ -92,12 +92,12 @@ func (s *agentSession) retainTaskMCPMetrics() error {
 	}
 	source := benchmarkMCPMetricsPath(s.workDir)
 	// #nosec G304 -- source is derived from this benchmark's isolated workspace.
-	data, err := os.ReadFile(source)
-	if errors.Is(err, os.ErrNotExist) {
+	data, readErr := os.ReadFile(source)
+	if errors.Is(readErr, os.ErrNotExist) {
 		return nil
 	}
-	if err != nil {
-		return fmt.Errorf("read benchmark MCP metrics: %w", err)
+	if readErr != nil {
+		return fmt.Errorf("read benchmark MCP metrics: %w", readErr)
 	}
 	var records []json.RawMessage
 	if err := json.Unmarshal(data, &records); err != nil {

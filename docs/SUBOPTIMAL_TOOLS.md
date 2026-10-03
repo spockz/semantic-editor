@@ -3625,6 +3625,14 @@ The need to report successfully written paths motivated adding a report-returnin
 - Workaround: continue coordinator review and require worker fixes plus observable contract tests; do not treat the missing response as approval.
 - Root cause: the review service did not complete within its request deadline; no narrower cause is established.
 
+## 2026-10-03: Semantic lookup rejected selected worktree root
+
+- Tool: `semantic_lookup`.
+- Target: `cmd/docgen/benchmarks_test.go`, `TestWriteBenchmarkBrowserAssetsPreservesDynamicFieldsAndCopiesPerspectiveAssets`.
+- Observed failure: the installed MCP rejected `workspace_root` as an unknown parameter, so it could not select the active quality worktree.
+- Workaround: continue with a targeted `apply_patch` against the assigned worktree after locating the declaration locally.
+- Root cause: the installed MCP schema has not reloaded the request-scoped workspace-root contract; the CLI or a rebuilt server must be used to target alternate worktrees.
+
 ## 2026-10-03: semantic move could not resolve operation package dependencies
 
 - Tool: `semantic_move_construct` via the local `semedit move-construct` CLI.

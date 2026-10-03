@@ -191,14 +191,14 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 	t.Setenv(openRouterAPIKeyEnv, "secret-test-key")
 	workDir := t.TempDir()
 	runner := NewRunner(filepath.Join(t.TempDir(), "benchmarks"), WithMCPServerInstructions(MCPServerInstructionsPrescriptive))
-	configPath, env, err := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
-	if err != nil {
-		t.Fatal(err)
+	configPath, env, configErr := runner.openCodeEnvironment(t.Context(), workDir, ArmSemedit, Target{Harness: string(HarnessOpenCode), Model: "openrouter/free"})
+	if configErr != nil {
+		t.Fatal(configErr)
 	}
 	// #nosec G304 -- config path is constructed by the harness inside the temporary fixture.
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	var config struct {
 		Provider map[string]map[string]any `json:"provider"`
@@ -211,24 +211,24 @@ func TestOpenCodeConfigurationIsFixtureScoped(t *testing.T) {
 			} `json:"servers"`
 		} `json:"mcp"`
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
-	openRouterProvider, found := config.Provider["openrouter"]
-	if !found {
+	openRouterProvider, providerFound := config.Provider["openrouter"]
+	if !providerFound {
 		t.Fatal("OpenRouter provider is absent")
 	}
-	if _, found := openRouterProvider["npm"]; found {
+	if _, foundNPM := openRouterProvider["npm"]; foundNPM {
 		t.Error("OpenRouter config overrides the native runtime with npm")
 	}
-	if _, found := openRouterProvider["options"]; found {
+	if _, foundOptions := openRouterProvider["options"]; foundOptions {
 		t.Error("OpenRouter config overrides native endpoint or credentials")
 	}
-	models, found := openRouterProvider["models"].(map[string]any)
-	if !found {
+	models, modelsFound := openRouterProvider["models"].(map[string]any)
+	if !modelsFound {
 		t.Fatal("OpenRouter model registration is absent")
 	}
-	if _, found := models["free"]; !found {
+	if _, freeModelFound := models["free"]; !freeModelFound {
 		t.Errorf("OpenRouter model registration = %#v, want free", models)
 	}
 	if strings.Contains(string(data), "secret-test-key") {
@@ -660,13 +660,13 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 }
 
 func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_00_hi_overhead.txtar"))
-	if err != nil {
-		t.Fatalf("read no-op fixture: %v", err)
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_00_hi_overhead.txtar"))
+	if readErr != nil {
+		t.Fatalf("read no-op fixture: %v", readErr)
 	}
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse no-op fixture: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse no-op fixture: %v", parseErr)
 	}
 	if len(task.Archive.Files) != 0 {
 		t.Fatalf("empty fixture contains %d files", len(task.Archive.Files))
@@ -675,16 +675,16 @@ func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
 	if err := task.ExtractTo(workDir); err != nil {
 		t.Fatalf("extract no-op fixture: %v", err)
 	}
-	passed, err := Evaluate(context.Background(), task, workDir, nil)
-	if err != nil {
-		t.Fatalf("evaluate unchanged workspace: %v", err)
+	passed, evaluateErr := Evaluate(context.Background(), task, workDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate unchanged workspace: %v", evaluateErr)
 	}
 	if !passed.Passed {
 		t.Fatalf("unchanged workspace failed: %s", passed.ErrorMessage)
 	}
-	changed, err := Evaluate(context.Background(), task, workDir, []string{"unexpected.txt"})
-	if err != nil {
-		t.Fatalf("evaluate changed workspace: %v", err)
+	changed, changedErr := Evaluate(context.Background(), task, workDir, []string{"unexpected.txt"})
+	if changedErr != nil {
+		t.Fatalf("evaluate changed workspace: %v", changedErr)
 	}
 	if changed.Passed || changed.FailureStage != "level_1_mutation_policy" {
 		t.Fatalf("changed workspace result = %+v", changed)
@@ -693,14 +693,14 @@ func TestEmptyWorkspaceFixtureRejectsChanges(t *testing.T) {
 
 func TestOracleMutationPolicyEnforcement(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
-	data, err := os.ReadFile(fixturePath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
+	data, readErr := os.ReadFile(fixturePath)
+	if readErr != nil {
+		t.Fatalf("read fixture: %v", readErr)
 	}
 
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse task: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse task: %v", parseErr)
 	}
 
 	tmpDir := t.TempDir()
@@ -709,9 +709,9 @@ func TestOracleMutationPolicyEnforcement(t *testing.T) {
 	}
 
 	// Case 1: Unauthorized change to go.mod
-	res, err := Evaluate(context.Background(), task, tmpDir, []string{"go.mod"})
-	if err != nil {
-		t.Fatalf("evaluate: %v", err)
+	res, evaluateErr := Evaluate(context.Background(), task, tmpDir, []string{"go.mod"})
+	if evaluateErr != nil {
+		t.Fatalf("evaluate: %v", evaluateErr)
 	}
 	if res.Passed {
 		t.Errorf("expected failure on disallowed go.mod change")
@@ -723,14 +723,14 @@ func TestOracleMutationPolicyEnforcement(t *testing.T) {
 
 func TestOracleAdversarialCheating(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_01_rename_local.txtar"))
-	data, err := os.ReadFile(fixturePath)
-	if err != nil {
-		t.Fatalf("read fixture: %v", err)
+	data, readErr := os.ReadFile(fixturePath)
+	if readErr != nil {
+		t.Fatalf("read fixture: %v", readErr)
 	}
 
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse task: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse task: %v", parseErr)
 	}
 
 	tmpDir := t.TempDir()
@@ -739,9 +739,9 @@ func TestOracleAdversarialCheating(t *testing.T) {
 	}
 
 	// Unmodified initial fixture fails Level 2 AST (newName missing and oldName present)
-	res, err := Evaluate(context.Background(), task, tmpDir, nil)
-	if err != nil {
-		t.Fatalf("evaluate: %v", err)
+	res, evaluateErr := Evaluate(context.Background(), task, tmpDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate: %v", evaluateErr)
 	}
 	if res.Passed {
 		t.Errorf("expected unmodified fixture to fail oracle")
@@ -760,9 +760,9 @@ func TestWorkspaceSnapshotTracksAllChangedFiles(t *testing.T) {
 		t.Fatalf("write deleted file: %v", err)
 	}
 
-	before, err := snapshotWorkspaceFiles(root)
-	if err != nil {
-		t.Fatalf("snapshot workspace: %v", err)
+	before, snapshotErr := snapshotWorkspaceFiles(root)
+	if snapshotErr != nil {
+		t.Fatalf("snapshot workspace: %v", snapshotErr)
 	}
 	if err := os.WriteFile(filepath.Join(root, "changed.go"), []byte("after"), 0o600); err != nil {
 		t.Fatalf("modify changed file: %v", err)
@@ -774,9 +774,9 @@ func TestWorkspaceSnapshotTracksAllChangedFiles(t *testing.T) {
 		t.Fatalf("write created file: %v", err)
 	}
 
-	got, err := changedWorkspaceFiles(root, before)
-	if err != nil {
-		t.Fatalf("collect workspace changes: %v", err)
+	got, changedErr := changedWorkspaceFiles(root, before)
+	if changedErr != nil {
+		t.Fatalf("collect workspace changes: %v", changedErr)
 	}
 	if want := []string{"changed.go", "created.go", "deleted.go"}; !slices.Equal(got, want) {
 		t.Errorf("changed files = %v, want %v", got, want)
@@ -1282,32 +1282,32 @@ func TestCodexTerminationOrigin(t *testing.T) {
 func TestAgyMCPConfigSetsFixtureExpectedRoot(t *testing.T) {
 	workDir := t.TempDir()
 	repositoryRoot := t.TempDir()
-	env, err := fixtureGoEnvironment(t.Context(), workDir)
-	if err != nil {
-		t.Fatal(err)
+	env, envErr := fixtureGoEnvironment(t.Context(), workDir)
+	if envErr != nil {
+		t.Fatal(envErr)
 	}
-	if err := writeAgyMCPConfig(workDir, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); err != nil {
-		t.Fatal(err)
+	if configErr := writeAgyMCPConfig(workDir, repositoryRoot, ArmSemedit, MCPServerInstructionsNone, env); configErr != nil {
+		t.Fatal(configErr)
 	}
-	data, err := os.ReadFile(filepath.Join(workDir, ".agents", "mcp_config.json"))
-	if err != nil {
-		t.Fatal(err)
+	data, readErr := os.ReadFile(filepath.Join(workDir, ".agents", "mcp_config.json"))
+	if readErr != nil {
+		t.Fatal(readErr)
 	}
 	var config struct {
 		Servers map[string]struct {
 			Args []string `json:"args"`
 		} `json:"mcpServers"`
 	}
-	if err := json.Unmarshal(data, &config); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
 	server, ok := config.Servers["semedit"]
 	if !ok {
 		t.Fatalf("Agy MCP config missing semedit: %s", data)
 	}
-	expectedRoot, err := canonicalFixtureRoot(workDir)
-	if err != nil {
-		t.Fatal(err)
+	expectedRoot, rootErr := canonicalFixtureRoot(workDir)
+	if rootErr != nil {
+		t.Fatal(rootErr)
 	}
 	if !slices.Contains(server.Args, "--metrics-file") || !slices.Contains(server.Args, benchmarkMCPMetricsPath(workDir)) {
 		t.Errorf("Agy MCP args = %#v, want fixture-local metrics file", server.Args)
@@ -1369,13 +1369,13 @@ func TestCodexFileChangeCapturedAsToolCall(t *testing.T) {
 }
 
 func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
-	if err != nil {
-		t.Fatalf("read staged fixture: %v", err)
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_13_rename_followup_scale.txtar"))
+	if readErr != nil {
+		t.Fatalf("read staged fixture: %v", readErr)
 	}
-	task, err := ParseTask(data)
-	if err != nil {
-		t.Fatalf("parse staged fixture: %v", err)
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse staged fixture: %v", parseErr)
 	}
 	if task.Metadata.InteractiveMode != "staged" || task.Metadata.StagedInitialTotalEdits != 1 || len(task.Metadata.StagedFollowups) != 4 {
 		t.Fatalf("staged metadata = %+v", task.Metadata)
@@ -1384,9 +1384,9 @@ func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
 	if err := task.ExtractTo(workDir); err != nil {
 		t.Fatalf("extract staged fixture: %v", err)
 	}
-	plan, err := os.ReadFile(filepath.Join(workDir, "rename-plan.md"))
-	if err != nil {
-		t.Fatalf("read rename plan: %v", err)
+	plan, planReadErr := os.ReadFile(filepath.Join(workDir, "rename-plan.md"))
+	if planReadErr != nil {
+		t.Fatalf("read rename plan: %v", planReadErr)
 	}
 	var oldNames, newNames []string
 	for line := range strings.SplitSeq(string(plan), "\n") {
@@ -1403,9 +1403,9 @@ func TestStagedRenameFixtureEnforcesEachCumulativeCheckpoint(t *testing.T) {
 		t.Fatalf("rename plan has %d mappings, want 16", len(oldNames))
 	}
 	sourcePath := filepath.Join(workDir, "pipeline", "workflow.go")
-	source, err := os.ReadFile(sourcePath)
-	if err != nil {
-		t.Fatalf("read workflow: %v", err)
+	source, sourceReadErr := os.ReadFile(sourcePath)
+	if sourceReadErr != nil {
+		t.Fatalf("read workflow: %v", sourceReadErr)
 	}
 	current := string(source)
 	previous := 0

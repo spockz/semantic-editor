@@ -470,13 +470,13 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 }
 
 func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
-	sourceRoot, err := filepath.Abs(workDir)
-	if err != nil {
-		return "", nil, fmt.Errorf("resolve workspace: %w", err)
+	sourceRoot, resolveErr := filepath.Abs(workDir)
+	if resolveErr != nil {
+		return "", nil, fmt.Errorf("resolve workspace: %w", resolveErr)
 	}
-	sourceFS, err := os.OpenRoot(sourceRoot)
-	if err != nil {
-		return "", nil, fmt.Errorf("open workspace: %w", err)
+	sourceFS, sourceOpenErr := os.OpenRoot(sourceRoot)
+	if sourceOpenErr != nil {
+		return "", nil, fmt.Errorf("open workspace: %w", sourceOpenErr)
 	}
 	scratchDir := filepath.Join(sourceRoot, ".scratch")
 	scratchCreated := false
@@ -501,13 +501,13 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		}
 		return nil
 	}
-	target, err := os.MkdirTemp(scratchDir, "oracle-*")
-	if err != nil {
-		return "", nil, errors.Join(fmt.Errorf("create private workspace: %w", err), sourceFS.Close(), removeScratch())
+	target, createTargetErr := os.MkdirTemp(scratchDir, "oracle-*")
+	if createTargetErr != nil {
+		return "", nil, errors.Join(fmt.Errorf("create private workspace: %w", createTargetErr), sourceFS.Close(), removeScratch())
 	}
-	targetFS, err := os.OpenRoot(target)
-	if err != nil {
-		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", err), sourceFS.Close(), os.RemoveAll(target), removeScratch())
+	targetFS, targetOpenErr := os.OpenRoot(target)
+	if targetOpenErr != nil {
+		return "", nil, errors.Join(fmt.Errorf("open private workspace: %w", targetOpenErr), sourceFS.Close(), os.RemoveAll(target), removeScratch())
 	}
 	cleanup := func() error {
 		closeSourceErr, closeTargetErr := sourceFS.Close(), targetFS.Close()
@@ -521,16 +521,16 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		}
 		return errors.Join(closeSourceErr, closeTargetErr, removeErr, scratchErr)
 	}
-	err = filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(sourceRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
 		if path == sourceRoot {
 			return nil
 		}
-		rel, err := filepath.Rel(sourceRoot, path)
-		if err != nil {
-			return fmt.Errorf("relativize %s: %w", path, err)
+		rel, relErr := filepath.Rel(sourceRoot, path)
+		if relErr != nil {
+			return fmt.Errorf("relativize %s: %w", path, relErr)
 		}
 		if entry.IsDir() {
 			if entry.Name() == ".git" || entry.Name() == ".scratch" {
@@ -541,13 +541,13 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		if !entry.Type().IsRegular() {
 			return nil
 		}
-		data, err := sourceFS.ReadFile(rel)
-		if err != nil {
-			return fmt.Errorf("read %s: %w", rel, err)
+		data, readErr := sourceFS.ReadFile(rel)
+		if readErr != nil {
+			return fmt.Errorf("read %s: %w", rel, readErr)
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return fmt.Errorf("stat %s: %w", rel, err)
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return fmt.Errorf("stat %s: %w", rel, infoErr)
 		}
 		if err := targetFS.MkdirAll(filepath.Dir(rel), 0o750); err != nil {
 			return fmt.Errorf("create parent for %s: %w", rel, err)
@@ -557,8 +557,8 @@ func copyWorkspaceForOracle(workDir string) (string, func() error, error) {
 		}
 		return nil
 	})
-	if err != nil {
-		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", err), cleanup())
+	if walkErr != nil {
+		return "", nil, errors.Join(fmt.Errorf("copy workspace: %w", walkErr), cleanup())
 	}
 	return target, cleanup, nil
 }
@@ -568,21 +568,21 @@ func installHiddenTests(workDir, sourceDir string) error {
 	if sourceDir == "" {
 		return nil
 	}
-	sourceRoot, err := filepath.Abs(sourceDir)
-	if err != nil {
-		return fmt.Errorf("resolve hidden test directory: %w", err)
+	sourceRoot, rootErr := filepath.Abs(sourceDir)
+	if rootErr != nil {
+		return fmt.Errorf("resolve hidden test directory: %w", rootErr)
 	}
-	sourceFS, err := os.OpenRoot(sourceRoot)
-	if err != nil {
-		return fmt.Errorf("open hidden test directory: %w", err)
+	sourceFS, sourceOpenErr := os.OpenRoot(sourceRoot)
+	if sourceOpenErr != nil {
+		return fmt.Errorf("open hidden test directory: %w", sourceOpenErr)
 	}
 	defer func() {
 		_ = sourceFS.Close()
 	}()
 
-	workFS, err := os.OpenRoot(workDir)
-	if err != nil {
-		return fmt.Errorf("open benchmark workspace: %w", err)
+	workFS, workOpenErr := os.OpenRoot(workDir)
+	if workOpenErr != nil {
+		return fmt.Errorf("open benchmark workspace: %w", workOpenErr)
 	}
 	defer func() {
 		_ = workFS.Close()
@@ -595,9 +595,9 @@ func installHiddenTests(workDir, sourceDir string) error {
 		if entry.IsDir() || !entry.Type().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(sourceRoot, path)
-		if err != nil {
-			return fmt.Errorf("relativize hidden test %s: %w", path, err)
+		rel, relErr := filepath.Rel(sourceRoot, path)
+		if relErr != nil {
+			return fmt.Errorf("relativize hidden test %s: %w", path, relErr)
 		}
 		if err := workFS.MkdirAll(filepath.Dir(rel), 0o750); err != nil {
 			return fmt.Errorf("create hidden test directory for %s: %w", rel, err)

@@ -492,101 +492,91 @@ func renderSemanticBatchCallout(sb *strings.Builder, response string) {
 func renderComparisonTable(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *RunResult) {
 	fmt.Fprintf(sb, "| Metric | Vanilla (Small) | %s | Δ (Small) | Vanilla (Large) | %s | Δ (Large) |\n", mcpColumnHeader("Small", smRun), mcpColumnHeader("Large", lmRun))
 	sb.WriteString("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
-
-	// 1. Wall-Clock Latency
-	sb.WriteString(formatMetricRowDuration("Wall-Clock Latency",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) time.Duration { return r.WallClock }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("Process Start → First Event",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("First Event → First Tool Call",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
-
-	sb.WriteString(formatMetricRowOptionalDuration("MCP Server Start → Initialize",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) *time.Duration { return r.MCPServerStartToInitialize }))
-
-	// 2. Interaction Turns & Cycles Breakdown
-	sb.WriteString(formatMetricRowInt("Top-Level User Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.Turns }))
-
-	sb.WriteString(formatMetricRowInt("Internal Tool Cycles",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.InternalTurns }))
-
-	sb.WriteString(formatMetricRowInt("Initial Load / Discovery Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.InitialLoadTurns }))
-
-	sb.WriteString(formatMetricRowInt("MCP Discovery / Schema Turns",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.MCPLoadTurns }))
-
-	sb.WriteString(formatMetricRowInt("Total Tool Invocations",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.ToolCount }))
-
-	// 3. Output Tokens
-	sb.WriteString(formatMetricRowInt("Output Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.OutputTokens }))
-
-	// 4. Reasoning / Thinking Tokens
-	sb.WriteString(formatMetricRowInt("Reasoning / Thinking Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.ReasoningTokens }))
-
-	// 5. Total Input Tokens
-	sb.WriteString(formatMetricRowInt("Total Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.PromptTokens }))
-
-	// 6. Cached Input Tokens
-	sb.WriteString(formatMetricRowIntWithDirection("Cached Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.CachedPromptTokens }, deltaHigherIsBetter))
-
-	// 7. Uncached Input Tokens
-	sb.WriteString(formatMetricRowInt("Uncached Input Tokens",
-		sbRun, smRun, lbRun, lmRun,
-		func(r *RunResult) int { return r.UncachedPromptTokens }))
-
-	sb.WriteString(formatCachedToUncachedRatioRow(sbRun, smRun, lbRun, lmRun))
-
-	// 8. Oracle L1: Mutation Policy
-	sb.WriteString(formatOracleRow("Oracle L1: Mutation Policy",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level1Policy }))
-
-	// 9. Oracle L2: AST Invariants
-	sb.WriteString(formatOracleRow("Oracle L2: AST Invariants",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level2AST }))
-
-	// 10. Oracle L3: Clean Build
-	sb.WriteString(formatOracleRow("Oracle L3: Clean Build",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level3Build }))
-
-	// 11. Oracle L4: Verification Test
-	sb.WriteString(formatOracleRow("Oracle L4: Verification Test",
-		sbRun, smRun, lbRun, lmRun,
-		func(o *OracleResult) bool { return o.Level4Test }))
-
-	// 12. MCP Tool Invocation Verified
-	sb.WriteString(formatMCPVerifiedRow("MCP Tools Invocation Verified",
-		sbRun, smRun, lbRun, lmRun))
-
+	runs := benchmarkComparisonRuns{smallBaseline: sbRun, smallSemedit: smRun, largeBaseline: lbRun, largeSemedit: lmRun}
+	renderTimingComparisonRows(sb, runs)
+	renderInteractionComparisonRows(sb, runs)
+	renderTokenComparisonRows(sb, runs)
+	renderOracleComparisonRows(sb, runs)
 	sb.WriteString("\n")
+}
+
+type benchmarkComparisonRuns struct {
+	smallBaseline *RunResult
+	smallSemedit  *RunResult
+	largeBaseline *RunResult
+	largeSemedit  *RunResult
+}
+
+func renderTimingComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowDuration("Wall-Clock Latency",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) time.Duration { return r.WallClock }))
+	sb.WriteString(formatMetricRowOptionalDuration("Process Start → First Event",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.ProcessStartToFirstEvent }))
+	sb.WriteString(formatMetricRowOptionalDuration("First Event → First Tool Call",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.FirstEventToFirstToolCall }))
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Initialize → First Semantic Call",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.MCPInitializeToFirstSemanticCall }))
+	sb.WriteString(formatMetricRowOptionalDuration("MCP Server Start → Initialize",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) *time.Duration { return r.MCPServerStartToInitialize }))
+}
+
+func renderInteractionComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowInt("Top-Level User Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.Turns }))
+	sb.WriteString(formatMetricRowInt("Internal Tool Cycles",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.InternalTurns }))
+	sb.WriteString(formatMetricRowInt("Initial Load / Discovery Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.InitialLoadTurns }))
+	sb.WriteString(formatMetricRowInt("MCP Discovery / Schema Turns",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.MCPLoadTurns }))
+	sb.WriteString(formatMetricRowInt("Total Tool Invocations",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.ToolCount }))
+}
+
+func renderTokenComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatMetricRowInt("Output Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.OutputTokens }))
+	sb.WriteString(formatMetricRowInt("Reasoning / Thinking Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.ReasoningTokens }))
+	sb.WriteString(formatMetricRowInt("Total Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.PromptTokens }))
+	sb.WriteString(formatMetricRowIntWithDirection("Cached Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.CachedPromptTokens }, deltaHigherIsBetter))
+	sb.WriteString(formatMetricRowInt("Uncached Input Tokens",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(r *RunResult) int { return r.UncachedPromptTokens }))
+	sb.WriteString(formatCachedToUncachedRatioRow(runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
+}
+
+func renderOracleComparisonRows(sb *strings.Builder, runs benchmarkComparisonRuns) {
+	sb.WriteString(formatOracleRow("Oracle L1: Mutation Policy",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level1Policy }))
+	sb.WriteString(formatOracleRow("Oracle L2: AST Invariants",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level2AST }))
+	sb.WriteString(formatOracleRow("Oracle L3: Clean Build",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level3Build }))
+	sb.WriteString(formatOracleRow("Oracle L4: Verification Test",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit,
+		func(o *OracleResult) bool { return o.Level4Test }))
+	sb.WriteString(formatMCPVerifiedRow("MCP Tools Invocation Verified",
+		runs.smallBaseline, runs.smallSemedit, runs.largeBaseline, runs.largeSemedit))
 }
 
 func mcpColumnHeader(context string, run *RunResult) string {

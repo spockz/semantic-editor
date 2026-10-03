@@ -522,9 +522,9 @@ func normalizePlanOptions(options PlanOptions) (PlanOptions, error) {
 	if len(options.MCPServerInstructions) == 0 {
 		options.MCPServerInstructions = []MCPServerInstructionMode{MCPServerInstructionsNone}
 	} else {
-		modes, err := ParseMCPServerInstructionModes(strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","))
-		if err != nil {
-			return PlanOptions{}, fmt.Errorf("invalid MCP server instruction modes: %w", err)
+		modes, parseModesErr := ParseMCPServerInstructionModes(strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","))
+		if parseModesErr != nil {
+			return PlanOptions{}, fmt.Errorf("invalid MCP server instruction modes: %w", parseModesErr)
 		}
 		options.MCPServerInstructions = modes
 	}
