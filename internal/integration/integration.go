@@ -117,8 +117,8 @@ func Install(req Request) (Result, error) {
 		return Result{}, err
 	}
 	if req.Binary != "" {
-		if err := validateBinary(req.Binary); err != nil {
-			return Result{}, err
+		if binaryErr := validateBinary(req.Binary); binaryErr != nil {
+			return Result{}, binaryErr
 		}
 	}
 	result := baseResult(req, path)
@@ -422,12 +422,12 @@ func ownershipPath(config string, target Target, scope Scope) string {
 }
 
 func ownedRegistration(config string, target Target, scope Scope, current []byte) (bool, error) {
-	data, err := os.ReadFile(ownershipPath(config, target, scope))
-	if errors.Is(err, os.ErrNotExist) {
+	data, readErr := os.ReadFile(ownershipPath(config, target, scope))
+	if errors.Is(readErr, os.ErrNotExist) {
 		return false, nil
 	}
-	if err != nil {
-		return false, fmt.Errorf("read ownership record: %w", err)
+	if readErr != nil {
+		return false, fmt.Errorf("read ownership record: %w", readErr)
 	}
 	var record ownershipRecord
 	if err := json.Unmarshal(data, &record); err != nil {
