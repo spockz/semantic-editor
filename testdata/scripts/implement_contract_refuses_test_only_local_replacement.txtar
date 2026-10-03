@@ -2,6 +2,7 @@
 mkdir -p ../tokenlib
 cp .scratch/local-token.mod ../tokenlib/go.mod
 cp .scratch/local-token.go ../tokenlib/token.go
+exec go test ./...
 ! exec semedit implement-contract --file worker.go --symbol Worker --contract Runner --contract-file runner.go --receiver-kind pointer --body-policy panic_stub --destination-file worker.go
 stderr 'contract edits do not support mutable local replacement module "example.com/local/token" outside the captured module'
 cmp go.mod .scratch/want/go.mod
@@ -25,17 +26,19 @@ type Worker struct{}
 -- runner.go --
 package app
 
-import "example.com/local/token"
-
 type Runner interface {
-	Run(token.Token)
+	Run() error
 }
 -- worker_test.go --
 package app
 
-import "example.com/local/token"
+import (
+	"testing"
 
-func TestWorker(_ token.Token) {}
+	"example.com/local/token"
+)
+
+func TestWorker(t *testing.T) { _ = token.Token(t.Name()) }
 -- .scratch/local-token.mod --
 module example.com/local/token
 
@@ -59,17 +62,19 @@ type Worker struct{}
 -- .scratch/want/runner.go --
 package app
 
-import "example.com/local/token"
-
 type Runner interface {
-	Run(token.Token)
+	Run() error
 }
 -- .scratch/want/worker_test.go --
 package app
 
-import "example.com/local/token"
+import (
+	"testing"
 
-func TestWorker(_ token.Token) {}
+	"example.com/local/token"
+)
+
+func TestWorker(t *testing.T) { _ = token.Token(t.Name()) }
 -- .scratch/want/tokenlib/go.mod --
 module example.com/local/token
 
