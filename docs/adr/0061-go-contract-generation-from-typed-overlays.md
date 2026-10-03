@@ -14,6 +14,8 @@ Implement both tools as Go-only operations over the current source buffer overla
 
 The first release writes only to an existing same-package destination file. It formats and type-checks the full candidate against the current overlay, validates the relevant read set and destination preimage, then performs one buffer apply or checked atomic publication. A no-op preserves source bytes and reports `no_op`; batch receipts describe the operation's actual working-buffer result and do not imply a whole-batch transaction.
 
+Contract edits refuse packages that use a mutable local `replace` module. The current read set binds the selected module manifest and captured Go sources, but does not yet bind an external local replacement's manifest or file membership. Versioned module replacements remain supported.
+
 ## Invariants
 
 * Schemas are declared, recursive, closed, and typed. Unknown keys and unsupported policy values fail before handler execution.

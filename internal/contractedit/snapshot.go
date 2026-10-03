@@ -1,6 +1,6 @@
-// WHY: This file owns package loading and immutable source capture for contract planning and type checks.
-
-package operation
+// Package contractedit owns execution-time source capture, validation, and publication for Go contract edits.
+// WHY: This file loads package data and captures a stable source view for type checks.
+package contractedit
 
 import (
 	"bytes"
@@ -21,7 +21,8 @@ import (
 	"semedit/internal/sourcebuf"
 )
 
-func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []string) (*contractSnapshot, error) {
+// LoadSnapshot captures the selected module's package graph and source read set.
+func LoadSnapshot(ctx context.Context, workDir string, selectedPaths []string) (*Snapshot, error) {
 	root, err := filepath.Abs(workDir)
 	if err != nil {
 		return nil, fmt.Errorf("resolve contract workspace: %w", err)
@@ -39,7 +40,7 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 		}
 		analysisCtx = sourcebuf.WithBuffer(ctx, buffer)
 	}
-	moduleRoot, err := findContractModuleRoot(analysisCtx, root, selectedPaths)
+	moduleRoot, err := FindModuleRoot(analysisCtx, root, selectedPaths)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +67,7 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 	if err := analysisCtx.Err(); err != nil {
 		return nil, fmt.Errorf("load current contract source overlay: %w", err)
 	}
-	snapshot := newContractSnapshot(analysisCtx, buffer, root, moduleRoot, environment)
+	snapshot := newSnapshot(analysisCtx, buffer, root, moduleRoot, environment)
 	visitErr := captureContractPackages(loaded, snapshot, root, parsedContents, readContents)
 	if visitErr != nil {
 		return nil, visitErr
@@ -83,7 +84,7 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 	if err := requireContractPackages(snapshot, root, selectedPaths); err != nil {
 		return nil, err
 	}
-	if err := validateContractPackageGraph(snapshot.ByPath, snapshot.RequiredPkgPaths); err != nil {
+	if err := ValidatePackageGraph(snapshot.ByPath, snapshot.RequiredPkgPaths); err != nil {
 		return nil, fmt.Errorf("validate required contract package graph: %w", err)
 	}
 	return snapshot, nil
@@ -129,7 +130,7 @@ func loadContractPackages(ctx context.Context, root, moduleRoot string, environm
 		ParseFile: func(fset *token.FileSet, filename string, source []byte) (*ast.File, error) {
 			parsedMu.Lock()
 			defer parsedMu.Unlock()
-			return parseContractSource(ctx, root, fset, filename, source, parsed, nil)
+			return ParseSource(ctx, root, fset, filename, source, parsed, nil)
 		},
 	}, "./...")
 	if err != nil {
@@ -138,15 +139,15 @@ func loadContractPackages(ctx context.Context, root, moduleRoot string, environm
 	return loaded, nil
 }
 
-func newContractSnapshot(ctx context.Context, buffer *sourcebuf.Buffer, root, moduleRoot string, environment []string) *contractSnapshot {
-	return &contractSnapshot{
+func newSnapshot(ctx context.Context, buffer *sourcebuf.Buffer, root, moduleRoot string, environment []string) *Snapshot {
+	return &Snapshot{
 		Context: ctx, Buffer: buffer, Root: root, ModuleRoot: moduleRoot, Env: environment,
 		Packages: make([]*packages.Package, 0), ByPath: make(map[string]*packages.Package),
 		Syntax: make(map[string]*ast.File), Contents: make(map[string][]byte),
 	}
 }
 
-func captureContractPackages(loaded []*packages.Package, snapshot *contractSnapshot, root string, parsed, readContents map[string][]byte) error {
+func captureContractPackages(loaded []*packages.Package, snapshot *Snapshot, root string, parsed, readContents map[string][]byte) error {
 	var visitErr error
 	packages.Visit(loaded, func(pkg *packages.Package) bool {
 		if visitErr != nil {
@@ -161,7 +162,7 @@ func captureContractPackages(loaded []*packages.Package, snapshot *contractSnaps
 	return visitErr
 }
 
-func captureContractPackage(snapshot *contractSnapshot, root string, pkg *packages.Package, parsed, readContents map[string][]byte) error {
+func captureContractPackage(snapshot *Snapshot, root string, pkg *packages.Package, parsed, readContents map[string][]byte) error {
 	snapshot.Packages = append(snapshot.Packages, pkg)
 	if pkg.PkgPath != "" && snapshot.ByPath[pkg.PkgPath] == nil {
 		snapshot.ByPath[pkg.PkgPath] = pkg
@@ -227,7 +228,7 @@ func recheckContractInputs(ctx context.Context, readContents map[string][]byte) 
 	return nil
 }
 
-func recordContractReadSet(snapshot *contractSnapshot, root string, readContents map[string][]byte) error {
+func recordContractReadSet(snapshot *Snapshot, root string, readContents map[string][]byte) error {
 	for path, data := range readContents {
 		relative, err := filepath.Rel(root, path)
 		if err != nil {
@@ -236,21 +237,21 @@ func recordContractReadSet(snapshot *contractSnapshot, root string, readContents
 		if isContractOutsideRoot(relative) {
 			continue
 		}
-		snapshot.ReadSet = append(snapshot.ReadSet, contractRevision{Path: filepath.ToSlash(relative), Revision: contractDigest(data)})
+		snapshot.ReadSet = append(snapshot.ReadSet, Revision{Path: filepath.ToSlash(relative), Revision: Digest(data)})
 	}
-	slices.SortFunc(snapshot.ReadSet, func(left, right contractRevision) int {
+	slices.SortFunc(snapshot.ReadSet, func(left, right Revision) int {
 		return strings.Compare(left.Path, right.Path)
 	})
 	return nil
 }
 
-func requireContractPackages(snapshot *contractSnapshot, root string, selectedPaths []string) error {
+func requireContractPackages(snapshot *Snapshot, root string, selectedPaths []string) error {
 	for _, selected := range selectedPaths {
-		path, err := canonicalContractPath(root, selected)
+		path, err := CanonicalPath(root, selected)
 		if err != nil {
 			return err
 		}
-		pkg := snapshot.packageForFile(path)
+		pkg := snapshot.PackageForFile(path)
 		if pkg == nil {
 			return fmt.Errorf("selected Go file %q is outside the loaded module package set", selected)
 		}
