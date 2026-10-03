@@ -789,83 +789,114 @@ func typecheckMoveOverlay(ctx context.Context, root string, changes map[string][
 
 func validateMoveDestinationReferences(pkgs []*packages.Package, destinationImport, destinationPath, targetName string, expected map[moveReferenceKey][]moveReferenceExpectation) error {
 	for key, references := range expected {
-		var pkg *packages.Package
-		for _, candidate := range pkgs {
-			if candidate.ID == key.packageID {
-				pkg = candidate
-				break
-			}
-		}
-		if pkg == nil {
-			return fmt.Errorf("cross-package move cannot validate rewritten destination references in package %s", key.packageID)
-		}
-		var moved *types.Func
-		for _, reference := range references {
-			if reference.kind != moveReferenceFunction {
-				continue
-			}
-			if pkg.PkgPath != destinationImport {
-				return fmt.Errorf("cross-package move cannot validate package-local reference in %s", key.filePath)
-			}
-			var ok bool
-			moved, ok = pkg.Types.Scope().Lookup(targetName).(*types.Func)
-			if !ok || moved.Pkg() == nil || moved.Pkg().Path() != destinationImport || filepath.Clean(pkg.Fset.Position(moved.Pos()).Filename) != filepath.Clean(destinationPath) {
-				return fmt.Errorf("cross-package move cannot identify moved function %q in destination package", targetName)
-			}
-			break
-		}
-		var syntax *ast.File
-		for _, file := range pkg.Syntax {
-			if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) == key.filePath {
-				syntax = file
-				break
-			}
-		}
-		if syntax == nil {
-			return fmt.Errorf("cross-package move cannot validate rewritten destination references in %s", key.filePath)
-		}
-		wanted := make(map[int]moveReferenceExpectation, len(references))
-		for _, reference := range references {
-			wanted[reference.offset] = reference
-		}
-		misresolved := false
-		ast.Inspect(syntax, func(node ast.Node) bool {
-			ident, ok := node.(*ast.Ident)
-			if !ok {
-				return true
-			}
-			offset := pkg.Fset.Position(ident.Pos()).Offset
-			reference, expectedReference := wanted[offset]
-			if !expectedReference || ident.Name != reference.name {
-				return true
-			}
-			resolved := pkg.TypesInfo.Uses[ident]
-			valid := false
-			switch reference.kind {
-			case moveReferenceFunction:
-				valid = resolved == moved
-			case moveReferenceImport:
-				if packageName, ok := resolved.(*types.PkgName); ok {
-					valid = packageName.Imported().Path() == destinationImport
-				}
-			}
-			wanted[offset] = moveReferenceExpectation{kind: 0}
-			if !valid {
-				misresolved = true
-				return false
-			}
-			return true
-		})
-		if misresolved {
-			return fmt.Errorf("cross-package move refuses rewritten reference %q in %s because it resolves to a different declaration", targetName, key.filePath)
-		}
-		for offset, expectation := range wanted {
-			if expectation.kind != 0 {
-				return fmt.Errorf("cross-package move cannot prove rewritten reference %q in %s at byte %d resolves to the moved function or its destination package", expectation.name, key.filePath, offset)
-			}
+		if err := validateMoveReferenceGroup(pkgs, destinationImport, destinationPath, targetName, key, references); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func validateMoveReferenceGroup(pkgs []*packages.Package, destinationImport, destinationPath, targetName string, key moveReferenceKey, references []moveReferenceExpectation) error {
+	pkg := packageByID(pkgs, key.packageID)
+	if pkg == nil {
+		return fmt.Errorf("cross-package move cannot validate rewritten destination references in package %s", key.packageID)
+	}
+	moved, err := movedFunctionForReferences(pkg, destinationImport, destinationPath, targetName, key, references)
+	if err != nil {
+		return err
+	}
+	syntax := syntaxFileForReference(pkg, key.filePath)
+	if syntax == nil {
+		return fmt.Errorf("cross-package move cannot validate rewritten destination references in %s", key.filePath)
+	}
+	return inspectMoveReferenceResolutions(pkg, syntax, destinationImport, targetName, key, references, moved.function)
+}
+
+func packageByID(pkgs []*packages.Package, id string) *packages.Package {
+	for _, pkg := range pkgs {
+		if pkg.ID == id {
+			return pkg
+		}
+	}
+	return nil
+}
+
+type movedFunctionResolution struct {
+	function *types.Func
+	required bool
+}
+
+func movedFunctionForReferences(pkg *packages.Package, destinationImport, destinationPath, targetName string, key moveReferenceKey, references []moveReferenceExpectation) (movedFunctionResolution, error) {
+	for _, reference := range references {
+		if reference.kind != moveReferenceFunction {
+			continue
+		}
+		if pkg.PkgPath != destinationImport {
+			return movedFunctionResolution{}, fmt.Errorf("cross-package move cannot validate package-local reference in %s", key.filePath)
+		}
+		moved, ok := pkg.Types.Scope().Lookup(targetName).(*types.Func)
+		if !ok || moved.Pkg() == nil || moved.Pkg().Path() != destinationImport || filepath.Clean(pkg.Fset.Position(moved.Pos()).Filename) != filepath.Clean(destinationPath) {
+			return movedFunctionResolution{}, fmt.Errorf("cross-package move cannot identify moved function %q in destination package", targetName)
+		}
+		return movedFunctionResolution{function: moved, required: true}, nil
+	}
+	return movedFunctionResolution{}, nil
+}
+
+func syntaxFileForReference(pkg *packages.Package, path string) *ast.File {
+	for _, file := range pkg.Syntax {
+		if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) == path {
+			return file
+		}
+	}
+	return nil
+}
+
+func inspectMoveReferenceResolutions(pkg *packages.Package, syntax *ast.File, destinationImport, targetName string, key moveReferenceKey, references []moveReferenceExpectation, moved *types.Func) error {
+	wanted := make(map[int]moveReferenceExpectation, len(references))
+	for _, reference := range references {
+		wanted[reference.offset] = reference
+	}
+	misresolved := false
+	ast.Inspect(syntax, func(node ast.Node) bool {
+		ident, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		offset := pkg.Fset.Position(ident.Pos()).Offset
+		reference, expectedReference := wanted[offset]
+		if !expectedReference || ident.Name != reference.name {
+			return true
+		}
+		valid := validMoveReferenceResolution(pkg.TypesInfo.Uses[ident], reference.kind, destinationImport, moved)
+		wanted[offset] = moveReferenceExpectation{kind: 0}
+		if !valid {
+			misresolved = true
+			return false
+		}
+		return true
+	})
+	if misresolved {
+		return fmt.Errorf("cross-package move refuses rewritten reference %q in %s because it resolves to a different declaration", targetName, key.filePath)
+	}
+	for offset, expectation := range wanted {
+		if expectation.kind != 0 {
+			return fmt.Errorf("cross-package move cannot prove rewritten reference %q in %s at byte %d resolves to the moved function or its destination package", expectation.name, key.filePath, offset)
+		}
+	}
+	return nil
+}
+
+func validMoveReferenceResolution(resolved types.Object, kind moveReferenceKind, destinationImport string, moved *types.Func) bool {
+	switch kind {
+	case moveReferenceFunction:
+		return resolved == moved
+	case moveReferenceImport:
+		packageName, ok := resolved.(*types.PkgName)
+		return ok && packageName.Imported().Path() == destinationImport
+	default:
+		return false
+	}
 }
 
 func publicationOrder(paths []string, destination, source string) []string {
