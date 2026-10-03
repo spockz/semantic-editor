@@ -5,6 +5,7 @@ package operation
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -22,6 +23,8 @@ import (
 )
 
 const extractTypeToolName = "semantic_extract_type"
+
+var errExtractFieldNotFound = errors.New("field is absent from syntax")
 
 type sourceEdit struct {
 	start int
@@ -66,130 +69,192 @@ func extractTypeStructuralDef() Def[map[string]any, structuralPlanResult] {
 
 func planExtractType(snapshot *structuralSnapshot, raw map[string]any) (astedit.SourcePlan, error) {
 	inType, newType, fieldName := stringParam(raw, "in_type"), stringParam(raw, "symbol"), stringParam(raw, "field")
-	if err := validateFreshPrivateIdentifier("symbol", newType); err != nil {
+	selection, err := prepareExtractTypeSelection(snapshot, raw, inType, newType, fieldName)
+	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
+	return buildExtractTypeSourcePlan(snapshot, selection)
+}
+
+type extractTypeSelection struct {
+	Owner     *packages.Package
+	TypeName  string
+	NewType   string
+	FieldName string
+	Selected  []extractTypeField
+}
+
+func prepareExtractTypeSelection(snapshot *structuralSnapshot, raw map[string]any, inType, newType, fieldName string) (extractTypeSelection, error) {
+	if err := validateFreshPrivateIdentifier("symbol", newType); err != nil {
+		return extractTypeSelection{}, err
+	}
 	if err := validateFreshPrivateIdentifier("field", fieldName); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
 	owner, named, typeName, ownerErr := structuralFieldOwner(snapshot, inType)
 	if ownerErr != nil {
-		return astedit.SourcePlan{}, ownerErr
+		return extractTypeSelection{}, ownerErr
 	}
 	if err := rejectGeneratedExtractFile(snapshot, owner); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
 	if newType == typeName || fieldName == typeName || fieldName == newType {
-		return astedit.SourcePlan{}, fmt.Errorf("new type and composition field names must be distinct from each other and in_type")
+		return extractTypeSelection{}, fmt.Errorf("new type and composition field names must be distinct from each other and in_type")
 	}
 	if owner.Types.Scope().Lookup(newType) != nil {
-		return astedit.SourcePlan{}, fmt.Errorf("new type name %q already exists in package %s", newType, owner.PkgPath)
+		return extractTypeSelection{}, fmt.Errorf("new type name %q already exists in package %s", newType, owner.PkgPath)
 	}
 	if owner.Types.Scope().Lookup(fieldName) != nil {
-		return astedit.SourcePlan{}, fmt.Errorf("composition field name %q collides with a package declaration", fieldName)
+		return extractTypeSelection{}, fmt.Errorf("composition field name %q collides with a package declaration", fieldName)
 	}
 	structure := named.Underlying().(*types.Struct)
 	if err := rejectExtractTypeAPIExposure(snapshot, owner, named); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
 	if err := structuralFieldSourceSet(snapshot, owner, named, typeName, fieldName); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
 	if err := rejectStructuralBuildVariants(snapshot, owner); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
 	selected, selectionErr := parseExtractTypeMembers(raw["members"], snapshot, owner, structure, typeName)
 	if selectionErr != nil {
-		return astedit.SourcePlan{}, selectionErr
+		return extractTypeSelection{}, selectionErr
 	}
 	if err := proveExtractTypeUses(snapshot, owner, selected); err != nil {
-		return astedit.SourcePlan{}, err
+		return extractTypeSelection{}, err
 	}
+	return extractTypeSelection{Owner: owner, TypeName: typeName, NewType: newType, FieldName: fieldName, Selected: selected}, nil
+}
+
+func buildExtractTypeSourcePlan(snapshot *structuralSnapshot, selection extractTypeSelection) (astedit.SourcePlan, error) {
 	source := snapshot.Sources[snapshot.File]
-	fset, file, parseErr := parsePlanExtractSource(snapshot.File, source)
-	if parseErr != nil {
-		return astedit.SourcePlan{}, parseErr
-	}
-	ownerGroup, ownerGroupErr := findExtractTypeOwner(file, typeName)
-	if ownerGroupErr != nil {
-		return astedit.SourcePlan{}, ownerGroupErr
-	}
-	ownerLine := fset.Position(ownerGroup.End()).Line
-	for _, group := range file.Comments {
-		for _, comment := range group.List {
-			if comment.Pos() > ownerGroup.End() && fset.Position(comment.Pos()).Line == ownerLine {
-				return astedit.SourcePlan{}, fmt.Errorf("owner %q has a trailing comment that cannot be preserved safely", typeName)
-			}
-		}
-	}
-	if err := bindExtractTypeFieldDeclarations(selected, ownerGroup, typeName); err != nil {
+	fset, file, err := parsePlanExtractSource(snapshot.File, source)
+	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
-	edits := make([]sourceEdit, 0, len(selected)+len(selected))
-	fieldLines := make([]string, 0, len(selected))
-	firstField := true
-	newline := "\n"
-	if bytes.Contains(source, []byte("\r\n")) {
-		newline = "\r\n"
+	ownerGroup, err := findExtractTypeOwner(file, selection.TypeName)
+	if err != nil {
+		return astedit.SourcePlan{}, err
 	}
-	for _, field := range selected {
-		start, end, line, err := extractTypeFieldLine(source, fset, field)
-		if err != nil {
-			return astedit.SourcePlan{}, err
-		}
-		fieldLines = append(fieldLines, line)
-		if firstField {
-			firstField = false
-			indent := source[start:fset.Position(field.decl.Pos()).Offset]
-			edits = append(edits, sourceEdit{start: start, end: end, text: []byte(string(indent) + fieldName + " " + newType + newline)})
-		} else {
-			edits = append(edits, sourceEdit{start: start, end: end})
-		}
+	if commentErr := rejectExtractTypeTrailingComment(fset, file, ownerGroup, selection.TypeName); commentErr != nil {
+		return astedit.SourcePlan{}, commentErr
 	}
-	for _, pkg := range snapshot.Packages {
-		if pkg.ID != owner.ID {
-			continue
-		}
-		seenUse := map[int]bool{}
-		for _, syntax := range pkg.Syntax {
-			path, err := filepath.Abs(pkg.Fset.Position(syntax.Pos()).Filename)
-			if err != nil {
-				return astedit.SourcePlan{}, fmt.Errorf("resolve extraction package source: %w", err)
-			}
-			if path != snapshot.File {
-				continue
-			}
-			ast.Inspect(syntax, func(node ast.Node) bool {
-				selector, ok := node.(*ast.SelectorExpr)
-				if !ok {
-					return true
-				}
-				selection := pkg.TypesInfo.Uses[selector.Sel]
-				if isSelectedExtractField(selected, selection) {
-					offset := pkg.Fset.Position(selector.X.End()).Offset
-					if !seenUse[offset] {
-						edits = append(edits, sourceEdit{start: offset, end: offset, text: []byte("." + fieldName)})
-						seenUse[offset] = true
-					}
-				}
-				return true
-			})
-		}
+	if bindErr := bindExtractTypeFieldDeclarations(selection.Selected, ownerGroup, selection.TypeName); bindErr != nil {
+		return astedit.SourcePlan{}, bindErr
 	}
-	var fields strings.Builder
-	for _, line := range fieldLines {
-		fields.WriteString("\t")
-		fields.WriteString(strings.TrimSpace(line))
-		fields.WriteString(newline)
+	fieldEdits, fieldLines, newline, err := extractTypeFieldEdits(source, fset, selection)
+	if err != nil {
+		return astedit.SourcePlan{}, err
 	}
+	useEdits, err := extractTypeReferenceEdits(snapshot, selection)
+	if err != nil {
+		return astedit.SourcePlan{}, err
+	}
+	fieldEdits = append(fieldEdits, useEdits...)
+	edits := fieldEdits
+	fields := renderExtractTypeFields(fieldLines, newline)
 	insertAt := fset.Position(ownerGroup.End()).Offset
-	typeText := []byte(newline + newline + "type " + newType + " struct {" + newline + fields.String() + "}")
+	typeText := []byte(newline + newline + "type " + selection.NewType + " struct {" + newline + fields + "}")
 	edits = append(edits, sourceEdit{start: insertAt, end: insertAt, text: typeText})
 	updated, err := applyExtractTypeEdits(source, edits)
 	if err != nil {
 		return astedit.SourcePlan{}, err
 	}
-	return astedit.SourcePlan{Source: updated, Selection: astedit.PlanSelection{Kind: "type", Owner: typeName, Target: newType}, RequiredProofs: []astedit.ProofRequirement{astedit.ProofCompleteSourceSet, astedit.ProofTypedMemberSet, astedit.ProofUnkeyedLiteralSet}, Changed: !bytes.Equal(source, updated)}, nil
+	return astedit.SourcePlan{
+		Source:         updated,
+		Selection:      astedit.PlanSelection{Kind: "type", Owner: selection.TypeName, Target: selection.NewType},
+		RequiredProofs: []astedit.ProofRequirement{astedit.ProofCompleteSourceSet, astedit.ProofTypedMemberSet, astedit.ProofUnkeyedLiteralSet},
+		Changed:        !bytes.Equal(source, updated),
+	}, nil
+}
+
+func rejectExtractTypeTrailingComment(fset *token.FileSet, file *ast.File, ownerGroup *ast.GenDecl, typeName string) error {
+	ownerLine := fset.Position(ownerGroup.End()).Line
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			if comment.Pos() > ownerGroup.End() && fset.Position(comment.Pos()).Line == ownerLine {
+				return fmt.Errorf("owner %q has a trailing comment that cannot be preserved safely", typeName)
+			}
+		}
+	}
+	return nil
+}
+
+func extractTypeFieldEdits(source []byte, fset *token.FileSet, selection extractTypeSelection) ([]sourceEdit, []string, string, error) {
+	edits := make([]sourceEdit, 0, len(selection.Selected))
+	lines := make([]string, 0, len(selection.Selected))
+	newline := "\n"
+	if bytes.Contains(source, []byte("\r\n")) {
+		newline = "\r\n"
+	}
+	for index, field := range selection.Selected {
+		start, end, line, err := extractTypeFieldLine(source, fset, field)
+		if err != nil {
+			return nil, nil, "", err
+		}
+		lines = append(lines, line)
+		if index == 0 {
+			indent := source[start:fset.Position(field.decl.Pos()).Offset]
+			edits = append(edits, sourceEdit{start: start, end: end, text: []byte(string(indent) + selection.FieldName + " " + selection.NewType + newline)})
+			continue
+		}
+		edits = append(edits, sourceEdit{start: start, end: end})
+	}
+	return edits, lines, newline, nil
+}
+
+func extractTypeReferenceEdits(snapshot *structuralSnapshot, selection extractTypeSelection) ([]sourceEdit, error) {
+	edits := make([]sourceEdit, 0)
+	seenUse := make(map[int]bool)
+	for _, pkg := range snapshot.Packages {
+		if pkg.ID != selection.Owner.ID {
+			continue
+		}
+		for _, syntax := range pkg.Syntax {
+			if err := appendExtractTypeFileReferences(snapshot, selection, pkg, syntax, seenUse, &edits); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return edits, nil
+}
+
+func appendExtractTypeFileReferences(snapshot *structuralSnapshot, selection extractTypeSelection, pkg *packages.Package, syntax *ast.File, seenUse map[int]bool, edits *[]sourceEdit) error {
+	path, err := filepath.Abs(pkg.Fset.Position(syntax.Pos()).Filename)
+	if err != nil {
+		return fmt.Errorf("resolve extraction package source: %w", err)
+	}
+	if path != snapshot.File {
+		return nil
+	}
+	ast.Inspect(syntax, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		selected := pkg.TypesInfo.Uses[selector.Sel]
+		if !isSelectedExtractField(selection.Selected, selected) {
+			return true
+		}
+		offset := pkg.Fset.Position(selector.X.End()).Offset
+		if !seenUse[offset] {
+			*edits = append(*edits, sourceEdit{start: offset, end: offset, text: []byte("." + selection.FieldName)})
+			seenUse[offset] = true
+		}
+		return true
+	})
+	return nil
+}
+
+func renderExtractTypeFields(lines []string, newline string) string {
+	var fields strings.Builder
+	for _, line := range lines {
+		fields.WriteString("\t")
+		fields.WriteString(strings.TrimSpace(line))
+		fields.WriteString(newline)
+	}
+	return fields.String()
 }
 
 func bindExtractTypeFieldDeclarations(selected []extractTypeField, ownerGroup *ast.GenDecl, typeName string) error {
@@ -300,31 +365,59 @@ func exactExtractFieldIdent(snapshot *structuralSnapshot, owner *packages.Packag
 		if path != snapshot.File {
 			continue
 		}
-		for _, decl := range syntax.Decls {
-			group, ok := decl.(*ast.GenDecl)
-			if !ok || group.Tok != token.TYPE {
-				continue
-			}
-			for _, spec := range group.Specs {
-				typeSpec, ok := spec.(*ast.TypeSpec)
-				if !ok || typeSpec.Name.Name != typeName {
-					continue
-				}
-				structure, ok := typeSpec.Type.(*ast.StructType)
-				if !ok {
-					return nil, fmt.Errorf("in_type %q is not directly declared as a struct", typeName)
-				}
-				for _, field := range structure.Fields.List {
-					for _, ident := range field.Names {
-						if ident.Name == name {
-							return ident, nil
-						}
-					}
-				}
-			}
+		ident, err := extractFieldIdentInFile(syntax, typeName, name)
+		if errors.Is(err, errExtractFieldNotFound) {
+			continue
+		}
+		if err != nil || ident != nil {
+			return ident, err
 		}
 	}
 	return nil, fmt.Errorf("field %s.%s was not found in the selected syntax", typeName, name)
+}
+
+func extractFieldIdentInFile(file *ast.File, typeName, fieldName string) (*ast.Ident, error) {
+	for _, declaration := range file.Decls {
+		group, ok := declaration.(*ast.GenDecl)
+		if !ok || group.Tok != token.TYPE {
+			continue
+		}
+		ident, err := extractFieldIdentInGroup(group, typeName, fieldName)
+		if err != nil || ident != nil {
+			return ident, err
+		}
+	}
+	return nil, errExtractFieldNotFound
+}
+
+func extractFieldIdentInGroup(group *ast.GenDecl, typeName, fieldName string) (*ast.Ident, error) {
+	for _, spec := range group.Specs {
+		typeSpec, ok := spec.(*ast.TypeSpec)
+		if !ok || typeSpec.Name.Name != typeName {
+			continue
+		}
+		structure, ok := typeSpec.Type.(*ast.StructType)
+		if !ok {
+			return nil, fmt.Errorf("in_type %q is not directly declared as a struct", typeName)
+		}
+		ident := extractFieldIdentInStruct(structure, fieldName)
+		if ident == nil {
+			return nil, errExtractFieldNotFound
+		}
+		return ident, nil
+	}
+	return nil, errExtractFieldNotFound
+}
+
+func extractFieldIdentInStruct(structure *ast.StructType, fieldName string) *ast.Ident {
+	for _, field := range structure.Fields.List {
+		for _, ident := range field.Names {
+			if ident.Name == fieldName {
+				return ident
+			}
+		}
+	}
+	return nil
 }
 
 func enclosingExtractField(owner *packages.Package, ident *ast.Ident) (*ast.Field, error) {
@@ -354,68 +447,98 @@ func proveExtractTypeUses(snapshot *structuralSnapshot, owner *packages.Package,
 		positions[fmt.Sprintf("%s:%d", snapshot.File, owner.Fset.Position(selected.ident.Pos()).Offset)] = true
 	}
 	for _, pkg := range snapshot.Packages {
-		if pkg.TypesInfo == nil || pkg.Fset == nil {
+		if err := proveExtractTypePackageUses(snapshot, pkg, positions); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func proveExtractTypePackageUses(snapshot *structuralSnapshot, pkg *packages.Package, positions map[string]bool) error {
+	if pkg.TypesInfo == nil || pkg.Fset == nil {
+		return nil
+	}
+	selectors, addressTaken := collectExtractTypeSelectorUses(pkg.Syntax)
+	for ident, object := range pkg.TypesInfo.Uses {
+		field, ok := object.(*types.Var)
+		if !ok || !field.IsField() {
 			continue
 		}
-		selectors := map[*ast.Ident]bool{}
-		addressTaken := map[*ast.Ident]bool{}
-		for _, syntax := range pkg.Syntax {
-			var stack []ast.Node
-			ast.Inspect(syntax, func(node ast.Node) bool {
-				if node == nil {
-					stack = stack[:len(stack)-1]
-					return false
-				}
-				if selector, ok := node.(*ast.SelectorExpr); ok {
-					selectors[selector.Sel] = true
-					address := ast.Expr(selector)
-					for _, s := range slices.Backward(stack) {
-						switch parent := s.(type) {
-						case *ast.ParenExpr:
-							if parent.X != address {
-								break
-							}
-							address = parent
-							continue
-						case *ast.UnaryExpr:
-							if parent.Op == token.AND && parent.X == address {
-								addressTaken[selector.Sel] = true
-							}
-						}
-						break
-					}
-				}
-				stack = append(stack, node)
-				return true
-			})
+		if err := validateExtractTypeFieldUse(snapshot, pkg, ident, field, positions, selectors, addressTaken); err != nil {
+			return err
 		}
-		for ident, object := range pkg.TypesInfo.Uses {
-			field, ok := object.(*types.Var)
-			if !ok || !field.IsField() {
-				continue
-			}
-			declaration := pkg.Fset.Position(field.Pos())
-			declarationPath, err := filepath.Abs(declaration.Filename)
-			if err != nil {
-				return fmt.Errorf("resolve selected field declaration path: %w", err)
-			}
-			if !positions[fmt.Sprintf("%s:%d", declarationPath, declaration.Offset)] {
-				continue
-			}
-			if !selectors[ident] {
-				return fmt.Errorf("selected field %q has a non-selector use that cannot be rewritten safely", field.Name())
-			}
-			if addressTaken[ident] {
-				return fmt.Errorf("selected field %q is address-taken, which is outside this layout proof", field.Name())
-			}
-			usePath, err := filepath.Abs(pkg.Fset.Position(ident.Pos()).Filename)
-			if err != nil {
-				return fmt.Errorf("resolve selected field use path: %w", err)
-			}
-			if usePath != snapshot.File {
-				return fmt.Errorf("selected field %q is referenced outside the selected file", field.Name())
+	}
+	return nil
+}
+
+func collectExtractTypeSelectorUses(syntaxFiles []*ast.File) (map[*ast.Ident]bool, map[*ast.Ident]bool) {
+	selectors := make(map[*ast.Ident]bool)
+	addressTaken := make(map[*ast.Ident]bool)
+	for _, syntax := range syntaxFiles {
+		collectExtractTypeFileSelectorUses(syntax, selectors, addressTaken)
+	}
+	return selectors, addressTaken
+}
+
+func collectExtractTypeFileSelectorUses(syntax *ast.File, selectors, addressTaken map[*ast.Ident]bool) {
+	var stack []ast.Node
+	ast.Inspect(syntax, func(node ast.Node) bool {
+		if node == nil {
+			stack = stack[:len(stack)-1]
+			return false
+		}
+		selector, ok := node.(*ast.SelectorExpr)
+		if ok {
+			selectors[selector.Sel] = true
+			if extractSelectorAddressTaken(selector, stack) {
+				addressTaken[selector.Sel] = true
 			}
 		}
+		stack = append(stack, node)
+		return true
+	})
+}
+
+func extractSelectorAddressTaken(selector *ast.SelectorExpr, stack []ast.Node) bool {
+	address := ast.Expr(selector)
+	for _, parentNode := range slices.Backward(stack) {
+		switch parent := parentNode.(type) {
+		case *ast.ParenExpr:
+			if parent.X != address {
+				return false
+			}
+			address = parent
+			continue
+		case *ast.UnaryExpr:
+			return parent.Op == token.AND && parent.X == address
+		default:
+			return false
+		}
+	}
+	return false
+}
+
+func validateExtractTypeFieldUse(snapshot *structuralSnapshot, pkg *packages.Package, ident *ast.Ident, field *types.Var, positions map[string]bool, selectors, addressTaken map[*ast.Ident]bool) error {
+	declaration := pkg.Fset.Position(field.Pos())
+	declarationPath, err := filepath.Abs(declaration.Filename)
+	if err != nil {
+		return fmt.Errorf("resolve selected field declaration path: %w", err)
+	}
+	if !positions[fmt.Sprintf("%s:%d", declarationPath, declaration.Offset)] {
+		return nil
+	}
+	if !selectors[ident] {
+		return fmt.Errorf("selected field %q has a non-selector use that cannot be rewritten safely", field.Name())
+	}
+	if addressTaken[ident] {
+		return fmt.Errorf("selected field %q is address-taken, which is outside this layout proof", field.Name())
+	}
+	usePath, err := filepath.Abs(pkg.Fset.Position(ident.Pos()).Filename)
+	if err != nil {
+		return fmt.Errorf("resolve selected field use path: %w", err)
+	}
+	if usePath != snapshot.File {
+		return fmt.Errorf("selected field %q is referenced outside the selected file", field.Name())
 	}
 	return nil
 }
@@ -468,6 +591,19 @@ func rejectGeneratedExtractFile(snapshot *structuralSnapshot, owner *packages.Pa
 }
 
 func rejectExtractTypeAPIExposure(snapshot *structuralSnapshot, owner *packages.Package, target *types.Named) error {
+	if err := rejectExtractTypeReflectionPackages(snapshot, owner); err != nil {
+		return err
+	}
+	if err := rejectExportedExtractTypeDeclarations(owner, target); err != nil {
+		return err
+	}
+	if err := rejectExportedExtractTypeMethods(owner, target); err != nil {
+		return err
+	}
+	return rejectExportedExtractTypeSyntax(owner, target)
+}
+
+func rejectExtractTypeReflectionPackages(snapshot *structuralSnapshot, owner *packages.Package) error {
 	for _, pkg := range snapshot.Packages {
 		if pkg.PkgPath != owner.PkgPath && !strings.HasPrefix(pkg.PkgPath, owner.PkgPath+" [") {
 			continue
@@ -478,12 +614,20 @@ func rejectExtractTypeAPIExposure(snapshot *structuralSnapshot, owner *packages.
 			}
 		}
 	}
+	return nil
+}
+
+func rejectExportedExtractTypeDeclarations(owner *packages.Package, target *types.Named) error {
 	for _, name := range owner.Types.Scope().Names() {
 		object := owner.Types.Scope().Lookup(name)
 		if object != nil && object.Exported() && extractTypeContains(object.Type(), target, map[types.Type]bool{}) {
 			return fmt.Errorf("private owner %q escapes through exported package declaration %q", target.Obj().Name(), name)
 		}
 	}
+	return nil
+}
+
+func rejectExportedExtractTypeMethods(owner *packages.Package, target *types.Named) error {
 	for _, name := range owner.Types.Scope().Names() {
 		object := owner.Types.Scope().Lookup(name)
 		typeName, ok := object.(*types.TypeName)
@@ -500,6 +644,10 @@ func rejectExtractTypeAPIExposure(snapshot *structuralSnapshot, owner *packages.
 			}
 		}
 	}
+	return nil
+}
+
+func rejectExportedExtractTypeSyntax(owner *packages.Package, target *types.Named) error {
 	for _, syntax := range owner.Syntax {
 		for _, declaration := range syntax.Decls {
 			if !exportedExtractDeclaration(declaration) {
@@ -602,15 +750,7 @@ func extractTypeContains(candidate types.Type, target *types.Named, seen map[typ
 	seen[candidate] = true
 	switch value := candidate.(type) {
 	case *types.Named:
-		if value.Obj() == target.Obj() {
-			return true
-		}
-		for t := range value.TypeArgs().Types() {
-			if extractTypeContains(t, target, seen) {
-				return true
-			}
-		}
-		return extractTypeContains(value.Underlying(), target, seen)
+		return extractNamedTypeContains(value, target, seen)
 	case *types.Alias:
 		return extractTypeContains(types.Unalias(value), target, seen)
 	case *types.Pointer:
@@ -620,42 +760,78 @@ func extractTypeContains(candidate types.Type, target *types.Named, seen map[typ
 	case *types.Array:
 		return extractTypeContains(value.Elem(), target, seen)
 	case *types.Map:
-		return extractTypeContains(value.Key(), target, seen) || extractTypeContains(value.Elem(), target, seen)
+		return extractMapTypeContains(value, target, seen)
 	case *types.Chan:
 		return extractTypeContains(value.Elem(), target, seen)
 	case *types.Signature:
 		return extractTypeContains(value.Params(), target, seen) || extractTypeContains(value.Results(), target, seen)
 	case *types.Tuple:
-		for v := range value.Variables() {
-			if extractTypeContains(v.Type(), target, seen) {
-				return true
-			}
-		}
+		return extractTupleTypeContains(value, target, seen)
 	case *types.Struct:
-		for field := range value.Fields() {
-			if extractTypeContains(field.Type(), target, seen) {
-				return true
-			}
-		}
+		return extractStructTypeContains(value, target, seen)
 	case *types.Interface:
-		value.Complete()
-		for method := range value.Methods() {
-			if extractTypeContains(method.Type(), target, seen) {
-				return true
-			}
-		}
-		for etyp := range value.EmbeddedTypes() {
-			if extractTypeContains(etyp, target, seen) {
-				return true
-			}
-		}
+		return extractInterfaceTypeContains(value, target, seen)
 	case *types.TypeParam:
 		return extractTypeContains(value.Constraint(), target, seen)
 	case *types.Union:
-		for term := range value.Terms() {
-			if extractTypeContains(term.Type(), target, seen) {
-				return true
-			}
+		return extractUnionTypeContains(value, target, seen)
+	}
+	return false
+}
+
+func extractNamedTypeContains(value *types.Named, target *types.Named, seen map[types.Type]bool) bool {
+	if value.Obj() == target.Obj() {
+		return true
+	}
+	for argument := range value.TypeArgs().Types() {
+		if extractTypeContains(argument, target, seen) {
+			return true
+		}
+	}
+	return extractTypeContains(value.Underlying(), target, seen)
+}
+
+func extractMapTypeContains(value *types.Map, target *types.Named, seen map[types.Type]bool) bool {
+	return extractTypeContains(value.Key(), target, seen) || extractTypeContains(value.Elem(), target, seen)
+}
+
+func extractTupleTypeContains(value *types.Tuple, target *types.Named, seen map[types.Type]bool) bool {
+	for variable := range value.Variables() {
+		if extractTypeContains(variable.Type(), target, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractStructTypeContains(value *types.Struct, target *types.Named, seen map[types.Type]bool) bool {
+	for field := range value.Fields() {
+		if extractTypeContains(field.Type(), target, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractInterfaceTypeContains(value *types.Interface, target *types.Named, seen map[types.Type]bool) bool {
+	value.Complete()
+	for method := range value.Methods() {
+		if extractTypeContains(method.Type(), target, seen) {
+			return true
+		}
+	}
+	for embedded := range value.EmbeddedTypes() {
+		if extractTypeContains(embedded, target, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractUnionTypeContains(value *types.Union, target *types.Named, seen map[types.Type]bool) bool {
+	for term := range value.Terms() {
+		if extractTypeContains(term.Type(), target, seen) {
+			return true
 		}
 	}
 	return false
