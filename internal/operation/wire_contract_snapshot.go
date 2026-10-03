@@ -60,6 +60,9 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 	if err != nil {
 		return nil, err
 	}
+	if err := rejectLocalReplacementModules(loaded); err != nil {
+		return nil, err
+	}
 	if err := analysisCtx.Err(); err != nil {
 		return nil, fmt.Errorf("load current contract source overlay: %w", err)
 	}
@@ -84,6 +87,22 @@ func loadContractSnapshot(ctx context.Context, workDir string, selectedPaths []s
 		return nil, fmt.Errorf("validate required contract package graph: %w", err)
 	}
 	return snapshot, nil
+}
+
+func rejectLocalReplacementModules(loaded []*packages.Package) error {
+	var replacementErr error
+	packages.Visit(loaded, func(pkg *packages.Package) bool {
+		if replacementErr != nil || pkg == nil || pkg.Module == nil || pkg.Module.Replace == nil {
+			return replacementErr == nil
+		}
+		replacement := pkg.Module.Replace
+		if replacement.Dir != "" && replacement.Version == "" {
+			replacementErr = fmt.Errorf("contract edits do not support mutable local replacement module %q outside the captured module", pkg.Module.Path)
+			return false
+		}
+		return true
+	}, nil)
+	return replacementErr
 }
 
 func readContractModuleFiles(ctx context.Context, moduleRoot string) (map[string][]byte, error) {
