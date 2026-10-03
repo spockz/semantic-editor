@@ -1029,17 +1029,14 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 // DefaultRegistry constructs the registry with lookup, rename, and verify operations wired to backend leaves.
 func DefaultRegistry() *Registry {
 	registry := NewRegistry()
-	if err := Register(registry, lookupDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, referencesDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, renameDef()); err != nil {
-		panic(err)
-	}
-	if err := Register(registry, verifyDef()); err != nil {
-		panic(err)
+	for _, register := range []func(*Registry) error{
+		registerNavigationOps,
+		registerRenameOps,
+		registerVerificationOps,
+	} {
+		if err := register(registry); err != nil {
+			panic(err)
+		}
 	}
 	if err := registerReadInspectOps(registry); err != nil {
 		panic(err)

@@ -35,12 +35,17 @@ func parseReadProject(raw map[string]any, file string) (backend.ProjectContext, 
 		return backend.ProjectContext{}, err
 	}
 	return backend.ProjectContext{
-		File: file, Language: config.language,
-		WorkspaceTrust: backend.WorkspaceTrust{Trusted: config.trusted},
-		Java:           config.java, Scala: config.scala,
-		Haskell: config.haskell, HaskellStandalone: config.haskell.Standalone,
-		Kotlin: config.kotlin, Bash: config.bash, Make: config.make,
-		KotlinBin: config.kotlin.KotlinBin,
+		File:              file,
+		Language:          config.language,
+		WorkspaceTrust:    backend.WorkspaceTrust{Trusted: config.trusted},
+		Java:              config.java,
+		Scala:             config.scala,
+		Haskell:           config.haskell,
+		HaskellStandalone: config.haskell.Standalone,
+		Kotlin:            config.kotlin,
+		Bash:              config.bash,
+		Make:              config.make,
+		KotlinBin:         config.kotlin.KotlinBin,
 	}, nil
 }
 
@@ -73,9 +78,14 @@ func parseReadProjectConfiguration(raw map[string]any) (readProjectConfiguration
 		return readProjectConfiguration{}, err
 	}
 	return readProjectConfiguration{
-		language: backend.LanguageID(language), trusted: trusted,
-		java: javaScala.java, scala: javaScala.scala,
-		haskell: tools.haskell, kotlin: tools.kotlin, bash: tools.bash, make: tools.make,
+		language: backend.LanguageID(language),
+		trusted:  trusted,
+		java:     javaScala.java,
+		scala:    javaScala.scala,
+		haskell:  tools.haskell,
+		kotlin:   tools.kotlin,
+		bash:     tools.bash,
+		make:     tools.make,
 	}, nil
 }
 

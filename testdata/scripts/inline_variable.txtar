@@ -1,4 +1,9 @@
 # Exercise literal inlining through the public CLI and refuse unsafe values and conversion-name bindings.
+mkdir .scratch
+cp calc.go .scratch/calc_before.go
+! exec semedit inline-variable --file calc.go --symbol value --in-function LocalAlias
+stderr 'cannot inline "value": default type name int is shadowed by a local or package binding or import'
+cmp calc.go .scratch/calc_before.go
 exec semedit inline-variable --file calc.go --symbol value --in-function Compute
 cmp calc.go want/calc.go
 ! exec semedit inline-variable --file calc.go --symbol result --in-function Compute
@@ -40,6 +45,12 @@ func Shadow() {
 	println(shadowed)
 }
 
+func LocalAlias() {
+	type int = string
+	value := 42
+	println(value)
+}
+
 func compute() int { return 1 }
 
 -- want/calc.go --
@@ -59,6 +70,12 @@ func Shadow() {
 	_ = int
 	shadowed := 42
 	println(shadowed)
+}
+
+func LocalAlias() {
+	type int = string
+	value := 42
+	println(value)
 }
 
 func compute() int { return 1 }
