@@ -1,0 +1,40 @@
+# A buffered batch may insert an unrelated declaration before safely deleting an unreferenced private function.
+stdin input.json
+exec semedit mcp --live-reload
+stdout '"status":"ok"'
+! stdout '"symbol":"obsolete"'
+cmp decls.go .scratch/want/decls_after_batch.go
+cmp added.go .scratch/want/added.go
+exec semedit replace-body --file decls.go --symbol keep --body 'return 3'
+stdout 'Successfully replaced body'
+exec semedit lookup --file decls.go --symbol keep
+stdout '"symbol": "keep"'
+cmp decls.go .scratch/want/decls_after_followup.go
+-- go.mod --
+module example.com/safedeletebatch
+
+go 1.24
+-- decls.go --
+package sample
+
+func obsolete() {}
+func keep() int { return 1 }
+-- added.go --
+package sample
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Added() {}"}},{"tool":"semantic_remove_construct","params":{"file":"decls.go","kind":"function","symbol":"obsolete","safe_delete":true}}]}}}
+-- .scratch/want/decls_after_batch.go --
+package sample
+
+func keep() int { return 1 }
+-- .scratch/want/decls_after_followup.go --
+package sample
+
+func keep() int {
+	return 3
+}
+-- .scratch/want/added.go --
+package sample
+
+func Added() {}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -55,6 +56,9 @@ type removeTarget struct {
 
 // Remove deletes one Go declaration or switch case after validating the resulting file syntax.
 func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
+	if opts.SafeDelete && sourcebuf.FromContext(ctx) == nil {
+		return removeWithOwnedBuffer(ctx, filePath, opts, autoOrganizeImports)
+	}
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
@@ -77,7 +81,7 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 	var snapshot *safeDeleteSnapshot
 	if opts.SafeDelete {
 		var refusal string
-		snapshot, checks, refusal = safeDeleteConstant(fset, fileNode, target.node, cleanPath, content, checks)
+		snapshot, checks, refusal = safeDeleteDeclaration(ctx, fset, fileNode, target.node, cleanPath, content, checks)
 		if refusal != "" {
 			return "", checks, refusal, nil
 		}
@@ -88,12 +92,16 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 		return "", checks, "", err
 	}
 	if snapshot != nil {
-		if err := validateSafeDeleteSnapshot(snapshot); err != nil {
-			return "", checks, "", &SafeDeleteSnapshotError{Cause: err}
-		}
 		checks = append(checks, "module_source_unchanged_before_write")
 	}
-	if err := publishRemovedFile(ctx, cleanPath, formatted, autoOrganizeImports); err != nil {
+	var prepublish func() error
+	if snapshot != nil {
+		prepublish = func() error { return validateSafeDeleteSnapshot(ctx, snapshot) }
+	}
+	if err := publishRemovedFile(ctx, cleanPath, formatted, autoOrganizeImports, prepublish); err != nil {
+		if snapshotErr, ok := errors.AsType[*SafeDeleteSnapshotError](err); ok {
+			return "", checks, "", snapshotErr
+		}
 		return "", checks, "", err
 	}
 	targetName := opts.Symbol
@@ -103,18 +111,29 @@ func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrgani
 	return UnifiedDiff(targetName, oldText, ""), checks, "", nil
 }
 
-func safeDeleteConstant(fset *token.FileSet, file *ast.File, selected ast.Node, cleanPath string, content []byte, checks []string) (*safeDeleteSnapshot, []string, string) {
+func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.File, selected ast.Node, cleanPath string, content []byte, checks []string) (*safeDeleteSnapshot, []string, string) {
 	checks = append(checks, "safe_delete_scope_check")
-	gen, value, ident := standaloneConstant(file, selected)
-	if gen == nil || value == nil || ident == nil || gen.Tok != token.CONST || gen.Lparen.IsValid() || len(gen.Specs) != 1 || len(value.Names) != 1 || ast.IsExported(ident.Name) {
-		return nil, checks, "safe_delete supports only an unexported standalone constant without grouped iota siblings"
+	target, refusal := classifySafeDeleteTarget(file, selected)
+	if refusal != "" {
+		return nil, checks, refusal
 	}
-	checks = append(checks, "constant_resource_scope_check")
+	switch target.kind {
+	case "constant":
+		gen, value, ident := standaloneConstant(file, selected)
+		if gen == nil || value == nil || ident == nil || gen.Lparen.IsValid() || len(gen.Specs) != 1 {
+			return nil, checks, "safe_delete supports only an unexported standalone constant without grouped iota siblings"
+		}
+		checks = append(checks, "constant_resource_scope_check")
+	case "value":
+		checks = append(checks, "variable_effect_scope_check")
+	default:
+		checks = append(checks, "function_identity_scope_check")
+	}
 	root, err := nearestModuleRoot(filepath.Dir(cleanPath))
 	if err != nil {
 		return nil, checks, "cannot establish a complete Go module source set: " + err.Error()
 	}
-	files, referenceFound, directiveFound, err := scanModuleSources(root, cleanPath, fset.Position(ident.Pos()).Offset, ident.Name, content)
+	files, referenceFound, directiveFound, err := scanModuleSources(ctx, root, cleanPath, fset.Position(target.pos).Offset, target.name, content)
 	checks = append(checks, "module_go_source_scan")
 	if err != nil {
 		return nil, checks, "cannot complete module source scan: " + err.Error()
@@ -126,7 +145,12 @@ func safeDeleteConstant(fset *token.FileSet, file *ast.File, selected ast.Node, 
 	}
 	checks = append(checks, "special_directive_scan")
 	if referenceFound {
-		return nil, checks, fmt.Sprintf("safe_delete found another Go identifier named %q in the module source set", ident.Name)
+		return nil, checks, fmt.Sprintf("safe_delete found another Go identifier named %q in the module source set", target.name)
+	}
+	if refusal, err := verifySafeDeleteTarget(ctx, root, cleanPath, target); err != nil {
+		return nil, checks, "cannot complete compiler reference preflight: " + err.Error()
+	} else if refusal != "" {
+		return nil, checks, refusal
 	}
 	return &safeDeleteSnapshot{root: root, files: files}, checks, ""
 }
@@ -165,14 +189,13 @@ func nearestModuleRoot(directory string) (string, error) {
 	}
 }
 
-func scanModuleSources(root, target string, targetOffset int, targetName string, targetContent []byte) (map[string][32]byte, bool, bool, error) {
+func scanModuleSources(ctx context.Context, root, target string, targetOffset int, targetName string, targetContent []byte) (map[string][32]byte, bool, bool, error) {
 	files := make(map[string][32]byte)
 	referenceFound, directiveFound := false, false
 	rootFS, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, false, false, fmt.Errorf("open module root %s: %w", root, err)
 	}
-	defer func() { _ = rootFS.Close() }()
 	// The selected file has already been resolved under the active workspace; root is its nearest module.
 	// #nosec G703
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -189,8 +212,18 @@ func scanModuleSources(root, target string, targetOffset int, targetName string,
 		if entry.Type()&os.ModeSymlink != 0 {
 			return fmt.Errorf("symlink in module source set: %s", path)
 		}
-		if entry.IsDir() || filepath.Ext(path) != ".go" {
+		if filepath.Base(path) == "go.mod" && filepath.Dir(path) != root {
+			return fmt.Errorf("nested Go module in source set: %s", path)
+		}
+		extension := filepath.Ext(path)
+		if extension == ".s" || extension == ".S" || extension == ".syso" || extension == ".c" || extension == ".h" || extension == ".cpp" || extension == ".cc" || extension == ".cxx" || extension == ".m" || extension == ".mm" {
+			return fmt.Errorf("non-Go source in module prevents complete reference proof: %s", path)
+		}
+		if entry.IsDir() || extension != ".go" {
 			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("non-regular Go source in module source set: %s", path)
 		}
 		absolute, err := filepath.Abs(path)
 		if err != nil {
@@ -200,17 +233,25 @@ func scanModuleSources(root, target string, targetOffset int, targetName string,
 		if err != nil {
 			return fmt.Errorf("resolve source path relative to module root: %w", err)
 		}
-		dataFile, err := rootFS.Open(relative)
-		if err != nil {
-			return fmt.Errorf("open %s beneath module root: %w", absolute, err)
-		}
-		data, err := io.ReadAll(dataFile)
-		closeErr := dataFile.Close()
-		if err != nil {
-			return fmt.Errorf("read %s: %w", absolute, err)
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close %s: %w", absolute, closeErr)
+		var data []byte
+		if sourcebuf.FromContext(ctx) != nil {
+			data, err = sourcebuf.ReadFile(ctx, absolute)
+			if err != nil {
+				return fmt.Errorf("read %s from current source revision: %w", absolute, err)
+			}
+		} else {
+			dataFile, openErr := rootFS.Open(relative)
+			if openErr != nil {
+				return fmt.Errorf("open %s beneath module root: %w", absolute, openErr)
+			}
+			data, err = io.ReadAll(dataFile)
+			closeErr := dataFile.Close()
+			if err != nil {
+				return fmt.Errorf("read %s: %w", absolute, err)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close %s: %w", absolute, closeErr)
+			}
 		}
 		if absolute == target && !bytes.Equal(data, targetContent) {
 			return fmt.Errorf("selected file changed while scanning: %s", absolute)
@@ -242,11 +283,20 @@ func scanModuleSources(root, target string, targetOffset int, targetName string,
 		})
 		return nil
 	})
+	closeErr := rootFS.Close()
+	if err == nil && closeErr != nil {
+		err = fmt.Errorf("close module root %s: %w", root, closeErr)
+	}
 	return files, referenceFound, directiveFound, err
 }
 
-func validateSafeDeleteSnapshot(snapshot *safeDeleteSnapshot) error {
-	current, _, _, err := scanModuleSources(snapshot.root, "", -1, "", nil)
+func validateSafeDeleteSnapshot(ctx context.Context, snapshot *safeDeleteSnapshot) error {
+	if buffer := sourcebuf.FromContext(ctx); buffer != nil {
+		if err := buffer.AssertDisk(); err != nil {
+			return fmt.Errorf("disk preimage changed: %w", err)
+		}
+	}
+	current, _, _, err := scanModuleSources(ctx, snapshot.root, "", -1, "", nil)
 	if err != nil {
 		return err
 	}
@@ -480,8 +530,16 @@ func formatRemovedFile(cleanPath string, content []byte, start, end int) ([]byte
 	return formatted, nil
 }
 
-func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte, autoOrganizeImports bool) error {
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
+func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte, autoOrganizeImports bool, check func() error) error {
+	writeCheck := func() error {
+		if check != nil {
+			if err := check(); err != nil {
+				return &SafeDeleteSnapshotError{Cause: err}
+			}
+		}
+		return nil
+	}
+	if err := sourcebuf.WriteFileChecked(ctx, cleanPath, formatted, writeCheck); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
 	if autoOrganizeImports {
@@ -495,4 +553,22 @@ func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte,
 		return fmt.Errorf("format file: %w", err)
 	}
 	return nil
+}
+
+func removeWithOwnedBuffer(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
+	buffer, err := sourcebuf.New(filepath.Dir(filePath))
+	if err != nil {
+		return "", nil, "", fmt.Errorf("prepare safe-delete source view: %w", err)
+	}
+	diff, checks, refusal, err := Remove(sourcebuf.WithBuffer(ctx, buffer), filePath, opts, autoOrganizeImports)
+	if err != nil || refusal != "" {
+		return diff, checks, refusal, err
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		return "", checks, "", &SafeDeleteSnapshotError{Cause: err}
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		return "", checks, "", fmt.Errorf("publish safe-delete source view: %w", err)
+	}
+	return diff, checks, "", nil
 }

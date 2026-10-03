@@ -1,0 +1,52 @@
+# Safe deletion must preserve imported package initialization, with and without import cleanup and in an unsaved batch.
+cp main.go .scratch/before.go
+! exec semedit remove-construct --file main.go --kind function --symbol obsolete --safe-delete
+stderr 'final use of an import'
+cmp main.go .scratch/before.go
+cp constants.go .scratch/constants_before.go
+! exec semedit remove-construct --file constants.go --kind constant --symbol unusedNumber --safe-delete
+stderr 'final use of an import'
+cmp constants.go .scratch/constants_before.go
+! exec semedit remove-construct --file main.go --kind function --symbol obsolete --safe-delete --auto-organize-imports=false
+stderr 'final use of an import'
+cmp main.go .scratch/before.go
+stdin input.json
+exec semedit mcp --live-reload
+stdout '"status":"error"'
+stdout 'final use of an import'
+cmp main.go .scratch/before.go
+cmp added.go .scratch/want/added.go
+exec go run .
+stderr 'initialized'
+-- go.mod --
+module example.com/safedeleteinit
+
+go 1.24
+-- main.go --
+package main
+
+import "example.com/safedeleteinit/dep"
+
+func obsolete() { dep.Value() }
+func main()     {}
+-- dep/dep.go --
+package dep
+
+func init()  { println("initialized") }
+func Value() {}
+const Number = 7
+-- constants.go --
+package main
+
+import "example.com/safedeleteinit/dep"
+
+const unusedNumber = dep.Number
+-- added.go --
+package main
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":false,"edits":[{"tool":"semantic_insert_function","params":{"file":"added.go","source":"func Added() {}"}},{"tool":"semantic_remove_construct","params":{"file":"main.go","kind":"function","symbol":"obsolete","safe_delete":true}}]}}}
+-- .scratch/want/added.go --
+package main
+
+func Added() {}

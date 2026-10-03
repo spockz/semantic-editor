@@ -319,6 +319,8 @@ func resultForBatch(result any, workDir string) BatchResult {
 			file = continuationPath(workDir, typed.Display)
 		}
 		return BatchResult{File: file, Package: typed.Package}
+	case operation.RemoveRes:
+		return BatchResult{File: continuationPath(workDir, typed.File)}
 	case operation.BuildDependencyRes:
 		return BatchResult{File: continuationPath(workDir, typed.GoMod)}
 	default:

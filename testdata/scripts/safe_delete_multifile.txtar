@@ -1,0 +1,54 @@
+# Safe deletion resolves declarations in the compiler's own file set and retains imports still used by surviving declarations.
+exec semedit remove-construct --file z.go --kind function --symbol obsolete --safe-delete
+stdout 'Safe deletion checks run'
+cp z.go .scratch/before-recursive.go
+! exec semedit remove-construct --file z.go --kind function --symbol unusedRecursive --safe-delete
+stderr 'another Go identifier named'
+cmp z.go .scratch/before-recursive.go
+exec semedit remove-construct --file z.go --kind variable --symbol unusedCount --safe-delete
+stdout 'Safe deletion checks run'
+cmp z.go .scratch/want/z.go
+exec go test ./...
+-- go.mod --
+module example.com/safedeletemultifile
+
+go 1.24
+-- a.go --
+package sample
+
+func Keep() int { return retained() }
+-- z.go --
+package sample
+
+import "example.com/safedeletemultifile/dep"
+
+var unusedCount = 7
+
+func obsolete() { dep.Value() }
+func unusedRecursive(n int) { if n > 0 { unusedRecursive(n - 1) } }
+func retained() int { return dep.Value() }
+-- dep/dep.go --
+package dep
+
+func Value() int { return 1 }
+-- z_test.go --
+package sample
+
+import "testing"
+
+func TestKeep(t *testing.T) {
+	if Keep() != 1 {
+		t.Fatal("behavior changed")
+	}
+}
+-- .scratch/want/z.go --
+package sample
+
+import "example.com/safedeletemultifile/dep"
+
+func unusedRecursive(n int) {
+	if n > 0 {
+		unusedRecursive(n - 1)
+	}
+}
+func retained() int { return dep.Value() }
