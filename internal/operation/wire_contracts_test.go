@@ -157,56 +157,78 @@ func TestSignatureContinuationContractSeparatesReceiptInspectionFromFunctionEdit
 func assertSignatureProducerContinuations(t *testing.T, registry *Registry, producers, functionConsumers []string) {
 	t.Helper()
 	for _, producerName := range producers {
-		producer, ok := registry.LookupMCP(producerName)
-		if !ok || producer.Output == nil || producer.Output.ResultSchema == nil {
-			t.Fatalf("%s output contract missing", producerName)
-		}
-		functionTargetSchema, ok := producer.Output.ResultSchema.Properties["function_target"]
-		if !ok || slices.Contains(producer.Output.ResultSchema.Required, "function_target") || !slices.Contains(functionTargetSchema.Required, "expected_revision") {
-			t.Fatalf("%s function_target schema is not optional and fully guarded: %#v", producerName, functionTargetSchema)
-		}
-		paths := make(map[string]OutputContinuation)
-		for _, continuation := range producer.Output.Continuations {
-			paths[continuation.Path] = continuation
-		}
-		for _, field := range []string{"file", "symbol"} {
-			path := "result.edit_receipt.continuations[]." + field
-			continuation, exists := paths[path]
-			if !exists || !slices.Equal(continuation.Consumers, []string{"semantic_inspect_symbol"}) {
-				t.Errorf("%s generic receipt path %q consumers = %#v, exists %v", producerName, path, continuation.Consumers, exists)
-			}
-		}
-		if _, exists := paths["result.edit_receipt.continuations[].expected_revision"]; exists {
-			t.Errorf("%s generic receipt revision was advertised as a consumer input", producerName)
-		}
-		for _, field := range []string{"file", "symbol", "expected_revision"} {
-			path := "result.function_target." + field
-			continuation, exists := paths[path]
-			if !exists || !continuation.Optional || !slices.Equal(continuation.Consumers, functionConsumers) {
-				t.Errorf("%s function target path %q consumers = %#v optional=%v exists=%v", producerName, path, continuation.Consumers, continuation.Optional, exists)
-			}
-		}
-		for _, continuation := range producer.Output.Continuations {
-			source := producerName + "." + continuation.Path
-			for _, consumerName := range continuation.Consumers {
-				consumer, exists := registry.LookupMCP(consumerName)
-				if !exists {
-					t.Errorf("%s continuation names unknown consumer %q", continuation.Path, consumerName)
-					continue
-				}
-				compatible := false
-				for _, parameter := range consumer.Params {
-					if (parameter.Role == "" || parameter.Role == continuation.Role) && slices.Contains(parameter.SourceFields, source) {
-						compatible = true
-						break
-					}
-				}
-				if !compatible {
-					t.Errorf("%s continuation names consumer %q without a matching input field", continuation.Path, consumerName)
-				}
-			}
+		producer := signatureProducerEntry(t, registry, producerName)
+		assertSignatureProducerShape(t, producer, producerName, functionConsumers)
+		assertSignatureContinuationInputs(t, registry, producerName, producer.Output.Continuations)
+	}
+}
+
+func signatureProducerEntry(t *testing.T, registry *Registry, name string) Entry {
+	t.Helper()
+	producer, ok := registry.LookupMCP(name)
+	if !ok || producer.Output == nil || producer.Output.ResultSchema == nil {
+		t.Fatalf("%s output contract missing", name)
+	}
+	return producer
+}
+
+func assertSignatureProducerShape(t *testing.T, producer Entry, name string, functionConsumers []string) {
+	t.Helper()
+	functionTargetSchema, ok := producer.Output.ResultSchema.Properties["function_target"]
+	if !ok || slices.Contains(producer.Output.ResultSchema.Required, "function_target") || !slices.Contains(functionTargetSchema.Required, "expected_revision") {
+		t.Fatalf("%s function_target schema is not optional and fully guarded: %#v", name, functionTargetSchema)
+	}
+	paths := signatureContinuationPaths(producer.Output.Continuations)
+	assertContinuationConsumers(t, name, paths, "result.edit_receipt.continuations[].", []string{"file", "symbol"}, []string{"semantic_inspect_symbol"}, false)
+	if _, exists := paths["result.edit_receipt.continuations[].expected_revision"]; exists {
+		t.Errorf("%s generic receipt revision was advertised as a consumer input", name)
+	}
+	assertContinuationConsumers(t, name, paths, "result.function_target.", []string{"file", "symbol", "expected_revision"}, functionConsumers, true)
+}
+
+func signatureContinuationPaths(continuations []OutputContinuation) map[string]OutputContinuation {
+	paths := make(map[string]OutputContinuation, len(continuations))
+	for _, continuation := range continuations {
+		paths[continuation.Path] = continuation
+	}
+	return paths
+}
+
+func assertContinuationConsumers(t *testing.T, producer string, paths map[string]OutputContinuation, prefix string, fields, consumers []string, optional bool) {
+	t.Helper()
+	for _, field := range fields {
+		path := prefix + field
+		continuation, exists := paths[path]
+		if !exists || continuation.Optional != optional || !slices.Equal(continuation.Consumers, consumers) {
+			t.Errorf("%s continuation path %q consumers = %#v optional=%v exists=%v", producer, path, continuation.Consumers, continuation.Optional, exists)
 		}
 	}
+}
+
+func assertSignatureContinuationInputs(t *testing.T, registry *Registry, producer string, continuations []OutputContinuation) {
+	t.Helper()
+	for _, continuation := range continuations {
+		source := producer + "." + continuation.Path
+		for _, consumerName := range continuation.Consumers {
+			assertSignatureContinuationInput(t, registry, source, continuation, consumerName)
+		}
+	}
+}
+
+func assertSignatureContinuationInput(t *testing.T, registry *Registry, source string, continuation OutputContinuation, consumerName string) {
+	t.Helper()
+	consumer, exists := registry.LookupMCP(consumerName)
+	if !exists {
+		t.Errorf("%s continuation names unknown consumer %q", continuation.Path, consumerName)
+		return
+	}
+	for _, parameter := range consumer.Params {
+		compatibleRole := parameter.Role == "" || parameter.Role == continuation.Role
+		if compatibleRole && slices.Contains(parameter.SourceFields, source) {
+			return
+		}
+	}
+	t.Errorf("%s continuation names consumer %q without a matching input field", continuation.Path, consumerName)
 }
 
 func assertSignatureInspectionSources(t *testing.T, registry *Registry, producers []string) {
@@ -559,90 +581,167 @@ func TestContractParserRetainsAnalyzedBytesAcrossDiskDrift(t *testing.T) {
 }
 
 func TestImplementContractPreflightsSamePackageTestVariants(t *testing.T) {
-	for _, test := range []struct {
-		name           string
-		testSource     string
-		symlinkSource  string
-		symlinkInRoot  bool
-		wantErr        bool
-		wantErrMessage string
-	}{
-		{name: "compiles with tests", testSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n", wantErr: false},
-		{name: "refuses test method collision", testSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true, wantErrMessage: "test variant"},
-		{name: "refuses in-root symlinked test method collision", symlinkSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", symlinkInRoot: true, wantErr: true, wantErrMessage: "does not support test symlinks"},
-		{name: "refuses out-of-root symlinked test method collision", symlinkSource: "package demo\n\nfunc (*Worker) Run() error { return nil }\n", wantErr: true, wantErrMessage: "outside the snapshot root"},
-		{name: "refuses out-of-root symlinked test source without collision", symlinkSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n", wantErr: true, wantErrMessage: "outside the snapshot root"},
-	} {
+	for _, test := range contractTestVariantCases() {
 		t.Run(test.name, func(t *testing.T) {
-			root := t.TempDir()
-			for name, source := range map[string]string{
-				"go.mod":     "module example.com/testvariant\n\ngo 1.27.1\n",
-				"types.go":   "package demo\n\ntype Worker struct{}\n\ntype Runner interface { Run() error }\n",
-				"methods.go": "package demo\n",
-			} {
-				path := filepath.Join(root, name)
-				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if test.symlinkSource != "" {
-				targetRoot := t.TempDir()
-				if test.symlinkInRoot {
-					targetRoot = filepath.Join(root, "fixtures")
-					if err := os.MkdirAll(targetRoot, 0o700); err != nil {
-						t.Fatal(err)
-					}
-				}
-				externalTest := filepath.Join(targetRoot, "external_test.go")
-				if err := os.WriteFile(externalTest, []byte(test.symlinkSource), 0o600); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink(externalTest, filepath.Join(root, "worker_test.go")); err != nil {
-					t.Fatalf("create test source symlink: %v", err)
-				}
-			} else if test.testSource != "" {
-				if err := os.WriteFile(filepath.Join(root, "worker_test.go"), []byte(test.testSource), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			before, err := os.ReadFile(filepath.Join(root, "methods.go"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := runImplementContract(context.Background(), CallContext{WorkDir: root}, implementContractRequest{
-				File: "types.go", Symbol: "Worker", Contract: "Runner", DestinationFile: "methods.go",
-				ReceiverKind: contractplan.ReceiverPointer, BodyPolicy: contractplan.BodyPolicyPanicStub,
-			})
-			switch {
-			case test.wantErr:
-				if err == nil || !strings.Contains(err.Error(), test.wantErrMessage) {
-					t.Fatalf("expected refusal containing %q, got %v", test.wantErrMessage, err)
-				}
-				after, readErr := os.ReadFile(filepath.Join(root, "methods.go"))
-				if readErr != nil {
-					t.Fatal(readErr)
-				}
-				if !bytes.Equal(after, before) {
-					t.Fatalf("destination changed after test variant refusal: %q", after)
-				}
-			case err != nil:
-				t.Fatalf("valid test variant rejected: %v", err)
-			default:
-				wantRevision := contractDigest([]byte(test.testSource))
-				foundTestRevision := false
-				for _, revision := range result.ReadSet {
-					if revision.Path == "worker_test.go" && revision.Revision == wantRevision {
-						foundTestRevision = true
-						break
-					}
-				}
-				if !foundTestRevision {
-					t.Fatalf("successful contract preflight read set lacks worker_test.go revision %q: %#v", wantRevision, result.ReadSet)
-				}
-			}
+			runContractTestVariantCase(t, test)
 		})
 	}
+}
+
+type contractTestVariantCase struct {
+	name           string
+	testSource     string
+	symlinkSource  string
+	symlinkInRoot  bool
+	wantErr        bool
+	wantErrMessage string
+}
+
+type contractTestVariantFixture struct {
+	Root              string
+	DestinationPath   string
+	DestinationBefore []byte
+}
+
+func contractTestVariantCases() []contractTestVariantCase {
+	return []contractTestVariantCase{
+		{
+			name:       "compiles with tests",
+			testSource: "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n",
+		},
+		{
+			name:           "refuses test method collision",
+			testSource:     "package demo\n\nfunc (*Worker) Run() error { return nil }\n",
+			wantErr:        true,
+			wantErrMessage: "test variant",
+		},
+		{
+			name:           "refuses in-root symlinked test method collision",
+			symlinkSource:  "package demo\n\nfunc (*Worker) Run() error { return nil }\n",
+			symlinkInRoot:  true,
+			wantErr:        true,
+			wantErrMessage: "does not support test symlinks",
+		},
+		{
+			name:           "refuses out-of-root symlinked test method collision",
+			symlinkSource:  "package demo\n\nfunc (*Worker) Run() error { return nil }\n",
+			wantErr:        true,
+			wantErrMessage: "outside the snapshot root",
+		},
+		{
+			name:           "refuses out-of-root symlinked test source without collision",
+			symlinkSource:  "package demo\n\nimport \"testing\"\n\nfunc TestWorker(t *testing.T) {}\n",
+			wantErr:        true,
+			wantErrMessage: "outside the snapshot root",
+		},
+	}
+}
+
+func runContractTestVariantCase(t *testing.T, test contractTestVariantCase) {
+	t.Helper()
+	fixture := createContractTestVariantFixture(t, test)
+	request := implementContractRequest{
+		File: "types.go", Symbol: "Worker", Contract: "Runner", DestinationFile: "methods.go",
+		ReceiverKind: contractplan.ReceiverPointer, BodyPolicy: contractplan.BodyPolicyPanicStub,
+	}
+	result, err := runImplementContract(context.Background(), CallContext{WorkDir: fixture.Root}, request)
+	if test.wantErr {
+		assertContractVariantRefusal(t, test, fixture, err)
+		return
+	}
+	if err != nil {
+		t.Fatalf("valid test variant rejected: %v", err)
+	}
+	assertContractVariantReadSet(t, test.testSource, result.ReadSet)
+}
+
+func createContractTestVariantFixture(t *testing.T, test contractTestVariantCase) contractTestVariantFixture {
+	t.Helper()
+	root := t.TempDir()
+	writeContractTestVariantBase(t, root)
+	writeContractTestVariantSource(t, root, test)
+	destination := filepath.Join(root, "methods.go")
+	before, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return contractTestVariantFixture{Root: root, DestinationPath: destination, DestinationBefore: before}
+}
+
+func writeContractTestVariantBase(t *testing.T, root string) {
+	t.Helper()
+	files := map[string]string{
+		"go.mod":     "module example.com/testvariant\n\ngo 1.27.1\n",
+		"types.go":   "package demo\n\ntype Worker struct{}\n\ntype Runner interface { Run() error }\n",
+		"methods.go": "package demo\n",
+	}
+	for name, source := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func writeContractTestVariantSource(t *testing.T, root string, test contractTestVariantCase) {
+	t.Helper()
+	if test.symlinkSource == "" {
+		if test.testSource != "" {
+			writeContractTestFile(t, filepath.Join(root, "worker_test.go"), test.testSource)
+		}
+		return
+	}
+	targetRoot := contractVariantSymlinkRoot(t, root, test.symlinkInRoot)
+	externalTest := filepath.Join(targetRoot, "external_test.go")
+	writeContractTestFile(t, externalTest, test.symlinkSource)
+	if err := os.Symlink(externalTest, filepath.Join(root, "worker_test.go")); err != nil {
+		t.Fatalf("create test source symlink: %v", err)
+	}
+}
+
+func contractVariantSymlinkRoot(t *testing.T, root string, inRoot bool) string {
+	t.Helper()
+	if !inRoot {
+		return t.TempDir()
+	}
+	path := filepath.Join(root, "fixtures")
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func writeContractTestFile(t *testing.T, path, source string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func assertContractVariantRefusal(t *testing.T, test contractTestVariantCase, fixture contractTestVariantFixture, err error) {
+	t.Helper()
+	if err == nil || !strings.Contains(err.Error(), test.wantErrMessage) {
+		t.Fatalf("expected refusal containing %q, got %v", test.wantErrMessage, err)
+	}
+	after, readErr := os.ReadFile(fixture.DestinationPath)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(after, fixture.DestinationBefore) {
+		t.Fatalf("destination changed after test variant refusal: %q", after)
+	}
+}
+
+func assertContractVariantReadSet(t *testing.T, source string, readSet []contractRevision) {
+	t.Helper()
+	wantRevision := contractDigest([]byte(source))
+	for _, revision := range readSet {
+		if revision.Path == "worker_test.go" && revision.Revision == wantRevision {
+			return
+		}
+	}
+	t.Fatalf("successful contract preflight read set lacks worker_test.go revision %q: %#v", wantRevision, readSet)
 }

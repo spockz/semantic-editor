@@ -4,6 +4,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -121,134 +122,248 @@ func fakeRangeAt(line, start, end int) fakeLSPRange {
 func runFakeLanguageServer(symbol fakeDocumentSymbol) {
 	reader := lsp.NewFrameReader(os.Stdin, 0)
 	writer := lsp.NewFrameWriter(os.Stdout, 0)
-	formattingSeen, codeActionSeen := false, false
+	state := fakeLanguageServerState{symbol: symbol}
 	for {
 		payload, err := reader.ReadMessage()
 		if errors.Is(err, io.EOF) {
 			return
 		}
 		if err != nil {
-			return
+			failFakeLanguageServer(fmt.Errorf("read fake language server frame: %w", err))
 		}
-		var request struct {
-			ID     json.RawMessage `json:"id"`
-			Method string          `json:"method"`
-			Params json.RawMessage `json:"params"`
-		}
-		if json.Unmarshal(payload, &request) != nil {
-			continue
+		request, err := decodeFakeLSPRequest(payload)
+		if err != nil {
+			failFakeLanguageServer(err)
 		}
 		if len(request.ID) == 0 {
-			if request.Method == "textDocument/didOpen" && (os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" || os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "") {
-				var opened struct {
-					TextDocument struct {
-						URI string `json:"uri"`
-					} `json:"textDocument"`
-				}
-				_ = json.Unmarshal(request.Params, &opened)
-				params, _ := json.Marshal(map[string]any{"uri": opened.TextDocument.URI, "version": 1, "diagnostics": []any{}})
-				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
-				_ = writer.WriteMessage(notification)
-			}
-			if request.Method == "textDocument/didOpen" && (os.Getenv("SEMEDIT_TEST_KOTLIN_VERIFY") != "" || os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "") {
-				var opened struct {
-					TextDocument struct {
-						URI string `json:"uri"`
-					} `json:"textDocument"`
-				}
-				_ = json.Unmarshal(request.Params, &opened)
-				uri := opened.TextDocument.URI
-				if os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "" {
-					uri = "file:///outside/Widget.kt"
-				}
-				diagnostics := []any{}
-				if os.Getenv("SEMEDIT_TEST_KOTLIN_DIAGNOSTIC") != "" {
-					diagnostics = []any{map[string]any{"message": "selected Kotlin warning", "severity": 2, "range": fakeRange(0, 0)}}
-				}
-				params, _ := json.Marshal(map[string]any{"uri": uri, "diagnostics": diagnostics})
-				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
-				_ = writer.WriteMessage(notification)
-			}
-			if request.Method == "textDocument/didChange" {
-				var change struct {
-					TextDocument struct {
-						URI     string `json:"uri"`
-						Version int    `json:"version"`
-					} `json:"textDocument"`
-				}
-				_ = json.Unmarshal(request.Params, &change)
-				if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!formattingSeen || !codeActionSeen) {
-					return
-				}
-				if change.TextDocument.Version <= 2 {
-					continue
-				}
-				params, _ := json.Marshal(map[string]any{"uri": change.TextDocument.URI, "version": change.TextDocument.Version, "diagnostics": []any{}})
-				notification, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
-				_ = writer.WriteMessage(notification)
-			}
-			if request.Method == "workspace/didChangeConfiguration" && os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
-				return
+			if !handleFakeLanguageNotification(writer, state, request) {
+				failFakeLanguageServer(errors.New("fake language server rejected notification"))
 			}
 			continue
 		}
-		var result any
-		switch request.Method {
-		case "initialize":
-			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
-				return
-			}
-			result = map[string]any{"capabilities": map[string]any{}}
-		case "workspace/didChangeConfiguration":
-			if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") != "" && !assertJavaSettings(request.Params, os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")) {
-				return
-			}
-		case "textDocument/documentSymbol":
-			result = []fakeDocumentSymbol{symbol}
-			if os.Getenv("SEMEDIT_TEST_KOTLIN_AMBIGUOUS") != "" {
-				result = []fakeDocumentSymbol{symbol, symbol}
-			}
-		case "textDocument/prepareRename":
-			result = symbol.SelectionRange
-		case "textDocument/formatting":
-			formattingSeen = true
-			result = []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 3}}, "newText": "class Widget {}\n"}}
-		case "textDocument/codeAction":
-			codeActionSeen = true
-			var params struct {
-				TextDocument struct {
-					URI string `json:"uri"`
-				} `json:"textDocument"`
-			}
-			_ = json.Unmarshal(request.Params, &params)
-			result = []map[string]any{{"kind": "source.organizeImports", "edit": map[string]any{"changes": map[string]any{params.TextDocument.URI: []map[string]any{{"range": fakeLSPRange{}, "newText": ""}}}}}}
-		case "textDocument/rename":
-			var params struct {
-				TextDocument struct {
-					URI string `json:"uri"`
-				} `json:"textDocument"`
-				NewName string `json:"newName"`
-			}
-			_ = json.Unmarshal(request.Params, &params)
-			uri := params.TextDocument.URI
-			if parsed, parseErr := url.Parse(uri); parseErr == nil {
-				uri = parsed.String()
-			}
-			edit := map[string]any{"changes": map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}}
-			if os.Getenv("SEMEDIT_RUST_UNSAFE") == "1" || os.Getenv("SEMEDIT_JAVA_UNSAFE") == "1" {
-				edit["changes"] = map[string]any{uri: []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}, "file:///foreign.rs": []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}}
-			}
-			result = edit
-		}
-		response, err := json.Marshal(struct {
-			JSONRPC string          `json:"jsonrpc"`
-			ID      json.RawMessage `json:"id"`
-			Result  any             `json:"result"`
-		}{JSONRPC: "2.0", ID: request.ID, Result: result})
-		if err != nil || writer.WriteMessage(response) != nil {
+		result, keepRunning := handleFakeLanguageRequest(&state, request)
+		if !keepRunning {
 			return
 		}
+		if err := writeFakeLSPResponse(writer, request.ID, result); err != nil {
+			failFakeLanguageServer(err)
+		}
 	}
+}
+
+func failFakeLanguageServer(err error) {
+	if _, writeErr := fmt.Fprintln(os.Stderr, "fake language server:", err); writeErr != nil {
+		os.Exit(2)
+	}
+	os.Exit(2)
+}
+
+type fakeLSPRequest struct {
+	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
+type fakeLanguageServerState struct {
+	symbol         fakeDocumentSymbol
+	formattingSeen bool
+	codeActionSeen bool
+}
+
+func decodeFakeLSPRequest(payload []byte) (fakeLSPRequest, error) {
+	var request fakeLSPRequest
+	if err := json.Unmarshal(payload, &request); err != nil {
+		return fakeLSPRequest{}, err
+	}
+	return request, nil
+}
+
+func handleFakeLanguageNotification(writer *lsp.FrameWriter, state fakeLanguageServerState, request fakeLSPRequest) bool {
+	if request.Method == "textDocument/didOpen" {
+		writeConfiguredOpenDiagnostics(writer, request.Params)
+		writeConfiguredKotlinDiagnostics(writer, request.Params)
+	}
+	if request.Method == "textDocument/didChange" && !handleFakeDocumentChange(writer, state, request.Params) {
+		return false
+	}
+	if request.Method == "workspace/didChangeConfiguration" && !validConfiguredJavaSettings(request.Params) {
+		return false
+	}
+	return true
+}
+
+func writeConfiguredOpenDiagnostics(writer *lsp.FrameWriter, raw json.RawMessage) {
+	if os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS") == "" && os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") == "" {
+		return
+	}
+	document := fakeTextDocumentParams(raw)
+	version := 1
+	writeFakeDiagnostics(writer, document.URI, &version, []any{})
+}
+
+func writeConfiguredKotlinDiagnostics(writer *lsp.FrameWriter, raw json.RawMessage) {
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_VERIFY") == "" && os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") == "" {
+		return
+	}
+	document := fakeTextDocumentParams(raw)
+	uri := document.URI
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_WRONG_URI_ONLY") != "" {
+		uri = "file:///outside/Widget.kt"
+	}
+	diagnostics := []any{}
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_DIAGNOSTIC") != "" {
+		diagnostics = []any{map[string]any{"message": "selected Kotlin warning", "severity": 2, "range": fakeRange(0, 0)}}
+	}
+	writeFakeDiagnostics(writer, uri, nil, diagnostics)
+}
+
+func fakeTextDocumentParams(raw json.RawMessage) struct {
+	URI string `json:"uri"`
+} {
+	var params struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake text document params: %w", err))
+	}
+	if params.TextDocument.URI == "" {
+		failFakeLanguageServer(errors.New("fake text document params missing URI"))
+	}
+	return params.TextDocument
+}
+
+func writeFakeDiagnostics(writer *lsp.FrameWriter, uri string, version *int, diagnostics []any) {
+	paramsValue := map[string]any{"uri": uri, "diagnostics": diagnostics}
+	if version != nil {
+		paramsValue["version"] = *version
+	}
+	params, err := json.Marshal(paramsValue)
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("encode fake diagnostics params: %w", err))
+	}
+	notification, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": json.RawMessage(params)})
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("encode fake diagnostics notification: %w", err))
+	}
+	if err := writer.WriteMessage(notification); err != nil {
+		failFakeLanguageServer(fmt.Errorf("write fake diagnostics notification: %w", err))
+	}
+}
+
+func handleFakeDocumentChange(writer *lsp.FrameWriter, state fakeLanguageServerState, raw json.RawMessage) bool {
+	var change struct {
+		TextDocument struct {
+			URI     string `json:"uri"`
+			Version int    `json:"version"`
+		} `json:"textDocument"`
+	}
+	if err := json.Unmarshal(raw, &change); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake document change: %w", err))
+	}
+	if os.Getenv("SEMEDIT_ASSERT_JAVA_VERIFY") != "" && change.TextDocument.Version > 2 && (!state.formattingSeen || !state.codeActionSeen) {
+		return false
+	}
+	if change.TextDocument.Version <= 2 {
+		return true
+	}
+	writeFakeDiagnostics(writer, change.TextDocument.URI, &change.TextDocument.Version, []any{})
+	return true
+}
+
+func validConfiguredJavaSettings(raw json.RawMessage) bool {
+	expected := os.Getenv("SEMEDIT_ASSERT_JAVA_SETTINGS")
+	return expected == "" || assertJavaSettings(raw, expected)
+}
+
+func handleFakeLanguageRequest(state *fakeLanguageServerState, request fakeLSPRequest) (any, bool) {
+	switch request.Method {
+	case "initialize":
+		return fakeInitializeResult(request.Params)
+	case "workspace/didChangeConfiguration":
+		return nil, validConfiguredJavaSettings(request.Params)
+	case "textDocument/documentSymbol":
+		return fakeDocumentSymbols(state.symbol), true
+	case "textDocument/prepareRename":
+		return state.symbol.SelectionRange, true
+	case "textDocument/formatting":
+		state.formattingSeen = true
+		return fakeFormattingEdits(), true
+	case "textDocument/codeAction":
+		state.codeActionSeen = true
+		return fakeCodeAction(request.Params), true
+	case "textDocument/rename":
+		return fakeRenameEdit(state.symbol, request.Params), true
+	default:
+		return nil, true
+	}
+}
+
+func fakeInitializeResult(params json.RawMessage) (any, bool) {
+	if !validConfiguredJavaSettings(params) {
+		return nil, false
+	}
+	return map[string]any{"capabilities": map[string]any{}}, true
+}
+
+func fakeDocumentSymbols(symbol fakeDocumentSymbol) []fakeDocumentSymbol {
+	if os.Getenv("SEMEDIT_TEST_KOTLIN_AMBIGUOUS") != "" {
+		return []fakeDocumentSymbol{symbol, symbol}
+	}
+	return []fakeDocumentSymbol{symbol}
+}
+
+func fakeFormattingEdits() []map[string]any {
+	return []map[string]any{{"range": fakeLSPRange{Start: fakeLSPPosition{}, End: fakeLSPPosition{Line: 3}}, "newText": "class Widget {}\n"}}
+}
+
+func fakeCodeAction(raw json.RawMessage) []map[string]any {
+	document := fakeTextDocumentParams(raw)
+	edit := map[string]any{"changes": map[string]any{
+		document.URI: []map[string]any{{"range": fakeLSPRange{}, "newText": ""}},
+	}}
+	return []map[string]any{{"kind": "source.organizeImports", "edit": edit}}
+}
+
+func fakeRenameEdit(symbol fakeDocumentSymbol, raw json.RawMessage) map[string]any {
+	var params struct {
+		TextDocument struct {
+			URI string `json:"uri"`
+		} `json:"textDocument"`
+		NewName string `json:"newName"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		failFakeLanguageServer(fmt.Errorf("decode fake rename params: %w", err))
+	}
+	if params.TextDocument.URI == "" || params.NewName == "" {
+		failFakeLanguageServer(errors.New("fake rename params missing URI or new name"))
+	}
+	uri := params.TextDocument.URI
+	parsed, err := url.Parse(uri)
+	if err != nil {
+		failFakeLanguageServer(fmt.Errorf("parse fake rename URI: %w", err))
+	}
+	uri = parsed.String()
+	changes := map[string][]map[string]any{
+		uri: {{"range": symbol.SelectionRange, "newText": params.NewName}},
+	}
+	if os.Getenv("SEMEDIT_RUST_UNSAFE") == "1" || os.Getenv("SEMEDIT_JAVA_UNSAFE") == "1" {
+		changes["file:///foreign.rs"] = []map[string]any{{"range": symbol.SelectionRange, "newText": params.NewName}}
+	}
+	return map[string]any{"changes": changes}
+}
+
+func writeFakeLSPResponse(writer *lsp.FrameWriter, id json.RawMessage, result any) error {
+	response, err := json.Marshal(struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Result  any             `json:"result"`
+	}{JSONRPC: "2.0", ID: id, Result: result})
+	if err != nil {
+		return err
+	}
+	return writer.WriteMessage(response)
 }
 
 func assertJavaSettings(raw json.RawMessage, expected string) bool {

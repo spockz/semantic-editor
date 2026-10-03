@@ -552,38 +552,56 @@ func TestRenameContinuationConsumersMatchLiveInputFields(t *testing.T) {
 	}
 	entries := registry.All()
 	for _, continuation := range producer.Output.Continuations {
-		if continuation.Field != "file" && continuation.Field != "symbol" && continuation.Field != "expected_revision" {
-			continue
+		if renameContinuationField(continuation.Field) {
+			assertRenameContinuationConsumers(t, registry, entries, producer.MCPName, continuation)
 		}
-		source := producer.MCPName + "." + continuation.Field
-		for _, consumer := range entries {
-			for _, parameter := range consumer.Params {
-				if parameter.Role != continuation.Role || !slices.Contains(parameter.SourceFields, source) {
-					continue
-				}
-				if !slices.Contains(continuation.Consumers, consumer.MCPName) {
-					t.Errorf("%s.%s accepts %s without a declared continuation consumer edge", consumer.MCPName, parameter.JSONName, source)
-				}
-			}
-		}
-		for _, consumerName := range continuation.Consumers {
-			consumer, exists := registry.LookupMCP(consumerName)
-			if !exists {
-				t.Errorf("%s continuation names unknown consumer %q", continuation.Field, consumerName)
-				continue
-			}
-			compatible := false
-			for _, parameter := range consumer.Params {
-				if slices.Contains(parameter.SourceFields, source) && (parameter.Role == "" || parameter.Role == continuation.Role) {
-					compatible = true
-					break
-				}
-			}
-			if !compatible {
-				t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
+	}
+}
+
+func renameContinuationField(field string) bool {
+	return field == "file" || field == "symbol" || field == "expected_revision"
+}
+
+func assertRenameContinuationConsumers(t *testing.T, registry *operation.Registry, entries []operation.Entry, producer string, continuation operation.OutputContinuation) {
+	t.Helper()
+	source := producer + "." + continuation.Field
+	assertRenameConsumerEdges(t, entries, continuation, source)
+	assertDeclaredRenameConsumers(t, registry, continuation, source)
+}
+
+func assertRenameConsumerEdges(t *testing.T, entries []operation.Entry, continuation operation.OutputContinuation, source string) {
+	t.Helper()
+	for _, consumer := range entries {
+		for _, parameter := range consumer.Params {
+			acceptsSource := parameter.Role == continuation.Role && slices.Contains(parameter.SourceFields, source)
+			if acceptsSource && !slices.Contains(continuation.Consumers, consumer.MCPName) {
+				t.Errorf("%s.%s accepts %s without a declared continuation consumer edge", consumer.MCPName, parameter.JSONName, source)
 			}
 		}
 	}
+}
+
+func assertDeclaredRenameConsumers(t *testing.T, registry *operation.Registry, continuation operation.OutputContinuation, source string) {
+	t.Helper()
+	for _, consumerName := range continuation.Consumers {
+		consumer, exists := registry.LookupMCP(consumerName)
+		if !exists {
+			t.Errorf("%s continuation names unknown consumer %q", continuation.Field, consumerName)
+			continue
+		}
+		if !renameConsumerAcceptsSource(consumer, continuation, source) {
+			t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
+		}
+	}
+}
+
+func renameConsumerAcceptsSource(consumer operation.Entry, continuation operation.OutputContinuation, source string) bool {
+	for _, parameter := range consumer.Params {
+		if slices.Contains(parameter.SourceFields, source) && (parameter.Role == "" || parameter.Role == continuation.Role) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestVerifyPolicyKeepsNilUnrestrictedAndEmptyFailClosed(t *testing.T) {
