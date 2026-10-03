@@ -1,0 +1,38 @@
+# The concrete type and generated method share a file; its live receipt target uses the planned final digest.
+exec semedit implement-contract --file worker.go --symbol Worker --contract Runner --contract-file worker.go --destination-file worker.go --receiver-kind pointer --body-policy panic_stub
+stdout '"status":\s*"persisted"'
+stdout '"type_target":\s*\{'
+stdout '"symbol":\s*"Worker"'
+stdout '"expected_revision":\s*"[0-9a-f]+"'
+cmp worker.go .scratch/want/worker.go
+exec go test ./...
+-- go.mod --
+module example.com/implement-same-file
+
+go 1.27.1
+-- worker.go --
+package sample
+
+type Worker struct{}
+
+type Runner interface {
+	Run() error
+}
+-- .scratch/want/worker.go --
+package sample
+
+type Worker struct{}
+
+type Runner interface {
+	Run() error
+}
+
+func (*Worker) Run() error { panic(`TODO: implement`) }
+-- worker_test.go --
+package sample
+
+import "testing"
+
+func TestWorkerImplementsRunner(t *testing.T) {
+	var _ Runner = (*Worker)(nil)
+}

@@ -1,0 +1,58 @@
+# MCP verify refuses explicit selectors disabled by the enabled-language policy.
+stdin java-language.json
+exec semedit mcp --enabled-languages=go
+stdout 'disabled by --enabled-languages'
+stdin java-file.json
+exec semedit mcp --enabled-languages=go
+stdout 'disabled by --enabled-languages'
+stdin java-path.json
+exec semedit mcp --enabled-languages=go
+stdout 'disabled by --enabled-languages'
+cmp Widget.java want/Widget.java
+
+stdin go-language.json
+exec semedit mcp --enabled-languages=java
+stdout 'disabled by --enabled-languages'
+stdin go-file.json
+exec semedit mcp --enabled-languages=java
+stdout 'disabled by --enabled-languages'
+stdin go-path.json
+exec semedit mcp --enabled-languages=java
+stdout 'disabled by --enabled-languages'
+cmp main.go want/main.go
+
+-- java-language.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"language":"java","path":".","trust_workspace":true,"jdtls_home":"/jdtls","check_only":true}}}
+
+-- java-file.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"file":"Widget.java","path":".","trust_workspace":true,"jdtls_home":"/jdtls","check_only":true}}}
+
+-- java-path.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":"Widget.java","trust_workspace":true,"jdtls_home":"/jdtls","check_only":true}}}
+
+-- go-language.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"language":"go","path":".","check_only":true}}}
+
+-- go-file.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"file":"main.go","path":".","check_only":true}}}
+
+-- go-path.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":"main.go","check_only":true}}}
+
+-- go.mod --
+module example.com/enabled
+
+go 1.24
+
+-- main.go --
+package main
+
+func main() {}
+-- Widget.java --
+class Widget {}
+-- want/main.go --
+package main
+
+func main() {}
+-- want/Widget.java --
+class Widget {}

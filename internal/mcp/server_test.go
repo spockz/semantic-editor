@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -269,6 +270,116 @@ func TestMCPStructuredContinuationFields(t *testing.T) {
 	}
 }
 
+func TestMCPAmbiguousLookupDoesNotPublishSelectedScopeAsContinuation(t *testing.T) {
+	root := t.TempDir()
+	for name, content := range map[string]string{
+		"go.mod":  "module example.com/ambiguouslookup\n\ngo 1.24\n",
+		"main.go": "package ambiguouslookup\n\ntype Server struct{}\nfunc (*Server) Serve() {}\n\ntype Other struct{}\nfunc (*Other) Serve() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"symbol":"Serve","file":"main.go"}}}` + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out).Serve(t.Context(), strings.NewReader(input)); err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			Structured map[string]any `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode ambiguous lookup: %v\n%s", err, out.String())
+	}
+	if response.Result.IsError || len(response.Result.Content) != 1 {
+		t.Fatalf("ambiguous lookup failed: %s", out.String())
+	}
+	text := response.Result.Content[0].Text
+	for _, evidence := range []string{`"ambiguous": true`, "Server.Serve", "Other.Serve"} {
+		if !strings.Contains(text, evidence) {
+			t.Errorf("lookup text omitted ambiguity evidence %q: %s", evidence, text)
+		}
+	}
+	for _, alias := range []string{"file", "symbol", "kind", "line", "column"} {
+		if _, exists := response.Result.Structured[alias]; exists {
+			t.Errorf("ambiguous lookup advertised unproven continuation alias %q: %#v", alias, response.Result.Structured)
+		}
+	}
+}
+
+func TestMCPExtractedContractContinuesIntoImplement(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "api"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"go.mod":           "module example.com/contractflow\n\ngo 1.27.1\n",
+		"api/store.go":     "package api\n\ntype Store struct{}\n\nfunc (*Store) Read() (int, error) { return 0, nil }\n\ntype Consumer struct{}\n",
+		"api/contracts.go": "package api\n",
+		"api/methods.go":   "package api\n",
+	} {
+		if err := pipeline.WriteAtomic(filepath.Join(root, name), []byte(source)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	call := func(tool string, arguments map[string]any) map[string]any {
+		t.Helper()
+		encoded, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": arguments}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		if err := mcp.NewServer("full", root, &out).Serve(t.Context(), bytes.NewReader(append(encoded, '\n'))); err != nil {
+			t.Fatal(err)
+		}
+		var response struct {
+			Result struct {
+				IsError    bool           `json:"isError"`
+				Structured map[string]any `json:"structuredContent"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+			t.Fatalf("decode %s response %q: %v", tool, out.String(), err)
+		}
+		if response.Result.IsError {
+			t.Fatalf("%s failed: %s", tool, out.String())
+		}
+		return response.Result.Structured
+	}
+	extracted := call("semantic_extract_interface", map[string]any{
+		"file": "api/store.go", "in_type": "Store", "symbol": "StoreAPI", "destination_file": "api/contracts.go",
+		"receiver_kind": "pointer", "members": []map[string]string{{"file": "api/store.go", "symbol": "(*Store).Read"}},
+	})
+	contract, ok := extracted["contract"].(string)
+	if !ok || contract != "StoreAPI" {
+		t.Fatalf("extract contract selector = %#v, want StoreAPI", extracted["contract"])
+	}
+	contractFile, ok := extracted["contract_file"].(string)
+	if !ok || contractFile != "api/contracts.go" {
+		t.Fatalf("extract contract_file selector = %#v, want api/contracts.go", extracted["contract_file"])
+	}
+	consumer := call("semantic_implement_contract", map[string]any{
+		"file": "api/store.go", "symbol": "Consumer", "contract": contract, "contract_file": contractFile,
+		"destination_file": "api/methods.go", "receiver_kind": "pointer", "body_policy": "panic_stub",
+	})
+	result, ok := consumer["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("implement omitted structured result: %#v", consumer)
+	}
+	if result["type_target"] == nil {
+		t.Fatalf("implement omitted live type_target: %#v", result)
+	}
+	if result["generated_methods"] == nil {
+		t.Fatalf("implement omitted generated method continuation: %#v", result)
+	}
+}
+
 func TestMCPRenameContinuationUsesRenamedSymbol(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/renamecontinuation\n\ngo 1.24\n"), 0o600); err != nil {
@@ -511,21 +622,28 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	var metricsResponse struct {
 		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			StructuredContent struct {
-				Result struct {
-					Records []struct {
-						Tool           string              `json:"tool"`
-						Metrics        map[string]any      `json:"metrics"`
-						SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
-					} `json:"records"`
-				} `json:"result"`
+				Result json.RawMessage `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal([]byte(lines[2]), &metricsResponse); err != nil {
 		t.Fatal(err)
 	}
-	records := metricsResponse.Result.StructuredContent.Result.Records
+	var metricsData struct {
+		Records []struct {
+			Tool           string              `json:"tool"`
+			Metrics        map[string]any      `json:"metrics"`
+			SessionMetrics *mcp.StartupMetrics `json:"session_metrics"`
+		} `json:"records"`
+	}
+	if err := json.Unmarshal(metricsResponse.Result.StructuredContent.Result, &metricsData); err != nil {
+		t.Fatalf("decode structured metrics records: %v", err)
+	}
+	records := metricsData.Records
 	if len(records) != 1 || records[0].Tool != "semantic_verify" {
 		t.Fatalf("metrics records = %#v, want latest semantic_verify call", records)
 	}
@@ -534,6 +652,27 @@ func TestMCPFirstSemanticCallIncludesSessionTiming(t *testing.T) {
 	}
 	if got := records[0].SessionMetrics; got == nil || got.ServerStartToInitializeMS < 0 || got.InitializeToFirstSemanticCallMS < 0 {
 		t.Errorf("session metrics = %#v, want non-negative durations", got)
+	}
+	const prefixLabel = "Critical result (JSON): "
+	text := metricsResponse.Result.Content[0].Text
+	prefix, _, found := strings.Cut(text, "\n\n")
+	if !found || !strings.HasPrefix(prefix, prefixLabel) {
+		t.Fatalf("metrics text omitted the critical JSON prefix: %q", text)
+	}
+	var presented map[string]any
+	decoder := json.NewDecoder(strings.NewReader(strings.TrimPrefix(prefix, prefixLabel)))
+	decoder.UseNumber()
+	if err := decoder.Decode(&presented); err != nil {
+		t.Fatalf("decode metrics text prefix: %v", err)
+	}
+	var structured any
+	decoder = json.NewDecoder(bytes.NewReader(metricsResponse.Result.StructuredContent.Result))
+	decoder.UseNumber()
+	if err := decoder.Decode(&structured); err != nil {
+		t.Fatalf("decode structured metrics result: %v", err)
+	}
+	if !reflect.DeepEqual(presented["result"], structured) {
+		t.Fatalf("metrics text records differ from structured result: text=%#v structured=%#v", presented["result"], structured)
 	}
 }
 
@@ -679,14 +818,44 @@ func TestMCPServerInitializeDeferred(t *testing.T) {
 }
 
 func TestSemanticRenameAdvertisesRust(t *testing.T) {
-	var out bytes.Buffer
-	srv := mcp.NewServer("full", ".", &out)
-	if err := srv.Serve(context.Background(), bytes.NewBufferString(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "src"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), `"language"`) || !strings.Contains(out.String(), `"rust"`) || !strings.Contains(out.String(), `selected .rs`) {
-		t.Fatalf("semantic_rename schema does not advertise Rust: %s", out.String())
+	for name, source := range map[string]string{
+		"go.mod":     "module example.com/mixed\n\ngo 1.24\n",
+		"main.go":    "package main\n",
+		"Cargo.toml": "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+		"src/lib.rs": "pub fn run() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
+	tools := listToolsAt(t, root)
+	for _, tool := range tools {
+		if tool["name"] != "semantic_rename" {
+			continue
+		}
+		input := tool["inputSchema"].(map[string]any)
+		language := input["properties"].(map[string]any)["language"].(map[string]any)
+		want := []any{"auto", "go", "rust"}
+		got := language["enum"].([]any)
+		if len(got) != len(want) {
+			t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("semantic_rename language enum = %#v, want %#v", got, want)
+			}
+		}
+		description, _ := language["description"].(string)
+		if !strings.Contains(description, "Rust requires a selected .rs file") {
+			t.Fatalf("semantic_rename.language description does not explain Rust file selection: %q", description)
+		}
+		return
+	}
+	t.Fatal("tools/list omitted semantic_rename for a Go+Rust workspace")
 }
 
 func TestJavaMavenImportIsAdvertisedByMCP(t *testing.T) {
@@ -1039,6 +1208,7 @@ func TestMCPToolLocationError(t *testing.T) {
 func TestMCPSnapshotAndUndo(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
+	writeTestGoModule(t, dir)
 
 	calcFile := filepath.Join(dir, "calc.go")
 	if err := os.WriteFile(calcFile, []byte("package calc\nfunc Val() int { return 1 }\n"), 0o600); err != nil {
@@ -1119,16 +1289,60 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	}
 }
 
-type exampleSchemaProperty struct {
-	Type  string            `json:"type"`
-	Enum  []json.RawMessage `json:"enum"`
-	Items struct {
-		Type string `json:"type"`
-	} `json:"items"`
-	Properties map[string]struct {
-		Type string `json:"type"`
-	} `json:"properties"`
-	Required []string `json:"required"`
+type mcpExampleProperty struct {
+	Type       string                        `json:"type"`
+	Enum       []json.RawMessage             `json:"enum"`
+	Items      *mcpExampleProperty           `json:"items"`
+	Properties map[string]mcpExampleProperty `json:"properties"`
+	Required   []string                      `json:"required"`
+}
+
+func mcpExampleValueMatches(value any, property mcpExampleProperty) bool {
+	switch property.Type {
+	case "string":
+		_, ok := value.(string)
+		return ok
+	case "boolean":
+		_, ok := value.(bool)
+		return ok
+	case "integer":
+		number, ok := value.(float64)
+		return ok && number == float64(int(number))
+	case "array":
+		items, ok := value.([]any)
+		if !ok || property.Items == nil {
+			return false
+		}
+		for _, item := range items {
+			if !mcpExampleValueMatches(item, *property.Items) {
+				return false
+			}
+		}
+		return true
+	case "object":
+		return mcpExampleObjectMatches(value, property)
+	default:
+		return false
+	}
+}
+
+func mcpExampleObjectMatches(value any, property mcpExampleProperty) bool {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, field := range property.Required {
+		if _, ok := object[field]; !ok {
+			return false
+		}
+	}
+	for field, fieldValue := range object {
+		fieldSchema, ok := property.Properties[field]
+		if !ok || !mcpExampleValueMatches(fieldValue, fieldSchema) {
+			return false
+		}
+	}
+	return true
 }
 
 func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
@@ -1144,9 +1358,9 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 			Tools []struct {
 				Name        string `json:"name"`
 				InputSchema struct {
-					Properties map[string]exampleSchemaProperty `json:"properties"`
-					Required   []string                         `json:"required"`
-					Examples   []map[string]json.RawMessage     `json:"examples"`
+					Properties map[string]mcpExampleProperty `json:"properties"`
+					Required   []string                      `json:"required"`
+					Examples   []map[string]json.RawMessage  `json:"examples"`
 				} `json:"inputSchema"`
 			} `json:"tools"`
 		} `json:"result"`
@@ -1174,74 +1388,29 @@ func TestMCPOperationExamplesMatchInputSchemas(t *testing.T) {
 					t.Errorf("%s example includes unsupported parameter %q", tool.Name, key)
 					continue
 				}
-				assertOperationExampleMatchesProperty(t, tool.Name, key, property, raw)
+				var value any
+				if err := json.Unmarshal(raw, &value); err != nil {
+					t.Errorf("%s example parameter %q is invalid JSON: %v", tool.Name, key, err)
+					continue
+				}
+				validType := mcpExampleValueMatches(value, property)
+				if !validType {
+					t.Errorf("%s example parameter %q does not satisfy type %q", tool.Name, key, property.Type)
+				}
+				if len(property.Enum) > 0 {
+					matched := false
+					for _, allowed := range property.Enum {
+						matched = matched || string(allowed) == string(raw)
+					}
+					if !matched {
+						t.Errorf("%s example parameter %q is outside its enum", tool.Name, key)
+					}
+				}
 			}
 		}
 	}
 	if exampleCount == 0 {
 		t.Fatal("tools/list did not advertise any operation examples")
-	}
-}
-
-func assertOperationExampleMatchesProperty(t *testing.T, toolName, parameterName string, property exampleSchemaProperty, raw json.RawMessage) {
-	t.Helper()
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		t.Errorf("%s example parameter %q is invalid JSON: %v", toolName, parameterName, err)
-		return
-	}
-	valid := false
-	switch property.Type {
-	case "string":
-		_, valid = value.(string)
-	case "boolean":
-		_, valid = value.(bool)
-	case "integer":
-		if number, ok := value.(float64); ok {
-			valid = number == float64(int(number))
-		}
-	case "array":
-		if items, ok := value.([]any); ok {
-			valid = true
-			for _, item := range items {
-				if _, ok := item.(string); !ok || property.Items.Type != "string" {
-					valid = false
-				}
-			}
-		}
-	case "object":
-		if object, ok := value.(map[string]any); ok {
-			valid = true
-			for _, required := range property.Required {
-				if _, exists := object[required]; !exists {
-					valid = false
-				}
-			}
-			for nested, nestedValue := range object {
-				nestedProperty, exists := property.Properties[nested]
-				if !exists || nestedProperty.Type != "string" {
-					valid = false
-					continue
-				}
-				if _, ok := nestedValue.(string); !ok {
-					valid = false
-				}
-			}
-		}
-	default:
-		t.Errorf("%s parameter %q has unexpected schema type %q", toolName, parameterName, property.Type)
-	}
-	if !valid {
-		t.Errorf("%s example parameter %q does not satisfy type %q", toolName, parameterName, property.Type)
-	}
-	if len(property.Enum) > 0 {
-		matched := false
-		for _, allowed := range property.Enum {
-			matched = matched || string(allowed) == string(raw)
-		}
-		if !matched {
-			t.Errorf("%s example parameter %q is outside its enum", toolName, parameterName)
-		}
 	}
 }
 
@@ -1580,9 +1749,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	var response struct {
 		Result struct {
-			IsError    bool `json:"isError"`
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 			Structured struct {
-				Result struct {
+				ApplicationState string `json:"application_state"`
+				Result           struct {
 					Status  string   `json:"status"`
 					Checks  []string `json:"checks_run"`
 					Refusal string   `json:"refusal"`
@@ -1595,6 +1768,13 @@ func TestSafeDeleteRefusalReturnsMCPErrorAndStructuredChecks(t *testing.T) {
 	}
 	if !response.Result.IsError || response.Result.Structured.Result.Status != "refused" || response.Result.Structured.Result.Refusal == "" {
 		t.Fatalf("safe delete response did not expose an explicit refusal: %+v", response.Result)
+	}
+	if response.Result.Structured.ApplicationState != "not_applied" {
+		t.Fatalf("safe delete application_state = %q, want not_applied", response.Result.Structured.ApplicationState)
+	}
+	text := response.Result.Content[0].Text
+	if !strings.HasPrefix(text, "Critical result (JSON): ") || !strings.Contains(text, response.Result.Structured.Result.Refusal) {
+		t.Fatalf("safe delete text omitted refusal details: %q", text)
 	}
 	if !slices.Contains(response.Result.Structured.Result.Checks, "module_reference_scan_complete") {
 		t.Fatalf("checks_run = %v", response.Result.Structured.Result.Checks)

@@ -1,0 +1,28 @@
+# A generated method that collides with a same-package test method is refused before publication.
+exec go test ./...
+! exec semedit implement-contract --file worker.go --symbol Worker --contract Runner --contract-file contracts.go --destination-file methods.go --receiver-kind pointer --body-policy panic_stub
+stderr 'contract test variant .* has type errors'
+cmp methods.go .scratch/want/methods.go
+exec go test ./...
+-- go.mod --
+module example.com/contract-test-collision
+
+go 1.27.1
+-- worker.go --
+package sample
+
+type Worker struct{}
+-- contracts.go --
+package sample
+
+type Runner interface {
+	Run() error
+}
+-- methods.go --
+package sample
+-- worker_test.go --
+package sample
+
+func (*Worker) Run() error { return nil }
+-- .scratch/want/methods.go --
+package sample

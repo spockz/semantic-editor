@@ -1,0 +1,26 @@
+# MCP inspection exposes the same revision guarded by the following public edit call.
+stdin input.json
+exec semedit mcp
+stdout 'Critical result \(JSON\):'
+stdout '"expected_revision":"145cc376b72487d43e3597c3951d9eda8fd204b8f6e3308d9e30197f2fa4417a"'
+stdout '"file":"main.go"'
+stdout '"symbol":"Value"'
+stdout '"isError":false'
+cmp main.go .scratch/want/main.go
+-- go.mod --
+module example.com.inspectcontinuation
+
+go 1.24
+-- main.go --
+package sample
+
+func Value() int { return 1 }
+-- .scratch/want/main.go --
+package sample
+
+func Value() int {
+	return 2
+}
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"Value","file":"main.go","language":"go","trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_replace_body","arguments":{"file":"main.go","symbol":"Value","expected_revision":"145cc376b72487d43e3597c3951d9eda8fd204b8f6e3308d9e30197f2fa4417a","body":"return 2"}}}

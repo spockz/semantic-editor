@@ -15,10 +15,12 @@ import (
 	"semedit/internal/telemetry"
 )
 
+const diagnosticStatusUnavailable = "unavailable"
+
 var (
 	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
 	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
-	accessEnum             = []string{"infer", "public", "private", "protected", "package-private"}
+	accessEnum             = goModifiers()
 	visibilityEnum         = []string{"public", "private"}
 	groupEnum              = []string{"append", "standalone"}
 	caseEnum               = []string{"first", "last", "before_default", "before", "after"}
@@ -96,7 +98,7 @@ func surroundingDelta(ctx context.Context, workDir string, deferVerification boo
 	return func() (pipeline.DiagnosticDelta, string) {
 		after, afterErr := pipeline.CheckDiagnostics(telemetry.WithPhase(ctx, telemetry.PhaseVerificationAfter), workDir)
 		if beforeErr != nil || afterErr != nil {
-			return pipeline.DiagnosticDelta{}, "unavailable"
+			return pipeline.DiagnosticDelta{}, diagnosticStatusUnavailable
 		}
 		delta := pipeline.ComputeDelta(before, after)
 		if len(delta.Introduced)+len(delta.Resolved)+len(delta.Suggestions) == 0 {
@@ -112,7 +114,10 @@ type FileEditRes struct {
 	DestinationFile    string
 	DestinationDisplay string
 	Display            string
+	ChangedFiles       []string
+	ApplicationState   string
 	Symbol             string
+	InType             string
 	Line               int
 	InFunction         string
 	Discriminator      string
@@ -134,6 +139,9 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	if res.Symbol != "" {
 		text += fmt.Sprintf(" symbol: %s.", res.Symbol)
 	}
+	if res.InType != "" {
+		text += fmt.Sprintf(" in_type: %s.", res.InType)
+	}
 	if res.Line > 0 {
 		text += fmt.Sprintf(" line (navigation only): %d.", res.Line)
 	}
@@ -143,8 +151,11 @@ func formatFileEdit(res FileEditRes) (string, error) {
 	if res.Discriminator != "" {
 		text += fmt.Sprintf(" discriminator: %s.", res.Discriminator)
 	}
-	if res.Diff != "" {
-		text += "\n" + res.Diff
+	if res.ApplicationState != "" {
+		text += " application_state: " + res.ApplicationState + "."
+	}
+	if len(res.ChangedFiles) > 0 {
+		text += " changed_files: " + strings.Join(res.ChangedFiles, ", ") + "."
 	}
 	if res.HasDelta {
 		text += " diagnostic_status: " + res.DiagnosticStatus + "."
@@ -152,7 +163,33 @@ func formatFileEdit(res FileEditRes) (string, error) {
 			text = AppendDiagnosticDelta(text, res.Delta)
 		}
 	}
+	if res.Diff != "" {
+		text += "\n" + res.Diff
+	}
 	return text, nil
+}
+
+func diagnosticDeltaSchema() ValueSchema {
+	textList := ValueSchema{Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}}
+	return ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+		"net_delta":   {Kind: SchemaInteger},
+		"introduced":  textList,
+		"resolved":    textList,
+		"suggestions": textList,
+	}, Required: []string{"net_delta", "introduced", "resolved"}}
+}
+
+func diagnosticDeltaOutput(delta pipeline.DiagnosticDelta) pipeline.DiagnosticDelta {
+	if delta.Introduced == nil {
+		delta.Introduced = []string{}
+	}
+	if delta.Resolved == nil {
+		delta.Resolved = []string{}
+	}
+	if delta.Suggestions == nil {
+		delta.Suggestions = []string{}
+	}
+	return delta
 }
 
 func receiverNameForDecl(decl *ast.FuncDecl) string {
@@ -239,7 +276,10 @@ func registerEngineOps(registry *Registry) error {
 	if err := Register(registry, scaffoldFileDef()); err != nil {
 		return err
 	}
-	return Register(registry, insertCaseDef())
+	if err := Register(registry, insertCaseDef()); err != nil {
+		return err
+	}
+	return registerStructuralPlanOps(registry)
 }
 
 func goTargetAfterEdit(ctx context.Context, filePath, source string) (string, int, error) {

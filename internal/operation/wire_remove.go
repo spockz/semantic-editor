@@ -12,6 +12,13 @@ import (
 	"strings"
 )
 
+const (
+	removeSafeDelete       = "safe_delete"
+	removeChecksRun        = "checks_run"
+	removeDiagnosticStatus = "diagnostic_status"
+	removeDiagnosticDelta  = "diagnostic_delta"
+)
+
 // RemoveReq selects a Go declaration or case for exact structural removal.
 type RemoveReq struct {
 	Project             backend.ProjectContext
@@ -80,7 +87,7 @@ var (
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: case value to remove (for example nil or \"foo\"); use default for a default clause"},
 		{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)"},
-		{Name: "safe_delete", CLIName: "safe-delete", JSONName: "safe_delete", Type: ParamBoolean, Description: "Request fail-closed reference and resource preflight. Supports unexported standalone constants, unexported free functions other than main/init, and standalone unexported basic package variables with no initializer or a constant-valued initializer. Grouped declarations, exported or referenced names, non-basic/effectful variables, methods, types, dynamic-reference imports, source directives, incomplete source sets, and unsupported declarations are refused with checks run.", Default: false},
+		{Name: removeSafeDelete, CLIName: "safe-delete", JSONName: removeSafeDelete, Type: ParamBoolean, Description: "Request fail-closed reference and resource preflight for unexported standalone constants, free functions other than main/init, or basic package variables with no initializer or a constant-valued initializer. Referenced, effectful, grouped, or unsupported declarations and incomplete source sets refuse with checks run.", Default: false},
 		{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically remove imports made unused by this edit (default true)", Default: true},
 	}
 )
@@ -113,7 +120,7 @@ func parseRemove(raw map[string]any) (RemoveReq, error) {
 	if req.ConstructPath, err = ParseString(raw, wireConstructPath, wireCLIConstructPath, false); err != nil {
 		return req, err
 	}
-	if req.SafeDelete, err = ParseBool(raw, "safe_delete", "safe-delete", false); err != nil {
+	if req.SafeDelete, err = ParseBool(raw, removeSafeDelete, "safe-delete", false); err != nil {
 		return req, err
 	}
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
@@ -189,11 +196,55 @@ func removeDef() Def[RemoveReq, RemoveRes] {
 			if res.Status == "refused" {
 				return fmt.Sprintf("Safe deletion refused for %s: %s (checks run: %s).", res.Display, res.Refusal, strings.Join(res.ChecksRun, ", ")), nil
 			}
-			text := fmt.Sprintf("Removed selected node from %s.\n%s", res.Display, res.Diff)
+			text := fmt.Sprintf("Removed selected node from %s.", res.Display)
+			if res.HasDelta {
+				text += " diagnostic_status: " + res.DiagnosticStatus + "."
+				if res.DiagnosticStatus == "changed" {
+					text = AppendDiagnosticDelta(text, res.Delta)
+				}
+			}
 			if res.SafeDelete {
 				text += fmt.Sprintf("\nSafe deletion checks run: %s.", strings.Join(res.ChecksRun, ", "))
 			}
-			return AppendDiagnosticDelta(text, res.Delta), nil
+			text += "\n" + res.Diff
+			return text, nil
+		},
+		Output: &OperationOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+			"status":               {Kind: SchemaString, Enum: []any{"removed"}},
+			removeSafeDelete:       {Kind: SchemaBoolean},
+			removeChecksRun:        {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+			"refusal":              {Kind: SchemaString},
+			"diff":                 {Kind: SchemaString},
+			removeDiagnosticStatus: {Kind: SchemaString, Enum: []any{"changed", "unchanged", "deferred", diagnosticStatusUnavailable}},
+			removeDiagnosticDelta:  diagnosticDeltaSchema(),
+		}, Required: []string{"status", removeSafeDelete, removeChecksRun, "diff", removeDiagnosticStatus, removeDiagnosticDelta}}},
+		ErrorOutput: &OperationErrorOutputContract{ResultSchema: &ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{
+			"status":         {Kind: SchemaString, Enum: []any{"refused"}},
+			removeSafeDelete: {Kind: SchemaBoolean, Enum: []any{true}},
+			removeChecksRun:  {Kind: SchemaArray, Items: &ValueSchema{Kind: SchemaString}},
+			"refusal":        {Kind: SchemaString},
+		}, Required: []string{"status", removeSafeDelete, removeChecksRun, "refusal"}}},
+		ProjectOutput: func(res RemoveRes) (any, error) {
+			checks := res.ChecksRun
+			if checks == nil {
+				checks = []string{}
+			}
+			return map[string]any{
+				"status": res.Status, removeSafeDelete: res.SafeDelete, removeChecksRun: checks,
+				"refusal": res.Refusal, "diff": res.Diff,
+				removeDiagnosticStatus: res.DiagnosticStatus, removeDiagnosticDelta: diagnosticDeltaOutput(res.Delta),
+			}, nil
+		},
+		ProjectErrorOutput: func(err error) (any, bool, error) {
+			var refusal *SafeDeleteRefusalError
+			if !errors.As(err, &refusal) {
+				return nil, false, nil
+			}
+			checks := refusal.ChecksRun
+			if checks == nil {
+				checks = []string{}
+			}
+			return map[string]any{"status": "refused", removeSafeDelete: true, removeChecksRun: checks, "refusal": refusal.Reason}, true, nil
 		},
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "kind": "function", "symbol": "obsoleteHelper"},
 		BufferedBatch: true, Batchable: true,
