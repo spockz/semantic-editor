@@ -3467,3 +3467,11 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: `captureExtractionPackageFile` was not found. The caller constructed that name without a discovery record.
 - Workaround: use the actual declaration outline or a canonical name already returned in inspected source.
 - Root cause: caller skipped selector discovery; the tool rejected the nonexistent selector without changing source.
+
+## 2026-10-03: extraction review guessed a source filename
+
+- Tool: `semantic_inspect_symbol`.
+- Target: extraction worktree `internal/astedit/inline_variable.go`, `InlineVariable`.
+- Observed failure: the requested source file does not exist; the declaration is in `inline.go`.
+- Workaround: discover the source filename with `rg --files`, then inspect the known declaration there.
+- Root cause: caller reconstructed the filename instead of reusing discovery; no source changed.
