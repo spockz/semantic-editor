@@ -390,13 +390,27 @@ func parseConstructReplacement(kind ConstructKind, source string) (string, error
 	if err != nil {
 		return "", &SyntaxError{File: "snippet", Snippet: source, Cause: err, Err: ErrSyntax}
 	}
-	fn := file.Decls[0].(*ast.FuncDecl)
+	fn, err := constructWrapperFunction(file)
+	if err != nil {
+		return "", fmt.Errorf("validate replacement wrapper: %w", err)
+	}
 	node := constructReplacementNode(kind, fn)
 	if node == nil {
 		return "", fmt.Errorf("replacement must be one complete Go %s construct", want)
 	}
 	start, end := fset.Position(node.Pos()).Offset, fset.Position(node.End()).Offset
 	return strings.TrimSpace(stub[start:end]), nil
+}
+
+func constructWrapperFunction(file *ast.File) (*ast.FuncDecl, error) {
+	if len(file.Decls) != 1 {
+		return nil, fmt.Errorf("replacement must stay inside one construct wrapper")
+	}
+	fn, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || fn.Name.Name != "_" || fn.Body == nil {
+		return nil, fmt.Errorf("replacement wrapper is not one complete function")
+	}
+	return fn, nil
 }
 
 func constructReplacementWrapper(kind ConstructKind, trimmed string) (string, string) {
@@ -474,7 +488,10 @@ func singleElseBlock(fn *ast.FuncDecl) ast.Node {
 	if !ok {
 		return nil
 	}
-	block, _ := conditional.Else.(*ast.BlockStmt)
+	block, ok := conditional.Else.(*ast.BlockStmt)
+	if !ok {
+		return nil
+	}
 	return block
 }
 
@@ -483,7 +500,10 @@ func singleCaseClause(fn *ast.FuncDecl) ast.Node {
 	if !ok || len(switchNode.Body.List) != 1 {
 		return nil
 	}
-	clause, _ := switchNode.Body.List[0].(*ast.CaseClause)
+	clause, ok := switchNode.Body.List[0].(*ast.CaseClause)
+	if !ok {
+		return nil
+	}
 	return clause
 }
 
@@ -492,7 +512,10 @@ func singleCommClause(fn *ast.FuncDecl) ast.Node {
 	if !ok || len(selectNode.Body.List) != 1 {
 		return nil
 	}
-	clause, _ := selectNode.Body.List[0].(*ast.CommClause)
+	clause, ok := selectNode.Body.List[0].(*ast.CommClause)
+	if !ok {
+		return nil
+	}
 	return clause
 }
 
