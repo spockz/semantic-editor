@@ -50,6 +50,8 @@ We introduce four discrete capabilities across the engine, CLI, and MCP interfac
    * Employs `ErrSwitchNotFound` when target switch is missing and `ErrAnchorNotFound` when specified anchor case is absent.
    * Returns diff and exposes `auto_organize_imports` (default `false`).
 
+   The generic `semantic_insert_construct` also exposes case insertion as `kind=case`; `semantic_insert_case` remains a specialized registry/CLI/batch variant. MCP catalog profiles control whether that specialized variant is advertised. Insertion does not accept overwrite; whole declaration updates use `semantic_replace_construct`.
+
 4. **`semantic_batch` (MCP tool)**:
    * Accepts an ordered list of `[{tool, params}]` entries.
    * Executes sequentially in `atomic: false` mode (fail-fast on first error).
@@ -57,6 +59,8 @@ We introduce four discrete capabilities across the engine, CLI, and MCP interfac
    * Stated cross-file atomicity (`atomic: true`) is deferred to preserve correctness without complex in-memory virtual file systems.
    * Aggregates modified files and executes `auto_organize_imports` or `format` once per written file at batch conclusion.
    * Returns structured per-edit status array alongside overall status.
+
+The MCP `--tool-profile=base` catalog exposes generic construct operations and core navigation. `--tool-profile=full` exposes all registered specialized variants. Selective `--expose-tool-variant verb:kind` filters affect only standalone discovery; registry-backed CLI and batch dispatch remain available.
 
 ---
 

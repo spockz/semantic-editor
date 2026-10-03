@@ -23,7 +23,7 @@ const (
 type RemoveReq struct {
 	Project             backend.ProjectContext
 	File                string
-	Kind                string
+	Kind                backend.ConstructKind
 	Symbol              string
 	InFunction          string
 	Discriminator       string
@@ -81,7 +81,7 @@ var (
 	removeDiscriminatorSources = sourceDiscriminatorContinuations
 	removeParams               = []ParameterContract{
 		{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: removeFileSources},
-		{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Go node kind to remove: function, method, type, constant, variable, or case", Required: true, Enums: []string{"function", "method", "type", "constant", "variable", "case"}},
+		{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableRemoveConstructKinds},
 		{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified top-level declaration to remove; required for function, method, type, constant, or variable, and never an owner selector", SourceFields: removeSymbolSources},
 		{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: sourceInFunctionContinuations},
 		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
@@ -102,9 +102,11 @@ func parseRemove(raw map[string]any) (RemoveReq, error) {
 	if req.File, err = ParseString(raw, "file", "file", true); err != nil {
 		return req, err
 	}
-	if req.Kind, err = ParseString(raw, "kind", "kind", true); err != nil {
+	kind, err := ParseString(raw, "kind", "kind", true)
+	if err != nil {
 		return req, err
 	}
+	req.Kind = backend.ConstructKind(kind)
 	if req.Symbol, err = ParseString(raw, "symbol", "symbol", false); err != nil {
 		return req, err
 	}
@@ -127,22 +129,32 @@ func parseRemove(raw map[string]any) (RemoveReq, error) {
 		return req, err
 	}
 	switch req.Kind {
-	case "function", "method", "type", "constant", "variable":
+	case backend.ConstructFunction, backend.ConstructMethod, backend.ConstructType, backend.ConstructConst, backend.ConstructVar:
 		if req.Symbol == "" {
 			return req, fmt.Errorf("symbol is required for kind=%s", req.Kind)
 		}
 		if req.InFunction != "" || req.Discriminator != "" || req.TargetCase != "" || req.ConstructPath != "" {
-			return req, fmt.Errorf("case selectors are only valid for kind=case")
+			return req, fmt.Errorf("nested selectors cannot be combined with declaration kind=%s", req.Kind)
 		}
-	case "case":
+	case backend.ConstructCase:
 		if req.InFunction == "" {
-			return req, fmt.Errorf("in_function is required for kind=case")
+			return req, fmt.Errorf("in_function is required for kind=%s", req.Kind)
 		}
 		if req.Symbol != "" {
 			return req, fmt.Errorf("symbol is a declaration target and cannot select a case; use in_function and target_case")
 		}
+	case backend.ConstructStatementOrExpr:
+		if req.InFunction == "" || req.Discriminator == "" {
+			return req, fmt.Errorf("in_function and discriminator are required for kind=%s", req.Kind)
+		}
+		if req.Symbol != "" || req.TargetCase != "" {
+			return req, fmt.Errorf("declaration and case selectors cannot be combined with kind=%s", req.Kind)
+		}
 	default:
 		return req, fmt.Errorf("unsupported removal kind %q", req.Kind)
+	}
+	if req.SafeDelete && req.Kind != backend.ConstructFunction && req.Kind != backend.ConstructConst && req.Kind != backend.ConstructVar {
+		return req, fmt.Errorf("safe_delete is supported only for function, const, or var removal")
 	}
 	return req, nil
 }
@@ -151,7 +163,7 @@ func runRemove(ctx context.Context, cc CallContext, req RemoveReq) (RemoveRes, e
 	targetPath := resolveWorkPath(cc.WorkDir, req.File)
 	finishDelta := surroundingDelta(ctx, cc.WorkDir, cc.DeferVerification)
 	diff, checks, refusal, err := astedit.Remove(ctx, targetPath, astedit.RemoveOptions{
-		Kind: req.Kind, Symbol: req.Symbol, InFunction: req.InFunction, Discriminator: req.Discriminator,
+		Kind: string(req.Kind), Symbol: req.Symbol, InFunction: req.InFunction, Discriminator: req.Discriminator,
 		TargetCase: req.TargetCase, ConstructPath: req.ConstructPath, SafeDelete: req.SafeDelete,
 	}, effectiveAutoOrganize(cc, req.AutoOrganizeImports))
 	if err != nil {

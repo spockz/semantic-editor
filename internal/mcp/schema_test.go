@@ -32,6 +32,138 @@ func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 	}
 }
 
+func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
+	root := schemaWorkspace(t)
+	base := toolsForOptions(t, root, mcp.WithToolProfile("base"))
+	baseNames := toolNameSet(base)
+	for _, name := range []string{"semantic_insert_construct", "semantic_replace_construct", "semantic_remove_construct", "semantic_move_construct", "semantic_rename", "semantic_lookup", "semantic_inspect_symbol", "semantic_outline", "semantic_find_references", "semantic_verify", "semantic_batch", "semantic_snapshot", "semantic_undo"} {
+		if !baseNames[name] {
+			t.Errorf("base tools/list omitted %s", name)
+		}
+	}
+	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body", "semantic_insert_field", "semantic_insert_case"} {
+		if baseNames[name] {
+			t.Errorf("base tools/list exposed %s", name)
+		}
+	}
+
+	full := toolNameSet(toolsForOptions(t, root, mcp.WithToolProfile("full")))
+	for _, name := range []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_replace_body"} {
+		if !full[name] {
+			t.Errorf("full tools/list omitted %s", name)
+		}
+	}
+
+	for _, test := range []struct {
+		patterns []string
+		want     []string
+	}{
+		{patterns: []string{"insert:*"}, want: []string{"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl", "semantic_insert_case", "semantic_insert_field"}},
+		{patterns: []string{"*:function"}, want: []string{"semantic_insert_function", "semantic_replace_body"}},
+		{patterns: []string{"insert:function,insert:type"}, want: []string{"semantic_insert_function", "semantic_insert_type"}},
+	} {
+		got := toolNameSet(toolsForOptions(t, root, mcp.WithToolProfile("base"), mcp.WithToolVariants(test.patterns)))
+		for _, name := range test.want {
+			if !got[name] {
+				t.Errorf("patterns %v omitted %s", test.patterns, name)
+			}
+		}
+		if len(got) != len(baseNames)+len(test.want) {
+			t.Errorf("patterns %v exposed %d tools; base %d plus %d variants expected", test.patterns, len(got), len(baseNames), len(test.want))
+		}
+	}
+}
+
+func TestMCPInvalidToolVariantFailsBeforeServing(t *testing.T) {
+	root := schemaWorkspace(t)
+	before, err := os.ReadFile(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	err = mcp.NewServer("full", root, &out, mcp.WithToolProfile("base"), mcp.WithToolVariants([]string{"remove:function"})).Serve(context.Background(), strings.NewReader(""))
+	if err == nil || !strings.Contains(err.Error(), "matched no registered operation") {
+		t.Fatalf("invalid tool variant error = %v", err)
+	}
+	if out.Len() != 0 {
+		t.Fatalf("server emitted output before rejecting variant: %s", out.String())
+	}
+	after, err := os.ReadFile(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatal("invalid tool variant changed workspace state")
+	}
+}
+
+func TestMCPBaseCatalogStillDispatchesSpecializedBatchChild(t *testing.T) {
+	root := schemaWorkspace(t)
+	input := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_function","params":{"file":"main.go","source":"func Added() int { return 1 }"}}]}}}`,
+	}, "\n") + "\n"
+	var out bytes.Buffer
+	if err := mcp.NewServer("full", root, &out, mcp.WithToolProfile("base")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+		t.Fatalf("MCP serve failed: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("MCP responses = %d, want tools/list plus batch call: %s", len(lines), out.String())
+	}
+	var listed struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &listed); err != nil {
+		t.Fatal(err)
+	}
+	if toolNameSet(listed.Result.Tools)["semantic_insert_function"] {
+		t.Fatal("base tools/list exposed standalone semantic_insert_function")
+	}
+	var response map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["error"] != nil {
+		t.Fatalf("specialized batch child failed: %s", lines[1])
+	}
+	content, err := os.ReadFile(filepath.Join(root, "main.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "func Added() int") {
+		t.Fatalf("specialized batch child did not mutate source: %s", content)
+	}
+}
+
+func toolsForOptions(t *testing.T, root string, options ...mcp.Option) []map[string]any {
+	t.Helper()
+	var out bytes.Buffer
+	request := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
+	if err := mcp.NewServer("full", root, &out, options...).Serve(context.Background(), strings.NewReader(request)); err != nil {
+		t.Fatalf("tools/list failed: %v", err)
+	}
+	var response struct {
+		Result struct {
+			Tools []map[string]any `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &response); err != nil {
+		t.Fatalf("decode tools/list response: %v", err)
+	}
+	return response.Result.Tools
+}
+
+func toolNameSet(tools []map[string]any) map[string]bool {
+	result := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		result[tool["name"].(string)] = true
+	}
+	return result
+}
+
 func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	registry := operation.NewRegistry()
 	params := []operation.ParameterContract{{
@@ -119,7 +251,7 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 	for _, source := range []string{
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+		"semantic_insert_declaration", "semantic_insert_construct", "semantic_replace_decl",
 		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	} {
 		if !strings.Contains(description, source) {
@@ -217,7 +349,7 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					t.Fatalf("%s omitted outputSchema", name)
 				}
 				switch name {
-				case "semantic_set_doc_comment", "semantic_insert_statement":
+				case "semantic_set_doc_comment":
 					assertStructuralOutputSchema(t, tool["outputSchema"], name)
 
 				case "semantic_extract_type":
@@ -526,6 +658,7 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 	t.Helper()
 	var out bytes.Buffer
 	var opts []mcp.Option
+	opts = append(opts, mcp.WithToolProfile("full"))
 	if registry != nil {
 		opts = append(opts, mcp.WithRegistry(registry))
 	}
@@ -680,7 +813,7 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 	}{
 		{
 			name:             "semantic_replace_construct",
-			required:         []string{"file", "in_function", "kind", "source"},
+			required:         []string{"file", "kind", "source"},
 			stringProperties: []string{"file", "in_function", "kind", "discriminator", "construct_path", "source"},
 		},
 		{
@@ -707,26 +840,26 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 			}
 			description, _ := tool["description"].(string)
 			if !strings.Contains(description, "Use this tool instead of") ||
-				(!strings.Contains(description, "replace_body") && !strings.Contains(description, "replace_file_content")) {
+				(!strings.Contains(description, "semantic_replace_body") && !strings.Contains(description, "replace_file_content")) {
 				t.Errorf("description does not advertise the semantic-edit trigger: %q", description)
 			}
 		})
 	}
 	construct := byName["semantic_replace_construct"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["kind"].(map[string]any)
-	if got, want := construct["enum"], toAnySlice([]string{"loop", "if", "else", "case", "select", "defer"}); !reflect.DeepEqual(got, want) {
+	if got, want := construct["enum"], toAnySlice([]string{"loop", "if", "else", "case", "select", "defer", "function", "method", "type", "const", "var", "statement/expression"}); !reflect.DeepEqual(got, want) {
 		t.Errorf("Go construct enum = %#v, want %#v", got, want)
 	}
 
-	insertStructure := byName["semantic_insert_structure"]
-	if insertStructure == nil {
-		t.Fatal("tools/list omitted semantic_insert_structure")
+	insertConstruct := byName["semantic_insert_construct"]
+	if insertConstruct == nil {
+		t.Fatal("tools/list omitted semantic_insert_construct")
 	}
-	overwrite, ok := insertStructure["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"].(map[string]any)
-	if !ok || overwrite["type"] != "boolean" {
-		t.Fatalf("semantic_insert_structure overwrite schema = %#v, want optional boolean", overwrite)
+	insertProperties := insertConstruct["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, exists := insertProperties["overwrite"]; exists {
+		t.Fatal("semantic_insert_construct retained retired overwrite parameter")
 	}
-	if defaultValue, hasDefault := overwrite["default"]; hasDefault && defaultValue != false {
-		t.Fatalf("semantic_insert_structure overwrite default = %#v, want false when specified", defaultValue)
+	if _, exists := byName["semantic_insert_decl"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["overwrite"]; exists {
+		t.Fatal("semantic_insert_decl retained retired overwrite parameter")
 	}
 
 	batch := byName["semantic_batch"]
@@ -745,7 +878,7 @@ func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
 		toolName, _ := properties["tool"].(map[string]any)["const"].(string)
 		batchTools[toolName] = properties["params"].(map[string]any)
 	}
-	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_structure"} {
+	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_construct"} {
 		params, ok := batchTools[name]
 		if !ok {
 			t.Errorf("semantic_batch schema omitted %s", name)
@@ -811,13 +944,19 @@ type customConstructBackend struct {
 	kinds []backend.ConstructKind
 }
 
-func (b customConstructBackend) SupportedConstructs() []backend.ConstructKind {
+func (b customConstructBackend) SupportedConstructs(operation backend.Operation) []backend.ConstructKind {
+	if operation != backend.OperationReplaceConstruct {
+		return nil
+	}
 	return append([]backend.ConstructKind(nil), b.kinds...)
 }
 
 func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/customconstruct\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	custom := customConstructBackend{
@@ -828,7 +967,7 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)))
+	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go"))
 	replaceFound := false
 	for _, tool := range tools {
 		if tool["name"] != "semantic_replace_construct" {
@@ -842,9 +981,13 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		replaceFound = true
 	}
 	if !replaceFound {
-		t.Fatal("tools/list omitted semantic_replace_construct")
+		got := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			got = append(got, tool["name"].(string))
+		}
+		t.Fatalf("tools/list omitted semantic_replace_construct; tools=%v", got)
 	}
-	if hasTool(tools, "semantic_insert_structure") {
+	if hasTool(tools, "semantic_insert_construct") {
 		t.Fatal("tools/list advertised insertion without a structure capability provider")
 	}
 	for _, tool := range tools {
@@ -854,7 +997,7 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 		branches := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
 		for _, raw := range branches {
 			branch := raw.(map[string]any)["properties"].(map[string]any)
-			if branch["tool"].(map[string]any)["const"] == "semantic_insert_structure" {
+			if branch["tool"].(map[string]any)["const"] == "semantic_insert_construct" {
 				t.Fatal("semantic_batch advertised insertion without a structure capability provider")
 			}
 		}
@@ -884,7 +1027,8 @@ func hasTool(tools []map[string]any, name string) bool {
 func listToolsAt(t *testing.T, root string, options ...mcp.Option) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, options...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	allOptions := append([]mcp.Option{mcp.WithToolProfile("full")}, options...)
+	if err := mcp.NewServer("full", root, &out, allOptions...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -969,7 +1113,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
 	assertContains("semantic_insert_decl description", toolDescription("semantic_insert_decl"), "one Go constant or variable", "instead of replace_file_content")
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
-	assertContains("semantic_insert_structure description", toolDescription("semantic_insert_structure"), "structural construct", "instead of replace_file_content")
+	assertContains("semantic_insert_construct description", toolDescription("semantic_insert_construct"), "construct", "semantic_replace_construct")
 	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "never beside tool", "zero-based edit index", `"symbol":"Run"`)
 	assertContains("semantic_lookup description", toolDescription("semantic_lookup"), "Returns symbol, file, kind, line, and column", "file-navigation reads", "not accepted as semedit tool parameters")
 	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact discriminator expression", "kind=case alone does not identify", "construct_path")
@@ -1104,13 +1248,13 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 	fileSources := []string{
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
+		"semantic_insert_declaration", "semantic_insert_construct", "semantic_replace_decl",
 		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	}
 	inFunctionSources := []string{
-		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_structure",
+		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_construct",
 	}
-	discriminatorSources := []string{"semantic_insert_case", "semantic_insert_structure"}
+	discriminatorSources := []string{"semantic_insert_case", "semantic_insert_construct"}
 	assertSources := func(toolName, parameter string, sources []string) {
 		t.Helper()
 		tool, ok := tools[toolName]
@@ -1932,7 +2076,7 @@ func TestToolsListScopesLanguageAndAccessEnums(t *testing.T) {
 				t.Errorf("inspect language enum = %#v, want %#v", got, tc.languages)
 			}
 			if tc.name == "java only" {
-				if _, ok := byName["semantic_insert_structure"]; ok {
+				if _, ok := byName["semantic_insert_construct"]; ok {
 					t.Error("Java-only tools/list included the Go-only insertion tool")
 				}
 				if _, ok := byName["semantic_verify"]["inputSchema"].(map[string]any)["examples"]; ok {
@@ -1940,7 +2084,7 @@ func TestToolsListScopesLanguageAndAccessEnums(t *testing.T) {
 				}
 			}
 			if tc.name == "go only" || tc.name == "mixed" {
-				access := byName["semantic_insert_structure"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+				access := byName["semantic_insert_construct"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
 				if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
 					t.Errorf("Go access enum = %#v, want %#v", got, want)
 				}
@@ -2013,7 +2157,7 @@ func TestToolsListUsesRegisteredBackendsForOperationInventory(t *testing.T) {
 	}
 	service := backend.NewService(registry)
 	tools := listToolsAt(t, root, mcp.WithService(service))
-	if hasTool(tools, "semantic_insert_structure") {
+	if hasTool(tools, "semantic_insert_construct") {
 		t.Fatal("Go-only insertion tool was listed without a registered Go backend")
 	}
 	if !hasTool(tools, "semantic_lookup") || !hasTool(tools, "semantic_metrics") {

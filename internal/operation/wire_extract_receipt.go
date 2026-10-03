@@ -37,7 +37,7 @@ var extractionReceiptFileConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, "semantic_find_references", semanticInspectSymbolToolName,
 	semanticReplaceBodyToolName, "semantic_replace_construct", semanticMoveConstructToolName, "semantic_remove_construct",
 	"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-	"semantic_insert_declaration", "semantic_insert_structure", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	"semantic_insert_declaration", "semantic_insert_construct", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
 	"semantic_extract_constant", semanticExtractVariableToolName, semanticInlineVariableToolName, "semantic_insert_field",
 	"semantic_assertion_mode",
 }

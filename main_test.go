@@ -243,7 +243,7 @@ func TestREQ002REQ006PublicRegistryAndCLIContractCoverage(t *testing.T) {
 		for _, candidate := range fixtures {
 			input, hasInput := candidate.files["input.json"]
 			if !hasInput || !strings.Contains(input, `"method":"tools/list"`) ||
-				!strings.Contains(candidate.comment, "exec semedit mcp --live-reload") {
+				!strings.Contains(candidate.comment, "exec semedit mcp --tool-profile full --live-reload") {
 				continue
 			}
 			if assertion.MatchString(candidate.comment) {
@@ -253,7 +253,7 @@ func TestREQ002REQ006PublicRegistryAndCLIContractCoverage(t *testing.T) {
 		return false
 	}
 
-	// The MCP tools/list txtar must assert exposure of every registry tool and
+	// The full-profile MCP tools/list txtar must assert every registry tool and
 	// the MCP-only tools, including conditional live reload.
 	for _, registered := range registry.All() {
 		if registered.MCPName == "" {

@@ -18,12 +18,11 @@ import (
 const diagnosticStatusUnavailable = "unavailable"
 
 var (
-	structurePlacementEnum = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol", "first", "last", "before", "after", "before_default"}
-	placementEnum          = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
-	accessEnum             = goModifiers()
-	visibilityEnum         = []string{"public", "private"}
-	groupEnum              = []string{"append", "standalone"}
-	caseEnum               = []string{"first", "last", "before_default", "before", "after"}
+	placementEnum  = []string{"file_start", "file_end", "public_start", "public_end", "private_start", "private_end", "before_symbol", "after_symbol"}
+	accessEnum     = goModifiers()
+	visibilityEnum = []string{"public", "private"}
+	groupEnum      = []string{"append", "standalone"}
+	caseEnum       = []string{"first", "last", "before_default", "before", "after"}
 )
 
 // AppendDiagnosticDelta appends a compiler diagnostic delta to a response base string.
@@ -226,7 +225,7 @@ func registerEngineOps(registry *Registry) error {
 		if err := Register(registry, assertionModeDef()); err != nil {
 			return err
 		}
-		if err := Register(registry, insertStructureDef()); err != nil {
+		if err := Register(registry, insertConstructDef()); err != nil {
 			return err
 		}
 		if err := Register(registry, insertDeclarationDef()); err != nil {

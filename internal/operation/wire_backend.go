@@ -75,7 +75,7 @@ const (
 	sourceInsertTypeFile               = "semantic_insert_type.file"
 	sourceInsertDeclFile               = "semantic_insert_decl.file"
 	sourceInsertDeclarationFile        = "semantic_insert_declaration.file"
-	sourceInsertStructureFile          = "semantic_insert_structure.file"
+	sourceInsertConstructFile          = "semantic_insert_construct.file"
 	sourceReplaceDeclFile              = "semantic_replace_decl.file"
 	sourceOrganizeImportsFile          = "semantic_organize_imports.file"
 	sourceScaffoldFile                 = "semantic_scaffold_file.file"
@@ -87,10 +87,10 @@ const (
 	sourceInsertTypeSymbol             = "semantic_insert_type.symbol"
 	sourceInsertDeclSymbol             = "semantic_insert_decl.symbol"
 	sourceInsertDeclarationSymbol      = "semantic_insert_declaration.symbol"
-	sourceInsertStructureSymbol        = "semantic_insert_structure.symbol"
+	sourceInsertConstructSymbol        = "semantic_insert_construct.symbol"
 	sourceReplaceDeclSymbol            = "semantic_replace_decl.symbol"
-	sourceInsertStructureInFunction    = "semantic_insert_structure.in_function"
-	sourceInsertStructureDiscriminator = "semantic_insert_structure.discriminator"
+	sourceInsertConstructInFunction    = "semantic_insert_construct.in_function"
+	sourceInsertConstructDiscriminator = "semantic_insert_construct.discriminator"
 )
 
 const wireExpectedRevision = "expected_revision"
@@ -104,7 +104,7 @@ var sourceFileContinuations = []string{
 	sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile,
 	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
-	sourceInsertStructureFile, sourceReplaceDeclFile, sourceOrganizeImportsFile, sourceScaffoldFile,
+	sourceInsertConstructFile, sourceReplaceDeclFile, sourceOrganizeImportsFile, sourceScaffoldFile,
 	sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, sourceExtractVariableReceiptFile, sourceInlineVariableReceiptFile,
 }
 
@@ -112,10 +112,10 @@ var sourceReplaceDeclFileContinuations = []string{sourceLookupFile, sourceRename
 
 var sourceReplaceBodyFileContinuations = []string{sourceLookupFile, sourceRenameFile, sourceReplaceBodyFile, sourceInsertFunctionFile, sourceExtractFunctionReceiptFile}
 
-var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol, "semantic_move_construct.symbol"}
+var sourceSymbolContinuations = []string{sourceLookupSymbol, sourceRenameSymbol, sourceReplaceBodySymbol, sourceInsertFunctionSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, "semantic_move_construct.symbol"}
 
 var sourceInFunctionContinuations = []string{
-	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertStructureInFunction,
+	sourceReplaceConstructInFunction, sourceInsertCaseInFunction, sourceInsertConstructInFunction,
 	sourceInspectInFunction,
 }
 
@@ -123,7 +123,7 @@ const sourceInspectInFunction = "semantic_inspect_symbol.result.continuations[].
 const sourceInspectExpectedRevision = "semantic_inspect_symbol.result.continuations[].expected_revision"
 
 var sourceDiscriminatorContinuations = []string{
-	sourceInsertCaseDiscriminator, sourceInsertStructureDiscriminator,
+	sourceInsertCaseDiscriminator, sourceInsertConstructDiscriminator,
 }
 
 var languageEnums = []string{"auto", "go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
@@ -987,7 +987,7 @@ var renameFileConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, "semantic_verify", semanticReplaceBodyToolName,
 	semanticMoveConstructToolName, "semantic_remove_construct", "semantic_insert_case",
 	"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-	"semantic_insert_declaration", "semantic_insert_structure", semanticReplaceDeclToolName,
+	"semantic_insert_declaration", "semantic_insert_construct", semanticReplaceDeclToolName,
 	semanticExtractFunctionToolName, semanticExtractVariableToolName,
 	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticMigrateTypeToolName,
 }

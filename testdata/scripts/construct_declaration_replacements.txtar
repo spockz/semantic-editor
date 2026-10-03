@@ -1,0 +1,31 @@
+# Whole named declarations replace by symbol without an enclosing function.
+exec semedit replace-construct --file declarations.go --kind function --symbol Convert --source 'func Convert(text string) string { return text }'
+exec semedit replace-construct --file declarations.go --kind type --symbol Config --source 'type Config struct { Port int }'
+exec semedit replace-construct --file declarations.go --kind const --symbol Limit --source 'const Limit = 20'
+exec semedit replace-construct --file declarations.go --kind var --symbol Revision --source 'var Revision = 2'
+cp declarations.go .scratch/replaced.go
+! exec semedit replace-construct --file declarations.go --kind type --symbol Config --source 'type Other struct { Host string }'
+stderr 'name|identity|Config'
+cmp declarations.go .scratch/replaced.go
+grep 'func Convert\(text string\) string' declarations.go
+grep 'type Config struct' declarations.go
+grep 'Port int' declarations.go
+grep 'const Limit = 20' declarations.go
+grep 'var Revision = 2' declarations.go
+grep 'Sibling.*Limit' declarations.go
+exec go test ./...
+
+-- go.mod --
+module example.com/constructdecls
+
+go 1.24
+-- declarations.go --
+package sample
+
+const Limit = 10
+var Revision = 1
+
+type Config struct { Host string }
+
+func Convert(value int) int { return value }
+func Sibling() int { return Limit }

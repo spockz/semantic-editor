@@ -1,107 +1,38 @@
-# ADR-0019: Intent-Driven Declaration Roles and Precision Statement Anchors
+# ADR-0019: Intent-Driven Declaration Roles and Statement Anchors
 
 * **Status**: Accepted
 * **Date**: 2026-09-17
 
----
-
 ## Context
 
-AI coding agents refactoring code currently face an undesirable trade-off between brittle text editing and cognitive overload:
-
-1. **Text Diffs (`replace_file_content`)**: The model must read lines, calculate token offsets, and emit fragile string replacements.
-2. **Low-Level AST Probing (`supported_locations` -> `insert_statement`)**: Forcing the LLM to inspect AST nodes, parse container IDs, and pick an insertion slot turns the agent into a manual AST compiler, burning tokens and requiring multi-turn roundtrips for standard declarations.
-
-In practice, an agent's semantic intent is usually high-level: *"Add a sentinel error `ErrNotFound`"*, *"Add a package-level mutex `var mu sync.Mutex`"*, or *"Add a shutdown log statement before returning from `Serve`"*.
-
-The host engine already possesses canonical knowledge of language grammar and file layout conventions. Requiring the model to specify spatial coordinates for standard entities violates Intent-Driven Orchestration ([ADR-0001](0001-intent-driven-orchestration.md)).
-
----
+Insertion intent spans top-level declarations, fields, switch cases, and statements anchored inside a function. Separate public tools for each syntax kind increase the catalog without changing the core operation: add one validated construct at a selected location. Agents also need deterministic ambiguity reporting when a selector matches more than one node.
 
 ## Decision
 
-We establish a two-tier insertion architecture pairing zero-turn declarative roles with precision block anchors:
+semantic_insert_construct (insert-construct) is the generic insertion operation. It requires a backend-supported kind and source snippet. Operation-specific backend capabilities determine which kinds and selectors the active language can execute. Current Go kinds include declarations, fields, switch cases, and statement/expression; this taxonomy does not claim support in another language.
 
-### 1. Tier 1: Fast-Path Zero-Turn Declarative Roles (`semantic_insert_decl`)
+Declaration and field insertion use their relevant placement contract. in_type selects a field owner, target_symbol optionally selects a neighboring field, and an existing declaration collision fails before mutation. Insert operations have no overwrite parameter. Whole declaration updates use semantic_replace_construct with a declaration symbol and kind. semantic_scaffold_file retains its separate file-level overwrite option.
 
-The agent emits its declaration intent in a **single tool turn** by specifying a semantic `role`:
+For Go statement insertion, in_function selects the owner and kind=statement/expression selects insertion intent. anchor accepts:
 
-```json
-{
-  "name": "semantic_insert_decl",
-  "description": "Insert a top-level Go declaration using its semantic role. The host engine deterministically resolves idiomatic placement and formatting without requiring spatial coordinates.",
-  "inputSchema": {
-    "file": "string (required): relative path to source file",
-    "role": "string (required): semantic role: 'sentinel_error', 'constant', 'global_variable', 'type', 'constructor', 'init_registration'",
-    "source": "string (required): declaration source code",
-    "access_modifier": "string (optional, default 'infer'): 'public', 'private', or 'infer'",
-    "auto_organize_imports": "bool (optional, default false)"
-  }
-}
-```
+* start: before the first direct statement.
+* end: after the final statement, except before a terminal return or panic.
+* before_return: before the final direct return.
+* before or after: adjacent to a statement selected by discriminator; these values require a discriminator.
 
-#### Placement Rules by Semantic Role
+Insertion resolves only direct statements in the selected function body. A unique direct statement anchor needs no path; repeated direct statements require the `construct_path` and matching `expected_revision` reported by an ambiguity diagnostic. Expression candidates do not participate in insertion selection. The source must parse as one statement. Invalid snippets and unresolved or ambiguous selectors fail before mutation.
 
-* **`sentinel_error`**:
-  * In Go: Targets the package-level `var (...)` error block. If an existing `var` block containing `Err*` definitions exists, appends inside that block. If absent, creates a new `var` declaration in the sentinel errors section directly below imports and above types.
-  * In Java: Synthesizes a nested or package-private exception class.
-* **`constant`**:
-  * Targets the package `const (...)` block preceding variable and type definitions.
-* **`global_variable`**:
-  * Targets package-level `var` block following constants.
-* **`type`**:
-  * Placed according to visibility invariants ([ADR-0012](0012-access-modifiers-and-section-placement.md)): public types in public sections, private types in private sections.
-* **`constructor`**:
-  * Placed directly adjacent to the instantiated type definition.
-* **`init_registration`**:
-  * Appended to the `init()` block (or creates `func init()` if absent).
-
-### 2. Tier 2: Precision Statement Anchors Inside Function Bodies (`semantic_insert_statement`)
-
-When surgical insertion inside an existing function body or control flow block is required, the agent specifies the target function and anchor pattern directly:
-
-```json
-{
-  "name": "semantic_insert_statement",
-  "description": "Insert statements into a function, method, or control structure at a semantic anchor point.",
-  "inputSchema": {
-    "file": "string (required): relative path to source file",
-    "func": "string (required): target function or method name (e.g. 'Server.Serve')",
-    "anchor": "string (optional, default 'end'): 'start', 'end', 'before_return', 'after:<snippet>', 'before:<snippet>'",
-    "statement": "string (required): statement source code",
-    "auto_organize_imports": "bool (optional, default false)"
-  }
-}
-```
-
-#### Anchor Semantics
-
-* **`start`**: First statement inside the target function/block.
-* **`end`**: Last statement inside the target function/block (automatically places before terminal return if present to avoid unreachable code).
-* **`before_return`**: Immediately preceding the terminal `return` statement in the block.
-* **`after:<snippet>` / `before:<snippet>`**: Matches statement whose AST contains `<snippet>`.
-
-### 3. Inspection Tool (`semantic_supported_locations`)
-
-Maintained as a diagnostic inspection tool for complex, deeply nested control structures (or multi-language discovery) when direct pattern matching is ambiguous.
-
-### 4. Ambiguous Structural Target Resolution
-
-A structural selector may match multiple nodes within its declared owner, even after file, package, type, and function scopes have been selected. A command must not choose the first matching node implicitly. It must fail before mutation and report each candidate with its enclosing structural context and a selector or handle that can be supplied to choose that candidate on retry. The selector syntax may be specific to the operation; the shared contract is candidate reporting, zero mutation on ambiguity, and explicit candidate selection.
-
----
+Specialized insertion operations remain registered for CLI and batch use. MCP discovery exposes generic tools by default; --tool-profile=full or matching --expose-tool-variant patterns disclose specialized variants. Catalog filtering does not alter registry capabilities or dispatch.
 
 ## Invariants
 
-1. **Zero-Turn Execution**: Declaring entities via standard semantic roles must never require a preceding inspection or discovery call.
-2. **Canonical Section Layout**: The engine must enforce language-idiomatic file organization (imports $\to$ constants $\to$ sentinel errors $\to$ types $\to$ constructors $\to$ methods $\to$ private helpers).
-3. **Dead Code Prevention**: Inserting with `anchor: "end"` must not place statements after a terminal `return` or `panic`.
-4. **Atomic Disk Mutation**: All writes execute through `pipeline.WriteAtomic` with advancing timestamps ([ADR-0010](0010-disk-synchronization-and-cache-invalidation.md)).
-5. **Explicit Structural Disambiguation**: A structural operation that finds multiple targets within its selected owner must report candidates and require an explicit selector or handle; ambiguity must not mutate the workspace.
-
----
+1. Insertion validates source and selectors before writing.
+2. Insertion never silently replaces a declaration or accepts overwrite.
+3. Ambiguous node selection reports usable candidate paths and leaves the workspace unchanged.
+4. Statement anchor semantics are limited to behavior implemented and tested by the language backend.
+5. All public mutation writes use atomic publication and advancing modification times.
+6. Each advertised language-operation pair has CLI txtar contract coverage or an explicit unsupported capability.
 
 ## Consequences
 
-* **Positive**: Minimizes agent token expenditure; eliminates spatial coordinate reasoning; preserves idiomatic code layout automatically; provides a seamless single-turn workflow for common additions.
-* **Negative**: Complex non-standard file layouts may require explicit anchor patterns rather than generic semantic roles. Structural selectors that match multiple nodes require a candidate-selection retry.
+Generic construct insertion provides one public semantic entry point while preserving specialized commands and batch operations. Statement anchors avoid whole-body replacement for local insertions, and explicit candidate paths prevent implicit selection.
