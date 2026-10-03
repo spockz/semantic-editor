@@ -74,6 +74,19 @@ func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trus
 	if err != nil {
 		return nil, err
 	}
+	edits, err = prepareBatchEntries(s.workDir, canonicalRoot, edits)
+	if err != nil {
+		return &BatchResponse{
+			Status:        "error",
+			WorkspaceRoot: canonicalRoot,
+			Results: []BatchResult{{
+				Tool:             "workspace_scope",
+				Status:           "error",
+				Error:            err.Error(),
+				ApplicationState: "not_applied",
+			}},
+		}, nil
+	}
 	root = canonicalRoot
 	requestServer := s.requestView(root, trustWorkspace)
 	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(root))
@@ -369,6 +382,43 @@ func parseBatchWorkspaceRequest(configuredRoot string, rootJSON, trustJSON json.
 	return root, trusted, err
 }
 
+func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) ([]BatchEntry, error) {
+	prepared := append([]BatchEntry(nil), edits...)
+	for index := range prepared {
+		entry := &prepared[index]
+		if len(entry.Params) == 0 || strings.TrimSpace(string(entry.Params)) == "null" {
+			return nil, fmt.Errorf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)
+		}
+		var child map[string]any
+		if err := decodeArgumentObject(entry.Params, &child); err != nil {
+			return nil, fmt.Errorf("edit %d invalid arguments: %w", index, err)
+		}
+		if childRootValue, present := child["workspace_root"]; present {
+			childRoot, ok := childRootValue.(string)
+			if !ok {
+				return nil, fmt.Errorf("edit %d workspace_root must be a string", index)
+			}
+			resolvedChildRoot, err := resolveRequestRoot(configuredRoot, childRoot)
+			if err != nil {
+				return nil, fmt.Errorf("edit %d: %w", index, err)
+			}
+			if resolvedChildRoot != batchRoot {
+				return nil, fmt.Errorf("edit %d workspace_root %q resolves to %q, differing from batch root %q", index, childRoot, resolvedChildRoot, batchRoot)
+			}
+			delete(child, "workspace_root")
+		}
+		if err := validateRequestPaths(batchRoot, child); err != nil {
+			return nil, fmt.Errorf("edit %d: %w", index, err)
+		}
+		encoded, err := json.Marshal(child)
+		if err != nil {
+			return nil, fmt.Errorf("edit %d encode normalized arguments: %w", index, err)
+		}
+		entry.Params = encoded
+	}
+	return prepared, nil
+}
+
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
 	s.sessionMu.Lock()
 	uninitialized := s.initializedAt.IsZero()
@@ -406,47 +456,10 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	}
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(root))
 	requestServer := s.requestView(root, trustWorkspace)
-	for index := range request.Edits {
-		if len(request.Edits[index].Params) == 0 || strings.TrimSpace(string(request.Edits[index].Params)) == "null" {
-			err := fmt.Errorf("edit %d params are required for %s; put operation arguments under params", index, request.Edits[index].Tool)
-			s.sendToolErrorWithTiming(id, err.Error(), timing, err)
-			return
-		}
-		var child map[string]any
-		if err := decodeArgumentObject(request.Edits[index].Params, &child); err != nil {
-			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d invalid arguments: %v", index, err), timing, err)
-			return
-		}
-		childRootValue, rootPresent := child["workspace_root"]
-		if rootPresent {
-			if _, ok := childRootValue.(string); !ok {
-				err := fmt.Errorf("edit %d workspace_root must be a string", index)
-				s.sendToolErrorWithTiming(id, err.Error(), timing, err)
-				return
-			}
-		}
-		childRoot, _ := childRootValue.(string)
-		delete(child, "workspace_root")
-		if childRoot != "" {
-			resolvedChildRoot, err := resolveRequestRoot(s.workDir, childRoot)
-			if err != nil || resolvedChildRoot != root {
-				if err == nil {
-					err = fmt.Errorf("child workspace_root %q resolves to %q, differing from batch root %q", childRoot, resolvedChildRoot, root)
-				}
-				s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d: %v", index, err), timing, err)
-				return
-			}
-		}
-		if err := validateRequestPaths(root, child); err != nil {
-			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d: %v", index, err), timing, err)
-			return
-		}
-		encoded, err := json.Marshal(child)
-		if err != nil {
-			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d encode normalized arguments: %v", index, err), timing, err)
-			return
-		}
-		request.Edits[index].Params = encoded
+	request.Edits, err = prepareBatchEntries(s.workDir, root, request.Edits)
+	if err != nil {
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	response, err := requestServer.executeBatchWithContext(ctx, request.Edits, request.AutoOrganizeImports)

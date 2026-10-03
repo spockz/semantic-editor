@@ -111,6 +111,65 @@ func TestBatch_SuccessfulExecution(t *testing.T) {
 	}
 }
 
+func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
+	configuredRoot := t.TempDir()
+	worktree := filepath.Join(configuredRoot, ".scratch", "worktrees", "selected")
+	if err := os.MkdirAll(worktree, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mainFile := filepath.Join(configuredRoot, "main.go")
+	mainSource := []byte("package main\n\nfunc Value() int { return 1 }\n")
+	if err := os.WriteFile(mainFile, mainSource, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	worktreeFile := filepath.Join(worktree, "value.go")
+	if err := os.WriteFile(filepath.Join(worktree, "go.mod"), []byte("module example.com/worktree\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(worktreeFile, []byte("package worktree\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server := mcp.NewServer("full", configuredRoot, &bytes.Buffer{})
+	var response *mcp.BatchResponse
+	var err error
+
+	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(`{"file":"../main.go","symbol":"Value","body":"return 2"}`),
+	}}, false)
+	if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "outside workspace root") {
+		t.Fatalf("outside-file batch response = %+v, err %v", response, err)
+	}
+	if got, readErr := os.ReadFile(mainFile); readErr != nil || !bytes.Equal(got, mainSource) {
+		t.Fatalf("rejected batch changed configured-root file: got %q, err %v", got, readErr)
+	}
+
+	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(`{"workspace_root":".","file":"value.go","symbol":"Value","body":"return 2"}`),
+	}}, false)
+	if err != nil || response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "differing from batch root") {
+		t.Fatalf("differing child-root batch response = %+v, err %v", response, err)
+	}
+	if got, readErr := os.ReadFile(worktreeFile); readErr != nil || string(got) != "package worktree\n\nfunc Value() int { return 1 }\n" {
+		t.Fatalf("refused direct batch changed selected-worktree file: got %q, err %v", got, readErr)
+	}
+
+	response, err = server.ExecuteBatchForWorkspace(context.Background(), worktree, false, []mcp.BatchEntry{{
+		Tool:   "semantic_replace_body",
+		Params: json.RawMessage(fmt.Sprintf(`{"file":%q,"symbol":"Value","body":"return 2"}`, worktreeFile)),
+	}}, false)
+	if err != nil || response.Status != "ok" || len(response.Results) != 1 {
+		t.Fatalf("contained absolute-file batch = %+v, err %v", response, err)
+	}
+	if response.Results[0].File != "value.go" {
+		t.Fatalf("absolute file continuation = %q, want normalized worktree-relative path", response.Results[0].File)
+	}
+	if got, readErr := os.ReadFile(mainFile); readErr != nil || !bytes.Equal(got, mainSource) {
+		t.Fatalf("valid worktree batch changed configured-root file: got %q, err %v", got, readErr)
+	}
+}
+
 func TestBatchExpectedRevisionUsesCurrentWorkingOverlay(t *testing.T) {
 	initial := []byte("package sample\n\nfunc Value() int {\n\treturn 1\n}\n")
 	current := []byte("package sample\n\nfunc Value() int {\n\treturn 2\n}\n")
