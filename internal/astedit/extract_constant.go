@@ -58,87 +58,120 @@ func ExtractConstant(ctx context.Context, filePath, owner, name string, opts Ext
 	if err != nil {
 		return "", err
 	}
-	var fset *token.FileSet
-	var syntax *ast.File
-	var info *types.Info
-	var scope *types.Scope
-	for _, pkg := range loaded {
-		if pkg.Types == nil || pkg.TypesInfo == nil || pkg.Fset == nil {
-			continue
-		}
-		for index, path := range pkg.CompiledGoFiles {
-			absolute, absErr := filepath.Abs(path)
-			if absErr != nil || filepath.Clean(absolute) != cleanPath {
-				continue
-			}
-			fset, syntax, info, scope = pkg.Fset, pkg.Syntax[index], pkg.TypesInfo, pkg.Types.Scope()
-			break
-		}
-	}
-	if syntax == nil {
-		return "", fmt.Errorf("constant extraction target %q is not in a buildable Go package", cleanPath)
+	inputs, err := selectConstantPackageInputs(loaded, cleanPath)
+	if err != nil {
+		return "", err
 	}
 	receiver, ownerName, err := symbol.ParseIdentifier(owner)
 	if err != nil {
 		return "", fmt.Errorf("parse in_function selector: %w", err)
 	}
-	target := findExtractOwner(syntax, ownerName, receiver)
+	target := findExtractOwner(inputs.syntax, ownerName, receiver)
 	if target == nil || target.Body == nil {
 		return "", fmt.Errorf("constant extraction owner %q was not found or has no body", owner)
 	}
-	selected := make([]ast.Expr, 0, 1)
-	ast.Inspect(target.Body, func(node ast.Node) bool {
-		expr, ok := node.(ast.Expr)
-		if !ok {
-			return true
-		}
-		start, end := fset.Position(expr.Pos()).Offset, fset.Position(expr.End()).Offset
-		if start >= 0 && end >= start && end <= len(content) && string(content[start:end]) == opts.Discriminator {
-			selected = append(selected, expr)
-		}
-		return true
-	})
-	if len(selected) != 1 {
-		return "", fmt.Errorf("constant expression selection matched %d current expressions; choose exact source text that identifies one expression", len(selected))
+	selected, err := selectConstantExpression(inputs.fset, target.Body, content, opts.Discriminator)
+	if err != nil {
+		return "", err
 	}
-	plan, err := PlanConstantExtraction(content, fset, syntax, info, scope, selected[0], name)
+	plan, err := PlanConstantExtraction(content, inputs.fset, inputs.syntax, inputs.info, inputs.scope, selected, name)
 	if err != nil {
 		return "", fmt.Errorf("plan constant extraction: %w", err)
 	}
-	updated := make([]byte, 0, len(content)+len(plan.Declaration)+8)
-	updated = append(updated, content[:plan.Start]...)
+	updated, err := constantExtractionSource(cleanPath, content, plan)
+	if err != nil {
+		return "", err
+	}
+	if err := publishConstantExtraction(ctx, cleanPath, content, updated, ownedBuffer, standalone); err != nil {
+		return "", err
+	}
+	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(updated)), nil
+}
+
+type constantPackageInputs struct {
+	fset   *token.FileSet
+	syntax *ast.File
+	info   *types.Info
+	scope  *types.Scope
+}
+
+func selectConstantPackageInputs(loaded []*packages.Package, targetPath string) (constantPackageInputs, error) {
+	for _, pkg := range loaded {
+		if pkg.Types == nil || pkg.TypesInfo == nil || pkg.Fset == nil {
+			continue
+		}
+		for index, path := range pkg.CompiledGoFiles {
+			absolute, err := filepath.Abs(path)
+			if err != nil || filepath.Clean(absolute) != targetPath || index >= len(pkg.Syntax) {
+				continue
+			}
+			return constantPackageInputs{fset: pkg.Fset, syntax: pkg.Syntax[index], info: pkg.TypesInfo, scope: pkg.Types.Scope()}, nil
+		}
+	}
+	return constantPackageInputs{}, fmt.Errorf("constant extraction target %q is not in a buildable Go package", targetPath)
+}
+
+func selectConstantExpression(fset *token.FileSet, body *ast.BlockStmt, source []byte, discriminator string) (ast.Expr, error) {
+	var selected ast.Expr
+	matches := 0
+	ast.Inspect(body, func(node ast.Node) bool {
+		expression, ok := node.(ast.Expr)
+		if ok && matchesConstantSource(fset, source, discriminator, expression) {
+			selected = expression
+			matches++
+		}
+		return true
+	})
+	if matches != 1 {
+		return nil, fmt.Errorf("constant expression selection matched %d current expressions; choose exact source text that identifies one expression", matches)
+	}
+	return selected, nil
+}
+
+func matchesConstantSource(fset *token.FileSet, source []byte, discriminator string, expression ast.Expr) bool {
+	start, end := fset.Position(expression.Pos()).Offset, fset.Position(expression.End()).Offset
+	return start >= 0 && end >= start && end <= len(source) && string(source[start:end]) == discriminator
+}
+
+func constantExtractionSource(path string, source []byte, plan ConstantExtractionPlan) ([]byte, error) {
+	updated := make([]byte, 0, len(source)+len(plan.Declaration)+8)
+	updated = append(updated, source[:plan.Start]...)
 	updated = append(updated, plan.Replacement...)
-	updated = append(updated, content[plan.End:]...)
+	updated = append(updated, source[plan.End:]...)
 	if len(updated) > 0 && updated[len(updated)-1] != '\n' {
 		updated = append(updated, '\n')
 	}
 	updated = append(updated, '\n')
 	updated = append(updated, []byte(plan.Declaration)...)
 	updated = append(updated, '\n')
-	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, updated, parser.ParseComments|parser.AllErrors); err != nil {
-		return "", &SyntaxError{File: cleanPath, Snippet: plan.Declaration, Cause: err, Err: ErrSyntax}
+	if _, err := parser.ParseFile(token.NewFileSet(), path, updated, parser.ParseComments|parser.AllErrors); err != nil {
+		return nil, &SyntaxError{File: path, Snippet: plan.Declaration, Cause: err, Err: ErrSyntax}
 	}
+	return updated, nil
+}
+
+func publishConstantExtraction(ctx context.Context, path string, before, after []byte, ownedBuffer *sourcebuf.Buffer, standalone bool) error {
 	validated := sourcebuf.Overlay(ctx)
 	if validated == nil {
 		validated = make(map[string][]byte)
 	}
-	validated[cleanPath] = updated
-	if _, err := loadConstantPackage(ctx, filepath.Dir(cleanPath), validated); err != nil {
-		return "", fmt.Errorf("validate extracted constant source: %w", err)
+	validated[path] = after
+	if _, err := loadConstantPackage(ctx, filepath.Dir(path), validated); err != nil {
+		return fmt.Errorf("validate extracted constant source: %w", err)
 	}
 	buffer := sourcebuf.FromContext(ctx)
 	if buffer == nil {
-		return "", fmt.Errorf("constant extraction requires a source buffer before apply")
+		return fmt.Errorf("constant extraction requires a source buffer before apply")
 	}
-	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: updated}}); err != nil {
-		return "", fmt.Errorf("apply buffered constant extraction: %w", err)
+	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: path, Before: before, After: after}}); err != nil {
+		return fmt.Errorf("apply buffered constant extraction: %w", err)
 	}
 	if standalone {
 		if err := ownedBuffer.Flush(ctx); err != nil {
-			return "", fmt.Errorf("publish constant extraction: %w", err)
+			return fmt.Errorf("publish constant extraction: %w", err)
 		}
 	}
-	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(updated)), nil
+	return nil
 }
 
 func loadConstantPackage(ctx context.Context, dir string, overlay map[string][]byte) ([]*packages.Package, error) {
