@@ -760,31 +760,35 @@ func extractionScope(file *ast.File, params []string) map[string]bool {
 func localBindings(body *ast.BlockStmt) map[string]bool {
 	locals := make(map[string]bool)
 	ast.Inspect(body, func(node ast.Node) bool {
-		switch item := node.(type) {
-		case *ast.AssignStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range item.Lhs {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
-						locals[ident.Name] = true
-					}
-				}
-			}
-		case *ast.ValueSpec:
-			for _, ident := range item.Names {
-				locals[ident.Name] = true
-			}
-		case *ast.RangeStmt:
-			if item.Tok == token.DEFINE {
-				for _, expr := range []ast.Expr{item.Key, item.Value} {
-					if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
-						locals[ident.Name] = true
-					}
-				}
-			}
-		}
+		addLocalBindingsAt(node, locals)
 		return true
 	})
 	return locals
+}
+
+func addLocalBindingsAt(node ast.Node, locals map[string]bool) {
+	switch item := node.(type) {
+	case *ast.AssignStmt:
+		if item.Tok == token.DEFINE {
+			addIdentifierBindings(item.Lhs, locals)
+		}
+	case *ast.ValueSpec:
+		for _, ident := range item.Names {
+			locals[ident.Name] = true
+		}
+	case *ast.RangeStmt:
+		if item.Tok == token.DEFINE {
+			addIdentifierBindings([]ast.Expr{item.Key, item.Value}, locals)
+		}
+	}
+}
+
+func addIdentifierBindings(expressions []ast.Expr, locals map[string]bool) {
+	for _, expr := range expressions {
+		if ident, ok := expr.(*ast.Ident); ok && ident.Name != "_" {
+			locals[ident.Name] = true
+		}
+	}
 }
 
 func rejectShadowedNames(stmt ast.Stmt, allowed, locals map[string]bool) error {
