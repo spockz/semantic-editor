@@ -18,7 +18,7 @@ cmp service.go .scratch/service-before.txt
 ! exec semedit introduce-parameter --file service.go --symbol overflow --parameters '[{"parameter":{"name":"small","type":"int8"},"argument":"257"}]' --discriminator large
 stderr 'assignable to the appended parameter type'
 cmp service.go .scratch/service-before.txt
-exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}]' --discriminator defaultMode
+exec semedit introduce-parameter --file service.go --symbol transform --parameters '[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}]' --discriminator defaultMode
 stdout 'Replaced the selected constant expression'
 cmp service.go .scratch/want/service.txt
 cmp calls.go .scratch/want/calls.txt
@@ -39,10 +39,12 @@ go 1.24
 -- service.go --
 package sample
 
-const defaultMode int = 3
+type mode int
+
+const defaultMode mode = 3
 var mutableMode = 2
 
-func transform(id int) int { return id + defaultMode }
+func transform(id int) int { return id + int(defaultMode) }
 func unsafe(id int) int { return id + mutableMode }
 func shadowed(id int) int { defaultMode := 4; return id + defaultMode }
 func repeated(flag bool) bool { if flag { return true }; return true }
@@ -71,10 +73,12 @@ func second() int { return transform(2) }
 -- .scratch/want/service.txt --
 package sample
 
-const defaultMode int = 3
+type mode int
+
+const defaultMode mode = 3
 var mutableMode = 2
 
-func transform(id int, mode int) int { return id + mode }
+func transform(id int, mode mode) int { return id + int(mode) }
 func unsafe(id int) int { return id + mutableMode }
 func shadowed(id int) int { defaultMode := 4; return id + defaultMode }
 func repeated(flag bool) bool { if flag { return true }; return true }

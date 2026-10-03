@@ -226,7 +226,11 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 		start int
 		end   int
 	}
-	selectedByOccurrence := make(map[expressionOccurrence]types.TypeAndValue)
+	type typedExpressionEvidence struct {
+		typeAndValue types.TypeAndValue
+		fset         *token.FileSet
+	}
+	selectedByOccurrence := make(map[expressionOccurrence]typedExpressionEvidence)
 	for _, pkg := range snapshot.Packages {
 		if pkg.TypesInfo == nil || pkg.Fset == nil || len(pkg.Errors) != 0 {
 			continue
@@ -253,11 +257,11 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 					}
 					start, end := pkg.Fset.Position(expr.Pos()).Offset, pkg.Fset.Position(expr.End()).Offset
 					if start >= 0 && end > start && end <= len(source) && string(source[start:end]) == strings.TrimSpace(expression) {
-						occurrence := expressionOccurrence{file: snapshot.File, start: start, end: end}
-						evidence := pkg.TypesInfo.Types[expr]
+						occurrence := expressionOccurrence{file: filepath.Clean(path), start: start, end: end}
+						evidence := typedExpressionEvidence{typeAndValue: pkg.TypesInfo.Types[expr], fset: pkg.Fset}
 						if previous, found := selectedByOccurrence[occurrence]; found {
-							if previous.Value == nil || previous.Type == nil || evidence.Value == nil || evidence.Type == nil || previous.Value.Kind() != evidence.Value.Kind() || !constant.Compare(previous.Value, token.EQL, evidence.Value) || !types.Identical(previous.Type, evidence.Type) {
-								selectedByOccurrence[occurrence] = types.TypeAndValue{}
+							if previous.typeAndValue.Value == nil || previous.typeAndValue.Type == nil || evidence.typeAndValue.Value == nil || evidence.typeAndValue.Type == nil || previous.typeAndValue.Value.Kind() != evidence.typeAndValue.Value.Kind() || !constant.Compare(previous.typeAndValue.Value, token.EQL, evidence.typeAndValue.Value) || !equivalentSignatureVariantType(previous.typeAndValue.Type, previous.fset, evidence.typeAndValue.Type, evidence.fset) {
+								selectedByOccurrence[occurrence] = typedExpressionEvidence{}
 							}
 						} else {
 							selectedByOccurrence[occurrence] = evidence
@@ -273,7 +277,7 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 	}
 	var selected types.TypeAndValue
 	for _, evidence := range selectedByOccurrence {
-		selected = evidence
+		selected = evidence.typeAndValue
 	}
 	if selected.Value == nil || selected.Type == nil {
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected body expression must resolve uniquely to a compile-time typed constant with consistent evidence across package variants")
@@ -311,6 +315,49 @@ func proveIntroduceParameterConstant(snapshot *structuralSnapshot, symbol, expre
 		return astedit.SignatureConstantEvidence{}, fmt.Errorf("selected and caller constants must both be assignable to the appended parameter type")
 	}
 	return astedit.SignatureConstantEvidence{Type: parameterType, SelectedValue: selected.Value.String(), ArgumentValue: argumentValue.String(), ArgumentSource: argument}, nil
+}
+
+func equivalentSignatureVariantType(left types.Type, leftFset *token.FileSet, right types.Type, rightFset *token.FileSet) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	if types.Identical(left, right) {
+		return true
+	}
+	leftNamed, leftOK := types.Unalias(left).(*types.Named)
+	rightNamed, rightOK := types.Unalias(right).(*types.Named)
+	if !leftOK || !rightOK || !sameSignatureVariantTypeName(leftNamed.Obj(), leftFset, rightNamed.Obj(), rightFset) || !types.Identical(leftNamed.Underlying(), rightNamed.Underlying()) {
+		return false
+	}
+	leftArgs, rightArgs := leftNamed.TypeArgs(), rightNamed.TypeArgs()
+	if leftArgs.Len() != rightArgs.Len() {
+		return false
+	}
+	for index := range leftArgs.Len() {
+		if !types.Identical(leftArgs.At(index), rightArgs.At(index)) {
+			return false
+		}
+	}
+	return true
+}
+
+func sameSignatureVariantTypeName(left *types.TypeName, leftFset *token.FileSet, right *types.TypeName, rightFset *token.FileSet) bool {
+	if left == nil || right == nil || left.Name() != right.Name() || left.Pkg() == nil || right.Pkg() == nil || left.Pkg().Path() != right.Pkg().Path() || leftFset == nil || rightFset == nil {
+		return false
+	}
+	leftFile, rightFile := leftFset.File(left.Pos()), rightFset.File(right.Pos())
+	if leftFile == nil || rightFile == nil {
+		return false
+	}
+	leftPath, err := filepath.Abs(leftFile.Name())
+	if err != nil {
+		return false
+	}
+	rightPath, err := filepath.Abs(rightFile.Name())
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(leftPath) == filepath.Clean(rightPath) && leftFile.Offset(left.Pos()) == rightFile.Offset(right.Pos())
 }
 
 func collectSignatureBodyBindings(snapshot *structuralSnapshot, symbol string) ([]astedit.SignatureBodyBinding, error) {

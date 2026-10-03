@@ -15,12 +15,14 @@ go 1.24
 -- input.json --
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","initializationOptions":{"trust_workspace":true}}}
 {"jsonrpc":"2.0","id":2,"method":"tools/list"}
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_introduce_parameter","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"int"},"argument":"3"}],"discriminator":"defaultMode"}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func later() int { return transform(9, 3) }"}}]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"calls.go","symbol":"first","body":"return transform(7)"}},{"tool":"semantic_introduce_parameter","params":{"file":"service.go","symbol":"transform","parameters":[{"source_index":0,"parameter":{"name":"id","type":"int"}},{"parameter":{"name":"mode","type":"mode"},"argument":"3"}],"discriminator":"defaultMode"}},{"tool":"semantic_insert_function","params":{"file":"calls.go","source":"func later() int { return transform(9, 3) }"}}]}}}
 -- service.go --
 package sample
 
-const defaultMode = 3
-func transform(id int) int { return id + defaultMode }
+type mode int
+
+const defaultMode mode = 3
+func transform(id int) int { return id + int(defaultMode) }
 -- calls.go --
 package sample
 
@@ -42,9 +44,11 @@ func TestTransform(t *testing.T) {
 -- .scratch/want/service.txt --
 package sample
 
-const defaultMode = 3
+type mode int
 
-func transform(id int, mode int) int { return id + mode }
+const defaultMode mode = 3
+
+func transform(id int, mode mode) int { return id + int(mode) }
 -- .scratch/want/calls.txt --
 package sample
 
