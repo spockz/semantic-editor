@@ -1231,6 +1231,9 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 			Content []struct {
 				Text string `json:"text"`
 			} `json:"content"`
+			StructuredContent struct {
+				Result json.RawMessage `json:"result"`
+			} `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(snapOut.Bytes(), &snapResp); err != nil {
@@ -1243,7 +1246,11 @@ func TestMCPSnapshotAndUndo(t *testing.T) {
 	var snapData struct {
 		SnapshotID string `json:"snapshot_id"`
 	}
-	if err := json.Unmarshal([]byte(snapResp.Result.Content[0].Text), &snapData); err != nil {
+	var snapshotText string
+	if err := json.Unmarshal(snapResp.Result.StructuredContent.Result, &snapshotText); err != nil {
+		t.Fatalf("unmarshal snapshot text: %v", err)
+	}
+	if err := json.Unmarshal([]byte(snapshotText), &snapData); err != nil {
 		t.Fatalf("unmarshal snapData: %v", err)
 	}
 	if snapData.SnapshotID == "" {
@@ -1918,11 +1925,18 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "moved.go"), []byte("package sample\n")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(fixture.root, "nested"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := pipeline.WriteAtomic(filepath.Join(fixture.root, "nested", "nested.go"), []byte("package nested\n\nfunc Nested() int { return 1 }\n")); err != nil {
+		t.Fatal(err)
+	}
 	calls := []struct {
 		name      string
 		arguments map[string]any
 	}{
 		{"semantic_verify", map[string]any{"path": ".", "language": "go", "check_only": true}},
+		{"semantic_verify", map[string]any{"workspace_root": "nested", "path": ".", "language": "go", "check_only": true}},
 		{"semantic_rename", map[string]any{"file": "value.go", "symbol": "Value", "to": "Renamed"}},
 		{"semantic_extract_function", map[string]any{"file": "value.go", "symbol": "emitOne", "in_function": "Emit", "kind": "function", "start_line": 6, "end_line": 6}},
 		{"semantic_extract_variable", map[string]any{"file": "value.go", "symbol": "total", "in_function": "Render", "discriminator": "count + 1"}},
@@ -1940,10 +1954,17 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 	if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": map[string]any{}}); err != nil {
 		t.Fatal(err)
 	}
+	moveID := 0
 	for index, call := range calls {
+		if call.name == "semantic_move_construct" {
+			moveID = index + 2
+		}
 		if err := encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": index + 2, "method": "tools/call", "params": map[string]any{"name": call.name, "arguments": call.arguments}}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if moveID == 0 {
+		t.Fatal("move_construct request missing from session reuse sequence")
 	}
 	var output bytes.Buffer
 	if err := mcp.NewServer("full", fixture.root, &output).Serve(t.Context(), &input); err != nil {
@@ -1967,12 +1988,31 @@ func TestMCPReusesGoSessionAcrossRefactorings(t *testing.T) {
 			t.Fatalf("failed response: %s", line)
 		}
 	}
+	var moveResponse string
+	for _, line := range responses {
+		var candidate struct {
+			ID     int `json:"id"`
+			Result struct {
+				Structured map[string]any `json:"structuredContent"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal([]byte(line), &candidate); err != nil {
+			t.Fatalf("decode semantic response: %v", err)
+		}
+		if candidate.ID == moveID {
+			moveResponse = line
+			break
+		}
+	}
+	if moveResponse == "" {
+		t.Fatal("move_construct response missing from session reuse requests")
+	}
 	var moved struct {
 		Result struct {
 			Structured map[string]any `json:"structuredContent"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal([]byte(responses[6]), &moved); err != nil {
+	if err := json.Unmarshal([]byte(moveResponse), &moved); err != nil {
 		t.Fatalf("decode move response: %v", err)
 	}
 	if moved.Result.Structured["file"] != "moved.go" || moved.Result.Structured["origin_file"] != "value.go" || moved.Result.Structured["symbol"] != "emitOne" {

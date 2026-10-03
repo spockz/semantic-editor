@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"semedit/internal/astedit"
+	"semedit/internal/gocache"
 	"semedit/internal/godiagnostics"
 
 	"semedit/internal/backend"
@@ -54,6 +55,7 @@ type BatchResult struct {
 // BatchResponse aggregates the outcomes of a semantic batch execution.
 type BatchResponse struct {
 	Status              string                    `json:"status"`
+	WorkspaceRoot       string                    `json:"workspace_root"`
 	Results             []BatchResult             `json:"results"`
 	DiagnosticDelta     *pipeline.DiagnosticDelta `json:"diagnostic_delta,omitempty"`
 	DiagnosticDeltaNote string                    `json:"diagnostic_delta_note,omitempty"`
@@ -63,6 +65,22 @@ type BatchResponse struct {
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	return s.ExecuteBatchForWorkspace(ctx, s.workDir, s.workspaceTrust.Trusted && s.workspaceTrust.Allows(s.workDir), edits, autoOrganizeImports)
+}
+
+// ExecuteBatchForWorkspace binds all child edits and final verification to one request root.
+func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	canonicalRoot, err := resolveRequestRoot(s.workDir, root)
+	if err != nil {
+		return nil, err
+	}
+	root = canonicalRoot
+	requestServer := s.requestView(root, trustWorkspace)
+	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(root))
+	return requestServer.executeBatchWithContext(ctx, edits, autoOrganizeImports)
+}
+
+func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	ctx, release := godiagnostics.EnsureSessionManager(ctx)
 	observer := godiagnostics.SynchronizeWithContext
 	if !s.goEnabled() {
@@ -328,6 +346,29 @@ func resultForBatch(result any, workDir string) BatchResult {
 	}
 }
 
+func parseBatchWorkspaceRequest(configuredRoot string, rootJSON, trustJSON json.RawMessage) (string, bool, error) {
+	var requestedRoot string
+	if len(rootJSON) > 0 {
+		if strings.TrimSpace(string(rootJSON)) == "null" {
+			return "", false, fmt.Errorf("workspace_root must be a string")
+		}
+		if err := json.Unmarshal(rootJSON, &requestedRoot); err != nil {
+			return "", false, fmt.Errorf("workspace_root must be a string: %w", err)
+		}
+	}
+	trusted := false
+	if len(trustJSON) > 0 {
+		if strings.TrimSpace(string(trustJSON)) == "null" {
+			return "", false, fmt.Errorf("trust_workspace must be a boolean")
+		}
+		if err := json.Unmarshal(trustJSON, &trusted); err != nil {
+			return "", false, fmt.Errorf("trust_workspace must be a boolean: %w", err)
+		}
+	}
+	root, err := resolveRequestRoot(configuredRoot, requestedRoot)
+	return root, trusted, err
+}
+
 func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.RawMessage) {
 	s.sessionMu.Lock()
 	uninitialized := s.initializedAt.IsZero()
@@ -342,8 +383,10 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	timing.toolName = "semantic_batch"
 	ctx = timing.Context(ctx)
 	var request struct {
-		Edits               []BatchEntry `json:"edits"`
-		AutoOrganizeImports bool         `json:"auto_organize_imports"`
+		Edits               []BatchEntry    `json:"edits"`
+		AutoOrganizeImports bool            `json:"auto_organize_imports"`
+		WorkspaceRoot       json.RawMessage `json:"workspace_root"`
+		TrustWorkspace      json.RawMessage `json:"trust_workspace"`
 	}
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
 	if err := json.Unmarshal(raw, &request); err != nil {
@@ -356,8 +399,57 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		s.sendToolErrorWithTiming(id, "semantic_batch requires non-empty 'edits' list", timing)
 		return
 	}
+	root, trustWorkspace, err := parseBatchWorkspaceRequest(s.workDir, request.WorkspaceRoot, request.TrustWorkspace)
+	if err != nil {
+		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+		return
+	}
+	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(root))
+	requestServer := s.requestView(root, trustWorkspace)
+	for index := range request.Edits {
+		if len(request.Edits[index].Params) == 0 || strings.TrimSpace(string(request.Edits[index].Params)) == "null" {
+			err := fmt.Errorf("edit %d params are required for %s; put operation arguments under params", index, request.Edits[index].Tool)
+			s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+			return
+		}
+		var child map[string]any
+		if err := decodeArgumentObject(request.Edits[index].Params, &child); err != nil {
+			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d invalid arguments: %v", index, err), timing, err)
+			return
+		}
+		childRootValue, rootPresent := child["workspace_root"]
+		if rootPresent {
+			if _, ok := childRootValue.(string); !ok {
+				err := fmt.Errorf("edit %d workspace_root must be a string", index)
+				s.sendToolErrorWithTiming(id, err.Error(), timing, err)
+				return
+			}
+		}
+		childRoot, _ := childRootValue.(string)
+		delete(child, "workspace_root")
+		if childRoot != "" {
+			resolvedChildRoot, err := resolveRequestRoot(s.workDir, childRoot)
+			if err != nil || resolvedChildRoot != root {
+				if err == nil {
+					err = fmt.Errorf("child workspace_root %q resolves to %q, differing from batch root %q", childRoot, resolvedChildRoot, root)
+				}
+				s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d: %v", index, err), timing, err)
+				return
+			}
+		}
+		if err := validateRequestPaths(root, child); err != nil {
+			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d: %v", index, err), timing, err)
+			return
+		}
+		encoded, err := json.Marshal(child)
+		if err != nil {
+			s.sendToolErrorWithTiming(id, fmt.Sprintf("edit %d encode normalized arguments: %v", index, err), timing, err)
+			return
+		}
+		request.Edits[index].Params = encoded
+	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
-	response, err := s.ExecuteBatch(ctx, request.Edits, request.AutoOrganizeImports)
+	response, err := requestServer.executeBatchWithContext(ctx, request.Edits, request.AutoOrganizeImports)
 	finishDispatch()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, fmt.Sprintf("batch execution error: %v", err), timing, err)
@@ -411,7 +503,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 }
 
 func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	response := &BatchResponse{Status: "ok", Results: make([]BatchResult, 0, len(edits))}
+	response := &BatchResponse{Status: "ok", WorkspaceRoot: s.workDir, Results: make([]BatchResult, 0, len(edits))}
 	verifyOptions := make(map[string]any)
 	for index, batchEntry := range edits {
 		entry, ok := s.registry.LookupMCP(batchEntry.Tool)
@@ -497,6 +589,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}
 	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
 	maps.Copy(verifyRaw, verifyOptions)
+	verifyRaw["trust_workspace"] = s.workspaceTrust.Trusted
 	goFormattingPaths := make([]string, 0, len(normalizationPaths))
 	if s.goEnabled() {
 		for _, path := range normalizationPaths {
@@ -540,6 +633,9 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 
 func mergeBatchVerificationOptions(options, raw map[string]any) error {
 	for _, key := range batchVerificationOptionKeys {
+		if key == "trust_workspace" {
+			continue
+		}
 		value, present := raw[key]
 		if !present {
 			value, present = raw[strings.ReplaceAll(key, "_", "-")]

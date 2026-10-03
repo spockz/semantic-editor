@@ -230,7 +230,55 @@ func (s *Server) Serve(ctx context.Context, in io.Reader) error {
 	if err := ctx.Err(); err != nil {
 		runErr = errors.Join(err, runErr)
 	}
-	return errors.Join(runErr, s.diagnostics.Close())
+	return errors.Join(runErr, s.closeDiagnosticSessions())
+}
+
+// diagnosticSession shares one manager because it keys Go processes by enclosing module, not request root.
+func (s *Server) diagnosticSession(_ string) *godiagnostics.SessionManager {
+	s.sessionMu.Lock()
+	defer s.sessionMu.Unlock()
+	if s.diagnostics == nil {
+		s.diagnostics = godiagnostics.NewSessionManager()
+	}
+	return s.diagnostics
+}
+
+func (s *Server) requestView(root string, trusted bool) *Server {
+	return &Server{
+		profile:             s.profile,
+		workDir:             root,
+		service:             s.service,
+		registry:            s.registry,
+		workspaceTrust:      canonicalTrust(root, trusted),
+		goBaseDir:           s.goBaseDirForRoot(root),
+		enabledLanguages:    s.enabledLanguages,
+		enabledLanguageText: s.enabledLanguageText,
+		enabledLanguageErr:  s.enabledLanguageErr,
+	}
+}
+
+func (s *Server) closeDiagnosticSessions() error {
+	s.sessionMu.Lock()
+	manager := s.diagnostics
+	s.diagnostics = godiagnostics.NewSessionManager()
+	s.sessionMu.Unlock()
+	if manager != nil {
+		return manager.Close()
+	}
+	return nil
+}
+
+func (s *Server) goBaseDirForRoot(root string) string {
+	if root == s.workDir && s.goBaseDir != "" {
+		return s.goBaseDir
+	}
+	if relative, err := filepath.Rel(s.workDir, root); err == nil && relative != ".." && !filepath.IsAbs(relative) && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		worktreePrefix := filepath.Join(".scratch", "worktrees") + string(filepath.Separator)
+		if relative != "." && !strings.HasPrefix(relative, worktreePrefix) && s.goBaseDir != "" {
+			return s.goBaseDir
+		}
+	}
+	return filepath.Join(root, ".scratch", "go")
 }
 
 func (s *Server) serveRequests(ctx context.Context, in io.Reader) error {
@@ -402,7 +450,7 @@ func (s *Server) handleRequest(ctx context.Context, req *jsonRPCRequest) {
 		}
 		s.sendResult(req.ID, map[string]any{"tools": tools})
 	case "tools/call":
-		s.handleToolCall(godiagnostics.WithSessionManager(ctx, s.diagnostics), req.ID, req.Params)
+		s.handleToolCall(godiagnostics.WithSessionManager(ctx, s.diagnosticSession(s.workDir)), req.ID, req.Params)
 	default:
 		if !isNotification {
 			s.sendError(req.ID, -32601, fmt.Sprintf("Method not found: %s", req.Method))
@@ -439,6 +487,7 @@ func (s *Server) listTools() ([]map[string]any, error) {
 			}
 			return nil, fmt.Errorf("build schema for %q: %w", entry.MCPName, err)
 		}
+		addWorkspaceRootInput(tool[toolFieldInputSchema].(map[string]any))
 		tools = append(tools, tool)
 		if entry.Batchable {
 			batchable = append(batchable, entry)
@@ -449,6 +498,10 @@ func (s *Server) listTools() ([]map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
+		batchSchema := batchTool[toolFieldInputSchema].(map[string]any)
+		properties := batchSchema[schemaPropertiesKey].(map[string]any)
+		properties["workspace_root"] = workspaceRootParameterSchema()
+		properties["trust_workspace"] = map[string]any{"type": "boolean", "default": false, "description": "Explicitly trust this selected workspace for configured verification hooks; applies only to this batch request."}
 		tools = append(tools, batchTool)
 	}
 	tools = append(tools, metricsToolSchema())
@@ -968,6 +1021,7 @@ func standardOutputSchema(resultSchema map[string]any) map[string]any {
 		schemaPropertiesKey: map[string]any{
 			applicationStateField:         map[string]any{"type": "string"},
 			"result":                      resultSchema,
+			"workspace_root":              map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used for this request; pass it to a later semantic tool call to keep using the same workspace."},
 			"presentation_error":          map[string]any{"type": "string"},
 			"native_metadata_unavailable": map[string]any{"type": "boolean"},
 			diagnosticStatusField:         map[string]any{"type": "string"},
@@ -1010,6 +1064,7 @@ func batchOutputSchemaForEntries(entries []operation.Entry) (map[string]any, err
 		"type": "object",
 		schemaPropertiesKey: map[string]any{
 			"status":             map[string]any{"type": "string", "enum": []string{"ok", "error"}},
+			"workspace_root":     map[string]any{"type": "string", schemaDescriptionKey: "Canonical root used by every child in this batch."},
 			"results":            map[string]any{"type": "array", "items": items},
 			diagnosticDeltaField: diagnosticDeltaSchema(),
 			finalDiffToolName:    map[string]any{"type": "string"},
@@ -1121,6 +1176,21 @@ func operationInputSchema(entry operation.Entry) (map[string]any, error) {
 	}
 	addOperationExample(schema, entry.ExampleRaw, entry.Params)
 	return schema, nil
+}
+
+func workspaceRootParameterSchema() map[string]any {
+	return map[string]any{
+		"type":        "string",
+		"description": "Optional workspace root for this request. Relative roots resolve from the MCP server's configured root; relative file paths resolve from the selected root. Any trust_workspace approval applies only to this canonical root, which is returned for copy-forward.",
+	}
+}
+
+func addWorkspaceRootInput(schema map[string]any) {
+	properties, ok := schema[schemaPropertiesKey].(map[string]any)
+	if !ok {
+		return
+	}
+	properties["workspace_root"] = workspaceRootParameterSchema()
 }
 
 func operationInputSchemaForBackends(entry operation.Entry, backends []backend.Backend) (map[string]any, error) {
@@ -1264,6 +1334,7 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 		if err != nil {
 			return nil, fmt.Errorf("build batch params schema for %q: %w", entry.MCPName, err)
 		}
+		addWorkspaceRootInput(paramsSchema)
 		branches = append(branches, map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
@@ -1286,6 +1357,8 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 			schemaPropertiesKey: map[string]any{
 				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
+				"workspace_root":        workspaceRootParameterSchema(),
+				"trust_workspace":       map[string]any{"type": "boolean", "description": "Trust configured verification hooks for this batch request and its selected workspace root."},
 			},
 			"required":              []string{"edits"},
 			additionalPropertiesKey: false,
@@ -1300,12 +1373,6 @@ type toolCallParams struct {
 }
 
 func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawParams json.RawMessage) {
-	observer := godiagnostics.SynchronizeWithContext
-	if !s.goEnabled() {
-		observer = func(context.Context) error { return nil }
-	}
-	ctx = operation.WithMutationObserver(ctx, observer)
-
 	var params toolCallParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
 		s.sendError(id, -32602, "Invalid params")
@@ -1357,16 +1424,32 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			return
 		}
 	}
+	requestRoot, rootErr := prepareWorkspaceArguments(s.workDir, raw)
+	if rootErr != nil {
+		finishArguments()
+		s.sendToolErrorWithTiming(id, rootErr.Error(), timing, rootErr)
+		return
+	}
+	requestTrust := requestTrustedRoot(requestRoot, s.workspaceTrust, raw)
+	projectTrust := canonicalTrust(requestRoot, requestTrust)
+	observer := godiagnostics.SynchronizeWithContext
+	requestServer := s.requestView(requestRoot, requestTrust)
+	if !requestServer.goEnabled() {
+		observer = func(context.Context) error { return nil }
+	}
+	ctx = operation.WithMutationObserver(ctx, observer)
+	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(requestRoot))
+	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(requestRoot))
 	finishArguments()
-	if err := s.validateLanguageAllowed(entry, raw); err != nil {
+	if err := requestServer.validateLanguageAllowed(entry, raw); err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	result, dispatchErr := s.registry.Dispatch(operation.CallContext{
 		Ctx:              ctx,
-		WorkDir:          s.workDir,
-		Project:          backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		WorkDir:          requestRoot,
+		Project:          backend.ProjectContext{RootDir: requestRoot, WorkspaceTrust: projectTrust},
 		Registry:         s.registry,
 		Service:          s.service,
 		AllowedLanguages: s.enabledLanguages,
@@ -1398,7 +1481,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		})
 		return
 	}
-	fields := structuredContinuationFields(params.Name, result, s.workDir, raw)
+	fields := structuredContinuationFields(params.Name, result, requestRoot, raw)
 	if entry.ProjectOutput != nil {
 		projected, projectErr := entry.ProjectOutput(result)
 		if projectErr != nil {
@@ -1413,6 +1496,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 		}
 		maps.Copy(fields, continuationFields)
 	}
+	fields["workspace_root"] = requestRoot
 	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 	text, formatErr := entry.Format(result)
 	finishResponse()
@@ -1484,14 +1568,12 @@ func (s *Server) handleReload(id json.RawMessage) {
 		s.sendError(id, -32601, "Unknown tool: semantic_reload")
 		return
 	}
-	if err := s.diagnostics.Close(); err != nil {
-		s.diagnostics = godiagnostics.NewSessionManager()
+	if err := s.closeDiagnosticSessions(); err != nil {
 		s.sendToolError(id, fmt.Sprintf("close diagnostics before reload: %v", err), err)
 		return
 	}
 	s.sendToolSuccessWithStructuredContent(id, `{"status":"reloading"}`, map[string]any{"result": map[string]any{"status": "reloading"}})
 	if err := execReload(); err != nil {
-		s.diagnostics = godiagnostics.NewSessionManager()
 		s.sendToolError(id, fmt.Sprintf("reload error: %v", err), err)
 	}
 }
