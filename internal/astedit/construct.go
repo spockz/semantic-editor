@@ -77,6 +77,8 @@ type constructCandidate struct {
 	class string
 }
 
+const replaceConstructOperation = "replace_construct"
+
 // ReplaceConstruct replaces one selected Go construct without rewriting sibling statements.
 func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind ConstructKind, discriminator, source string, opts ConstructOptions) (string, error) {
 	if selector := opts.Discriminator; selector != "" {
@@ -106,7 +108,7 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	}
 	recv, name, err := symbol.ParseIdentifier(funcName)
 	if err != nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Err: err}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: err}
 	}
 	fset := token.NewFileSet()
 	fileNode, err := parser.ParseFile(fset, cleanPath, content, parser.ParseComments)
@@ -122,10 +124,10 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 		}
 	}
 	if target == nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Err: symbol.ErrNotFound}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Err: symbol.ErrNotFound}
 	}
 	if target.Body == nil {
-		return "", &symbol.SymbolError{Op: "replace_construct", File: filePath, Symbol: funcName, Pos: fset.Position(target.Pos()), Err: ErrNoBody}
+		return "", &symbol.SymbolError{Op: replaceConstructOperation, File: filePath, Symbol: funcName, Pos: fset.Position(target.Pos()), Err: ErrNoBody}
 	}
 	candidates := collectConstructCandidates(fset, target.Body, kind)
 	var matches []constructCandidate
@@ -164,6 +166,10 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("clean imports after construct replacement: %w", err)
+	}
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
@@ -175,8 +181,6 @@ func ReplaceConstruct(ctx context.Context, filePath, funcName string, kind Const
 			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
 			return "", fmt.Errorf("organize imports: %w", err)
 		}
-	} else if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format file: %w", err)
 	}
 	return UnifiedDiff(funcName, strings.TrimSpace(oldText), strings.TrimSpace(replacement)), nil
 }

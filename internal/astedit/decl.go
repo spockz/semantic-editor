@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -29,15 +28,7 @@ type DeclOptions struct {
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.
 func InsertDecl(ctx context.Context, filePath string, source string, opts DeclOptions) error {
-	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
-		Kind:                backend.ConstructDecl,
-		AccessModifier:      opts.AccessModifier,
-		Group:               opts.Group,
-		Placement:           opts.Placement,
-		TargetSymbol:        opts.TargetSymbol,
-		AutoOrganizeImports: opts.AutoOrganizeImports,
-	})
-	return err
+	return insertDeclImpl(ctx, filePath, source, opts)
 }
 
 // InsertDecl injects constants, variables, or general top-level declarations into filePath.

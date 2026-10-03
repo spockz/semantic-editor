@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -27,14 +26,7 @@ type FunctionOptions struct {
 
 // InsertFunction injects a function or method declaration into filePath.
 func InsertFunction(ctx context.Context, filePath string, source string, opts FunctionOptions) error {
-	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
-		Kind:                backend.ConstructFunction,
-		AccessModifier:      opts.AccessModifier,
-		Placement:           opts.Placement,
-		TargetSymbol:        opts.TargetSymbol,
-		AutoOrganizeImports: opts.AutoOrganizeImports,
-	})
-	return err
+	return insertFunctionImpl(ctx, filePath, source, opts)
 }
 
 // InsertFunction injects a function or method declaration into filePath.

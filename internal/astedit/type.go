@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/backend"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 )
@@ -27,14 +26,7 @@ type TypeOptions struct {
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.
 func InsertType(ctx context.Context, filePath string, source string, opts TypeOptions) error {
-	_, err := InsertConstruct(ctx, filePath, source, InsertConstructOptions{
-		Kind:                backend.ConstructType,
-		AccessModifier:      opts.AccessModifier,
-		Placement:           opts.Placement,
-		TargetSymbol:        opts.TargetSymbol,
-		AutoOrganizeImports: opts.AutoOrganizeImports,
-	})
-	return err
+	return insertTypeImpl(ctx, filePath, source, opts)
 }
 
 // InsertType injects a struct, interface, or type alias declaration into filePath.

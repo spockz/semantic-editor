@@ -99,24 +99,22 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 		return SourcePlan{}, fmt.Errorf("validate inserted statement: %w", err)
 	}
 	var anchor ast.Stmt
-	var anchorIndex int
 	switch anchorMode {
 	case "start":
 		if len(owner.Body.List) > 0 {
-			anchor, anchorIndex = owner.Body.List[0], 0
+			anchor = owner.Body.List[0]
 		}
 	case "end":
 		if len(owner.Body.List) > 0 {
-			anchorIndex = len(owner.Body.List) - 1
-			anchor = owner.Body.List[anchorIndex]
+			anchor = owner.Body.List[len(owner.Body.List)-1]
 			if isInsertTerminal(anchor) {
 				anchorMode = "before"
 			}
 		}
 	case "before_return":
-		for i := len(owner.Body.List) - 1; i >= 0; i-- {
-			if _, ok := owner.Body.List[i].(*ast.ReturnStmt); ok {
-				anchor, anchorIndex, anchorMode = owner.Body.List[i], i, "before"
+		for _, stmt := range slices.Backward(owner.Body.List) {
+			if _, ok := stmt.(*ast.ReturnStmt); ok {
+				anchor, anchorMode = stmt, "before"
 				break
 			}
 		}
@@ -127,11 +125,7 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 		candidates := collectStatementExpressionCandidates(fset, source, owner.Body)
 		matches := make([]constructCandidate, 0, 1)
 		for _, candidate := range candidates {
-			if candidate.key != strings.TrimSpace(intent.Discriminator) {
-				continue
-			}
-			parts := strings.Split(candidate.path, ".")
-			if len(parts) > 1 && !strings.HasPrefix(parts[1], "e") {
+			if !isDirectOwnerStatementCandidate(candidate) || candidate.key != normalizeConstructSelector(intent.Discriminator) {
 				continue
 			}
 			matches = append(matches, candidate)
@@ -140,6 +134,9 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 			matches = slices.DeleteFunc(matches, func(candidate constructCandidate) bool { return candidate.path != intent.ConstructPath.Value })
 		}
 		if len(matches) == 0 {
+			if intent.ConstructPath.Present {
+				return SourcePlan{}, fmt.Errorf("construct_path %q does not select a direct statement anchor %q", intent.ConstructPath.Value, intent.Discriminator)
+			}
 			return SourcePlan{}, fmt.Errorf("statement anchor %q not found in %q", intent.Discriminator, intent.Function)
 		}
 		if len(matches) > 1 {
@@ -150,9 +147,8 @@ func PlanInsertStatement(source []byte, intent InsertStatementIntent) (SourcePla
 			return SourcePlan{}, fmt.Errorf("construct_path %s selects an expression, not a direct statement anchor", selected.path)
 		}
 		anchor, _ = selected.node.(ast.Stmt)
-		for index, stmt := range owner.Body.List {
+		for _, stmt := range owner.Body.List {
 			if stmt == anchor {
-				anchorIndex = index
 				break
 			}
 		}
@@ -271,8 +267,4 @@ func parseSingleDirectStatement(source string) (ast.Stmt, error) {
 		return nil, fmt.Errorf("expected exactly one statement")
 	}
 	return fn.Body.List[0], nil
-}
-
-func supportedDirectStatement(stmt ast.Stmt) bool {
-	return stmt != nil
 }

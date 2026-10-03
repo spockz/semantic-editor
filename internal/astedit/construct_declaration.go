@@ -1,8 +1,7 @@
-// This file replaces complete named declarations because callers need explicit identity checks before replacing their syntax.
+// Package astedit replaces complete named declarations because callers need explicit identity checks before replacing their syntax.
 package astedit
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"go/ast"
@@ -44,8 +43,22 @@ func replaceDeclarationConstruct(ctx context.Context, filePath, symbolQuery stri
 		return replaceFunctionConstruct(ctx, cleanPath, content, fset, file, symbolQuery, kind, source, opts)
 	}
 	if kind == ConstructConst || kind == ConstructVar || kind == ConstructType {
-		if _, ok := replacementDecl.(*ast.GenDecl); !ok {
+		gen, ok := replacementDecl.(*ast.GenDecl)
+		if !ok {
 			return "", fmt.Errorf("replacement source must be one const, var, or type declaration")
+		}
+		if (kind == ConstructType && gen.Tok != token.TYPE) || (kind == ConstructConst && gen.Tok != token.CONST) || (kind == ConstructVar && gen.Tok != token.VAR) {
+			return "", fmt.Errorf("replacement declaration does not match construct kind %q", kind)
+		}
+		targetKind, found, kindErr := namedDeclarationKind(file, symbolQuery)
+		if kindErr != nil {
+			return "", kindErr
+		}
+		if !found {
+			return "", fmt.Errorf("declaration %q not found in %s", symbolQuery, cleanPath)
+		}
+		if targetKind != kind {
+			return "", fmt.Errorf("selected declaration %q is %s, not %s", symbolQuery, targetKind, kind)
 		}
 		return ReplaceDecl(ctx, cleanPath, symbolQuery, source, ReplaceDeclOptions{AutoOrganizeImports: opts.AutoOrganizeImports})
 	}
@@ -106,24 +119,31 @@ func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []b
 		startPos = target.Doc.Pos()
 	}
 	start, end := fset.Position(startPos).Offset, fset.Position(target.End()).Offset
-	var replacementText bytes.Buffer
-	if err := format.Node(&replacementText, replacementFset, replacement); err != nil {
+	replacementStart := replacementFset.Position(replacement.Pos()).Offset
+	replacementEnd := replacementFset.Position(replacement.End()).Offset
+	if replacement.Doc != nil {
+		replacementStart = replacementFset.Position(replacement.Doc.Pos()).Offset
+	}
+	replacementBytesInput := []byte(replacementSource)
+	if replacementStart < 0 || replacementEnd > len(replacementBytesInput) || replacementStart >= replacementEnd {
+		return "", fmt.Errorf("replacement function source span is invalid")
+	}
+	replacementBytes, err := format.Source(replacementBytesInput[replacementStart:replacementEnd])
+	if err != nil {
 		return "", fmt.Errorf("format replacement function: %w", err)
 	}
-	updated := replaceBytes(content, start, end, replacementText.Bytes())
+	updated := replaceBytes(content, start, end, replacementBytes)
 	formatted, err := format.Source(updated)
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
 	}
-	if opts.AutoOrganizeImports {
-		formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
-		if err != nil {
-			return "", fmt.Errorf("clean imports after construct replacement: %w", err)
-		}
-		formatted, err = format.Source(formatted)
-		if err != nil {
-			return "", fmt.Errorf("format import-cleaned source: %w", err)
-		}
+	formatted, err = cleanupMoveImports(ctx, cleanPath, formatted)
+	if err != nil {
+		return "", fmt.Errorf("clean imports after construct replacement: %w", err)
+	}
+	formatted, err = format.Source(formatted)
+	if err != nil {
+		return "", fmt.Errorf("format import-cleaned source: %w", err)
 	}
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: source, Cause: err, Err: ErrSyntax}
@@ -131,12 +151,55 @@ func replaceFunctionConstruct(ctx context.Context, cleanPath string, content []b
 	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
 		return "", fmt.Errorf("write atomic: %w", err)
 	}
-	if !opts.AutoOrganizeImports {
-		if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-			return "", fmt.Errorf("format file: %w", err)
+	if opts.AutoOrganizeImports {
+		if err := pipeline.OrganizeImports(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
+			_ = pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath)
+			return "", fmt.Errorf("organize imports: %w", err)
 		}
 	}
-	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[start:end])), strings.TrimSpace(replacementText.String())), nil
+	return UnifiedDiff(symbolQuery, strings.TrimSpace(string(content[start:end])), strings.TrimSpace(string(replacementBytes))), nil
+}
+
+func namedDeclarationKind(file *ast.File, name string) (ConstructKind, bool, error) {
+	var found ConstructKind
+	for _, decl := range file.Decls {
+		gen, ok := decl.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, spec := range gen.Specs {
+			var candidate string
+			switch value := spec.(type) {
+			case *ast.TypeSpec:
+				candidate = value.Name.Name
+			case *ast.ValueSpec:
+				for _, ident := range value.Names {
+					if ident.Name == name {
+						candidate = name
+						break
+					}
+				}
+			}
+			if candidate != name {
+				continue
+			}
+			kind := ConstructType
+			switch gen.Tok {
+			case token.CONST:
+				kind = ConstructConst
+			case token.VAR:
+				kind = ConstructVar
+			case token.TYPE:
+			default:
+				continue
+			}
+			if found != "" {
+				return "", false, fmt.Errorf("declaration %q is ambiguous", name)
+			}
+			found = kind
+		}
+	}
+	return found, found != "", nil
 }
 
 func receiverTypeKey(fields *ast.FieldList) string {
