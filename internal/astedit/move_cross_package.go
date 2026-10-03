@@ -101,9 +101,6 @@ type crossPackageMoveTarget struct {
 	packages           []*packages.Package
 	sourcePackage      *packages.Package
 	destinationPackage *packages.Package
-	sourceFile         *ast.File
-	destinationFile    *ast.File
-	declaration        *ast.FuncDecl
 	targetObject       types.Object
 	declarationStart   int
 	declarationEnd     int
@@ -197,17 +194,12 @@ func resolveCrossPackageFunction(snapshot crossPackageMoveSnapshot, symbolQuery 
 		return crossPackageMoveTarget{}, err
 	}
 	return crossPackageMoveTarget{
-		packages:      selectedMovePackages(selected),
+		packages:      selected.all,
 		sourcePackage: selected.source, destinationPackage: selected.destination,
-		sourceFile: selected.sourceFile, destinationFile: selected.destFile,
-		declaration: decl, targetObject: targetObj,
+		targetObject:     targetObj,
 		declarationStart: start, declarationEnd: end,
 		declarationText: snapshot.files[snapshot.sourcePath][start:end], neededImports: imports,
 	}, nil
-}
-
-func selectedMovePackages(selected crossPackagePackages) []*packages.Package {
-	return selected.all
 }
 
 func moveConstructAcrossPackages(ctx context.Context, sourcePath, destinationPath, symbolQuery string, opts MoveConstructOptions) (string, error) {

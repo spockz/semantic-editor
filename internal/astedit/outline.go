@@ -34,7 +34,6 @@ func OutlineGo(root, path string, kinds []string, includeUnexported, includeTest
 
 type goOutlineRequest struct {
 	root              string
-	path              string
 	directory         bool
 	includeUnexported bool
 	includeTests      bool
@@ -64,7 +63,7 @@ func newGoOutlineRequest(root, path string, kinds []string, includeUnexported, i
 		scope.Kind = "directory_syntax"
 	}
 	return &goOutlineRequest{
-		root: resolved.root, path: path, directory: resolved.directory,
+		root: resolved.root, directory: resolved.directory,
 		includeUnexported: includeUnexported, includeTests: includeTests,
 		kinds: kindSet, files: files,
 		result: &backend.OutlineResult{Scope: scope, Files: make([]backend.OutlineFile, 0, len(files))},
