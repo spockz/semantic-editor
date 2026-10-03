@@ -64,15 +64,21 @@ type BatchResponse struct {
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
 	ctx, release := godiagnostics.EnsureSessionManager(ctx)
-	ctx = operation.WithMutationObserver(ctx, godiagnostics.SynchronizeWithContext)
+	observer := godiagnostics.SynchronizeWithContext
+	if !s.goEnabled() {
+		observer = func(context.Context) error { return nil }
+	}
+	ctx = operation.WithMutationObserver(ctx, observer)
 
 	response, resultErr := s.executeBatch(ctx, edits, autoOrganizeImports)
-	if err := godiagnostics.SynchronizeWithContext(ctx); err != nil {
-		if response == nil {
-			return nil, errors.Join(resultErr, err, release())
+	if s.goEnabled() {
+		if err := godiagnostics.SynchronizeWithContext(ctx); err != nil {
+			if response == nil {
+				return nil, errors.Join(resultErr, err, release())
+			}
+			response.Status = "error"
+			response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
 		}
-		response.Status = "error"
-		response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
 	}
 	return response, errors.Join(resultErr, release())
 }
@@ -230,6 +236,7 @@ func (s *Server) executeBatchEdit(ctx context.Context, batchEntry BatchEntry) (B
 		Project:           backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
 		Registry:          s.registry,
 		Service:           s.service,
+		AllowedLanguages:  s.enabledLanguages,
 		InBatch:           true,
 		DeferImports:      true,
 		DeferVerification: true,
@@ -451,7 +458,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	if err != nil {
 		return nil, fmt.Errorf("discover batch verification plan: %w", err)
 	}
-	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan)
+	baseline, err := collectBatchVerificationBaseline(ctx, s.workDir, plan, s.enabledLanguages)
 	if err != nil {
 		return nil, err
 	}
@@ -488,10 +495,18 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 	}
 	verifyRaw := map[string]any{"path": ".", "language": "auto", "trust_workspace": s.workspaceTrust.Trusted}
 	maps.Copy(verifyRaw, verifyOptions)
+	goFormattingPaths := make([]string, 0, len(normalizationPaths))
+	if s.goEnabled() {
+		for _, path := range normalizationPaths {
+			if filepath.Ext(path) == ".go" {
+				goFormattingPaths = append(goFormattingPaths, path)
+			}
+		}
+	}
 	verified, err := s.registry.Dispatch(operation.CallContext{
 		Ctx: ctx, WorkDir: s.workDir,
 		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
-		Registry: s.registry, Service: s.service, GoFormattingPaths: normalizationPaths,
+		Registry: s.registry, Service: s.service, GoFormattingPaths: goFormattingPaths, AllowedLanguages: s.enabledLanguages,
 	}, verifyEntry.Key, verifyRaw)
 	if err != nil {
 		response.Status = "error"

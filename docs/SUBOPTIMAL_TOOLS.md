@@ -3303,3 +3303,68 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: insertion diagnostics reported `undefined: javabackend` because the test import had not been added yet.
 - Workaround: immediately run worktree-local semantic import organization with the Java backend package alias; diagnostics then resolved.
 - Root cause: the inserted test referenced a new package alias before adding its import.
+
+## 2026-10-03: incorrect function insertion CLI command
+
+- Tool: local `semedit` CLI, `insert-function` command.
+- Target: `internal/operation/verify_plan.go`.
+- Observed failure: the bundled binary returned `unknown command "insert-function" for "semedit"`.
+- Workaround: use the supported `insert-func` command for later function additions; no source was changed by the failed command.
+- Root cause: I guessed the CLI subcommand instead of checking its canonical spelling (`insert-func`).
+
+## 2026-10-03: targeted coordinator instead of private worktree
+
+- Tool: `apply_patch`.
+- Target: coordinator `internal/operation/verify_hooks.go` rather than the private worktree copy.
+- Observed failure: two patches used the coordinator absolute path and changed its function signature/imports; the parent restored the file and saved the diff for reconciliation.
+- Workaround: repeat the needed edit only in the verified private worktree and verify `git rev-parse --show-toplevel` before further changes.
+- Root cause: I copied the coordinator root into the patch target without the `/.scratch/worktrees/verify-enabled-languages` suffix.
+
+## 2026-10-03: scaffold-file rejected plain purpose text
+
+- Tool: local `semedit scaffold-file` CLI.
+- Target: `internal/mcp/enabled_languages_test.go`.
+- Observed failure: the CLI rejected the plain `--purpose-header` value as invalid Go source; the target file was not created.
+- Workaround: retry with a Go comment-form purpose header after checking the CLI contract.
+- Root cause: the CLI flag expects a complete Go file comment, not comment-free prose.
+
+## 2026-10-03: insert-type received literal newline escapes
+
+- Tool: local `semedit insert-type` CLI.
+- Target: `internal/mcp/enabled_languages_test.go`.
+- Observed failure: the CLI parser received backslash-n characters in place of newlines and rejected the snippet; the file was unchanged.
+- Workaround: send the source through stdin using a quoted heredoc.
+- Root cause: I quoted the `--source` payload for the shell without converting escaped newlines to actual line breaks.
+
+## 2026-10-03: inserted test type before imports
+
+- Tool: local `semedit insert-type` CLI.
+- Target: `internal/mcp/enabled_languages_test.go`.
+- Observed failure: the declaration was inserted with a temporary `undefined: golang` diagnostic because the new file had not yet imported the backend package.
+- Workaround: add the required imports before semantic verification.
+- Root cause: type insertion verifies immediately, before subsequent import edits.
+
+## 2026-10-03: insert-func import alias mismatch
+
+- Tool: local `semedit insert-func` CLI.
+- Target: `internal/mcp/enabled_languages_test.go`.
+- Observed failure: automatic import organization aliased `internal/backend/golang` as `gobackend`, while the earlier inserted type still referenced `golang`; diagnostics reported `undefined: golang`.
+- Workaround: align the type's package qualifier with the generated import alias.
+- Root cause: the generated alias is selected from package naming rules and differs from the directory name.
+
+## 2026-10-03: insert-func placement needed exported section
+
+- Tool: local `semedit insert-func` CLI.
+- Target: `internal/mcp/enabled_languages_test.go`.
+- Observed failure: insertion with `--placement private_end` was rejected because the `Test*` declaration is exported; no mutation occurred.
+- Workaround: use `--access public --placement public_end`.
+- Root cause: the test function's exported name requires public section placement.
+
+## Verification allowlist: incorrect inspection CLI command
+
+- Date: 2026-10-03
+- Tool: local semedit CLI help invocation.
+- Target: inspection command discovery.
+- Observed failure: `inspect --help` failed with unknown command; the CLI suggested `inspect-symbol`.
+- Workaround: use the reported canonical command `inspect-symbol`.
+- Root cause: reconstructed the CLI name instead of checking the command inventory.

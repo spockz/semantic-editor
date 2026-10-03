@@ -43,6 +43,14 @@ However, raw LSP-MCP tools remain coordinate-based (`line/character`), whereas `
    Omit an operation whose required dynamic choices cannot be supplied by
    registered backends; keep other available operations in the catalog.
 
+   Enforce the explicit language allowlist during execution, including
+   automatic verification and the final batch boundary. Reject explicitly
+   selected disabled source languages before normalization. Exclude disabled
+   backends from built-in formatting, LSP hooks, and diagnostics; report their source
+   coverage as disabled. No enabled verifiable source remains an error.
+   Project shell hooks retain their configured policy over the allowed source
+   scope; the language allowlist does not interpret or rewrite shell commands.
+
 ## Invariants
 
 * `semedit` tool names must never collide with standard LSP method names.

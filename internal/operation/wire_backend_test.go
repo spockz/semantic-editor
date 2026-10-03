@@ -2,6 +2,7 @@
 package operation_test
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"semedit/internal/backend"
+	gobackend "semedit/internal/backend/golang"
 	"semedit/internal/operation"
 )
 
@@ -76,6 +78,17 @@ func cloneExample(raw map[string]any) map[string]any {
 	cloned := make(map[string]any, len(raw))
 	maps.Copy(cloned, raw)
 	return cloned
+}
+
+type verifyPolicyGoBackend struct {
+	gobackend.GoBackend
+
+	calls int
+}
+
+func (b *verifyPolicyGoBackend) Verify(context.Context, backend.VerifyRequest) ([]backend.Diagnostic, error) {
+	b.calls++
+	return nil, nil
 }
 
 func TestRegisteredDefsHonorContracts(t *testing.T) {
@@ -528,5 +541,73 @@ func TestRenameContinuationConsumersMatchLiveInputFields(t *testing.T) {
 				t.Errorf("%s continuation names incompatible consumer %q", continuation.Field, consumerName)
 			}
 		}
+	}
+}
+
+func TestVerifyPolicyKeepsNilUnrestrictedAndEmptyFailClosed(t *testing.T) {
+	newRoot := func(t *testing.T) string {
+		t.Helper()
+		root := t.TempDir()
+		for name, source := range map[string]string{
+			"go.mod":  "module example.com/policy\n\ngo 1.24\n",
+			"main.go": "package main\nfunc main(){ }\n",
+		} {
+			if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return root
+	}
+	languageBackend := &verifyPolicyGoBackend{}
+	backendRegistry, err := backend.NewRegistry(languageBackend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := backend.NewService(backendRegistry)
+	registry := operation.DefaultRegistry()
+	entry, ok := registry.LookupCLI("verify")
+	if !ok {
+		t.Fatal("verify operation is not registered")
+	}
+	request := map[string]any{"path": ".", "language": "auto"}
+	for _, test := range []struct {
+		name          string
+		root          string
+		allowed       []backend.LanguageID
+		wantFailure   bool
+		wantFormatted bool
+	}{
+		{name: "nil is unrestricted", root: newRoot(t), wantFormatted: true},
+		{name: "empty denies all", root: newRoot(t), allowed: []backend.LanguageID{}, wantFailure: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			call := operation.CallContext{
+				Ctx: context.Background(), WorkDir: test.root,
+				Project: backend.ProjectContext{RootDir: test.root}, Registry: registry, Service: service,
+				AllowedLanguages: test.allowed,
+			}
+			result, err := registry.Dispatch(call, entry.Key, request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			verify := result.(operation.VerifyRes)
+			if (verify.Failure != "") != test.wantFailure {
+				t.Fatalf("verify result = %+v", verify)
+			}
+			contents, err := os.ReadFile(filepath.Join(test.root, "main.go"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			formatted := strings.Contains(string(contents), "func main() {}")
+			if formatted != test.wantFormatted {
+				t.Fatalf("source formatted=%t, want %t: %s", formatted, test.wantFormatted, contents)
+			}
+			if test.wantFailure && (len(verify.Coverage) != 1 || verify.Coverage[0].Language != "go" || verify.Coverage[0].Status != "disabled") {
+				t.Fatalf("empty policy coverage = %+v, want Go disabled", verify.Coverage)
+			}
+		})
+	}
+	if languageBackend.calls != 1 {
+		t.Fatalf("Go backend calls = %d, want one call for nil policy and none for empty policy", languageBackend.calls)
 	}
 }

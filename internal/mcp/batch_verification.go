@@ -6,6 +6,8 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
+
 	"semedit/internal/backend"
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
@@ -14,12 +16,17 @@ import (
 )
 
 type batchVerificationBaseline struct {
-	Messages []string
-	Modules  map[string]struct{}
+	Messages      []string
+	Modules       map[string]struct{}
+	OmittedReason string
 }
 
-func collectBatchVerificationBaseline(ctx context.Context, workDir string, plan projectverify.Plan) (batchVerificationBaseline, error) {
+func collectBatchVerificationBaseline(ctx context.Context, workDir string, plan projectverify.Plan, allowedLanguages []backend.LanguageID) (batchVerificationBaseline, error) {
 	baseline := batchVerificationBaseline{Modules: make(map[string]struct{})}
+	if allowedLanguages != nil && !slices.Contains(allowedLanguages, backend.LanguageGo) {
+		baseline.OmittedReason = "diagnostic delta omitted because Go verification is disabled by --enabled-languages"
+		return baseline, nil
+	}
 	var goSources []string
 	for _, source := range plan.Sources {
 		if source.Language == string(backend.LanguageGo) {
@@ -81,6 +88,8 @@ func recordBatchDiagnosticDelta(response *BatchResponse, baseline batchVerificat
 		}
 	}
 	switch {
+	case baseline.OmittedReason != "":
+		response.DiagnosticDeltaNote = baseline.OmittedReason
 	case coverageComplete:
 		delta := pipeline.ComputeDelta(baseline.Messages, after)
 		response.DiagnosticDelta = &delta

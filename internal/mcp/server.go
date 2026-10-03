@@ -503,6 +503,10 @@ func (s *Server) activeLanguages() ([]backend.LanguageID, error) {
 	return allowed, nil
 }
 
+func (s *Server) goEnabled() bool {
+	return s.enabledLanguages == nil || slices.Contains(s.enabledLanguages, backend.LanguageGo)
+}
+
 func withoutImplicitHaskell(languages []backend.LanguageID) []backend.LanguageID {
 	filtered := make([]backend.LanguageID, 0, len(languages))
 	for _, language := range languages {
@@ -1278,7 +1282,11 @@ type toolCallParams struct {
 }
 
 func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawParams json.RawMessage) {
-	ctx = operation.WithMutationObserver(ctx, godiagnostics.SynchronizeWithContext)
+	observer := godiagnostics.SynchronizeWithContext
+	if !s.goEnabled() {
+		observer = func(context.Context) error { return nil }
+	}
+	ctx = operation.WithMutationObserver(ctx, observer)
 
 	var params toolCallParams
 	if err := json.Unmarshal(rawParams, &params); err != nil {
@@ -1338,11 +1346,12 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 	}
 	finishDispatch := telemetry.Start(ctx, telemetry.PhaseDispatch)
 	result, dispatchErr := s.registry.Dispatch(operation.CallContext{
-		Ctx:      ctx,
-		WorkDir:  s.workDir,
-		Project:  backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
-		Registry: s.registry,
-		Service:  s.service,
+		Ctx:              ctx,
+		WorkDir:          s.workDir,
+		Project:          backend.ProjectContext{RootDir: s.workDir, WorkspaceTrust: s.workspaceTrust},
+		Registry:         s.registry,
+		Service:          s.service,
+		AllowedLanguages: s.enabledLanguages,
 	}, entry.Key, raw)
 	finishDispatch()
 	if dispatchErr != nil {
@@ -1397,7 +1406,7 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 }
 
 func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]any) error {
-	if slices.Contains(entry.Languages, backend.LanguageAuto) {
+	if len(entry.Languages) == 1 && slices.Contains(entry.Languages, backend.LanguageAuto) {
 		return nil
 	}
 	active, err := s.activeLanguages()
@@ -1409,12 +1418,17 @@ func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]a
 		selected = backend.LanguageID(value)
 	}
 	if selected == "" {
-		if file, ok := raw["file"].(string); ok {
+		if file, ok := raw["file"].(string); ok && file != "" {
 			selected = backend.LanguageIDFromFile(file)
 		}
 	}
+	if selected == "" {
+		if path, ok := raw["path"].(string); ok && path != "" {
+			selected, _ = existingSourceLanguage(s.workDir, path)
+		}
+	}
 	if selected != "" {
-		if len(s.enabledLanguages) > 0 && !slices.Contains(s.enabledLanguages, selected) {
+		if s.enabledLanguages != nil && !slices.Contains(s.enabledLanguages, selected) {
 			return fmt.Errorf("language %q is disabled by --enabled-languages", selected)
 		}
 		if selected == backend.LanguageHaskell {
@@ -1433,6 +1447,18 @@ func (s *Server) validateLanguageAllowed(entry operation.Entry, raw map[string]a
 		return nil
 	}
 	return fmt.Errorf("operation %q is unavailable for the active workspace languages", entry.Key)
+}
+
+func existingSourceLanguage(root, path string) (backend.LanguageID, bool) {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", false
+	}
+	language := backend.LanguageIDFromFile(path)
+	return language, language != ""
 }
 
 func (s *Server) handleReload(id json.RawMessage) {

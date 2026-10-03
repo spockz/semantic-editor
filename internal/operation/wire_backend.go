@@ -547,6 +547,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 			return VerifyRes{}, err
 		}
 	}
+	selectedLanguage, explicitSelection := verificationSelectionLanguage(project, path)
+	if explicitSelection && !cc.AllowsLanguage(selectedLanguage) {
+		return VerifyRes{}, fmt.Errorf("verification language %q is disabled by --enabled-languages", selectedLanguage)
+	}
+	if !request.CheckOnly && cc.AllowedLanguages != nil && (request.FormatSelectedFile || request.OrganizeImports) && !explicitSelection {
+		return VerifyRes{Failure: "select an enabled source language or file before applying selected-file normalization"}, nil
+	}
 	if path != "." {
 		if _, statErr := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path))); statErr != nil {
 			return VerifyRes{}, fmt.Errorf("verification path %q: %w", path, statErr)
@@ -561,6 +568,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		requestedScope.Paths = []string{path}
 	}
 	actualPaths := scopedSourcePaths(plan, requestedScope)
+	allowedPlan := planForAllowedLanguages(plan, cc.AllowedLanguages)
 	if len(actualPaths) == 0 && path != "." {
 		actualPaths = []string{path}
 	}
@@ -573,7 +581,7 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 	}
 	goFormatPaths := make([]string, 0, len(formatPaths))
 	for _, formatPath := range formatPaths {
-		if shouldRunGofmt(project, formatPath) {
+		if cc.AllowsLanguage(backend.LanguageGo) && shouldRunGofmt(project, formatPath) {
 			goFormatPaths = append(goFormatPaths, formatPath)
 		}
 	}
@@ -590,13 +598,13 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 		}
 	}
 	if !request.CheckOnly {
-		if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Normalize, scope); trustErr != nil {
+		if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Normalize, scope); trustErr != nil {
 			return response, trustErr
 		} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
 			response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
 			return response, nil
 		}
-		response.NormalizeReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize))
+		response.NormalizeReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize, cc.AllowedLanguages))
 		if err != nil {
 			response.Failure = err.Error()
 			// Preserve hook results while ingress maps Failure to a failed operation.
@@ -616,24 +624,25 @@ func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRe
 			// Preserve completed normalization details in the public result.
 			return response, nil
 		}
+		allowedPlan = planForAllowedLanguages(plan, cc.AllowedLanguages)
 		response.Scope = projectverify.Scope{Paths: scopedSourcePaths(plan, scope)}
 		if len(response.Scope.Paths) == 0 && len(scope.Paths) > 0 {
 			response.Scope = scope
 		}
 	}
-	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope)
+	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope, cc.AllowedLanguages)
 	if err != nil {
 		response.Failure = err.Error()
 		// Preserve diagnostics gathered before the failed hook.
 		return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
 	}
-	if hookID, trustErr := workspaceTrustRequiredHook(plan, plan.Checks, scope); trustErr != nil {
+	if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Checks, scope); trustErr != nil {
 		return response, trustErr
 	} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
 		response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
 		return response, nil
 	}
-	response.CheckReport, err = projectverify.RunPhase(ctx, plan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck))
+	response.CheckReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck, cc.AllowedLanguages))
 	if err != nil {
 		response.Failure = err.Error()
 	}
