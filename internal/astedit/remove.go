@@ -56,6 +56,9 @@ type removeTarget struct {
 
 // Remove deletes one Go declaration or switch case after validating the resulting file syntax.
 func Remove(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
+	if opts.SafeDelete && sourcebuf.FromContext(ctx) == nil {
+		return removeWithOwnedBuffer(ctx, filePath, opts, autoOrganizeImports)
+	}
 	cleanPath := filepath.Clean(filePath)
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
@@ -144,12 +147,10 @@ func safeDeleteDeclaration(ctx context.Context, fset *token.FileSet, file *ast.F
 	if referenceFound {
 		return nil, checks, fmt.Sprintf("safe_delete found another Go identifier named %q in the module source set", target.name)
 	}
-	if target.kind != "constant" {
-		if refusal, err := verifySafeDeleteTarget(ctx, root, cleanPath, target); err != nil {
-			return nil, checks, "cannot complete compiler reference preflight: " + err.Error()
-		} else if refusal != "" {
-			return nil, checks, refusal
-		}
+	if refusal, err := verifySafeDeleteTarget(ctx, root, cleanPath, target); err != nil {
+		return nil, checks, "cannot complete compiler reference preflight: " + err.Error()
+	} else if refusal != "" {
+		return nil, checks, refusal
 	}
 	return &safeDeleteSnapshot{root: root, files: files}, checks, ""
 }
@@ -552,4 +553,22 @@ func publishRemovedFile(ctx context.Context, cleanPath string, formatted []byte,
 		return fmt.Errorf("format file: %w", err)
 	}
 	return nil
+}
+
+func removeWithOwnedBuffer(ctx context.Context, filePath string, opts RemoveOptions, autoOrganizeImports bool) (string, []string, string, error) {
+	buffer, err := sourcebuf.New(filepath.Dir(filePath))
+	if err != nil {
+		return "", nil, "", fmt.Errorf("prepare safe-delete source view: %w", err)
+	}
+	diff, checks, refusal, err := Remove(sourcebuf.WithBuffer(ctx, buffer), filePath, opts, autoOrganizeImports)
+	if err != nil || refusal != "" {
+		return diff, checks, refusal, err
+	}
+	if err := buffer.AssertDisk(); err != nil {
+		return "", checks, "", &SafeDeleteSnapshotError{Cause: err}
+	}
+	if err := buffer.Flush(ctx); err != nil {
+		return "", checks, "", fmt.Errorf("publish safe-delete source view: %w", err)
+	}
+	return diff, checks, "", nil
 }

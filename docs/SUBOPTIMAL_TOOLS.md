@@ -3134,6 +3134,7 @@ When an agent or developer uses an MCP tool from `semedit` and encounters any of
 - Observed failure: Go attempted to open a build-cache path under the coordinator user's Library cache and the sandbox denied it; no source was changed.
 - Workaround: rerun from the exact relocation worktree with its per-worktree `GOCACHE`, `GOPLSCACHE`, and `GOTMPDIR` settings.
 - Root cause: the command omitted the required repository cache environment and was run from the coordinator checkout.
+
 ## Integration: batch verification refused workspace hook and reformatted oracle fixtures
 
 - Tool: `semantic_batch` with `semantic_insert_decl` and five `semantic_replace_decl` children.
@@ -3391,3 +3392,43 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: `limit: 60` was rejected because the server maximum is 50.
 - Workaround: retry with `limit: 50`.
 - Root cause: the exposed tool schema does not specify its server-enforced maximum.
+
+## 2026-10-03: safe-delete peer review timed out
+
+- Tool: `codex_ask`, read-only Terra review.
+- Target: safe-delete expansion in `internal/astedit/remove.go` and `safe_delete.go`.
+- Observed failure: the peer-review request returned `context deadline exceeded`, without a review report.
+- Workaround: continue concrete source review and observable probes; request an independent native review when a worker slot is available.
+- Root cause: the external review transport timed out; no source mutation resulted from this call.
+
+## 2026-10-03: safe-delete import cleanup changed initialization
+
+- Tool: private branch CLI `remove-construct --safe-delete`.
+- Target: scratch probe `main.go`, deleting an unused function that held the only reference to an imported package.
+- Observed failure: deletion succeeded and import organization removed the normal import, also removing that package's observable `init` effect.
+- Workaround: reject safe deletion when it would remove the final use of a normal import; add CLI coverage for standalone and buffered requests.
+- Root cause: the safe-delete preflight proved declaration references and variable effects but omitted import initialization effects introduced by cleanup.
+
+## 2026-10-03: outline request used the wrong scope field
+
+- Tool: `semantic_outline`.
+- Target: relocation worktree `internal/astedit/safe_delete.go`.
+- Observed failure: `file` was rejected; the tool requires `path`.
+- Workaround: copy the supported parameter name from the exposed schema and retry.
+- Root cause: caller failed to consult the tool schema before dispatch; no source changed.
+
+## 2026-10-03: safe-delete misclassified a generated test runner
+
+- Tool: private CLI `remove-construct --safe-delete` in `safe_delete_multifile.txtar`.
+- Target: unused private function in a package with same-package tests.
+- Observed failure: the compiler-generated test runner's `reflect` import caused an unsupported dynamic-reference refusal. Checking only containment still failed because Go cache files can live under the module's ignored `.scratch` directory.
+- Workaround: apply module source-directory boundaries before classifying package imports; retain real module test variants and their typed reference proofs.
+- Root cause: loaded package module metadata and filesystem containment do not prove source membership.
+
+## 2026-10-03: concurrent full check lost a diagnostics session
+
+- Tool: CLI `rename` in `rename_diagnostic_delta.txtar` during the flow integration checks.
+- Target: fixture `api/server.go`, `Server.OldName`.
+- Observed failure: gopls diagnostics shutdown returned `JSON-RPC client is closed` during concurrently running race suites.
+- Workaround: rerun the unchanged public fixture with bounded test concurrency and retain the combined integration gate.
+- Root cause: transport failure observed; process/resource causation is not established by this log.

@@ -87,6 +87,9 @@ func verifySafeDeleteTarget(ctx context.Context, root, targetPath string, target
 	if safeDeleteHasReference(pkgs, root, targetPath, target, targetObject, targetPkg) {
 		return fmt.Sprintf("safe_delete found a compiler-resolved reference to %q", target.name), nil
 	}
+	if problem := safeDeleteImportProblem(pkgs, targetPath, target); problem != "" {
+		return problem, nil
+	}
 	return "", nil
 }
 
@@ -100,6 +103,16 @@ func safeDeletePackageProblem(pkgs []*packages.Package, root string) string {
 			if problem == "" {
 				problem = item.Error()
 			}
+		}
+		moduleSource := false
+		for _, file := range pkg.GoFiles {
+			if safeDeleteModuleSource(root, file) {
+				moduleSource = true
+				break
+			}
+		}
+		if !moduleSource {
+			return true
 		}
 		for _, imported := range pkg.Imports {
 			if imported.PkgPath == "reflect" || imported.PkgPath == "plugin" || imported.PkgPath == "unsafe" {
@@ -149,20 +162,26 @@ func safeDeleteDefinitionInPackage(pkg *packages.Package, targetPath string, tar
 func safeDeleteDefinitionInDecl(pkg *packages.Package, declaration ast.Decl, target safeDeleteTarget) (types.Object, bool) {
 	switch node := declaration.(type) {
 	case *ast.FuncDecl:
-		if target.kind == "function" && node.Name.Name == target.name && pkg.Fset.Position(node.Name.Pos()).Offset == pkg.Fset.Position(target.pos).Offset {
+		if target.kind == "function" && node.Name.Name == target.name {
 			return pkg.TypesInfo.Defs[node.Name], false
 		}
 	case *ast.GenDecl:
 		for _, spec := range node.Specs {
 			value, ok := spec.(*ast.ValueSpec)
-			if !ok || target.kind != "value" {
+			if !ok || (target.kind != "value" && target.kind != "constant") {
 				continue
 			}
 			for _, name := range value.Names {
-				if name.Name != target.name || pkg.Fset.Position(name.Pos()).Offset != pkg.Fset.Position(target.pos).Offset {
+				if name.Name != target.name {
 					continue
 				}
 				object := pkg.TypesInfo.Defs[name]
+				if target.kind == "constant" {
+					if _, ok := object.(*types.Const); ok {
+						return object, false
+					}
+					return nil, false
+				}
 				variable, ok := object.(*types.Var)
 				if !ok {
 					return nil, false
@@ -175,20 +194,43 @@ func safeDeleteDefinitionInDecl(pkg *packages.Package, declaration ast.Decl, tar
 }
 
 func safeDeleteHasReference(pkgs []*packages.Package, root, targetPath string, target safeDeleteTarget, targetObject types.Object, targetPkg string) bool {
+	if targetObject == nil || targetObject.Pkg() == nil || targetObject.Pkg().Path() != targetPkg {
+		return true
+	}
 	foundUse := false
 	packages.Visit(pkgs, func(pkg *packages.Package) bool {
 		if pkg.Module == nil || !pkg.Module.Main || !safeDeleteWithin(root, pkg.Module.Dir) {
 			return true
 		}
-		for ident, object := range pkg.TypesInfo.Uses {
-			if object == nil || object.Name() != target.name || object.Pkg() == nil || object.Pkg().Path() != targetPkg {
+		if pkg.TypesInfo == nil || pkg.Fset == nil {
+			foundUse = true
+			return false
+		}
+		var selected ast.Decl
+		var selectedObject types.Object
+		for _, file := range pkg.Syntax {
+			if filepath.Clean(pkg.Fset.Position(file.Pos()).Filename) != filepath.Clean(targetPath) {
 				continue
 			}
-			if object.Pos() == targetObject.Pos() && (filepath.Clean(pkg.Fset.Position(ident.Pos()).Filename) != filepath.Clean(targetPath) || ident.Pos() < target.pos || ident.End() > target.end) {
+			for _, declaration := range file.Decls {
+				object, matched := safeDeleteDefinitionInDecl(pkg, declaration, target)
+				if matched && object != nil {
+					selected = declaration
+					selectedObject = object
+				}
+			}
+		}
+		if selectedObject == nil {
+			return true
+		}
+		for ident, object := range pkg.TypesInfo.Uses {
+			if object != selectedObject {
+				continue
+			}
+			if ident.Pos() < selected.Pos() || ident.End() > selected.End() {
 				foundUse = true
 				return false
 			}
-			_ = ident
 		}
 		return !foundUse
 	}, nil)
@@ -218,4 +260,75 @@ func safeDeleteVariableInitializer(pkg *packages.Package, declaration *ast.GenDe
 	}
 	typed, ok := pkg.TypesInfo.Types[value.Values[0]]
 	return ok && typed.Value != nil
+}
+
+func safeDeleteImportProblem(pkgs []*packages.Package, targetPath string, target safeDeleteTarget) string {
+	problem := ""
+	packages.Visit(pkgs, func(pkg *packages.Package) bool {
+		if problem != "" || pkg.TypesInfo == nil || pkg.Fset == nil {
+			return problem == ""
+		}
+		for index, path := range pkg.CompiledGoFiles {
+			if filepath.Clean(path) != filepath.Clean(targetPath) || index >= len(pkg.Syntax) {
+				continue
+			}
+			file := pkg.Syntax[index]
+			var selected ast.Node
+			for _, declaration := range file.Decls {
+				object, _ := safeDeleteDefinitionInDecl(pkg, declaration, target)
+				if object != nil {
+					selected = declaration
+					break
+				}
+			}
+			if selected == nil {
+				continue
+			}
+			for _, imported := range file.Imports {
+				if imported.Name != nil && imported.Name.Name == "." {
+					problem = "safe_delete cannot prove import initialization with a dot import"
+					return false
+				}
+				var importedName types.Object
+				if imported.Name != nil {
+					importedName = pkg.TypesInfo.Defs[imported.Name]
+				} else {
+					importedName = pkg.TypesInfo.Implicits[imported]
+				}
+				if importedName == nil || importedName.Name() == "_" {
+					continue
+				}
+				inside, outside := false, false
+				for identifier, object := range pkg.TypesInfo.Uses {
+					if object != importedName || identifier.Pos() < file.Pos() || identifier.End() > file.End() {
+						continue
+					}
+					if identifier.Pos() >= selected.Pos() && identifier.End() <= selected.End() {
+						inside = true
+					} else {
+						outside = true
+					}
+				}
+				if inside && !outside {
+					problem = "safe_delete would remove the final use of an import and change package initialization; retain initialization explicitly before deleting"
+					return false
+				}
+			}
+		}
+		return problem == ""
+	}, nil)
+	return problem
+}
+
+func safeDeleteModuleSource(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || !filepath.IsLocal(relative) {
+		return false
+	}
+	for directory := range strings.SplitSeq(filepath.Dir(relative), string(filepath.Separator)) {
+		if directory != "." && (strings.HasPrefix(directory, ".") || strings.HasPrefix(directory, "_") || directory == "vendor") {
+			return false
+		}
+	}
+	return true
 }
