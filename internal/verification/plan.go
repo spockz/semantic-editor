@@ -1,5 +1,6 @@
-// Package operation selects language-server verification from discovered sources and explicit launcher configuration.
-package operation
+// Package verification selects language-server verification from discovered sources and explicit launcher configuration.
+// WHY: This file owns backend selection and module-scoped diagnostic coverage for verification plans.
+package verification
 
 import (
 	"context"
@@ -28,10 +29,47 @@ type LanguageCoverage struct {
 
 var goBuildExclusions = []string{"Go build context and build tags", "testdata", "build", "dist", "target", "vendor", "node_modules", ".scratch", ".git", "bazel-*", "_*", ".*"}
 
-func runPlanLSPVerificationEnabled(ctx context.Context, service *backend.Service, project backend.ProjectContext, request VerifyReq, plan projectverify.Plan, scope projectverify.Scope) ([]backend.Diagnostic, []LanguageCoverage, error) {
+func runPlanLSPVerificationEnabled(ctx context.Context, service *backend.Service, project backend.ProjectContext, request Request, plan projectverify.Plan, scope projectverify.Scope) ([]backend.Diagnostic, []LanguageCoverage, error) {
 	if service == nil {
 		return nil, nil, fmt.Errorf("verification backend service is nil")
 	}
+	selection := selectVerificationLanguages(request, project, plan, scope)
+	result := languageVerificationResult{Coverage: make([]LanguageCoverage, 0, len(selection.Languages))}
+	verified := 0
+	for _, language := range selection.Languages {
+		languageResult, err := verifyLanguage(ctx, service, project, plan, selection, language)
+		result.append(languageResult)
+		if err != nil {
+			return result.Diagnostics, result.Coverage, err
+		}
+		if languageResult.Verified {
+			verified++
+		}
+	}
+	if verified == 0 {
+		return result.Diagnostics, result.Coverage, fmt.Errorf("no selected source has a configured verification backend")
+	}
+	return result.Diagnostics, result.Coverage, nil
+}
+
+type languageSelection struct {
+	Languages  []string
+	ByLanguage map[string][]string
+	Explicit   bool
+}
+
+type languageVerificationResult struct {
+	Diagnostics []backend.Diagnostic
+	Coverage    []LanguageCoverage
+	Verified    bool
+}
+
+func (result *languageVerificationResult) append(next languageVerificationResult) {
+	result.Diagnostics = append(result.Diagnostics, next.Diagnostics...)
+	result.Coverage = append(result.Coverage, next.Coverage...)
+}
+
+func selectVerificationLanguages(request Request, project backend.ProjectContext, plan projectverify.Plan, scope projectverify.Scope) languageSelection {
 	selectedLanguage := request.Project.Language
 	selectedFile := request.Project.File
 	fileSelected := isExistingSourceFile(project.RootDir, selectedFile)
@@ -39,12 +77,9 @@ func runPlanLSPVerificationEnabled(ctx context.Context, service *backend.Service
 		selectedFile = request.Path
 		fileSelected = true
 	}
-	if selectedLanguage == "" || selectedLanguage == backend.LanguageAuto {
-		if fileSelected {
-			selectedLanguage = backend.LanguageIDFromFile(selectedFile)
-		}
+	if (selectedLanguage == "" || selectedLanguage == backend.LanguageAuto) && fileSelected {
+		selectedLanguage = backend.LanguageIDFromFile(selectedFile)
 	}
-	explicit := (selectedLanguage != "" && selectedLanguage != backend.LanguageAuto) || fileSelected
 	byLanguage := make(map[string][]string)
 	for _, source := range plan.Sources {
 		if sourceInScope(source.Path, scope) {
@@ -56,77 +91,107 @@ func runPlanLSPVerificationEnabled(ctx context.Context, service *backend.Service
 		languages = append(languages, language)
 	}
 	slices.Sort(languages)
+	explicit := (selectedLanguage != "" && selectedLanguage != backend.LanguageAuto) || fileSelected
 	if explicit {
 		languages = []string{string(selectedLanguage)}
 	}
-	var diagnostics []backend.Diagnostic
-	coverage := make([]LanguageCoverage, 0, len(languages))
-	verified := 0
-	for _, language := range languages {
-		paths := byLanguage[language]
-		if !explicit && !autoLSPEnabled(project, plan, language) {
-			coverage = append(coverage, LanguageCoverage{Language: language, Status: "not-configured", Paths: paths, Detail: "No configured language server is selected for this source language."})
-			continue
-		}
-		if backend.LanguageID(language) == backend.LanguageMake {
-			coverage = append(coverage, LanguageCoverage{Language: language, Status: "unsupported", Paths: paths, Detail: "The Make backend does not implement verification."})
-			return diagnostics, coverage, fmt.Errorf("verification is unsupported for language %q", language)
-		}
-		if backend.LanguageID(language) == backend.LanguageRust || backend.LanguageID(language) == backend.LanguageScala || backend.LanguageID(language) == backend.LanguageHaskell {
-			coverage = append(coverage, LanguageCoverage{Language: language, Status: "unsupported", Paths: paths, Detail: "The selected backend does not implement verification."})
-			return diagnostics, coverage, fmt.Errorf("verification is unsupported for language %q", language)
-		}
-		if backend.LanguageID(language) == backend.LanguageGo {
-			moduleRoots, err := SelectedGoModuleRoots(project.RootDir, paths)
-			if err != nil {
-				return diagnostics, coverage, err
-			}
-			if len(moduleRoots) == 0 {
-				return diagnostics, coverage, fmt.Errorf("detected Go sources have no verifiable module scope")
-			}
-			for _, moduleRoot := range moduleRoots {
-				selected := project
-				selected.RootDir = moduleRoot
-				selected.Language = backend.LanguageGo
-				selected.File = "."
-				result, err := service.Verify(ctx, backend.VerifyRequest{Project: selected, Path: ".", CheckOnly: true})
-				if err != nil {
-					coverage = append(coverage, LanguageCoverage{Language: language, Status: "failed", ModuleRoot: relativeModuleRoot(project.RootDir, moduleRoot), PackagePattern: "./...", BuildExclusions: goBuildExclusions, Detail: err.Error()})
-					return diagnostics, coverage, fmt.Errorf("verify Go module %q: %w", moduleRoot, err)
-				}
-				for _, diagnostic := range result.Diagnostics {
-					diagnostic.Message = "[" + relativeModuleRoot(project.RootDir, moduleRoot) + "] " + diagnostic.Message
-					diagnostics = append(diagnostics, diagnostic)
-				}
-				coverage = append(coverage, LanguageCoverage{Language: language, Status: "verified", ModuleRoot: relativeModuleRoot(project.RootDir, moduleRoot), PackagePattern: "./...", BuildExclusions: goBuildExclusions, Detail: "gopls checked the effective module package pattern; active build tags, build constraints, and listed excluded directories govern selected files."})
-			}
-			verified++
-			continue
-		}
-		if len(paths) == 0 {
-			continue
-		}
-		for _, path := range paths {
-			selected := project
-			selected.Language = backend.LanguageID(language)
-			selected.File = path
-			result, err := service.Verify(ctx, backend.VerifyRequest{Project: selected, Path: path, CheckOnly: true})
-			if err != nil {
-				coverage = append(coverage, LanguageCoverage{Language: language, Status: "failed", Paths: paths, Detail: err.Error()})
-				return diagnostics, coverage, fmt.Errorf("verify %s source %q: %w", language, path, err)
-			}
-			diagnostics = append(diagnostics, result.Diagnostics...)
-		}
-		verified++
-		coverage = append(coverage, LanguageCoverage{Language: language, Status: "verified", Paths: paths, Detail: "Language-server diagnostics completed for the selected source scope."})
-	}
-	if verified == 0 {
-		return diagnostics, coverage, fmt.Errorf("no selected source has a configured verification backend")
-	}
-	return diagnostics, coverage, nil
+	return languageSelection{Languages: languages, ByLanguage: byLanguage, Explicit: explicit}
 }
 
-func runPlanLSPVerification(ctx context.Context, service *backend.Service, project backend.ProjectContext, request VerifyReq, plan projectverify.Plan, scope projectverify.Scope, allowed []backend.LanguageID) ([]backend.Diagnostic, []LanguageCoverage, error) {
+func verifyLanguage(ctx context.Context, service *backend.Service, project backend.ProjectContext, plan projectverify.Plan, selection languageSelection, language string) (languageVerificationResult, error) {
+	paths := selection.ByLanguage[language]
+	if !selection.Explicit && !autoLSPEnabled(project, plan, language) {
+		return languageVerificationResult{Coverage: []LanguageCoverage{{Language: language, Status: "not-configured", Paths: paths, Detail: "No configured language server is selected for this source language."}}}, nil
+	}
+	if backend.LanguageID(language) == backend.LanguageMake || unsupportedVerificationLanguage(backend.LanguageID(language)) {
+		return unsupportedLanguageResult(language, paths), fmt.Errorf("verification is unsupported for language %q", language)
+	}
+	if backend.LanguageID(language) == backend.LanguageGo {
+		return verifyGoLanguage(ctx, service, project, language, paths)
+	}
+	return verifySelectedLanguageFiles(ctx, service, project, language, paths)
+}
+
+func unsupportedVerificationLanguage(language backend.LanguageID) bool {
+	return language == backend.LanguageRust || language == backend.LanguageScala || language == backend.LanguageHaskell
+}
+
+func unsupportedLanguageResult(language string, paths []string) languageVerificationResult {
+	detail := "The selected backend does not implement verification."
+	if backend.LanguageID(language) == backend.LanguageMake {
+		detail = "The Make backend does not implement verification."
+	}
+	return languageVerificationResult{Coverage: []LanguageCoverage{{Language: language, Status: "unsupported", Paths: paths, Detail: detail}}}
+}
+
+func verifyGoLanguage(ctx context.Context, service *backend.Service, project backend.ProjectContext, language string, paths []string) (languageVerificationResult, error) {
+	moduleRoots, err := SelectedGoModuleRoots(project.RootDir, paths)
+	if err != nil {
+		return languageVerificationResult{}, err
+	}
+	if len(moduleRoots) == 0 {
+		return languageVerificationResult{}, fmt.Errorf("detected Go sources have no verifiable module scope")
+	}
+	result := languageVerificationResult{Coverage: make([]LanguageCoverage, 0, len(moduleRoots)), Verified: true}
+	for _, moduleRoot := range moduleRoots {
+		moduleResult, err := verifyGoModule(ctx, service, project, language, moduleRoot)
+		result.append(moduleResult)
+		if err != nil {
+			return result, err
+		}
+	}
+	return result, nil
+}
+
+func verifyGoModule(ctx context.Context, service *backend.Service, project backend.ProjectContext, language, moduleRoot string) (languageVerificationResult, error) {
+	selected := project
+	selected.RootDir = moduleRoot
+	selected.Language = backend.LanguageGo
+	selected.File = "."
+	checked, err := service.Verify(ctx, backend.VerifyRequest{Project: selected, Path: ".", CheckOnly: true})
+	if err != nil {
+		coverage := LanguageCoverage{Language: language, Status: "failed", ModuleRoot: relativeModuleRoot(project.RootDir, moduleRoot), PackagePattern: "./...", BuildExclusions: goBuildExclusions, Detail: err.Error()}
+		result := languageVerificationResult{Coverage: []LanguageCoverage{coverage}}
+		return result, fmt.Errorf("verify Go module %q: %w", moduleRoot, err)
+	}
+	return successfulGoModuleResult(project.RootDir, language, moduleRoot, checked.Diagnostics), nil
+}
+
+func successfulGoModuleResult(projectRoot, language, moduleRoot string, diagnostics []backend.Diagnostic) languageVerificationResult {
+	relative := relativeModuleRoot(projectRoot, moduleRoot)
+	for index := range diagnostics {
+		diagnostics[index].Message = "[" + relative + "] " + diagnostics[index].Message
+	}
+	coverage := LanguageCoverage{
+		Language: language, Status: "verified", ModuleRoot: relative, PackagePattern: "./...",
+		BuildExclusions: goBuildExclusions,
+		Detail:          "gopls checked the effective module package pattern; active build tags, build constraints, and listed excluded directories govern selected files.",
+	}
+	return languageVerificationResult{Diagnostics: diagnostics, Coverage: []LanguageCoverage{coverage}, Verified: true}
+}
+
+func verifySelectedLanguageFiles(ctx context.Context, service *backend.Service, project backend.ProjectContext, language string, paths []string) (languageVerificationResult, error) {
+	if len(paths) == 0 {
+		return languageVerificationResult{}, nil
+	}
+	result := languageVerificationResult{Verified: true}
+	for _, path := range paths {
+		selected := project
+		selected.Language = backend.LanguageID(language)
+		selected.File = path
+		checked, err := service.Verify(ctx, backend.VerifyRequest{Project: selected, Path: path, CheckOnly: true})
+		if err != nil {
+			coverage := LanguageCoverage{Language: language, Status: "failed", Paths: paths, Detail: err.Error()}
+			result.Coverage = append(result.Coverage, coverage)
+			return result, fmt.Errorf("verify %s source %q: %w", language, path, err)
+		}
+		result.Diagnostics = append(result.Diagnostics, checked.Diagnostics...)
+	}
+	result.Coverage = append(result.Coverage, LanguageCoverage{Language: language, Status: "verified", Paths: paths, Detail: "Language-server diagnostics completed for the selected source scope."})
+	return result, nil
+}
+
+func runPlanLSPVerification(ctx context.Context, service *backend.Service, project backend.ProjectContext, request Request, plan projectverify.Plan, scope projectverify.Scope, allowed []backend.LanguageID) ([]backend.Diagnostic, []LanguageCoverage, error) {
 	if allowed == nil {
 		return runPlanLSPVerificationEnabled(ctx, service, project, request, plan, scope)
 	}

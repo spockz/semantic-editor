@@ -6,17 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"semedit/internal/backend"
-	"semedit/internal/backend/pathutil"
 	"semedit/internal/backends"
 	"semedit/internal/capability"
-	"semedit/internal/pipeline"
+	"semedit/internal/navigation"
 	"semedit/internal/projectverify"
 	"semedit/internal/sourcebuf"
+	"semedit/internal/verification"
 )
 
 // languageEnums accepts every backend language so support is decided by handler presence, not parsing.
@@ -176,15 +175,10 @@ type LookupRes = backend.LookupResult
 type RenameRes = backend.RenameResult
 
 // VerifyRes reports compiler diagnostics and whether gofmt reformatted sources.
-type VerifyRes struct {
-	Diagnostics     []backend.Diagnostic `json:"diagnostics,omitempty"`
-	Formatted       bool                 `json:"formatted,omitempty"`
-	NormalizeReport projectverify.Report `json:"normalize"`
-	CheckReport     projectverify.Report `json:"checks"`
-	Scope           projectverify.Scope  `json:"scope"`
-	Failure         string               `json:"failure,omitempty"`
-	Coverage        []LanguageCoverage   `json:"coverage,omitempty"`
-}
+type VerifyRes = verification.Result
+
+// LanguageCoverage reports one language's verification scope and outcome.
+type LanguageCoverage = verification.LanguageCoverage
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
@@ -351,358 +345,48 @@ func parseVerify(raw map[string]any) (VerifyReq, error) {
 }
 
 func lookupRun(ctx context.Context, cc CallContext, request LookupReq) (*backend.LookupResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	project := effectiveProject(cc, request.Project)
 	service := cc.Service
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	return service.Lookup(ctx, project, request.Symbol)
+	return navigation.Lookup(ctx, service, project, request.Symbol)
 }
 
 func renameRun(ctx context.Context, cc CallContext, request RenameReq) (*backend.RenameResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	project := effectiveProject(cc, request.Project)
 	service := cc.Service
 	if service == nil {
 		service = backends.NewDefaultService()
 	}
-	result, err := service.Rename(ctx, backend.RenameRequest{
+	buffered := ctx != nil && sourcebuf.FromContext(ctx) != nil
+	return navigation.Rename(ctx, service, navigation.RenameRequest{
 		Project:           project,
 		Symbol:            request.Symbol,
 		To:                request.To,
 		OrganizeImports:   effectiveAutoOrganize(cc, request.OrganizeImports),
-		DeferFormatting:   cc.DeferVerification,
 		DeferVerification: cc.DeferVerification,
+		Buffered:          buffered,
 	})
-	if err != nil {
-		var diagnosticsError *backend.RenameDiagnosticsError
-		if errors.As(err, &diagnosticsError) && diagnosticsError.Result != nil {
-			diagnosticsError.Result.Source = cloneRenameLookup(diagnosticsError.Result.Lookup)
-			diagnosticsError.Result.Lookup = nil
-			diagnosticsError.Result.ProjectRoot = project.RootDir
-			diagnosticsError.Result.ApplicationState = string(EditPersisted)
-			if sourcebuf.FromContext(ctx) != nil {
-				diagnosticsError.Result.ApplicationState = string(EditAppliedWorking)
-			}
-		}
-		return result, err
-	}
-	if result == nil {
-		return nil, fmt.Errorf("rename backend returned no result")
-	}
-	result.ProjectRoot = project.RootDir
-	result.ApplicationState = string(EditPersisted)
-	if sourcebuf.FromContext(ctx) != nil {
-		result.ApplicationState = string(EditAppliedWorking)
-		result.Source = cloneRenameLookup(result.Lookup)
-		result.Lookup = nil
-		result.ContinuationUnavailable = "rename is part of an in-progress workspace batch"
-		return result, nil
-	}
-	return resolvePostRenameIdentity(ctx, service, project, request, result), nil
-}
-
-func resolvePostRenameIdentity(ctx context.Context, service *backend.Service, project backend.ProjectContext, request RenameReq, result *backend.RenameResult) *backend.RenameResult {
-	if result.Lookup == nil {
-		result.ContinuationUnavailable = "backend returned no pre-rename identity"
-		return result
-	}
-	result.Source = cloneRenameLookup(result.Lookup)
-	result.Lookup = nil
-	query, expectedSymbol := postRenameLookupName(result.Source, request.To)
-	if query == "" {
-		result.ContinuationUnavailable = "rename source did not contain a qualified identity"
-		return result
-	}
-	resolved, err := service.Lookup(ctx, project, query)
-	if err != nil {
-		result.ContinuationUnavailable = "post-rename lookup failed: " + err.Error()
-		return result
-	}
-	if resolved == nil || resolved.Ambiguous || resolved.Definition == nil {
-		result.ContinuationUnavailable = "post-rename lookup did not resolve one declaration"
-		return result
-	}
-	resolvedSymbol := resolved.Definition.QualifiedName
-	if resolvedSymbol == "" || resolvedSymbol != expectedSymbol {
-		result.ContinuationUnavailable = "post-rename lookup did not resolve the expected qualified identity"
-		return result
-	}
-	if result.Source.Definition == nil || !sameWorkspacePath(project.RootDir, result.Source.Definition.File, resolved.Definition.File) {
-		result.ContinuationUnavailable = "post-rename lookup resolved a different source file"
-		return result
-	}
-	resolved.Symbol = resolvedSymbol
-	result.Lookup = resolved
-	inspectProject := project
-	inspectProject.File = resolved.Definition.File
-	inspection, err := service.Inspect(ctx, backend.InspectRequest{Project: inspectProject, Symbol: resolvedSymbol})
-	if err != nil || inspection == nil {
-		if err != nil {
-			result.ContinuationUnavailable = "post-rename inspection failed: " + err.Error()
-		} else {
-			result.ContinuationUnavailable = "post-rename inspection returned no result"
-		}
-		return result
-	}
-	matched := ""
-	matchCount := 0
-	for _, match := range inspection.Matches {
-		if match.QualifiedName != resolvedSymbol || !sameWorkspacePath(project.RootDir, match.File, resolved.Definition.File) {
-			continue
-		}
-		matchCount++
-		if matchCount > 1 {
-			result.ContinuationUnavailable = "post-rename inspection matched multiple declarations"
-			return result
-		}
-		matched = match.Revision
-	}
-	result.Revision = matched
-	if matchCount != 1 || matched == "" {
-		result.ContinuationUnavailable = "post-rename inspection did not prove a matching file revision"
-	}
-	return result
-}
-
-func postRenameLookupName(source *backend.LookupResult, requestedName string) (string, string) {
-	if source == nil {
-		return "", ""
-	}
-	oldIdentity := source.Symbol
-	if source.Definition != nil && source.Definition.QualifiedName != "" {
-		oldIdentity = source.Definition.QualifiedName
-	}
-	newLeaf := backend.NormalizeRenameInput(requestedName)
-	if oldIdentity == "" || newLeaf == "" {
-		return "", ""
-	}
-	dot := strings.LastIndex(oldIdentity, ".")
-	colon := strings.LastIndex(oldIdentity, "::")
-	separator, width := dot, 1
-	if colon > separator {
-		separator, width = colon, 2
-	}
-	if separator < 0 {
-		return newLeaf, newLeaf
-	}
-	qualified := oldIdentity[:separator+width] + newLeaf
-	return qualified, qualified
-}
-
-func cloneRenameLookup(source *backend.LookupResult) *backend.LookupResult {
-	if source == nil {
-		return nil
-	}
-	clone := *source
-	if source.Definition != nil {
-		definition := *source.Definition
-		clone.Definition = &definition
-	}
-	return &clone
-}
-
-func sameWorkspacePath(root, left, right string) bool {
-	canonical := func(path string) (string, error) {
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(root, path)
-		}
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return "", err
-		}
-		return filepath.Clean(absolute), nil
-	}
-	leftPath, leftErr := canonical(left)
-	rightPath, rightErr := canonical(right)
-	return leftErr == nil && rightErr == nil && leftPath == rightPath
 }
 
 func verifyRun(ctx context.Context, cc CallContext, request VerifyReq) (VerifyRes, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	project := effectiveProject(cc, request.Project)
-	path := strings.TrimSpace(request.Path)
-	if path == "" {
-		path = "."
-	}
-	path, err := canonicalVerifyPath(project.RootDir, path)
-	if err != nil {
-		return VerifyRes{}, err
-	}
-	if project.File != "" {
-		project.File, err = canonicalVerifyPath(project.RootDir, project.File)
-		if err != nil {
-			return VerifyRes{}, err
-		}
-	}
-	selectedLanguage, explicitSelection := verificationSelectionLanguage(project, path)
-	if explicitSelection && !cc.AllowsLanguage(selectedLanguage) {
-		return VerifyRes{}, fmt.Errorf("verification language %q is disabled by --enabled-languages", selectedLanguage)
-	}
-	if !request.CheckOnly && cc.AllowedLanguages != nil && (request.FormatSelectedFile || request.OrganizeImports) && !explicitSelection {
-		return VerifyRes{Failure: "select an enabled source language or file before applying selected-file normalization"}, nil
-	}
-	if path != "." {
-		if _, statErr := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path))); statErr != nil {
-			return VerifyRes{}, fmt.Errorf("verification path %q: %w", path, statErr)
-		}
-	}
-	plan, err := projectverify.Discover(project.RootDir)
-	if err != nil {
-		return VerifyRes{}, fmt.Errorf("discover project verification plan: %w", err)
-	}
-	requestedScope := projectverify.Scope{}
-	if path != "." {
-		requestedScope.Paths = []string{path}
-	}
-	actualPaths := scopedSourcePaths(plan, requestedScope)
-	allowedPlan := planForAllowedLanguages(plan, cc.AllowedLanguages)
-	if len(actualPaths) == 0 && path != "." {
-		actualPaths = []string{path}
-	}
-	scope := requestedScope
-	service := serviceForContext(cc)
-	response := VerifyRes{Scope: projectverify.Scope{Paths: actualPaths}}
-	formatPaths := []string{path}
-	if cc.GoFormattingPaths != nil {
-		formatPaths = cc.GoFormattingPaths
-	}
-	goFormatPaths := make([]string, 0, len(formatPaths))
-	for _, formatPath := range formatPaths {
-		if cc.AllowsLanguage(backend.LanguageGo) && shouldRunGofmt(project, formatPath) {
-			goFormatPaths = append(goFormatPaths, formatPath)
-		}
-	}
-	if !request.CheckOnly && len(goFormatPaths) > 0 {
-		needsFormatting, formatCheckErr := gofmtListsFiles(ctx, project.RootDir, goFormatPaths...)
-		if formatCheckErr != nil {
-			return response, fmt.Errorf("check Go formatting before verification: %w", formatCheckErr)
-		}
-		if needsFormatting {
-			if formatErr := pipeline.Format(ctx, project.RootDir, goFormatPaths...); formatErr != nil {
-				return response, fmt.Errorf("format Go files before verification: %w", formatErr)
-			}
-			response.Formatted = true
-		}
-	}
-	if !request.CheckOnly {
-		if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Normalize, scope); trustErr != nil {
-			return response, trustErr
-		} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
-			response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
-			return response, nil
-		}
-		response.NormalizeReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseNormalize, scope, verificationLSPRunner(service, project, projectverify.PhaseNormalize, cc.AllowedLanguages))
-		if err != nil {
-			response.Failure = err.Error()
-			// Preserve hook results while ingress maps Failure to a failed operation.
-			return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
-		}
-		if request.FormatSelectedFile || request.OrganizeImports {
-			_, err = service.Verify(ctx, backend.VerifyRequest{Project: project, Path: path, FormatSelectedFile: request.FormatSelectedFile, OrganizeImports: request.OrganizeImports})
-			if err != nil {
-				response.Failure = fmt.Errorf("apply selected backend normalization: %w", err).Error()
-				// Preserve completed normalization details in the public result.
-				return response, nil
-			}
-		}
-		plan, err = projectverify.Discover(project.RootDir)
-		if err != nil {
-			response.Failure = fmt.Errorf("rediscover project verification plan: %w", err).Error()
-			// Preserve completed normalization details in the public result.
-			return response, nil
-		}
-		allowedPlan = planForAllowedLanguages(plan, cc.AllowedLanguages)
-		response.Scope = projectverify.Scope{Paths: scopedSourcePaths(plan, scope)}
-		if len(response.Scope.Paths) == 0 && len(scope.Paths) > 0 {
-			response.Scope = scope
-		}
-	}
-	response.Diagnostics, response.Coverage, err = runPlanLSPVerification(ctx, service, project, request, plan, scope, cc.AllowedLanguages)
-	if err != nil {
-		response.Failure = err.Error()
-		// Preserve diagnostics gathered before the failed hook.
-		return response, nil //nolint:nilerr // Preserve the partial public report; ingress maps Failure to an operation error.
-	}
-	if hookID, trustErr := workspaceTrustRequiredHook(allowedPlan, allowedPlan.Checks, scope); trustErr != nil {
-		return response, trustErr
-	} else if hookID != "" && !project.WorkspaceTrust.Allows(project.RootDir) {
-		response.Failure = fmt.Sprintf("workspace trust is required to run verification hook %q", hookID)
-		return response, nil
-	}
-	response.CheckReport, err = projectverify.RunPhase(ctx, allowedPlan, projectverify.PhaseCheck, scope, verificationLSPRunner(service, project, projectverify.PhaseCheck, cc.AllowedLanguages))
-	if err != nil {
-		response.Failure = err.Error()
-	}
-	return response, nil
+	return verification.Run(ctx, verification.Request{
+		Project:            project,
+		Path:               request.Path,
+		FormatSelectedFile: request.FormatSelectedFile,
+		OrganizeImports:    request.OrganizeImports,
+		CheckOnly:          request.CheckOnly,
+		AllowedLanguages:   cc.AllowedLanguages,
+		GoFormattingPaths:  cc.GoFormattingPaths,
+		Service:            cc.Service,
+	})
 }
 
-func shouldRunGofmt(project backend.ProjectContext, path string) bool {
-	language := project.Language
-	if language != "" && language != backend.LanguageAuto {
-		return language == backend.LanguageGo
-	}
-	language = backend.LanguageIDFromFile(path)
-	if language != "" && language != backend.LanguageAuto {
-		return language == backend.LanguageGo
-	}
-	info, err := os.Stat(filepath.Join(project.RootDir, filepath.FromSlash(path)))
-	return err == nil && info.IsDir()
-}
-
-func canonicalVerifyPath(root, requested string) (string, error) {
-	if !filepath.IsAbs(requested) {
-		clean := filepath.Clean(requested)
-		if clean == ".." || strings.HasPrefix(clean, ".."+string(filepath.Separator)) {
-			return "", fmt.Errorf("verification path %q is outside workspace %q", requested, pathutil.CanonicalWorkspaceRoot(root))
-		}
-		requested = filepath.Join(root, clean)
-	}
-	canonicalRoot := pathutil.CanonicalWorkspaceRoot(root)
-	canonicalPath := pathutil.CanonicalWorkspaceRoot(requested)
-	if !pathutil.PathWithin(canonicalRoot, canonicalPath) {
-		return "", fmt.Errorf("verification path %q is outside workspace %q", requested, canonicalRoot)
-	}
-	rel, err := filepath.Rel(canonicalRoot, canonicalPath)
-	if err != nil {
-		return "", fmt.Errorf("resolve verification path %q relative to workspace: %w", requested, err)
-	}
-	return filepath.ToSlash(rel), nil
-}
-
-func scopedSourcePaths(plan projectverify.Plan, scope projectverify.Scope) []string {
-	paths := make([]string, 0)
-	for _, source := range plan.Sources {
-		if sourceInScope(source.Path, scope) {
-			paths = append(paths, source.Path)
-		}
-	}
-	return paths
-}
-
-func hasMutatingLSPHooks(hooks []projectverify.Hook) bool {
-	for _, hook := range hooks {
-		if hook.LSP != nil && (hook.LSP.ActionKind != "" || hook.LSP.Command != "") {
-			return true
-		}
-	}
-	return false
-}
-
-// gofmtListsFiles reports whether gofmt would reformat sources under path.
-func gofmtListsFiles(ctx context.Context, rootDir string, paths ...string) (bool, error) {
-	formatted, err := pipeline.NeedsFormatting(ctx, rootDir, paths...)
-	if err != nil {
-		return false, fmt.Errorf("gofmt -l %s: %w", strings.Join(paths, ", "), err)
-	}
-	return formatted, nil
+// SelectedGoModuleRoots retains the batch verifier's path helper at the operation boundary.
+func SelectedGoModuleRoots(projectRoot string, selectedPaths []string) ([]string, error) {
+	return verification.SelectedGoModuleRoots(projectRoot, selectedPaths)
 }
 
 func formatLookup(result *backend.LookupResult) (string, error) {
