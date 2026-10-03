@@ -120,7 +120,8 @@ func validateBodySnippet(bodySource string) (string, error) {
 	bodyTrimmed := strings.TrimSpace(bodySource)
 	synthetic := "package dummy\n\nfunc _() {\n" + bodyTrimmed + "\n}\n"
 	synthFset := token.NewFileSet()
-	if _, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments); err != nil {
+	file, err := parser.ParseFile(synthFset, "snippet", synthetic, parser.ParseComments)
+	if err != nil {
 		pos := extractSyntaxPosition(synthFset, err)
 		if pos.Line > 3 {
 			pos.Line -= 3
@@ -132,6 +133,13 @@ func validateBodySnippet(bodySource string) (string, error) {
 			Cause:   err,
 			Err:     ErrSyntax,
 		}
+	}
+	if len(file.Decls) != 1 {
+		return "", fmt.Errorf("replacement body must remain inside its function wrapper")
+	}
+	function, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || function.Name.Name != "_" || function.Body == nil {
+		return "", fmt.Errorf("replacement body wrapper is not one complete function")
 	}
 
 	return bodyTrimmed, nil
