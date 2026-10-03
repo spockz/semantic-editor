@@ -1002,56 +1002,12 @@ func inspectMoveModuleFiles(ctx context.Context, root, sourcePath, destinationPa
 	}
 	snapshot := map[string][]byte{}
 	walkErr := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("inspect module file %s: %w", path, err)
-		}
-		if path == root {
-			return nil
-		}
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
-		}
-		if entry.IsDir() {
-			if entry.Name() == ".git" || entry.Name() == "vendor" || entry.Name() == ".scratch" {
-				return filepath.SkipDir
-			}
-			if path != root {
-				if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
-					return filepath.SkipDir
-				}
-			}
-			return nil
-		}
-		if !strings.HasSuffix(entry.Name(), ".go") {
-			return nil
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return fmt.Errorf("resolve module-relative Go file %s: %w", path, relErr)
-		}
-		var data []byte
-		if sourcebuf.FromContext(ctx) != nil {
-			data, err = sourcebuf.ReadFile(ctx, path)
-		} else {
-			data, err = rootFS.ReadFile(rel)
-		}
-		if err != nil {
-			return fmt.Errorf("read Go file during move preflight %s: %w", path, err)
-		}
-		snapshot[filepath.Clean(path)] = data
-		text := string(data)
-		generated := strings.Contains(text, "Code generated ") && strings.Contains(text, "DO NOT EDIT.")
-		constrained := moveFilenameBuildConstraint(path) != "" || strings.Contains(text, "//go:build ") || strings.Contains(text, "// +build ")
-		selected := filepath.Clean(path) == filepath.Clean(sourcePath) || filepath.Clean(path) == filepath.Clean(destinationPath)
-		if selected && (generated || constrained) {
-			return fmt.Errorf("cross-package move refuses generated or build-constrained source or destination %s", path)
-		}
-		if (generated || constrained) && containsMoveIdentifier(data, symbolName) {
-			return fmt.Errorf("cross-package move refuses possible reference to %q in generated or build-constrained file %s", symbolName, path)
-		}
-		return nil
+		return inspectMoveModuleEntry(ctx, root, path, entry, err, rootFS, sourcePath, destinationPath, symbolName, snapshot)
 	})
 	closeErr := rootFS.Close()
+	if walkErr != nil && closeErr != nil {
+		return nil, errors.Join(walkErr, fmt.Errorf("close Go module root: %w", closeErr))
+	}
 	if walkErr != nil {
 		return nil, walkErr
 	}
@@ -1059,6 +1015,71 @@ func inspectMoveModuleFiles(ctx context.Context, root, sourcePath, destinationPa
 		return nil, fmt.Errorf("close Go module root: %w", closeErr)
 	}
 	return snapshot, nil
+}
+
+func inspectMoveModuleEntry(ctx context.Context, root, path string, entry fs.DirEntry, entryErr error, rootFS *os.Root, sourcePath, destinationPath, symbolName string, snapshot map[string][]byte) error {
+	if entryErr != nil {
+		return fmt.Errorf("inspect module file %s: %w", path, entryErr)
+	}
+	if path == root {
+		return nil
+	}
+	if entry.Type()&fs.ModeSymlink != 0 {
+		return fmt.Errorf("cross-package move refuses symlink ambiguity at %s", path)
+	}
+	if entry.IsDir() {
+		return moveDirectoryTraversal(path, entry.Name())
+	}
+	if !strings.HasSuffix(entry.Name(), ".go") {
+		return nil
+	}
+	data, err := readMoveModuleFile(ctx, root, path, rootFS)
+	if err != nil {
+		return err
+	}
+	snapshot[filepath.Clean(path)] = data
+	return validateMoveModuleSource(path, data, sourcePath, destinationPath, symbolName)
+}
+
+func moveDirectoryTraversal(path, name string) error {
+	if name == ".git" || name == "vendor" || name == ".scratch" {
+		return filepath.SkipDir
+	}
+	if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+func readMoveModuleFile(ctx context.Context, root, path string, rootFS *os.Root) ([]byte, error) {
+	relative, err := filepath.Rel(root, path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve module-relative Go file %s: %w", path, err)
+	}
+	var data []byte
+	if sourcebuf.FromContext(ctx) != nil {
+		data, err = sourcebuf.ReadFile(ctx, path)
+	} else {
+		data, err = rootFS.ReadFile(relative)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read Go file during move preflight %s: %w", path, err)
+	}
+	return data, nil
+}
+
+func validateMoveModuleSource(path string, data []byte, sourcePath, destinationPath, symbolName string) error {
+	text := string(data)
+	generated := strings.Contains(text, "Code generated ") && strings.Contains(text, "DO NOT EDIT.")
+	constrained := moveFilenameBuildConstraint(path) != "" || strings.Contains(text, "//go:build ") || strings.Contains(text, "// +build ")
+	selected := filepath.Clean(path) == filepath.Clean(sourcePath) || filepath.Clean(path) == filepath.Clean(destinationPath)
+	if selected && (generated || constrained) {
+		return fmt.Errorf("cross-package move refuses generated or build-constrained source or destination %s", path)
+	}
+	if (generated || constrained) && containsMoveIdentifier(data, symbolName) {
+		return fmt.Errorf("cross-package move refuses possible reference to %q in generated or build-constrained file %s", symbolName, path)
+	}
+	return nil
 }
 
 func loadMovePackageScope(ctx context.Context, root string, changes map[string][]byte, mode packages.LoadMode, patterns []string) ([]*packages.Package, error) {
