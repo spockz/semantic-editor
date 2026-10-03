@@ -365,43 +365,9 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		}
 	}
 
-	for _, decl := range fileNode.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			var rec string
-			if d.Recv != nil && len(d.Recv.List) > 0 {
-				switch r := d.Recv.List[0].Type.(type) {
-				case *ast.Ident:
-					rec = r.Name
-				case *ast.StarExpr:
-					if id, ok := r.X.(*ast.Ident); ok {
-						rec = id.Name
-					}
-				}
-			}
-			if targetReceiver != "" {
-				if rec == targetReceiver && d.Name.Name == targetName {
-					return decl, nil
-				}
-			} else if d.Name.Name == targetName {
-				return decl, nil
-			}
-
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					if s.Name.Name == targetName {
-						return decl, nil
-					}
-				case *ast.ValueSpec:
-					for _, name := range s.Names {
-						if name.Name == targetName {
-							return decl, nil
-						}
-					}
-				}
-			}
+	for _, declaration := range fileNode.Decls {
+		if declarationMatchesTarget(declaration, targetReceiver, targetName) {
+			return declaration, nil
 		}
 	}
 
@@ -409,4 +375,54 @@ func findTargetDecl(fileNode *ast.File, targetSymbol string) (ast.Decl, error) {
 		TargetSymbol: targetSymbol,
 		Err:          ErrSymbolNotFound,
 	}
+}
+
+func declarationMatchesTarget(declaration ast.Decl, targetReceiver, targetName string) bool {
+	switch candidate := declaration.(type) {
+	case *ast.FuncDecl:
+		return candidate.Name.Name == targetName &&
+			(targetReceiver == "" || functionReceiverName(candidate) == targetReceiver)
+	case *ast.GenDecl:
+		return genericDeclarationHasName(candidate, targetName)
+	default:
+		return false
+	}
+}
+
+func functionReceiverName(function *ast.FuncDecl) string {
+	if function.Recv == nil || len(function.Recv.List) == 0 {
+		return ""
+	}
+	switch receiver := function.Recv.List[0].Type.(type) {
+	case *ast.Ident:
+		return receiver.Name
+	case *ast.StarExpr:
+		if name, ok := receiver.X.(*ast.Ident); ok {
+			return name.Name
+		}
+	}
+	return ""
+}
+
+func genericDeclarationHasName(declaration *ast.GenDecl, targetName string) bool {
+	for _, spec := range declaration.Specs {
+		if specificationHasName(spec, targetName) {
+			return true
+		}
+	}
+	return false
+}
+
+func specificationHasName(spec ast.Spec, targetName string) bool {
+	switch candidate := spec.(type) {
+	case *ast.TypeSpec:
+		return candidate.Name.Name == targetName
+	case *ast.ValueSpec:
+		for _, name := range candidate.Names {
+			if name.Name == targetName {
+				return true
+			}
+		}
+	}
+	return false
 }
