@@ -253,6 +253,25 @@ func TestResolveLocalOnlyLookupPromotesDefinition(t *testing.T) {
 	}
 }
 
+func TestResolveBodylessFunctionBindings(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "assembly.go")
+	source := "package api\nfunc external(input int) (output int)\n"
+	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
+		t.Fatalf("write bodyless declaration: %v", err)
+	}
+	for name, wantKind := range map[string]string{"input": "parameter", "output": "result"} {
+		result, err := symbol.Resolve(dir, "assembly.go", name)
+		if err != nil {
+			t.Fatalf("Resolve %s: %v", name, err)
+		}
+		if result.Definition == nil || result.Definition.Kind != wantKind {
+			t.Fatalf("Resolve %s definition = %#v, want %s", name, result.Definition, wantKind)
+		}
+	}
+}
+
 func TestResolveInterfaceMethodAmbiguity(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

@@ -14,6 +14,16 @@ import (
 
 type declarationCollision struct{ name, file string }
 
+type packageSourceFiles struct {
+	paths      []string
+	targetPath string
+}
+
+type parsedCollisionSource struct {
+	path string
+	file *ast.File
+}
+
 func checkInsertDeclCollisions(ctx context.Context, path string, declarations []ast.Decl, file *ast.File) error {
 	seen := make(map[string]struct{})
 	for _, decl := range declarations {
@@ -35,99 +45,89 @@ func checkInsertDeclCollisions(ctx context.Context, path string, declarations []
 }
 
 func findPackageDeclarationCollisions(ctx context.Context, targetPath string, target *ast.File, incoming []ast.Decl) ([]declarationCollision, error) {
-	wanted := make(map[string]struct{})
-	for _, decl := range incoming {
-		for _, name := range extractDeclNames(decl) {
-			if name != "_" {
-				wanted[name] = struct{}{}
-			}
-		}
-	}
+	wanted := declarationNames(incoming)
 	if len(wanted) == 0 {
 		return nil, nil
 	}
-	absTarget, err := filepath.Abs(targetPath)
+	sources, err := packageSourcePaths(targetPath)
 	if err != nil {
-		return nil, fmt.Errorf("resolve target path: %w", err)
-	}
-	paths, err := filepath.Glob(filepath.Join(filepath.Dir(absTarget), "*.go"))
-	if err != nil {
-		return nil, fmt.Errorf("list package files: %w", err)
+		return nil, err
 	}
 	if target == nil {
 		return nil, fmt.Errorf("cannot check package declarations without a parsed target file")
 	}
 	fset := token.NewFileSet()
 	var collisions []declarationCollision
-	for _, path := range paths {
-		absPath, err := filepath.Abs(path)
+	for _, path := range sources.paths {
+		parsed, err := parseCollisionFile(ctx, fset, path, sources.targetPath, target)
 		if err != nil {
-			return nil, fmt.Errorf("resolve package file %s: %w", path, err)
+			return nil, err
 		}
-		var file *ast.File
-		if absPath == absTarget {
-			file = target
-		} else {
-			file, err = sourcebuf.ParseFile(ctx, fset, absPath, nil, parser.ParseComments|parser.AllErrors)
-			if err != nil {
-				return nil, fmt.Errorf("parse package file %s while checking collisions: %w", absPath, err)
-			}
-		}
-		if file.Name.Name != target.Name.Name {
+		if parsed.file.Name.Name != target.Name.Name {
 			continue
 		}
-		for _, decl := range file.Decls {
-			if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv != nil {
-				continue
-			}
-			for _, name := range extractDeclNames(decl) {
-				if _, ok := wanted[name]; ok {
-					collisions = append(collisions, declarationCollision{name: name, file: absPath})
-				}
-			}
-		}
+		collisions = append(collisions, fileDeclarationCollisions(parsed.file, parsed.path, wanted)...)
 	}
 	return collisions, nil
 }
 
+func declarationNames(declarations []ast.Decl) map[string]struct{} {
+	wanted := make(map[string]struct{})
+	for _, decl := range declarations {
+		for _, name := range extractDeclNames(decl) {
+			if name != "_" {
+				wanted[name] = struct{}{}
+			}
+		}
+	}
+	return wanted
+}
+
+func packageSourcePaths(targetPath string) (packageSourceFiles, error) {
+	absTarget, err := filepath.Abs(targetPath)
+	if err != nil {
+		return packageSourceFiles{}, fmt.Errorf("resolve target path: %w", err)
+	}
+	paths, err := filepath.Glob(filepath.Join(filepath.Dir(absTarget), "*.go"))
+	if err != nil {
+		return packageSourceFiles{}, fmt.Errorf("list package files: %w", err)
+	}
+	return packageSourceFiles{paths: paths, targetPath: absTarget}, nil
+}
+
+func parseCollisionFile(ctx context.Context, fset *token.FileSet, path, absTarget string, target *ast.File) (parsedCollisionSource, error) {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return parsedCollisionSource{}, fmt.Errorf("resolve package file %s: %w", path, err)
+	}
+	if absPath == absTarget {
+		return parsedCollisionSource{path: absPath, file: target}, nil
+	}
+	file, err := sourcebuf.ParseFile(ctx, fset, absPath, nil, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return parsedCollisionSource{}, fmt.Errorf("parse package file %s while checking collisions: %w", absPath, err)
+	}
+	return parsedCollisionSource{path: absPath, file: file}, nil
+}
+
+func fileDeclarationCollisions(file *ast.File, path string, wanted map[string]struct{}) []declarationCollision {
+	var collisions []declarationCollision
+	for _, decl := range file.Decls {
+		if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv != nil {
+			continue
+		}
+		for _, name := range extractDeclNames(decl) {
+			if _, ok := wanted[name]; ok {
+				collisions = append(collisions, declarationCollision{name: name, file: path})
+			}
+		}
+	}
+	return collisions
+}
+
 func checkConstructDeclarationCollision(ctx context.Context, targetPath string, target *ast.File, incoming ast.Decl) error {
 	if fn, ok := incoming.(*ast.FuncDecl); ok && fn.Recv != nil {
-		receiverType := extractReceiverTypeName(fn.Recv)
-		absTarget, err := filepath.Abs(targetPath)
-		if err != nil {
-			return fmt.Errorf("resolve target path: %w", err)
-		}
-		paths, err := filepath.Glob(filepath.Join(filepath.Dir(absTarget), "*.go"))
-		if err != nil {
-			return fmt.Errorf("list package files: %w", err)
-		}
-		fset := token.NewFileSet()
-		for _, path := range paths {
-			absPath, err := filepath.Abs(path)
-			if err != nil {
-				return fmt.Errorf("resolve package file %s: %w", path, err)
-			}
-			file := target
-			if absPath != absTarget {
-				file, err = sourcebuf.ParseFile(ctx, fset, absPath, nil, parser.ParseComments|parser.AllErrors)
-				if err != nil {
-					return fmt.Errorf("parse package file %s while checking collisions: %w", absPath, err)
-				}
-			}
-			if file.Name.Name != target.Name.Name {
-				continue
-			}
-			for _, decl := range file.Decls {
-				existing, ok := decl.(*ast.FuncDecl)
-				if !ok || existing.Recv == nil {
-					continue
-				}
-				if existing.Name.Name == fn.Name.Name && extractReceiverTypeName(existing.Recv) == receiverType {
-					return fmt.Errorf("method %s.%s already exists in %s: %w", receiverType, fn.Name.Name, absPath, ErrDeclCollision)
-				}
-			}
-		}
-		return nil
+		return checkMethodCollision(ctx, targetPath, target, fn)
 	}
 
 	collisions, err := findPackageDeclarationCollisions(ctx, targetPath, target, []ast.Decl{incoming})
@@ -138,4 +138,40 @@ func checkConstructDeclarationCollision(ctx context.Context, targetPath string, 
 		return fmt.Errorf("declaration %q already exists in %s: %w", collisions[0].name, collisions[0].file, ErrDeclCollision)
 	}
 	return nil
+}
+
+func checkMethodCollision(ctx context.Context, targetPath string, target *ast.File, incoming *ast.FuncDecl) error {
+	sources, err := packageSourcePaths(targetPath)
+	if err != nil {
+		return err
+	}
+	if target == nil {
+		return fmt.Errorf("cannot check package declarations without a parsed target file")
+	}
+	fset := token.NewFileSet()
+	for _, path := range sources.paths {
+		parsed, err := parseCollisionFile(ctx, fset, path, sources.targetPath, target)
+		if err != nil {
+			return err
+		}
+		if parsed.file.Name.Name != target.Name.Name {
+			continue
+		}
+		if methodExists(parsed.file, incoming) {
+			receiverType := extractReceiverTypeName(incoming.Recv)
+			return fmt.Errorf("method %s.%s already exists in %s: %w", receiverType, incoming.Name.Name, parsed.path, ErrDeclCollision)
+		}
+	}
+	return nil
+}
+
+func methodExists(file *ast.File, incoming *ast.FuncDecl) bool {
+	receiverType := extractReceiverTypeName(incoming.Recv)
+	for _, decl := range file.Decls {
+		existing, ok := decl.(*ast.FuncDecl)
+		if ok && existing.Recv != nil && existing.Name.Name == incoming.Name.Name && extractReceiverTypeName(existing.Recv) == receiverType {
+			return true
+		}
+	}
+	return false
 }

@@ -14,50 +14,89 @@ import (
 func scanTopLevelDeclarations(fset *token.FileSet, node *ast.File, filePath, targetRecv, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
 	var results []*Symbol
 	for _, declaration := range node.Decls {
-		switch decl := declaration.(type) {
-		case *ast.FuncDecl:
-			receiver := extractReceiver(decl.Recv)
-			if decl.Name.Name == targetName && (targetRecv == "" || targetRecv == receiver) {
-				position := fset.Position(decl.Name.Pos())
-				kind := "function"
-				if receiver != "" {
-					kind = "method"
-				}
-				results = append(results, &Symbol{Name: decl.Name.Name, Receiver: receiver, Kind: kind, File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset})
-			}
-		case *ast.GenDecl:
-			for _, raw := range decl.Specs {
-				switch spec := raw.(type) {
-				case *ast.TypeSpec:
-					if targetRecv != "" && spec.Name.Name == targetRecv {
-						members, err := findTypeMembers(fset, filePath, spec, targetName, index)
-						if err != nil {
-							return nil, err
-						}
-						results = append(results, members...)
-					}
-					if targetRecv != "" {
-						continue
-					}
-					if spec.Name.Name == targetName {
-						position := fset.Position(spec.Name.Pos())
-						results = append(results, &Symbol{Name: spec.Name.Name, Kind: "type", File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset})
-					}
-				case *ast.ValueSpec:
-					if targetRecv != "" {
-						continue
-					}
-					for _, ident := range spec.Names {
-						if ident.Name == targetName {
-							position := fset.Position(ident.Pos())
-							results = append(results, &Symbol{Name: ident.Name, Kind: "value", File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset})
-						}
-					}
-				}
-			}
+		found, err := scanTopLevelDeclaration(fset, declaration, filePath, targetRecv, targetName, index)
+		if err != nil {
+			return nil, err
 		}
+		results = append(results, found...)
 	}
 	return results, nil
+}
+
+func scanTopLevelDeclaration(fset *token.FileSet, declaration ast.Decl, filePath, targetRecv, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
+	switch decl := declaration.(type) {
+	case *ast.FuncDecl:
+		return scanFunctionDeclaration(fset, decl, filePath, targetRecv, targetName), nil
+	case *ast.GenDecl:
+		return scanGeneralDeclaration(fset, decl, filePath, targetRecv, targetName, index)
+	default:
+		return nil, nil
+	}
+}
+
+func scanFunctionDeclaration(fset *token.FileSet, declaration *ast.FuncDecl, filePath, targetRecv, targetName string) []*Symbol {
+	receiver := extractReceiver(declaration.Recv)
+	if declaration.Name.Name != targetName || targetRecv != "" && targetRecv != receiver {
+		return nil
+	}
+	kind := "function"
+	if receiver != "" {
+		kind = "method"
+	}
+	position := fset.Position(declaration.Name.Pos())
+	return []*Symbol{{Name: declaration.Name.Name, Receiver: receiver, Kind: kind, File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset}}
+}
+
+func scanGeneralDeclaration(fset *token.FileSet, declaration *ast.GenDecl, filePath, targetRecv, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
+	var results []*Symbol
+	for _, spec := range declaration.Specs {
+		found, err := scanGeneralSpec(fset, spec, filePath, targetRecv, targetName, index)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, found...)
+	}
+	return results, nil
+}
+
+func scanGeneralSpec(fset *token.FileSet, raw ast.Spec, filePath, targetRecv, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
+	switch spec := raw.(type) {
+	case *ast.TypeSpec:
+		return scanTypeSpec(fset, spec, filePath, targetRecv, targetName, index)
+	case *ast.ValueSpec:
+		return scanValueSpec(fset, spec, filePath, targetRecv, targetName), nil
+	default:
+		return nil, nil
+	}
+}
+
+func scanTypeSpec(fset *token.FileSet, spec *ast.TypeSpec, filePath, targetRecv, targetName string, index *packageTypeIndex) ([]*Symbol, error) {
+	if targetRecv != "" {
+		if spec.Name.Name != targetRecv {
+			return nil, nil
+		}
+		return findTypeMembers(fset, filePath, spec, targetName, index)
+	}
+	if spec.Name.Name != targetName {
+		return nil, nil
+	}
+	position := fset.Position(spec.Name.Pos())
+	return []*Symbol{{Name: spec.Name.Name, Kind: "type", File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset}}, nil
+}
+
+func scanValueSpec(fset *token.FileSet, spec *ast.ValueSpec, filePath, targetRecv, targetName string) []*Symbol {
+	if targetRecv != "" {
+		return nil
+	}
+	var results []*Symbol
+	for _, ident := range spec.Names {
+		if ident.Name != targetName {
+			continue
+		}
+		position := fset.Position(ident.Pos())
+		results = append(results, &Symbol{Name: ident.Name, Kind: "value", File: filePath, Line: position.Line, Column: position.Column, Offset: position.Offset})
+	}
+	return results
 }
 
 func scanFunctionVariables(fset *token.FileSet, node *ast.File, filePath, targetName string) []*Symbol {
@@ -67,50 +106,59 @@ func scanFunctionVariables(fset *token.FileSet, node *ast.File, filePath, target
 		if !ok {
 			continue
 		}
-		appendVariables := func(fields *ast.FieldList, kind string) {
-			if fields == nil {
-				return
-			}
-			for _, field := range fields.List {
-				for _, ident := range field.Names {
-					appendLocalVariable(&results, fset, filePath, ident, targetName, kind)
-				}
-			}
-		}
-		appendVariables(function.Recv, "receiver")
-		appendVariables(function.Type.Params, "parameter")
-		appendVariables(function.Type.Results, "result")
-		if function.Body == nil {
-			continue
-		}
-		ast.Inspect(function.Body, func(node ast.Node) bool {
-			switch declaration := node.(type) {
-			case *ast.AssignStmt:
-				if declaration.Tok == token.DEFINE {
-					for _, lhs := range declaration.Lhs {
-						if ident, ok := lhs.(*ast.Ident); ok {
-							appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
-						}
-					}
-				}
-			case *ast.RangeStmt:
-				if declaration.Tok == token.DEFINE {
-					for _, expr := range []ast.Expr{declaration.Key, declaration.Value} {
-						if ident, ok := expr.(*ast.Ident); ok {
-							appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
-						}
-					}
-				}
-			case *ast.ValueSpec:
-				for _, ident := range declaration.Names {
-					appendLocalVariable(&results, fset, filePath, ident, targetName, "variable")
-				}
-			}
-			return true
-		})
+		results = appendFunctionVariables(results, fset, filePath, targetName, function)
 	}
-
 	return results
+}
+
+func appendFunctionVariables(results []*Symbol, fset *token.FileSet, filePath, targetName string, function *ast.FuncDecl) []*Symbol {
+	appendFieldVariables(&results, fset, filePath, targetName, function.Recv, "receiver")
+	appendFieldVariables(&results, fset, filePath, targetName, function.Type.Params, "parameter")
+	appendFieldVariables(&results, fset, filePath, targetName, function.Type.Results, "result")
+	if function.Body == nil {
+		return results
+	}
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		appendDeclaredLocal(&results, fset, filePath, targetName, node)
+		return true
+	})
+	return results
+}
+
+func appendFieldVariables(results *[]*Symbol, fset *token.FileSet, filePath, targetName string, fields *ast.FieldList, kind string) {
+	if fields == nil {
+		return
+	}
+	for _, field := range fields.List {
+		for _, ident := range field.Names {
+			appendLocalVariable(results, fset, filePath, ident, targetName, kind)
+		}
+	}
+}
+
+func appendDeclaredLocal(results *[]*Symbol, fset *token.FileSet, filePath, targetName string, node ast.Node) {
+	switch declaration := node.(type) {
+	case *ast.AssignStmt:
+		if declaration.Tok == token.DEFINE {
+			appendExpressionIdentifiers(results, fset, filePath, targetName, declaration.Lhs)
+		}
+	case *ast.RangeStmt:
+		if declaration.Tok == token.DEFINE {
+			appendExpressionIdentifiers(results, fset, filePath, targetName, []ast.Expr{declaration.Key, declaration.Value})
+		}
+	case *ast.ValueSpec:
+		for _, ident := range declaration.Names {
+			appendLocalVariable(results, fset, filePath, ident, targetName, "variable")
+		}
+	}
+}
+
+func appendExpressionIdentifiers(results *[]*Symbol, fset *token.FileSet, filePath, targetName string, expressions []ast.Expr) {
+	for _, expression := range expressions {
+		if ident, ok := expression.(*ast.Ident); ok {
+			appendLocalVariable(results, fset, filePath, ident, targetName, "variable")
+		}
+	}
 }
 
 func findInterfaceMethods(index *packageTypeIndex, root indexedTypeDeclaration, targetName string) ([]*Symbol, error) {
