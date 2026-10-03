@@ -1,14 +1,14 @@
 # Standard Go Makefile for semedit
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
+ifeq ($(shell uname -s),Darwin)
 export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
+endif
 HUGO_BASE_URL ?= /
 GOLANGCI_LINT_VERSION ?= v2.13.2
 MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
 VALE_VERSION ?= v3.22.0
-ifeq ($(MAKELEVEL),0)
-export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(CURDIR)/.scratch/go/bin:$(PATH)
-endif
+GOPLS_VERSION ?= v0.23.0
 # GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
 # Set it only in the top-level process so recursive make shares its jobserver.
 MAKE_JOBS ?= 8
@@ -23,17 +23,21 @@ export GOMODCACHE := $(GO_SCRATCH)/mod
 export GOTMPDIR := $(GO_SCRATCH)/tmp
 export GOBIN := $(GO_SCRATCH)/bin
 export GOPATH := $(GO_SCRATCH)
+export GOPLSCACHE := $(GO_SCRATCH)/gopls
 export GOFLAGS :=
 export GOWORK := off
 export GOLANGCI_LINT_CACHE := $(CURDIR)/.scratch/golangci-lint-cache
 export HUGO_CACHEDIR := $(CURDIR)/.scratch/hugo-cache
+ifeq ($(MAKELEVEL),0)
+export PATH := $(CURDIR)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
+endif
 
 .DEFAULT_GOAL := check
 
 ## Go commands use project-local state so caches and temporary files stay under the workspace.
 .PHONY: go-env
 go-env:
-	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOLANGCI_LINT_CACHE)" "$(HUGO_CACHEDIR)" "$(CURDIR)/.scratch/tools"
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOPLSCACHE)" "$(GOLANGCI_LINT_CACHE)" "$(HUGO_CACHEDIR)" "$(CURDIR)/.scratch/tools"
 
 ## ---------------------------------------------------------
 ## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
@@ -59,6 +63,7 @@ tools: go-env ## Install development tools (linters, formatters, scanners)
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 	go install mvdan.cc/gofumpt@latest
 	go install golang.org/x/tools/cmd/goimports@latest
+	go install golang.org/x/tools/gopls@$(GOPLS_VERSION)
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/errata-ai/vale/v3/cmd/vale@$(VALE_VERSION)
 	@if command -v npm >/dev/null 2>&1; then \

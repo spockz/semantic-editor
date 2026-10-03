@@ -20,6 +20,7 @@ jobs:
       GOTMPDIR: ${{ github.workspace }}/.scratch/go/tmp
       GOBIN: ${{ github.workspace }}/.scratch/go/bin
       GOPATH: ${{ github.workspace }}/.scratch/go
+      GOPLSCACHE: ${{ github.workspace }}/.scratch/go/gopls
       GOFLAGS: ""
       GOWORK: "off"
       GOLANGCI_LINT_CACHE: ${{ github.workspace }}/.scratch/golangci-lint-cache
@@ -28,7 +29,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Prepare project-local caches
-        run: mkdir -p "$GOCACHE" "$GOMODCACHE" "$GOTMPDIR" "$GOBIN" "$GOLANGCI_LINT_CACHE" "$HUGO_CACHEDIR"
+        run: mkdir -p "$GOCACHE" "$GOMODCACHE" "$GOTMPDIR" "$GOBIN" "$GOPLSCACHE" "$GOLANGCI_LINT_CACHE" "$HUGO_CACHEDIR"
 
       - uses: actions/setup-go@v5
         with:

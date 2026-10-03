@@ -40,7 +40,8 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 	moduleCacheDir := filepath.Join(baseDir, "mod")
 	tempDir := filepath.Join(baseDir, "tmp")
 	binDir := filepath.Join(baseDir, "bin")
-	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir} {
+	goplsCacheDir := filepath.Join(baseDir, "gopls")
+	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir, goplsCacheDir} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return nil, fmt.Errorf("create Go state directory %q: %w", dir, err)
 		}
@@ -71,6 +72,7 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"TMP":        {},
 		"GOBIN":      {},
 		"GOPATH":     {},
+		"GOPLSCACHE": {},
 		"GOFLAGS":    {},
 		"GOWORK":     {},
 	}
@@ -91,6 +93,7 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 		"TMP="+tempDir,
 		"GOBIN="+binDir,
 		"GOPATH="+baseDir,
+		"GOPLSCACHE="+goplsCacheDir,
 		"GOFLAGS=",
 		"GOWORK=off",
 	), nil

@@ -2,7 +2,10 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null || pwd)
+REPO_ROOT ?= $(shell git rev-parse --show-toplevel 2>/dev/null)
+ifeq ($(strip $(REPO_ROOT)),)
+$(error cannot determine repository root; run in a Git checkout or set REPO_ROOT)
+endif
 GO_SCRATCH ?= $(REPO_ROOT)/.scratch/go
 export GOENV := $(GO_SCRATCH)/env
 export GOCACHE := $(GO_SCRATCH)/build
@@ -10,11 +13,14 @@ export GOMODCACHE := $(GO_SCRATCH)/mod
 export GOTMPDIR := $(GO_SCRATCH)/tmp
 export GOBIN := $(GO_SCRATCH)/bin
 export GOPATH := $(GO_SCRATCH)
+export GOPLSCACHE := $(GO_SCRATCH)/gopls
 export GOFLAGS :=
 export GOWORK := off
 export GOLANGCI_LINT_CACHE := $(REPO_ROOT)/.scratch/golangci-lint-cache
+ifneq ($(CURDIR),$(REPO_ROOT))
 ifeq ($(MAKELEVEL),0)
 export PATH := $(REPO_ROOT)/.scratch/tools/node_modules/.bin:$(GOBIN):$(PATH)
+endif
 endif
 BENCH_DIR ?= $(REPO_ROOT)/testdata/bench
 OUT_DIR ?= $(REPO_ROOT)/data/benchmarks/results
@@ -40,7 +46,7 @@ endif
 
 .PHONY: bench-go-env
 bench-go-env:
-	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOLANGCI_LINT_CACHE)"
+	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOPLSCACHE)" "$(GOLANGCI_LINT_CACHE)"
 
 .PHONY: bench-help
 bench-help: ## Show benchmark harness commands and usage examples
