@@ -21,12 +21,12 @@ func TestDiagnosticsLifecycleAndFailures(t *testing.T) {
 	if goplsErr != nil {
 		t.Fatalf("FindGopls() error = %v", goplsErr)
 	}
-	root, _, secondSource := createDiagnosticsFixture(t)
+	fixture := createDiagnosticsFixture(t)
 	check := func(ctx context.Context, executable string) ([]string, error) {
-		return godiagnostics.Check(ctx, root, executable, os.Environ())
+		return godiagnostics.Check(ctx, fixture.root, executable, os.Environ())
 	}
 	t.Run("real gopls lifecycle and diagnostics", func(t *testing.T) {
-		assertRealDiagnosticsLifecycle(t, check, gopls, root, secondSource)
+		assertRealDiagnosticsLifecycle(t, check, gopls, fixture.root, fixture.secondSource)
 	})
 
 	t.Run("cancellation", func(t *testing.T) {
@@ -46,10 +46,14 @@ func TestDiagnosticsLifecycleAndFailures(t *testing.T) {
 	})
 }
 
-func createDiagnosticsFixture(t *testing.T) (string, string, string) {
+type diagnosticsFixture struct {
+	root         string
+	secondSource string
+}
+
+func createDiagnosticsFixture(t *testing.T) diagnosticsFixture {
 	t.Helper()
 	root := t.TempDir()
-	second := filepath.Join(root, "second.go")
 	secondSource := "package sample\n\nfunc Second() int { return 2 }\n"
 	files := map[string]string{
 		"go.mod":             "module diagnostics.test\n\ngo 1.24\n",
@@ -63,7 +67,7 @@ func createDiagnosticsFixture(t *testing.T) (string, string, string) {
 	for relative, content := range files {
 		writeDiagnosticsFixture(t, root, relative, content)
 	}
-	return root, second, secondSource
+	return diagnosticsFixture{root: root, secondSource: secondSource}
 }
 
 func writeDiagnosticsFixture(t *testing.T, root, relative, content string) {
@@ -173,60 +177,74 @@ func TestManagedDiagnosticsReuseAndRefresh(t *testing.T) {
 		}
 	})
 	scanRoot := root
+	harness := managedDiagnosticsHarness{root: root, module: module, clean: clean, wrapper: wrapper, counter: counter, ctx: ctx, manager: manager, environment: environment, scanRoot: &scanRoot}
 	check := func(wantStarts int, wantDiagnostic string) {
-		checkManagedFixtureDiagnostics(ctx, t, manager, scanRoot, wrapper, environment, counter, wantStarts, wantDiagnostic)
+		checkManagedFixtureDiagnostics(harness.ctx, t, harness.manager, *harness.scanRoot, harness.wrapper, harness.environment, harness.counter, wantStarts, wantDiagnostic)
 	}
-	runManagedDiagnosticsSequence(ctx, t, root, module, clean, wrapper, manager, environment, write, check, &scanRoot)
+	harness.write = write
+	harness.check = check
+	runManagedDiagnosticsSequence(ctx, t, harness)
 }
 
-func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, root, module, clean, wrapper string, manager *godiagnostics.SessionManager, environment []string, write func(string, string), check func(int, string), scanRoot *string) {
+type managedDiagnosticsHarness struct {
+	root, module, clean, wrapper, counter string
+	ctx                                   context.Context
+	manager                               *godiagnostics.SessionManager
+	environment                           []string
+	write                                 func(string, string)
+	check                                 func(int, string)
+	scanRoot                              *string
+}
+
+func runManagedDiagnosticsSequence(ctx context.Context, t *testing.T, harness managedDiagnosticsHarness) {
 	t.Helper()
+	check := harness.check
 	check(1, "")
 	check(1, "")
-	write("value.go", "package sample\n\nfunc Value() int { return missingValue }\n")
+	harness.write("value.go", "package sample\n\nfunc Value() int { return missingValue }\n")
 	check(1, "missingValue")
-	write("value.go", clean)
+	harness.write("value.go", harness.clean)
 	check(1, "")
-	write("go.mod", module+"\n// changed module configuration\n")
+	harness.write("go.mod", harness.module+"\n// changed module configuration\n")
 	check(2, "")
-	write("extra.go", "package sample\n\nfunc Extra() int { return Value() }\n")
+	harness.write("extra.go", "package sample\n\nfunc Extra() int { return Value() }\n")
 	check(3, "")
-	write("../dependency/go.mod", "module example.com/dependency\n\ngo 1.24\n")
+	harness.write("../dependency/go.mod", "module example.com/dependency\n\ngo 1.24\n")
 	dependencySource := "package dependency\n\nfunc Value() int { return 1 }\n"
-	write("../dependency/value.go", dependencySource)
-	write("go.mod", module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n")
-	write("a/value.go", "package a\n\nimport \"example.com/dependency\"\n\nvar Value int = dependency.Value()\n")
-	write("b/value.go", "package b\n\nimport \"example.com/manageddiagnostics/a\"\n\nvar Value int = a.Value\n")
-	*scanRoot = filepath.Join(root, "a")
+	harness.write("../dependency/value.go", dependencySource)
+	harness.write("go.mod", harness.module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n")
+	harness.write("a/value.go", "package a\n\nimport \"example.com/dependency\"\n\nvar Value int = dependency.Value()\n")
+	harness.write("b/value.go", "package b\n\nimport \"example.com/manageddiagnostics/a\"\n\nvar Value int = a.Value\n")
+	*harness.scanRoot = filepath.Join(harness.root, "a")
 	check(4, "")
-	*scanRoot = filepath.Join(root, "b")
+	*harness.scanRoot = filepath.Join(harness.root, "b")
 	check(4, "")
-	write("../dependency/value.go", "package dependency\n\nfunc Value() string { return \"changed\" }\n")
-	*scanRoot = filepath.Join(root, "a")
+	harness.write("../dependency/value.go", "package dependency\n\nfunc Value() string { return \"changed\" }\n")
+	*harness.scanRoot = filepath.Join(harness.root, "a")
 	check(4, "cannot use")
-	*scanRoot = filepath.Join(root, "b")
+	*harness.scanRoot = filepath.Join(harness.root, "b")
 	check(4, "")
-	write("../dependency/value.go", dependencySource)
-	*scanRoot = filepath.Join(root, "a")
+	harness.write("../dependency/value.go", dependencySource)
+	*harness.scanRoot = filepath.Join(harness.root, "a")
 	check(4, "")
-	write("go.mod", module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n// parent changed\n")
+	harness.write("go.mod", harness.module+"\nrequire example.com/dependency v0.0.0\nreplace example.com/dependency => ../dependency\n// parent changed\n")
 	check(5, "")
-	write("gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n# executable replaced\n")
+	harness.write("gopls-wrapper", "#!/bin/sh\nprintf 'start\\n' >> \"$SEMEDIT_GOPLS_COUNT\"\nexec \"$SEMEDIT_REAL_GOPLS\" \"$@\"\n# executable replaced\n")
 	check(6, "")
-	validManifest, manifestErr := os.ReadFile(filepath.Join(root, "go.mod"))
+	validManifest, manifestErr := os.ReadFile(filepath.Join(harness.root, "go.mod"))
 	if manifestErr != nil {
 		t.Fatal(manifestErr)
 	}
-	write("go.mod", "this is not a module manifest\n")
-	if _, err := manager.CheckDetailed(ctx, *scanRoot, wrapper, environment); err == nil {
+	harness.write("go.mod", "this is not a module manifest\n")
+	if _, err := harness.manager.CheckDetailed(ctx, *harness.scanRoot, harness.wrapper, harness.environment); err == nil {
 		t.Fatal("invalid module configuration did not fail")
 	}
-	write("go.mod", string(validManifest))
+	harness.write("go.mod", string(validManifest))
 	check(7, "")
-	if err := manager.Close(); err != nil {
+	if err := harness.manager.Close(); err != nil {
 		t.Fatal(err)
 	}
-	_, closedErr := manager.CheckDetailed(ctx, root, wrapper, environment)
+	_, closedErr := harness.manager.CheckDetailed(ctx, harness.root, harness.wrapper, harness.environment)
 	if closedErr == nil || !strings.Contains(closedErr.Error(), "manager is closed") {
 		t.Fatalf("closed check error = %v", closedErr)
 	}
