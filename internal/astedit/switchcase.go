@@ -240,35 +240,9 @@ type switchMatch struct {
 func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitchOn, canonicalTarget string) []switchMatch {
 	var matches []switchMatch
 	ast.Inspect(body, func(n ast.Node) bool {
-		switch s := n.(type) {
-		case *ast.SwitchStmt:
-			matched := false
-			if targetSwitchOn == "" {
-				matched = s.Tag == nil
-			} else if s.Tag != nil {
-				var buf bytes.Buffer
-				if err := format.Node(&buf, fset, s.Tag); err == nil {
-					matched = buf.String() == canonicalTarget || strings.TrimSpace(buf.String()) == canonicalTarget
-				}
-			}
-			if matched {
-				matches = append(matches, switchMatch{body: s.Body})
-				return false
-			}
-		case *ast.TypeSwitchStmt:
-			if targetSwitchOn != "" && s.Assign != nil {
-				var selector ast.Expr
-				if assign, ok := s.Assign.(*ast.AssignStmt); ok && len(assign.Rhs) == 1 {
-					if assertion, ok := assign.Rhs[0].(*ast.TypeAssertExpr); ok {
-						selector = assertion.X
-					}
-				}
-				var buf bytes.Buffer
-				if selector != nil && format.Node(&buf, fset, selector) == nil && buf.String() == canonicalTarget {
-					matches = append(matches, switchMatch{body: s.Body})
-					return false
-				}
-			}
+		if matchedBody := matchingSwitchBody(fset, n, targetSwitchOn, canonicalTarget); matchedBody != nil {
+			matches = append(matches, switchMatch{body: matchedBody})
+			return false
 		}
 		return true
 	})
@@ -277,6 +251,65 @@ func collectSwitchMatches(fset *token.FileSet, body *ast.BlockStmt, targetSwitch
 	}
 	assignSwitchPaths(matches, "")
 	return matches
+}
+
+func matchingSwitchBody(fset *token.FileSet, node ast.Node, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+	switch statement := node.(type) {
+	case *ast.SwitchStmt:
+		return matchingExpressionSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
+	case *ast.TypeSwitchStmt:
+		return matchingTypeSwitchBody(fset, statement, targetSwitchOn, canonicalTarget)
+	default:
+		return nil
+	}
+}
+
+func matchingExpressionSwitchBody(fset *token.FileSet, statement *ast.SwitchStmt, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+	if targetSwitchOn == "" {
+		if statement.Tag == nil {
+			return statement.Body
+		}
+		return nil
+	}
+	if statement.Tag == nil {
+		return nil
+	}
+	var formatted bytes.Buffer
+	if err := format.Node(&formatted, fset, statement.Tag); err != nil {
+		return nil
+	}
+	text := formatted.String()
+	if text == canonicalTarget || strings.TrimSpace(text) == canonicalTarget {
+		return statement.Body
+	}
+	return nil
+}
+
+func matchingTypeSwitchBody(fset *token.FileSet, statement *ast.TypeSwitchStmt, targetSwitchOn, canonicalTarget string) *ast.BlockStmt {
+	if targetSwitchOn == "" || statement.Assign == nil {
+		return nil
+	}
+	selector := typeSwitchSelector(statement.Assign)
+	if selector == nil {
+		return nil
+	}
+	var formatted bytes.Buffer
+	if format.Node(&formatted, fset, selector) != nil || formatted.String() != canonicalTarget {
+		return nil
+	}
+	return statement.Body
+}
+
+func typeSwitchSelector(assign ast.Stmt) ast.Expr {
+	assignment, ok := assign.(*ast.AssignStmt)
+	if !ok || len(assignment.Rhs) != 1 {
+		return nil
+	}
+	assertion, ok := assignment.Rhs[0].(*ast.TypeAssertExpr)
+	if !ok {
+		return nil
+	}
+	return assertion.X
 }
 
 func assignSwitchPaths(matches []switchMatch, prefix string) {
