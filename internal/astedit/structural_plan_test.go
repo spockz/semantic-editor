@@ -11,84 +11,70 @@ import (
 	"testing"
 )
 
-//nolint:gocognit // Related source-only planner cases share one table of observable outcomes.
 func TestStructuralSourcePlanners(t *testing.T) {
-	t.Run("field insertion preserves the selected struct and exposes semantic gates", func(t *testing.T) {
-		source := []byte("package p\ntype config struct {\n\t// Current value.\n\tcurrent int `json:\"current\"`\n}\n")
-		plan, err := PlanInsertField(source, InsertFieldIntent{
-			TypeName: "config", FieldName: "added", FieldSource: "added string `json:\"added\"`",
-			Placement: FieldBeforeSymbol, TargetField: "current",
+	t.Run("field insertion preserves the selected struct and exposes semantic gates", assertFieldInsertionPreservesSemanticGates)
+	t.Run("field insertion refuses positional literals and direct collisions", assertFieldInsertionRefusals)
+	t.Run("field insertion uses the exact brace span for empty structs", assertEmptyStructFieldInsertion)
+}
+
+func assertFieldInsertionPreservesSemanticGates(t *testing.T) {
+	source := []byte("package p\ntype config struct {\n\t// Current value.\n\tcurrent int `json:\"current\"`\n}\n")
+	plan, err := PlanInsertField(source, InsertFieldIntent{TypeName: "config", FieldName: "added", FieldSource: "added string `json:\"added\"`", Placement: FieldBeforeSymbol, TargetField: "current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "package p\ntype config struct {\n\tadded string `json:\"added\"`\n\t// Current value.\n\tcurrent int `json:\"current\"`\n}\n"
+	if string(plan.Source) != expected {
+		t.Fatalf("planned source mismatch:\n%s", plan.Source)
+	}
+	if !plan.Changed || plan.Selection.Target != "config.added" {
+		t.Fatalf("missing changed target evidence: %+v", plan)
+	}
+	if err := typeCheckPlannedSource(t, plan.Source); err != nil {
+		t.Fatalf("planned field source did not type-check: %v", err)
+	}
+	if len(plan.RequiredProofs) != 3 || plan.RequiredProofs[0] != ProofCompleteSourceSet || plan.RequiredProofs[2] != ProofUnkeyedLiteralSet {
+		t.Fatalf("missing integration proof gates: %+v", plan.RequiredProofs)
+	}
+}
+
+func assertFieldInsertionRefusals(t *testing.T) {
+	for _, source := range []string{"package p\ntype config struct {\n\tcurrent int\n}\nvar value = config{1}\n", "package p\ntype config struct {\n\tadded int\n}\n"} {
+		_, err := PlanInsertField([]byte(source), InsertFieldIntent{TypeName: "config", FieldName: "added", FieldSource: "added string"})
+		if err == nil {
+			t.Fatalf("expected refusal for %q", source)
+		}
+	}
+	for _, fieldSource := range []string{"_ int", "added int\n}\ntype injected int\ntype holder struct {"} {
+		_, err := PlanInsertField([]byte("package p\ntype config struct {\n\tcurrent int\n}\n"), InsertFieldIntent{TypeName: "config", FieldName: "added", FieldSource: fieldSource})
+		if err == nil {
+			t.Fatalf("unsafe field source %q was accepted", fieldSource)
+		}
+	}
+}
+
+func assertEmptyStructFieldInsertion(t *testing.T) {
+	cases := []struct {
+		name, source, expected string
+	}{
+		{name: "empty struct", source: "package p\ntype options struct{}\n", expected: "package p\ntype options struct{\n\ttimeout int\n}\n"},
+		{name: "grouped type with indentation", source: "package p\ntype (\n\toptions struct{}\n)\n", expected: "package p\ntype (\n\toptions struct{\n\t\ttimeout int\n\t}\n)\n"},
+		{name: "CRLF", source: "package p\r\ntype options struct{}\r\n", expected: "package p\r\ntype options struct{\r\n\ttimeout int\r\n}\r\n"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			plan, err := PlanInsertField([]byte(testCase.source), InsertFieldIntent{TypeName: "options", FieldName: "timeout", FieldSource: "timeout int"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(plan.Source) != testCase.expected {
+				t.Fatalf("empty struct edit = %q, want %q", plan.Source, testCase.expected)
+			}
+			if err := typeCheckPlannedSource(t, plan.Source); err != nil {
+				t.Fatalf("empty struct result did not type-check: %v", err)
+			}
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		expected := "package p\ntype config struct {\n\tadded string `json:\"added\"`\n\t// Current value.\n\tcurrent int `json:\"current\"`\n}\n"
-		if string(plan.Source) != expected {
-			t.Fatalf("planned source mismatch:\n%s", plan.Source)
-		}
-		if !plan.Changed || plan.Selection.Target != "config.added" {
-			t.Fatalf("missing changed target evidence: %+v", plan)
-		}
-		if err := typeCheckPlannedSource(t, plan.Source); err != nil {
-			t.Fatalf("planned field source did not type-check: %v", err)
-		}
-		if len(plan.RequiredProofs) != 3 || plan.RequiredProofs[0] != ProofCompleteSourceSet || plan.RequiredProofs[2] != ProofUnkeyedLiteralSet {
-			t.Fatalf("missing integration proof gates: %+v", plan.RequiredProofs)
-		}
-	})
-	t.Run("field insertion refuses positional literals and direct collisions", func(t *testing.T) {
-		for _, source := range []string{
-			"package p\ntype config struct {\n\tcurrent int\n}\nvar value = config{1}\n",
-			"package p\ntype config struct {\n\tadded int\n}\n",
-		} {
-			_, err := PlanInsertField([]byte(source), InsertFieldIntent{TypeName: "config", FieldName: "added", FieldSource: "added string"})
-			if err == nil {
-				t.Fatalf("expected refusal for %q", source)
-			}
-		}
-		for _, fieldSource := range []string{"_ int", "added int\n}\ntype injected int\ntype holder struct {"} {
-			_, err := PlanInsertField([]byte("package p\ntype config struct {\n\tcurrent int\n}\n"), InsertFieldIntent{
-				TypeName: "config", FieldName: "added", FieldSource: fieldSource,
-			})
-			if err == nil {
-				t.Fatalf("unsafe field source %q was accepted", fieldSource)
-			}
-		}
-	})
-	t.Run("field insertion uses the exact brace span for empty structs", func(t *testing.T) {
-		for _, tc := range []struct {
-			name, source, expected string
-		}{
-			{
-				name:     "empty struct",
-				source:   "package p\ntype options struct{}\n",
-				expected: "package p\ntype options struct{\n\ttimeout int\n}\n",
-			},
-			{
-				name:     "grouped type with indentation",
-				source:   "package p\ntype (\n\toptions struct{}\n)\n",
-				expected: "package p\ntype (\n\toptions struct{\n\t\ttimeout int\n\t}\n)\n",
-			},
-			{
-				name:     "CRLF",
-				source:   "package p\r\ntype options struct{}\r\n",
-				expected: "package p\r\ntype options struct{\r\n\ttimeout int\r\n}\r\n",
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				plan, err := PlanInsertField([]byte(tc.source), InsertFieldIntent{TypeName: "options", FieldName: "timeout", FieldSource: "timeout int"})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if string(plan.Source) != tc.expected {
-					t.Fatalf("empty struct edit = %q, want %q", plan.Source, tc.expected)
-				}
-				if err := typeCheckPlannedSource(t, plan.Source); err != nil {
-					t.Fatalf("empty struct result did not type-check: %v", err)
-				}
-			})
-		}
-	})
+	}
 }
 
 func TestStructuralStatementPlannerAnchors(t *testing.T) {

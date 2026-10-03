@@ -13,15 +13,76 @@ import (
 )
 
 // OutlineGo produces deterministic Go declarations from selected source files.
-//
-//nolint:gocognit,funlen // One file walk preserves the ordering and scope of each declaration projection.
 func OutlineGo(root, path string, kinds []string, includeUnexported, includeTests bool) (*backend.OutlineResult, error) {
+	request, err := newGoOutlineRequest(root, path, kinds, includeUnexported, includeTests)
+	if err != nil {
+		return nil, err
+	}
+	result := request.result
+	for _, filePath := range request.files {
+		if request.skipFile(filePath) {
+			continue
+		}
+		file, err := request.outlineFile(filePath)
+		if err != nil {
+			return nil, err
+		}
+		result.Files = append(result.Files, file)
+	}
+	return result, nil
+}
+
+type goOutlineRequest struct {
+	root              string
+	directory         bool
+	includeUnexported bool
+	includeTests      bool
+	kinds             map[string]bool
+	files             []string
+	result            *backend.OutlineResult
+}
+
+func newGoOutlineRequest(root, path string, kinds []string, includeUnexported, includeTests bool) (*goOutlineRequest, error) {
+	resolved, err := resolveGoOutlinePath(root, path)
+	if err != nil {
+		return nil, err
+	}
+	kindSet, err := outlineKindSet(kinds)
+	if err != nil {
+		return nil, err
+	}
+	files, err := pipeline.GoFiles(resolved.root, resolved.target)
+	if err != nil {
+		return nil, fmt.Errorf("select Go outline files under %q: %w", path, err)
+	}
+	if !resolved.directory && len(files) == 0 {
+		return nil, fmt.Errorf("outline path %q contains no Go source file", path)
+	}
+	scope := backend.ReadScope{Kind: "selected_file", Path: displayGoPath(resolved.root, resolved.target), Complete: true}
+	if resolved.directory {
+		scope.Kind = "directory_syntax"
+	}
+	return &goOutlineRequest{
+		root: resolved.root, directory: resolved.directory,
+		includeUnexported: includeUnexported, includeTests: includeTests,
+		kinds: kindSet, files: files,
+		result: &backend.OutlineResult{Scope: scope, Files: make([]backend.OutlineFile, 0, len(files))},
+	}, nil
+}
+
+type resolvedGoOutlinePath struct {
+	root      string
+	target    string
+	directory bool
+}
+
+func resolveGoOutlinePath(root, path string) (resolvedGoOutlinePath, error) {
 	if strings.TrimSpace(path) == "" {
-		return nil, fmt.Errorf("outline path is required")
+		return resolvedGoOutlinePath{}, fmt.Errorf("outline path is required")
 	}
 	absoluteRoot, err := filepath.Abs(root)
 	if err != nil {
-		return nil, fmt.Errorf("resolve Go workspace %q: %w", root, err)
+		return resolvedGoOutlinePath{}, fmt.Errorf("resolve Go workspace %q: %w", root, err)
 	}
 	target := path
 	if !filepath.IsAbs(target) {
@@ -29,19 +90,27 @@ func OutlineGo(root, path string, kinds []string, includeUnexported, includeTest
 	}
 	target, err = filepath.Abs(target)
 	if err != nil {
-		return nil, fmt.Errorf("resolve outline path %q: %w", path, err)
+		return resolvedGoOutlinePath{}, fmt.Errorf("resolve outline path %q: %w", path, err)
 	}
 	info, err := os.Stat(target)
 	if err != nil {
-		return nil, fmt.Errorf("stat outline path %q: %w", path, err)
+		return resolvedGoOutlinePath{}, fmt.Errorf("stat outline path %q: %w", path, err)
 	}
 	directory := info.IsDir()
-	if linkInfo, linkErr := os.Lstat(target); linkErr == nil && linkInfo.Mode()&os.ModeSymlink != 0 && directory {
-		return nil, fmt.Errorf("outline directory path %q is a symlink", path)
+	linkInfo, err := os.Lstat(target)
+	if err != nil {
+		return resolvedGoOutlinePath{}, fmt.Errorf("inspect outline path %q: %w", path, err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink != 0 && directory {
+		return resolvedGoOutlinePath{}, fmt.Errorf("outline directory path %q is a symlink", path)
 	}
 	if !directory && (!info.Mode().IsRegular() || filepath.Ext(target) != ".go") {
-		return nil, fmt.Errorf("outline path %q is not a Go source file or directory", path)
+		return resolvedGoOutlinePath{}, fmt.Errorf("outline path %q is not a Go source file or directory", path)
 	}
+	return resolvedGoOutlinePath{root: absoluteRoot, target: target, directory: directory}, nil
+}
+
+func outlineKindSet(kinds []string) (map[string]bool, error) {
 	kindSet := make(map[string]bool, len(kinds))
 	for _, kind := range kinds {
 		if !backend.IsReadOutlineKind(kind) {
@@ -49,209 +118,255 @@ func OutlineGo(root, path string, kinds []string, includeUnexported, includeTest
 		}
 		kindSet[kind] = true
 	}
-	files, err := pipeline.GoFiles(absoluteRoot, target)
+	return kindSet, nil
+}
+
+func (request *goOutlineRequest) skipFile(filePath string) bool {
+	return request.directory && !request.includeTests && strings.HasSuffix(filepath.Base(filePath), "_test.go")
+}
+
+func (request *goOutlineRequest) matchesKind(kind string) bool {
+	return len(request.kinds) == 0 || request.kinds[kind]
+}
+
+func (request *goOutlineRequest) outlineFile(filePath string) (backend.OutlineFile, error) {
+	source, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304 -- GoFiles returns the bounded selected source set.
 	if err != nil {
-		return nil, fmt.Errorf("select Go outline files under %q: %w", path, err)
+		return backend.OutlineFile{}, fmt.Errorf("read Go outline source %s: %w", filePath, err)
 	}
-	if !directory && len(files) == 0 {
-		return nil, fmt.Errorf("outline path %q contains no Go source file", path)
+	parsed, err := parseGoReadSource(request.root, filePath, source)
+	if err != nil {
+		return backend.OutlineFile{}, err
 	}
-	result := &backend.OutlineResult{
-		Scope: backend.ReadScope{
-			Kind:     "selected_file",
-			Path:     displayGoPath(absoluteRoot, target),
-			Complete: true,
-		},
-		Files: make([]backend.OutlineFile, 0, len(files)),
+	doc, err := goReadComment(source, parsed.fset, parsed.file.Doc)
+	if err != nil {
+		return backend.OutlineFile{}, err
 	}
-	if directory {
-		result.Scope.Kind = "directory_syntax"
-		result.Scope.Path = displayGoPath(absoluteRoot, target)
+	imports, err := goReadImports(parsed.file)
+	if err != nil {
+		return backend.OutlineFile{}, err
 	}
-	matchesKind := func(kind string) bool {
-		return len(kindSet) == 0 || kindSet[kind]
+	file := backend.OutlineFile{File: parsed.displayPath, Language: backend.LanguageGo, Package: parsed.file.Name.Name, Revision: goReadRevision(source), Doc: doc, Imports: imports, Symbols: make([]backend.ReadSymbol, 0)}
+	for _, declaration := range parsed.file.Decls {
+		items, err := request.outlineDeclaration(parsed, source, declaration)
+		if err != nil {
+			return backend.OutlineFile{}, err
+		}
+		file.Symbols = append(file.Symbols, items...)
 	}
-	for _, filePath := range files {
-		if directory && !includeTests && strings.HasSuffix(filepath.Base(filePath), "_test.go") {
+	return file, nil
+}
+
+func (request *goOutlineRequest) outlineDeclaration(parsed *goReadSource, source []byte, declaration ast.Decl) ([]backend.ReadSymbol, error) {
+	switch decl := declaration.(type) {
+	case *ast.FuncDecl:
+		return request.outlineFunction(parsed, source, decl)
+	case *ast.GenDecl:
+		return request.outlineGeneralDeclaration(parsed, source, decl)
+	default:
+		return []backend.ReadSymbol{}, nil
+	}
+}
+
+func (request *goOutlineRequest) outlineFunction(parsed *goReadSource, source []byte, decl *ast.FuncDecl) ([]backend.ReadSymbol, error) {
+	kind := "function"
+	receiver := ""
+	if decl.Recv != nil {
+		kind = "method"
+		receiver = goReceiverName(decl.Recv)
+	}
+	if !request.matchesKind(kind) || !request.visibleFunction(decl, receiver) {
+		return nil, nil
+	}
+	signatureDecl := *decl
+	signatureDecl.Doc = nil
+	signatureDecl.Body = nil
+	signature, err := goReadFormattedNode(parsed.fset, &signatureDecl)
+	if err != nil {
+		return nil, err
+	}
+	doc, err := goReadComment(source, parsed.fset, decl.Doc)
+	if err != nil {
+		return nil, err
+	}
+	qualifiedName := decl.Name.Name
+	if receiver != "" {
+		qualifiedName = receiver + "." + decl.Name.Name
+	}
+	symbol, err := makeOutlineSymbol(parsed, decl.Name.Name, qualifiedName, kind, decl, decl.Name, &signature, doc, nil, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return []backend.ReadSymbol{symbol}, nil
+}
+
+func (request *goOutlineRequest) visibleFunction(decl *ast.FuncDecl, receiver string) bool {
+	if request.includeUnexported {
+		return true
+	}
+	return ast.IsExported(decl.Name.Name) && (receiver == "" || ast.IsExported(receiver))
+}
+
+func (request *goOutlineRequest) outlineGeneralDeclaration(parsed *goReadSource, source []byte, decl *ast.GenDecl) ([]backend.ReadSymbol, error) {
+	var symbols []backend.ReadSymbol
+	for _, rawSpec := range decl.Specs {
+		items, err := request.outlineSpec(parsed, source, decl, rawSpec)
+		if err != nil {
+			return nil, err
+		}
+		symbols = append(symbols, items...)
+	}
+	return symbols, nil
+}
+
+func (request *goOutlineRequest) outlineSpec(parsed *goReadSource, source []byte, decl *ast.GenDecl, rawSpec ast.Spec) ([]backend.ReadSymbol, error) {
+	switch spec := rawSpec.(type) {
+	case *ast.TypeSpec:
+		return request.outlineTypeSpec(parsed, source, decl, spec)
+	case *ast.ValueSpec:
+		return request.outlineValueSpec(parsed, source, decl, spec)
+	default:
+		return nil, nil
+	}
+}
+
+func (request *goOutlineRequest) outlineTypeSpec(parsed *goReadSource, source []byte, decl *ast.GenDecl, spec *ast.TypeSpec) ([]backend.ReadSymbol, error) {
+	typeKind := "type"
+	if _, ok := spec.Type.(*ast.InterfaceType); ok {
+		typeKind = "interface"
+	}
+	if !request.includeUnexported && !ast.IsExported(spec.Name.Name) {
+		return nil, nil
+	}
+	children, childMatch, err := outlineTypeChildren(parsed, spec, request.kinds, request.includeUnexported)
+	if err != nil {
+		return nil, err
+	}
+	if !request.matchesKind(typeKind) && !childMatch {
+		return nil, nil
+	}
+	signature, err := outlineFilteredTypeSignature(parsed, decl, spec, request.kinds, request.includeUnexported)
+	if err != nil {
+		return nil, err
+	}
+	docGroup := spec.Doc
+	if docGroup == nil {
+		docGroup = decl.Doc
+	}
+	doc, err := goReadComment(source, parsed.fset, docGroup)
+	if err != nil {
+		return nil, err
+	}
+	symbol, err := makeOutlineSymbol(parsed, spec.Name.Name, spec.Name.Name, typeKind, spec, spec.Name, &signature, doc, nil, nil, children)
+	if err != nil {
+		return nil, err
+	}
+	return []backend.ReadSymbol{symbol}, nil
+}
+
+func (request *goOutlineRequest) outlineValueSpec(parsed *goReadSource, source []byte, decl *ast.GenDecl, spec *ast.ValueSpec) ([]backend.ReadSymbol, error) {
+	valueKind := valueDeclarationKind(decl.Tok)
+	kind, prefix := valueKind.kind, valueKind.prefix
+	if !request.matchesKind(kind) {
+		return nil, nil
+	}
+	docGroup := spec.Doc
+	if docGroup == nil {
+		docGroup = decl.Doc
+	}
+	doc, err := goReadComment(source, parsed.fset, docGroup)
+	if err != nil {
+		return nil, err
+	}
+	typeResult, err := outlineValueType(parsed, spec)
+	if err != nil {
+		return nil, err
+	}
+	typeText := typeResult.text
+	signatureText, err := outlineValueSignature(parsed, kind, prefix, spec, typeText)
+	if err != nil {
+		return nil, err
+	}
+	return request.outlineValueNames(parsed, kind, prefix, spec, doc, typeText, signatureText)
+}
+
+type outlineOptionalText struct {
+	text *string
+}
+
+func outlineValueType(parsed *goReadSource, spec *ast.ValueSpec) (outlineOptionalText, error) {
+	if spec.Type == nil {
+		return outlineOptionalText{}, nil
+	}
+	text, err := goReadNodeText(parsed.source, parsed.fset, spec.Type)
+	if err != nil {
+		return outlineOptionalText{}, err
+	}
+	return outlineOptionalText{text: &text}, nil
+}
+
+func outlineValueSignature(parsed *goReadSource, kind, prefix string, spec *ast.ValueSpec, typeText *string) (string, error) {
+	signature, err := goReadFormattedNode(parsed.fset, spec)
+	if err != nil {
+		return "", err
+	}
+	if kind == "constant" {
+		return prefix + signature, nil
+	}
+	names := make([]string, len(spec.Names))
+	for index, name := range spec.Names {
+		names[index] = name.Name
+	}
+	signature = prefix + strings.Join(names, ", ")
+	if typeText != nil {
+		signature += " " + *typeText
+	}
+	return signature, nil
+}
+
+func (request *goOutlineRequest) outlineValueNames(parsed *goReadSource, kind, prefix string, spec *ast.ValueSpec, doc, typeText *string, signature string) ([]backend.ReadSymbol, error) {
+	symbols := make([]backend.ReadSymbol, 0, len(spec.Names))
+	for nameIndex, name := range spec.Names {
+		if !request.includeUnexported && !ast.IsExported(name.Name) {
 			continue
 		}
-		source, err := os.ReadFile(filepath.Clean(filePath)) // #nosec G304 -- GoFiles returns the bounded selected source set.
-		if err != nil {
-			return nil, fmt.Errorf("read Go outline source %s: %w", filePath, err)
-		}
-		parsed, err := parseGoReadSource(absoluteRoot, filePath, source)
+		nameSignature, err := request.outlineValueNameSignature(parsed, kind, prefix, spec, name, nameIndex, typeText, signature)
 		if err != nil {
 			return nil, err
 		}
-		doc, err := goReadComment(source, parsed.fset, parsed.file.Doc)
+		symbol, err := makeOutlineSymbol(parsed, name.Name, name.Name, kind, spec, name, &nameSignature, doc, typeText, nil, nil)
 		if err != nil {
 			return nil, err
 		}
-		imports, err := goReadImports(parsed.file)
-		if err != nil {
-			return nil, err
-		}
-		fileResult := backend.OutlineFile{
-			File:     parsed.displayPath,
-			Language: backend.LanguageGo,
-			Package:  parsed.file.Name.Name,
-			Revision: goReadRevision(source),
-			Doc:      doc,
-			Imports:  imports,
-			Symbols:  make([]backend.ReadSymbol, 0),
-		}
-		for _, declaration := range parsed.file.Decls {
-			switch decl := declaration.(type) {
-			case *ast.FuncDecl:
-				kind := "function"
-				if decl.Recv != nil {
-					kind = "method"
-				}
-				receiver := ""
-				if decl.Recv != nil {
-					receiver = goReceiverName(decl.Recv)
-				}
-				visible := includeUnexported || ast.IsExported(decl.Name.Name)
-				if receiver != "" && !includeUnexported && !ast.IsExported(receiver) {
-					visible = false
-				}
-				if !matchesKind(kind) || !visible {
-					continue
-				}
-				signatureDecl := *decl
-				signatureDecl.Doc = nil
-				signatureDecl.Body = nil
-				signature, err := goReadFormattedNode(parsed.fset, &signatureDecl)
-				if err != nil {
-					return nil, err
-				}
-				doc, err := goReadComment(source, parsed.fset, decl.Doc)
-				if err != nil {
-					return nil, err
-				}
-				qualifiedName := decl.Name.Name
-				if receiver != "" {
-					qualifiedName = receiver + "." + decl.Name.Name
-				}
-				readSymbol, err := makeOutlineSymbol(parsed, decl.Name.Name, qualifiedName, kind, decl, decl.Name, &signature, doc, nil, nil, nil)
-				if err != nil {
-					return nil, err
-				}
-				fileResult.Symbols = append(fileResult.Symbols, readSymbol)
-			case *ast.GenDecl:
-				for _, rawSpec := range decl.Specs {
-					switch spec := rawSpec.(type) {
-					case *ast.TypeSpec:
-						typeKind := "type"
-						if _, ok := spec.Type.(*ast.InterfaceType); ok {
-							typeKind = "interface"
-						}
-						if !includeUnexported && !ast.IsExported(spec.Name.Name) {
-							continue
-						}
-						children, childMatch, err := outlineTypeChildren(parsed, spec, kindSet, includeUnexported)
-						if err != nil {
-							return nil, err
-						}
-						if !matchesKind(typeKind) && !childMatch {
-							continue
-						}
-						signature, err := outlineFilteredTypeSignature(parsed, decl, spec, kindSet, includeUnexported)
-						if err != nil {
-							return nil, err
-						}
-						docGroup := spec.Doc
-						if docGroup == nil {
-							docGroup = decl.Doc
-						}
-						doc, err := goReadComment(source, parsed.fset, docGroup)
-						if err != nil {
-							return nil, err
-						}
-						readSymbol, err := makeOutlineSymbol(parsed, spec.Name.Name, spec.Name.Name, typeKind, spec, spec.Name, &signature, doc, nil, nil, children)
-						if err != nil {
-							return nil, err
-						}
-						fileResult.Symbols = append(fileResult.Symbols, readSymbol)
-					case *ast.ValueSpec:
-						kind := "variable"
-						prefix := "var "
-						if decl.Tok == token.CONST {
-							kind = "constant"
-							prefix = "const "
-						}
-						if !matchesKind(kind) {
-							continue
-						}
-						docGroup := spec.Doc
-						if docGroup == nil {
-							docGroup = decl.Doc
-						}
-						doc, err := goReadComment(source, parsed.fset, docGroup)
-						if err != nil {
-							return nil, err
-						}
-						var typeText *string
-						if spec.Type != nil {
-							text, typeErr := goReadNodeText(source, parsed.fset, spec.Type)
-							if typeErr != nil {
-								return nil, typeErr
-							}
-							typeText = &text
-						}
-						signatureText, err := goReadFormattedNode(parsed.fset, spec)
-						if err != nil {
-							return nil, err
-						}
-						if kind == "variable" {
-							names := make([]string, len(spec.Names))
-							for i, name := range spec.Names {
-								names[i] = name.Name
-							}
-							signatureText = prefix + strings.Join(names, ", ")
-							if typeText != nil {
-								signatureText += " " + *typeText
-							}
-						} else {
-							signatureText = prefix + signatureText
-						}
-						for nameIndex, name := range spec.Names {
-							if !includeUnexported && !ast.IsExported(name.Name) {
-								continue
-							}
-							nameSignature := signatureText
-							if kind == "variable" && len(spec.Names) > 1 {
-								nameSignature = prefix + name.Name
-								if typeText != nil {
-									nameSignature += " " + *typeText
-								}
-							}
-							if kind == "constant" && len(spec.Names) > 1 {
-								nameSignature = prefix + name.Name
-								if typeText != nil {
-									nameSignature += " " + *typeText
-								}
-								if nameIndex < len(spec.Values) {
-									valueText, err := goReadNodeText(source, parsed.fset, spec.Values[nameIndex])
-									if err != nil {
-										return nil, err
-									}
-									nameSignature += " = " + valueText
-								}
-							}
-							readSymbol, err := makeOutlineSymbol(parsed, name.Name, name.Name, kind, spec, name, &nameSignature, doc, typeText, nil, nil)
-							if err != nil {
-								return nil, err
-							}
-							fileResult.Symbols = append(fileResult.Symbols, readSymbol)
-						}
-					}
-				}
-			}
-		}
-		result.Files = append(result.Files, fileResult)
+		symbols = append(symbols, symbol)
 	}
-	return result, nil
+	return symbols, nil
+}
+
+func (request *goOutlineRequest) outlineValueNameSignature(parsed *goReadSource, kind, prefix string, spec *ast.ValueSpec, name *ast.Ident, index int, typeText *string, signature string) (string, error) {
+	if len(spec.Names) == 1 {
+		return signature, nil
+	}
+	if kind == "variable" {
+		return valueNameSignature(prefix, name.Name, typeText), nil
+	}
+	nameSignature := valueNameSignature(prefix, name.Name, typeText)
+	if index >= len(spec.Values) {
+		return nameSignature, nil
+	}
+	valueText, err := goReadNodeText(parsed.source, parsed.fset, spec.Values[index])
+	if err != nil {
+		return "", err
+	}
+	return nameSignature + " = " + valueText, nil
+}
+
+func valueNameSignature(prefix, name string, typeText *string) string {
+	result := prefix + name
+	if typeText != nil {
+		result += " " + *typeText
+	}
+	return result
 }
 
 func displayGoPath(root, path string) string {
