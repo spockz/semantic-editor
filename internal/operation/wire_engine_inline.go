@@ -24,8 +24,8 @@ func (r *InlineVariableReq) SetProjectContext(project backend.ProjectContext) { 
 
 var inlineVariableParams = []ParameterContract{
 	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: Go source file containing the local binding; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: local variable or constant to inline", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol}},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified Go function or method containing the local binding", Required: true, SourceFields: []string{sourceInlineVariableInFunction}},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: live local binding in the selected owner; copy a compatible local identity from semantic_lookup. The binding is removed on success.", Required: true, SourceFields: []string{sourceLookupSymbol}},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified Go function or method containing the local binding", Required: true, SourceFields: sourceInFunctionContinuations},
 }
 
 func parseInlineVariable(raw map[string]any) (InlineVariableReq, error) {
@@ -62,19 +62,19 @@ func runInlineVariable(ctx context.Context, cc CallContext, req InlineVariableRe
 	}, nil
 }
 
-func inlineVariableDef() Def[InlineVariableReq, FileEditRes] {
-	return Def[InlineVariableReq, FileEditRes]{
+func inlineVariableDef() Def[InlineVariableReq, ExtractionResult] {
+	return Def[InlineVariableReq, ExtractionResult]{
 		Key:     "inline_variable",
-		Summary: "Use this tool instead of manually editing source when inlining one local Go variable initialized by a literal into direct call arguments or direct return values in the immediately following statement. Refuses expressions, reassignment, shadowing, intervening statements, and unsupported use shapes. Call inlining is not supported.",
-		Params:  inlineVariableParams,
-		Level:   LevelFile,
-		CLIName: "inline-variable",
-		MCPName: "semantic_inline_variable",
-		Parse:   parseInlineVariable,
-		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineVariableReq) (FileEditRes, error){
-			backend.LanguageGo: runInlineVariable,
+		Summary: "Use this tool instead of replacing local uses by text to inline one Go local initialized by a literal into all direct argument or return-value uses in the immediately following statement. Literal substitution preserves the binding's value and does not duplicate runtime evaluation. The successful edit removes the binding and returns its surviving owner function as a live target; use semantic_lookup to select fresh constructs or bindings. The removed name is historical evidence and is not a follow-up target. Expressions, reassignment, shadowing, intervening statements, and unsupported use shapes are refused. Call inlining is not supported.",
+		Params:  inlineVariableParams, Level: LevelFile, CLIName: "inline-variable", MCPName: semanticInlineVariableToolName,
+		Parse:    parseInlineVariable,
+		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InlineVariableReq) (ExtractionResult, error){backend.LanguageGo: runInlineVariableWithReceipt},
+		Format:   formatExtractionResult,
+		Output:   extractionReceiptOutput(semanticRenameToolName, semanticReplaceBodyToolName),
+		FinalizeOutput: func(cc CallContext, _ InlineVariableReq, result ExtractionResult) (ExtractionResult, error) {
+			return finalizeExtractionOutput(cc, result)
 		},
-		Format:        formatFileEdit,
+		ProjectOutput: projectExtractionResult,
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "limit", wireInFunction: "Server.Stop"},
 		BufferedBatch: true, Batchable: true,
 	}

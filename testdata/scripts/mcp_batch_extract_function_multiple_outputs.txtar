@@ -1,0 +1,44 @@
+# Compose an earlier buffered declaration, multiple-output extraction, and helper rename.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"extract_function"'
+stdout '"status":"applied_working"'
+! stdout '"isError":true'
+cmp emit.go .scratch/want/emit.go
+cmp seed.go .scratch/want/seed.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionbatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_insert_function","params":{"file":"seed.go","source":"func Seed() int { return 1 }"}},{"tool":"semantic_extract_function","params":{"file":"emit.go","symbol":"writeSummary","in_function":"Emit","kind":"function","start_line":4,"end_line":5}},{"tool":"semantic_rename","params":{"file":"emit.go","symbol":"writeSummary","to":"writePair"}}]}}}
+-- seed.go --
+package sample
+-- emit.go --
+package sample
+
+func Emit() {
+	left, right := 1, "summary"
+	println("inside")
+	println(left, right)
+}
+-- .scratch/want/seed.go --
+package sample
+
+func Seed() int { return 1 }
+-- .scratch/want/emit.go --
+package sample
+
+func Emit() {
+	left, right := writePair()
+	println(left, right)
+}
+
+func writePair() (int, string) {
+	left, right := 1, "summary"
+	println("inside")
+	return left, right
+}

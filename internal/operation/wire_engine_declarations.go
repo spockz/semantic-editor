@@ -27,8 +27,8 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceReplaceDeclFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertStructureSymbol, sourceReplaceDeclSymbol, sourceExtractConstantReceiptSymbol}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
 }
@@ -434,7 +434,7 @@ func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 		Params:  replaceDeclParams,
 		Level:   LevelFile,
 		CLIName: "replace-decl",
-		MCPName: "semantic_replace_decl",
+		MCPName: semanticReplaceDeclToolName,
 		Parse:   parseReplaceDecl,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceDeclReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceDecl,

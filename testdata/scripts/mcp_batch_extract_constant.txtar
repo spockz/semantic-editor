@@ -1,0 +1,26 @@
+# Compose a body edit, constant extraction, and later use through one buffered MCP batch.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+! stdout '"isError":true'
+cmp retry.go .scratch/want/retry.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantbatch
+
+go 1.23
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"auto_organize_imports":true,"edits":[{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return 3 * 60"}},{"tool":"semantic_extract_constant","params":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3 * 60"}},{"tool":"semantic_replace_body","params":{"file":"retry.go","symbol":"Retry","body":"return retryWindow"}}]}}}
+-- retry.go --
+package retry
+
+func Retry() int { return 1 }
+-- .scratch/want/retry.go --
+package retry
+
+func Retry() int {
+	return retryWindow
+}
+
+const retryWindow int = 3 * 60

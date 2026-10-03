@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
@@ -22,6 +21,10 @@ import (
 // InlineVariable inlines one local literal binding at its immediate use site.
 func InlineVariable(ctx context.Context, filePath, function, name string) (string, error) {
 	cleanPath := filepath.Clean(filePath)
+	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
+	if err != nil {
+		return "", err
+	}
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read target file: %w", err)
@@ -73,15 +76,28 @@ func InlineVariable(ctx context.Context, filePath, function, name string) (strin
 	if err != nil {
 		return "", err
 	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write atomic: %w", err)
-	}
-	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format after inline: %w", err)
-	}
 	current, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
-		return "", fmt.Errorf("read formatted file: %w", err)
+		return "", fmt.Errorf("recheck inline source before publication: %w", err)
+	}
+	if !bytes.Equal(current, content) {
+		return "", fmt.Errorf("cannot inline %q: source changed during planning", name)
+	}
+	if err := validateExtractionCandidate(ctx, cleanPath, formatted); err != nil {
+		return "", fmt.Errorf("validate inlined package: %w", err)
+	}
+	buffer := sourcebuf.FromContext(ctx)
+	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
+		return "", fmt.Errorf("apply inlined source after compiler preflight: %w", err)
+	}
+	current, err = sourcebuf.ReadFile(ctx, cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("read inlined file: %w", err)
+	}
+	if standalone {
+		if err := ownedBuffer.Flush(ctx); err != nil {
+			return "", fmt.Errorf("publish inlined source: %w", err)
+		}
 	}
 	return UnifiedDiff(cleanPath, string(content), string(current)), nil
 }

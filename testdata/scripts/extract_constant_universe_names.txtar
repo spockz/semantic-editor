@@ -1,0 +1,20 @@
+# Refuse package constant names that capture universe bindings in existing functions.
+! exec semedit extract-constant --file constants.go --symbol true --in-function Extract --discriminator '1'
+stderr 'collides with a package or universe binding'
+cmp constants.go original/constants.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstantpredeclared
+
+go 1.23
+-- constants.go --
+package sample
+
+func Extract() int { return 1 }
+func Existing() any { return true }
+-- original/constants.go --
+package sample
+
+func Extract() int { return 1 }
+func Existing() any { return true }

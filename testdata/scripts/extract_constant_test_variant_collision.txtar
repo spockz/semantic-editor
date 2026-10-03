@@ -1,0 +1,36 @@
+# Constant extraction must refuse a package name declared only by a same-package test variant.
+exec go test ./...
+stdin input.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'redeclared'
+cmp retry.go .scratch/want/retry.go
+cmp retry_test.go .scratch/want/retry_test.go
+exec go test ./...
+
+-- go.mod --
+module example.com/constanttestcollision
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_constant","arguments":{"file":"retry.go","symbol":"retryWindow","in_function":"Retry","discriminator":"3 * 60"}}}
+-- retry.go --
+package retry
+
+func Retry() int {
+	return 3 * 60
+}
+-- retry_test.go --
+package retry
+
+const retryWindow = 1
+-- .scratch/want/retry.go --
+package retry
+
+func Retry() int {
+	return 3 * 60
+}
+-- .scratch/want/retry_test.go --
+package retry
+
+const retryWindow = 1

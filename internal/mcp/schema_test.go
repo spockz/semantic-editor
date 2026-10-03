@@ -120,7 +120,7 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	} {
 		if !strings.Contains(description, source) {
 			t.Errorf("file description %q omitted relevant source tool %s", description, source)
@@ -162,11 +162,10 @@ func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
 			t.Errorf("semantic_inline_variable.%s description omitted role %q", key, role)
 		}
 	}
+	assertSemanticEditReceiptOutputSchema(t, "semantic_inline_variable", tool["outputSchema"])
 	output := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
-	for _, key := range []string{"file", "in_function"} {
-		if _, ok := output[key]; !ok {
-			t.Errorf("semantic_inline_variable output omitted continuation field %s", key)
-		}
+	if _, ok := output["in_function"]; ok {
+		t.Error("semantic_inline_variable output advertises an in_function alias absent from its receipt")
 	}
 }
 
@@ -231,21 +230,18 @@ func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
 					assertRemoveConstructOutputSchema(t, tool["outputSchema"])
 				case "semantic_extract_interface", "semantic_implement_contract":
 					assertContractOutputSchema(t, name, tool["outputSchema"])
-				case "semantic_inline_function", "semantic_migrate_type":
+				case "semantic_inline_function", "semantic_migrate_type", "semantic_extract_constant", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 					assertSemanticEditReceiptOutputSchema(t, name, tool["outputSchema"])
 				case "semantic_rename", "semantic_organize_imports":
 					assertTypedOutcomeOrLegacyStringSchema(t, name, tool["outputSchema"])
-				case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
+				case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
 					assertStandardOutputSchema(t, tool["outputSchema"], "string")
 					properties := tool["outputSchema"].(map[string]any)["properties"].(map[string]any)
 					for _, field := range map[string][]string{
 						"semantic_lookup":            {"symbol", "file", "kind", "line", "column"},
 						"semantic_rename":            {"symbol", "file"},
 						"semantic_replace_body":      {"symbol", "file"},
-						"semantic_extract_function":  {"symbol", "file", "in_function"},
-						"semantic_extract_variable":  {"symbol", "file", "in_function"},
 						"semantic_replace_construct": {"file", "in_function"},
-						"semantic_inline_variable":   {"file", "in_function"},
 						"semantic_insert_case":       {"file", "in_function", "discriminator"},
 					}[name] {
 						if _, ok := properties[field]; !ok {
@@ -1109,7 +1105,7 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		"semantic_lookup", "semantic_rename", "semantic_replace_body", "semantic_replace_construct",
 		"semantic_insert_case", "semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
 		"semantic_insert_declaration", "semantic_insert_structure", "semantic_replace_decl",
-		"semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
+		"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable", "semantic_inline_variable", "semantic_organize_imports", "semantic_scaffold_file",
 	}
 	inFunctionSources := []string{
 		"semantic_replace_construct", "semantic_insert_case", "semantic_insert_structure",
@@ -1137,10 +1133,15 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		}
 	}
 	assertSources("semantic_insert_decl", "file", fileSources)
-	assertSources("semantic_extract_function", "symbol", []string{"semantic_extract_function"})
-	assertSources("semantic_extract_function", "in_function", []string{"semantic_extract_function"})
-	assertSources("semantic_extract_variable", "symbol", []string{"semantic_extract_variable"})
-	assertSources("semantic_extract_variable", "in_function", []string{"semantic_extract_variable"})
+	for _, toolName := range []string{"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable"} {
+		tool := tools[toolName]
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		symbol := properties["symbol"].(map[string]any)["description"].(string)
+		if strings.Contains(symbol, "Copy from") {
+			t.Errorf("%s.symbol creation name advertises an invalid producer: %s", toolName, symbol)
+		}
+		assertSources(toolName, "in_function", inFunctionSources)
+	}
 	for _, tool := range inFunctionSources {
 		assertSources(tool, "in_function", inFunctionSources)
 		assertSources(tool, "discriminator", discriminatorSources)

@@ -1,0 +1,31 @@
+# Extract a leading short declaration with multiple live-out values.
+exec semedit extract-function --file emit.go --symbol writeSummary --in-function Emit --kind function --start-line 4 --end-line 5
+stdout 'symbol: writeSummary'
+cmp emit.go want/emit.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionoutputs
+
+go 1.23
+-- emit.go --
+package sample
+
+func Emit() {
+	left, right := 1, "summary"
+	println("inside")
+	println(left, right)
+}
+-- want/emit.go --
+package sample
+
+func Emit() {
+	left, right := writeSummary()
+	println(left, right)
+}
+
+func writeSummary() (int, string) {
+	left, right := 1, "summary"
+	println("inside")
+	return left, right
+}

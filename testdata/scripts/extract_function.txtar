@@ -1,6 +1,6 @@
 # Extract safe call statements through the CLI and reject local data flow without mutation.
 ! exec semedit extract-function --file api/emitter.go --symbol increment --in-function Increment --kind function --start-line 12 --end-line 12
-stderr 'only one leading single-variable := declaration'
+stderr 'only one leading := declaration with matching named results'
 cmp api/emitter.go original/api/emitter.go
 exec semedit extract-function --file api/emitter.go --symbol writeMessages --in-function Emit --kind function --start-line 6 --end-line 7
 stdout 'symbol: writeMessages'

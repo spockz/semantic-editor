@@ -36,7 +36,7 @@ func insertFieldStructuralDef() Def[map[string]any, structuralPlanResult] {
 	targetProperties := SymbolTargetSchema().Properties
 	output.Continuations = append(output.Continuations,
 		OutputContinuation{Path: "result.edit_receipt.continuations[].file", Schema: targetProperties["file"], Role: RoleTarget, Consumers: []string{insertFieldToolName}},
-		OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: targetProperties["symbol"], Role: RoleTarget, Consumers: []string{"semantic_rename", semanticInspectSymbolToolName}},
+		OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: targetProperties["symbol"], Role: RoleTarget, Consumers: []string{semanticRenameToolName, semanticInspectSymbolToolName}},
 		OutputContinuation{Path: "result.edit_receipt.continuations[].expected_revision", Schema: targetProperties["expected_revision"], Role: RoleTarget, Consumers: []string{insertFieldToolName}},
 	)
 	return structuralPlanDef(structuralPlanSpec{

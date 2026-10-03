@@ -60,15 +60,27 @@ func (GoBackend) CapabilityMatrix() backend.LanguageMatrix {
 		Operations: map[string]backend.OpCapability{
 			"extract_function": {
 				Supported:   true,
-				Description: "Extracts contiguous top-level call statements, optionally with one leading returned local of a supported inferred type; rejects address-taken inputs or results, closure-captured inputs, direct recover calls, uncertain pointer-receiver dispatch, other local data flow, control flow, composite literals, generic owners, variadics, and owner comments.",
+				Description: "Extracts contiguous direct calls, optionally with one leading short declaration whose distinct live-out values have validated supported result types; rejects effectful or unsupported results, address-taken values, closures, recover, uncertain receiver dispatch, other local flow, control flow, composite literals, generic or variadic owners, and comments.",
 				CLICommand:  "semedit extract-function --file <path> --symbol <helper> --in-function <owner> --kind <function|method> --start-line <line> --end-line <line>",
 				MCPTool:     "semantic_extract_function",
 			},
+			"extract_constant": {
+				Supported:   true,
+				Description: "Extracts one exact resolved compile-time basic constant expression from a Go function to a package constant; refuses iota, local constant dependencies, unsupported types or syntax, comments, collisions, duplicate matches, and stale selected-file revisions.",
+				CLICommand:  "semedit extract-constant --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--expected-revision <sha256>]",
+				MCPTool:     "semantic_extract_constant",
+			},
 			"extract_variable": {
 				Supported:   true,
-				Description: "Extracts one exact side-effect-free typed expression from a whole argument of a direct single-argument call statement into a preceding local; rejects comments, context-dependent or defaulted types, nested calls, and unsupported contexts.",
-				CLICommand:  "semedit extract-variable --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--construct-path <path>]",
+				Description: "Extracts one exact side-effect-free typed first argument from a direct identifier call statement into a preceding local while preserving later argument order; a supplied construct_path requires the matching selected-file expected_revision. It refuses callable shadowing, unresolved imports, comments, constant-only or unsupported types, nested calls, and unsupported contexts.",
+				CLICommand:  "semedit extract-variable --file <path> --symbol <name> --in-function <owner> --discriminator <expression> [--construct-path <path> --expected-revision <sha256>]",
 				MCPTool:     "semantic_extract_variable",
+			},
+			"inline_variable": {
+				Supported:   true,
+				Description: "Inlines one local literal into all proven direct uses in the immediately following statement; refuses computed or explicitly typed initializers, intervening statements, shadowing, extra references, unsupported use shapes, and comments. Call inlining is unsupported.",
+				CLICommand:  "semedit inline-variable --file <path> --symbol <name> --in-function <owner>",
+				MCPTool:     "semantic_inline_variable",
 			},
 			"rename": {
 				Supported:    true,

@@ -1,0 +1,79 @@
+# Extract one exact compile-time expression and refuse duplicate or runtime selections without writes.
+exec semedit extract-constant --file retry.go --symbol retryWindow --in-function Retry --discriminator '3 * 60'
+stdout 'symbol: retryWindow'
+cmp retry.go want/retry.go
+! exec semedit extract-constant --file duplicate.go --symbol duration --in-function Duplicate --discriminator '3 * 60'
+stderr 'matched 2 current expressions'
+cmp duplicate.go original/duplicate.go
+! exec semedit extract-constant --file localcollision.go --symbol value --in-function LocalCollision --discriminator '3 * 60'
+stderr 'declared in the selected function or method'
+cmp localcollision.go original/localcollision.go
+! exec semedit extract-constant --file runtime.go --symbol total --in-function Runtime --discriminator 'value + 1'
+stderr 'not a resolved Go constant expression'
+cmp runtime.go original/runtime.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractconstant
+
+go 1.23
+-- retry.go --
+package retry
+
+func Retry() int {
+	return 3 * 60
+}
+-- want/retry.go --
+package retry
+
+func Retry() int {
+	return retryWindow
+}
+
+const retryWindow int = 3 * 60
+-- duplicate.go --
+package retry
+
+func Duplicate() int {
+	return 3 * 60 + 3 * 60
+}
+-- original/duplicate.go --
+package retry
+
+func Duplicate() int {
+	return 3 * 60 + 3 * 60
+}
+-- runtime.go --
+package retry
+
+func Runtime() int {
+	value := compute()
+	return value + 1
+}
+
+func compute() int { return 2 }
+-- localcollision.go --
+package retry
+
+func LocalCollision() int {
+	value := 1
+	_ = value
+	return 3 * 60
+}
+-- original/localcollision.go --
+package retry
+
+func LocalCollision() int {
+	value := 1
+	_ = value
+	return 3 * 60
+}
+-- original/runtime.go --
+package retry
+
+func Runtime() int {
+	value := compute()
+	return value + 1
+}
+
+func compute() int { return 2 }

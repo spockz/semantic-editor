@@ -3491,3 +3491,39 @@ The need to report successfully written paths motivated adding a report-returnin
 - Observed failure: the MCP resolved the relative path under the primary checkout, where this branch-only file does not exist.
 - Workaround: inspect the private worktree directly and continue source mutations with its local semantic CLI if available.
 - Root cause: the MCP server is bound to the primary checkout rather than the active private worktree.
+
+## ST-0266: extraction preflight batch failed final semantic verification
+
+- Date: 2026-10-03
+- Tool: trusted `semantic_batch` with constant-loader/body replacements, helper insertion, and import organization.
+- Target: `internal/astedit/extract_constant.go`.
+- Observed failure: mutation children reported success, but final verification failed; the verifier diagnostic was truncated.
+- Workaround: inspect current source, preserve successful children, complete the missing read-set initialization and capture loops, then retry coherently.
+- Root cause: the replacement omitted local read-set initialization and final capture loops, leaving undefined names and an incomplete return.
+
+## ST-0267: extraction conflict resolution was blocked by Git metadata permissions
+
+- Date: 2026-10-03
+- Tool: `git checkout --theirs` for `docs/SUBOPTIMAL_TOOLS.md`.
+- Target: linked worktree index for the extraction branch.
+- Observed failure: Git could not create the shared repository index lock because the metadata directory is outside the writable sandbox.
+- Workaround: request narrowly scoped access to perform the one-file conflict resolution.
+- Root cause: the linked worktree stores its index in shared repository metadata.
+
+## ST-0268: documentation patches targeted the coordinator path
+
+- Date: 2026-10-03
+- Tool: `apply_patch`.
+- Target: extraction ADR and index documentation during merge integration.
+- Observed failure: patches addressed the coordinator checkout path instead of this private worktree; the coordinator restored those exact changes before structural merge.
+- Workaround: reapply only the extraction-owned hunks under `.scratch/worktrees/flow-extraction` and verify both worktree roots before editing.
+- Root cause: the absolute path omitted the private worktree suffix.
+
+## ST-0269: replace-body left an obsolete import after replacing InlineVariable
+
+- Date: 2026-10-03
+- Tool: CLI `replace-body` followed by attempted `imports` help invocation.
+- Target: `internal/astedit/inline.go`.
+- Observed failure: replacing the function body removed its use of `internal/pipeline`; the subsequent CLI import operation could not start because the source no longer compiled.
+- Workaround: remove the obsolete import with a targeted patch, then rerun semantic verification.
+- Root cause: `replace-body` changes one function body and does not clean file imports.

@@ -19,10 +19,18 @@ import (
 )
 
 const (
-	semanticInlineFunctionToolName = "semantic_inline_function"
-	semanticMigrateTypeToolName    = "semantic_migrate_type"
-	semanticReplaceBodyToolName    = "semantic_replace_body"
-	semanticInspectSymbolToolName  = "semantic_inspect_symbol"
+	semanticLookupToolName          = "semantic_lookup"
+	semanticRenameToolName          = "semantic_rename"
+	semanticMoveConstructToolName   = "semantic_move_construct"
+	semanticReplaceDeclToolName     = "semantic_replace_decl"
+	semanticExtractFunctionToolName = "semantic_extract_function"
+	semanticExtractConstantToolName = "semantic_extract_constant"
+	semanticExtractVariableToolName = "semantic_extract_variable"
+	semanticInlineVariableToolName  = "semantic_inline_variable"
+	semanticInlineFunctionToolName  = "semantic_inline_function"
+	semanticMigrateTypeToolName     = "semantic_migrate_type"
+	semanticReplaceBodyToolName     = "semantic_replace_body"
+	semanticInspectSymbolToolName   = "semantic_inspect_symbol"
 )
 
 // InlineFunctionCallSite selects one caller-side expression for function inlining.

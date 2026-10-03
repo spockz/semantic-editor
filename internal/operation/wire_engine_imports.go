@@ -180,12 +180,12 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 }
 
 var organizeImportsFileConsumers = []string{
-	"semantic_lookup", "semantic_rename", "semantic_verify",
-	"semantic_replace_body", "semantic_replace_construct", "semantic_move_construct",
+	semanticLookupToolName, semanticRenameToolName, "semantic_verify",
+	semanticReplaceBodyToolName, "semantic_replace_construct", semanticMoveConstructToolName,
 	"semantic_remove_construct", "semantic_insert_case", "semantic_insert_function",
 	"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
-	"semantic_insert_structure", "semantic_replace_decl", "semantic_extract_function",
-	"semantic_extract_variable", "semantic_inline_variable",
+	"semantic_insert_structure", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	semanticExtractVariableToolName, semanticInlineVariableToolName,
 	"semantic_find_references", semanticInspectSymbolToolName, "semantic_assertion_mode",
 }
 

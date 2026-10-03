@@ -1,0 +1,39 @@
+# The extraction receipt follows the surviving owner function as a live target.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"operation":"extract_variable"'
+stdout '"status":"persisted"'
+stdout '"continuations":'
+stdout '"file":"render.go"'
+stdout '"symbol":"Render"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+stdout '"symbol":"Display"'
+cmp render.go .scratch/want/render.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractvariablereceipt
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_variable","arguments":{"file":"render.go","symbol":"distanceValue","in_function":"Render","discriminator":"distance"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"render.go","symbol":"Render","to":"Display"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":"render.go","symbol":"Display"}}}
+-- render.go --
+package render
+
+func consume(first any, rest ...any) {}
+
+func Render(distance int) {
+	consume(distance, distance)
+}
+-- .scratch/want/render.go --
+package render
+
+func consume(first any, rest ...any) {}
+
+func Display(distance int) {
+	distanceValue := distance
+	consume(distanceValue, distance)
+}

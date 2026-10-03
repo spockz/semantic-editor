@@ -1,0 +1,42 @@
+# A function extraction receipt identifies the live helper for rename and fresh lookup.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+stdout '"schema_version":"semedit.edit-receipt/v1"'
+stdout '"status":"persisted"'
+stdout '"continuations":'
+stdout '"file":"emit.go"'
+stdout '"symbol":"sendSelected"'
+stdout '"expected_revision":"[0-9a-f]{64}"'
+stdout '"symbol":"writeSelected"'
+cmp emit.go .scratch/want/emit.go
+exec go test ./...
+
+-- go.mod --
+module example.com/extractfunctionreceipt
+
+go 1.24
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_extract_function","arguments":{"file":"emit.go","symbol":"sendSelected","in_function":"Emit","kind":"function","start_line":5,"end_line":5}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_rename","arguments":{"file":"emit.go","symbol":"sendSelected","to":"writeSelected"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_lookup","arguments":{"file":"emit.go","symbol":"writeSelected"}}}
+-- emit.go --
+package emit
+
+func Emit() {
+	println("before")
+	println("selected")
+	println("after")
+}
+-- .scratch/want/emit.go --
+package emit
+
+func Emit() {
+	println("before")
+	writeSelected()
+	println("after")
+}
+
+func writeSelected() {
+	println("selected")
+}

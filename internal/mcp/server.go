@@ -1190,9 +1190,27 @@ func parameterDescription(param operation.ParameterContract) string {
 		if len(tools) == 0 {
 			continue
 		}
-		fmt.Fprintf(&description, " Copy from the %s field of a preceding %s result.", field, strings.Join(tools, " or "))
+		if strings.HasPrefix(field, "result.continuations[].") {
+			name := strings.TrimPrefix(field, "result.continuations[].")
+			fmt.Fprintf(&description, " Receipt %s from %s.", name, joinToolNames(tools))
+			continue
+		}
+		fmt.Fprintf(&description, " Copy from the %s field of a preceding %s result.", field, joinToolNames(tools))
 	}
 	return description.String()
+}
+
+func joinToolNames(names []string) string {
+	switch len(names) {
+	case 0:
+		return ""
+	case 1:
+		return names[0]
+	case 2:
+		return names[0] + " or " + names[1]
+	default:
+		return strings.Join(names[:len(names)-1], ", ") + ", or " + names[len(names)-1]
+	}
 }
 
 func operationInputSchemaForParams(params []operation.ParameterContract) (map[string]any, error) {

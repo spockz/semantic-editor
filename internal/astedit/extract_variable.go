@@ -13,25 +13,25 @@ import (
 	"strconv"
 	"strings"
 
-	"semedit/internal/pipeline"
+	types "go/types"
 	"semedit/internal/sourcebuf"
 	"semedit/internal/symbol"
 )
 
-// ExtractVariableOptions selects one exact argument expression in the owner's direct body.
+// ExtractVariableOptions selects one exact first-argument expression in the owner's direct body.
 type ExtractVariableOptions struct {
-	Discriminator string
-	ConstructPath string
+	Discriminator    string
+	ConstructPath    string
+	ExpectedRevision string
 }
 
 type variableCandidate struct {
 	path string
 	stmt *ast.ExprStmt
-	call *ast.CallExpr
 	expr ast.Expr
 }
 
-// ExtractVariable moves one side-effect-free, typed argument expression immediately before its call.
+// ExtractVariable moves the first side-effect-free, typed argument of an unshadowed same-file package call into a local.
 func ExtractVariable(ctx context.Context, filePath, owner, name string, opts ExtractVariableOptions) (string, error) {
 	if !token.IsIdentifier(name) || token.Lookup(name).IsKeyword() || name == "_" {
 		return "", fmt.Errorf("symbol %q is not a valid local identifier", name)
@@ -40,9 +40,19 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 		return "", fmt.Errorf("discriminator must contain the exact source text of the expression")
 	}
 	cleanPath := filepath.Clean(filePath)
+	ctx, ownedBuffer, standalone, err := prepareExtractionBuffer(ctx, cleanPath)
+	if err != nil {
+		return "", err
+	}
 	content, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read extraction target: %w", err)
+	}
+	if opts.ConstructPath != "" && opts.ExpectedRevision == "" {
+		return "", fmt.Errorf("construct_path requires a non-empty expected_revision")
+	}
+	if opts.ExpectedRevision != "" && goReadRevision(content) != opts.ExpectedRevision {
+		return "", fmt.Errorf("selected source revision mismatch: expected %q, current %q", opts.ExpectedRevision, goReadRevision(content))
 	}
 	recv, ownerName, err := symbol.ParseIdentifier(owner)
 	if err != nil {
@@ -82,6 +92,9 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 	if variableNameVisible(file, target, name) {
 		return "", fmt.Errorf("cannot extract: local name %q collides with a name visible in %s", name, owner)
 	}
+	if !resolvedStaticFunctionCallee(file, target, candidate.stmt) {
+		return "", fmt.Errorf("cannot extract expression %q: only an unshadowed same-file package function call with no unresolved import binding is supported", opts.Discriminator)
+	}
 
 	exprStart := fset.Position(candidate.expr.Pos()).Offset
 	exprEnd := fset.Position(candidate.expr.End()).Offset
@@ -99,26 +112,25 @@ func ExtractVariable(ctx context.Context, filePath, owner, name string, opts Ext
 	if err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: opts.Discriminator, Cause: err, Err: ErrSyntax}
 	}
-	formatted = preserveTrailingNewlines(content, formatted)
+	formatted = normalizeExtractionNewlines(formatted)
 	if _, err := parser.ParseFile(token.NewFileSet(), cleanPath, formatted, parser.ParseComments|parser.AllErrors); err != nil {
 		return "", &SyntaxError{File: cleanPath, Snippet: opts.Discriminator, Cause: err, Err: ErrSyntax}
 	}
-	current, err := sourcebuf.ReadFile(ctx, cleanPath)
-	if err != nil {
-		return "", fmt.Errorf("recheck extraction target before publication: %w", err)
+	if err := validateVariableCandidate(ctx, cleanPath, owner, name, opts.Discriminator, candidate.path, content, formatted); err != nil {
+		return "", err
 	}
-	if !bytes.Equal(current, content) {
-		return "", fmt.Errorf("cannot extract from %s: source changed during extraction", owner)
-	}
-	if err := pipeline.WriteAtomicContext(ctx, cleanPath, formatted); err != nil {
-		return "", fmt.Errorf("write extracted variable atomically: %w", err)
-	}
-	if err := pipeline.Format(ctx, filepath.Dir(cleanPath), cleanPath); err != nil {
-		return "", fmt.Errorf("format extracted variable: %w", err)
+	buffer := sourcebuf.FromContext(ctx)
+	if err := buffer.Apply(ctx, []sourcebuf.Change{{Path: cleanPath, Before: content, After: formatted}}); err != nil {
+		return "", fmt.Errorf("apply extracted variable after compiler preflight: %w", err)
 	}
 	finalSource, err := sourcebuf.ReadFile(ctx, cleanPath)
 	if err != nil {
 		return "", fmt.Errorf("read formatted extraction result: %w", err)
+	}
+	if standalone {
+		if err := ownedBuffer.Flush(ctx); err != nil {
+			return "", fmt.Errorf("publish extracted variable: %w", err)
+		}
 	}
 	return UnifiedDiff(filepath.Base(cleanPath), string(content), string(finalSource)), nil
 }
@@ -131,7 +143,7 @@ func findVariableCandidates(fset *token.FileSet, content []byte, target *ast.Fun
 			continue
 		}
 		call, ok := exprStmt.X.(*ast.CallExpr)
-		if !ok || len(call.Args) != 1 {
+		if !ok || len(call.Args) == 0 {
 			continue
 		}
 		if _, ok := call.Fun.(*ast.Ident); !ok {
@@ -146,14 +158,14 @@ func findVariableCandidates(fset *token.FileSet, content []byte, target *ast.Fun
 		if string(content[start:end]) != discriminator {
 			continue
 		}
-		candidates = append(candidates, variableCandidate{path: strconv.Itoa(index), stmt: exprStmt, call: call, expr: expr})
+		candidates = append(candidates, variableCandidate{path: strconv.Itoa(index), stmt: exprStmt, expr: expr})
 	}
 	return candidates, nil
 }
 
 func chooseVariableCandidate(candidates []variableCandidate, path string) (variableCandidate, error) {
 	if len(candidates) == 0 {
-		return variableCandidate{}, fmt.Errorf("no supported direct call argument exactly matches discriminator")
+		return variableCandidate{}, fmt.Errorf("no supported first argument of a direct call exactly matches discriminator")
 	}
 	if path != "" {
 		for _, candidate := range candidates {
@@ -287,4 +299,135 @@ func variableNameVisible(file *ast.File, target *ast.FuncDecl, name string) bool
 	}
 
 	return false
+}
+
+func resolvedStaticFunctionCallee(file *ast.File, target *ast.FuncDecl, stmt *ast.ExprStmt) bool {
+	call, ok := stmt.X.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	callee, ok := call.Fun.(*ast.Ident)
+	if !ok || parameterHasName(target.Type.Params, callee.Name) || fieldListHasName(target.Recv, callee.Name) || localBindings(target.Body)[callee.Name] {
+		return false
+	}
+	for _, imported := range file.Imports {
+		if imported.Name == nil || imported.Name.Name == "." {
+			return false
+		}
+		if imported.Name.Name == callee.Name {
+			return false
+		}
+	}
+	matches := 0
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Recv == nil && function.Name.Name == callee.Name {
+			matches++
+		}
+	}
+	return matches == 1
+}
+
+func validateVariableCandidate(ctx context.Context, filePath, owner, name, discriminator, constructPath string, original, candidate []byte) error {
+	cleanPath, err := filepath.Abs(filepath.Clean(filePath))
+	if err != nil {
+		return fmt.Errorf("resolve variable extraction validation path: %w", err)
+	}
+	loadTarget := func(source []byte) (*ast.FuncDecl, *types.Info, *token.FileSet, error) {
+		overlay := sourcebuf.Overlay(ctx)
+		if overlay == nil {
+			overlay = make(map[string][]byte)
+		}
+		overlay[cleanPath] = bytes.Clone(source)
+		loaded, loadErr := loadExtractionPackages(ctx, filepath.Dir(cleanPath), overlay, false)
+		if loadErr != nil {
+			return nil, nil, nil, fmt.Errorf("type-check variable extraction candidate: %w", loadErr)
+		}
+		matches := 0
+		var syntax *ast.File
+		var info *types.Info
+		var fset *token.FileSet
+		for _, pkg := range loaded {
+			if pkg.TypesInfo == nil {
+				continue
+			}
+			for index, compiled := range pkg.CompiledGoFiles {
+				path, pathErr := filepath.Abs(compiled)
+				if pathErr == nil && filepath.Clean(path) == cleanPath {
+					if index >= len(pkg.Syntax) {
+						return nil, nil, nil, fmt.Errorf("type-check variable extraction candidate: package syntax is incomplete")
+					}
+					matches++
+					syntax, info, fset = pkg.Syntax[index], pkg.TypesInfo, pkg.Fset
+				}
+			}
+		}
+		if matches != 1 || syntax == nil || info == nil || fset == nil {
+			return nil, nil, nil, fmt.Errorf("type-check variable extraction candidate: selected file resolves in %d package variants", matches)
+		}
+		receiver, function, parseErr := symbol.ParseIdentifier(owner)
+		if parseErr != nil {
+			return nil, nil, nil, fmt.Errorf("parse in_function selector: %w", parseErr)
+		}
+		target := findExtractOwner(syntax, function, receiver)
+		if target == nil || target.Body == nil {
+			return nil, nil, nil, fmt.Errorf("type-check variable extraction candidate: owner %q was not found", owner)
+		}
+		return target, info, fset, nil
+	}
+	originalOwner, originalInfo, originalFset, err := loadTarget(original)
+	if err != nil {
+		return err
+	}
+	originalCandidates, err := findVariableCandidates(originalFset, original, originalOwner, discriminator)
+	if err != nil {
+		return fmt.Errorf("resolve original variable extraction type: %w", err)
+	}
+	originalSelection, err := chooseVariableCandidate(originalCandidates, constructPath)
+	if err != nil {
+		return fmt.Errorf("resolve original variable extraction type: %w", err)
+	}
+	originalType := originalInfo.Types[originalSelection.expr].Type
+	if originalType == nil {
+		return fmt.Errorf("cannot extract expression %q: Go type information is unavailable", discriminator)
+	}
+	candidateOwner, candidateInfo, _, err := loadTarget(candidate)
+	if err != nil {
+		return err
+	}
+	var candidateType types.Type
+	matches := 0
+	for _, statement := range candidateOwner.Body.List {
+		expression, ok := statement.(*ast.ExprStmt)
+		if !ok {
+			continue
+		}
+		call, ok := expression.X.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			continue
+		}
+		ident, ok := call.Args[0].(*ast.Ident)
+		if !ok || ident.Name != name {
+			continue
+		}
+		matches++
+		candidateType = candidateInfo.Types[ident].Type
+	}
+	if matches != 1 || candidateType == nil {
+		return fmt.Errorf("cannot extract expression %q: generated local has no unique resolved type", discriminator)
+	}
+	typeIdentity := func(value types.Type) string {
+		return types.TypeString(value, func(pkg *types.Package) string {
+			if pkg == nil {
+				return ""
+			}
+			return pkg.Path()
+		})
+	}
+	originalIdentity := typeIdentity(originalType)
+	candidateIdentity := typeIdentity(candidateType)
+	if originalIdentity != candidateIdentity {
+		return fmt.Errorf("cannot extract expression %q: generated local changes Go type from %s to %s", discriminator, originalIdentity, candidateIdentity)
+	}
+	return nil
 }
