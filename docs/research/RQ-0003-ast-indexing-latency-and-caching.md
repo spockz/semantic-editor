@@ -1,8 +1,8 @@
 # RQ-0003: AST Indexing Latency & Caching
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Performance & Indexing
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -34,3 +34,13 @@ To keep agent turn latency within the target $<50\text{ms}$ flow-state threshold
 * **Tree-sitter Incremental Parsing**: [Tree-sitter Documentation](https://tree-sitter.github.io/tree-sitter/using-parsers#incremental-parsing).
 * **Aider Tree-sitter Repo Map**: [Aider Repo Map Architecture](https://aider.chat/docs/repomap.html): ranks and extracts code symbols efficiently.
 * **Rust `ra_ap_syntax` / Rowan**: [rust-analyzer architecture](https://rust-analyzer.github.io/blog): lossless syntax trees with fast incremental edits.
+
+---
+
+## 4. Resolution & Architecture Decision
+
+Resolved and superseded by architectural constraints and language server sessions:
+
+1. **Rejection of External Daemons & CGO Runtimes**: [ADR-0020: Exclusive Golang Runtime, Tooling Ecosystem, and Native Binaries](../adr/0020-exclusive-golang-runtime-and-tooling-ecosystem.md) established pure Go execution, eliminating external daemon architectures (`semeditd`) and Tree-sitter CGO bindings.
+2. **Synchronous On-Demand Parsing**: [ADR-0010: Disk Synchronization & Cache Invalidation Across Heterogeneous Tools](../adr/0010-disk-synchronization-and-cache-invalidation.md) adopted atomic writes and synchronous parser verification over complex background watcher caches.
+3. **Persistent Go LSP Sessions**: [ADR-0060: MCP-Owned Go Diagnostic Sessions](../adr/0060-mcp-owned-go-diagnostic-sessions.md) implemented persistent in-memory `gopls` sessions retained by the MCP instance, achieving fast AST queries without a dedicated repository-wide index daemon.

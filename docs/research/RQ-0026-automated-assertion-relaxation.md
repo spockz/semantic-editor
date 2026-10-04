@@ -1,8 +1,9 @@
 # RQ-0026: Automated Assertion Relaxation (Fail-Fast to Continue-on-Failure)
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Semantics
 * **Date**: 2026-09-18
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -132,3 +133,12 @@ shapes safe.
    txtar cases per ADR-0028 in the same change.
 3. Keep the ast-grep grammar quirk (selector-pattern misparse) documented for
    rule authors until rules move behind the engine operation.
+
+---
+
+## 6. Resolution & Architecture Decision
+
+Resolved and implemented in the core engine:
+
+1. **Go AST Assertion Mode Engine**: Built [`internal/assertmode`](../../internal/assertmode/assertmode.go) to mechanically apply [ADR-0033: Exhaustive Assertion Reporting](../adr/0033-exhaustive-assertion-reporting.md). It converts test assertions between fail-fast (`Fatal`, `Fatalf`) and continue-on-failure (`Error`, `Errorf`) using `go/types` receiver verification and escape analysis for guarded values.
+2. **Central Operation Registration**: Registered as the `assertion_mode` operation in [`internal/operation/wire_assertmode.go`](../../internal/operation/wire_assertmode.go) supporting both `relax` and `restrict` modes across the CLI and MCP surfaces.

@@ -1,8 +1,8 @@
 # RQ-0014: Benchmark Methodology, Token/Latency Measurement & Eval Harness
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Benchmarks & Empirical Evaluation
-* **Last Updated**: 2026-09-16
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -234,3 +234,14 @@ Developing `semedit-bench` proceeds through four structured phases:
 2. Construct the prototype evaluation runner based on Approach B for fast prototyping, with an eventual migration path to Approach C for in-tree developer execution.
 3. Execute initial baseline evaluations on Qwen 2.5 Coder 14B/32B and Claude 3.7 Sonnet.
 4. Publish the first empirical benchmark report in `docs/research/benchmarks/`.
+
+---
+
+## 8. Resolution & Architecture Decision
+
+Resolved and implemented via the Go-native benchmark harness and evaluation architecture:
+
+1. **Go-Native Harness Engine**: Rather than an external Python/LiteLLM script, the harness was implemented in Go under [`tools/benchmark-harness`](../../tools/benchmark-harness/README.md), adhering to [ADR-0020](../adr/0020-exclusive-golang-runtime-and-tooling-ecosystem.md) and [ADR-0050: Benchmark Planning, Sessions, and Arm Policy](../adr/0050-benchmark-planning-sessions-and-arm-policy.md).
+2. **Measurement Validity & Telemetry**: [ADR-0038](../adr/0038-benchmark-experiment-conditions-and-provenance.md) and [ADR-0039](../adr/0039-benchmark-result-validity-and-tool-telemetry.md) formalize condition tracking, normalized ordered tool telemetry, and duration logging in milliseconds.
+3. **Fixture & Oracle Isolation**: [ADR-0040](../adr/0040-benchmark-fixture-and-oracle-isolation.md) enforces clean separation of visible prompts from post-run hidden acceptance tests.
+4. **Publication & Aggregation**: [ADR-0043](../adr/0043-benchmark-run-aggregation-and-best-case-publication.md) and [`cmd/docgen/benchmarks.go`](../../cmd/docgen/benchmarks.go) automate paired evidence aggregation and interactive reporting; empirical evaluations continue under [RQ-0015](RQ-0015-multi-dimensional-benchmark-matrix.md).

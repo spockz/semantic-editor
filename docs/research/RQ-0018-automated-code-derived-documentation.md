@@ -1,8 +1,9 @@
 # RQ-0018: Automated Code-Derived Capability Documentation and Test-Driven Examples
 
-* **Status**: Open
+* **Status**: Resolved
 * **Date**: 2026-09-16
 * **Category**: Documentation & Developer Experience
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -383,3 +384,14 @@ The top-level `make check` target invokes `verify-docs` alongside `fmt`, `tidy`,
 * Add `make docgen`, `make docgen-source`, and `make verify-docs` to `Makefile`.
 * Integrate `verify-docs` into `make check` and call the same target from the Pages workflow.
 * Validate that repository passes `make check` and markdown linter checks with zero warnings.
+
+---
+
+## 8. Resolution & Architecture Decision
+
+Resolved and delivered via the code-derived documentation engine:
+
+1. **Declarative Capability Source of Truth**: Implemented [`internal/capability`](../../internal/capability) to declare backend capability matrices directly from code.
+2. **Automated Documentation Generator**: Built [`cmd/docgen`](../../cmd/docgen) to parse capabilities and extract executable `txtar` test fixtures, generating reference pages, schemas, and [`skills/semedit/SKILL.md`](../../skills/semedit/SKILL.md).
+3. **Hugo/Hextra Integration**: [ADR-0015: Hugo + Hextra Documentation Presentation Layer](../adr/0015-mkdocs-material-documentation.md) and [RQ-0019](RQ-0019-mkdocs-material-migration.md) adopted Hugo and Hextra for modern presentation, navigation, and theme toggling.
+4. **CI Verification & Drift Gate**: Added `make docgen` and `make verify-docs` to `Makefile`, enforcing in `make check` that all published documentation reflects current code capabilities.

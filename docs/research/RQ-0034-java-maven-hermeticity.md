@@ -1,6 +1,7 @@
-# RQ-0030: Java Maven Hermeticity and Network Policy
+# RQ-0034: Java Maven Hermeticity and Network Policy
 
-Status: Open
+* **Status**: Open
+* **Category**: Build & Test Infrastructure
 
 ## Question
 

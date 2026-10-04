@@ -1,8 +1,8 @@
 # RQ-0005: Monorepo Workspace Topologies
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Workspaces & Configuration Safety
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -37,3 +37,13 @@ Language servers need to know the workspace boundaries to correctly resolve cros
 * **`gopls` Multi-Module Workspace Support**: [gopls documentation on multi-module setups](https://github.com/golang/tools/blob/master/gopls/doc/workspace.md).
 * **Cargo Workspaces**: [The Rust Cargo Book: Workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html).
 * **LSP `workspace/workspaceFolders` Specification**: [LSP Specification 3.17](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workspace_workspaceFolders).
+
+---
+
+## 4. Resolution & Architecture Decision
+
+Resolved and codified in [ADR-0005: Workspace Manifest Safety & Monorepo Scoping](../adr/0005-workspace-manifest-safety-and-monorepo-scoping.md) and [ADR-0041: MCP Runtime Configuration and Project-Local Go State](../adr/0041-mcp-runtime-configuration-and-project-local-go-state.md):
+
+1. **Non-Destructive Invariant**: `semedit` strictly prohibits writing or mutating workspace manifests (`go.work`, `Cargo.toml`) on disk without explicit user approval.
+2. **Contained Workspace Roots**: Runtime execution resolves contained canonical workspace roots per request, isolating build caches, LSP subprocesses, and temporary states under `.scratch/` within the resolved root.
+3. **Scoped Sessions**: Language servers operate within explicit module or project boundaries rather than unbounded cross-module multi-language attachments.

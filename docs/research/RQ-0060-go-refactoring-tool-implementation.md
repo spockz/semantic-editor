@@ -5,9 +5,7 @@
 * **Category**: Go Refactoring & Implementation Handover
 * **Date**: 2026-10-01
 
-## Consolidation and scope
-
-This is the single implementation investigation for the tools and expansions previously planned in RQ-0041–0059. Their complete tool-specific contracts, semantic risks, implementation steps, fixture sketches, and model-facing description drafts are retained below. Repeated shared requirements are recorded once. The earlier files are forwarding records; their consolidation status does not mean their tools are implemented.
+This is the single implementation investigation for the refactoring tools and expansions originally planned across the historical RQ-0041–0059 handovers. The individual forwarding files have been retired to eliminate documentation clutter, and their complete tool-specific contracts, semantic risks, implementation steps, fixture sketches, and model-facing description drafts are retained below. Repeated shared requirements are recorded once. Across all tool handovers, only `semantic_encapsulate_field` (RQ-0048 scope) and broader expansion gates beyond first-release bounds remain open.
 
 [RQ-0024](RQ-0024-ide-edit-and-refactoring-capability-taxonomy.md) continues to own the broader IDE capability taxonomy. [RQ-0027](RQ-0027-preventing-read-files.md#refactoring-handover-foundations) continues to investigate reusable schema, receipt, and model-facing description foundations. ADR-0055 governs parameter and continuation names. This record collects implementation work; accepted architectural changes still require the applicable ADR and an atomic index update.
 
@@ -57,27 +55,27 @@ Final integration requires the combined `make check` with bounded package concur
 
 ## Tool handover map
 
-| Section | Original record | Main dependency |
+| Section | Historical handover | Delivery status & governance |
 | :--- | :--- | :--- |
-| [Change signature](#go-change-signature) | RQ-0041 | Parameter mapping and evaluation proofs |
-| [Inline function/method](#go-inline-function) | RQ-0042 | Call selection and once-only evaluation |
-| [Extract constant](#go-extract-constant) | RQ-0043 | Typed constant/context proof |
-| [Extract interface](#go-extract-interface) | RQ-0044 | Exact method sets and member selection |
-| [Introduce parameter](#go-introduce-parameter) | RQ-0045 | 0041 signature planner |
-| [Introduce parameter object](#go-introduce-parameter-object) | RQ-0046 | 0041 plus field/evaluation mapping |
-| [Extract type and extract delegate](#go-extract-type-and-delegate) | RQ-0047 | Member dependencies and identity/layout proof |
-| [Encapsulate field](#go-encapsulate-field) | RQ-0048 | 0056 field/member planning |
-| [Type migration](#go-type-migration) | RQ-0049 | Type identity graph; later 0041 |
-| [Implement interface/contract](#go-implement-contract) | RQ-0050 | Method-set/signature comparison |
-| [Broader extract function/method](#go-extract-function-expansion) | RQ-0051 | Live-in/live-out and control-flow proof |
-| [Broader extract variable](#go-extract-variable-expansion) | RQ-0052 | Expression evaluation/context proof |
-| [Broader inline variable](#go-inline-variable-expansion) | RQ-0053 | Def/use and evaluation proof |
-| [Broader safe delete](#go-safe-delete-expansion) | RQ-0054 | Complete source/reference/resource coverage |
-| [Broader cross-package/type/package moves](#go-move-construct-expansion) | RQ-0055 | Dependency group and resource proof |
-| [Focused struct-field insertion](#go-insert-field) | RQ-0056 | Member collision/layout contract |
-| [Anchored statement insertion](#go-insert-statement) | RQ-0057 | Revision-bound node targeting |
-| [Composite-element insertion](#go-insert-composite-element) | RQ-0058 | Typed literal/element targeting |
-| [Documentation-comment edit](#go-set-doc-comment) | RQ-0059 | Comment ownership/directive preservation |
+| [Change signature](#go-change-signature) | RQ-0041 | Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md). General signature migration remains open. |
+| [Inline function/method](#go-inline-function) | RQ-0042 | Bounded delivery merged on main at `6718968`. Broader multi-call and method inlining remain open. |
+| [Extract constant](#go-extract-constant) | RQ-0043 | Bounded delivery merged on main; typed package constant proof. General context/enum extraction remains open. |
+| [Extract interface](#go-extract-interface) | RQ-0044 | Bounded delivery merged on main at `6718968`; see [ADR-0061](../adr/0061-go-contract-generation-from-typed-overlays.md). |
+| [Introduce parameter](#go-introduce-parameter) | RQ-0045 | Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md). |
+| [Introduce parameter object](#go-introduce-parameter-object) | RQ-0046 | Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md). |
+| [Extract type and extract delegate](#go-extract-type-and-delegate) | RQ-0047 | Bounded field-only extraction merged on main under [ADR-0063](../adr/0063-bounded-go-field-only-type-extraction.md). Methods stay on owner; delegate extraction remains open. |
+| [Encapsulate field](#go-encapsulate-field) | RQ-0048 | Open; accessor generation and reference rewrite planning. |
+| [Type migration](#go-type-migration) | RQ-0049 | Bounded alias-preserving migration merged on main at `6718968` (`internal/operation/wire_migrate_type.go`). Broader type graph migration remains open. |
+| [Implement interface/contract](#go-implement-contract) | RQ-0050 | Bounded delivery merged on main at `6718968`; see [ADR-0061](../adr/0061-go-contract-generation-from-typed-overlays.md). |
+| [Broader extract function/method](#go-extract-function-expansion) | RQ-0051 | Bounded delivery merged on main under [ADR-0056](../adr/0056-go-call-statement-extraction.md); broader control-flow and expression extraction remain open. |
+| [Broader extract variable](#go-extract-variable-expansion) | RQ-0052 | Bounded delivery merged on main under [ADR-0059](../adr/0059-bounded-go-extract-variable.md); broader expression extraction remains open. |
+| [Broader inline variable](#go-inline-variable-expansion) | RQ-0053 | Bounded delivery merged on main under [ADR-0058](../adr/0058-bounded-go-inline-variable-refactoring.md); broader evaluation inlining remains open. |
+| [Broader safe delete](#go-safe-delete-expansion) | RQ-0054 | Bounded delivery merged on main under [ADR-0057](../adr/0057-exact-go-node-removal-and-safe-delete.md); broader resource/member deletion remains open. |
+| [Broader cross-package/type/package moves](#go-move-construct-expansion) | RQ-0055 | Bounded free function and construct moves merged on main; broader cross-package resource movement remains open. |
+| [Focused struct-field insertion](#go-insert-field) | RQ-0056 | Bounded delivery merged on main at `6718968` (`semantic_insert_field`). |
+| [Anchored statement insertion](#go-insert-statement) | RQ-0057 | Superseded by `semantic_insert_construct` (`kind=statement/expression`) under [ADR-0053](../adr/0053-whole-construct-and-body-replacement.md). |
+| [Composite-element insertion](#go-insert-composite-element) | RQ-0058 | Bounded keyed struct/map insertion merged on main at `b77060a`; see [ADR-0062](../adr/0062-operation-specific-selector-continuations.md). |
+| [Documentation-comment edit](#go-set-doc-comment) | RQ-0059 | Bounded delivery merged on main at `6718968` (`semantic_set_doc_comment`). |
 
 ## Shared handover contract
 
@@ -150,7 +148,7 @@ Use ADR-0055 roles: `symbol` is the primary target; `file` is the workspace-rela
 
 ## Go change signature
 
-Original handover: RQ-0041. Implementation status: Open.
+Historical handover: RQ-0041. Implementation status: Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md). General signature migration remains open.
 
 ### Purpose and shared contract
 
@@ -304,7 +302,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go inline function
 
-Original handover: RQ-0042. Implementation status: Open.
+Historical handover: RQ-0042. Implementation status: Bounded delivery merged on main at `6718968`. Broader multi-call and method inlining remain open.
 
 ### Purpose and shared contract
 
@@ -447,7 +445,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go extract constant
 
-Original handover: RQ-0043. Implementation status: Open.
+Historical handover: RQ-0043. Implementation status: Bounded delivery merged on main (`semantic_extract_constant`); typed package constant proof. General context/enum extraction remains open.
 
 ### Purpose and shared contract
 
@@ -591,7 +589,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go extract interface
 
-Original handover: RQ-0044. Implementation status: Open.
+Historical handover: RQ-0044. Implementation status: Bounded delivery merged on main at `6718968`; see [ADR-0061](../adr/0061-go-contract-generation-from-typed-overlays.md). Broader cross-package/generic extraction remains open.
 
 ### Purpose and shared contract
 
@@ -742,7 +740,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go introduce parameter
 
-Original handover: RQ-0045. Implementation status: Open.
+Historical handover: RQ-0045. Implementation status: Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md).
 
 ### Purpose and shared contract
 
@@ -896,7 +894,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go introduce parameter object
 
-Original handover: RQ-0046. Implementation status: Open.
+Historical handover: RQ-0046. Implementation status: Bounded delivery merged on main; see [ADR-0064](../adr/0064-bounded-go-signature-refactoring.md).
 
 ### Purpose and shared contract
 
@@ -1069,7 +1067,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go extract type and delegate
 
-Original handover: RQ-0047. Implementation status: Open.
+Historical handover: RQ-0047. Implementation status: Bounded field-only extraction merged on main under [ADR-0063](../adr/0063-bounded-go-field-only-type-extraction.md). Methods stay on owner; delegate extraction remains open.
 
 ### Outcome and current evidence
 
@@ -1212,7 +1210,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go encapsulate field
 
-Original handover: RQ-0048. Implementation status: Open.
+Historical handover: RQ-0048. Implementation status: Open.
 
 ### Outcome and current evidence
 
@@ -1350,7 +1348,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go type migration
 
-Original handover: RQ-0049. Implementation status: Open.
+Historical handover: RQ-0049. Implementation status: Bounded alias-preserving migration merged on main at `6718968` (`internal/operation/wire_migrate_type.go`). Broader type graph migration remains open.
 
 ### Outcome and current evidence
 
@@ -1477,7 +1475,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go implement contract
 
-Original handover: RQ-0050. Implementation status: Open.
+Historical handover: RQ-0050. Implementation status: Bounded delivery merged on main at `6718968`; see [ADR-0061](../adr/0061-go-contract-generation-from-typed-overlays.md).
 
 ### Outcome and current evidence
 
@@ -1617,7 +1615,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go extract function expansion
 
-Original handover: RQ-0051. Implementation status: Open.
+Historical handover: RQ-0051. Implementation status: Bounded delivery merged on main under [ADR-0056](../adr/0056-go-call-statement-extraction.md); broader control-flow and expression extraction remain open.
 
 ### Outcome and current evidence
 
@@ -1755,7 +1753,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go extract variable expansion
 
-Original handover: RQ-0052. Implementation status: Open.
+Historical handover: RQ-0052. Implementation status: Bounded delivery merged on main under [ADR-0059](../adr/0059-bounded-go-extract-variable.md); broader expression extraction remains open.
 
 ### Context
 
@@ -1862,7 +1860,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go inline variable expansion
 
-Original handover: RQ-0053. Implementation status: Open.
+Historical handover: RQ-0053. Implementation status: Bounded delivery merged on main under [ADR-0058](../adr/0058-bounded-go-inline-variable-refactoring.md); broader evaluation inlining remains open.
 
 ### Context
 
@@ -1963,7 +1961,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go safe delete expansion
 
-Original handover: RQ-0054. Implementation status: Open.
+Historical handover: RQ-0054. Implementation status: Bounded delivery merged on main under [ADR-0057](../adr/0057-exact-go-node-removal-and-safe-delete.md); broader resource/member deletion remains open.
 
 ### Context
 
@@ -2061,7 +2059,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go move construct expansion
 
-Original handover: RQ-0055. Implementation status: Open.
+Historical handover: RQ-0055. Implementation status: Bounded free function and construct moves merged on main; broader cross-package resource movement remains open.
 
 ### Context
 
@@ -2163,7 +2161,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go insert field
 
-Original handover: RQ-0056. Implementation status: Open.
+Historical handover: RQ-0056. Implementation status: Bounded delivery merged on main at `6718968` (`semantic_insert_field`).
 
 ### Context
 
@@ -2267,7 +2265,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go insert statement
 
-Original handover: RQ-0057. Implementation status: Open.
+Historical handover: RQ-0057. Implementation status: Superseded by `semantic_insert_construct` (`kind=statement/expression`) under [ADR-0053](../adr/0053-whole-construct-and-body-replacement.md).
 
 ### Current status
 
@@ -2378,7 +2376,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go insert composite element
 
-Original handover: RQ-0058. Implementation status: Complete for the bounded keyed struct/map append described below; see ADR-0062.
+Historical handover: RQ-0058. Implementation status: Complete for the bounded keyed struct/map append described below; see ADR-0062.
 
 ### Context
 
@@ -2483,7 +2481,7 @@ For every remaining parameter, the shared description templates require its role
 
 ## Go set doc comment
 
-Original handover: RQ-0059. Implementation status: Open.
+Historical handover: RQ-0059. Implementation status: Bounded delivery merged on main at `6718968` (`semantic_set_doc_comment`).
 
 ### Context
 

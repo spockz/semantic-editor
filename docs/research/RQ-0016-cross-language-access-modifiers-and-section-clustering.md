@@ -1,8 +1,9 @@
 # RQ-0016: Cross-Language Access Modifiers and Section Clustering
 
-* **Status**: Open
+* **Status**: Resolved
 * **Date**: 2026-09-16
 * **Category**: Semantics & Architecture
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -97,3 +98,13 @@ When inserting a method or function:
 
 * Codify the backend capability contract and section placement rules in ADR-0012.
 * Implement `AccessModifier` support in `internal/astedit` and `internal/adapters/golang`.
+
+---
+
+## 6. Resolution & Architecture Decision
+
+Formalized and implemented in [ADR-0012: Cross-Language Access Modifiers and Section Placement](../adr/0012-access-modifiers-and-section-placement.md):
+
+1. **Universal Access Modifier Contract**: Defined the canonical `AccessModifier` enum (`infer`, `public`, `private`, `protected`, `package-private`) in [`internal/astedit/access.go`](../../internal/astedit/access.go), with validation returning explicit errors when unsupported modifiers are targeted.
+2. **Idiomatic Visibility Inference**: The Go engine infers visibility from casing (`infer`), matching exported/unexported identifiers, while rejecting invalid keyword modifiers (`protected`, `package-private`).
+3. **Strict Section Partitioning**: Function, method, and type insertion routines enforce section partitioning, guaranteeing public declarations precede private declarations and clustering receiver methods within their respective visibility sections.

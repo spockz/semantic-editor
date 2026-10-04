@@ -1,8 +1,8 @@
 # RQ-0009: Read-Only vs. Mutating LSP in Agent Harnesses
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Agent Harness & LSP Integration
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -72,3 +72,12 @@ Instead of forcing the agent to make two separate tool calls (`apply_edit` $\rig
 * **Antigravity LSP & Tool Prioritization Guidelines** (Observed harness behavior, 2026).
 * **LSP Specification 3.17**: `textDocument/rename`, `textDocument/codeAction`, `workspace/applyEdit`.
 * **Blackwell Systems `agent-lsp`**: [GitHub agent-lsp](https://github.com/blackwell-systems/agent-lsp): exposes LSP tools via MCP.
+
+---
+
+## 5. Resolution & Architecture Decision
+
+Resolved and implemented across core orchestration decisions:
+
+1. **Semantic MCP Tool Naming & Routing**: [ADR-0007: Semantic MCP Tool Naming & Schema Descriptions](../adr/0007-semantic-mcp-tool-naming-and-descriptions.md), [ADR-0009: Coexistence with LSP-MCP Servers via Distinct Naming & Profiles](../adr/0009-mcp-coexistence-and-tool-scoping.md), and [ADR-0053: Unified Construct Lifecycle and Public Catalog](../adr/0053-whole-construct-and-body-replacement.md) established high-level intent-based naming (`semantic_rename`, `semantic_replace_construct`, `semantic_insert_construct`) that steers planner routing away from line-diff text editing.
+2. **Bundled Mutation & Diagnostic Reporting**: [ADR-0004: Staged Execution & Diagnostic Reporting (No Forced Rollback)](../adr/0004-staged-execution-and-diagnostic-feedback.md) unified code transformation, atomic formatting, and compiler diagnostic deltas into a single synchronous turn, eliminating separate post-edit verification calls.

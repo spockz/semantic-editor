@@ -1,8 +1,9 @@
 # RQ-0032: Harness-Native Semantic Editor Installation
 
-* **Status**: Open
+* **Status**: Resolved
 * **Date**: 2026-09-21
 * **Category**: Integration & Distribution
+* **Last Updated**: 2026-10-04
 
 ## 1. Question
 
@@ -170,3 +171,12 @@ Resolve each initial target adapter independently when its installation is:
 
 Create an ADR once the final public command shape, ownership ledger, and
 configuration-conflict policy are accepted.
+
+---
+
+## 10. Resolution & Architecture Decision
+
+Resolved and implemented across the integration package and CLI surface:
+
+1. **Integration Target Adapters**: Implemented [`internal/integration`](../../internal/integration) supporting GitHub Copilot (`copilot`) and Codex (`codex`) with both `workspace` and `user` scopes.
+2. **Deterministic CLI Commands**: Added `semedit install`, `semedit integration status`, and `semedit uninstall` in [`internal/cli/cli.go`](../../internal/cli/cli.go), providing idempotent registration, conflict preflight, and clean removal without mutating untargeted harness configurations.

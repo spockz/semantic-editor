@@ -1,8 +1,8 @@
 # RQ-0002: Symbol Addressing & Disambiguation
 
-* **Status**: Open
+* **Status**: Resolved
 * **Category**: Addressing & Coordinate Resolution
-* **Last Updated**: 2026-09-15
+* **Last Updated**: 2026-10-04
 
 ---
 
@@ -49,3 +49,13 @@ Define a natural identifier syntax that allows unambiguous resolution without co
 * **Tree-sitter Query Syntax**: [Tree-sitter Pattern Matching](https://tree-sitter.github.io/tree-sitter/using-parsers#pattern-matching-with-queries).
 * **SCIP (Source Code Intelligence Protocol)**: [Sourcegraph SCIP Specification](https://github.com/sourcegraph/scip): hierarchical symbol naming (`scip-go`, `scip-java`).
 * **`gopls` Definition & Symbol RPCs**: [gopls documentation](https://pkg.go.dev/golang.org/x/tools/gopls).
+
+---
+
+## 4. Resolution & Architecture Decision
+
+Formalized and implemented across [ADR-0003: Symbol-Based Addressing Over File Coordinates](../adr/0003-symbol-based-addressing.md) and [ADR-0051: Semantic Code Inspection and Outline Operations](../adr/0051-semantic-code-inspection-and-outline-operations.md):
+
+1. **Hierarchical Symbol Qualification**: Models address symbols by name and receiver qualification (`TypeName.MethodName`) directly, eliminating line and character coordinate arithmetic.
+2. **Two-Tier Disambiguation Protocol**: The symbol resolver (`internal/symbol/resolver.go`) and neutral backend (`internal/backend/backend.go`) detect duplicate/overloaded symbols, returning structured ambiguous candidate sets (`Ambiguous: true`, `Candidates: [...]`) when unqualified queries match multiple definitions.
+3. **Semantic Inspection & Outline Navigation**: `semantic_inspect_symbol`, `semantic_outline`, and `semantic_find_references` provide whole-symbol source retrieval, body-elided outlines, and reference discovery with persistent revision coordinates.
