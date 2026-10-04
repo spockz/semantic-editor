@@ -329,6 +329,12 @@ title = "semedit"
 contentDir = "content"
 enableEmoji = true
 enableRobotsTXT = true
+disableKinds = ["RSS", "taxonomy", "term"]
+
+[outputs]
+  home = ["HTML", "sitemap"]
+  page = ["HTML"]
+  section = ["HTML"]
 
 [module]
   [[module.imports]]
