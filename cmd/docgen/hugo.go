@@ -323,20 +323,35 @@ The generated [capability reference](../reference/) contains the available seman
 `
 }
 
-const hugoConfig = `baseURL = "/"
+const hugoConfigBase = `baseURL = "/"
 languageCode = "en-us"
 title = "semedit"
 contentDir = "content"
 enableEmoji = true
-enableRobotsTXT = true
-disableKinds = ["RSS", "taxonomy", "term"]
+enableRobotsTXT = true`
+
+func renderHugoConfig(enableRSS bool) string {
+	var outputsSection string
+	if enableRSS {
+		outputsSection = `disableKinds = ["taxonomy", "term"]
+
+[outputs]
+  home = ["HTML", "RSS", "sitemap"]
+  page = ["HTML"]
+  section = ["HTML", "RSS"]`
+	} else {
+		outputsSection = `disableKinds = ["RSS", "taxonomy", "term"]
 
 [outputs]
   home = ["HTML", "sitemap"]
   page = ["HTML"]
-  section = ["HTML"]
+  section = ["HTML"]`
+	}
 
-[module]
+	return hugoConfigBase + "\n" + outputsSection + "\n\n" + hugoConfigTail
+}
+
+const hugoConfigTail = `[module]
   [[module.imports]]
     path = "github.com/imfing/hextra"
 
@@ -483,8 +498,8 @@ Start with the installation guide, then use the reference when you need a specif
 {{< /hextra/feature-grid >}}
 `
 
-func writeHugoConfig(outputDir string) error {
-	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(hugoConfig)); err != nil {
+func writeHugoConfig(outputDir string, enableRSS bool) error {
+	if err := writeGeneratedFile(filepath.Join(outputDir, "hugo.toml"), []byte(renderHugoConfig(enableRSS))); err != nil {
 		return fmt.Errorf("write hugo.toml: %w", err)
 	}
 	if err := writeHugoModule(outputDir); err != nil {

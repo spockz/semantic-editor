@@ -74,7 +74,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	t.Parallel()
 
 	outputDir := prepareHugoTestOutput(t)
-	if err := writeHugoConfig(outputDir); err != nil {
+	if err := writeHugoConfig(outputDir, false); err != nil {
 		t.Fatalf("write Hugo config: %v", err)
 	}
 	if err := writeLandingAssets(outputDir); err != nil {
@@ -87,6 +87,7 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 	configText := string(config)
 	assertContainsAll(t, configText, []string{
 		`baseURL = "/"`,
+		`disableKinds = ["RSS", "taxonomy", "term"]`,
 		`endLevel = 4`,
 		`path = "github.com/imfing/hextra"`,
 		`name = "Get started"`,
@@ -147,6 +148,52 @@ func TestWriteHugoConfigUsesDeploymentNeutralBaseURL(t *testing.T) {
 		`title="Benchmarks"`,
 		`link="benchmarks/"`,
 	}, "Hugo documentation section")
+}
+
+func TestWriteHugoConfigRSSConfiguration(t *testing.T) {
+	t.Parallel()
+
+	t.Run("disabled by default", func(t *testing.T) {
+		t.Parallel()
+		outputDir := prepareHugoTestOutput(t)
+		if err := writeHugoConfig(outputDir, false); err != nil {
+			t.Fatalf("write Hugo config: %v", err)
+		}
+		config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml"))
+		if err != nil {
+			t.Fatalf("read Hugo config: %v", err)
+		}
+		configText := string(config)
+		assertContainsAll(t, configText, []string{
+			`disableKinds = ["RSS", "taxonomy", "term"]`,
+			"home = [\"HTML\", \"sitemap\"]",
+			"section = [\"HTML\"]",
+		}, "Hugo config without RSS")
+		if strings.Contains(configText, `"RSS"`) && strings.Contains(configText, `home = ["HTML", "RSS"`) {
+			t.Errorf("expected RSS outputs omitted when enableRSS is false")
+		}
+	})
+
+	t.Run("enabled", func(t *testing.T) {
+		t.Parallel()
+		outputDir := prepareHugoTestOutput(t)
+		if err := writeHugoConfig(outputDir, true); err != nil {
+			t.Fatalf("write Hugo config: %v", err)
+		}
+		config, err := os.ReadFile(filepath.Join(outputDir, "hugo.toml"))
+		if err != nil {
+			t.Fatalf("read Hugo config: %v", err)
+		}
+		configText := string(config)
+		assertContainsAll(t, configText, []string{
+			`disableKinds = ["taxonomy", "term"]`,
+			`home = ["HTML", "RSS", "sitemap"]`,
+			`section = ["HTML", "RSS"]`,
+		}, "Hugo config with RSS")
+		if strings.Contains(configText, `"RSS", "taxonomy"`) {
+			t.Errorf("expected RSS kind enabled when enableRSS is true")
+		}
+	})
 }
 
 func TestExtractCodeCapabilitiesReportsMalformedPlacementSource(t *testing.T) {

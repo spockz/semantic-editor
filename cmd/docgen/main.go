@@ -15,32 +15,40 @@ func main() {
 	}
 }
 
+type docgenOptions struct {
+	outputDir string
+	enableRSS bool
+}
+
 func runDocgen(args []string) error {
 	rootDir, rootErr := findRepoRoot()
 	if rootErr != nil {
 		return fmt.Errorf("locating repo root: %w", rootErr)
 	}
-	outputDir, parseErr := parseOutputDir(rootDir, args)
+	opts, parseErr := parseDocgenOptions(rootDir, args)
 	if parseErr != nil {
 		return parseErr
 	}
-	if err := prepareOutputDirectories(outputDir); err != nil {
+	if err := prepareOutputDirectories(opts.outputDir); err != nil {
 		return err
 	}
-	if err := removeStaleDocumentation(outputDir); err != nil {
+	if err := removeStaleDocumentation(opts.outputDir); err != nil {
 		return err
 	}
-	return generateDocumentation(rootDir, outputDir)
+	return generateDocumentation(rootDir, opts.outputDir, opts.enableRSS)
 }
 
-func parseOutputDir(rootDir string, args []string) (string, error) {
-	outputDir := filepath.Join(rootDir, ".scratch", "docgen")
-	flags := flag.NewFlagSet("docgen", flag.ExitOnError)
-	flags.StringVar(&outputDir, "output-dir", outputDir, "directory for the generated Hugo source tree")
-	if err := flags.Parse(args); err != nil {
-		return "", fmt.Errorf("parsing flags: %w", err)
+func parseDocgenOptions(rootDir string, args []string) (docgenOptions, error) {
+	opts := docgenOptions{
+		outputDir: filepath.Join(rootDir, ".scratch", "docgen"),
 	}
-	return outputDir, nil
+	flags := flag.NewFlagSet("docgen", flag.ExitOnError)
+	flags.StringVar(&opts.outputDir, "output-dir", opts.outputDir, "directory for the generated Hugo source tree")
+	flags.BoolVar(&opts.enableRSS, "enable-rss", false, "enable RSS feed generation in Hugo configuration")
+	if err := flags.Parse(args); err != nil {
+		return docgenOptions{}, fmt.Errorf("parsing flags: %w", err)
+	}
+	return opts, nil
 }
 
 func prepareOutputDirectories(outputDir string) error {
@@ -76,7 +84,7 @@ func removeStaleDocumentation(outputDir string) error {
 	return nil
 }
 
-func generateDocumentation(rootDir, outputDir string) error {
+func generateDocumentation(rootDir, outputDir string, enableRSS bool) error {
 	capabilities, placements, capabilitiesErr := extractCodeCapabilities(rootDir)
 	if capabilitiesErr != nil {
 		return fmt.Errorf("extracting code capabilities: %w", capabilitiesErr)
@@ -98,7 +106,7 @@ func generateDocumentation(rootDir, outputDir string) error {
 	if err := writeLandingAssets(outputDir); err != nil {
 		return fmt.Errorf("writing landing assets: %w", err)
 	}
-	if err := writeHugoConfig(outputDir); err != nil {
+	if err := writeHugoConfig(outputDir, enableRSS); err != nil {
 		return fmt.Errorf("writing Hugo configuration: %w", err)
 	}
 	fmt.Printf("Successfully synthesized Hugo documentation source: %s\n", filepath.Join(outputDir, "content", "docs", "reference.md"))

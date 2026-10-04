@@ -5,6 +5,7 @@ ifeq ($(shell uname -s),Darwin)
 export DEVELOPER_DIR ?= /Library/Developer/CommandLineTools
 endif
 HUGO_BASE_URL ?= /
+DOCGEN_ARGS ?=
 GOLANGCI_LINT_VERSION ?= v2.13.2
 MARKDOWNLINT_CLI2_VERSION ?= 0.23.2
 VALE_VERSION ?= v3.22.0
@@ -316,7 +317,7 @@ docgen: check-hugo-version docgen-source ## Generate the documentation site into
 docgen-source: go-env ## Generate temporary Hugo Markdown and module source in .scratch/docgen
 	@echo "==> Generating Hugo documentation source in .scratch/docgen..."
 	@mkdir -p .scratch/docgen
-	go run ./cmd/docgen --output-dir .scratch/docgen
+	go run ./cmd/docgen --output-dir .scratch/docgen $(DOCGEN_ARGS)
 
 .PHONY: docs
 docs: docgen ## Alias for docgen
