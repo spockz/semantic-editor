@@ -229,9 +229,7 @@ func TestBenchmarkCodeShortcodeUsesHextraPartialsAndSafeDecoding(t *testing.T) {
 	for _, want := range []string{
 		`{{- $encoded := .Get "content" -}}`,
 		`{{- $content := $encoded | base64Decode -}}`,
-		`partial "components/codeblock"`,
-		`partialCached "components/codeblock-copy-button"`,
-		`site.Params.highlight.copy.enable`,
+		`<pre><code class="language-{{ $lang }}">{{ $content }}</code></pre>`,
 	} {
 		if !strings.Contains(benchmarkCodeShortcode, want) {
 			t.Errorf("benchmark shortcode source missing %q", want)

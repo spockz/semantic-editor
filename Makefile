@@ -11,7 +11,7 @@ VALE_VERSION ?= v3.22.0
 GOPLS_VERSION ?= v0.23.0
 # GNU Make 3.81 gives this flag precedence over -jN; set MAKE_JOBS=N to override.
 # Set it only in the top-level process so recursive make shares its jobserver.
-MAKE_JOBS ?= 8
+MAKE_JOBS ?= 12
 ifeq ($(MAKELEVEL),0)
 MAKEFLAGS += -j$(MAKE_JOBS)
 endif
@@ -40,13 +40,16 @@ go-env:
 	@mkdir -p "$(GOCACHE)" "$(GOMODCACHE)" "$(GOTMPDIR)" "$(GOBIN)" "$(GOPLSCACHE)" "$(GOLANGCI_LINT_CACHE)" "$(HUGO_CACHEDIR)" "$(CURDIR)/.scratch/tools"
 
 ## ---------------------------------------------------------
-## Single-entry check target (runs formatting, lint [go, markdown, vale], security, tests, and docs)
+## Check targets
 ## ---------------------------------------------------------
 .PHONY: check
-check: lint vuln test verify-docs ## Run all checks (format, tidy, lint [go, markdown, vale], security, tests, and docs)
+check: lint-check test-core ## Run fast iterative checks (linting and core engine tests)
 
-## Reader targets wait for source formatting and dependency updates.
-lint-go lint-markdown lint-vale vuln test build-next: tidy
+.PHONY: check-ci
+check-ci: lint vuln test-all verify-docs ## Run comprehensive checks (format, tidy, full linters, security, all tests, docs)
+
+## Go source reader targets wait for source formatting and dependency updates; markdown and vale linting run independently.
+lint-go vuln test test-core test-harness test-all build-next: tidy
 
 ## ---------------------------------------------------------
 ## Dependencies & Tooling
@@ -214,9 +217,28 @@ vuln: go-env ## Run vulnerability security check
 ## ---------------------------------------------------------
 ## Testing
 ## ---------------------------------------------------------
-.PHONY: test
-test: go-env ## Run unit and race tests
-	@echo "==> Running unit tests..."
+.PHONY: test test-core
+test: test-core ## Alias for test-core
+
+test-core: go-env ## Run core engine unit tests excluding benchmark-harness
+	@echo "==> Running core engine tests..."
+	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
+	go test -shuffle=on -cover $$CORE_PACKAGES
+
+.PHONY: test-race
+test-race: go-env ## Run core engine unit tests with race detector
+	@echo "==> Running core engine tests with race detector..."
+	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
+	go test -race -shuffle=on -cover -v $$CORE_PACKAGES
+
+.PHONY: test-harness
+test-harness: go-env ## Run benchmark harness tests
+	@echo "==> Running benchmark harness tests..."
+	go test -shuffle=on -cover ./tools/benchmark-harness/...
+
+.PHONY: test-all
+test-all: go-env ## Run all unit and race tests including benchmark-harness
+	@echo "==> Running full test suite with race detector..."
 	go test -race -shuffle=on -cover -v ./...
 
 .PHONY: test-short

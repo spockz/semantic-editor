@@ -170,10 +170,7 @@ const benchmarkCodeShortcode = `{{- $lang := .Get "lang" | default "text" -}}
 {{- $content := $encoded | base64Decode -}}
 <div class="benchmark-code-block">
   <div class="hextra-code-block hx:relative hx:mt-6 hx:first:mt-0 hx:group/code">
-    {{- partial "components/codeblock" (dict "lang" $lang "content" $content "options" (dict)) -}}
-    {{- if or (eq site.Params.highlight.copy.enable nil) (site.Params.highlight.copy.enable) -}}
-      {{- partialCached "components/codeblock-copy-button" (dict "filename" "") "" -}}
-    {{- end -}}
+    <pre><code class="language-{{ $lang }}">{{ $content }}</code></pre>
   </div>
 </div>
 `
