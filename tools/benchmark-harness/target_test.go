@@ -1,3 +1,4 @@
+// Target parsing tests preserve benchmark identities across provider-specific command routing.
 package main
 
 import (
@@ -81,5 +82,18 @@ func TestTargetListFlag(t *testing.T) {
 	}
 	if tl[1].String() != "agy/gemini-3.8-flash-low" {
 		t.Errorf("expected agy/gemini-3.8-flash-low, got %s", tl[1].String())
+	}
+}
+
+func TestOpenCodeShortTarget(t *testing.T) {
+	target, err := ParseTarget("opencode/qwen36-iq4-xs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Harness != "opencode" || target.Model != "qwen36-iq4-xs" || target.Effort != "" || target.String() != "opencode/qwen36-iq4-xs" {
+		t.Fatalf("short target changed benchmark identity: %+v", target)
+	}
+	if _, err := ParseTarget("opencode/"); err == nil {
+		t.Fatal("empty model accepted")
 	}
 }

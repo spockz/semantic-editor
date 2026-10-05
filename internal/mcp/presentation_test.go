@@ -12,6 +12,8 @@ import (
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T) {
@@ -397,11 +399,7 @@ func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
 }
 
 func TestBatchResultSchemaAllowsOverlappingSuccessAndErrorProjection(t *testing.T) {
-	schema := operation.ValueSchema{
-		Kind:       operation.SchemaObject,
-		Properties: map[string]operation.ValueSchema{"status": {Kind: operation.SchemaString}},
-		Required:   []string{"status"},
-	}
+	schema := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{"status": {Kind: operation.SchemaString}}, Required: []string{"status"}}
 	entry := operation.Entry{
 		MCPName:       "semantic_probe_projection",
 		Output:        &operation.OperationOutputContract{ResultSchema: &schema},
@@ -411,17 +409,35 @@ func TestBatchResultSchemaAllowsOverlappingSuccessAndErrorProjection(t *testing.
 			return map[string]any{"status": "known"}, true, nil
 		},
 	}
-	resultSchema, err := batchResultSchemaForEntries([]operation.Entry{entry})
+	rowSchema, err := batchResultSchemaForEntries([]operation.Entry{entry})
 	if err != nil {
 		t.Fatalf("batchResultSchemaForEntries() error = %v", err)
 	}
-	branches := resultSchema["oneOf"].([]any)
-	properties := branches[0].(map[string]any)[schemaPropertiesKey].(map[string]any)
-	result := properties["result"].(map[string]any)
-	if _, ok := result["anyOf"]; !ok {
-		t.Fatalf("overlapping success/error schemas must use anyOf: %#v", result)
+	encoded, err := json.Marshal(rowSchema)
+	if err != nil {
+		t.Fatalf("encode row schema: %v", err)
 	}
-	if _, ok := result["oneOf"]; ok {
-		t.Fatalf("overlapping result schema uses oneOf: %#v", result)
+	var document any
+	if decodeErr := json.Unmarshal(encoded, &document); decodeErr != nil {
+		t.Fatalf("decode row schema: %v", decodeErr)
+	}
+	compiler := jsonschema.NewCompiler()
+	if resourceErr := compiler.AddResource("batch-row.json", document); resourceErr != nil {
+		t.Fatalf("add row schema: %v", resourceErr)
+	}
+	compiled, err := compiler.Compile("batch-row.json")
+	if err != nil {
+		t.Fatalf("compile row schema: %v", err)
+	}
+	for label, row := range map[string]any{
+		"success":     map[string]any{"tool": entry.MCPName, "status": "ok", "result": map[string]any{"status": "known"}},
+		"known error": map[string]any{"tool": entry.MCPName, "status": "error", "error": "known failure", applicationStateField: "unknown", "result": map[string]any{"status": "known"}},
+	} {
+		if err := compiled.Validate(row); err != nil {
+			t.Errorf("overlapping %s projection rejected: %v", label, err)
+		}
+	}
+	if err := compiled.Validate(map[string]any{"tool": entry.MCPName, "status": "error", "error": "known failure", applicationStateField: "unknown"}); err != nil {
+		t.Errorf("generic error projection rejected: %v", err)
 	}
 }

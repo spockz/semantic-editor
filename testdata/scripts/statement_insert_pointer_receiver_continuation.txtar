@@ -1,0 +1,31 @@
+# A canonical method selector from inspection must select a pointer receiver.
+exec semedit insert-construct --file dispatch.go --kind statement/expression --in-function Dispatcher.Record --discriminator flush() --source record() --anchor before
+cmp dispatch.go .scratch/want/dispatch.go
+
+-- go.mod --
+module example.com/pointercontinuation
+
+go 1.24
+-- dispatch.go --
+package service
+
+type Dispatcher struct{}
+
+func (d *Dispatcher) Record() {
+	flush()
+}
+
+func flush() {}
+func record() {}
+-- .scratch/want/dispatch.go --
+package service
+
+type Dispatcher struct{}
+
+func (d *Dispatcher) Record() {
+	record()
+	flush()
+}
+
+func flush()  {}
+func record() {}

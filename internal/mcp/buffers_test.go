@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"semedit/internal/backend"
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/sourcebuf"
@@ -129,7 +130,7 @@ func executeUnsavedBufferBatch(t *testing.T, root string, registry *operation.Re
 			t.Fatal(err)
 		}
 	}
-	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
 		t.Fatal(err)
 	}
 	return output.String()
@@ -222,7 +223,7 @@ func TestBatchBufferDiskBarrierOrdering(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	srv := mcp.NewServer("full", fixture.root, &output, mcp.WithRegistry(registry))
+	srv := mcptest.NewServer(t, "full", fixture.root, &output, mcp.WithRegistry(registry))
 	response, err := srv.ExecuteBatch(t.Context(), []mcp.BatchEntry{{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"value.go","symbol":"Value","body":"return 2"}`)}, {Tool: "semantic_probe_disk", Params: json.RawMessage(`{}`)}, {Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"value.go","symbol":"Value","body":"return 3"}`)}}, false)
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +280,7 @@ func TestBatchSubdirectoryRenameAcrossBarrier(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
-	response, err := mcp.NewServer("full", subdir, &output, mcp.WithRegistry(registry)).ExecuteBatch(t.Context(), []mcp.BatchEntry{
+	response, err := mcptest.NewServer(t, "full", subdir, &output, mcp.WithRegistry(registry)).ExecuteBatch(t.Context(), []mcp.BatchEntry{
 		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"value.go","symbol":"Value","to":"Renamed"}`)},
 		{Tool: "semantic_probe_module_disk", Params: json.RawMessage(`{}`)},
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"value.go","symbol":"Renamed","body":"return 3"}`)},
@@ -355,7 +356,7 @@ func TestBatchMovesAndRenameShareUnsavedModule(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := mcp.NewServer("full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+	if err := mcptest.NewServer(t, "full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
 		t.Fatal(err)
 	}
 	for line := range strings.SplitSeq(strings.TrimSpace(output.String()), "\n") {
@@ -462,7 +463,7 @@ func TestMCPBatchSignatureKeepsDiskPreimageUntilFlush(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := mcp.NewServer("full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
+	if err := mcptest.NewServer(t, "full", fixture.root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), &input); err != nil {
 		t.Fatal(err)
 	}
 	if probes != 1 {

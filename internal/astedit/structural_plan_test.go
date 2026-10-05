@@ -398,3 +398,32 @@ func TestDocCommentBlockCRLFRawRange(t *testing.T) {
 		t.Fatalf("comment removal changed bytes outside its owned range:\n got %q\nwant %q", removed.Source, want)
 	}
 }
+
+func TestStructuralMethodSelectorCanonicalizesReceiverTypes(t *testing.T) {
+	for _, receiverTypes := range []string{"A[T]", "A[T, U]"} {
+		typeParameters := "T any"
+		if receiverTypes == "A[T, U]" {
+			typeParameters = "T, U any"
+		}
+		source := []byte("package p\ntype A[" + typeParameters + "] struct{}\nfunc (" + receiverTypes + ") Value() {\n\tvalueWork()\n}\nfunc (*" + receiverTypes + ") Pointer() {\n\tpointerWork()\n}\n")
+		for _, testCase := range []struct {
+			selector string
+			anchor   string
+		}{
+			{selector: "A.Value", anchor: "valueWork()"},
+			{selector: "A.Pointer", anchor: "pointerWork()"},
+			{selector: "(*A).Pointer", anchor: "pointerWork()"},
+		} {
+			plan, err := PlanInsertStatement(source, InsertStatementIntent{
+				Function: testCase.selector, Discriminator: testCase.anchor, Source: "audit()", Placement: StatementBefore,
+			})
+			if err != nil {
+				t.Errorf("receiver %s selector %q: %v", receiverTypes, testCase.selector, err)
+				continue
+			}
+			if !strings.Contains(string(plan.Source), "audit()\n\t"+testCase.anchor) {
+				t.Errorf("receiver %s selector %q did not insert before %s:\n%s", receiverTypes, testCase.selector, testCase.anchor, plan.Source)
+			}
+		}
+	}
+}

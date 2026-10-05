@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 )
 
 func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
@@ -174,6 +174,39 @@ func TestCompositeInsertionUsesLiteralLexicalScopeForMapKeys(t *testing.T) {
 	}
 }
 
+func TestPointerMethodInspectionContinuationFeedsStatementInsertion(t *testing.T) {
+	root := t.TempDir()
+	writeTestGoModule(t, root)
+	path := filepath.Join(root, "dispatch.go")
+	initial := []byte("package service\ntype Dispatcher struct{}\nfunc (d *Dispatcher) Record() {\n\tflush()\n}\nfunc flush() {}\nfunc record() {}\n")
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatalf("write dispatcher fixture: %v", err)
+	}
+	inspected := callCompositeTool(t, root, 1, "semantic_inspect_symbol", map[string]any{
+		"symbol": "Dispatcher.Record", "file": "dispatch.go", "language": "go", "trust_workspace": true,
+	})
+	inspectResult := inspected["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	records := inspectResult["continuations"].([]any)
+	if len(records) != 1 {
+		t.Fatalf("inspection continuations = %#v", records)
+	}
+	record := records[0].(map[string]any)
+	if record["in_function"] != "Dispatcher.Record" {
+		t.Fatalf("pointer method continuation = %#v", record)
+	}
+	callCompositeTool(t, root, 2, "semantic_insert_construct", map[string]any{
+		"file": record["file"], "kind": "statement/expression", "in_function": record["in_function"],
+		"discriminator": "flush()", "source": "record()", "anchor": "before",
+	})
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read inserted dispatcher: %v", err)
+	}
+	if !strings.Contains(string(updated), "\trecord()\n\tflush()") {
+		t.Fatalf("statement insertion did not use inspected pointer-method selector:\n%s", updated)
+	}
+}
+
 func callCompositeTool(t *testing.T, root string, id int, name string, arguments map[string]any, allowRefusal ...bool) map[string]any {
 	t.Helper()
 	request, err := json.Marshal(map[string]any{
@@ -184,7 +217,7 @@ func callCompositeTool(t *testing.T, root string, id int, name string, arguments
 		t.Fatalf("encode %s request: %v", name, err)
 	}
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
 		t.Fatalf("serve %s request: %v", name, err)
 	}
 	var response map[string]any

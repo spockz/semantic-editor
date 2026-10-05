@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 )
 
 func TestMCPLiveReloadCapabilities(t *testing.T) {
@@ -20,7 +21,7 @@ func TestMCPLiveReloadCapabilities(t *testing.T) {
 		inBuf := bytes.NewBufferString(input)
 		var outBuf bytes.Buffer
 
-		srv := mcp.NewServer("full", ".", &outBuf)
+		srv := mcptest.NewServer(t, "full", ".", &outBuf)
 		if err := srv.Serve(t.Context(), inBuf); err != nil {
 			t.Fatalf("Serve failed: %v", err)
 		}
@@ -54,7 +55,7 @@ func TestMCPLiveReloadToolPresence(t *testing.T) {
 		inBuf := bytes.NewBufferString(input)
 		var outBuf bytes.Buffer
 
-		srv := mcp.NewServer("full", ".", &outBuf)
+		srv := mcptest.NewServer(t, "full", ".", &outBuf)
 		if err := srv.Serve(t.Context(), inBuf); err != nil {
 			t.Fatalf("Serve failed: %v", err)
 		}
@@ -82,7 +83,7 @@ func TestMCPLiveReloadToolPresence(t *testing.T) {
 		inBuf := bytes.NewBufferString(input)
 		var outBuf bytes.Buffer
 
-		srv := mcp.NewServer("full", ".", &outBuf, mcp.WithLiveReload(true))
+		srv := mcptest.NewServer(t, "full", ".", &outBuf, mcp.WithLiveReload(true))
 		if err := srv.Serve(t.Context(), inBuf); err != nil {
 			t.Fatalf("Serve failed: %v", err)
 		}
@@ -129,7 +130,7 @@ func TestMCPLiveReloadInitializedNotification(t *testing.T) {
 		inBuf := bytes.NewBufferString(input)
 		var outBuf bytes.Buffer
 
-		srv := mcp.NewServer("full", ".", &outBuf, mcp.WithLiveReload(true))
+		srv := mcptest.NewServer(t, "full", ".", &outBuf, mcp.WithLiveReload(true))
 		if err := srv.Serve(t.Context(), inBuf); err != nil {
 			t.Fatalf("Serve failed: %v", err)
 		}
@@ -156,7 +157,7 @@ func TestMCPLiveReloadInitializedNotification(t *testing.T) {
 		inBuf := bytes.NewBufferString(input)
 		var outBuf bytes.Buffer
 
-		srv := mcp.NewServer("full", ".", &outBuf, mcp.WithLiveReload(false))
+		srv := mcptest.NewServer(t, "full", ".", &outBuf, mcp.WithLiveReload(false))
 		if err := srv.Serve(t.Context(), inBuf); err != nil {
 			t.Fatalf("Serve failed: %v", err)
 		}
@@ -175,7 +176,7 @@ func TestMCPLiveReloadToolCallWhenDisabled(t *testing.T) {
 	inBuf := bytes.NewBufferString(input)
 	var outBuf bytes.Buffer
 
-	srv := mcp.NewServer("full", ".", &outBuf, mcp.WithLiveReload(false))
+	srv := mcptest.NewServer(t, "full", ".", &outBuf, mcp.WithLiveReload(false))
 	if err := srv.Serve(t.Context(), inBuf); err != nil {
 		t.Fatalf("Serve failed: %v", err)
 	}

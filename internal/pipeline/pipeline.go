@@ -295,7 +295,13 @@ func insertExplicitImport(fileNode *ast.File, alias, pkgPath string) {
 			return
 		}
 	}
-	fileNode.Decls = slices.Insert(fileNode.Decls, 0, ast.Decl(&ast.GenDecl{Tok: token.IMPORT, Specs: []ast.Spec{newSpec}}))
+	anchor := fileNode.Name.End()
+	newSpec.Path.ValuePos = anchor
+	if newSpec.Name != nil {
+		newSpec.Name.NamePos = anchor
+	}
+	newDecl := &ast.GenDecl{TokPos: anchor, Tok: token.IMPORT, Specs: []ast.Spec{newSpec}}
+	fileNode.Decls = slices.Insert(fileNode.Decls, 0, ast.Decl(newDecl))
 }
 
 // FindModuleRoot locates the nearest enclosing directory containing go.mod.

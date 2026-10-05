@@ -80,11 +80,11 @@ var (
 	removeSymbolSources        = sourceSymbolContinuations
 	removeDiscriminatorSources = sourceDiscriminatorContinuations
 	removeParams               = []ParameterContract{
-		{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: removeFileSources},
+		{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: removeFileSources},
 		{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableRemoveConstructKinds},
-		{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified top-level declaration to remove; required for function, method, type, constant, or variable, and never an owner selector", SourceFields: removeSymbolSources},
-		{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: sourceInFunctionContinuations},
-		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
+		{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Role: RoleTarget, Description: "Target: qualified top-level declaration to remove; required for function, method, type, constant, or variable, and never an owner selector", SourceFields: removeSymbolSources},
+		{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: owner function or method containing the case target; required only for kind=case", SourceFields: sourceInFunctionContinuations},
+		{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Role: RoleSelector, Description: "Selector: switch discriminant expression or type-switch assignment to narrow case selection", SourceFields: removeDiscriminatorSources},
 		{Name: "target_case", CLIName: "target-case", JSONName: "target_case", Type: ParamString, Description: "Selector: case value to remove (for example nil or \"foo\"); use default for a default clause"},
 		{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (for example 0 or 0.1)"},
 		{Name: removeSafeDelete, CLIName: "safe-delete", JSONName: removeSafeDelete, Type: ParamBoolean, Description: "Request fail-closed reference and resource preflight for unexported standalone constants, free functions other than main/init, or basic package variables with no initializer or a constant-valued initializer. Referenced, effectful, grouped, or unsupported declarations and incomplete source sets refuse with checks run.", Default: false},
@@ -201,7 +201,7 @@ func removeDef() Def[RemoveReq, RemoveRes] {
 		Params:   removeParams,
 		Level:    LevelFile,
 		CLIName:  "remove-construct",
-		MCPName:  "semantic_remove_construct",
+		MCPName:  semanticRemoveConstructToolName,
 		Parse:    parseRemove,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, RemoveReq) (RemoveRes, error){backend.LanguageGo: runRemove},
 		Format: func(res RemoveRes) (string, error) {

@@ -1,0 +1,944 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "none",
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434"
+      },
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 38334,
+        "comparison_pair_id": "pair-fc86676623de6ef7",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "first_event_to_first_tool_call_ms": 5832,
+        "initial_context_tokens": 6830,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 38334,
+            "initial_load_turns": 1,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2103,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 959,
+            "process_start_to_first_event_ms": 11634,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 45502,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "content": "package config\n\nimport (\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.ListenPort)\n}\n",
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "write",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000",
+                  "pattern": "\\.Port"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go build ./..."
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go test ./..."
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 7168,
+            "wall_clock_ms": 43134
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-d9a7eee95e5d8c70",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "opencode_exit_code": 0,
+        "oracle": {
+          "duration_ms": 2103,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 959,
+        "process_start_to_first_event_ms": 11634,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 45502,
+        "prompt_variant": "default",
+        "provenance": {
+          "gopls_version": "0.23.0",
+          "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+          "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 7,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "opencode",
+          "model": "qwen36-iq4-xs"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "content": "package config\n\nimport (\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.ListenPort)\n}\n",
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "write",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000",
+              "pattern": "\\.Port"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go build ./..."
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go test ./..."
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "read",
+          "write",
+          "grep",
+          "bash",
+          "bash"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 7168,
+        "variant": "small:default",
+        "wall_clock_ms": 45321
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+        "cached_prompt_tokens": 328157,
+        "comparison_pair_id": "pair-fc86676623de6ef7",
+        "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+        "first_event_to_first_tool_call_ms": 5506,
+        "initial_context_tokens": 31327,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 328157,
+            "initial_load_turns": 1,
+            "internal_turns": 10,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2170,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1390,
+            "process_start_to_first_event_ms": 51202,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 362092,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Port",
+                  "to": "ListenPort"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Port: symbol not found\"} resolve Port: symbol not found",
+                "functional_status": "failed",
+                "name": "semedit_semantic_rename",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Config.Port",
+                  "to": "ListenPort"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_rename",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "kind": "const"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=const\"} symbol is required for kind=const",
+                "functional_status": "failed",
+                "name": "semedit_semantic_remove_construct",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "kind": "type",
+                  "source": "type Config struct {\n\tHost string\n\tListenPort int\n}"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=type\"} symbol is required for kind=type",
+                "functional_status": "failed",
+                "name": "semedit_semantic_replace_construct",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "config/config.go",
+                  "kind": "function",
+                  "placement": "file_start",
+                  "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_insert_construct",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "go test ./config/...",
+                  "workdir": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "config/config.go"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_verify",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 33935,
+            "wall_clock_ms": 102301
+          }
+        ],
+        "internal_turns": 10,
+        "job_id": "job-3ed3c6bf544e17a5",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": true,
+        "opencode_exit_code": 0,
+        "oracle": {
+          "duration_ms": 2170,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1390,
+        "process_start_to_first_event_ms": 51202,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 362092,
+        "prompt_variant": "default",
+        "provenance": {
+          "gopls_version": "0.23.0",
+          "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000.mcp-metrics.json",
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 7,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not use `semantic_batch` because I was unaware it was available as an option. The operations (rename and insert) were sequential and interdependent—the `DefaultConfig()` function references `ListenPort`, which needed to exist first—making batching feasible, but I handled them as separate calls without knowing the batch tool existed."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Semedit's semantic tools felt precise and reliable—renaming and inserting code with type-aware confidence is a genuine upgrade over text search-and-replace, and I'd absolutely ask you to add them."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "opencode",
+          "model": "qwen36-iq4-xs"
+        },
+        "task_id": "task-09-composite-refactor",
+        "tool_calls": [
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Port",
+              "to": "ListenPort"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Port: symbol not found\"} resolve Port: symbol not found",
+            "functional_status": "failed",
+            "name": "semedit_semantic_rename",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Config.Port",
+              "to": "ListenPort"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_rename",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "kind": "const"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=const\"} symbol is required for kind=const",
+            "functional_status": "failed",
+            "name": "semedit_semantic_remove_construct",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "kind": "type",
+              "source": "type Config struct {\n\tHost string\n\tListenPort int\n}"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=type\"} symbol is required for kind=type",
+            "functional_status": "failed",
+            "name": "semedit_semantic_replace_construct",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "config/config.go",
+              "kind": "function",
+              "placement": "file_start",
+              "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_insert_construct",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "go test ./config/...",
+              "workdir": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "config/config.go"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_verify",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "read",
+          "semedit_semantic_rename",
+          "semedit_semantic_rename",
+          "semedit_semantic_remove_construct",
+          "semedit_semantic_replace_construct",
+          "read",
+          "semedit_semantic_insert_construct",
+          "read",
+          "bash",
+          "semedit_semantic_verify"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 33935,
+        "variant": "small:default",
+        "wall_clock_ms": 104558
+      },
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-09-composite-refactor",
+      "txtar_path": "testdata/bench/task_09_composite_refactor.txtar",
+      "txtar_provenance": "https://github.com/spockz/semantic-editor/blob/83d88a5482d8614eee37246b1ddc53ebb78d4435/testdata/bench/task_09_composite_refactor.txtar",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 38334,
+      "comparison_pair_id": "pair-fc86676623de6ef7",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "first_event_to_first_tool_call_ms": 5832,
+      "initial_context_tokens": 6830,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 38334,
+          "initial_load_turns": 1,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2103,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 959,
+          "process_start_to_first_event_ms": 11634,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 45502,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "content": "package config\n\nimport (\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.ListenPort)\n}\n",
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "write",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "path": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000",
+                "pattern": "\\.Port"
+              },
+              "functional_status": "succeeded",
+              "name": "grep",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go build ./..."
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go test ./..."
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 7168,
+          "wall_clock_ms": 43134
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-d9a7eee95e5d8c70",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": false,
+      "opencode_exit_code": 0,
+      "oracle": {
+        "duration_ms": 2103,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 959,
+      "process_start_to_first_event_ms": 11634,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 45502,
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "content": "package config\n\nimport (\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost       string\n\tListenPort int\n}\n\nfunc DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.ListenPort)\n}\n",
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000/config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "write",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "path": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000",
+            "pattern": "\\.Port"
+          },
+          "functional_status": "succeeded",
+          "name": "grep",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go build ./..."
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "cd \"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-09-composite-refactor_1791154865044899000\" \u0026\u0026 go test ./..."
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "read",
+        "write",
+        "grep",
+        "bash",
+        "bash"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 7168,
+      "variant": "small:default",
+      "wall_clock_ms": 45321
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package config\n\nimport (\n\t\"archive/tar\"\n\t\"fmt\"\n)\n\ntype Config struct {\n\tHost string\n\tPort int\n}\n\nfunc (c *Config) Addr() string {\n\treturn fmt.Sprintf(\"%s:%d\", c.Host, c.Port)\n}",
+      "cached_prompt_tokens": 328157,
+      "comparison_pair_id": "pair-fc86676623de6ef7",
+      "diff": "File config/config.go modified (15 lines -\u003e 21 lines)",
+      "first_event_to_first_tool_call_ms": 5506,
+      "initial_context_tokens": 31327,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 328157,
+          "initial_load_turns": 1,
+          "internal_turns": 10,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2170,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1390,
+          "process_start_to_first_event_ms": 51202,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 362092,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Port",
+                "to": "ListenPort"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Port: symbol not found\"} resolve Port: symbol not found",
+              "functional_status": "failed",
+              "name": "semedit_semantic_rename",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Config.Port",
+                "to": "ListenPort"
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_rename",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "kind": "const"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=const\"} symbol is required for kind=const",
+              "functional_status": "failed",
+              "name": "semedit_semantic_remove_construct",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "kind": "type",
+                "source": "type Config struct {\n\tHost string\n\tListenPort int\n}"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=type\"} symbol is required for kind=type",
+              "functional_status": "failed",
+              "name": "semedit_semantic_replace_construct",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "config/config.go",
+                "kind": "function",
+                "placement": "file_start",
+                "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_insert_construct",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "go test ./config/...",
+                "workdir": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000"
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "path": "config/config.go"
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_verify",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 33935,
+          "wall_clock_ms": 102301
+        }
+      ],
+      "internal_turns": 10,
+      "job_id": "job-3ed3c6bf544e17a5",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": true,
+      "opencode_exit_code": 0,
+      "oracle": {
+        "duration_ms": 2170,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1390,
+      "process_start_to_first_event_ms": 51202,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 362092,
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000.mcp-metrics.json",
+        "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 7,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not use `semantic_batch` because I was unaware it was available as an option. The operations (rename and insert) were sequential and interdependent—the `DefaultConfig()` function references `ListenPort`, which needed to exist first—making batching feasible, but I handled them as separate calls without knowing the batch tool existed."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Semedit's semantic tools felt precise and reliable—renaming and inserting code with type-aware confidence is a genuine upgrade over text search-and-replace, and I'd absolutely ask you to add them."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-09-composite-refactor",
+      "tool_calls": [
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Port",
+            "to": "ListenPort"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Port: symbol not found\"} resolve Port: symbol not found",
+          "functional_status": "failed",
+          "name": "semedit_semantic_rename",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Config.Port",
+            "to": "ListenPort"
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_rename",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "kind": "const"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=const\"} symbol is required for kind=const",
+          "functional_status": "failed",
+          "name": "semedit_semantic_remove_construct",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "kind": "type",
+            "source": "type Config struct {\n\tHost string\n\tListenPort int\n}"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"symbol is required for kind=type\"} symbol is required for kind=type",
+          "functional_status": "failed",
+          "name": "semedit_semantic_replace_construct",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "config/config.go",
+            "kind": "function",
+            "placement": "file_start",
+            "source": "func DefaultConfig() *Config {\n\treturn \u0026Config{\n\t\tHost:       \"localhost\",\n\t\tListenPort: 8080,\n\t}\n}"
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_insert_construct",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000/config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "go test ./config/...",
+            "workdir": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-09-composite-refactor_1791154910754923000"
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "path": "config/config.go"
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_verify",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 10,
+      "tools_used": [
+        "read",
+        "semedit_semantic_rename",
+        "semedit_semantic_rename",
+        "semedit_semantic_remove_construct",
+        "semedit_semantic_replace_construct",
+        "read",
+        "semedit_semantic_insert_construct",
+        "read",
+        "bash",
+        "semedit_semantic_verify"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 33935,
+      "variant": "small:default",
+      "wall_clock_ms": 104558
+    }
+  ],
+  "timestamp": "2026-10-05T04:35:31.139051+02:00"
+}

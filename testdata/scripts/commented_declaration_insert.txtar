@@ -1,0 +1,56 @@
+# Specific declaration kinds must parse comments while rejecting wrong or multiple declaration forms before writing.
+mkdir -p .scratch
+cp request.go .scratch/original.go
+stdin commented-var.txt
+exec semedit insert-construct --file request.go --kind var --placement after_symbol --target ErrRequest --group standalone --source -
+stdout 'Successfully inserted var construct'
+grep 'ErrInvalidRequest is returned when a request lacks a valid identity' request.go
+grep 'var ErrInvalidRequest = 2' request.go
+
+stdin commented-const.txt
+exec semedit insert-construct --file request.go --kind const --placement after_symbol --target ErrInvalidRequest --group standalone --source -
+stdout 'Successfully inserted const construct'
+grep 'DefaultIdentity is used when a request omits an identity' request.go
+grep 'const DefaultIdentity = "default"' request.go
+
+stdin commented-type.txt
+exec semedit insert-construct --file request.go --kind type --placement after_symbol --target Request --source -
+stdout 'Successfully inserted type construct'
+grep 'Identity is the canonical request identifier' request.go
+grep 'type Identity string' request.go
+
+cp request.go .scratch/after-valid.go
+stdin wrong-kind.txt
+! exec semedit insert-construct --file request.go --kind var --source -
+stderr 'var insertion requires a var declaration'
+cmp request.go .scratch/after-valid.go
+
+stdin multiple-vars.txt
+! exec semedit insert-construct --file request.go --kind var --source -
+stderr 'var insertion requires exactly one var declaration'
+cmp request.go .scratch/after-valid.go
+
+-- go.mod --
+module example.com/commenteddeclaration
+
+go 1.24
+-- request.go --
+package request
+
+type Request struct{}
+
+var ErrRequest = 1
+-- commented-var.txt --
+// ErrInvalidRequest is returned when a request lacks a valid identity.
+var ErrInvalidRequest = 2
+-- commented-const.txt --
+// DefaultIdentity is used when a request omits an identity.
+const DefaultIdentity = "default"
+-- commented-type.txt --
+// Identity is the canonical request identifier.
+type Identity string
+-- wrong-kind.txt --
+type Other struct{}
+-- multiple-vars.txt --
+var First = 1
+var Second = 2

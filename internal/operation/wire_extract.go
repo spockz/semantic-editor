@@ -29,7 +29,7 @@ func (r *ExtractFunctionReq) SetProjectContext(project backend.ProjectContext) {
 }
 
 var extractFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple identifier for the helper declaration to create", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified owner function or method containing the statements", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Helper declaration form", Required: true, Enums: []string{"function", "method"}},
@@ -133,7 +133,7 @@ func (r ExtractConstantReq) GetProjectContext() backend.ProjectContext { return 
 func (r *ExtractConstantReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var extractConstantParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh package-level constant identifier to create; choose a new simple name", Required: true},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified function or method containing the expression", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of one current compile-time constant expression", Required: true},
@@ -222,9 +222,9 @@ func (r *ExtractVariableReq) SetProjectContext(project backend.ProjectContext) {
 }
 
 var extractVariableParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: fresh simple local identifier to create; choose a new name not already visible in the owner", Required: true},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: sourceInFunctionContinuations},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified owner function or method containing the selected call", Required: true, SourceFields: sourceInFunctionContinuations},
 	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: exact source text of the first argument expression in a direct call to an unshadowed same-file package function", Required: true},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic; a supplied path requires its matching expected_revision"},
 	{Name: expectedRevisionJSONName, CLIName: "expected-revision", JSONName: expectedRevisionJSONName, Type: ParamString, Role: RoleTarget, Description: "Guard: selected-file SHA-256 revision copied from semantic_inspect_symbol; required with a construct_path from the ambiguity diagnostic", SourceFields: []string{sourceInspectExpectedRevision}},

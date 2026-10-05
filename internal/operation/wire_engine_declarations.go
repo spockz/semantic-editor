@@ -27,8 +27,8 @@ func (r InsertDeclarationReq) GetProjectContext() backend.ProjectContext { retur
 func (r *InsertDeclarationReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceReplaceDeclFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, sourceExtractConstantReceiptSymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceReplaceDeclFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Role: RoleTarget, Description: "Target: existing constant, global variable, or type alias identifier", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, sourceInsertTypeSymbol, sourceInsertDeclSymbol, sourceInsertDeclarationSymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol, sourceExtractConstantReceiptSymbol}},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "New declaration source snippet", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up imports after replacement (default true)", Default: true},
 }
@@ -44,7 +44,7 @@ type insertDeclarationFields struct {
 }
 
 var insertDeclarationParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One top-level Go declaration. Prefer semantic_insert_function, semantic_insert_type, or semantic_insert_decl for functions, types, constants, and variables", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Placement qualifier: file_start, file_end (default), public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol identifier required when placement is before_symbol or after_symbol"},
@@ -111,13 +111,15 @@ func insertDeclarationDef() Def[InsertDeclarationReq, FileEditRes] {
 		Params:  insertDeclarationParams,
 		Level:   LevelFile,
 		CLIName: "insert",
-		MCPName: "semantic_insert_declaration",
+		MCPName: semanticInsertDeclarationToolName,
 		Parse:   parseInsertDeclaration,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclarationReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertDeclaration,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "func InitServer() *Server { return &Server{} }"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -133,7 +135,7 @@ func (r InsertFunctionReq) GetProjectContext() backend.ProjectContext { return r
 func (r *InsertFunctionReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertFunctionParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "One complete Go function or method declaration, including parameters, results, and body", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private", Enums: accessEnum, DynamicEnums: supportedAccessModifiers},
@@ -169,13 +171,15 @@ func insertFunctionDef() Def[InsertFunctionReq, FileEditRes] {
 		Params:  insertFunctionParams,
 		Level:   LevelFile,
 		CLIName: "insert-func",
-		MCPName: "semantic_insert_function",
+		MCPName: semanticInsertFunctionToolName,
 		Parse:   parseInsertFunction,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertFunctionReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertFunction,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "func (s *Server) Stop() {}"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -191,7 +195,7 @@ func (r InsertTypeReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertTypeReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertTypeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Type definition Go source code snippet", Required: true},
 	// CLI today exposes --no-imports (negated); generation normalizes to --auto-organize-imports.
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private", Enums: accessEnum, DynamicEnums: supportedAccessModifiers},
@@ -227,13 +231,15 @@ func insertTypeDef() Def[InsertTypeReq, FileEditRes] {
 		Params:  insertTypeParams,
 		Level:   LevelFile,
 		CLIName: "insert-type",
-		MCPName: "semantic_insert_type",
+		MCPName: semanticInsertTypeToolName,
 		Parse:   parseInsertType,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertTypeReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertType,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "type Config struct{}"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -273,7 +279,7 @@ func (r InsertDeclReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertDeclReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertDeclParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Declaration Go source code snippet", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private", Enums: accessEnum, DynamicEnums: supportedAccessModifiers},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for const/var: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
@@ -336,13 +342,15 @@ func insertDeclDef() Def[InsertDeclReq, FileEditRes] {
 		Params:  insertDeclParams,
 		Level:   LevelFile,
 		CLIName: "insert-decl",
-		MCPName: "semantic_insert_decl",
+		MCPName: semanticInsertDeclToolName,
 		Parse:   parseInsertDecl,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertDeclReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertDecl,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "source": "const DefaultPort = 8080"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
@@ -433,8 +441,10 @@ func replaceDeclDef() Def[ReplaceDeclReq, FileEditRes] {
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceDeclReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceDecl,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "symbol": "DefaultPort", "source": "const DefaultPort = 8443"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		BufferedBatch: true, Batchable: true,
 	}
 }

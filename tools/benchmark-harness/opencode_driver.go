@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	openCodeDefaultModel   = "amdbeast/qwen36-coder"
+	openCodeDefaultModel   = "qwen36-iq4-xs"
 	openCodeQwenBaseURL    = "http://192.168.1.122:1234/v1"
 	openCodeQwenBaseURLEnv = "SEMEDIT_OPENCODE_QWEN_BASE_URL"
 	openRouterAPIKeyEnv    = "OPENROUTER_API_KEY" //nolint:gosec // environment variable name, never a credential value
@@ -33,10 +33,7 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	if err != nil {
 		return "", fmt.Errorf("prepare OpenCode environment: %w", err)
 	}
-	model := target.Model
-	if model == "" {
-		model = openCodeDefaultModel
-	}
+	model := openCodeProviderModel(target.Model)
 	if strings.HasPrefix(model, "openrouter/") && strings.TrimSpace(environmentLookup(env, openRouterAPIKeyEnv)) == "" {
 		return "", fmt.Errorf("%s is not set; OpenCode benchmarks require OpenRouter authentication", openRouterAPIKeyEnv)
 	}
@@ -49,12 +46,18 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 		args = append(args, "--variant", target.Effort)
 	}
 	args = append(args, prompt)
-
-	// #nosec G204 -- external driver invocation controlled by benchmark harness
-	cmd := exec.CommandContext(ctx, "opencode", args...)
+	openCodePath, err := exec.LookPath("opencode")
+	if err != nil {
+		return "", fmt.Errorf("locate OpenCode executable: %w", err)
+	}
+	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, openCodeModelBaseURL(target))
+	if err != nil {
+		return "", fmt.Errorf("prepare OpenCode filesystem containment: %w", err)
+	}
+	// #nosec G204 -- benchmark harness starts a fixed sandbox launcher and configured OpenCode executable.
+	cmd := exec.CommandContext(ctx, sandboxPath, append([]string{"-f", profilePath, openCodePath}, args...)...)
 	cmd.Dir = workDir
 	cmd.Env = env
-
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return "", fmt.Errorf("open OpenCode stdout: %w", err)
@@ -62,11 +65,10 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("start OpenCode using %s: %w", configPath, err)
+		return "", fmt.Errorf("start sandboxed OpenCode using %s: %w", configPath, err)
 	}
 	processStartedAt := time.Now()
 	res.processStartedAt = processStartedAt
-
 	stream := readOpenCodeEventStream(stdout, res, resumeID)
 	waitErr := cmd.Wait()
 	if cmd.ProcessState != nil {
@@ -76,6 +78,9 @@ func (r *Runner) runOpenCode(ctx context.Context, workDir string, target Target,
 	res.OpenCodeStderr = sanitizeOpenRouterDiagnostic(boundedDiagnostic(stderr.Bytes(), maxOpenCodeStderrBytes), env)
 	applyOpenCodeStreamMetrics(res, stream, processStartedAt)
 	providerErr := openCodeStreamFailure(stream, waitErr, res.OpenCodeStderr)
+	if providerErr != nil {
+		providerErr = &openCodeDiagnosticError{cause: providerErr, message: sanitizeOpenRouterDiagnostic(providerErr.Error(), env)}
+	}
 	setOpenCodeObservationState(res, providerErr, stream)
 	if providerErr != nil {
 		return stream.sessionID, providerErr
@@ -96,6 +101,7 @@ type openCodeEventStream struct {
 	firstEventAt time.Time
 	sessionID    string
 	scanErr      error
+	usage        openCodeUsageTracker
 }
 
 func readOpenCodeEventStream(stdout io.Reader, result *RunResult, resumeID string) openCodeEventStream {
@@ -128,9 +134,11 @@ func consumeOpenCodeEvent(stream *openCodeEventStream, result *RunResult, raw []
 	}
 	appendOpenCodeAgentResponse(result, event)
 	stream.tracker.observe(result, event, observedAt)
+	stream.usage.observe(event)
 }
 
 func applyOpenCodeStreamMetrics(result *RunResult, stream openCodeEventStream, processStartedAt time.Time) {
+	stream.usage.apply(result)
 	result.Turns = 0
 	if stream.validEvents > 0 {
 		result.Turns = 1
@@ -163,6 +171,10 @@ func openCodeStreamFailure(stream openCodeEventStream, waitErr error, stderr str
 		} else {
 			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w", waitErr))
 		}
+	}
+	providerErr = errors.Join(providerErr, stream.usage.err)
+	if stream.validEvents > 0 && (!stream.usage.finished || len(stream.usage.starts) > len(stream.usage.steps)) {
+		providerErr = errors.Join(providerErr, fmt.Errorf("OpenCode stream lacks complete terminal token usage"))
 	}
 	return providerErr
 }
@@ -207,19 +219,23 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 	if err := pipeline.WriteAtomic(configPath, data); err != nil {
 		return "", nil, fmt.Errorf("write OpenCode configuration: %w", err)
 	}
-
 	homeDir := filepath.Join(configRoot, "home")
-	for _, dir := range []string{homeDir, filepath.Join(configRoot, "config"), filepath.Join(configRoot, "data"), filepath.Join(configRoot, "cache")} {
+	configDir := filepath.Join(configRoot, "config")
+	dataDir := filepath.Join(configRoot, "data")
+	cacheDir := filepath.Join(configRoot, "cache")
+	tempDir := filepath.Join(configRoot, "tmp")
+	for _, dir := range []string{homeDir, configDir, dataDir, cacheDir, tempDir} {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return "", nil, fmt.Errorf("create OpenCode isolated directory: %w", err)
 		}
 	}
-	env := append([]string(nil), goEnv...)
+	env := sanitizedOpenCodeEnvironment(goEnv)
 	env = replaceEnvironment(env, map[string]string{
 		"HOME":                            homeDir,
-		"XDG_CONFIG_HOME":                 filepath.Join(configRoot, "config"),
-		"XDG_DATA_HOME":                   filepath.Join(configRoot, "data"),
-		"XDG_CACHE_HOME":                  filepath.Join(configRoot, "cache"),
+		"XDG_CONFIG_HOME":                 configDir,
+		"XDG_DATA_HOME":                   dataDir,
+		"XDG_CACHE_HOME":                  cacheDir,
+		"TMPDIR":                          tempDir,
 		"OPENCODE_CONFIG":                 configPath,
 		"OPENCODE_DISABLE_PROJECT_CONFIG": "1",
 	})
@@ -227,10 +243,7 @@ func (r *Runner) openCodeEnvironment(ctx context.Context, workDir string, arm Ar
 }
 
 func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env []string) (map[string]any, error) {
-	model := target.Model
-	if model == "" {
-		model = openCodeDefaultModel
-	}
+	model := openCodeProviderModel(target.Model)
 	provider, providerModel, found := strings.Cut(model, "/")
 	if !found || providerModel == "" {
 		return nil, fmt.Errorf("OpenCode target %q must use provider/model form", model)
@@ -239,9 +252,7 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	switch provider {
 	case "openrouter":
 		providerConfig = map[string]any{
-			"models": map[string]any{
-				providerModel: map[string]any{"name": providerModel},
-			},
+			"models": map[string]any{providerModel: map[string]any{"name": providerModel}},
 		}
 	case "amdbeast":
 		baseURL := openCodeQwenBaseURL
@@ -249,23 +260,19 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 			baseURL = override
 		}
 		providerConfig = map[string]any{
-			"name": "AMD Beast",
-			"npm":  "@ai-sdk/openai-compatible",
-			"options": map[string]any{
-				"baseURL": baseURL,
-			},
-			"models": map[string]any{
-				providerModel: map[string]any{"name": "QWen 3.6 Coder"},
-			},
+			"name":    "AMD Beast",
+			"npm":     "@ai-sdk/openai-compatible",
+			"options": map[string]any{"baseURL": baseURL},
+			"models":  map[string]any{providerModel: map[string]any{"name": providerModel, "id": providerModel}},
 		}
 	default:
 		return nil, fmt.Errorf("unsupported OpenCode provider %q", provider)
 	}
 	config := map[string]any{
-		"$schema": "https://opencode.ai/config.json",
-		"provider": map[string]any{
-			provider: providerConfig,
-		},
+		"$schema":    "https://opencode.ai/config.json",
+		"tools":      map[string]bool{"task": false},
+		"permission": map[string]any{"external_directory": "deny"},
+		"provider":   map[string]any{provider: providerConfig},
 	}
 	if provider == "openrouter" {
 		config["model"] = model
@@ -596,4 +603,14 @@ func firstValue(values ...any) any {
 		}
 	}
 	return nil
+}
+
+func openCodeProviderModel(model string) string {
+	if model == "" {
+		model = openCodeDefaultModel
+	}
+	if !strings.Contains(model, "/") {
+		return "amdbeast/" + model
+	}
+	return model
 }

@@ -124,6 +124,11 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return agentWorkspaceSetup{}, fmt.Errorf("extract task fixture: %w", err)
 	}
+	if target.Harness == string(HarnessOpenCode) {
+		if err := initializeOpenCodeFixtureGit(ctx, workDir); err != nil {
+			return agentWorkspaceSetup{}, err
+		}
+	}
 	if target.Harness == string(HarnessCodex) {
 		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
 			return agentWorkspaceSetup{}, fmt.Errorf("prepare Codex fixture instructions: %w", err)
@@ -365,6 +370,9 @@ func semanticToolBaseName(name string) string {
 		if after, found := strings.CutPrefix(clean, prefix); found {
 			return after
 		}
+	}
+	if after, found := strings.CutPrefix(clean, "semedit_semantic_"); found {
+		return "semantic_" + after
 	}
 	return clean
 }

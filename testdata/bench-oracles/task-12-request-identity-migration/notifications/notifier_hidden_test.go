@@ -1,9 +1,10 @@
 package notifications
 
 import (
-	"example.com/identityservice/request"
 	"reflect"
 	"testing"
+
+	"example.com/identityservice/request"
 )
 
 func TestNotificationRequestIdentity(t *testing.T) {

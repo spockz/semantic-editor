@@ -23,9 +23,9 @@ import (
 const wireCLIExpectedRevision = "expected-revision"
 
 var renameParams = []ParameterContract{
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: append(append(append(append([]string(nil), sourceSymbolContinuations...), sourceExtractFunctionReceiptSymbol, sourceExtractConstantReceiptSymbol, sourceExtractVariableReceiptSymbol, sourceInlineVariableReceiptSymbol), sourceContractExtractSymbol, sourceContractImplementSymbol), sourceConcreteTargetSymbol, sourceGeneratedMethodSymbol)},
 	{Name: "to", CLIName: "to", JSONName: "to", Description: "New identifier name (e.g. Serve)", Type: ParamString, Required: true},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, "semantic_extract_variable.result.continuations[].file", "semantic_inline_variable.result.continuations[].file", sourceContractExtractFile, sourceContractImplementFile, sourceConcreteTargetFile, sourceGeneratedMethodFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: source file containing the declaration; paths are relative to the workspace root. Required to select Rust or Java rename scope", Type: ParamString, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile, sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, "semantic_extract_variable.result.continuations[].file", "semantic_inline_variable.result.continuations[].file", sourceContractExtractFile, sourceContractImplementFile, sourceConcreteTargetFile, sourceGeneratedMethodFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto; Rust requires a selected .rs file and workspace trust; Java requires a selected .java file and trust_workspace=true)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for Rust or Java rename (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java rename", Type: ParamString},
@@ -35,16 +35,17 @@ var renameParams = []ParameterContract{
 }
 
 var lookupParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Required: true, SourceFields: append(sourceSymbolContinuations, sourceContractExtractSymbol, sourceContractImplementSymbol)},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file that constrains symbol search scope", Type: ParamString, SourceFields: append(sourceFileContinuations, sourceContractExtractFile, sourceContractImplementFile)},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. Server.ServeHTTP, (*Client).Do, or ValidateToken)", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: append(sourceSymbolContinuations, sourceContractExtractSymbol, sourceContractImplementSymbol)},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file that constrains symbol search scope", Type: ParamString, Role: RoleTarget, SourceFields: append(sourceFileContinuations, sourceContractExtractFile, sourceContractImplementFile)},
 )
 
 const (
-	wireCLITrustWorkspace      = "trust-workspace"
-	wireJDTLSHome              = "jdtls_home"
-	wireImportMaven            = "import_maven"
-	wireCLIAutoOrganizeImports = "auto-organize-imports"
-	wireAccessModifier         = "access_modifier"
+	wireCLITrustWorkspace         = "trust-workspace"
+	wireJDTLSHome                 = "jdtls_home"
+	wireImportMaven               = "import_maven"
+	wireCLIAutoOrganizeImports    = "auto-organize-imports"
+	wireAccessModifier            = "access_modifier"
+	wireNavigationHintDescription = "Navigation hint; not an operation parameter."
 )
 
 const (
@@ -104,6 +105,7 @@ var sourceFileContinuations = []string{
 	sourceReplaceConstructFile, sourceInsertCaseFile, sourceInsertFunctionFile,
 	sourceInsertTypeFile, sourceInsertDeclFile, sourceInsertDeclarationFile,
 	sourceInsertConstructFile, sourceReplaceDeclFile, sourceOrganizeImportsFile, sourceScaffoldFile,
+	semanticMoveConstructToolName + ".file",
 	sourceExtractFunctionReceiptFile, sourceExtractConstantReceiptFile, sourceExtractVariableReceiptFile, sourceInlineVariableReceiptFile,
 }
 
@@ -182,7 +184,7 @@ type LanguageCoverage = verification.LanguageCoverage
 
 var verifyParams = []ParameterContract{
 	{Name: "path", CLIName: "path", JSONName: "path", Description: "Optional Go file or directory to format and check; relative paths resolve from the active semedit workspace root. Go verification runs formatting before diagnostics and can write files", Type: ParamString, Default: "."},
-	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
+	{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: Java, Kotlin, or Bash source file to verify; path is relative to the workspace root", Type: ParamString, Role: RoleTarget, SourceFields: []string{sourceLookupFile, sourceRenameFile}},
 	{Name: "language", CLIName: "language", JSONName: "language", Description: "Language backend (default auto)", Type: ParamString, Enums: languageEnums, LanguageSelector: true},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Description: "Explicitly trust this workspace for this request; required for external language verification (default false)", Type: ParamBoolean, Default: false},
 	{Name: wireJDTLSHome, CLIName: "jdtls-home", JSONName: wireJDTLSHome, Description: "Explicit preinstalled JDT LS distribution home required for Java verification", Type: ParamString},
@@ -468,6 +470,14 @@ func lookupDef() Def[LookupReq, *backend.LookupResult] {
 			backend.LanguageMake:    run,
 		},
 		Format: formatLookup,
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
+			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
+			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
+		},
+			OutputMetadataField{Field: "kind", Schema: ValueSchema{Kind: SchemaString}, Description: "Descriptive symbol category; its vocabulary differs from mutation kind inputs.", Optional: true},
+			OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true},
+			OutputMetadataField{Field: "column", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true},
+		),
 		ExampleRaw: map[string]any{
 			"symbol":           "Server.Start",
 			"file":             wireExampleFile,
@@ -669,16 +679,19 @@ func projectRenameDiagnostics(delta backend.DiagnosticDelta) map[string]any {
 
 var renameFileConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, "semantic_verify", semanticReplaceBodyToolName,
-	semanticMoveConstructToolName, "semantic_remove_construct", "semantic_insert_case",
-	"semantic_insert_function", "semantic_insert_type", "semantic_insert_decl",
-	"semantic_insert_declaration", "semantic_insert_construct", semanticReplaceDeclToolName,
+	semanticAssertionModeToolName, semanticExtractConstantToolName,
+	semanticMoveConstructToolName, semanticRemoveConstructToolName, semanticReplaceConstructToolName, semanticInsertCaseToolName,
+	semanticInsertFunctionToolName, semanticInsertTypeToolName, semanticInsertDeclToolName,
+	semanticInsertDeclarationToolName, semanticInsertConstructToolName, semanticReplaceDeclToolName,
 	semanticExtractFunctionToolName, semanticExtractVariableToolName,
 	semanticInlineFunctionToolName, semanticInlineVariableToolName, semanticMigrateTypeToolName,
+	semanticFindReferencesToolName, semanticInspectSymbolToolName,
 }
 
 var renameSymbolConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, semanticReplaceBodyToolName, semanticMoveConstructToolName,
 	semanticReplaceDeclToolName, semanticInlineFunctionToolName, semanticMigrateTypeToolName,
+	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticRemoveConstructToolName,
 }
 
 var renameRevisionConsumers = []string{
@@ -701,7 +714,9 @@ func verifyDef() Def[VerifyReq, VerifyRes] {
 			backend.LanguageBash:   verifyRun,
 			backend.LanguageAuto:   verifyRun,
 		},
-		Format: formatVerify,
+		Format:        formatVerify,
+		Output:        &OperationOutputContract{ResultSchema: NativeVerifyOutputSchema()},
+		ProjectOutput: func(result VerifyRes) (any, error) { return result, nil },
 		ExampleRaw: map[string]any{
 			"path":             ".",
 			"language":         "go",

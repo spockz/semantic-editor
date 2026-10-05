@@ -181,12 +181,13 @@ func organizeImportsDef() Def[OrganizeImportsReq, FileEditRes] {
 
 var organizeImportsFileConsumers = []string{
 	semanticLookupToolName, semanticRenameToolName, "semantic_verify",
-	semanticReplaceBodyToolName, "semantic_replace_construct", semanticMoveConstructToolName,
-	"semantic_remove_construct", "semantic_insert_case", "semantic_insert_function",
-	"semantic_insert_type", "semantic_insert_decl", "semantic_insert_declaration",
-	"semantic_insert_construct", semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	semanticReplaceBodyToolName, semanticReplaceConstructToolName, semanticMoveConstructToolName,
+	semanticRemoveConstructToolName, semanticInsertCaseToolName, semanticInsertFunctionToolName,
+	semanticInsertTypeToolName, semanticInsertDeclToolName, semanticInsertDeclarationToolName,
+	semanticInsertConstructToolName, semanticReplaceDeclToolName, semanticExtractFunctionToolName,
+	semanticExtractConstantToolName,
 	semanticExtractVariableToolName, semanticInlineVariableToolName,
-	"semantic_find_references", semanticInspectSymbolToolName, "semantic_assertion_mode",
+	semanticFindReferencesToolName, semanticInspectSymbolToolName, semanticAssertionModeToolName,
 }
 
 // AddBuildDependencyReq fetches one external module into the build (go get + go mod tidy).

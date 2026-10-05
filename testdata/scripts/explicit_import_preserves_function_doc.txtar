@@ -1,0 +1,39 @@
+# Explicit import insertion preserves a function's attached documentation for bare and quoted paths.
+stdin input.json
+exec semedit mcp
+stdout '"isError":false'
+cmp plain.go .scratch/want/plain.go
+cmp quoted.go .scratch/want/quoted.go
+
+-- go.mod --
+module example.com/importownership
+
+go 1.24
+-- plain.go --
+package sample
+
+// NormalizeKind trims surrounding whitespace.
+func NormalizeKind(value string) string { return strings.TrimSpace(value) }
+-- quoted.go --
+package sample
+
+// NormalizeQuoted trims surrounding whitespace.
+func NormalizeQuoted(value string) string { return strings.TrimSpace(value) }
+-- .scratch/want/plain.go --
+package sample
+
+import "strings"
+
+// NormalizeKind trims surrounding whitespace.
+func NormalizeKind(value string) string { return strings.TrimSpace(value) }
+-- .scratch/want/quoted.go --
+package sample
+
+import "strings"
+
+// NormalizeQuoted trims surrounding whitespace.
+func NormalizeQuoted(value string) string { return strings.TrimSpace(value) }
+-- input.json --
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"initializationOptions":{"trust_workspace":true}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"plain.go","add":["strings"]}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_organize_imports","arguments":{"file":"quoted.go","add":["\"strings\""]}}}

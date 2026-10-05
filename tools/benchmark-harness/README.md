@@ -1,3 +1,5 @@
+<!-- Maps benchmark ownership and measurement contracts to implementation and verification. -->
+
 # Benchmark harness architecture
 
 Start here when changing the benchmark harness. This guide maps the current implementation to its responsibilities, contracts, and regression tests. Update it when ownership or entry points move. [ADR-0050](../../docs/adr/0050-benchmark-planning-sessions-and-arm-policy.md) records the accepted design and invariants; this file records where to implement them.
@@ -40,7 +42,7 @@ Paths in this table are relative to this directory unless they start with `../..
 | MCP server instruction mode matrix | [runner.go](runner.go): `ParseMCPServerInstructionModes`; [planner.go](planner.go): `normalizePlanOptions`, `makePlannedJobs` | Expand each selected server instruction mode into independent paired agent jobs with mode-specific identities. Deterministic control jobs remain single. See `planner_test.go` and `cli_integration_test.go`. |
 | Agent lifecycle and measurement boundaries | [driver.go](driver.go): `Runner.ExecuteAgent`, `mergeTurn`, `requestSemanticToolReflection` | Orchestrate setup, task turns, oracle checks, task metric finalization, and optional diagnostic questioning. See [session_test.go](session_test.go). |
 | Workspace ownership, original snapshot, continuation state, transcript recording, or follow-up sequencing | [session.go](session.go): `agentSession`, `runTurn`, `runFollowups`, `runStagedFollowups`, `evaluateStage`, `close` | One session owns mutable state and one selected adapter. Cleanup retains evidence outside the task workspace. See `session_test.go`. |
-| Provider process arguments, environment, event parsing, tool outcomes, or provider diagnostics | [codex_driver.go](codex_driver.go), [agy_driver.go](agy_driver.go), [opencode_driver.go](opencode_driver.go) | Keep protocol details in the matching driver. Adapter selection and Agy's cumulative-observation cursor live in `session.go`. See [bench_test.go](bench_test.go) and `session_test.go`. |
+| Provider process arguments, environment, event parsing, tool outcomes, or provider diagnostics | [codex_driver.go](codex_driver.go), [agy_driver.go](agy_driver.go), [opencode_driver.go](opencode_driver.go), [opencode_usage.go](opencode_usage.go) | Keep protocol details in the matching driver. OpenCode usage owns step deduplication, token normalization, and terminal completeness. Adapter selection and Agy's cumulative-observation cursor live in `session.go`. See [bench_test.go](bench_test.go), [session_test.go](session_test.go), and [opencode_usage_test.go](opencode_usage_test.go). |
 | Target syntax or a pinned model catalog | [target.go](target.go), [openrouter.go](openrouter.go) | Parse harness/model/effort and expand the explicitly selected catalog. See [target_test.go](target_test.go), [openrouter_test.go](openrouter_test.go), and [the OpenRouter guide](../../docs/benchmark-openrouter.md). |
 | Result fields, tool telemetry types, runner options, or deterministic control execution | [runner.go](runner.go): `RunResult`, `ToolCall`, `Runner`, `ExecuteControlVariant` | Shared runtime data and control execution. A serialized field change also needs review of `report.go` and the docgen read model. |
 | Fixture metadata, extraction, mutation guards, hidden tests, or acceptance evaluation | [oracle.go](oracle.go): `TaskMetadata`, `ParseTask`, `ExtractVariantTo`, `Evaluate` | [txtar.go](txtar.go) wraps archive parsing; [large_overlay.go](large_overlay.go) supplies supported large-context overlays. Inputs live in [testdata/bench](../../testdata/bench), with some script fixtures also usable as benchmarks. See `bench_test.go` and planner context tests. |
@@ -69,6 +71,8 @@ Failed or exhausted task attempts do not trigger diagnostic reflection. The resu
 
 An optional `oracle.diagnostic_expected_tools` list adds informational tool-use coverage to a result. Expected and observed names are normalized across provider prefixes, and observations include selections from every measured task turn even when the selected call failed. Diagnostic reflection calls are excluded. A batch call counts only as `semantic_batch`; it does not imply that any individual tool was observed. `observation_state` and `complete` describe capture quality, while `expected_satisfied` reports positively observed expected tools. The harness emits `missing` only after complete capture; unknown or partial capture retains positive observations without making absence claims. Tool-use coverage never changes oracle pass/fail. Codex capture is complete only after a clean stream containing `turn.completed`; OpenCode and Agy remain unknown until their terminal telemetry contracts are validated.
 
+Semantic tool identity is normalized before MCP verification, expected-tool coverage, and batch-reflection decisions. Recognized names include `semantic_*`, `semedit/semantic_*`, `mcp__semedit__semantic_*`, and OpenCode's `semedit_semantic_*`; a provider may also identify the server separately as `semedit`. OpenCode's prefixed semantic terminal events therefore count as MCP use even when its event omits a server field.
+
 Task elapsed time is finalized before optional diagnostic questioning. A non-use, batching, or integration-value reflection runs through the same adapter with a fresh result and the `diagnostic_reflection` classification. Its explanation may be retained; its tokens, tools, turns, elapsed time, and oracle effects must not enter task totals, serialized benchmark metrics, or publication aggregates. Never merge a reflection result through `mergeTurn`. Every successful semedit session with a continuation identity receives an integration-value question after any behavior-specific reflection, regardless of observed tool use. Save its prompt, response, and capture error as `semantic_integration_reflection`. The prompt requests a candid one-sentence recommendation from the coding agent, grounded in this run, including whether it would ask its owner to add semedit. It prohibits edits, tools, and retries. Reports label the response as agent opinion; browser metric rows exclude the entire object.
 
 Agy transcript reads are cumulative. Its session adapter advances a cursor and returns only new observations, including after a failed resume. A regressed transcript must not reintroduce old calls into task totals. Missing transcripts, invalid streaming records, and transcript-write failures remain explicit errors. Missing evidence is not a successful zero-tool measurement. Keep raw evidence and normalized observations distinct when changing a parser.
@@ -76,6 +80,53 @@ Agy transcript reads are cumulative. Its session adapter advances a cursor and r
 The selected `read`, `write`, or `readwrite` policy is a comparison condition on both agent arms, but steering applies only to semedit. `Job.Policy` describes semedit applicability; `AgentExecution.Policy` carries the selected agent condition. Terminal `RunResult.SemeditArmRestrict` records the condition, and `SemeditArmRestrictionApplied` records applicability. Direct control has no restriction condition. All policies permit shell builds and tests. `--mcp-server-instructions` accepts a comma-separated list of `none`, `descriptive`, and `prescriptive`; each mode creates a separate paired agent cell, and control jobs run once.
 
 Policy changes must remain consistent across planning, prompts, result metadata, comparison keys, filenames, and publication. Historical results without policy metadata remain `unspecified`; the new-run default `write` must not be applied to them. Planned results retain exact fixture task identities, while legacy results retain their established normalization.
+
+## OpenCode AMD Beast smoke run
+
+Use `opencode/qwen36-iq4-xs` without an effort suffix. The provider defaults to
+`http://192.168.1.122:1234/v1`; `SEMEDIT_OPENCODE_QWEN_BASE_URL` overrides the endpoint.
+The adapter selects the configured `amdbeast` provider internally and passes
+`qwen36-iq4-xs` as the API model ID. Reports retain the short target identifier.
+The runner creates isolated OpenCode state and configuration for each fixture, and
+resumes that same session for corrective task turns and diagnostic questions.
+Each fixture is initialized as its own Git project, and OpenCode plus its child
+processes run under a fail-closed macOS Seatbelt profile. The profile permits the
+fixture workspace while denying reads elsewhere and all network egress. Remote
+provider calls therefore remain unavailable until the OS boundary can allow the
+configured endpoint without widening access to other hosts.
+
+OpenCode 1.18.30 emits disjoint input, cache-read, cache-write, output, and reasoning
+counters in each `step_finish`. Total input includes all three input buckets;
+cached input contains cache reads; uncached input includes cache writes. Sum
+distinct part IDs within each process, preserving multiple steps within one
+assistant message. Require a final `stop` finish with complete counters and no
+unmatched starts; missing counters produce a failed measurement. Delegated agent
+tasks are disabled in both arms because OpenCode omits child-session usage from
+the root JSON stream. Cache-write counts are preserved, but their distinct price
+is not represented by the existing uncached-input field.
+
+After `make check`, build the harness and run the simplest editing task first,
+then the three complex migrations/refactorings, with one worker and paired arms:
+
+```sh
+make bench-build build-next
+.scratch/bin/benchmark-harness \
+  --target opencode/qwen36-iq4-xs \
+  --task task-01-rename-local --variants small --concurrency 1 \
+  --timeout 12m --run-id opencode-amdbeast-simple
+.scratch/bin/benchmark-harness \
+  --target opencode/qwen36-iq4-xs \
+  --tasks task-09-composite-refactor,task-11-mixed-sink-api-migration,task-12-request-identity-migration \
+  --variants small:default --concurrency 1 --timeout 12m \
+  --run-id opencode-amdbeast-hard
+```
+
+Task 01 declares its existing instruction as the default prompt, so either
+`small` or `small:default` schedules its pair. The hard
+selection uses the default prompt and excludes task 11's additional discovery
+prompt. Diagnostic questions remain outside all solving totals; corrective
+prompts that continue solving remain inside them. Live connectivity evidence and
+the experiment results are recorded in [RQ-0061](../../docs/research/RQ-0061-opencode-amdbeast-smoke.md).
 
 ## Publication map
 
@@ -102,7 +153,7 @@ go test ./tools/benchmark-harness
 go test ./cmd/docgen
 ```
 
-The standalone MCP startup benchmark runs a fresh Go module and empty module/build cache for each iteration. Workspace and directory creation and binary build occur outside the timer. With `gopls` on `PATH`, run `go test ./internal/mcp -run '^$' -bench BenchmarkMCPColdStartupVerify -benchtime=10x` to record subprocess spawn, initialize-response, and verify-response phases.
+The standalone MCP startup benchmark runs a fresh Go module and empty module/build cache for each iteration. Workspace and directory creation and binary build occur outside the timer. After verification timing stops, it retrieves the same subprocess's `tools/list` schema and validates the verification response. With `gopls` on `PATH`, run `go test ./internal/mcp -run '^$' -bench BenchmarkMCPColdStartupVerify -benchtime=10x` to record subprocess spawn, initialize-response, and verify-response phases.
 
 Use fake provider processes for routine regressions. `cli_integration_test.go` proves that the complete plan precedes execution and that all three policies isolate baseline behavior. `scheduler_test.go` proves completion accounting and ordering. `session_test.go` exercises process continuation, cumulative transcript failures, evidence recording, and reflection exclusion. Parser-only tests cannot establish those lifecycle properties. `report_test.go` and docgen tests cover serialization and policy-separated publication.
 

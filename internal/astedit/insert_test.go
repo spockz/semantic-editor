@@ -261,3 +261,40 @@ func TestInsertDeclaration_AutoOrganizeImports(t *testing.T) {
 		t.Errorf("expected ReadEnv to be present, got:\n%s", content)
 	}
 }
+
+func TestInsertDeclarationRejectsInvalidCombinedSyntax(t *testing.T) {
+	for _, organize := range []bool{false, true} {
+		name := "format"
+		if organize {
+			name = "organize imports"
+		}
+		t.Run(name, func(t *testing.T) {
+			original := "package api\n\nimport \"strings\"\n\nfunc Normalize(value string) string { return strings.TrimSpace(value) }\n"
+			file := setupTestFile(t, original)
+			before, err := os.Stat(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = astedit.InsertDeclaration(t.Context(), file, `import "strings"`, astedit.Options{
+				Placement: astedit.PlacementFileEnd, AutoOrganizeImports: organize,
+			})
+			if err == nil || !strings.Contains(err.Error(), "imports must appear before other declarations") {
+				t.Fatalf("wanted import ordering rejection, got %v", err)
+			}
+			got, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != original {
+				t.Fatalf("rejected insertion changed source:\n%s", got)
+			}
+			after, err := os.Stat(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !before.ModTime().Equal(after.ModTime()) {
+				t.Fatal("rejected insertion advanced the file revision")
+			}
+		})
+	}
+}

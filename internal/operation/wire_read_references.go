@@ -27,8 +27,8 @@ func (request *ReferencesReq) SetProjectContext(project backend.ProjectContext) 
 }
 
 var referencesParams = readRequestParams(
-	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Store.Read' or 'Widget')", Type: ParamString, Required: true, SourceFields: sourceSymbolContinuations},
-	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Selector: optional source file containing the target declaration; search still covers the selected Go module", Type: ParamString, SourceFields: sourceFileContinuations},
+	ParameterContract{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Description: "Target: qualified symbol identifier (e.g. 'Store.Read' or 'Widget')", Type: ParamString, Role: RoleTarget, Required: true, SourceFields: sourceSymbolContinuations},
+	ParameterContract{Name: "file", CLIName: "file", JSONName: "file", Description: "Target: optional source file containing the target declaration; search still covers the selected Go module", Type: ParamString, Role: RoleTarget, SourceFields: sourceFileContinuations},
 )
 
 func parseReferences(raw map[string]any) (ReferencesReq, error) {
@@ -76,7 +76,7 @@ func referencesDef() Def[ReferencesReq, *backend.ReferencesResult] {
 	return Def[ReferencesReq, *backend.ReferencesResult]{
 		Key:     capability.OpFindReferences,
 		Summary: "Use this tool instead of text search when finding typed references to a Go declaration within its active module build. The optional file selects the target declaration; results span the module, including test variants.",
-		Params:  referencesParams, Level: LevelSymbol, CLIName: "find-references", MCPName: "semantic_find_references",
+		Params:  referencesParams, Level: LevelSymbol, CLIName: "find-references", MCPName: semanticFindReferencesToolName,
 		ReadOnly: true, Batchable: false, Parse: parseReferences,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReferencesReq) (*backend.ReferencesResult, error){
 			backend.LanguageGo: referencesRun,

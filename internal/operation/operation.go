@@ -175,20 +175,8 @@ func Register[Req any, Res any](registry *Registry, def Def[Req, Res]) error {
 }
 
 func validateDefOutput[Req any, Res any](def Def[Req, Res]) error {
-	if def.Output == nil {
-		if def.ProjectOutput != nil {
-			return fmt.Errorf("register %q output projector requires an output contract: %w", def.Key, ErrInvalidDefinition)
-		}
-	} else {
-		if err := ValidateOutputContract(*def.Output); err != nil {
-			return fmt.Errorf("register %q output contract: %w", def.Key, err)
-		}
-		if (def.Output.ResultSchema != nil || len(def.Output.Continuations) > 0) && def.ProjectOutput == nil {
-			return fmt.Errorf("register %q typed output requires a projector: %w", def.Key, ErrInvalidDefinition)
-		}
-		if def.ProjectOutput != nil && def.Output.ResultSchema == nil {
-			return fmt.Errorf("register %q output projector requires a result schema: %w", def.Key, ErrInvalidDefinition)
-		}
+	if err := ValidateOutputMode(def.Output, def.ProjectOutput != nil); err != nil {
+		return fmt.Errorf("register %q: %w", def.Key, err)
 	}
 	if def.ProjectErrorOutput == nil {
 		if def.ErrorOutput != nil {
@@ -376,4 +364,32 @@ func projectErrorOutputHook[Req any, Res any](def Def[Req, Res]) func(error) (an
 		}
 		return validated, true, nil
 	}
+}
+
+// ValidateOutputMode enforces the legacy-envelope versus projected typed-result boundary.
+func ValidateOutputMode(contract *OperationOutputContract, hasProjector bool) error {
+	if contract == nil {
+		if hasProjector {
+			return fmt.Errorf("output projector requires an output contract: %w", ErrInvalidDefinition)
+		}
+		return nil
+	}
+	if err := ValidateOutputContract(*contract); err != nil {
+		return fmt.Errorf("output contract: %w", err)
+	}
+	hasTypedResult := contract.ResultSchema != nil
+	hasLegacyEnvelope := len(contract.Metadata) > 0 || len(contract.EnvelopeContinuations) > 0
+	if hasLegacyEnvelope && (hasTypedResult || hasProjector) {
+		return fmt.Errorf("metadata and envelope continuations require the legacy result envelope: %w", ErrInvalidDefinition)
+	}
+	if hasTypedResult && !hasProjector {
+		return fmt.Errorf("typed output requires a projector: %w", ErrInvalidDefinition)
+	}
+	if hasProjector && !hasTypedResult {
+		return fmt.Errorf("output projector requires a result schema: %w", ErrInvalidDefinition)
+	}
+	if len(contract.Continuations) > 0 && !hasTypedResult {
+		return fmt.Errorf("typed continuations require a result schema: %w", ErrInvalidDefinition)
+	}
+	return nil
 }

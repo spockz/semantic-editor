@@ -174,17 +174,11 @@ func validateInsertConstructKind(source string, kind ConstructKind, opts InsertC
 			return fmt.Errorf("source declaration does not match construct kind %q", kind)
 		}
 	case backend.ConstructType:
-		if !strings.HasPrefix(trimmed, "type ") {
-			return fmt.Errorf("type insertion requires a type declaration")
-		}
+		return validateSingleDeclarationSnippet(source, kind, token.TYPE)
 	case backend.ConstructConst:
-		if !strings.HasPrefix(trimmed, "const ") {
-			return fmt.Errorf("const insertion requires a const declaration")
-		}
+		return validateSingleDeclarationSnippet(source, kind, token.CONST)
 	case backend.ConstructVar:
-		if !strings.HasPrefix(trimmed, "var ") {
-			return fmt.Errorf("var insertion requires a var declaration")
-		}
+		return validateSingleDeclarationSnippet(source, kind, token.VAR)
 	case backend.ConstructField:
 		if opts.TypeName == "" {
 			return fmt.Errorf("field insertion requires a type selector")
@@ -307,6 +301,21 @@ func writeConstructSource(ctx context.Context, filePath string, source []byte, o
 	}
 	if err := pipeline.Format(ctx, dir, cleanPath); err != nil {
 		return fmt.Errorf("format file: %w", err)
+	}
+	return nil
+}
+
+func validateSingleDeclarationSnippet(source string, kind ConstructKind, expected token.Token) error {
+	snippet, err := parseDeclarationSnippet(source)
+	if err != nil {
+		return fmt.Errorf("%s insertion requires a valid %s declaration: %w", kind, expected, err)
+	}
+	if len(snippet.file.Decls) != 1 {
+		return fmt.Errorf("%s insertion requires exactly one %s declaration", kind, expected)
+	}
+	declaration, ok := snippet.file.Decls[0].(*ast.GenDecl)
+	if !ok || declaration.Tok != expected {
+		return fmt.Errorf("%s insertion requires a %s declaration", kind, expected)
 	}
 	return nil
 }

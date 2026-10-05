@@ -35,7 +35,7 @@ type AssertionModeRes struct {
 }
 
 var assertionModeParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: Go test file to rewrite; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: Go test file to rewrite; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "mode", CLIName: "mode", JSONName: "mode", Type: ParamString, Description: "Rewrite direction", Required: true, Enums: []string{"relax", "restrict"}},
 	{Name: "dry_run", CLIName: "dry-run", JSONName: "dry_run", Type: ParamBoolean, Description: "Preview the assertion rewrite without writing; trust_workspace is not required when true", Default: false},
 	{Name: wireTrustWorkspace, CLIName: wireCLITrustWorkspace, JSONName: wireTrustWorkspace, Type: ParamBoolean, Description: "Must be true for a non-dry-run request that writes this workspace; consent applies to this request only", Default: false},
@@ -70,7 +70,7 @@ func assertionModeDef() Def[AssertionModeReq, AssertionModeRes] {
 		Params:   assertionModeParams,
 		Level:    LevelFile,
 		CLIName:  "assertion-mode",
-		MCPName:  "semantic_assertion_mode",
+		MCPName:  semanticAssertionModeToolName,
 		Parse:    parseAssertionMode,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, AssertionModeReq) (AssertionModeRes, error){backend.LanguageGo: runAssertionMode},
 		Format: func(res AssertionModeRes) (string, error) {

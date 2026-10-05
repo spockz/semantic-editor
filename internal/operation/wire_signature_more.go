@@ -11,12 +11,13 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
-	"golang.org/x/tools/go/packages"
 	"maps"
 	"path/filepath"
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 const wireSourceIndex = "source_index"
@@ -82,7 +83,7 @@ func introduceParameterObjectDef() Def[map[string]any, structuralPlanResult] {
 	params := []ParameterContract{
 		structuralStringParam("file", wireTargetGoFileDescription, true, true, RoleTarget, append([]string{"semantic_lookup.file"}, signatureTargetSourceFields("file")...)...),
 		structuralStringParam("symbol", "Target: private Go free function whose complete parameter list, body bindings, and direct callers will be updated. Copy the qualified symbol from semantic_lookup or a finalized function_target.", true, true, RoleTarget, append([]string{"semantic_lookup.symbol"}, signatureTargetSourceFields("symbol")...)...),
-		structuralStringParam("destination_file", "Destination: existing same-file location for the new private struct; release one requires the target file.", true, true, RoleTarget, "semantic_lookup.file"),
+		structuralStringParam("destination_file", "Destination: existing same-file location for the new private struct; release one requires the target file.", true, true, RoleTarget),
 		{Name: "parameter", JSONName: "parameter", CLIName: "parameter", Type: ParamObject, Required: true, Role: RoleValue, Description: "Creation choice: new private parameter name and private struct type name; choose both names for this conversion.", Schema: &parameter},
 		{Name: "fields", JSONName: "fields", CLIName: "fields", Type: ParamArray, Required: true, Role: RoleValue, Description: "Replacement: map every original parameter exactly once, in source_index order, to a private field with the same Go type; caller expressions become keyed fields in original evaluation order.", Schema: &fields},
 		structuralStringParam(wireExpectedRevision, "Precondition: opaque selected-file revision copied from the same finalized function_target record as file and symbol; stale targets are refused.", false, true, RoleTarget, signatureTargetSourceFields(wireExpectedRevision)...),

@@ -34,10 +34,11 @@ optional `diagnostic_delta` describing the captured final state. Successful
 batch calls place that response object in `structuredContent.result`; failed
 batches retain error semantics and do not claim a final diagnostic delta.
 
-The opt-in `semantic_reload` tool advertises a dedicated output schema and
-returns `{ "result": { "status": "reloading" } }` before re-execution. Error
-responses remain outside successful output-schema conformance and continue to
-retain their existing `content` and `isError` behavior.
+The opt-in `semantic_reload` tool returns
+`{ "result": { "status": "reloading" } }` before re-execution. Every emitted
+structured result, including execution errors, must conform to the advertised
+output schema. RQ-0062 found that exempting error responses caused clients to
+reject otherwise useful errors.
 
 This decision records the original envelope. ADR-0052 later moved ordinary
 timing metrics out of direct results, and registered operations now use typed
@@ -77,7 +78,8 @@ requested text when its leading summary already exposes the complete outcome
 and limitations; they do not need a duplicate JSON wrapper.
 
 Known error outcomes use an opt-in operation-owned error projector paired with
-a private result schema. Registration and runtime validation reject live
+a result schema that is included in the advertised output contract.
+Registration and runtime validation reject live
 `continuations` and `expected_revision` fields in that error projection. A
 typed error can report known applied or partial changes without satisfying the
 successful result schema. An unmatched error reports unknown application
@@ -85,15 +87,60 @@ state. A failed error projector retains the original operation error and
 reports the projection failure; it does not replace the operation failure.
 This leaves registry dispatch error semantics unchanged.
 
-Batch child result schemas accept the separately validated successful and known
-error projections. Their union uses `anyOf` because those shapes can overlap;
-the child's status and original error still distinguish the outcome.
+The shared envelope uses mutually exclusive `oneOf` branches:
+
+- A native result requires the operation's typed `result` (or the legacy text
+  result) and forbids a top-level `error`.
+- A generic error requires `error` and `application_state` and forbids `result`.
+- A known error requires `error`, `application_state`, and a `result` validated
+  against the registered error schema.
+
+The outer MCP `isError` flag identifies execution failure; it is not part of
+`structuredContent` and cannot select a branch of its JSON Schema. Verification
+and batches retain native outcome objects on domain failures. Their payloads
+record `failure` and `status` respectively, and tests correlate them with
+`isError`. Protocol errors remain JSON-RPC error objects with numeric codes.
+
+Verification and Maven declare native result schemas in the registry. Maven
+known errors use the same declared native result shape through its error
+projector. Generic transport error handling does not inject provider-specific
+result objects. Batch children use status-correlated success, generic-error,
+and known-error branches, so a generic branch cannot hide an invalid typed
+result. Unknown batch tool names can produce generic failure rows only.
+
+Batch verification metadata uses the native verification schema independently
+of the standalone operation's output projector, because batch execution retains
+the native verification result. An injected standalone projector may therefore
+change its own result shape without changing the batch metadata contract.
+
+Batch diagnostic arrays use empty arrays for zero introduced or resolved
+diagnostics. An unavailable delta is represented by omission of the whole
+delta, preserving that distinction.
+
+Each server lazily caches its fully resolved tool catalog against its canonical
+workspace root and active-language snapshot. The catalog includes the server's
+fixed registry, backend capabilities, profile, variants, and reload setting.
+Cached maps become immutable after construction: wire serialization reuses them,
+while mutable callers receive independent copies. Successful reinitialization
+and reload discard cached catalogs together with language snapshots. Catalog
+data is never shared across separate server instances or injected registries.
+
+Unprojected operations may explicitly declare envelope continuations alongside
+their formatted string result. These sibling fields use the same role, consumer,
+schema, and optionality rules as live projected continuations, but do not pretend
+to be fields of a typed result object. Before publication, the MCP adapter
+validates its actual envelope fields against the declared contract. A projected
+operation retains its typed result contract and never falls back to legacy
+envelope extraction. Informational metadata fields are declared separately.
 
 ## Invariants
 
 - Every tool returned by `tools/list`, including injected-registry tools,
   `semantic_batch`, and opt-in `semantic_reload`, has an `outputSchema`.
-- Every successful direct or batch call includes the schema-required
+- Every captured tool result, successful or failed, is validated against its
+  advertised output schema in the MCP protocol tests. Deliberate failures cover
+  every tool in the actual full catalog; protocol failures are checked separately.
+- Every native direct or batch outcome includes the schema-required
   `structuredContent.result`; `content` retains human-readable output.
 - Full serialized structured JSON in text follows MCP's SHOULD recommendation.
   A compact essential projection is a bounded compatibility tradeoff, not
@@ -103,9 +150,9 @@ the child's status and original error still distinguish the outcome.
   status, limitations, ambiguity, and live continuations ahead of bulk text;
   the compact prefix uses the shared essential projection. Truncation limits
   remain open.
-- Error projections are validated against their paired private schema;
-  successful result guarantees remain unchanged. Error state does not produce
-  live continuation guards.
+- Error projections are validated against their paired advertised schema.
+  Generic errors cannot carry an undeclared result, and native outcomes cannot
+  carry a top-level error. Error state does not produce live continuation guards.
 - Batch `diagnostic_delta` is advertised and returned only when execution
   reaches the final diagnostic capture.
 - Output schemas do not over-constrain arbitrary telemetry phase names,
@@ -115,7 +162,7 @@ the child's status and original error still distinguish the outcome.
 
 ## Consequences
 
-MCP clients can discover and validate successful result envelopes without
+MCP clients can discover and validate both native results and error envelopes without
 parsing human-readable text. The protocol response identifies the revision
 that supports structured tool output. Operations without typed projections
 retain compatibility with their existing formatters; declared projections

@@ -38,8 +38,18 @@ type MoveConstructOptions struct {
 // GoMoveConstructKinds lists declaration kinds supported by Go's move handler.
 var GoMoveConstructKinds = []ConstructKind{ConstructFunction, ConstructMethod, ConstructType, ConstructConst, ConstructVar}
 
+func validateMoveConstructPlacement(opts MoveConstructOptions) error {
+	if opts.TargetSymbol == "" || opts.Placement == PlacementBeforeSymbol || opts.Placement == PlacementAfterSymbol {
+		return nil
+	}
+	return fmt.Errorf("target_symbol requires before_symbol or after_symbol placement")
+}
+
 // MoveConstruct relocates an existing declaration construct to a new placement within filePath.
 func MoveConstruct(ctx context.Context, filePath, symbolQuery string, opts MoveConstructOptions) (string, error) {
+	if err := validateMoveConstructPlacement(opts); err != nil {
+		return "", err
+	}
 	cleanPath := filepath.Clean(filePath)
 	destinationPath := cleanPath
 	if opts.DestinationFile != "" {

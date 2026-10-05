@@ -18,8 +18,9 @@ import (
 	"path/filepath"
 	"slices"
 
-	"golang.org/x/tools/go/packages"
 	"semedit/internal/sourcebuf"
+
+	"golang.org/x/tools/go/packages"
 )
 
 // InlineFunctionOptions identifies one caller-owned direct call and its captured revision.

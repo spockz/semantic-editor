@@ -1,0 +1,874 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "none",
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434"
+      },
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 38900,
+        "comparison_pair_id": "pair-903e310173723d00",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 2548,
+        "initial_context_tokens": 6811,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 38900,
+            "initial_load_turns": 4,
+            "internal_turns": 7,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 1986,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 837,
+            "process_start_to_first_event_ms": 11650,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 46626,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "pattern": "func \\(.*Server\\) oldName"
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "\\.oldName\\("
+                },
+                "functional_status": "succeeded",
+                "name": "grep",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "pattern": "**/*.go"
+                },
+                "functional_status": "succeeded",
+                "name": "glob",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+                  "newString": "func (s *Server) newName() string {",
+                  "oldString": "func (s *Server) oldName() string {"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+                  "newString": "\treturn s.newName()",
+                  "oldString": "\treturn s.oldName()"
+                },
+                "functional_status": "succeeded",
+                "name": "edit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 7726,
+            "wall_clock_ms": 36405
+          }
+        ],
+        "internal_turns": 7,
+        "job_id": "job-956f879275e34074",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": false,
+        "opencode_exit_code": 0,
+        "oracle": {
+          "duration_ms": 1986,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 837,
+        "process_start_to_first_event_ms": 11650,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 46626,
+        "prompt_variant": "default",
+        "provenance": {
+          "gopls_version": "0.23.0",
+          "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+          "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "opencode",
+          "model": "qwen36-iq4-xs"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "arguments": {
+              "pattern": "func \\(.*Server\\) oldName"
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "\\.oldName\\("
+            },
+            "functional_status": "succeeded",
+            "name": "grep",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "pattern": "**/*.go"
+            },
+            "functional_status": "succeeded",
+            "name": "glob",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+              "newString": "func (s *Server) newName() string {",
+              "oldString": "func (s *Server) oldName() string {"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+              "newString": "\treturn s.newName()",
+              "oldString": "\treturn s.oldName()"
+            },
+            "functional_status": "succeeded",
+            "name": "edit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 7,
+        "tools_used": [
+          "grep",
+          "grep",
+          "glob",
+          "read",
+          "edit",
+          "edit",
+          "read"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 7726,
+        "variant": "small:default",
+        "wall_clock_ms": 38478
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 229698,
+        "comparison_pair_id": "pair-903e310173723d00",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 2143,
+        "initial_context_tokens": 31308,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 229698,
+            "initial_load_turns": 0,
+            "internal_turns": 7,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 1984,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 726,
+            "process_start_to_first_event_ms": 50567,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 263313,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "symbol": "Server.oldName"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_lookup",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Server.oldName",
+                  "to": "newName"
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_rename",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "path": "."
+                },
+                "functional_status": "succeeded",
+                "name": "semedit_semantic_verify",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git diff --name-only"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git diff api/server.go"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "command": "git diff api/server_test.go"
+                },
+                "functional_status": "succeeded",
+                "name": "bash",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000/api/server.go"
+                },
+                "functional_status": "succeeded",
+                "name": "read",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 33615,
+            "wall_clock_ms": 78890
+          }
+        ],
+        "internal_turns": 7,
+        "job_id": "job-0eb02ae4ee084085",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "none",
+        "mcp_verified": true,
+        "opencode_exit_code": 0,
+        "oracle": {
+          "duration_ms": 1984,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 726,
+        "process_start_to_first_event_ms": 50567,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 263313,
+        "prompt_variant": "default",
+        "provenance": {
+          "gopls_version": "0.23.0",
+          "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000.mcp-metrics.json",
+          "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+          "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not use `semantic_batch` because the operations were sequential and dependent on each other—the `semantic_lookup` was needed to confirm the symbol identity before `semantic_rename`, and `semantic_verify` is a verification step rather than a modification, making batching unsuitable. The two actual modifying calls were also not independent edits that could be parallelized."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Semedit's tools are genuinely delightful for refactoring tasks like renaming—they handle all the call-site updates automatically and verify correctness in one smooth workflow, saving me from tedious manual search-and-replace across the codebase."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "opencode",
+          "model": "qwen36-iq4-xs"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "arguments": {
+              "symbol": "Server.oldName"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_lookup",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Server.oldName",
+              "to": "newName"
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_rename",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "path": "."
+            },
+            "functional_status": "succeeded",
+            "name": "semedit_semantic_verify",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git diff --name-only"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git diff api/server.go"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "command": "git diff api/server_test.go"
+            },
+            "functional_status": "succeeded",
+            "name": "bash",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000/api/server.go"
+            },
+            "functional_status": "succeeded",
+            "name": "read",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 7,
+        "tools_used": [
+          "semedit_semantic_lookup",
+          "semedit_semantic_rename",
+          "semedit_semantic_verify",
+          "bash",
+          "bash",
+          "bash",
+          "read"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 33615,
+        "variant": "small:default",
+        "wall_clock_ms": 80957
+      },
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-01-rename-local",
+      "txtar_path": "testdata/bench/task_01_rename_local.txtar",
+      "txtar_provenance": "sha256:224b2797e1b13aee9c9d8d34 (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 38900,
+      "comparison_pair_id": "pair-903e310173723d00",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 2548,
+      "initial_context_tokens": 6811,
+      "initial_load_turns": 4,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 38900,
+          "initial_load_turns": 4,
+          "internal_turns": 7,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 1986,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 837,
+          "process_start_to_first_event_ms": 11650,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 46626,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "pattern": "func \\(.*Server\\) oldName"
+              },
+              "functional_status": "succeeded",
+              "name": "grep",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "pattern": "\\.oldName\\("
+              },
+              "functional_status": "succeeded",
+              "name": "grep",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "pattern": "**/*.go"
+              },
+              "functional_status": "succeeded",
+              "name": "glob",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+                "newString": "func (s *Server) newName() string {",
+                "oldString": "func (s *Server) oldName() string {"
+              },
+              "functional_status": "succeeded",
+              "name": "edit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+                "newString": "\treturn s.newName()",
+                "oldString": "\treturn s.oldName()"
+              },
+              "functional_status": "succeeded",
+              "name": "edit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 7726,
+          "wall_clock_ms": 36405
+        }
+      ],
+      "internal_turns": 7,
+      "job_id": "job-956f879275e34074",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": false,
+      "opencode_exit_code": 0,
+      "oracle": {
+        "duration_ms": 1986,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 837,
+      "process_start_to_first_event_ms": 11650,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 46626,
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "arguments": {
+            "pattern": "func \\(.*Server\\) oldName"
+          },
+          "functional_status": "succeeded",
+          "name": "grep",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "pattern": "\\.oldName\\("
+          },
+          "functional_status": "succeeded",
+          "name": "grep",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "pattern": "**/*.go"
+          },
+          "functional_status": "succeeded",
+          "name": "glob",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+            "newString": "func (s *Server) newName() string {",
+            "oldString": "func (s *Server) oldName() string {"
+          },
+          "functional_status": "succeeded",
+          "name": "edit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go",
+            "newString": "\treturn s.newName()",
+            "oldString": "\treturn s.oldName()"
+          },
+          "functional_status": "succeeded",
+          "name": "edit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_baseline-diff_small-default_task-01-rename-local_1791152896613175000/api/server.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 7,
+      "tools_used": [
+        "grep",
+        "grep",
+        "glob",
+        "read",
+        "edit",
+        "edit",
+        "read"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 7726,
+      "variant": "small:default",
+      "wall_clock_ms": 38478
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 229698,
+      "comparison_pair_id": "pair-903e310173723d00",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 2143,
+      "initial_context_tokens": 31308,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 229698,
+          "initial_load_turns": 0,
+          "internal_turns": 7,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 1984,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 726,
+          "process_start_to_first_event_ms": 50567,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 263313,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "symbol": "Server.oldName"
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_lookup",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Server.oldName",
+                "to": "newName"
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_rename",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "path": "."
+              },
+              "functional_status": "succeeded",
+              "name": "semedit_semantic_verify",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "git diff --name-only"
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "git diff api/server.go"
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "command": "git diff api/server_test.go"
+              },
+              "functional_status": "succeeded",
+              "name": "bash",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000/api/server.go"
+              },
+              "functional_status": "succeeded",
+              "name": "read",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 33615,
+          "wall_clock_ms": 78890
+        }
+      ],
+      "internal_turns": 7,
+      "job_id": "job-0eb02ae4ee084085",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "none",
+      "mcp_verified": true,
+      "opencode_exit_code": 0,
+      "oracle": {
+        "duration_ms": 1984,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 726,
+      "process_start_to_first_event_ms": 50567,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 263313,
+      "prompt_variant": "default",
+      "provenance": {
+        "gopls_version": "0.23.0",
+        "harness_sha256": "9b6e0b3f3f786895237c35e83b80769d5d1755c3660696217da5931f1e4e4678",
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000.mcp-metrics.json",
+        "semedit_prewarm_skipped": "no_go_target_or_unsupported_provider",
+        "semedit_sha256": "8119878c0486579e57f89c1d11b8a7f152c22d5eea57959f4417e232d8224434",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not use `semantic_batch` because the operations were sequential and dependent on each other—the `semantic_lookup` was needed to confirm the symbol identity before `semantic_rename`, and `semantic_verify` is a verification step rather than a modification, making batching unsuitable. The two actual modifying calls were also not independent edits that could be parallelized."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Semedit's tools are genuinely delightful for refactoring tasks like renaming—they handle all the call-site updates automatically and verify correctness in one smooth workflow, saving me from tedious manual search-and-replace across the codebase."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "harness": "opencode",
+        "model": "qwen36-iq4-xs"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "arguments": {
+            "symbol": "Server.oldName"
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_lookup",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Server.oldName",
+            "to": "newName"
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_rename",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "path": "."
+          },
+          "functional_status": "succeeded",
+          "name": "semedit_semantic_verify",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "git diff --name-only"
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "git diff api/server.go"
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "command": "git diff api/server_test.go"
+          },
+          "functional_status": "succeeded",
+          "name": "bash",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "filePath": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_opencode_semedit_small-default_task-01-rename-local_1791152935386195000/api/server.go"
+          },
+          "functional_status": "succeeded",
+          "name": "read",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 7,
+      "tools_used": [
+        "semedit_semantic_lookup",
+        "semedit_semantic_rename",
+        "semedit_semantic_verify",
+        "bash",
+        "bash",
+        "bash",
+        "read"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 33615,
+      "variant": "small:default",
+      "wall_clock_ms": 80957
+    }
+  ],
+  "timestamp": "2026-10-05T04:35:31.064477+02:00"
+}

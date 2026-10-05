@@ -66,24 +66,15 @@ type BatchResponse struct {
 
 // ExecuteBatch runs an ordered sequence of registered semantic edits, fail-fast on disk.
 func (s *Server) ExecuteBatch(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	return s.ExecuteBatchForWorkspace(ctx, s.workDir, s.workspaceTrust.Trusted && s.workspaceTrust.Allows(s.workDir), edits, autoOrganizeImports)
+	configuration := s.configurationSnapshot()
+	trusted := configuration.workspaceTrust.Trusted && configuration.workspaceTrust.Allows(configuration.workDir)
+	return s.executeBatchForConfiguration(ctx, configuration, configuration.workDir, trusted, edits, autoOrganizeImports)
 }
 
 // ExecuteBatchForWorkspace binds all child edits and final verification to one request root.
 func (s *Server) ExecuteBatchForWorkspace(ctx context.Context, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	canonicalRoot, err := resolveRequestRoot(s.workDir, root)
-	if err != nil {
-		return nil, err
-	}
-	preparedEdits, err := prepareBatchEntries(s.workDir, canonicalRoot, edits)
-	if err != nil {
-		return nil, err
-	}
-	edits = preparedEdits
-	root = canonicalRoot
-	requestServer := s.requestView(root, trustWorkspace)
-	ctx = gocache.WithBaseDir(ctx, s.goBaseDirForRoot(root))
-	return requestServer.executeBatchWithContext(ctx, edits, autoOrganizeImports)
+	configuration := s.configurationSnapshot()
+	return s.executeBatchForConfiguration(ctx, configuration, root, trustWorkspace, edits, autoOrganizeImports)
 }
 
 func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
@@ -93,7 +84,6 @@ func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry
 		observer = func(context.Context) error { return nil }
 	}
 	ctx = operation.WithMutationObserver(ctx, observer)
-
 	response, resultErr := s.executeBatch(ctx, edits, autoOrganizeImports)
 	if s.goEnabled() {
 		if err := godiagnostics.SynchronizeWithContext(ctx); err != nil {
@@ -101,6 +91,7 @@ func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry
 				return nil, errors.Join(resultErr, err, release())
 			}
 			response.Status = "error"
+			response.DiagnosticDelta = nil
 			response.Results = append(response.Results, BatchResult{Tool: "session_sync", Status: "error", Error: err.Error()})
 		}
 	}
@@ -170,6 +161,7 @@ func captureBatchDiff(response *BatchResponse, root string, before map[string]st
 	if err != nil {
 		message := fmt.Errorf("capture final batch diff: %w", err)
 		response.Status = "error"
+		response.DiagnosticDelta = nil
 		response.Results = append(response.Results, BatchResult{Tool: finalDiffToolName, Status: "error", Error: message.Error()})
 		return message
 	}
@@ -438,19 +430,21 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 			return
 		}
 	}
+	configuration := s.configurationSnapshot()
 	timing := newToolRequestTiming(ctx, s.firstSemanticCallMetrics(time.Now()))
 	timing.toolName = "semantic_batch"
 	ctx = timing.Context(ctx)
 	finishArguments := telemetry.Start(ctx, telemetry.PhaseArgumentParsing)
-	request, err := parseBatchToolRequest(s.workDir, raw)
+	request, err := parseBatchToolRequest(configuration.workDir, raw)
 	finishArguments()
 	if err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
 	}
+	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, request.root))
 	ctx = godiagnostics.WithSessionManager(ctx, s.diagnosticSession(request.root))
-	requestServer := s.requestView(request.root, request.trustWorkspace)
-	request.request.Edits, err = prepareBatchEntries(s.workDir, request.root, request.request.Edits)
+	requestServer := requestViewFromConfiguration(configuration, request.root, request.trustWorkspace)
+	request.request.Edits, err = prepareBatchEntries(configuration.workDir, request.root, request.request.Edits)
 	if err != nil {
 		s.sendToolErrorWithTiming(id, err.Error(), timing, err)
 		return
@@ -462,11 +456,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		s.sendToolErrorWithTiming(id, fmt.Sprintf("batch execution error: %v", err), timing, err)
 		return
 	}
-	for index := range response.Results {
-		if response.Results[index].Status == "error" && response.Results[index].ApplicationState == "" {
-			response.Results[index].ApplicationState = "unknown"
-		}
-	}
+	prepareBatchOutput(response)
 	finishResponse := telemetry.Start(ctx, telemetry.PhaseResponseFormatting)
 	bodyBytes, err := json.MarshalIndent(response, "", "  ")
 	finishResponse()
@@ -496,16 +486,14 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 	s.recordToolMetrics(timing)
 	if response.Status == "error" {
 		s.sendResult(id, map[string]any{
-			"content":            []map[string]any{{"type": "text", "text": critical}},
-			"isError":            true,
-			structuredContentKey: structured,
+			"content": []map[string]any{{"type": "text", "text": critical}},
+			"isError": true, structuredContentKey: structured,
 		})
 		return
 	}
 	s.sendResult(id, map[string]any{
-		"content":            []map[string]any{{"type": "text", "text": critical}},
-		"isError":            false,
-		structuredContentKey: structured,
+		"content": []map[string]any{{"type": "text", "text": critical}},
+		"isError": false, structuredContentKey: structured,
 	})
 }
 
@@ -684,6 +672,20 @@ func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchRespons
 	return response, nil
 }
 
+func (s *Server) executeBatchForConfiguration(ctx context.Context, configuration serverConfiguration, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
+	canonicalRoot, err := resolveRequestRoot(configuration.workDir, root)
+	if err != nil {
+		return nil, err
+	}
+	preparedEdits, err := prepareBatchEntries(configuration.workDir, canonicalRoot, edits)
+	if err != nil {
+		return nil, err
+	}
+	requestServer := requestViewFromConfiguration(configuration, canonicalRoot, trustWorkspace)
+	ctx = gocache.WithBaseDir(ctx, selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, canonicalRoot))
+	return requestServer.executeBatchWithContext(ctx, preparedEdits, autoOrganizeImports)
+}
+
 func batchGoFormattingPaths(paths []string, goEnabled bool) []string {
 	formatted := make([]string, 0, len(paths))
 	if !goEnabled {
@@ -734,4 +736,22 @@ func includeExternalBatchSources(root string, before, after map[string]string) e
 		after[path] = string(data)
 	}
 	return nil
+}
+
+func prepareBatchOutput(response *BatchResponse) {
+	for index := range response.Results {
+		if response.Results[index].Status == "error" && response.Results[index].ApplicationState == "" {
+			response.Results[index].ApplicationState = "unknown"
+		}
+	}
+	if response.DiagnosticDelta != nil {
+		delta := *response.DiagnosticDelta
+		if delta.Introduced == nil {
+			delta.Introduced = []string{}
+		}
+		if delta.Resolved == nil {
+			delta.Resolved = []string{}
+		}
+		response.DiagnosticDelta = &delta
+	}
 }

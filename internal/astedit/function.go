@@ -145,6 +145,9 @@ func insertDeclarationText(content []byte, source string, offset int) []byte {
 }
 
 func publishInsertedDeclaration(ctx context.Context, path string, content []byte, organizeImports bool) error {
+	if _, err := parser.ParseFile(token.NewFileSet(), path, content, parser.AllErrors); err != nil {
+		return fmt.Errorf("validate inserted file: %w", err)
+	}
 	if err := pipeline.WriteAtomicContext(ctx, path, content); err != nil {
 		return fmt.Errorf("write atomic: %w", err)
 	}
@@ -218,15 +221,19 @@ func extractReceiverTypeName(recv *ast.FieldList) string {
 	if recv == nil || len(recv.List) == 0 {
 		return ""
 	}
-	t := recv.List[0].Type
-	if star, ok := t.(*ast.StarExpr); ok {
-		t = star.X
+	receiver := recv.List[0].Type
+	if pointer, ok := receiver.(*ast.StarExpr); ok {
+		receiver = pointer.X
 	}
-	if ident, ok := t.(*ast.Ident); ok {
-		return ident.Name
-	}
-	if idx, ok := t.(*ast.IndexExpr); ok {
-		if ident, ok := idx.X.(*ast.Ident); ok {
+	switch typed := receiver.(type) {
+	case *ast.Ident:
+		return typed.Name
+	case *ast.IndexExpr:
+		if ident, ok := typed.X.(*ast.Ident); ok {
+			return ident.Name
+		}
+	case *ast.IndexListExpr:
+		if ident, ok := typed.X.(*ast.Ident); ok {
 			return ident.Name
 		}
 	}

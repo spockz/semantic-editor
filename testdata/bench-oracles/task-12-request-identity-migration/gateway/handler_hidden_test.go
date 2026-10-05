@@ -2,9 +2,10 @@ package gateway
 
 import (
 	"errors"
+	"testing"
+
 	"example.com/identityservice/request"
 	"example.com/identityservice/response"
-	"testing"
 )
 
 type sentinelClient struct{}

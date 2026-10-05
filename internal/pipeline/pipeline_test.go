@@ -3,6 +3,9 @@ package pipeline_test
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -605,4 +608,55 @@ func TestCheckDiagnosticDetailsRespectsSelectedSubproject(t *testing.T) {
 	if len(diagnostics) != 0 {
 		t.Fatalf("selected project diagnostics = %v, want no findings from the clean selected subtree", diagnostics)
 	}
+}
+
+func TestOrganizeImportsWithOptionsReportKeepsFunctionDocOnFirstImport(t *testing.T) {
+	for _, testCase := range []struct {
+		name  string
+		entry string
+	}{
+		{name: "plain import path", entry: "strings"},
+		{name: "quoted import path", entry: "\"strings\""},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			assertExplicitImportKeepsFunctionDoc(t, testCase.entry)
+		})
+	}
+}
+
+func assertExplicitImportKeepsFunctionDoc(t *testing.T, entry string) {
+	t.Helper()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "normalize.go")
+	source := "package sample\n\n// NormalizeKind trims surrounding whitespace.\nfunc NormalizeKind(value string) string { return strings.TrimSpace(value) }\n"
+	if err := os.WriteFile(file, []byte(source), 0o600); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	report, err := pipeline.OrganizeImportsWithOptionsReport(context.Background(), dir, pipeline.ImportOptions{
+		Add: []string{entry},
+	}, file)
+	if err != nil {
+		t.Fatalf("organize imports: %v", err)
+	}
+	if len(report.ChangedFiles) != 1 || report.ChangedFiles[0] != file {
+		t.Fatalf("changed files = %v, want only %q", report.ChangedFiles, file)
+	}
+	updated, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("read updated source: %v", err)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), file, updated, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse updated source: %v", err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "NormalizeKind" {
+			if function.Doc == nil || function.Doc.Text() != "NormalizeKind trims surrounding whitespace.\n" {
+				t.Fatalf("NormalizeKind doc = %#v; source:\n%s", function.Doc, updated)
+			}
+			return
+		}
+	}
+	t.Fatalf("NormalizeKind declaration missing after import edit:\n%s", updated)
 }

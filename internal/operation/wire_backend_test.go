@@ -34,6 +34,27 @@ func TestMoveConstructDefaultsDestinationToSourceFile(t *testing.T) {
 	}
 }
 
+func TestMoveConstructRejectsTargetWithoutRelativePlacement(t *testing.T) {
+	entry, ok := operation.DefaultRegistry().LookupCLI("move-construct")
+	if !ok {
+		t.Fatal("move_construct registry entry missing")
+	}
+	for name, raw := range map[string]map[string]any{
+		"default placement": {"file": "pkg/source.go", "symbol": "MoveMe", "target_symbol": "Anchor"},
+		"file placement":    {"file": "pkg/source.go", "symbol": "MoveMe", "placement": "file_start", "target_symbol": "Anchor"},
+		"section placement": {"file": "pkg/source.go", "symbol": "MoveMe", "placement": "public_start", "target_symbol": "Anchor"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := entry.Parse(raw); !errors.Is(err, operation.ErrInvalidParams) {
+				t.Fatalf("Parse(%#v) error = %v, want ErrInvalidParams", raw, err)
+			}
+		})
+	}
+	if _, err := entry.Parse(map[string]any{"file": "pkg/source.go", "symbol": "MoveMe", "placement": "before_symbol", "target_symbol": "Anchor"}); err != nil {
+		t.Fatalf("relative target parse failed: %v", err)
+	}
+}
+
 func TestJavaVerifyRegistryRequestAndDispatch(t *testing.T) {
 	entry, ok := operation.DefaultRegistry().LookupCLI("verify")
 	if !ok {

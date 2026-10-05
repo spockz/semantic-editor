@@ -15,6 +15,7 @@ import (
 	gobackend "semedit/internal/backend/golang"
 	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 )
 
 type enabledLanguageGoBackend struct {
@@ -29,34 +30,25 @@ func decodeEnabledVerifyCoverage(t *testing.T, payload []byte) (bool, map[string
 		Result struct {
 			IsError           bool `json:"isError"`
 			StructuredContent struct {
-				Result string `json:"result"`
+				Result struct {
+					Coverage []struct {
+						Language string `json:"language"`
+						Status   string `json:"status"`
+					} `json:"coverage"`
+					Normalize struct {
+						Results []struct {
+							ID     string `json:"ID"`
+							Status string `json:"Status"`
+						} `json:"Results"`
+					} `json:"normalize"`
+				} `json:"result"`
 			} `json:"structuredContent"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(payload, &response); err != nil {
 		t.Fatal(err)
 	}
-	text := response.Result.StructuredContent.Result
-	const marker = "Verification report: "
-	_, after, ok := strings.Cut(text, marker)
-	if !ok {
-		t.Fatalf("verification report is missing: %s", text)
-	}
-	var report struct {
-		Coverage []struct {
-			Language string `json:"language"`
-			Status   string `json:"status"`
-		} `json:"coverage"`
-		Normalize struct {
-			Results []struct {
-				ID     string `json:"id"`
-				Status string `json:"status"`
-			} `json:"results"`
-		} `json:"normalize"`
-	}
-	if err := json.Unmarshal([]byte(after), &report); err != nil {
-		t.Fatalf("decode verification report: %v\n%s", err, text)
-	}
+	report := response.Result.StructuredContent.Result
 	coverage := make(map[string]string, len(report.Coverage))
 	hooks := make(map[string]string, len(report.Normalize.Results))
 	for _, item := range report.Coverage {
@@ -97,7 +89,7 @@ func TestMCPVerifyEnabledLanguagesRestrictsAutoCoverage(t *testing.T) {
 	service := backend.NewService(registry)
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"auto","check_only":true}}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, mcp.WithService(service), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithService(service), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), `"isError":true`) {
@@ -146,7 +138,7 @@ func TestMCPVerifyRejectsDisabledLanguageSelectorsAndKeepsDirectoryScopes(t *tes
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":"src.java","language":"auto","check_only":true}}}`,
 	}, "\n") + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	responses := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -207,7 +199,7 @@ func TestMCPBatchJavaOnlySkipsGoBaselineAndVerification(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"trust_workspace":true,"edits":[{"tool":"semantic_rename","params":{"symbol":"Widget","to":"Gadget","file":"Widget.java","language":"java","trust_workspace":true,"jdtls_home":"/jdtls"}}]}}}`,
 	}, "\n") + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("java")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("java")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -291,7 +283,7 @@ verify:
 	}
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":".","language":"auto","trust_workspace":true,"jdtls_home":"/jdtls"}}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(out.String(), `"isError":true`) {

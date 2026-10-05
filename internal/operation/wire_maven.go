@@ -99,7 +99,11 @@ func mavenDef(key, cli, mcp, goal, summary string) Def[MavenReq, MavenRes] {
 			}
 			return string(data), nil
 		},
-		ExampleRaw: map[string]any{"language": "java", wireTrustWorkspace: true, "maven_tool": "auto", "allow_network": false}}
+		Output:             &OperationOutputContract{ResultSchema: mavenResultOutputSchema()},
+		ProjectOutput:      func(result MavenRes) (any, error) { return result, nil },
+		ErrorOutput:        &OperationErrorOutputContract{ResultSchema: mavenResultOutputSchema()},
+		ProjectErrorOutput: projectMavenErrorOutput,
+		ExampleRaw:         map[string]any{"language": "java", wireTrustWorkspace: true, "maven_tool": "auto", "allow_network": false}}
 }
 func registerMavenOps(registry *Registry) error {
 	if err := Register(registry, mavenDef("maven_compile", "maven-compile", "semantic_maven_compile", "test-compile", "Use this tool instead of a shell Maven invocation when compiling tests for a Java root POM. Set trust_workspace=true. The fixed test-compile goal runs offline unless allow_network=true and uses temporary Maven home/repository data under .scratch; Maven writes project build outputs.")); err != nil {

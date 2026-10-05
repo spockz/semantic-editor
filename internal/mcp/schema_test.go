@@ -18,6 +18,7 @@ import (
 	gobackend "semedit/internal/backend/golang"
 	javabackend "semedit/internal/backend/java"
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 	"semedit/internal/operation"
 	"semedit/internal/sourcebuf"
 )
@@ -81,7 +82,7 @@ func TestMCPInvalidToolVariantFailsBeforeServing(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	err = mcp.NewServer("full", root, &out, mcp.WithToolProfile("base"), mcp.WithToolVariants([]string{"remove:function"})).Serve(context.Background(), strings.NewReader(""))
+	err = mcptest.NewServer(t, "full", root, &out, mcp.WithToolProfile("base"), mcp.WithToolVariants([]string{"remove:function"})).Serve(context.Background(), strings.NewReader(""))
 	if err == nil || !strings.Contains(err.Error(), "matched no registered operation") {
 		t.Fatalf("invalid tool variant error = %v", err)
 	}
@@ -104,7 +105,7 @@ func TestMCPBaseCatalogStillDispatchesSpecializedBatchChild(t *testing.T) {
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_function","params":{"file":"main.go","source":"func Added() int { return 1 }"}}]}}}`,
 	}, "\n") + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", root, &out, mcp.WithToolProfile("base")).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, mcp.WithToolProfile("base")).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatalf("MCP serve failed: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -142,7 +143,7 @@ func toolsForOptions(t *testing.T, root string, options ...mcp.Option) []map[str
 	t.Helper()
 	var out bytes.Buffer
 	request := `{"jsonrpc":"2.0","id":1,"method":"tools/list"}` + "\n"
-	if err := mcp.NewServer("full", root, &out, options...).Serve(context.Background(), strings.NewReader(request)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, options...).Serve(context.Background(), strings.NewReader(request)); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -285,7 +286,7 @@ func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
 		t.Fatal("tools/list omitted semantic_inline_variable")
 	}
 	input := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
-	for key, role := range map[string]string{"symbol": "Target:", "file": "Selector:", "in_function": "Selector:"} {
+	for key, role := range map[string]string{"symbol": "Target:", "file": "Target:", "in_function": "Selector:"} {
 		field, ok := input[key].(map[string]any)
 		if !ok {
 			t.Fatalf("semantic_inline_variable input omitted %s", key)
@@ -370,7 +371,7 @@ func assertListedToolOutputSchema(t *testing.T, tool map[string]any) {
 		assertContractOutputSchema(t, name, output)
 	case "semantic_inline_function", "semantic_migrate_type", "semantic_extract_constant", "semantic_extract_function", "semantic_extract_variable", "semantic_inline_variable":
 		assertSemanticEditReceiptOutputSchema(t, name, output)
-	case "semantic_rename", "semantic_organize_imports":
+	case "semantic_rename", "semantic_organize_imports", "semantic_maven_compile", "semantic_maven_test", "semantic_verify":
 		assertTypedOutcomeOrLegacyStringSchema(t, name, output)
 	case "semantic_lookup", "semantic_replace_body", "semantic_replace_construct", "semantic_insert_case":
 		assertStandardOutputSchema(t, output, "string")
@@ -461,7 +462,7 @@ func assertRemoveConstructOutputSchema(t *testing.T, raw any) {
 	t.Helper()
 	assertStandardOutputSchema(t, raw, "object")
 	output := raw.(map[string]any)["properties"].(map[string]any)
-	result := output["result"].(map[string]any)
+	result := nativeResultSchema(t, raw)
 	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_remove_construct")
 	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
 		t.Fatalf("remove operation omitted its registered result schema")
@@ -537,10 +538,8 @@ func TestMCPLiveReloadAdvertisesStructuredOutputSchema(t *testing.T) {
 		if !ok {
 			t.Fatalf("semantic_reload outputSchema = %#v, want object", tool["outputSchema"])
 		}
-		if got := output["required"]; !reflect.DeepEqual(got, []any{"result"}) {
-			t.Fatalf("semantic_reload outputSchema required = %#v", got)
-		}
-		result := output["properties"].(map[string]any)["result"].(map[string]any)
+		assertStandardOutputSchema(t, output, "object")
+		result := nativeResultSchema(t, output)
 		status := result["properties"].(map[string]any)["status"].(map[string]any)
 		if status["const"] != "reloading" {
 			t.Fatalf("semantic_reload status schema = %#v, want reloading", status)
@@ -548,6 +547,30 @@ func TestMCPLiveReloadAdvertisesStructuredOutputSchema(t *testing.T) {
 		return
 	}
 	t.Fatal("live-reload tools/list omitted semantic_reload")
+}
+
+func nativeResultSchema(t *testing.T, raw any) map[string]any {
+	t.Helper()
+	schema := raw.(map[string]any)
+	for _, rawBranch := range schema["oneOf"].([]any) {
+		branch := rawBranch.(map[string]any)
+		required, _ := branch["required"].([]any)
+		not, _ := branch["not"].(map[string]any)
+		forbidden, _ := not["required"].([]any)
+		hasResult := false
+		for _, field := range required {
+			hasResult = hasResult || field == "result"
+		}
+		forbidsError := false
+		for _, field := range forbidden {
+			forbidsError = forbidsError || field == "error"
+		}
+		if hasResult && forbidsError {
+			return branch["properties"].(map[string]any)["result"].(map[string]any)
+		}
+	}
+	t.Fatalf("outputSchema omitted native result branch: %#v", schema["oneOf"])
+	return nil
 }
 
 func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
@@ -559,21 +582,21 @@ func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
 	if schema["type"] != "object" {
 		t.Fatalf("outputSchema type = %#v, want object", schema["type"])
 	}
-	if got := schema["required"]; !reflect.DeepEqual(got, []any{"result"}) {
-		t.Fatalf("outputSchema required = %#v, want result only", got)
-	}
 	properties := schema["properties"].(map[string]any)
+	assertStandardOutputProperties(t, properties)
+	if resultType != "" && nativeResultSchema(t, raw)["type"] != resultType {
+		t.Fatalf("native outputSchema result = %#v, want type %s", nativeResultSchema(t, raw), resultType)
+	}
+	assertDisjointStandardOutputBranches(t, schema["oneOf"])
+}
+
+func assertStandardOutputProperties(t *testing.T, properties map[string]any) {
+	t.Helper()
 	if got := properties["application_state"].(map[string]any)["type"]; got != "string" {
 		t.Fatalf("application_state schema = %#v, want string", properties["application_state"])
 	}
-	if got := properties["result"].(map[string]any)["type"]; got != resultType {
-		t.Fatalf("outputSchema result type = %#v, want %s", got, resultType)
-	}
-	if got := properties["diagnostic_status"].(map[string]any)["type"]; got != "string" {
-		t.Fatalf("diagnostic_status schema = %#v, want string", properties["diagnostic_status"])
-	}
-	if got := properties["diagnostic_delta"].(map[string]any)["type"]; got != "object" {
-		t.Fatalf("diagnostic_delta schema = %#v, want object", properties["diagnostic_delta"])
+	if got := properties["error"].(map[string]any)["type"]; got != "string" {
+		t.Fatalf("error schema = %#v, want string", properties["error"])
 	}
 	if _, ok := properties["metrics"]; ok {
 		t.Fatalf("standard outputSchema must not include per-call metrics: %#v", properties["metrics"])
@@ -583,24 +606,58 @@ func assertStandardOutputSchema(t *testing.T, raw any, resultType string) {
 	}
 }
 
+func assertDisjointStandardOutputBranches(t *testing.T, raw any) {
+	t.Helper()
+	branches, ok := raw.([]any)
+	if !ok || len(branches) < 2 {
+		t.Fatalf("outputSchema oneOf = %#v, want native and generic error branches", raw)
+	}
+	foundNative := false
+	foundGeneric := false
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		required, _ := branch["required"].([]any)
+		not, _ := branch["not"].(map[string]any)
+		forbidden, _ := not["required"].([]any)
+		if schemaIncludes(required, "result") && schemaIncludes(forbidden, "error") {
+			foundNative = true
+		}
+		if schemaIncludes(required, "error") && schemaIncludes(required, "application_state") && schemaIncludes(forbidden, "result") {
+			foundGeneric = true
+		}
+	}
+	if !foundNative || !foundGeneric {
+		t.Fatalf("outputSchema oneOf omitted disjoint native or generic error branches: %#v", branches)
+	}
+}
+
+func schemaIncludes(fields []any, field string) bool {
+	for _, value := range fields {
+		if value == field {
+			return true
+		}
+	}
+	return false
+}
+
 func assertTypedOutcomeOrLegacyStringSchema(t *testing.T, name string, raw any) {
 	t.Helper()
 	schema, ok := raw.(map[string]any)
 	if !ok {
 		t.Fatalf("%s outputSchema = %#v, want object", name, raw)
 	}
-	properties := schema["properties"].(map[string]any)
-	result := properties["result"].(map[string]any)
+	result := nativeResultSchema(t, schema)
 	entry, ok := operation.DefaultRegistry().LookupMCP(name)
 	if !ok || entry.Output == nil || entry.Output.ResultSchema == nil {
 		assertStandardOutputSchema(t, raw, "string")
 		return
 	}
 	assertResultSchemaMatchesRegistration(t, name, result, entry)
-	wantType, ok := result["type"].(string)
-	if !ok {
-		t.Fatalf("%s registered result schema omitted type: %#v", name, result)
+	want, err := entry.Output.ResultSchema.JSONSchema()
+	if err != nil {
+		t.Fatalf("%s registered result schema: %v", name, err)
 	}
+	wantType, _ := want["type"].(string)
 	assertStandardOutputSchema(t, raw, wantType)
 }
 
@@ -619,7 +676,7 @@ func assertResultSchemaMatchesRegistration(t *testing.T, name string, result map
 		t.Fatalf("%s normalize registered result schema: %v", name, err)
 	}
 	if !reflect.DeepEqual(result, normalizedWant) {
-		t.Fatalf("%s advertised result schema = %#v, want registered schema %#v", name, result, normalizedWant)
+		t.Fatalf("%s advertised native result schema = %#v, want registered schema %#v", name, result, normalizedWant)
 	}
 }
 
@@ -632,20 +689,8 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 		t.Fatalf("batch result required = %#v, want status, results, and final_diff", got)
 	}
 	properties := result["properties"].(map[string]any)
-	items := properties["results"].(map[string]any)["items"].(map[string]any)
-	branches, ok := items["oneOf"].([]any)
-	if !ok || len(branches) == 0 {
-		t.Fatalf("batch result item schema = %#v, want registered tool branches", items)
-	}
-	for _, rawBranch := range branches {
-		branch := rawBranch.(map[string]any)
-		if got := branch["required"]; !reflect.DeepEqual(got, []any{"tool", "status"}) {
-			t.Fatalf("batch result branch required = %#v", got)
-		}
-		if branch["additionalProperties"] != false {
-			t.Fatalf("batch result branch is not closed: %#v", branch)
-		}
-	}
+	assertBatchItemOutcomeBranches(t, properties["results"].(map[string]any)["items"].(map[string]any))
+	assertBatchAggregateOutcomeBranches(t, result)
 	if diff, diffOK := properties["final_diff"].(map[string]any); !diffOK || diff["type"] != "string" {
 		t.Fatalf("batch final_diff schema = %#v", properties["final_diff"])
 	}
@@ -655,6 +700,80 @@ func assertBatchOutputSchema(t *testing.T, raw any) {
 	}
 	if got := delta["required"]; !reflect.DeepEqual(got, []any{"net_delta", "introduced", "resolved"}) {
 		t.Fatalf("diagnostic_delta required = %#v", got)
+	}
+	if note, ok := properties["diagnostic_delta_note"].(map[string]any); !ok || note["type"] != "string" {
+		t.Fatalf("diagnostic_delta_note schema = %#v, want string", properties["diagnostic_delta_note"])
+	}
+}
+
+func assertBatchItemOutcomeBranches(t *testing.T, items map[string]any) {
+	t.Helper()
+	branches, ok := items["oneOf"].([]any)
+	if !ok || len(branches) == 0 {
+		t.Fatalf("batch result item schema = %#v, want registered tool branches", items)
+	}
+	for _, rawBranch := range branches {
+		assertBatchItemOutcomeBranch(t, rawBranch.(map[string]any))
+	}
+}
+
+func assertBatchItemOutcomeBranch(t *testing.T, branch map[string]any) {
+	t.Helper()
+	if branch["additionalProperties"] != false {
+		t.Fatalf("batch result branch is not closed: %#v", branch)
+	}
+	properties := branch["properties"].(map[string]any)
+	status := properties["status"].(map[string]any)["const"]
+	required := branch["required"].([]any)
+	not, _ := branch["not"].(map[string]any)
+	forbidden, _ := not["required"].([]any)
+	if !schemaIncludes(required, "tool") || !schemaIncludes(required, "status") {
+		t.Fatalf("batch result branch required = %#v, want tool and status", required)
+	}
+	if status == "ok" && !schemaIncludes(forbidden, "error") {
+		t.Fatalf("successful batch branch permits error: %#v", branch)
+	}
+	if status == "error" && (!schemaIncludes(required, "error") || !schemaIncludes(required, "application_state")) {
+		t.Fatalf("error batch branch omits error envelope: %#v", branch)
+	}
+	if status != "ok" && status != "error" {
+		t.Fatalf("batch result branch status = %#v, want ok or error", status)
+	}
+	if _, hasResult := properties["result"]; status == "error" && !hasResult && !schemaIncludes(forbidden, "result") {
+		t.Fatalf("generic error batch branch permits undeclared result: %#v", branch)
+	}
+}
+
+func assertBatchAggregateOutcomeBranches(t *testing.T, result map[string]any) {
+	t.Helper()
+	branches, ok := result["oneOf"].([]any)
+	if !ok || len(branches) != 2 {
+		t.Fatalf("batch aggregate outcomes = %#v, want ok and error branches", result["oneOf"])
+	}
+	foundSuccess, foundError := false, false
+	for _, rawBranch := range branches {
+		branch := rawBranch.(map[string]any)
+		properties := branch["properties"].(map[string]any)
+		switch properties["status"].(map[string]any)["const"] {
+		case "ok":
+			foundSuccess = true
+			status := properties["results"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)["status"].(map[string]any)
+			if status["const"] != "ok" {
+				t.Fatalf("successful aggregate branch permits an error row: %#v", branch)
+			}
+		case "error":
+			foundError = true
+			if _, exists := properties["results"].(map[string]any)["contains"]; !exists {
+				t.Fatalf("error aggregate branch does not require an error row: %#v", branch)
+			}
+			not := branch["not"].(map[string]any)
+			if !reflect.DeepEqual(not["required"], []any{"diagnostic_delta"}) {
+				t.Fatalf("error aggregate branch permits diagnostic_delta: %#v", branch)
+			}
+		}
+	}
+	if !foundSuccess || !foundError {
+		t.Fatalf("batch aggregate schema omitted successful or error branch: %#v", branches)
 	}
 }
 
@@ -676,7 +795,7 @@ func listToolsAtWithRegistry(t *testing.T, profile, root string, registry *opera
 	if registry != nil {
 		opts = append(opts, mcp.WithRegistry(registry))
 	}
-	if err := mcp.NewServer(profile, root, &out, opts...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	if err := mcptest.NewServer(t, profile, root, &out, opts...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -712,7 +831,7 @@ func writeTestGoModule(t *testing.T, dir string) {
 func listToolsWithLiveReload(t *testing.T) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", schemaWorkspace(t), &out, mcp.WithLiveReload(true)).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	if err := mcptest.NewServer(t, "full", schemaWorkspace(t), &out, mcp.WithLiveReload(true)).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -965,7 +1084,7 @@ func TestMCPEnabledLanguagesFilterMixedAndSourceLessWorkspaces(t *testing.T) {
 			t.Fatal("source-less workspace inferred a Go construct backend")
 		}
 	}
-	if err := mcp.NewServer("full", empty, &bytes.Buffer{}, mcp.WithEnabledLanguages("go,unknown")).Serve(context.Background(), strings.NewReader("")); err == nil {
+	if err := mcptest.NewServer(t, "full", empty, &bytes.Buffer{}, mcp.WithEnabledLanguages("go,unknown")).Serve(context.Background(), strings.NewReader("")); err == nil {
 		t.Fatal("unknown enabled language was accepted")
 	}
 
@@ -1071,7 +1190,7 @@ func listToolsAt(t *testing.T, root string, options ...mcp.Option) []map[string]
 	t.Helper()
 	var out bytes.Buffer
 	allOptions := append([]mcp.Option{mcp.WithToolProfile("full")}, options...)
-	if err := mcp.NewServer("full", root, &out, allOptions...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &out, allOptions...).Serve(context.Background(), strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`+"\n")); err != nil {
 		t.Fatalf("tools/list failed: %v", err)
 	}
 	var response struct {
@@ -1149,8 +1268,8 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_assertion_mode description", toolDescription("semantic_assertion_mode"), "trust_workspace=true", "dry_run=true", "without trust or file writes")
 	assertContains("semantic_assertion_mode.dry_run", paramDescription("semantic_assertion_mode", "dry_run"), "without writing", "trust_workspace is not required")
 	assertContains("semantic_assertion_mode.trust_workspace", paramDescription("semantic_assertion_mode", "trust_workspace"), "Must be true", "non-dry-run")
-	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select Rust or Java rename scope", "paths are relative to the workspace root", "Copy from the file field of a preceding semantic_lookup")
-	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Target: qualified symbol identifier", "Copy from the symbol field of a preceding semantic_lookup")
+	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select Rust or Java rename scope", "paths are relative to the workspace root", "Copy file from semantic_lookup")
+	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Target: qualified symbol identifier", "Copy symbol from semantic_lookup")
 	assertContains("semantic_insert_declaration.source", paramDescription("semantic_insert_declaration", "source"), "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one complete Go function or method", "parameters, results, and body")
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
@@ -1160,7 +1279,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "never beside tool", "zero-based edit index", `"symbol":"Run"`)
 	assertContains("semantic_lookup description", toolDescription("semantic_lookup"), "Returns symbol, file, kind, line, and column", "file-navigation reads", "not accepted as semedit tool parameters")
 	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact discriminator expression", "kind=case alone does not identify", "construct_path")
-	assertContains("semantic_insert_case.discriminator", paramDescription("semantic_insert_case", "discriminator"), "Selector: switch discriminant expression", "tagless switch", "Copy from the discriminator field")
+	assertContains("semantic_insert_case.discriminator", paramDescription("semantic_insert_case", "discriminator"), "Selector: switch discriminant expression", "tagless switch", "Copy discriminator from")
 }
 
 func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
@@ -1320,12 +1439,16 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 		}
 	}
 	assertSources("semantic_insert_decl", "file", fileSources)
+	assertSources("semantic_insert_decl", "file", []string{"Receipt file from semantic_extract_function"})
 	for _, toolName := range []string{"semantic_extract_function", "semantic_extract_constant", "semantic_extract_variable"} {
-		tool := tools[toolName]
-		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
-		symbol := properties["symbol"].(map[string]any)["description"].(string)
-		if strings.Contains(symbol, "Copy from") {
-			t.Errorf("%s.symbol creation name advertises an invalid producer: %s", toolName, symbol)
+		entry, ok := operation.DefaultRegistry().LookupMCP(toolName)
+		if !ok {
+			t.Fatalf("default registry omitted %s", toolName)
+		}
+		for _, param := range entry.Params {
+			if param.JSONName == "symbol" && len(param.SourceFields) != 0 {
+				t.Errorf("%s.symbol creation name declares source fields: %v", toolName, param.SourceFields)
+			}
 		}
 		assertSources(toolName, "in_function", inFunctionSources)
 	}
@@ -1448,7 +1571,7 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 	assertTypedAdvertisedSchemas(t, byName, operations)
 	var projectedOutput bytes.Buffer
 	projectedRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_typed_schema_provider","arguments":{}}}`
-	if err := mcp.NewServer("full", root, &projectedOutput, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(projectedRequest+"\n")); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &projectedOutput, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(projectedRequest+"\n")); err != nil {
 		t.Fatalf("serve projected provider: %v", err)
 	}
 	var projectedResponse map[string]any
@@ -1465,7 +1588,7 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 		t.Fatalf("encode nested continuation consumer call: %v", err)
 	}
 	var consumerOutput bytes.Buffer
-	if err := mcp.NewServer("full", root, &consumerOutput, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(consumerRequest, '\n'))); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &consumerOutput, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(consumerRequest, '\n'))); err != nil {
 		t.Fatalf("serve nested continuation consumer: %v", err)
 	}
 	if strings.Contains(consumerOutput.String(), "isError\":true") || !strings.Contains(consumerOutput.String(), "accepted") {
@@ -1473,7 +1596,7 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 	}
 	var malformedOutput bytes.Buffer
 	malformedRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_typed_schema_provider","arguments":{"invalid_output":true}}}`
-	if err := mcp.NewServer("full", root, &malformedOutput, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(malformedRequest+"\n")); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &malformedOutput, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(malformedRequest+"\n")); err != nil {
 		t.Fatalf("serve malformed provider: %v", err)
 	}
 	if !strings.Contains(malformedOutput.String(), "violates declared schema") || strings.Contains(malformedOutput.String(), `"structuredContent":{"result":{}}`) {
@@ -1484,7 +1607,7 @@ func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_typed_schema_consumer","params":{"payload":{"text":"","rows":[0],"unexpected":true},"file":"main.go","symbol":"Widget"}}]}}}`,
 	} {
 		var output bytes.Buffer
-		if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
+		if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
 			t.Fatalf("serve typed request: %v", err)
 		}
 		if !strings.Contains(output.String(), "unknown property \\\"unexpected\\\"") {
@@ -1666,7 +1789,8 @@ func assertBatchResultBranch(t *testing.T, branches []any, name, wantKind string
 	for _, rawBranch := range branches {
 		branch := rawBranch.(map[string]any)
 		properties := branch["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] != name {
+		tool, ok := properties["tool"].(map[string]any)["const"].(string)
+		if !ok || tool != name || properties["status"].(map[string]any)["const"] != "ok" {
 			continue
 		}
 		resultSchema, ok := properties["result"].(map[string]any)
@@ -1676,7 +1800,7 @@ func assertBatchResultBranch(t *testing.T, branches []any, name, wantKind string
 		assertBatchResultSchemaKind(t, name, resultSchema, wantKind)
 		return
 	}
-	t.Fatalf("batch output schema omitted registered result branch %s", name)
+	t.Fatalf("batch output schema omitted registered successful result branch %s", name)
 }
 
 func assertBatchResultSchemaKind(t *testing.T, name string, resultSchema map[string]any, wantKind string) {
@@ -1698,7 +1822,8 @@ func assertLegacyBatchBranchOmitsResult(t *testing.T, branches []any) {
 	for _, rawBranch := range branches {
 		branch := rawBranch.(map[string]any)
 		properties := branch["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] != "semantic_legacy_output" {
+		tool, ok := properties["tool"].(map[string]any)["const"].(string)
+		if !ok || tool != "semantic_legacy_output" || properties["status"].(map[string]any)["const"] != "ok" {
 			continue
 		}
 		if _, hasResult := properties["result"]; hasResult {
@@ -1706,7 +1831,7 @@ func assertLegacyBatchBranchOmitsResult(t *testing.T, branches []any) {
 		}
 		return
 	}
-	t.Fatal("legacy batch schema branch is missing")
+	t.Fatal("legacy successful batch schema branch is missing")
 }
 
 func assertBatchResultShapeExecution(t *testing.T, root string, registry *operation.Registry) {
@@ -1720,7 +1845,7 @@ func assertBatchResultShapeExecution(t *testing.T, root string, registry *operat
 		t.Fatalf("encode batch request: %v", err)
 	}
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
 		t.Fatalf("serve batch typed results: %v", err)
 	}
 	var response map[string]any
@@ -1829,7 +1954,7 @@ func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
 		t.Fatalf("write inspection fixture: %v", err)
 	}
 	var inspectOutput bytes.Buffer
-	inspectServer := mcp.NewServer("full", root, &inspectOutput)
+	inspectServer := mcptest.NewServer(t, "full", root, &inspectOutput)
 	inspectRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"Value","file":"main.go","language":"go","trust_workspace":true}}}` + "\n"
 	if err := inspectServer.Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
 		t.Fatalf("serve inspect call: %v", err)
@@ -1886,7 +2011,7 @@ func executeGuardedReplace(t *testing.T, root string, arguments map[string]any, 
 		t.Fatalf("encode guarded edit: %v", err)
 	}
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); err != nil {
 		t.Fatalf("serve guarded edit: %v", err)
 	}
 	return output.String()
@@ -1912,7 +2037,7 @@ func TestInspectProjectionFeedsInsertField(t *testing.T) {
 	}
 	inspectRequest := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_inspect_symbol","arguments":{"symbol":"options","file":"config.go","language":"go","trust_workspace":true}}}` + "\n"
 	var inspectOutput bytes.Buffer
-	if err := mcp.NewServer("full", root, &inspectOutput).Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &inspectOutput).Serve(context.Background(), strings.NewReader(inspectRequest)); err != nil {
 		t.Fatalf("serve field inspection: %v", err)
 	}
 	var inspected map[string]any
@@ -1937,7 +2062,7 @@ func TestInspectProjectionFeedsInsertField(t *testing.T) {
 		t.Fatalf("encode field insertion: %v", err)
 	}
 	var output bytes.Buffer
-	if serveErr := mcp.NewServer("full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); serveErr != nil {
+	if serveErr := mcptest.NewServer(t, "full", root, &output).Serve(context.Background(), bytes.NewReader(append(request, '\n'))); serveErr != nil {
 		t.Fatalf("serve field insertion: %v", serveErr)
 	}
 	if strings.Contains(output.String(), `"isError":true`) {
@@ -2091,7 +2216,7 @@ func serveReceiptCalls(t *testing.T, root string, registry *operation.Registry) 
 	t.Helper()
 	requests := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_receipt_mutation","arguments":{"identity":"after"}}}` + "\n" + `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_receipt_mutation","arguments":{"identity":"removed","remove":true}}}` + "\n" + `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"semantic_receipt_mutation","arguments":{"identity":"original","replacement":true}}}` + "\n"
 	var output bytes.Buffer
-	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(requests)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(requests)); err != nil {
 		t.Fatalf("serve receipt calls: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
@@ -2172,7 +2297,7 @@ func TestMCPIntegerNotationAndRangeValidation(t *testing.T) {
 					request = `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[` + edit + `]}}}`
 				}
 				var output bytes.Buffer
-				if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
+				if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(context.Background(), strings.NewReader(request+"\n")); err != nil {
 					t.Fatalf("serve numeric request: %v", err)
 				}
 				gotIntegerError := strings.Contains(output.String(), "must be an integer")
@@ -2411,5 +2536,107 @@ func TestToolsListUsesRegisteredBackendsForOperationInventory(t *testing.T) {
 		if got, want := language["enum"], toAnySlice([]string{"auto", "java"}); !reflect.DeepEqual(got, want) {
 			t.Fatalf("lookup language enum = %#v, want %#v", got, want)
 		}
+	}
+}
+
+func TestBatchVerificationSchemaUsesNativeVerifyResultAcrossCustomProjection(t *testing.T) {
+	root := t.TempDir()
+	registry := operation.NewRegistry()
+	registerNativeVerifyProjectionFixture(t, registry)
+	assertNativeVerifyProjectionSchemas(t, root, registry)
+	assertNativeVerifyProjectionWireResults(t, root, registry)
+}
+
+func registerNativeVerifyProjectionFixture(t *testing.T, registry *operation.Registry) {
+	t.Helper()
+	verifySchema := operation.ValueSchema{Kind: operation.SchemaString}
+	verifyDefinition := operation.Def[struct{}, operation.VerifyRes]{
+		Key: "verify", Summary: "Verify custom test fixture.", MCPName: "semantic_verify",
+		Params: []operation.ParameterContract{
+			{Name: "path", JSONName: "path", Type: operation.ParamString},
+			{Name: "language", JSONName: "language", Type: operation.ParamString},
+			{Name: "trust_workspace", JSONName: "trust_workspace", Type: operation.ParamBoolean},
+		},
+		Output: &operation.OperationOutputContract{ResultSchema: &verifySchema},
+		Parse:  func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (operation.VerifyRes, error){
+			backend.LanguageAuto: func(context.Context, operation.CallContext, struct{}) (operation.VerifyRes, error) {
+				return operation.VerifyRes{}, nil
+			},
+		},
+		ProjectOutput: func(operation.VerifyRes) (any, error) { return "standalone projection", nil },
+	}
+	if err := operation.Register(registry, verifyDefinition); err != nil {
+		t.Fatalf("register custom verify: %v", err)
+	}
+	probe := operation.Def[struct{}, string]{
+		Key: "batch-probe", Summary: "No-op batch fixture.", MCPName: "semantic_batch_probe", Batchable: true,
+		Params: []operation.ParameterContract{{Name: "path", JSONName: "path", Type: operation.ParamString}},
+		Parse:  func(map[string]any) (struct{}, error) { return struct{}{}, nil },
+		Handlers: map[backend.LanguageID]func(context.Context, operation.CallContext, struct{}) (string, error){
+			backend.LanguageAuto: func(context.Context, operation.CallContext, struct{}) (string, error) { return "done", nil },
+		},
+	}
+	if err := operation.Register(registry, probe); err != nil {
+		t.Fatalf("register no-op batch fixture: %v", err)
+	}
+}
+
+func assertNativeVerifyProjectionSchemas(t *testing.T, root string, registry *operation.Registry) {
+	t.Helper()
+	byName := namedMCPTools(listToolsAtWithRegistry(t, "full", root, registry))
+	verifyResultSchema := byName["semantic_verify"]["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	if verifyResultSchema["type"] != "string" {
+		t.Fatalf("standalone verify output schema = %#v, want custom string projection", verifyResultSchema)
+	}
+	batchSchema := byName["semantic_batch"]["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)
+	batchProperties := batchSchema["properties"].(map[string]any)
+	verificationSchema, err := operation.NativeVerifyOutputSchema().JSONSchema()
+	if err != nil {
+		t.Fatalf("build native verify schema: %v", err)
+	}
+	actual, err := json.Marshal(batchProperties["verification"])
+	if err != nil {
+		t.Fatalf("encode batch verification schema: %v", err)
+	}
+	want, err := json.Marshal(verificationSchema)
+	if err != nil {
+		t.Fatalf("encode native verification schema: %v", err)
+	}
+	if !bytes.Equal(actual, want) {
+		t.Fatalf("batch verification schema = %s, want native verify schema %s", actual, want)
+	}
+}
+
+func assertNativeVerifyProjectionWireResults(t *testing.T, root string, registry *operation.Registry) {
+	t.Helper()
+	requests := strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_verify","arguments":{"path":"."}}}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_batch_probe","params":{"path":"."}}]}}}`,
+	}, "\n") + "\n"
+	var output bytes.Buffer
+	server := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry))
+	if err := server.Serve(context.Background(), strings.NewReader(requests)); err != nil {
+		t.Fatalf("serve custom verify calls: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("MCP responses = %d, want 2: %s", len(lines), output.String())
+	}
+	var standaloneResponse, batchResponse map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &standaloneResponse); err != nil {
+		t.Fatalf("decode standalone response: %v", err)
+	}
+	if err := json.Unmarshal([]byte(lines[1]), &batchResponse); err != nil {
+		t.Fatalf("decode batch response: %v", err)
+	}
+	standalone := standaloneResponse["result"].(map[string]any)["structuredContent"].(map[string]any)["result"]
+	if standalone != "standalone projection" {
+		t.Fatalf("standalone projected verify result = %#v", standalone)
+	}
+	batch := batchResponse["result"].(map[string]any)["structuredContent"].(map[string]any)["result"].(map[string]any)
+	verification, ok := batch["verification"].(map[string]any)
+	if batch["status"] != "ok" || !ok || verification["normalize"] == nil || verification["checks"] == nil {
+		t.Fatalf("batch native verification result = %#v", batch)
 	}
 }

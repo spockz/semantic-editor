@@ -1,8 +1,9 @@
 package storage
 
 import (
-	"example.com/identityservice/request"
 	"testing"
+
+	"example.com/identityservice/request"
 )
 
 func TestLookupUsesRecordIDAndRenamedRequestField(t *testing.T) {

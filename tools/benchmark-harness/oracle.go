@@ -55,7 +55,8 @@ type OracleConfig struct {
 
 // MutationPolicyConfig defines file modification constraints.
 type MutationPolicyConfig struct {
-	DisallowedFiles []string `json:"disallowed_files" yaml:"disallowed_files"`
+	DisallowedFiles []string `json:"disallowed_files"            yaml:"disallowed_files"`
+	ForbidTestEdits bool     `json:"forbid_test_edits,omitempty" yaml:"forbid_test_edits,omitempty"`
 }
 
 // SymbolAdjacency ensures relative declaration ordering.
@@ -277,6 +278,12 @@ func (parser *taskFrontmatterParser) setKnownScalar(path, value string) error {
 			return fmt.Errorf("staged_initial_total_edits: %w", err)
 		}
 		metadata.StagedInitialTotalEdits = count
+	case "oracle.level_1_mutation_policy.forbid_test_edits":
+		forbidTestEdits, flagErr := strconv.ParseBool(value)
+		if flagErr != nil {
+			return fmt.Errorf("oracle.level_1_mutation_policy.forbid_test_edits: %w", flagErr)
+		}
+		metadata.Oracle.MutationPolicy.ForbidTestEdits = forbidTestEdits
 	case "oracle.level_2_ast.file":
 		metadata.Oracle.AST.File = value
 	case "oracle.level_2_ast.symbol_before.first":
@@ -476,6 +483,9 @@ func checkMutationPolicy(policy MutationPolicyConfig, modifiedFiles []string) or
 	}
 	for _, modified := range modifiedFiles {
 		relative := filepath.ToSlash(modified)
+		if policy.ForbidTestEdits && strings.HasSuffix(relative, "_test.go") {
+			return oracleFailure{failed: true, stage: "level_1_mutation_policy", message: fmt.Sprintf("test file edits are disallowed: %s", relative)}
+		}
 		if slices.Contains(policy.DisallowedFiles, relative) {
 			return oracleFailure{failed: true, stage: "level_1_mutation_policy", message: fmt.Sprintf("unauthorized modification of protected file: %s", relative)}
 		}

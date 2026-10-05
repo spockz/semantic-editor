@@ -5,6 +5,7 @@ go 1.27.1
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/rogpeppe/go-internal v1.16.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/tools v0.26.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -17,4 +18,5 @@ require (
 	golang.org/x/mod v0.21.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 )

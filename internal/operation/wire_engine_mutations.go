@@ -53,12 +53,19 @@ func (r MoveConstructReq) GetProjectContext() backend.ProjectContext { return r.
 func (r *MoveConstructReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var moveConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module. Copy from a preceding move receipt.", Required: false, SourceFields: []string{semanticMoveConstructToolName + ".file"}},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticMoveConstructToolName + ".symbol"}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "destination_file", CLIName: "destination-file", JSONName: "destination_file", Type: ParamString, Role: RoleTarget, Description: "Target: destination Go source file. Cross-package moves support exported free functions within one Go module.", Required: false},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Role: RoleTarget, Description: "Target: qualified declaration symbol to relocate", Required: true, SourceFields: []string{sourceLookupSymbol, sourceRenameSymbol, semanticMoveConstructToolName + ".symbol"}},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Destination placement: file_start, file_end, public_start, public_end, private_start, private_end, before_symbol, after_symbol", Enums: placementEnum},
-	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement"},
+	{Name: wireTargetSymbol, CLIName: "target-symbol", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol required for before_symbol or after_symbol placement; omit it for every other placement"},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Organize imports after relocation (default true)", Default: true},
+}
+
+func validateMoveTargetPlacement(placement astedit.Placement, targetSymbol string) error {
+	if targetSymbol == "" || placement == astedit.PlacementBeforeSymbol || placement == astedit.PlacementAfterSymbol {
+		return nil
+	}
+	return fmt.Errorf("target_symbol requires before_symbol or after_symbol placement: %w", ErrInvalidParams)
 }
 
 func parseMoveConstruct(raw map[string]any) (MoveConstructReq, error) {
@@ -86,6 +93,10 @@ func parseMoveConstruct(raw map[string]any) (MoveConstructReq, error) {
 	}
 	req.Placement = astedit.Placement(placement)
 	if req.TargetSymbol, err = ParseString(raw, wireTargetSymbol, "target-symbol", false); err != nil {
+		return req, err
+	}
+	err = validateMoveTargetPlacement(req.Placement, req.TargetSymbol)
+	if err != nil {
 		return req, err
 	}
 	if req.AutoOrganizeImports, err = ParseBool(raw, wireAutoOrganizeImports, wireCLIAutoOrganizeImports, true); err != nil {
@@ -188,7 +199,12 @@ func runMoveConstruct(ctx context.Context, cc CallContext, req MoveConstructReq)
 }
 
 func moveConstructDef() Def[MoveConstructReq, FileEditRes] {
-	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of text replacement to relocate one supported declaration to an explicit destination and placement. Use semantic_insert_construct to add a declaration or semantic_replace_construct to update one in place.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true}
+	return Def[MoveConstructReq, FileEditRes]{Key: "move_construct", Summary: "Use this tool instead of text replacement to relocate one supported declaration to an explicit destination and placement. Use semantic_insert_construct to add a declaration or semantic_replace_construct to update one in place.", Params: moveConstructParams, Level: LevelWorkspace, CLIName: "move-construct", MCPName: semanticMoveConstructToolName, Parse: parseMoveConstruct, Handlers: map[backend.LanguageID]func(context.Context, CallContext, MoveConstructReq) (FileEditRes, error){backend.LanguageGo: runMoveConstruct}, Format: formatFileEdit, ExampleRaw: map[string]any{"file": "api/server.go", "destination_file": "api/server.go", "symbol": "Run", "placement": "before_symbol", "target_symbol": "Init", wireAutoOrganizeImports: true}, BufferedBatch: true, Batchable: true,
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
+			legacyEnvelopeFieldWithDescription("file", RoleTarget, envelopeFileConsumers, "Live destination file after the move; copy this target into later operations."),
+			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
+		}, OutputMetadataField{Field: "origin_file", Schema: ValueSchema{Kind: SchemaString}, Description: "Historical source location before the move; evidence only, not a continuation target.", Optional: true}),
+	}
 }
 
 // GetProjectContext returns the request project for registry dispatch.
@@ -204,11 +220,11 @@ func (r ReplaceBodyReq) GetProjectContext() backend.ProjectContext { return r.Pr
 func (r *ReplaceBodyReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var replaceConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Selector: existing function, method, type, constant, or variable declaration; declaration replacement does not require an enclosing function", Role: RoleSelector, SourceFields: []string{sourceLookupSymbol, sourceReplaceBodySymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: existing function, method, type, constant, or variable declaration; declaration replacement does not require an enclosing function", Role: RoleTarget, SourceFields: []string{sourceLookupSymbol, sourceReplaceBodySymbol, sourceInsertConstructSymbol, sourceReplaceDeclSymbol}},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: enclosing function or method for nested control-flow and statement/expression constructs", Role: RoleSelector, SourceFields: append(sourceInFunctionContinuations, "semantic_inspect_symbol.result.continuations[].in_function")},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableReplaceConstructKinds},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: existing condition, statement, expression, or construct source; required to identify nested targets", SourceFields: sourceDiscriminatorContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: existing condition, statement, expression, or construct source; required to identify nested targets", Role: RoleSelector, SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Complete replacement construct source; expression kinds require an expression and statement/declaration kinds require the matching syntax", Required: true},
 	{Name: wireAutoOrganizeImports, CLIName: wireCLIAutoOrganizeImports, JSONName: wireAutoOrganizeImports, Type: ParamBoolean, Description: "Automatically clean up and resolve imports after mutation (default true)", Default: true},
@@ -298,6 +314,7 @@ func replaceBodyDef() Def[ReplaceBodyReq, FileEditRes] {
 			return text, nil
 		},
 		ExampleRaw:    map[string]any{"file": wireExampleFile, "symbol": "Server.Start", "body": "return nil"},
+		Output:        legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers), legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers)}),
 		BufferedBatch: true, Batchable: true,
 	}
 }
@@ -383,7 +400,9 @@ func scaffoldFileDef() Def[ScaffoldFileReq, ScaffoldFileRes] {
 			return fmt.Sprintf("Successfully scaffolded %s with package %s.", res.Display, res.Package), nil
 		},
 		ExampleRaw: map[string]any{"file": wireExampleFile},
-		Batchable:  true,
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers)},
+			OutputMetadataField{Field: "package", Schema: ValueSchema{Kind: SchemaString}, Description: "Resolved package name for the created file.", Optional: true}),
+		Batchable: true,
 	}
 }
 
@@ -407,9 +426,9 @@ func (r InsertCaseReq) GetProjectContext() backend.ProjectContext { return r.Pro
 func (r *InsertCaseReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var insertCaseParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Required: true, SourceFields: sourceInFunctionContinuations},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", SourceFields: sourceDiscriminatorContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: wireTargetGoFileDescription, Required: true, SourceFields: sourceFileContinuations},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified name of the containing function (e.g. 'Server.ServeHTTP', '(*Client).Do'). Identifies the scope to search; not the construct being replaced.", Role: RoleSelector, Required: true, SourceFields: sourceInFunctionContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Selector: switch discriminant expression or switch condition (e.g. 'method'). Omit only for a tagless switch.", Role: RoleSelector, SourceFields: sourceDiscriminatorContinuations},
 	{Name: wireConstructPath, CLIName: wireCLIConstructPath, JSONName: wireConstructPath, Type: ParamString, Description: "Selector: candidate path from an ambiguity diagnostic (e.g. '0' or '0.1'). The error diagnostic carries this path as text."},
 	{Name: "case", CLIName: "case", JSONName: "case", Type: ParamString, Description: "Complete case clause, including colon and statements, e.g. case \"foo\":\\n\\treturn bar", Required: true},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "one of: first, last, before_default, before, after (default 'before_default')", Enums: caseEnum},
@@ -474,13 +493,18 @@ func insertCaseDef() Def[InsertCaseReq, FileEditRes] {
 		Params:  insertCaseParams,
 		Level:   LevelFile,
 		CLIName: "insert-case",
-		MCPName: "semantic_insert_case",
+		MCPName: semanticInsertCaseToolName,
 		Parse:   parseInsertCase,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertCaseReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertCase,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "Serve", wireDiscriminator: "request.Method", "case": "case \"stop\":\n\treturn nil"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
+			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
+			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
+			legacyEnvelopeField(wireDiscriminator, RoleSelector, envelopeDiscriminatorConsumers),
+		}),
 		BufferedBatch: true, Batchable: true,
 	}
 }
@@ -561,13 +585,17 @@ func replaceConstructDef() Def[ReplaceConstructReq, FileEditRes] {
 		Params:  replaceConstructParams,
 		Level:   LevelFile,
 		CLIName: "replace-construct",
-		MCPName: "semantic_replace_construct",
+		MCPName: semanticReplaceConstructToolName,
 		Parse:   parseReplaceConstruct,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, ReplaceConstructReq) (FileEditRes, error){
 			backend.LanguageGo: runReplaceConstruct,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", wireDiscriminator: "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, wireInFunction: "TestWriteAssets", "kind": "loop", wireDiscriminator: "want", "source": "for _, want := range []string{\"a\", \"b\"} { t.Run(want, func(t *testing.T) {}) }"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
+			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
+			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
+		}),
 		BufferedBatch: true, Batchable: true,
 	}
 }

@@ -276,10 +276,10 @@ func contractResultSchema() ValueSchema {
 
 func contractOutputContract() *OperationOutputContract {
 	text := nonEmptyStringSchema()
-	consumers := []string{contractInspectTool, contractRenameTool}
+	consumers := []string{contractInspectTool, contractRenameTool, semanticLookupToolName}
 	return &OperationOutputContract{ResultSchema: new(contractResultSchema()), Continuations: []OutputContinuation{
-		{Path: "result.receipt.continuations[].file", Schema: text, Role: RoleSelector, Consumers: consumers},
-		{Path: "result.receipt.continuations[].symbol", Schema: text, Role: RoleSelector, Consumers: consumers},
+		{Path: "result.receipt.continuations[].file", Schema: text, Role: RoleTarget, Consumers: consumers},
+		{Path: "result.receipt.continuations[].symbol", Schema: text, Role: RoleTarget, Consumers: consumers},
 	}}
 }
 

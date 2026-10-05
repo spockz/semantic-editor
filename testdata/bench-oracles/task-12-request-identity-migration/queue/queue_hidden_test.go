@@ -1,9 +1,10 @@
 package queue
 
 import (
-	"example.com/identityservice/request"
 	"reflect"
 	"testing"
+
+	"example.com/identityservice/request"
 )
 
 func TestQueueUsesRequestIdentity(t *testing.T) {

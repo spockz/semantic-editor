@@ -1,8 +1,9 @@
 package reporting
 
 import (
-	"example.com/identityservice/request"
 	"testing"
+
+	"example.com/identityservice/request"
 )
 
 func TestReportsGroupByRequestIdentity(t *testing.T) {

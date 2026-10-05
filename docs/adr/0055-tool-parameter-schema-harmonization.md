@@ -117,8 +117,23 @@ tool-and-field pairs that feed this parameter (e.g.
 `["semantic_lookup.symbol", "semantic_rename.symbol"]`). The schema generator
 appends the Direction A cross-reference clause to the parameter description
 automatically when `SourceFields` is non-empty. A build-time registry check
-verifies that every named source field exists in the referenced tool's output
-schema.
+indexes provider fields and nested continuation paths directly from the declared
+operation output contracts. It verifies field existence without synthesizing
+JSON Schema maps. Every source requires a matching field name and assignable
+value schema. Live target and selector sources additionally require matching
+roles and compatible consumers.
+
+Informational output metadata has its own declared field schemas. Coordinates,
+descriptive kinds, and historical paths do not acquire live continuation roles
+merely because they appear in a result. Typed result continuations retain their
+declared nested paths and same-record provenance.
+
+An operation with a formatted string result can explicitly declare typed sibling
+envelope continuations without manufacturing a typed object result. The provider
+index includes those live fields, with the same role, consumer, leaf-name, and
+assignability checks. Their runtime envelope contract rejects undeclared or
+mistyped fields and requires any non-optional continuation. Typed projected-result
+continuations retain the original result-schema and projector requirements.
 
 ### 9. Existing-Declaration Selector Provenance
 
@@ -224,8 +239,8 @@ error projections.
   diagnostic list serializations per mutation. `SourceFields` keeps
   cross-reference text consistent as tools evolve. Text-only clients retain
   the information needed for a safe next call.
-* **Negative**: `SourceFields` build check requires that output schemas be
-  machine-readable, which ADR-0042 already establishes. Parameter renames
+* **Negative**: `SourceFields` build checks require declared machine-readable
+  provider contracts, which ADR-0042 establishes. Parameter renames
   require txtar fixtures to be updated in the same change. Essential fields
   appear in both representations; shared projection and bounded presentation
   must prevent divergence and unnecessary bulk duplication.

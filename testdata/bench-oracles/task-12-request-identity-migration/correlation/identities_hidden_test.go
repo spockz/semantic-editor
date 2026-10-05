@@ -1,11 +1,12 @@
 package correlation
 
 import (
+	"reflect"
+	"testing"
+
 	"example.com/identityservice/request"
 	"example.com/identityservice/response"
 	"example.com/identityservice/review"
-	"reflect"
-	"testing"
 )
 
 func TestTypedLookalikeIDsRemainDistinct(t *testing.T) {

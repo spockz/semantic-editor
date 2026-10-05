@@ -33,20 +33,23 @@ func (t Target) String() string {
 // - "harness" (e.g. "codex", "agy", "control")
 // - "harness/model" (e.g. "agy/gemini-3.8-flash-high")
 // - "harness/model/effort" (e.g. "codex/gpt-5.6-luna/high")
+// - "opencode/model" (e.g. "opencode/qwen36-iq4-xs", using the AMD Beast provider)
 // - "opencode/provider/model[/effort]" (e.g. "opencode/openrouter/cohere/north-mini-code:free")
 func ParseTarget(raw string) (Target, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Target{}, fmt.Errorf("empty target specification")
 	}
-
 	parts := strings.Split(raw, "/")
 	if strings.EqualFold(parts[0], string(HarnessOpenCode)) {
 		if len(parts) == 1 {
 			return Target{Harness: string(HarnessOpenCode)}, nil
 		}
-		if len(parts) < 3 {
-			return Target{}, fmt.Errorf("invalid OpenCode target specification %q: expected opencode[/provider/model[/effort]]", raw)
+		if len(parts) == 2 {
+			if parts[1] == "" {
+				return Target{}, fmt.Errorf("invalid OpenCode target specification %q: model is missing", raw)
+			}
+			return Target{Harness: string(HarnessOpenCode), Model: parts[1]}, nil
 		}
 		effort := ""
 		modelEnd := len(parts)
@@ -66,14 +69,11 @@ func ParseTarget(raw string) (Target, error) {
 	}
 	switch len(parts) {
 	case 1:
-		harness := strings.ToLower(parts[0])
-		return Target{Harness: harness}, nil
+		return Target{Harness: strings.ToLower(parts[0])}, nil
 	case 2:
-		harness := strings.ToLower(parts[0])
-		return Target{Harness: harness, Model: parts[1]}, nil
+		return Target{Harness: strings.ToLower(parts[0]), Model: parts[1]}, nil
 	case 3:
-		harness := strings.ToLower(parts[0])
-		return Target{Harness: harness, Model: parts[1], Effort: strings.ToLower(parts[2])}, nil
+		return Target{Harness: strings.ToLower(parts[0]), Model: parts[1], Effort: strings.ToLower(parts[2])}, nil
 	default:
 		return Target{}, fmt.Errorf("invalid target specification %q: expected harness[/model[/effort]]", raw)
 	}

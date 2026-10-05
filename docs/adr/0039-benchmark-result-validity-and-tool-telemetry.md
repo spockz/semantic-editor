@@ -1,3 +1,5 @@
+<!-- Defines evidence validity so provider telemetry cannot silently become successful zero measurements. -->
+
 # ADR-0039: Benchmark Result Validity and Tool Telemetry
 
 Status: Accepted
@@ -13,6 +15,17 @@ harness failures were also reaching generated documentation as if they were
 valid experimental observations.
 
 ## Decision
+
+OpenCode task token accounting consumes terminal step usage, deduplicated by
+part ID within each process invocation. Its disjoint input and cache-read/write
+buckets reconstruct total input; cache writes join uncached input in the
+existing schema. Output and reasoning remain separate. A final `stop` finish,
+complete nonnegative integer counters, and no unmatched starts are required;
+missing or malformed usage is a provider error rather than successful zero
+usage. Explicitly reported zero counters remain valid. Disable delegated agent
+tasks in both arms because the root-session JSON stream omits their usage.
+Task correction turns contribute usage once; diagnostic reflections use fresh
+unmerged results after the task clock is frozen, under ADR-0050.
 
 Normalize every observed tool invocation into an ordered record containing its
 tool name, server identity, transport outcome, functional outcome, failure

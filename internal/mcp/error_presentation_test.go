@@ -15,6 +15,7 @@ import (
 	"semedit/internal/astedit"
 	"semedit/internal/backend"
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 	"semedit/internal/operation"
 )
 
@@ -111,12 +112,10 @@ func registerKnownOperationErrorProbe(t *testing.T, registry *operation.Registry
 				return "", &astedit.SyntaxError{File: "main.go", Pos: token.Position{Filename: "main.go", Line: 1, Column: 2}, Err: errors.New("handler reported a partial write")}
 			},
 		},
-		Format: func(string) (string, error) { return "unused", nil },
-		Output: knownErrorOutputContract(schemas),
-		ProjectOutput: func(string) (any, error) {
-			return map[string]any{"application_state": "persisted", "changed_files": []string{"main.go"}}, nil
-		},
-		ErrorOutput: knownErrorErrorContract(schemas),
+		Format:        func(string) (string, error) { return "unused", nil },
+		Output:        knownErrorOutputContract(),
+		ProjectOutput: func(string) (any, error) { return "completed", nil },
+		ErrorOutput:   knownErrorErrorContract(schemas),
 		ProjectErrorOutput: func(error) (any, bool, error) {
 			if !test.Known {
 				return nil, false, nil
@@ -141,15 +140,8 @@ func knownErrorOutputSchemas() knownOperationErrorSchemas {
 	}
 }
 
-func knownErrorOutputContract(schemas knownOperationErrorSchemas) *operation.OperationOutputContract {
-	return &operation.OperationOutputContract{ResultSchema: &operation.ValueSchema{
-		Kind: operation.SchemaObject,
-		Properties: map[string]operation.ValueSchema{
-			"application_state": schemas.State,
-			"changed_files":     schemas.Files,
-		},
-		Required: []string{"application_state", "changed_files"},
-	}}
+func knownErrorOutputContract() *operation.OperationOutputContract {
+	return &operation.OperationOutputContract{ResultSchema: &operation.ValueSchema{Kind: operation.SchemaString}}
 }
 
 func knownErrorErrorContract(schemas knownOperationErrorSchemas) *operation.OperationErrorOutputContract {
@@ -170,7 +162,7 @@ func serveKnownOperationErrorCalls(t *testing.T, root string, registry *operatio
 		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_probe_known_error","arguments":{}}}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_probe_known_error","params":{}}]}}}`,
 	}, "\n") + "\n"
-	if err := mcp.NewServer("full", root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", root, &output, mcp.WithRegistry(registry)).Serve(t.Context(), strings.NewReader(input)); err != nil {
 		t.Fatalf("serve error call: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")

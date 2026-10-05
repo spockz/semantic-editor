@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"semedit/internal/symbol"
 	"slices"
 	"strings"
 )
@@ -92,14 +93,17 @@ func resolveInsertStatementAnchorMode(anchor string, placement StatementPlacemen
 }
 
 func findInsertStatementOwner(file *ast.File, selector string) (*ast.FuncDecl, error) {
-	functionName, ownerSelector := splitFunctionOwnerSelector(selector)
+	receiver, functionName, err := symbol.ParseIdentifier(selector)
+	if err != nil {
+		return nil, fmt.Errorf("function selector %q is invalid: %w", selector, err)
+	}
 	if !token.IsIdentifier(functionName) || token.Lookup(functionName).IsKeyword() {
 		return nil, fmt.Errorf("function selector %q is invalid", selector)
 	}
 	var owner *ast.FuncDecl
 	for _, declaration := range file.Decls {
 		function, ok := declaration.(*ast.FuncDecl)
-		if !ok || function.Name.Name != functionName || !matchesFunctionOwner(function, ownerSelector) {
+		if !ok || function.Name.Name != functionName || !matchesFunctionOwner(function, receiver) {
 			continue
 		}
 		if owner != nil {
@@ -111,15 +115,6 @@ func findInsertStatementOwner(file *ast.File, selector string) (*ast.FuncDecl, e
 		return nil, fmt.Errorf("function %q not found", selector)
 	}
 	return owner, nil
-}
-
-func splitFunctionOwnerSelector(selector string) (string, string) {
-	functionName := selector
-	ownerSelector := ""
-	if dot := strings.LastIndex(functionName, "."); dot >= 0 {
-		ownerSelector, functionName = functionName[:dot], functionName[dot+1:]
-	}
-	return functionName, ownerSelector
 }
 
 type insertStatementAnchor struct {
@@ -263,15 +258,7 @@ func matchesFunctionOwner(fn *ast.FuncDecl, selector string) bool {
 	if fn.Recv == nil || len(fn.Recv.List) != 1 {
 		return false
 	}
-	switch recv := fn.Recv.List[0].Type.(type) {
-	case *ast.Ident:
-		return selector == recv.Name
-	case *ast.StarExpr:
-		ident, ok := recv.X.(*ast.Ident)
-		return ok && selector == "(*"+ident.Name+")"
-	default:
-		return false
-	}
+	return extractReceiverTypeName(fn.Recv) == selector
 }
 
 func requireDedicatedStatementLine(source []byte, fset *token.FileSet, block *ast.BlockStmt, anchor ast.Stmt) error {

@@ -23,8 +23,8 @@ func (r InlineVariableReq) GetProjectContext() backend.ProjectContext { return r
 func (r *InlineVariableReq) SetProjectContext(project backend.ProjectContext) { r.Project = project }
 
 var inlineVariableParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Selector: Go source file containing the local binding; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
-	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Description: "Target: live local binding in the selected owner; copy a compatible local identity from semantic_lookup. The binding is removed on success.", Required: true, SourceFields: []string{sourceLookupSymbol}},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: Go source file containing the local binding; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
+	{Name: "symbol", CLIName: "symbol", JSONName: "symbol", Type: ParamString, Role: RoleTarget, Description: "Target: live local binding in the selected owner; copy a compatible local identity from semantic_lookup. The binding is removed on success.", Required: true, SourceFields: []string{sourceLookupSymbol}},
 	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified Go function or method containing the local binding", Required: true, SourceFields: sourceInFunctionContinuations},
 }
 

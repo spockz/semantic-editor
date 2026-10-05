@@ -5,11 +5,13 @@ package mcp_test
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"semedit/internal/mcptest"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +157,7 @@ func runColdMCPBenchmarkProtocol(b *testing.B, process coldMCPBenchmarkProcess) 
 	if !strings.Contains(verifyLine, `"id":2`) || strings.Contains(verifyLine, `"isError":true`) || strings.Contains(verifyLine, `"error":`) {
 		b.Fatalf("semantic_verify failed: %s", verifyLine)
 	}
+	validateColdMCPBenchmarkOutput(b, process, verifyLine)
 	finishColdMCPBenchmarkProcess(b, process)
 	completed = true
 	return coldMCPBenchmarkDurations{startup: spawned.Sub(started), initialize: initAt.Sub(spawned), verify: verifyAt.Sub(initAt)}
@@ -215,4 +218,52 @@ func coldGoEnv(dirs map[string]string) []string {
 		env = append(env, name+"="+value)
 	}
 	return env
+}
+
+func validateColdMCPBenchmarkOutput(b *testing.B, process coldMCPBenchmarkProcess, verifyLine string) {
+	b.Helper()
+	writeColdMCPRequest(b, process, "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/list\"}\n", "tools/list")
+	catalogLine := readColdMCPResponse(b, process, "tools/list")
+	var catalog struct {
+		Result struct {
+			Tools []struct {
+				Name         string          `json:"name"`
+				OutputSchema json.RawMessage `json:"outputSchema"`
+			} `json:"tools"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(catalogLine), &catalog); err != nil {
+		b.Fatalf("decode benchmark catalog: %v", err)
+	}
+	var outputSchema json.RawMessage
+	for _, tool := range catalog.Result.Tools {
+		if tool.Name == "semantic_verify" {
+			outputSchema = tool.OutputSchema
+			break
+		}
+	}
+	if len(outputSchema) == 0 {
+		b.Fatal("benchmark catalog omitted semantic_verify outputSchema")
+	}
+	schema, err := mcptest.CompileOutputSchema(outputSchema)
+	if err != nil {
+		b.Fatalf("compile benchmark outputSchema: %v", err)
+	}
+	var response struct {
+		Result struct {
+			StructuredContent json.RawMessage `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal([]byte(verifyLine), &response); err != nil {
+		b.Fatalf("decode benchmark verification response: %v", err)
+	}
+	var content any
+	decoder := json.NewDecoder(bytes.NewReader(response.Result.StructuredContent))
+	decoder.UseNumber()
+	if err := decoder.Decode(&content); err != nil {
+		b.Fatalf("decode benchmark structuredContent: %v", err)
+	}
+	if err := schema.Validate(content); err != nil {
+		b.Fatalf("benchmark semantic_verify violates advertised outputSchema: %v", err)
+	}
 }

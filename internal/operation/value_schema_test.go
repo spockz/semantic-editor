@@ -689,3 +689,37 @@ func TestProjectInspectResultAddsGoDeclarationOwnerAliases(t *testing.T) {
 		}
 	}
 }
+
+func TestOutputModeValidationSeparatesLegacyAndProjectedContracts(t *testing.T) {
+	text := ValueSchema{Kind: SchemaString}
+	object := ValueSchema{Kind: SchemaObject, Properties: map[string]ValueSchema{"value": text}}
+	legacy := &OperationOutputContract{Metadata: []OutputMetadataField{{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}}}}
+	projected := &OperationOutputContract{ResultSchema: &object}
+	legacyEnvelope := &OperationOutputContract{EnvelopeContinuations: []EnvelopeContinuationField{{Field: "file", Schema: text, Role: RoleTarget, Consumers: []string{"semantic_consumer"}}}}
+	cases := []struct {
+		name        string
+		contract    *OperationOutputContract
+		projector   bool
+		wantInvalid bool
+	}{
+		{name: "no output", wantInvalid: false},
+		{name: "legacy metadata", contract: legacy},
+		{name: "legacy envelope", contract: legacyEnvelope},
+		{name: "legacy metadata cannot be projected", contract: legacy, projector: true, wantInvalid: true},
+		{name: "typed result needs projector", contract: projected, wantInvalid: true},
+		{name: "projector needs typed result", projector: true, wantInvalid: true},
+		{name: "typed result with projector", contract: projected, projector: true},
+		{name: "typed continuation needs result", contract: &OperationOutputContract{Continuations: []OutputContinuation{{Field: "value", Schema: text, Role: RoleTarget, Consumers: []string{"semantic_consumer"}}}}, wantInvalid: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateOutputMode(tc.contract, tc.projector)
+			if tc.wantInvalid && err == nil {
+				t.Fatal("ValidateOutputMode() accepted an invalid output mode")
+			}
+			if !tc.wantInvalid && err != nil {
+				t.Fatalf("ValidateOutputMode() error = %v", err)
+			}
+		})
+	}
+}

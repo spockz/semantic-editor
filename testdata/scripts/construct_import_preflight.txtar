@@ -1,0 +1,46 @@
+# Rejected insertion must preserve source through direct CLI and MCP batch publication.
+! exec semedit insert-construct --file audit/normalize.go --kind declaration --source 'import "strings"'
+stderr 'imports must appear before other declarations'
+cmp audit/normalize.go .scratch/original.go.txt
+
+! exec semedit insert-construct --file audit/normalize.go --kind declaration --source 'import "strings"' --auto-organize-imports=false
+stderr 'imports must appear before other declarations'
+cmp audit/normalize.go .scratch/original.go.txt
+
+stdin standalone.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'imports must appear before other declarations'
+cmp audit/normalize.go .scratch/original.go.txt
+
+stdin batch.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'imports must appear before other declarations'
+cmp audit/normalize.go .scratch/original.go.txt
+exec go test ./...
+
+-- go.mod --
+module example.com/importpreflight
+
+go 1.23
+
+-- audit/normalize.go --
+package audit
+
+import "strings"
+
+func Normalize(value string) string { return strings.TrimSpace(value) }
+
+-- .scratch/original.go.txt --
+package audit
+
+import "strings"
+
+func Normalize(value string) string { return strings.TrimSpace(value) }
+
+-- standalone.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_insert_construct","arguments":{"file":"audit/normalize.go","kind":"declaration","source":"import \"strings\""}}}
+
+-- batch.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_insert_construct","params":{"file":"audit/normalize.go","kind":"declaration","source":"import \"strings\""}}]}}}

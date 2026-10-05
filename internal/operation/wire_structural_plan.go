@@ -195,13 +195,13 @@ func structuralStringParam(name, description string, required, allowEmpty bool, 
 
 func setDocCommentStructuralDef() Def[map[string]any, structuralPlanResult] {
 	params := []ParameterContract{
-		structuralStringParam("file", wireTargetGoFileDescription, true, false, RoleSelector,
+		structuralStringParam("file", wireTargetGoFileDescription, true, false, RoleTarget,
 			"semantic_set_doc_comment.result.edit_receipt.continuations[].file"),
 		structuralStringParam("scope", "Selector: required target mode; this operation supports declaration scope only.", true, false, RoleSelector),
 		structuralStringParam("symbol", "Target: live top-level Go declaration whose documentation comment will change.", true, false, RoleTarget,
 			"semantic_set_doc_comment.result.edit_receipt.continuations[].symbol"),
 		structuralStringParam("comment", "Replacement: plain documentation text without Go comment delimiters. An explicit empty string removes the doc comment.", true, true, RoleValue),
-		structuralStringParam("expected_revision", "Precondition: opaque full-file revision copied from this tool's standalone live continuation; stale values are refused.", false, false, RoleSelector,
+		structuralStringParam("expected_revision", "Precondition: opaque full-file revision copied from this tool's standalone live continuation; stale values are refused.", false, false, RoleTarget,
 			"semantic_set_doc_comment.result.edit_receipt.continuations[].expected_revision"),
 	}
 	params[1].Schema.Enum = []any{"declaration"}
@@ -265,9 +265,9 @@ func structuralOutputContract(includeContinuations bool) OperationOutputContract
 	if includeContinuations {
 		targetProperties := SymbolTargetSchema().Properties
 		contract.Continuations = append(contract.Continuations,
-			OutputContinuation{Path: "result.edit_receipt.continuations[].file", Schema: targetProperties["file"], Role: RoleSelector, Consumers: []string{"semantic_set_doc_comment"}},
+			OutputContinuation{Path: "result.edit_receipt.continuations[].file", Schema: targetProperties["file"], Role: RoleTarget, Consumers: []string{"semantic_set_doc_comment"}},
 			OutputContinuation{Path: "result.edit_receipt.continuations[].symbol", Schema: targetProperties["symbol"], Role: RoleTarget, Consumers: []string{"semantic_set_doc_comment"}},
-			OutputContinuation{Path: "result.edit_receipt.continuations[].expected_revision", Schema: targetProperties["expected_revision"], Role: RoleSelector, Consumers: []string{"semantic_set_doc_comment"}},
+			OutputContinuation{Path: "result.edit_receipt.continuations[].expected_revision", Schema: targetProperties["expected_revision"], Role: RoleTarget, Consumers: []string{"semantic_set_doc_comment"}},
 		)
 	}
 	return contract

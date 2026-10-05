@@ -44,6 +44,15 @@ which checks apply; filesystem checks execute only after edit publication.
 ADR-0054 implements this verification-signal integration at the resolved
 initialization boundary.
 
+Retain the detected active source languages as a session snapshot. Both tool
+discovery and language-policy validation use that snapshot rather than rescanning
+the filesystem on each request. Tests that omit the initialize handshake obtain
+a snapshot lazily against the configured root. A request-selected module or
+worktree obtains its own snapshot under the same server session; transient
+request views share those records instead of repeating detection. A successful
+reinitialization refreshes all root-specific snapshots, while a failed attempt
+retains the previous usable configuration. Reload refreshes session state.
+
 The benchmark harness enables `--semedit-prewarm-verify` by default for Codex
 semedit jobs with a Go oracle target. An explicit false value disables it, and
 fixtures without a Go target skip it. The treatment runs the promoted semedit
@@ -89,6 +98,9 @@ process must not expose those transient files in workspace snapshots.
   binary path.
 - Detect languages and verification signals during initialization after resolving
   the workspace root and base directories, even when launch CWD differs.
+- Discovery and dispatch share an immutable active-language snapshot for each
+  canonical effective root. Source-file changes do not implicitly change the
+  session's language policy; reinitialization or reload refreshes it.
 - A benchmark semantic arm supplies complete MCP command registration rather
   than relying on configuration inherited from the fixture directory.
 - Server instructions are a server configuration input, not a task-prompt

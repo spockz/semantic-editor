@@ -1,0 +1,56 @@
+# target_symbol is only meaningful for relative placement and must never be ignored.
+! exec semedit move-construct --file direct.go --symbol MoveMe --target-symbol Anchor
+stderr 'target_symbol requires before_symbol or after_symbol'
+cmp direct.go .scratch/want/direct.go
+
+# A relative target remains a supported placement.
+exec semedit move-construct --file direct.go --symbol MoveMe --placement before_symbol --target-symbol Anchor
+cmp direct.go .scratch/want/direct-relative.go
+
+# Batch parameter preflight rejects the invalid child before any edit dispatches.
+stdin batch.json
+exec semedit mcp
+stdout '"isError":true'
+stdout 'target_symbol requires before_symbol or after_symbol'
+cmp batch.go .scratch/want/batch.go
+
+-- go.mod --
+module example.com/movetarget
+
+go 1.23
+-- direct.go --
+package movetarget
+
+func Anchor() {}
+
+func MoveMe() {}
+-- batch.go --
+package movetarget
+
+func BatchAnchor() {}
+
+func BatchFirst() {}
+
+func BatchMoveMe() {}
+-- batch.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_move_construct","params":{"file":"batch.go","symbol":"BatchFirst","placement":"before_symbol","target_symbol":"BatchAnchor"}},{"tool":"semantic_move_construct","params":{"file":"batch.go","symbol":"BatchMoveMe","target_symbol":"BatchAnchor"}}]}}}
+-- .scratch/want/direct.go --
+package movetarget
+
+func Anchor() {}
+
+func MoveMe() {}
+-- .scratch/want/direct-relative.go --
+package movetarget
+
+func MoveMe() {}
+
+func Anchor() {}
+-- .scratch/want/batch.go --
+package movetarget
+
+func BatchAnchor() {}
+
+func BatchFirst() {}
+
+func BatchMoveMe() {}

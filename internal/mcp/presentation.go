@@ -275,21 +275,6 @@ func criticalTextFallback(structured map[string]any, body string, cause error) s
 	return fmt.Sprintf("Critical result projection unavailable: %v\n\n%s", cause, body)
 }
 
-func criticalTextWithNative(structured map[string]any, body string, native any) (string, error) {
-	fields, err := criticalNativeFields(native)
-	if err != nil {
-		return "", err
-	}
-	if len(fields) > 0 {
-		for key, value := range fields {
-			if _, exists := structured[key]; !exists {
-				structured[key] = value
-			}
-		}
-	}
-	return criticalText(structured, body)
-}
-
 func (fields orderedJSONObject) MarshalJSON() ([]byte, error) {
 	var result bytes.Buffer
 	result.WriteByte('{')

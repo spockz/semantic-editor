@@ -182,6 +182,7 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 		`{"type":"message.part.updated","properties":{"part":{"id":"tool-1","type":"tool","tool":"semantic_rename","server":"semedit","state":{"status":"running","input":{"symbol":"old"}}}}}`,
 		`{"type":"message.part.updated","properties":{"part":{"id":"tool-1","type":"tool","tool":"semantic_rename","server":"semedit","state":{"status":"completed","input":{"symbol":"old"},"output":{"structuredContent":{"metrics":{"schema_version":1,"total_ms":17}}}}}}}`,
 		`{"type":"message.part.updated","properties":{"part":{"type":"text","text":"DONE"}}}`,
+		`{"type":"step_finish","part":{"type":"step-finish","id":"finish-1","reason":"stop","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}}`,
 	}, "\n") + "\n"
 	content := fmt.Sprintf("#!/bin/sh\nprintf '%%b' %q\n", stdout)
 	if err := os.WriteFile(script, []byte(content), 0o600); err != nil {
@@ -328,28 +329,34 @@ func assertOpenCodeBaselineConfiguration(t *testing.T, runner *Runner) {
 
 func assertLegacyOpenCodeConfiguration(t *testing.T, runner *Runner) {
 	t.Helper()
-	legacyPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "amdbeast/qwen36-coder"})
+	configPath, _, err := runner.openCodeEnvironment(t.Context(), t.TempDir(), ArmBaseline, Target{Harness: string(HarnessOpenCode), Model: "qwen36-iq4-xs"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// #nosec G304 -- the path is returned by the fixture-scoped harness setup.
-	legacy, err := os.ReadFile(legacyPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var legacyConfig struct {
+	var config struct {
 		Provider map[string]struct {
 			Options map[string]string `json:"options"`
+			Models  map[string]struct {
+				ID string `json:"id"`
+			} `json:"models"`
 		} `json:"provider"`
 	}
-	if err := json.Unmarshal(legacy, &legacyConfig); err != nil {
-		t.Fatal(err)
+	if decodeErr := json.Unmarshal(data, &config); decodeErr != nil {
+		t.Fatal(decodeErr)
 	}
-	if got := legacyConfig.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
-		t.Errorf("legacy AMD Beast base URL = %q, want %q", got, openCodeQwenBaseURL)
+	if got := config.Provider["amdbeast"].Options["baseURL"]; got != openCodeQwenBaseURL {
+		t.Errorf("AMD Beast base URL = %q, want %q", got, openCodeQwenBaseURL)
 	}
-	if _, found := legacyConfig.Provider["openrouter"]; found {
-		t.Error("legacy AMD Beast config unexpectedly includes OpenRouter")
+	if got := config.Provider["amdbeast"].Models["qwen36-iq4-xs"].ID; got != "qwen36-iq4-xs" {
+		t.Errorf("AMD Beast API model = %q, want qwen36-iq4-xs", got)
+	}
+	if _, found := config.Provider["openrouter"]; found {
+		t.Error("AMD Beast config unexpectedly includes OpenRouter")
 	}
 }
 

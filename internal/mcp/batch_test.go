@@ -8,6 +8,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +18,7 @@ import (
 	"testing"
 
 	"semedit/internal/mcp"
+	"semedit/internal/mcptest"
 	"semedit/internal/telemetry"
 )
 
@@ -58,7 +62,7 @@ func executeSuccessfulBatch(t *testing.T, root string) successfulBatchRun {
 	t.Helper()
 	edits := successfulBatchEdits()
 	metrics := telemetry.NewMetrics()
-	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), edits, false)
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), edits, false)
 	if err != nil {
 		t.Fatalf("ExecuteBatch failed: %v", err)
 	}
@@ -152,7 +156,7 @@ func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
 	if err := os.WriteFile(worktreeFile, []byte("package worktree\n\nfunc Value() int { return 1 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	server := mcp.NewServer("full", configuredRoot, &bytes.Buffer{})
+	server := mcptest.NewServer(t, "full", configuredRoot, &bytes.Buffer{})
 	var response *mcp.BatchResponse
 	var err error
 
@@ -233,7 +237,7 @@ func executeRevisionGuardBatch(t *testing.T, root, revision string) *mcp.BatchRe
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"main.go","symbol":"Value","body":"return 2"}`)},
 		{Tool: "semantic_replace_body", Params: json.RawMessage(fmt.Sprintf(`{"file":"main.go","symbol":"Value","expected_revision":%q,"body":"return 3"}`, revision))},
 	}
-	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), edits, false)
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), edits, false)
 	if err != nil {
 		t.Fatalf("execute batch: %v", err)
 	}
@@ -278,7 +282,7 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 	}
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 2"}}]}}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -322,7 +326,7 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 	tmpDir := t.TempDir()
 	var out bytes.Buffer
-	server := mcp.NewServer("full", tmpDir, &out)
+	server := mcptest.NewServer(t, "full", tmpDir, &out)
 	response, err := server.ExecuteBatch(context.Background(), []mcp.BatchEntry{{
 		Tool: "semantic_replace_body",
 	}}, false)
@@ -348,7 +352,7 @@ func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
 	}
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 1"}}]}}}` + "\n"
 	var out bytes.Buffer
-	if err := mcp.NewServer("full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
+	if err := mcptest.NewServer(t, "full", tmpDir, &out).Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -395,7 +399,7 @@ func TestBatch_FailFast(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	srv := mcp.NewServer("full", tmpDir, &out)
+	srv := mcptest.NewServer(t, "full", tmpDir, &out)
 
 	edits := []mcp.BatchEntry{
 		{
@@ -477,7 +481,7 @@ func Sub(a, b int) int {
 	}
 
 	var out bytes.Buffer
-	srv := mcp.NewServer("full", tmpDir, &out)
+	srv := mcptest.NewServer(t, "full", tmpDir, &out)
 
 	edits := []mcp.BatchEntry{
 		{
@@ -523,7 +527,7 @@ func TestBatch_RenameDefersWorkspacePostProcess(t *testing.T) {
 		t.Fatalf("write calc.go: %v", err)
 	}
 
-	srv := mcp.NewServer("full", tmpDir, nil)
+	srv := mcptest.NewServer(t, "full", tmpDir, nil)
 	metrics := telemetry.NewMetrics()
 	resp, err := srv.ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
 		{Tool: "semantic_rename", Params: json.RawMessage(`{"file":"calc.go","symbol":"Add","to":"Sum","auto_organize_imports":true}`)},
@@ -586,7 +590,7 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 	}
 	defer func() { _ = os.Setenv("PATH", originalPath) }()
 	var out bytes.Buffer
-	srv := mcp.NewServer("full", module, &out)
+	srv := mcptest.NewServer(t, "full", module, &out)
 	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"semantic_batch","arguments":{"edits":[{"tool":"semantic_replace_body","params":{"file":"file.go","symbol":"Value","body":"return 2"}}]}}}` + "\n"
 	if err := srv.Serve(context.Background(), strings.NewReader(input)); err != nil {
 		t.Fatal(err)
@@ -621,7 +625,7 @@ func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
 	if err := os.WriteFile(file, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	srv := mcp.NewServer("full", root, &bytes.Buffer{})
+	srv := mcptest.NewServer(t, "full", root, &bytes.Buffer{})
 	response, err := srv.ExecuteBatch(context.Background(), []mcp.BatchEntry{
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2"}`)},
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2","unexpected":true}`)},
@@ -669,7 +673,7 @@ func Local() int { return 1 }
 		}
 	}
 	metrics := telemetry.NewMetrics()
-	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(telemetry.WithMetrics(context.Background(), metrics), []mcp.BatchEntry{
 		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"Normalize"}`)},
 		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Collapse"}`)},
 		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"source.go","symbol":"Local","placement":"file_start"}`)},
@@ -737,7 +741,7 @@ func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{
 		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"first.go","symbol":"MoveMe"}`)},
 		{Tool: "semantic_move_construct", Params: json.RawMessage(`{"file":"source.go","destination_file":"second.go","symbol":"Missing"}`)},
 	}, false)
@@ -783,7 +787,7 @@ func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 			t.Fatalf("write %s: %v", name, err)
 		}
 	}
-	response, err := mcp.NewServer("full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{{
 		Tool:   "semantic_move_construct",
 		Params: json.RawMessage(`{"file":"source.go","destination_file":"other/dest.go","symbol":"MoveMe"}`),
 	}}, false)
@@ -807,6 +811,44 @@ func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
 			assertMoveSymlinkRefused(t, test)
 		})
 	}
+}
+
+func TestBatchImportBeforeFailureKeepsFunctionDocOwnership(t *testing.T) {
+	root := t.TempDir()
+	writeBatchFixtureFile(t, filepath.Join(root, "go.mod"), "module example.com/importownership\n\ngo 1.23\n")
+	writeBatchFixtureFile(t, filepath.Join(root, "normalize.go"), "package importownership\n\n// NormalizeKind trims surrounding whitespace.\nfunc NormalizeKind(value string) string { return strings.TrimSpace(value) }\n")
+
+	response, err := mcptest.NewServer(t, "full", root, &bytes.Buffer{}).ExecuteBatch(context.Background(), []mcp.BatchEntry{
+		{Tool: "semantic_organize_imports", Params: json.RawMessage("{\"file\":\"normalize.go\",\"add\":[\"\\\"strings\\\"\"]}")},
+		{Tool: "semantic_replace_body", Params: json.RawMessage("{\"file\":\"normalize.go\",\"symbol\":\"Missing\",\"body\":\"return value\"}")},
+	}, false)
+	if err != nil || response.Status != "error" {
+		t.Fatalf("failed batch response = %+v, err = %v", response, err)
+	}
+	if len(response.Results) != 2 || response.Results[0].Status != "ok" || response.Results[1].Status != "error" {
+		t.Fatalf("batch child results = %+v", response.Results)
+	}
+	updated, err := os.ReadFile(filepath.Join(root, "normalize.go"))
+	if err != nil {
+		t.Fatalf("read persisted import edit: %v", err)
+	}
+	if !strings.Contains(string(updated), "\"strings\"") {
+		t.Fatalf("earlier import edit was not persisted: %s", updated)
+	}
+	parsed, err := parser.ParseFile(token.NewFileSet(), "normalize.go", updated, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		t.Fatalf("parse persisted batch output: %v", err)
+	}
+	for _, declaration := range parsed.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "NormalizeKind" {
+			if function.Doc == nil || function.Doc.Text() != "NormalizeKind trims surrounding whitespace.\n" {
+				t.Fatalf("NormalizeKind doc = %#v; source:\n%s", function.Doc, updated)
+			}
+			return
+		}
+	}
+	t.Fatalf("NormalizeKind declaration missing after partial batch:\n%s", updated)
 }
 
 type moveSymlinkCase struct {

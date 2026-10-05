@@ -39,16 +39,16 @@ func (r *InsertConstructReq) SetProjectContext(project backend.ProjectContext) {
 }
 
 var insertConstructParams = []ParameterContract{
-	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
+	{Name: "file", CLIName: "file", JSONName: "file", Type: ParamString, Role: RoleTarget, Description: "Target: source file to modify; path is relative to the workspace root", Required: true, SourceFields: sourceFileContinuations},
 	{Name: "kind", CLIName: "kind", JSONName: "kind", Type: ParamString, Description: "Construct kind supported by the selected language backend", Required: true, DynamicEnums: executableInsertConstructKinds},
 	{Name: "source", CLIName: "source", JSONName: "source", Type: ParamString, Description: "Source code for the new construct", Required: true},
 	{Name: wireAccessModifier, CLIName: "access", JSONName: wireAccessModifier, Type: ParamString, Description: "Go access modifier: infer, public, or private", Enums: accessEnum, DynamicEnums: supportedAccessModifiers},
 	{Name: "placement", CLIName: "placement", JSONName: "placement", Type: ParamString, Description: "Optional placement qualifier for declarations, fields, or cases", Enums: constructPlacementEnum},
 	{Name: wireTargetSymbol, CLIName: "target", JSONName: wireTargetSymbol, Type: ParamString, Description: "Target symbol or anchor case identifier required for relative placement"},
-	{Name: "in_type", CLIName: "in-type", JSONName: "in_type", Type: ParamString, Description: "Selector: existing Go struct type that owns a field insertion", SourceFields: []string{"semantic_inspect_symbol.result.continuations[].in_type"}},
+	{Name: "in_type", CLIName: "in-type", JSONName: "in_type", Type: ParamString, Role: RoleSelector, Description: "Selector: existing Go struct type that owns a field insertion", SourceFields: []string{"semantic_inspect_symbol.result.continuations[].in_type"}},
 	{Name: "group", CLIName: "group", JSONName: "group", Type: ParamString, Description: "Group merging behavior for declarations: 'append' merges into existing block, 'standalone' inserts separate declaration (default 'append')", Enums: groupEnum},
-	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
-	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
+	{Name: wireInFunction, CLIName: wireCLIInFunction, JSONName: wireInFunction, Type: ParamString, Role: RoleSelector, Description: "Selector: qualified enclosing function or method name for nested constructs such as a case.", SourceFields: sourceInFunctionContinuations},
+	{Name: wireDiscriminator, CLIName: wireDiscriminator, JSONName: wireDiscriminator, Type: ParamString, Role: RoleSelector, Description: "Discriminant expression or switch condition (e.g. for case)", SourceFields: sourceDiscriminatorContinuations},
 	{Name: "anchor", CLIName: "anchor", JSONName: "anchor", Type: ParamString, Description: "Statement insertion anchor: start, end, before_return, before, or after; before/after require discriminator", Enums: []string{"start", "end", "before_return", "before", "after"}},
 	{Name: "construct_path", CLIName: wireCLIConstructPath, JSONName: "construct_path", Type: ParamString, Description: "Candidate path from an ambiguity diagnostic, such as 0 or 0.1; repeated statement anchors also require its expected_revision"},
 	{Name: wireExpectedRevision, CLIName: wireCLIExpectedRevision, JSONName: wireExpectedRevision, Type: ParamString, Description: "Required with construct_path: file revision copied from the ambiguity diagnostic"},
@@ -217,13 +217,19 @@ func insertConstructDef() Def[InsertConstructReq, FileEditRes] {
 		Params:  insertConstructParams,
 		Level:   LevelFile,
 		CLIName: "insert-construct",
-		MCPName: "semantic_insert_construct",
+		MCPName: semanticInsertConstructToolName,
 		Parse:   parseInsertConstruct,
 		Handlers: map[backend.LanguageID]func(context.Context, CallContext, InsertConstructReq) (FileEditRes, error){
 			backend.LanguageGo: runInsertConstruct,
 		},
-		Format:        formatFileEdit,
-		ExampleRaw:    map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
+		Format:     formatFileEdit,
+		ExampleRaw: map[string]any{"file": wireExampleFile, "kind": "function", "source": "func Stop() {}"},
+		Output: legacyEnvelopeOutput([]EnvelopeContinuationField{
+			legacyEnvelopeField("file", RoleTarget, envelopeFileConsumers),
+			legacyEnvelopeField("symbol", RoleTarget, envelopeSymbolConsumers),
+			legacyEnvelopeField(wireInFunction, RoleSelector, envelopeFunctionConsumers),
+			legacyEnvelopeField(wireDiscriminator, RoleSelector, envelopeDiscriminatorConsumers),
+		}, OutputMetadataField{Field: "line", Schema: ValueSchema{Kind: SchemaInteger}, Description: wireNavigationHintDescription, Optional: true}),
 		PlacementKey:  true,
 		BufferedBatch: true, Batchable: true,
 	}
