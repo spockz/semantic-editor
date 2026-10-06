@@ -8,6 +8,7 @@ import (
 )
 
 func TestOutlineGoPreservesCRLFCommentsAndTags(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	source := []byte("package demo\r\n/*\r\n * Public docs\r\n */\r\ntype Public struct { Value int `json:\"name\r\nvalue\"` }\r\n")
 	path := filepath.Join(root, "source.go")

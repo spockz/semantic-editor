@@ -17,6 +17,7 @@ import (
 )
 
 func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeTestGoModule(t, root)
 	path := filepath.Join(root, "routes.go")
@@ -94,6 +95,7 @@ func TestCompositeSelectorContinuationFeedsNextInsertion(t *testing.T) {
 }
 
 func TestCompositeContinuationSelectsOuterLiteralWithNestedValue(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeTestGoModule(t, root)
 	path := filepath.Join(root, "routes.go")
@@ -133,6 +135,7 @@ func TestCompositeContinuationSelectsOuterLiteralWithNestedValue(t *testing.T) {
 }
 
 func TestCompositeInsertionUsesLiteralLexicalScopeForMapKeys(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		source string

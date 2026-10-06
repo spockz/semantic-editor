@@ -11,6 +11,7 @@ import (
 )
 
 func TestInsertDecl_GroupMerging(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "consts.go")
 
@@ -81,6 +82,7 @@ var (
 }
 
 func TestReplaceDecl_MultilineVarPreservesLayoutAndAdjacentFunctions(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "declarations.go")
 	initial := `package sample
@@ -127,6 +129,7 @@ func runInsertDecl() string { return "present" }
 }
 
 func TestInsertDecl_SentinelVarSortedWithinGroup(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "errors.go")
 	initial := `package errors
@@ -153,6 +156,7 @@ var (
 }
 
 func TestInsertDecl_Standalone(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "values.go")
 
@@ -189,6 +193,7 @@ const (
 }
 
 func TestInsertDecl_SectionViolation(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "consts.go")
 	initial := `package consts
@@ -232,6 +237,7 @@ const privateConst = 2
 }
 
 func TestInsertDecl_PreservesCommentedSentinelSpecs(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "errors.go")
 	initial := "package errors\n\nvar (\n\t// ErrBravo documents the bravo error.\n\tErrBravo = \"bravo\"\n)\n"
@@ -254,6 +260,7 @@ func TestInsertDecl_PreservesCommentedSentinelSpecs(t *testing.T) {
 }
 
 func TestInsertDecl_RejectsInvalidGroupedSourceWithoutWriting(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "errors.go")
 	initial := "package errors\n\nvar (\n\tErrBravo = \"bravo\"\n)\n"
@@ -275,6 +282,7 @@ func TestInsertDecl_RejectsInvalidGroupedSourceWithoutWriting(t *testing.T) {
 }
 
 func TestReplaceDecl_GroupedDocumentedVarPreservesSibling(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "errors.go")
 	initial := `package sample
@@ -316,6 +324,7 @@ var (
 }
 
 func TestReplaceDecl_StandaloneCommentReplacementAndPreservation(t *testing.T) {
+	t.Parallel()
 	file := filepath.Join(t.TempDir(), "count.go")
 	initial := `package sample
 

@@ -11,6 +11,7 @@ import (
 )
 
 func TestInsertFunction_ReceiverClustering(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "service.go")
 
@@ -89,6 +90,7 @@ func (s *Service) stop() {
 }
 
 func TestInsertFunction_PointerReceiverAnchor(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "transaction.go")
 	initial := `package audit
@@ -137,6 +139,7 @@ func (b *BufferedSink) Commit() error {
 }
 
 func TestInsertFunction_SectionViolationAndValidation(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "util.go")
 
@@ -207,6 +210,7 @@ func privateOne() {}
 }
 
 func TestInsertFunction_DuplicateNameFailsUnchanged(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "model.go")
 	initial := "package model\n\n// Keep this documentation.\nfunc Load() string { return \"old\" }\n\nfunc Other() {}\n"
@@ -228,6 +232,7 @@ func TestInsertFunction_DuplicateNameFailsUnchanged(t *testing.T) {
 }
 
 func TestInsertFunction_DuplicateReceiverMethodFailsUnchanged(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "model.go")
 	initial := "package model\n\ntype Widget struct{}\ntype Gadget struct{}\n\n// Keep the existing method documentation.\nfunc (Widget) Name() string { return \"old\" }\n\nfunc (Gadget) Name() string { return \"other type\" }\n"
@@ -249,6 +254,7 @@ func TestInsertFunction_DuplicateReceiverMethodFailsUnchanged(t *testing.T) {
 }
 
 func TestInsertConstructRejectsDeclarationCollisionUnchanged(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		kind   ConstructKind

@@ -10,6 +10,7 @@ import (
 )
 
 func TestVerifyMoveFileUnchangedRejectsConcurrentEdits(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "source.go")
 	expected := []byte("package api\n")
 	if err := os.WriteFile(path, expected, 0o600); err != nil {

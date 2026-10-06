@@ -13,6 +13,7 @@ import (
 )
 
 func TestPlanInlineFunctionPreservesDeclaredResultType(t *testing.T) {
+	t.Parallel()
 	caller := "package sample\nfunc Run() any { return adjust() }\n"
 	callee := "package sample\nfunc adjust() float64 { return 1 }\n"
 	plan, err := PlanInlineFunction(caller, callee, "adjust", "Run", "adjust()")
@@ -27,6 +28,7 @@ func TestPlanInlineFunctionPreservesDeclaredResultType(t *testing.T) {
 }
 
 func TestPlanInlineFunctionRefusesUnprovenBindingsAndEvaluation(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, caller, callee string }{
 		{name: "parameter evaluation", caller: "package p\nfunc Run() int { return adjust(next()) }\nfunc next() int { return 1 }\n", callee: "package p\nfunc adjust(v int) int { return v }\n"},
 		{name: "callee shadow", caller: "package p\nfunc Run(adjust func() int) int { return adjust() }\n", callee: "package p\nfunc adjust() int { return 1 }\n"},
@@ -45,6 +47,7 @@ func TestPlanInlineFunctionRefusesUnprovenBindingsAndEvaluation(t *testing.T) {
 }
 
 func TestApplySemanticEditRechecksCapturedInputsAtPublication(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	targetPath := filepath.Join(root, "main.go")
 	manifestPath := filepath.Join(root, "go.mod")
@@ -76,6 +79,7 @@ func TestApplySemanticEditRechecksCapturedInputsAtPublication(t *testing.T) {
 }
 
 func TestCompleteRefactorReadSetRefusesManifestDrift(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	manifestPath := filepath.Join(root, "go.mod")
 	if err := os.WriteFile(manifestPath, []byte("module example.com/current\n\ngo 1.24\n"), 0o600); err != nil {

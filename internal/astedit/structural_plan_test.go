@@ -12,6 +12,7 @@ import (
 )
 
 func TestStructuralSourcePlanners(t *testing.T) {
+	t.Parallel()
 	t.Run("field insertion preserves the selected struct and exposes semantic gates", assertFieldInsertionPreservesSemanticGates)
 	t.Run("field insertion refuses positional literals and direct collisions", assertFieldInsertionRefusals)
 	t.Run("field insertion uses the exact brace span for empty structs", assertEmptyStructFieldInsertion)
@@ -78,6 +79,7 @@ func assertEmptyStructFieldInsertion(t *testing.T) {
 }
 
 func TestStructuralStatementPlannerAnchors(t *testing.T) {
+	t.Parallel()
 	t.Run("statement insertion uses exact direct anchors in control flow owners", func(t *testing.T) {
 		source := []byte("package p\nfunc Handle() {\n\tfirst()\n\tsecond()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{
@@ -112,6 +114,7 @@ func TestStructuralStatementPlannerAnchors(t *testing.T) {
 }
 
 func TestStructuralMethodSelectorPlanner(t *testing.T) {
+	t.Parallel()
 	t.Run("qualified method selectors preserve receiver identity", func(t *testing.T) {
 		source := []byte("package p\ntype A struct{}\ntype B struct{}\nfunc (A) Run() {\n\twork()\n}\nfunc (B) Run() {\n\twork()\n}\n")
 		plan, err := PlanInsertStatement(source, InsertStatementIntent{
@@ -155,6 +158,7 @@ func TestStructuralMethodSelectorPlanner(t *testing.T) {
 }
 
 func TestStructuralTypedMapPlanner(t *testing.T) {
+	t.Parallel()
 	t.Run("typed map insertion detects semantic duplicate keys", func(t *testing.T) {
 		source := []byte("package p\nvar handlers = map[string]int{\"a\": 1}\n")
 		intent := InsertElementIntent{
@@ -191,6 +195,7 @@ func TestStructuralTypedMapPlanner(t *testing.T) {
 }
 
 func TestStructuralDocCommentPlanner(t *testing.T) {
+	t.Parallel()
 	t.Run("declaration doc comments preserve text and distinguish removal from missing", func(t *testing.T) {
 		assertDocCommentPlanBehavior(t)
 	})
@@ -287,6 +292,7 @@ func typeCheckPlannedSource(t *testing.T, source []byte) error {
 }
 
 func TestStructCompositeElementTypeContext(t *testing.T) {
+	t.Parallel()
 	source := []byte("package p\ntype config struct {\n\tName string\n\tEnabled bool\n}\nvar cfg = config{Name: \"service\"}\n")
 	intent := InsertElementIntent{
 		Declaration: "cfg", Discriminator: "config{Name: \"service\"}", Source: "Enabled: true",
@@ -330,6 +336,7 @@ func TestStructCompositeElementTypeContext(t *testing.T) {
 }
 
 func TestStructuralOptionalSelectorAndCommentInputs(t *testing.T) {
+	t.Parallel()
 	source := []byte("package p\nfunc Handle() {\n\trun()\n}\n")
 	_, err := PlanInsertStatement(source, InsertStatementIntent{
 		Function: "Handle", Discriminator: "run()", ConstructPath: OptionalString{Present: true, Null: true},
@@ -369,6 +376,7 @@ func TestStructuralOptionalSelectorAndCommentInputs(t *testing.T) {
 }
 
 func TestDocCommentBlockCRLFRawRange(t *testing.T) {
+	t.Parallel()
 	source := []byte("package p\r\n/* Old\r\nMore\r\n*/\r\nfunc f() {}\r\n")
 	set, err := PlanSetDocComment(source, SetDocCommentIntent{
 		Symbol: "f", Comment: OptionalString{Present: true, Value: "New documentation."},

@@ -24,14 +24,17 @@ import (
 func TestCommandEnvUsesWorkspaceLocalGoState(t *testing.T) {
 	root := t.TempDir()
 	for key, value := range map[string]string{
-		"GOENV":      filepath.Join(t.TempDir(), "env"),
-		"GOCACHE":    t.TempDir(),
-		"GOMODCACHE": t.TempDir(),
-		"GOTMPDIR":   t.TempDir(),
-		"GOBIN":      t.TempDir(),
-		"GOPATH":     t.TempDir(),
-		"GOFLAGS":    "-mod=readonly",
-		"GOWORK":     filepath.Join(t.TempDir(), "go.work"),
+		"GOENV":                     filepath.Join(t.TempDir(), "env"),
+		"GOCACHE":                   t.TempDir(),
+		"GOMODCACHE":                t.TempDir(),
+		"GOTMPDIR":                  t.TempDir(),
+		"GOBIN":                     t.TempDir(),
+		"GOPATH":                    t.TempDir(),
+		"GOFLAGS":                   "-mod=readonly",
+		"GOWORK":                    filepath.Join(t.TempDir(), "go.work"),
+		"SEMEDIT_SHARED_GOCACHE":    "",
+		"SEMEDIT_SHARED_GOMODCACHE": "",
+		"SEMEDIT_SHARED_GOPLSCACHE": "",
 	} {
 		t.Setenv(key, value)
 	}

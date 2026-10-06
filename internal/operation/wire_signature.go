@@ -345,16 +345,48 @@ func decodeSignatureMappings(value any) ([]astedit.SignatureParameterMapping, er
 	return converted, nil
 }
 
-func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol string) error {
+func compiledGoFiles(pkgs []*packages.Package) (map[string]bool, error) {
 	compiled := make(map[string]bool)
-	for _, pkg := range snapshot.Packages {
+	for _, pkg := range pkgs {
 		for _, filename := range pkg.CompiledGoFiles {
 			absolute, err := filepath.Abs(filename)
 			if err != nil {
-				return fmt.Errorf("resolve compiled Go file: %w", err)
+				return nil, fmt.Errorf("resolve compiled Go file: %w", err)
 			}
 			compiled[filepath.Clean(absolute)] = true
 		}
+	}
+	return compiled, nil
+}
+
+func checkSignatureVariantFile(snapshot *structuralSnapshot, absolute, symbol string) error {
+	source, err := sourcebuf.ReadFile(snapshot.Ctx, absolute)
+	if err != nil {
+		return fmt.Errorf("read inactive signature variant %q: %w", absolute, err)
+	}
+	file, err := parser.ParseFile(token.NewFileSet(), absolute, source, parser.ParseComments|parser.AllErrors)
+	if err != nil {
+		return fmt.Errorf("parse inactive signature variant %q: %w", absolute, err)
+	}
+	mentions := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		if identifier, ok := node.(*ast.Ident); ok && identifier.Name == symbol {
+			mentions = true
+			return false
+		}
+		return true
+	})
+	snapshot.Sources[absolute] = bytes.Clone(source)
+	if mentions {
+		return fmt.Errorf("function %q may have a caller or alternate definition in inactive source variant %s", symbol, absolute)
+	}
+	return nil
+}
+
+func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol string) error {
+	compiled, err := compiledGoFiles(snapshot.Packages)
+	if err != nil {
+		return err
 	}
 	packageDir := filepath.Dir(snapshot.File)
 	return filepath.WalkDir(packageDir, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -362,7 +394,7 @@ func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol strin
 			return fmt.Errorf("scan signature package variant %q: %w", path, walkErr)
 		}
 		if entry.IsDir() {
-			if path != packageDir && entry.Name() == "testdata" {
+			if path != packageDir && (strings.HasPrefix(entry.Name(), ".") || strings.HasPrefix(entry.Name(), "_") || entry.Name() == "testdata" || entry.Name() == "vendor") {
 				return filepath.SkipDir
 			}
 			return nil
@@ -377,27 +409,7 @@ func rejectSignatureVariantReferences(snapshot *structuralSnapshot, symbol strin
 		if compiled[filepath.Clean(absolute)] {
 			return nil
 		}
-		source, err := sourcebuf.ReadFile(snapshot.Ctx, absolute)
-		if err != nil {
-			return fmt.Errorf("read inactive signature variant %q: %w", absolute, err)
-		}
-		file, err := parser.ParseFile(token.NewFileSet(), absolute, source, parser.ParseComments|parser.AllErrors)
-		if err != nil {
-			return fmt.Errorf("parse inactive signature variant %q: %w", absolute, err)
-		}
-		mentions := false
-		ast.Inspect(file, func(node ast.Node) bool {
-			if identifier, ok := node.(*ast.Ident); ok && identifier.Name == symbol {
-				mentions = true
-				return false
-			}
-			return true
-		})
-		snapshot.Sources[absolute] = bytes.Clone(source)
-		if mentions {
-			return fmt.Errorf("function %q may have a caller or alternate definition in inactive source variant %s", symbol, absolute)
-		}
-		return nil
+		return checkSignatureVariantFile(snapshot, absolute, symbol)
 	})
 }
 

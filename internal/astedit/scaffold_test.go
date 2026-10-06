@@ -12,6 +12,7 @@ import (
 )
 
 func TestScaffoldFile_ExplicitPackage(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	targetPath := filepath.Join(tmpDir, "model.go")
 
@@ -35,6 +36,7 @@ func TestScaffoldFile_ExplicitPackage(t *testing.T) {
 }
 
 func TestScaffoldFile_InferSibling(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	sibling := filepath.Join(tmpDir, "existing.go")
 	if err := os.WriteFile(sibling, []byte("package service\n\ntype Service struct{}\n"), 0o600); err != nil {
@@ -67,6 +69,7 @@ func TestScaffoldFile_InferSibling(t *testing.T) {
 }
 
 func TestScaffoldFile_InferOnlyTestSiblings(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	testSibling := filepath.Join(tmpDir, "foo_test.go")
 	if err := os.WriteFile(testSibling, []byte("package foo_test\n"), 0o600); err != nil {
@@ -84,6 +87,7 @@ func TestScaffoldFile_InferOnlyTestSiblings(t *testing.T) {
 }
 
 func TestScaffoldFile_FileExistsWithoutOverwrite(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	targetPath := filepath.Join(tmpDir, "foo.go")
 	if err := os.WriteFile(targetPath, []byte("package foo\n"), 0o600); err != nil {
@@ -102,6 +106,7 @@ func TestScaffoldFile_FileExistsWithoutOverwrite(t *testing.T) {
 }
 
 func TestScaffoldFile_FileExistsWithOverwrite(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	targetPath := filepath.Join(tmpDir, "foo.go")
 	if err := os.WriteFile(targetPath, []byte("package foo\n"), 0o600); err != nil {
@@ -128,6 +133,7 @@ func TestScaffoldFile_FileExistsWithOverwrite(t *testing.T) {
 }
 
 func TestScaffoldFile_EmptyDirInfer(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	targetPath := filepath.Join(tmpDir, "empty", "new.go")
 
@@ -141,6 +147,7 @@ func TestScaffoldFile_EmptyDirInfer(t *testing.T) {
 }
 
 func TestScaffoldFile_InferPreservesSiblingReadFailure(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	sibling := filepath.Join(tmpDir, "broken.go")
 	if err := os.Symlink(filepath.Join(tmpDir, "missing.go"), sibling); err != nil {
@@ -157,6 +164,7 @@ func TestScaffoldFile_InferPreservesSiblingReadFailure(t *testing.T) {
 }
 
 func TestScaffoldFile_PurposeHeaderPreservedForExplicitAndInferredPackages(t *testing.T) {
+	t.Parallel()
 	const header = "// WHY: This file groups the service adapters.\n// Keep this wording exactly."
 	tests := []struct {
 		name        string
@@ -196,6 +204,7 @@ func TestScaffoldFile_PurposeHeaderPreservedForExplicitAndInferredPackages(t *te
 }
 
 func TestScaffoldFile_InvalidPurposeHeaderDoesNotCreateFile(t *testing.T) {
+	t.Parallel()
 	targetPath := filepath.Join(t.TempDir(), "nested", "generated.go")
 	_, err := astedit.ScaffoldFile(context.Background(), targetPath, "models", astedit.ScaffoldOptions{PurposeHeader: "type Invalid struct {"})
 	if !errors.Is(err, astedit.ErrSyntax) {

@@ -506,13 +506,13 @@ func readManifestState(root string) (map[string]manifestState, error) {
 
 func closeManagedSession(ctx context.Context, session *managedSession) error {
 	var resultErr error
-	if _, err := session.client.Request(ctx, "shutdown", map[string]any{}); err != nil {
+	if _, err := session.client.Request(ctx, "shutdown", map[string]any{}); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		resultErr = errors.Join(resultErr, fmt.Errorf("shutdown gopls diagnostics session: %w", err))
 	}
-	if err := session.client.Notify(ctx, "exit", nil); err != nil {
+	if err := session.client.Notify(ctx, "exit", nil); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		resultErr = errors.Join(resultErr, fmt.Errorf("exit gopls diagnostics session: %w", err))
 	}
-	if err := session.client.Close(); err != nil {
+	if err := session.client.Close(); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		resultErr = errors.Join(resultErr, fmt.Errorf("close gopls diagnostics session: %w", err))
 	}
 	return resultErr

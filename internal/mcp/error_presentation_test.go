@@ -20,6 +20,7 @@ import (
 )
 
 func TestMCPKnownOperationErrorPreservesProjectionAndUnknownOnProjectionFailure(t *testing.T) {
+	t.Parallel()
 	for _, test := range knownOperationErrorCases() {
 		t.Run(test.Name, func(t *testing.T) { runKnownOperationErrorCase(t, test) })
 	}

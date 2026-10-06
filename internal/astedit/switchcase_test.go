@@ -28,6 +28,7 @@ func Handle(action string) string {
 `
 
 func TestInsertCase_BeforeDefault(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "main.go")
 	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
@@ -59,6 +60,7 @@ func TestInsertCase_BeforeDefault(t *testing.T) {
 }
 
 func TestInsertCase_BoundaryPlacement(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		placement astedit.CasePlacement
@@ -93,6 +95,7 @@ func TestInsertCase_BoundaryPlacement(t *testing.T) {
 }
 
 func TestInsertCase_BeforeAnchor(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "main.go")
 	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
@@ -122,6 +125,7 @@ func TestInsertCase_BeforeAnchor(t *testing.T) {
 }
 
 func TestInsertCase_AfterAnchor(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "main.go")
 	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
@@ -152,6 +156,7 @@ func TestInsertCase_AfterAnchor(t *testing.T) {
 }
 
 func TestInsertCase_TaglessSwitch(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "tagless.go")
 	initial := `package main
@@ -188,6 +193,7 @@ func Check(val int) string {
 }
 
 func TestInsertCase_Errors(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "main.go")
 	if err := os.WriteFile(filePath, []byte(switchSource), 0o600); err != nil {
@@ -223,6 +229,7 @@ func TestInsertCase_Errors(t *testing.T) {
 }
 
 func TestInsertCase_AmbiguousSwitchReportsAndAcceptsPath(t *testing.T) {
+	t.Parallel()
 	filePath := filepath.Join(t.TempDir(), "nested.go")
 	initial := `package main
 func Route(mode string) string {
@@ -272,6 +279,7 @@ func Route(mode string) string {
 }
 
 func TestInsertCase_TypeSwitchMatchesAssertedExpression(t *testing.T) {
+	t.Parallel()
 	filePath := filepath.Join(t.TempDir(), "typeswitch.go")
 	initial := `package main
 

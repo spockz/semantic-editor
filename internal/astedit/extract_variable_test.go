@@ -12,6 +12,7 @@ import (
 )
 
 func TestExtractVariableRewritesWholeSingleCallArgument(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "sample.go")
 	before := "package sample\n\nfunc Print(int) {}\n\nfunc Render(count int) {\n\tPrint(count + 1)\n}\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -31,6 +32,7 @@ func TestExtractVariableRewritesWholeSingleCallArgument(t *testing.T) {
 }
 
 func TestExtractVariablePreservesLaterArgumentOrder(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "sample.go")
 	before := "package sample\n\nfunc Print(int, int) {}\n\nfunc Render(count int) {\n\tPrint(count + 1, count)\n}\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -50,6 +52,7 @@ func TestExtractVariablePreservesLaterArgumentOrder(t *testing.T) {
 }
 
 func TestExtractVariableRequiresPathForAmbiguousExpression(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "sample.go")
 	before := "package sample\nfunc Print(int) {}\nfunc Render(count int) { Print(count); Print(count) }\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -69,6 +72,7 @@ func TestExtractVariableRequiresPathForAmbiguousExpression(t *testing.T) {
 }
 
 func TestExtractVariableRejectsUnsafeAndUnrepresentableSelectionsWithoutWriting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, source, discriminator, wantError string
 	}{
@@ -106,6 +110,7 @@ func TestExtractVariableRejectsUnsafeAndUnrepresentableSelectionsWithoutWriting(
 }
 
 func TestExtractVariableRejectsCallableParameterWithoutWriting(t *testing.T) {
+	t.Parallel()
 	before := "package sample\nfunc Render(call func(int), value int) { call(value) }\n"
 	path := filepath.Join(t.TempDir(), "sample.go")
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -125,6 +130,7 @@ func TestExtractVariableRejectsCallableParameterWithoutWriting(t *testing.T) {
 }
 
 func TestExtractVariableRejectsUnresolvedImportCalleeWithoutWriting(t *testing.T) {
+	t.Parallel()
 	before := "package sample\nimport \"fmt\"\nfunc consume(int) {}\nfunc Render(value int) { consume(value); fmt.Println(value) }\n"
 	path := filepath.Join(t.TempDir(), "sample.go")
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {

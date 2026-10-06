@@ -17,11 +17,13 @@ Exposing an editing tool exclusively via the Model Context Protocol (MCP) or exc
    * **CLI Mode** (`semedit <command>`): Sub-millisecond execution for terminal scripts and direct agent commands.
    * **MCP Daemon Mode** (`semedit mcp`): Native Model Context Protocol server for Claude Code, Cursor, Windsurf, Antigravity, etc.
 2. **Synchronized Agent Skills (`SKILL.md`)**: Ship alongside a clear, platform-agnostic `SKILL.md` containing operational rules and decision trees that override model diff inertia and enforce semantic tool routing.
+3. **Progressive Per-Language Reference Guides**: Maintain modular reference guides (`skills/semedit/references/<lang>.md`) covering language-specific macro refactoring patterns and build verification workflows, conditionally loaded by agent harnesses.
 
 ## Invariants
 
 * Every semantic operation supported over MCP must also be invocable via CLI.
 * Releases must ship with updated agent steering instructions (`SKILL.md`).
+* Whenever the operational scope of a supported language expands (or a new language backend is introduced), contributors must verify whether and how to update the corresponding language reference guide (`skills/semedit/references/<lang>.md`) to document new macro refactoring patterns and compiler verification workflows.
 
 ## Consequences
 

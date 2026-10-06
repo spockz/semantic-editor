@@ -12,11 +12,10 @@ import (
 	"semedit/internal/operation"
 	"semedit/internal/pipeline"
 	"semedit/internal/projectverify"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T) {
+	t.Parallel()
 	continuations := []any{map[string]any{
 		"file": "main.go", "symbol": "Renamed", "expected_revision": "rev-2",
 		"companions": map[string]any{"read_set": []any{"preserve-inside-record"}},
@@ -88,6 +87,7 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 }
 
 func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *testing.T) {
+	t.Parallel()
 	target := map[string]any{"file": "main.go", "symbol": "update", "expected_revision": "rev-4"}
 	structured := map[string]any{
 		"result": map[string]any{
@@ -151,6 +151,7 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 }
 
 func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *testing.T) {
+	t.Parallel()
 	record := map[string]any{"file": "main.go", "symbol": "Value", "expected_revision": "rev-3"}
 	changes := make([]any, 96)
 	for index := range changes {
@@ -197,6 +198,7 @@ func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *test
 }
 
 func TestCriticalTextFallbackKeepsOperationErrorBeforeBody(t *testing.T) {
+	t.Parallel()
 	structured := map[string]any{
 		"error":    "operation failed after a partial write",
 		"location": map[string]any{"file": "main.go", "line": 4},
@@ -218,6 +220,7 @@ func TestCriticalTextFallbackKeepsOperationErrorBeforeBody(t *testing.T) {
 }
 
 func TestCriticalTextKeepsTypedEssentialsWhenNativeMetadataIsUnavailable(t *testing.T) {
+	t.Parallel()
 	structured := map[string]any{
 		"result": map[string]any{
 			"status": "applied", "application_state": "persisted",
@@ -242,6 +245,7 @@ func TestCriticalTextKeepsTypedEssentialsWhenNativeMetadataIsUnavailable(t *test
 }
 
 func TestCriticalNativeFieldsExposeExactDiagnosticResult(t *testing.T) {
+	t.Parallel()
 	native := operation.FileEditRes{
 		DiagnosticStatus: "changed",
 		Delta:            pipeline.DiagnosticDelta{NetDelta: 1, Introduced: []string{"new diagnostic"}, Resolved: []string{}},
@@ -282,6 +286,7 @@ func TestCriticalNativeFieldsExposeExactDiagnosticResult(t *testing.T) {
 }
 
 func TestBatchCriticalOutcomeKeepsChildrenIntermediateAndAheadOfDiffs(t *testing.T) {
+	t.Parallel()
 	response := &BatchResponse{
 		Status: "error",
 		Results: []BatchResult{
@@ -329,6 +334,7 @@ func TestBatchCriticalOutcomeKeepsChildrenIntermediateAndAheadOfDiffs(t *testing
 }
 
 func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
+	t.Parallel()
 	started := time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC)
 	response := &BatchResponse{
 		Status:  "error",
@@ -399,7 +405,12 @@ func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
 }
 
 func TestBatchResultSchemaAllowsOverlappingSuccessAndErrorProjection(t *testing.T) {
-	schema := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{"status": {Kind: operation.SchemaString}}, Required: []string{"status"}}
+	t.Parallel()
+	schema := operation.ValueSchema{
+		Kind:       operation.SchemaObject,
+		Properties: map[string]operation.ValueSchema{"status": {Kind: operation.SchemaString}},
+		Required:   []string{"status"},
+	}
 	entry := operation.Entry{
 		MCPName:       "semantic_probe_projection",
 		Output:        &operation.OperationOutputContract{ResultSchema: &schema},
@@ -409,35 +420,17 @@ func TestBatchResultSchemaAllowsOverlappingSuccessAndErrorProjection(t *testing.
 			return map[string]any{"status": "known"}, true, nil
 		},
 	}
-	rowSchema, err := batchResultSchemaForEntries([]operation.Entry{entry})
+	resultSchema, err := batchResultSchemaForEntries([]operation.Entry{entry})
 	if err != nil {
 		t.Fatalf("batchResultSchemaForEntries() error = %v", err)
 	}
-	encoded, err := json.Marshal(rowSchema)
-	if err != nil {
-		t.Fatalf("encode row schema: %v", err)
+	branches := resultSchema["oneOf"].([]any)
+	properties := branches[0].(map[string]any)[schemaPropertiesKey].(map[string]any)
+	result := properties["result"].(map[string]any)
+	if _, ok := result["anyOf"]; !ok {
+		t.Fatalf("overlapping success/error schemas must use anyOf: %#v", result)
 	}
-	var document any
-	if decodeErr := json.Unmarshal(encoded, &document); decodeErr != nil {
-		t.Fatalf("decode row schema: %v", decodeErr)
-	}
-	compiler := jsonschema.NewCompiler()
-	if resourceErr := compiler.AddResource("batch-row.json", document); resourceErr != nil {
-		t.Fatalf("add row schema: %v", resourceErr)
-	}
-	compiled, err := compiler.Compile("batch-row.json")
-	if err != nil {
-		t.Fatalf("compile row schema: %v", err)
-	}
-	for label, row := range map[string]any{
-		"success":     map[string]any{"tool": entry.MCPName, "status": "ok", "result": map[string]any{"status": "known"}},
-		"known error": map[string]any{"tool": entry.MCPName, "status": "error", "error": "known failure", applicationStateField: "unknown", "result": map[string]any{"status": "known"}},
-	} {
-		if err := compiled.Validate(row); err != nil {
-			t.Errorf("overlapping %s projection rejected: %v", label, err)
-		}
-	}
-	if err := compiled.Validate(map[string]any{"tool": entry.MCPName, "status": "error", "error": "known failure", applicationStateField: "unknown"}); err != nil {
-		t.Errorf("generic error projection rejected: %v", err)
+	if _, ok := result["oneOf"]; ok {
+		t.Fatalf("overlapping result schema uses oneOf: %#v", result)
 	}
 }

@@ -9,6 +9,7 @@ import (
 )
 
 func TestRequestRootAndTrustRejectWrongTypes(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	for _, raw := range []map[string]any{
 		{"workspace_root": nil},
@@ -29,6 +30,7 @@ func TestRequestRootAndTrustRejectWrongTypes(t *testing.T) {
 }
 
 func TestGoBaseDirForRootSharesDefaultSubdirectoriesAndIsolatesWorktrees(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	configuredCache := filepath.Join(root, "private-cache")
 	server := &Server{workDir: root, goBaseDir: configuredCache}
@@ -44,6 +46,7 @@ func TestGoBaseDirForRootSharesDefaultSubdirectoriesAndIsolatesWorktrees(t *test
 }
 
 func TestRequestPathsRejectTraversalAndSymlinks(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "linked")); err != nil {

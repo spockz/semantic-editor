@@ -14,6 +14,7 @@ import (
 )
 
 func TestReplaceBody_TopLevelFunction(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "main.go")
 	initial := `package main
@@ -54,6 +55,7 @@ func Calculate(a, b int) int {
 }
 
 func TestReplaceBody_MethodPointerReceiver(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "server.go")
 	initial := `package main
@@ -91,6 +93,7 @@ return nil`, astedit.BodyOptions{})
 }
 
 func TestReplaceBody_SymbolNotFound(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "calc.go")
 	initial := `package calc
@@ -115,6 +118,7 @@ func Add(a, b int) int { return a + b }
 }
 
 func TestReplaceBody_SyntaxErrorZeroDiskMutation(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "calc.go")
 	initial := `package calc
@@ -146,6 +150,7 @@ func Add(a, b int) int {
 }
 
 func TestReplaceBody_AutoOrganizeImports(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	filePath := filepath.Join(tmpDir, "printer.go")
 	initial := `package main
@@ -176,6 +181,7 @@ func PrintMsg(s string) {
 }
 
 func TestReplaceBodyPrunesImportsUsingResolvedPackageName(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write := func(path, content string) {
 		t.Helper()
@@ -213,6 +219,7 @@ func Value(input string) string {
 }
 
 func TestReplaceBodyPrunesOrdinaryImportsAndPreservesCgo(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "body.go")
 	initial := `package body
@@ -245,6 +252,7 @@ func Value() int { fmt.Println("old"); return 1 }
 }
 
 func TestReplaceBody_RejectsWrapperEscapeWithoutMutation(t *testing.T) {
+	t.Parallel()
 	filePath := filepath.Join(t.TempDir(), "body.go")
 	initial := "package sample\nfunc Run() { old() }\n"
 	if err := os.WriteFile(filePath, []byte(initial), 0o600); err != nil {

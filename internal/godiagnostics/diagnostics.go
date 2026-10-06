@@ -131,10 +131,10 @@ func CheckDetailed(ctx context.Context, root, executable string, environment []s
 		}
 		diagnostics = append(diagnostics, found...)
 	}
-	if _, err := client.Request(sessionCtx, "shutdown", map[string]any{}); err != nil {
+	if _, err := client.Request(sessionCtx, "shutdown", map[string]any{}); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		return nil, fmt.Errorf("shutdown gopls diagnostics session: %w", err)
 	}
-	if err := client.Notify(sessionCtx, "exit", nil); err != nil {
+	if err := client.Notify(sessionCtx, "exit", nil); err != nil && !errors.Is(err, lsp.ErrClosed) {
 		return nil, fmt.Errorf("exit gopls diagnostics session: %w", err)
 	}
 	if err := sessionCtx.Err(); err != nil {

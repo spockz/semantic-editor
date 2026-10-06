@@ -16,6 +16,7 @@ import (
 )
 
 func TestPlanConstantExtractionPreservesContextualTypeAndExactRange(t *testing.T) {
+	t.Parallel()
 	source := []byte("package p\nfunc F() int { return 3 * 60 }\n")
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "constant.go", source, parser.ParseComments|parser.AllErrors)
@@ -47,6 +48,7 @@ func TestPlanConstantExtractionPreservesContextualTypeAndExactRange(t *testing.T
 }
 
 func TestPlanConstantExtractionRefusesRuntimeAndIotaExpressions(t *testing.T) {
+	t.Parallel()
 	t.Run("runtime expression has complete valid type facts", func(t *testing.T) {
 		source := "package p\nfunc F(input int) int { return input + 1 }\n"
 		fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
@@ -120,6 +122,7 @@ func checkedConstantSelection(t *testing.T, source string, selectExpression func
 }
 
 func TestExtractFunctionMovesCallsAndInfersParameters(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 import "fmt"
@@ -163,6 +166,7 @@ fmt.Println("after")
 }
 
 func TestExtractFunctionReturnsMultipleLiveOuts(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 func Emit() {
@@ -193,6 +197,7 @@ func Emit() {
 }
 
 func TestExtractMethodPreservesReceiverAndParameters(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 import "fmt"
@@ -223,6 +228,7 @@ func (l *Logger) Emit(message string) {
 }
 
 func TestExtractFunctionRejectsUnsafeSelectionsWithoutWriting(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, source, wantError string
 		start, end              int
@@ -261,6 +267,7 @@ func TestExtractFunctionRejectsUnsafeSelectionsWithoutWriting(t *testing.T) {
 }
 
 func TestExtractFunctionReturnsOneLiveLocal(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 import "fmt"
@@ -291,6 +298,7 @@ func BuildValue() {
 }
 
 func TestExtractFunctionRejectsPackageCollisionAndCompositeLiterals(t *testing.T) {
+	t.Parallel()
 	t.Run("package-wide helper collision", func(t *testing.T) {
 		file := setupTestFile(t, "package testpkg\nfunc F() {\n println(1)\n}\n")
 		other := filepath.Join(filepath.Dir(file), "other.go")
@@ -331,6 +339,7 @@ func F(key string) {
 }
 
 func TestExtractFunctionPreservesDefinedOutputType(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 type Distance int
@@ -355,6 +364,7 @@ func Emit(distance Distance) {
 }
 
 func TestExtractFunctionRejectsEffectfulMultipleOutputWithoutWriting(t *testing.T) {
+	t.Parallel()
 	file := setupTestFile(t, `package testpkg
 
 func Emit() {
@@ -382,6 +392,7 @@ func compute() int { return 1 }
 }
 
 func TestPlanConstantExtractionRefusesNamedConstantType(t *testing.T) {
+	t.Parallel()
 	source := "package p\ntype Duration int\nconst interval Duration = 1\nfunc F() Duration { return interval }\n"
 	fset, file, info, pkg, selected := checkedConstantSelection(t, source, func(node ast.Node) ast.Expr {
 		if ret, ok := node.(*ast.ReturnStmt); ok {
@@ -398,6 +409,7 @@ func TestPlanConstantExtractionRefusesNamedConstantType(t *testing.T) {
 }
 
 func TestExtractConstantRejectsStaleRevisionWithoutWriting(t *testing.T) {
+	t.Parallel()
 	before := "package sample\nfunc Retry() int { return 3 * 60 }\n"
 	path := filepath.Join(t.TempDir(), "retry.go")
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -419,6 +431,7 @@ func TestExtractConstantRejectsStaleRevisionWithoutWriting(t *testing.T) {
 }
 
 func TestExtractConstantRefusesSymlinkedPackageSource(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/symlinkconstant\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)

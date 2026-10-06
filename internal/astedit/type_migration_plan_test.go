@@ -9,6 +9,7 @@ import (
 )
 
 func TestPlanAliasTypeMigrationUsesIdentity(t *testing.T) {
+	t.Parallel()
 	pkg := types.NewPackage("example.test/p", "p")
 	aliasObject := types.NewTypeName(token.NoPos, pkg, "Count", nil)
 	alias := types.NewAlias(aliasObject, types.Typ[types.Int])
@@ -25,6 +26,7 @@ func TestPlanAliasTypeMigrationUsesIdentity(t *testing.T) {
 }
 
 func TestPlanAliasTypeMigrationRefusesDistinctNamedType(t *testing.T) {
+	t.Parallel()
 	pkg := types.NewPackage("example.test/p", "p")
 	namedObject := types.NewTypeName(token.NoPos, pkg, "Count", nil)
 	named := types.NewNamed(namedObject, types.Typ[types.Int], nil)

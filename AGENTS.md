@@ -97,3 +97,15 @@ If any MCP tool call fails, produces incorrect AST output, panics, or requires a
 `testdata/scripts/*.txtar` is the primary executable contract for public semantic operations. Tests must invoke the `semedit` CLI, assert its observable output or diagnostics, and assert resulting workspace state when an operation mutates files. Unit tests that fake an LSP, compiler, or external tool remain necessary for transport and failure isolation, but do not replace CLI txtar coverage.
 
 For every operation advertised by more than one language backend, maintain comparable txtar coverage for every implemented language-operation pair. A language may omit a scenario only when the capability registry marks that operation unsupported; document the intentional asymmetry in the backend capability metadata and its ADR. When adding an operation to a second language, add or update the corresponding CLI txtar cases in the same change.
+
+---
+
+## 7. Language Capability Expansion & Skill Reference Governance Invariant
+
+Automated test suites (`TestSupportedLanguagesHaveSkillReferences`) verify file existence and index links. However, formulating idiomatic refactoring patterns requires deliberate domain reasoning exceeding automated checks.
+
+Whenever expanding the operational scope of a supported language (introducing a new language backend or implementing new operations for an existing backend), agents and contributors must deliberately verify whether and how to update the corresponding language reference guide in [`skills/semedit/references/<lang>.md`](skills/semedit/references/):
+
+* Capture newly enabled macro refactoring patterns and architectural transformations.
+* Document compiler, build tool, or language-server verification practices.
+* Maintain language-specific idiom guides so agent planners execute high-level workflows cleanly without manual trial and error.

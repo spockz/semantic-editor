@@ -23,6 +23,7 @@ import (
 )
 
 func TestBatch_SuccessfulExecution(t *testing.T) {
+	t.Parallel()
 	fixture := createSuccessfulBatchFixture(t)
 	run := executeSuccessfulBatch(t, fixture.Root)
 	assertSuccessfulBatchResponse(t, run.Response, run.Metrics)
@@ -139,6 +140,7 @@ func assertSuccessfulBatchSources(t *testing.T, fixture successfulBatchFixture) 
 }
 
 func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
+	t.Parallel()
 	configuredRoot := t.TempDir()
 	worktree := filepath.Join(configuredRoot, ".scratch", "worktrees", "selected")
 	if err := os.MkdirAll(worktree, 0o700); err != nil {
@@ -198,6 +200,7 @@ func TestExecuteBatchForWorkspaceEnforcesAndNormalizesFileScope(t *testing.T) {
 }
 
 func TestBatchExpectedRevisionUsesCurrentWorkingOverlay(t *testing.T) {
+	t.Parallel()
 	initial := []byte("package sample\n\nfunc Value() int {\n\treturn 1\n}\n")
 	current := []byte("package sample\n\nfunc Value() int {\n\treturn 2\n}\n")
 	staleDigest := sha256.Sum256(initial)
@@ -272,6 +275,7 @@ func assertRevisionGuardSource(t *testing.T, path string, wantStatus, wantBody s
 }
 
 func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batchstructured\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -324,6 +328,7 @@ func TestBatchToolSuccessIncludesStructuredBatchResponse(t *testing.T) {
 }
 
 func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	var out bytes.Buffer
 	server := mcptest.NewServer(t, "full", tmpDir, &out)
@@ -343,6 +348,7 @@ func TestBatchValidationIdentifiesEditAndParamsShape(t *testing.T) {
 }
 
 func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batchemptydiff\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -382,6 +388,7 @@ func TestBatchToolIncludesEmptyFinalDiff(t *testing.T) {
 }
 
 func TestBatch_FailFast(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -460,6 +467,7 @@ func TestBatch_FailFast(t *testing.T) {
 }
 
 func TestBatch_SameFileSequential(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -518,6 +526,7 @@ func Sub(a, b int) int {
 }
 
 func TestBatch_RenameDefersWorkspacePostProcess(t *testing.T) {
+	t.Parallel()
 	tmpDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte("module example.com/batch\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
@@ -663,6 +672,7 @@ func TestBatchAcceptsCanonicalFlatAndToolKeyedEntriesSequentially(t *testing.T) 
 }
 
 func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	file := filepath.Join(root, "file.go")
 	original := []byte("package testpkg\n\nfunc Foo() int { return 1 }\n")
@@ -690,6 +700,7 @@ func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
 }
 
 func TestBatchMoveConstructTracksBothFilesAndNormalizesTogether(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmove\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -772,6 +783,7 @@ func Local() int { return 1 }
 }
 
 func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovefailure\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -815,6 +827,7 @@ func TestBatchMoveConstructFailureKeepsReceiptsAndPersistedDiff(t *testing.T) {
 }
 
 func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchmovescope\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -847,6 +860,7 @@ func TestBatchMoveConstructRejectsDestinationCollision(t *testing.T) {
 }
 
 func TestBatchMoveConstructRejectsSymlinkFileAndDirectoryPaths(t *testing.T) {
+	t.Parallel()
 	for _, test := range []moveSymlinkCase{
 		{name: "file", source: "source-link.go", destination: "dest.go"},
 		{name: "directory", source: "source.go", destination: "linked/dest.go"},

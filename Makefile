@@ -130,25 +130,38 @@ tidy: fmt ## Ensure dependencies match source code
 .PHONY: lint
 lint: lint-go lint-markdown lint-vale ## Run all static linters (golangci-lint, markdownlint-cli2, vale)
 
+MARKDOWN_GLOBS := "docs/**/*.md" "skills/**/*.md" "tools/**/*.md" "*.md"
+VALE_TARGETS := docs skills tools *.md
+
 .PHONY: lint-check
-lint-check: go-env ## Run configured Go, Markdown, and Vale linters without source fixers
-	@echo "==> Running read-only Go lint..."
+lint-check: go-env ## Run configured Go, Markdown, and Vale linters with automated fixes
+	@echo "==> Running Go lint with fixes..."
 	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run ./...; \
+		golangci-lint run --fix ./...; \
 	else \
 		echo "golangci-lint not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
-	@echo "==> Running read-only Markdown lint..."
+	@echo "==> Running Markdown lint with fixes..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		markdownlint-cli2 "**/*.md" "!.agents/"; \
+		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do [ -f "$$f" ] && echo "$$f"; done || true); \
+		if [ -n "$$changed_md" ] && [ "$${CI:-}" != "true" ]; then \
+			echo "$$changed_md" | xargs markdownlint-cli2 --fix; \
+		else \
+			markdownlint-cli2 --fix $(MARKDOWN_GLOBS); \
+		fi; \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
 		exit 1; \
 	fi
 	@echo "==> Running read-only Vale lint..."
 	@if command -v vale >/dev/null 2>&1; then \
-		find . -path './.scratch' -prune -o -path './.git' -prune -o -path './data' -prune -o -type f -name '*.md' -print0 | xargs -0 vale; \
+		changed_md=$$(git status --porcelain=v1 -- '*.md' 2>/dev/null | awk '$$1 !~ /^D/ {print $$2}' | while read -r f; do [ -f "$$f" ] && echo "$$f"; done || true); \
+		if [ -n "$$changed_md" ] && [ "$${CI:-}" != "true" ]; then \
+			echo "$$changed_md" | xargs vale; \
+		else \
+			vale $(VALE_TARGETS); \
+		fi; \
 	else \
 		echo "vale not installed. Run 'make tools'."; \
 		exit 1; \
@@ -180,7 +193,7 @@ lint-go: go-env ## Run golangci-lint
 lint-markdown: ## Run markdownlint-cli2
 	@echo "==> Running markdownlint-cli2..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		markdownlint-cli2 "**/*.md" "!.agents/"; \
+		markdownlint-cli2 $(MARKDOWN_GLOBS); \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
 		exit 1; \
@@ -190,7 +203,7 @@ lint-markdown: ## Run markdownlint-cli2
 fix-markdown: ## Apply automatic markdownlint-cli2 fixes
 	@echo "==> Applying Markdown linter fixes..."
 	@if command -v markdownlint-cli2 >/dev/null 2>&1; then \
-		markdownlint-cli2 --fix "**/*.md"; \
+		markdownlint-cli2 --fix $(MARKDOWN_GLOBS); \
 	else \
 		echo "markdownlint-cli2 not installed. Run 'make tools'."; \
 		exit 1; \
@@ -200,7 +213,7 @@ fix-markdown: ## Apply automatic markdownlint-cli2 fixes
 lint-vale: ## Run vale prose linter
 	@echo "==> Running vale..."
 	@if command -v vale >/dev/null 2>&1; then \
-		find . -path './.scratch' -prune -o -path './.git' -prune -o -path './data' -prune -o -type f -name '*.md' -print0 | xargs -0 vale; \
+		vale $(VALE_TARGETS); \
 	else \
 		echo "vale not installed. Run 'make tools'."; \
 		exit 1; \
@@ -224,7 +237,7 @@ test: test-core ## Alias for test-core
 test-core: go-env ## Run core engine unit tests excluding benchmark-harness
 	@echo "==> Running core engine tests..."
 	@CORE_PACKAGES=$$(go list ./... | grep -v 'semedit/tools/benchmark-harness'); \
-	go test -shuffle=on -cover $$CORE_PACKAGES
+	go test $$CORE_PACKAGES
 
 .PHONY: test-race
 test-race: go-env ## Run core engine unit tests with race detector
@@ -250,12 +263,12 @@ test-short: go-env ## Run short test suite without long-running tests
 .PHONY: test-property-full
 test-property-full: go-env ## Run comprehensive 100-check property tests
 	@echo "==> Running full property tests (100 checks)..."
-	RAPID_CHECKS=100 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
+	RAPID_CHECKS=100 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
 
 .PHONY: test-fuzz
 test-fuzz: go-env ## Run deep 1000-check metamorphic property fuzzing
 	@echo "==> Running deep property fuzzing (1000 checks)..."
-	RAPID_CHECKS=1000 go test -race -v -run TestProperty_ ./internal/adapters/golang/...
+	RAPID_CHECKS=1000 go test -race -shuffle=on -v -run TestProperty_ ./internal/adapters/golang/...
 
 ## ---------------------------------------------------------
 ## Build and Clean

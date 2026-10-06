@@ -13,6 +13,7 @@ import (
 )
 
 func TestLoadConstantPackageBindsReadSetBeforeApply(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(t *testing.T, dependency, manifest string)

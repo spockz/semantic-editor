@@ -10,6 +10,7 @@ import (
 )
 
 func TestMoveConstructAcrossPackagesRewritesTypedCallersAndImports(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	writeMoveFixture(t, root, "go.mod", "module example.com/cross\n\ngo 1.23\n")
 	writeMoveFixture(t, root, "legacy/move.go", `package legacy
@@ -45,6 +46,7 @@ func Call() string { return legacy.MoveMe(" caller ") }
 }
 
 func TestMoveConstructAcrossPackagesRefusesUnresolvedCasesBeforeWriting(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, symbol, source, extraFilePath, extraFile, destination, wantError string
 	}{

@@ -8,6 +8,7 @@ import (
 )
 
 func TestPlanChangeSignatureUpdatesDeclarationAndEveryProvenCall(t *testing.T) {
+	t.Parallel()
 	target := "package p\nfunc work(id int) bool { return id > 0 }\n"
 	callerA := "package p\nfunc run() bool { return work(1) }\n"
 	callerB := "package p\nfunc retry() bool { return work(2) }\n"
@@ -56,6 +57,7 @@ func TestPlanChangeSignatureUpdatesDeclarationAndEveryProvenCall(t *testing.T) {
 }
 
 func TestPlanChangeSignatureUsesCallerLocalPositionsForZeroArgumentCall(t *testing.T) {
+	t.Parallel()
 	target := "package p\nfunc work() int { return 1 }\n"
 	caller := "package p\nfunc noise() int { return 7 }\nfunc run() int { return work(\n) }\n"
 	call := strings.Index(caller, "work(\n)")
@@ -80,6 +82,7 @@ func TestPlanChangeSignatureUsesCallerLocalPositionsForZeroArgumentCall(t *testi
 }
 
 func TestPlanIntroduceParameterReplacesOnlyEquivalentConstant(t *testing.T) {
+	t.Parallel()
 	target := "package p\nfunc ready(id int) bool { return true }\n"
 	caller := "package p\nfunc run() bool { return ready(1) }\n"
 	call := strings.Index(caller, "ready(1)")
@@ -121,6 +124,7 @@ func TestPlanIntroduceParameterReplacesOnlyEquivalentConstant(t *testing.T) {
 }
 
 func TestPlanIntroduceParameterObjectPreservesArgumentOrder(t *testing.T) {
+	t.Parallel()
 	target := "package p\nfunc save(path, body string) string { return path + body }\n"
 	caller := "package p\nfunc run() string { return save(first(), second()) }\n"
 	call := strings.Index(caller, "save(first(), second())")
@@ -161,6 +165,7 @@ func TestPlanIntroduceParameterObjectPreservesArgumentOrder(t *testing.T) {
 }
 
 func TestPlanIntroduceParameterObjectRefusesMethodNameCollision(t *testing.T) {
+	t.Parallel()
 	target := "package p\nfunc save(path string) string { return path }\n"
 	method := "package p\nfunc (s Store) saveOptions() {}\n"
 	request := ParameterObjectRequest{
@@ -180,6 +185,7 @@ func TestPlanIntroduceParameterObjectRefusesMethodNameCollision(t *testing.T) {
 }
 
 func TestSignaturePlannersRequireExplicitCompleteReadSets(t *testing.T) {
+	t.Parallel()
 	if _, err := PlanChangeSignature(SignatureChangeRequest{}, SignatureCallSetProof{}); err == nil {
 		t.Fatal("incomplete caller-set proof was accepted")
 	}
@@ -189,6 +195,7 @@ func TestSignaturePlannersRequireExplicitCompleteReadSets(t *testing.T) {
 }
 
 func TestPlanChangeSignatureNoOpTrailingCommaAndVariadicRefusal(t *testing.T) {
+	t.Parallel()
 	zero := 0
 	target := "package p\nfunc work(id int,\n) bool { return id > 0 }\n"
 	caller := "package p\nfunc run() bool { return work(1,\n) }\n"

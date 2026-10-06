@@ -7,6 +7,7 @@ import (
 )
 
 func TestAccessModifier_Inference(t *testing.T) {
+	t.Parallel()
 	backend := GolangBackend{}
 	for _, testCase := range accessInferenceCases() {
 		t.Run(testCase.name, func(t *testing.T) {

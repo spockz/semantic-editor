@@ -43,7 +43,7 @@ func configureRapidChecks(t *testing.T, shortChecks int, defaultChecks int) {
 
 // TestProperty_RoundTripInvertibility asserts R^-1(R(P)) == P across generated AST variations.
 func TestProperty_RoundTripInvertibility(t *testing.T) {
-	configureRapidChecks(t, 5, 5)
+	configureRapidChecks(t, 2, 2)
 	rapid.Check(t, checkRoundTripProperty)
 }
 

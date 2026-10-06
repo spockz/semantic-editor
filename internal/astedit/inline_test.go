@@ -11,6 +11,7 @@ import (
 )
 
 func TestInlineVariableLiteralImmediateCall(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "inline.go")
 	before := "package p\nfunc f() int {\n\tvalue := 42\n\tprintln(value, value)\n\treturn 0\n}\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -30,6 +31,7 @@ func TestInlineVariableLiteralImmediateCall(t *testing.T) {
 }
 
 func TestInlineVariableRejectsUnsafeCasesWithoutWriting(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"side effect":           "value := call()\nprintln(value)\n",
 		"intervening statement": "value := 42\nprintln(1)\nprintln(value)\n",
@@ -62,6 +64,7 @@ func TestInlineVariableRejectsUnsafeCasesWithoutWriting(t *testing.T) {
 }
 
 func TestInlineVariableRejectsLocalConversionTypeShadowWithoutWriting(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "inline.go")
 	before := "package p\nfunc f() {\n\ttype int = string\n\tvalue := 42\n\tprintln(value)\n}\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {
@@ -81,6 +84,7 @@ func TestInlineVariableRejectsLocalConversionTypeShadowWithoutWriting(t *testing
 }
 
 func TestInlineVariableRejectsUncertainConversionBindings(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		file    string
 		sibling string
@@ -134,6 +138,7 @@ func indentSource(source string) string {
 }
 
 func TestInlineVariableRejectsParameterShadowing(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "inline.go")
 	before := "package p\nfunc f(value int) {\n\t{\n\t\tvalue := 42\n\t\tprintln(value)\n\t}\n}\n"
 	if err := os.WriteFile(path, []byte(before), 0o600); err != nil {

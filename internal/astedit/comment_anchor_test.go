@@ -15,6 +15,7 @@ import (
 )
 
 func TestNormalizeInsertionOffsetCommentBoundaries(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		source      string
@@ -53,6 +54,7 @@ func TestNormalizeInsertionOffsetCommentBoundaries(t *testing.T) {
 }
 
 func TestInsertDeclarationKeepsFunctionDocAttached(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\n// Keep documentation.\nfunc Keep() {}\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertDeclaration(context.Background(), path, "func Added() {}", Options{Placement: PlacementBeforeSymbol, TargetSymbol: "Keep"}); err != nil {
@@ -64,6 +66,7 @@ func TestInsertDeclarationKeepsFunctionDocAttached(t *testing.T) {
 }
 
 func TestInsertFunctionKeepsFunctionDocAttached(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\n// Keep documentation.\nfunc Keep() {}\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertFunction(context.Background(), path, "func Added() {}", FunctionOptions{Placement: PlacementBeforeSymbol, TargetSymbol: "Keep"}); err != nil {
@@ -75,6 +78,7 @@ func TestInsertFunctionKeepsFunctionDocAttached(t *testing.T) {
 }
 
 func TestInsertTypeKeepsTypeDocAttached(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\n// Keep documentation.\ntype Keep struct{}\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertType(context.Background(), path, "type Added struct{}", TypeOptions{}); err != nil {
@@ -86,6 +90,7 @@ func TestInsertTypeKeepsTypeDocAttached(t *testing.T) {
 }
 
 func TestInsertDeclStandaloneKeepsDeclarationDocAttached(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\n// Keep documentation.\nvar Keep = 1\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertDecl(context.Background(), path, "var Added = 2", DeclOptions{Group: "standalone", Placement: PlacementBeforeSymbol, TargetSymbol: "Keep"}); err != nil {
@@ -97,6 +102,7 @@ func TestInsertDeclStandaloneKeepsDeclarationDocAttached(t *testing.T) {
 }
 
 func TestInsertDeclGroupedKeepsSpecDocAttached(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\nimport \"errors\"\n\nvar (\n\t// Keep documentation.\n\tErrKeep = errors.New(\"keep\")\n)\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertDecl(context.Background(), path, "var ErrAdded = errors.New(\"added\")", DeclOptions{}); err != nil {
@@ -109,6 +115,7 @@ func TestInsertDeclGroupedKeepsSpecDocAttached(t *testing.T) {
 }
 
 func TestInsertCaseKeepsDefaultCommentBeforeDefault(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\nfunc Handle(value string) {\n\tswitch value {\n\tcase \"keep\":\n\t\treturn\n\t// Keep documentation.\n\tdefault:\n\t\treturn\n\t}\n}\n"
 	path := writeCommentFixture(t, initial)
 	if _, err := InsertCase(context.Background(), path, "Handle", "value", "case \"added\":\n\treturn", CaseOptions{Placement: CasePlacementBeforeDefault}); err != nil {
@@ -123,6 +130,7 @@ func TestInsertCaseKeepsDefaultCommentBeforeDefault(t *testing.T) {
 }
 
 func TestInsertDeclarationAfterSymbolFollowsInlineTrailingComment(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\nfunc Keep() {} // Keep this implementation.\n\nfunc Last() {}\n"
 	path := writeCommentFixture(t, initial)
 	if err := InsertDeclaration(context.Background(), path, "func Added() {}", Options{Placement: PlacementAfterSymbol, TargetSymbol: "Keep"}); err != nil {
@@ -134,6 +142,7 @@ func TestInsertDeclarationAfterSymbolFollowsInlineTrailingComment(t *testing.T) 
 }
 
 func TestReplaceConstructKeepsLeadingCommentWithLoop(t *testing.T) {
+	t.Parallel()
 	initial := "package p\n\nfunc Count(values []int) {\n\t// Keep documentation.\n\tfor _, value := range values {\n\t\t_ = value\n\t}\n}\n"
 	path := writeCommentFixture(t, initial)
 	if _, err := ReplaceConstruct(context.Background(), path, "Count", ConstructLoop, "values", "for range values {}", ConstructOptions{}); err != nil {

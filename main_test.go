@@ -79,6 +79,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
+	t.Parallel()
 	testscript.Run(t, testscript.Params{
 		Dir: filepath.Join("testdata", "scripts"),
 		Setup: func(env *testscript.Env) error {
@@ -86,6 +87,15 @@ func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 				if val := os.Getenv(key); val != "" {
 					env.Vars = append(env.Vars, key+"="+val)
 				}
+			}
+			if gocache := os.Getenv("GOCACHE"); gocache != "" {
+				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOCACHE="+gocache)
+			}
+			if gomodcache := os.Getenv("GOMODCACHE"); gomodcache != "" {
+				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOMODCACHE="+gomodcache)
+			}
+			if goplscache := os.Getenv("GOPLSCACHE"); goplscache != "" {
+				env.Vars = append(env.Vars, "SEMEDIT_SHARED_GOPLSCACHE="+goplscache)
 			}
 			env.Vars = append(env.Vars, "PATH="+os.Getenv("PATH"))
 			if err := prepareFakeLSPs(); err != nil {
@@ -114,6 +124,7 @@ func TestREQ001SemanticIntentCLIContracts(t *testing.T) {
 }
 
 func TestREQ002REQ006PublicRegistryAndCLIContractCoverage(t *testing.T) {
+	t.Parallel()
 	fixtures := loadPublicFixtures(t)
 	registry := operation.DefaultRegistry()
 	assertRegistryCommandCoverage(t, registry, fixtures)
@@ -265,6 +276,7 @@ func fixtureAssertsFullCatalogTool(fixtures []publicFixture, tool string) bool {
 }
 
 func TestTxtarsHaveAssertionsOrWantedFiles(t *testing.T) {
+	t.Parallel()
 	assertion := regexp.MustCompile(`(?m)^\s*(?:stdout|stderr|cmp|exists|grep)\b`)
 	failureExpectation := regexp.MustCompile(`(?m)^\s*!\s*(?:exec\s+)?[^\s#]+`)
 	benchmarkOracle := regexp.MustCompile(`(?m)^oracle:\s*$`)

@@ -27,6 +27,7 @@ import (
 const fieldInsertionToolName = "semantic_insert_field"
 
 func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
+	t.Parallel()
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
 			assertBatchSchemaProfile(t, profile)
@@ -35,6 +36,7 @@ func TestMCPBatchSchemaDerivesFromRegistry(t *testing.T) {
 }
 
 func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	base := toolsForOptions(t, root, mcp.WithToolProfile("base"))
 	baseNames := toolNameSet(base)
@@ -77,6 +79,7 @@ func TestMCPToolCatalogProfilesAndVariantFilters(t *testing.T) {
 }
 
 func TestMCPInvalidToolVariantFailsBeforeServing(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	before, err := os.ReadFile(filepath.Join(root, "main.go"))
 	if err != nil {
@@ -100,6 +103,7 @@ func TestMCPInvalidToolVariantFailsBeforeServing(t *testing.T) {
 }
 
 func TestMCPBaseCatalogStillDispatchesSpecializedBatchChild(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	input := strings.Join([]string{
 		`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`,
@@ -167,6 +171,7 @@ func toolNameSet(tools []map[string]any) map[string]bool {
 }
 
 func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
+	t.Parallel()
 	registry := operation.NewRegistry()
 	params := []operation.ParameterContract{{Name: "file", JSONName: "file", Type: operation.ParamString, Required: true}}
 	parse := func(map[string]any) (struct{}, error) { return struct{}{}, nil }
@@ -211,6 +216,7 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 }
 
 func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
+	t.Parallel()
 	var tool map[string]any
 	for _, candidate := range listTools(t, "full") {
 		if candidate["name"] == "semantic_insert_function" {
@@ -252,6 +258,7 @@ func TestMCPContinuationDescriptionsNameSourcesWithinBudget(t *testing.T) {
 }
 
 func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
+	t.Parallel()
 	var tool map[string]any
 	for _, candidate := range listTools(t, "full") {
 		if candidate["name"] == "semantic_inline_variable" {
@@ -280,6 +287,7 @@ func TestInlineVariableToolSchemaAndContinuations(t *testing.T) {
 }
 
 func TestSourceFieldsResolveToAdvertisedOutputSchema(t *testing.T) {
+	t.Parallel()
 	registry := operation.DefaultRegistry()
 	if err := mcp.ValidateSourceFields(registry.All()); err != nil {
 		t.Fatal(err)
@@ -316,6 +324,7 @@ func assertContractOutputSchema(t *testing.T, name string, schema any) {
 }
 
 func TestMCPToolsAdvertiseStructuredOutputSchemas(t *testing.T) {
+	t.Parallel()
 	for _, profile := range []string{"full", "mutations-only"} {
 		t.Run(profile, func(t *testing.T) {
 			for _, tool := range listTools(t, profile) {
@@ -506,6 +515,7 @@ func assertInsertFieldOutputSchema(t *testing.T, raw any) {
 }
 
 func TestMCPLiveReloadAdvertisesStructuredOutputSchema(t *testing.T) {
+	t.Parallel()
 	tools := listToolsWithLiveReload(t)
 	for _, tool := range tools {
 		if tool["name"] != "semantic_reload" {
@@ -894,6 +904,7 @@ func expectedBatchSchemaEntries(profile string) batchSchemaExpectations {
 }
 
 func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
+	t.Parallel()
 	tools := listTools(t, "full")
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
@@ -977,6 +988,7 @@ func assertConstructBatchSchema(t *testing.T, byName map[string]map[string]any) 
 }
 
 func TestMCPEnabledLanguagesFilterMixedAndSourceLessWorkspaces(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	write := func(name, source string) {
 		t.Helper()
@@ -1038,6 +1050,7 @@ func (b customConstructBackend) SupportedConstructs(operation backend.Operation)
 }
 
 func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "main.go"), []byte("package main\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -1102,6 +1115,7 @@ func listToolsAt(t *testing.T, root string, options ...mcp.Option) []map[string]
 }
 
 func TestDefaultMCPDescriptionsRouteBeforeGenericTools(t *testing.T) {
+	t.Parallel()
 	for _, catalog := range [][]map[string]any{
 		listToolsWithRegistry(t, "full", operation.DefaultRegistry()),
 		listToolsWithLiveReload(t),
@@ -1117,6 +1131,7 @@ func TestDefaultMCPDescriptionsRouteBeforeGenericTools(t *testing.T) {
 }
 
 func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
+	t.Parallel()
 	tools := listToolsWithRegistry(t, "full", operation.DefaultRegistry())
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
@@ -1180,6 +1195,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 }
 
 func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
+	t.Parallel()
 	tools := listTools(t, "full")
 	var verifySchema, batchSchema, insertFunctionSchema map[string]any
 	for _, tool := range tools {
@@ -1220,6 +1236,7 @@ func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
 }
 
 func TestScaffoldPurposeHeaderSchemaIsOptional(t *testing.T) {
+	t.Parallel()
 	tools := listTools(t, "full")
 	for _, tool := range tools {
 		if tool["name"] != "semantic_scaffold_file" {
@@ -1295,6 +1312,7 @@ func assertInspectOutputSchema(t *testing.T, outputSchema any) {
 }
 
 func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
+	t.Parallel()
 	tools := make(map[string]map[string]any)
 	for _, tool := range listTools(t, "full") {
 		tools[tool["name"].(string)] = tool
@@ -1351,6 +1369,7 @@ func TestMCPContinuationDescriptionsCoverConstructSources(t *testing.T) {
 }
 
 func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
+	t.Parallel()
 	entry, ok := operation.DefaultRegistry().LookupMCP("semantic_move_construct")
 	if !ok || !entry.Batchable {
 		t.Fatalf("semantic_move_construct registry entry = %+v, present=%v; want batchable", entry, ok)
@@ -1418,6 +1437,7 @@ func assertMoveBatchSchema(t *testing.T, batch map[string]any) {
 }
 
 func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
+	t.Parallel()
 	tools := make(map[string]map[string]any)
 	for _, tool := range listTools(t, "full") {
 		tools[tool["name"].(string)] = tool
@@ -1442,6 +1462,7 @@ func TestMCPStaleContinuationsAreNotAdvertised(t *testing.T) {
 }
 
 func TestTypedRecursiveSchemaFlowsThroughToolAndBatchIngress(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	registry := operation.NewRegistry()
 	operations := registerTypedSchemaOperations(t, registry)
@@ -1595,6 +1616,7 @@ func registerTypedSchemaOperations(t *testing.T, registry *operation.Registry) t
 }
 
 func TestBatchToolAdvertisesAndEmitsRegisteredResultShapes(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	registry := operation.NewRegistry()
 	registerBatchResultShapeEntries(t, registry)
@@ -1825,6 +1847,7 @@ func assertMissingVerificationBatchResult(t *testing.T, result map[string]any) {
 }
 
 func TestInspectProjectionFeedsGuardedReplaceBody(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	module := []byte("module example.com/inspectprojection\n\ngo 1.24\n")
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), module, 0o600); err != nil {
@@ -1911,6 +1934,7 @@ func assertGuardedReplaceSource(t *testing.T, path string) {
 }
 
 func TestInspectProjectionFeedsInsertField(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	path := filepath.Join(root, "config.go")
 	initial := []byte("package sample\ntype options struct{}\n")
@@ -1975,6 +1999,7 @@ func TestInspectProjectionFeedsInsertField(t *testing.T) {
 }
 
 func TestMCPProjectedReceiptUsesFinalDiskIdentityAndRevision(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	path := filepath.Join(root, "main.go")
 	initial := []byte("package sample\n// identity:before\nvar Widget = 1\n")
@@ -2157,6 +2182,7 @@ func assertReplacementReceiptProjection(t *testing.T, response map[string]any) {
 }
 
 func TestMCPIntegerNotationAndRangeValidation(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	registry := operation.DefaultRegistry()
 	for _, item := range []struct {
@@ -2192,6 +2218,7 @@ func TestMCPIntegerNotationAndRangeValidation(t *testing.T) {
 }
 
 func TestTypedContinuationRegistrationRejectsIncompatibleConsumers(t *testing.T) {
+	t.Parallel()
 	stringSchema := operation.ValueSchema{Kind: operation.SchemaString}
 	integerSchema := operation.ValueSchema{Kind: operation.SchemaInteger}
 	producerObject := operation.ValueSchema{Kind: operation.SchemaObject, Properties: map[string]operation.ValueSchema{"file": stringSchema, "symbol": stringSchema, "extra": stringSchema}, Required: []string{"file", "symbol"}}
@@ -2254,6 +2281,7 @@ func TestTypedContinuationRegistrationRejectsIncompatibleConsumers(t *testing.T)
 }
 
 func TestToolsListScopesLanguageAndAccessEnums(t *testing.T) {
+	t.Parallel()
 	javaOnly := t.TempDir()
 	if err := os.WriteFile(filepath.Join(javaOnly, "Main.java"), []byte("class Main {}\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -2363,6 +2391,7 @@ func assertBatchRenameLanguageEnum(t *testing.T, byName map[string]map[string]an
 }
 
 func TestToolsListScopesVerifyAndOmitsBatchForMakeOnlyWorkspace(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("all:\n\t@true\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -2405,6 +2434,7 @@ func TestToolsListScopesVerifyAndOmitsBatchForMakeOnlyWorkspace(t *testing.T) {
 }
 
 func TestToolsListUsesRegisteredBackendsForOperationInventory(t *testing.T) {
+	t.Parallel()
 	root := schemaWorkspace(t)
 	registry, err := backend.NewRegistry(javabackend.NewJavaBackend())
 	if err != nil {

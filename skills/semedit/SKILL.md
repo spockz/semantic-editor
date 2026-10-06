@@ -11,11 +11,11 @@ When the request matches an operation exposed by the active semedit server, use 
 
 | Requested change | Use instead of built-in tools | Route away from |
 | --- | --- | --- |
-| Find a named symbol in a supported source file | `semantic_lookup` | Built-in text search, `grep`, or line counting |
-| Inspect a symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
-| View declaration hierarchy and structure of a file or directory | `semantic_outline` with optional `kinds` and `include_unexported` | Reading whole files or manual grep navigation |
-| Find usages, call sites, or references of a symbol | `semantic_find_references` | Broad text search or regex |
-| Rename a supported symbol and its references | `semantic_rename` | Built-in text replacement across files |
+| Find a named symbol in Go, Java, Rust, Scala, or Haskell | `semantic_lookup` | Built-in text search, `grep`, or line counting |
+| Inspect a Go symbol's declaration, signature, doc comment, and imports | `semantic_inspect_symbol` | Raw file reading or guessing signatures |
+| View declaration hierarchy in Go, Java, Kotlin, Rust, Scala, Makefile, or Bash | `semantic_outline` with optional `kinds` and `include_unexported` | Reading whole files or manual grep navigation |
+| Find usages, call sites, or references of a Go symbol | `semantic_find_references` | Broad text search or regex |
+| Rename a symbol and its references in Go, or in selected trusted Rust or Java files | `semantic_rename` | Built-in text replacement across files |
 | Replace one Go control-flow construct, clause, or statement/expression inside a function | `semantic_replace_construct` with `kind`, optional `discriminator` and `construct_path`, and complete replacement `source` | Built-in text edits or regenerating the whole function |
 | Insert one Go control-flow construct, loop, branch, clause, or statement/expression inside a function | `semantic_insert_construct` with `kind`, target placement (`before_line`, `after_line`, or `at_index`), and `source` | Built-in text edits or line insertion |
 | Change an existing Go function or method body | `semantic_replace_body` | Built-in whole-declaration or text replacement |
@@ -30,9 +30,9 @@ When the request matches an operation exposed by the active semedit server, use 
 | Add, remove, or format Go source imports | `semantic_organize_imports`; set `file` to scope writes, or omit it only when workspace-wide changes are intended | Built-in import-block edits or shell `goimports` |
 | Add an external Go module dependency | `semantic_add_build_dependency`; updates `go.mod`/`go.sum` and may use the network | Built-in `go.mod`/`go.sum` edits or shell `go get`/`go mod tidy` |
 | Add a Go switch case | `semantic_insert_case` | Built-in switch text replacement |
-| Convert supported Go test assertions between failure modes | `semantic_assertion_mode`; writes require `trust_workspace: true`, while `dry_run: true` previews without trust or writes | Built-in text replacement of `t.Fatal`/`t.Error` calls |
-| Apply several registered semantic edits in order | `semantic_batch`; edits run sequentially against the working state, so later edits see earlier edits. Combine compound refactorings into one batch turn. Successful earlier edits remain written if a later edit fails. | Several built-in text patches |
-| Explicitly format or check supported Go or trusted Java sources | `semantic_verify`; Go verification runs formatting before diagnostics and can write files, and Java format/import flags also write. There is no dry-run | Shell formatters or ad hoc diagnostics; avoid a redundant call after an edit that already verifies |
+| Convert Go test assertions (t.Fatal/t.Error) between failure modes | `semantic_assertion_mode`; writes require `trust_workspace: true`, while `dry_run: true` previews without trust or writes | Built-in text replacement of `t.Fatal`/`t.Error` calls |
+| Apply several registered semantic edits in order | `semantic_batch`; successful earlier edits remain written if a later edit fails | Several built-in text patches |
+| Explicitly format or check Go or trusted Java sources | `semantic_verify`; Go verification runs formatting before diagnostics and can write files, and Java format/import flags also write. There is no dry-run | Shell formatters or ad hoc diagnostics; avoid a redundant call after an edit that already verifies |
 | Compile tests for a trusted Java root POM | `semantic_maven_compile`; set `trust_workspace: true`, runs offline unless `allow_network: true`, and writes build outputs plus temporary Maven data under `.scratch` | Shell Maven invocation |
 | Run tests for a trusted Java root POM | `semantic_maven_test`; set `trust_workspace: true`, runs offline unless `allow_network: true`, and writes build outputs plus temporary Maven data under `.scratch` | Shell Maven invocation |
 | Save a pre-edit rollback point for a bounded edit | `semantic_snapshot` | `git stash` or manual backup copies |
@@ -56,6 +56,32 @@ For methods, qualify the receiver when useful, such as `Server.Start` or `(*Serv
 The declaration, loop, body, file, import, dependency, and switch-case operations above are Go operations. Symbol inspection and reference discovery currently support Go workspaces. Declaration outline supports Go, Java, Kotlin, Rust, Scala, Makefile, and Bash backends. Symbol lookup supports Go, trusted Rust, Java, Scala, and standalone Haskell backends. Semantic rename is available for Go workspaces and for selected Rust or Java files; Rust/Java rename requires both `file` and `trust_workspace: true`. Scala and Haskell are lookup-only. Java verification is limited to its advertised selected-file actions and requires workspace trust. Use only operations exposed for the current workspace and follow their schema requirements. For unsupported changes, use the available editing workflow and report any relevant limitation.
 
 Framework conventions belong in a relevant installed framework skill. Use semedit's language-level operation to perform the structural change, and use that skill to choose the framework-specific owner or placement.
+
+## Core Operations vs. Macro Refactorings
+
+`semedit` strictly demarcates low-level engine responsibilities from high-level architectural refactorings:
+
+1. **Core Engine Primitives**: Zero-token, deterministic AST mutations and compiler/LSP queries (`semantic_lookup`, `semantic_outline`, `semantic_rename`, `semantic_replace_body`, `semantic_insert_construct`, `semantic_replace_construct`, `semantic_batch`). The engine executes exact syntactic transformations and enforces local compiler invariants; it does not implement framework-specific heuristics or whole-project modernization lifecycles.
+2. **Skill-Orchestrated Macro Refactorings**: High-level, cross-paradigm, or idiomatic refactorings (such as decomposing classes, introducing design patterns, or modernizing language constructs) are composed by the agent using core operations in `semantic_batch`. Whole-project migrations that alter external serialization or ecosystem contracts belong in dedicated linting/upgrade tools rather than core engine commands.
+
+### General Refactoring Examples
+
+- **Encapsulate State**: Rather than a monolithic engine command, create accessors via declaration insertions, rewrite verified caller sites, and update field access atomically within a single `semantic_batch`.
+- **Extract Abstraction / Delegate**: Derive interfaces or composite types from existing symbols, rewrite dependent call sites, and verify overlay clean state before completing.
+- **Decompose Large Functions**: Extract pure expressions or straight-line statements into scoped helpers, updating callers with preserved argument evaluation order.
+
+## Language-Specific Refactoring References
+
+To conserve context budget across agent harnesses (OpenAI Codex, Google Antigravity, GitHub Copilot), **do not read language reference files unless actively modifying or refactoring source files in that specific language**:
+
+- **Go**: Consult [references/golang.md](references/golang.md) only when refactoring Go types, signatures, or constructs.
+- **Java**: Consult [references/java.md](references/java.md) only when refactoring Java classes, records, accessors, or Maven builds.
+- **Rust**: Consult [references/rust.md](references/rust.md) only when refactoring Rust structs, newtypes, traits, or modules.
+- **Scala**: Consult [references/scala.md](references/scala.md) only when inspecting or refactoring Scala symbols.
+- **Kotlin**: Consult [references/kotlin.md](references/kotlin.md) only when inspecting or refactoring Kotlin symbols.
+- **Haskell**: Consult [references/haskell.md](references/haskell.md) only when inspecting standalone Haskell symbols.
+- **Bash**: Consult [references/bash.md](references/bash.md) only when inspecting or refactoring Bash scripts.
+- **Makefile**: Consult [references/make.md](references/make.md) only when inspecting or refactoring Makefiles.
 
 ## Keep examples discriminating
 

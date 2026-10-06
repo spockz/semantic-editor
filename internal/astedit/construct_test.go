@@ -34,6 +34,7 @@ func readGo(t *testing.T, path string) string {
 }
 
 func TestReplaceConstruct_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(items []string) {\n before()\n for _, item := range items {\n  for _, want := range []string{\"a\"} {\n   check(item, want)\n  }\n }\n after()\n}\n"
 	writeGo(t, path, initial)
@@ -49,6 +50,7 @@ func TestReplaceConstruct_TargetsNestedRangeAndPreservesOuterBody(t *testing.T) 
 }
 
 func TestReplaceConstruct_AmbiguityListsPathsAndLocations(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check(items []string) { for _, want := range items { use(want) }; for _, want := range items { use(want) } }\n")
 	_, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range items { use(1) }", astedit.ConstructOptions{})
@@ -65,6 +67,7 @@ func TestReplaceConstruct_AmbiguityListsPathsAndLocations(t *testing.T) {
 }
 
 func TestReplaceConstruct_RejectsBareStatementsWithoutMutation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(items []string) { for _, want := range items { use(want) } }\n"
 	writeGo(t, path, initial)
@@ -78,6 +81,7 @@ func TestReplaceConstruct_RejectsBareStatementsWithoutMutation(t *testing.T) {
 }
 
 func TestReplaceConstruct_DiscriminatorMatchesIdentifierExactly(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check(want, unwanted []string) { for _, unwanted := range unwanted { use(unwanted) }; for _, want := range want { use(want) } }\n"
 	writeGo(t, path, initial)
@@ -91,6 +95,7 @@ func TestReplaceConstruct_DiscriminatorMatchesIdentifierExactly(t *testing.T) {
 }
 
 func TestReplaceConstruct_ReplacesClassicForHeader(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check() { before(); for i := 0; i < 3; i++ { tick(i) }; after() }\n")
 	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "i := 0", "for i := 10; i < 20; i++ { tick(i * 2) }", astedit.ConstructOptions{}); err != nil {
@@ -105,6 +110,7 @@ func TestReplaceConstruct_ReplacesClassicForHeader(t *testing.T) {
 }
 
 func TestReplaceConstruct_PathSelectsNestedMatchingLoop(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	writeGo(t, path, "package sample\nfunc Check(wants []string) { for _, want := range wants { for _, want := range wants { use(want) } } }\n")
 	if _, err := astedit.ReplaceConstruct(context.Background(), path, "Check", astedit.ConstructLoop, "want", "for _, want := range wants { use(\"inner\") }", astedit.ConstructOptions{ConstructPath: "0.0.0"}); err != nil {
@@ -117,6 +123,7 @@ func TestReplaceConstruct_PathSelectsNestedMatchingLoop(t *testing.T) {
 }
 
 func TestReplaceConstruct_RejectsMalformedReplacementWithoutMutation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "loops.go")
 	initial := "package sample\nfunc Check() { for i := 0; i < 3; i++ { tick(i) } }\n"
 	writeGo(t, path, initial)
@@ -130,6 +137,7 @@ func TestReplaceConstruct_RejectsMalformedReplacementWithoutMutation(t *testing.
 }
 
 func TestReplaceConstruct_RejectsNonBlockElseWithoutMutation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "else.go")
 	initial := "package sample\nfunc Check() { if ready { proceed() } else { fallback() } }\n"
 	writeGo(t, path, initial)
@@ -143,6 +151,7 @@ func TestReplaceConstruct_RejectsNonBlockElseWithoutMutation(t *testing.T) {
 }
 
 func TestReplaceConstruct_ReplacesEveryGoKind(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, source, discriminator, replacement, want string
 		kind                                           astedit.ConstructKind
@@ -170,6 +179,7 @@ func TestReplaceConstruct_ReplacesEveryGoKind(t *testing.T) {
 }
 
 func TestReplaceConstruct_UsesBranchPathsAndHeaderOnlySelectors(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "branches.go")
 	initial := "package sample\nfunc Check() { if condition { unrelated() }; switch { case \"x\": first(); case \"x\": second() } }\n"
 	writeGo(t, path, initial)
@@ -190,6 +200,7 @@ func TestReplaceConstruct_UsesBranchPathsAndHeaderOnlySelectors(t *testing.T) {
 }
 
 func TestReplaceDecl_GroupedVarPreservesSiblingSpecs(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "values.go")
 	writeGo(t, path, "package sample\nvar (\n // keep this comment\n target = 1\n sibling = 2\n)\n")
 	if _, err := astedit.ReplaceDecl(context.Background(), path, "target", "var target = 3", astedit.ReplaceDeclOptions{}); err != nil {
@@ -228,6 +239,7 @@ func TestReplaceDecl_GroupedVarPreservesSiblingSpecs(t *testing.T) {
 }
 
 func TestReplaceDecl_RejectsImplicitConstSiblingMutation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "values.go")
 	writeGo(t, path, "package sample\nconst (\n first = 1\n second\n)\n")
 	_, err := astedit.ReplaceDecl(context.Background(), path, "first", "const first = 4", astedit.ReplaceDeclOptions{})
@@ -240,6 +252,7 @@ func TestReplaceDecl_RejectsImplicitConstSiblingMutation(t *testing.T) {
 }
 
 func TestReplaceDecl_RejectsSharedVarSpecWithoutMutation(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "values.go")
 	initial := "package sample\nvar first, second = 1, 2\n"
 	writeGo(t, path, initial)
@@ -253,6 +266,7 @@ func TestReplaceDecl_RejectsSharedVarSpecWithoutMutation(t *testing.T) {
 }
 
 func TestReplaceDecl_ReplacesTypeAlias(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "aliases.go")
 	writeGo(t, path, "package sample\ntype Payload = string\ntype Other = int\n")
 	if _, err := astedit.ReplaceDecl(context.Background(), path, "Payload", "type Payload = []byte", astedit.ReplaceDeclOptions{}); err != nil {
@@ -265,6 +279,7 @@ func TestReplaceDecl_ReplacesTypeAlias(t *testing.T) {
 }
 
 func TestInsertDeclRejectsPackageCollisionWithoutWriting(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "one.go")
 	initial := "package sample\nconst Existing = 1\n"
 	writeGo(t, path, initial)
@@ -278,6 +293,7 @@ func TestInsertDeclRejectsPackageCollisionWithoutWriting(t *testing.T) {
 }
 
 func TestInsertDeclFindsSiblingPackageCollision(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "one.go")
 	writeGo(t, path, "package sample\nfunc Use() {}\n")
@@ -289,6 +305,7 @@ func TestInsertDeclFindsSiblingPackageCollision(t *testing.T) {
 }
 
 func TestReplaceConstruct_SelectsIfByShortInitializerAndPath(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "ifs.go")
 	initial := "package sample\nfunc Check() { if err := writeGeneratedFile(\"first\"); err != nil { first() }; if err := writeGeneratedFile(\"second\"); err != nil { second() } }\n"
 	writeGo(t, path, initial)
@@ -328,6 +345,7 @@ func TestReplaceConstruct_SelectsIfByShortInitializerAndPath(t *testing.T) {
 }
 
 func TestRemoveGroupedDeclarationPreservesSiblingComment(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "decls.go")
 	writeGo(t, path, "package sample\nvar (\n // Keep documents the sibling.\n Keep = 1\n // Remove documents the target.\n Remove = 2\n)\n")
 	if _, _, refusal, err := astedit.Remove(context.Background(), path, astedit.RemoveOptions{Kind: "variable", Symbol: "Remove"}, false); err != nil || refusal != "" {
@@ -347,6 +365,7 @@ func TestRemoveGroupedDeclarationPreservesSiblingComment(t *testing.T) {
 }
 
 func TestRemoveCaseUsesFunctionAndSwitchSelectors(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "switch.go")
 	initial := "package sample\nfunc Route(route string) {\n switch route {\n case \"old\":\n  old()\n case \"keep\":\n  keep()\n }\n}\n"
 	writeGo(t, path, initial)
@@ -360,6 +379,7 @@ func TestRemoveCaseUsesFunctionAndSwitchSelectors(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteRefusesWithoutCompletePreflights(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safefunction\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -380,6 +400,7 @@ func TestRemoveSafeDeleteRefusesWithoutCompletePreflights(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteUnreferencedFreeFunction(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safefunction\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -398,6 +419,7 @@ func TestRemoveSafeDeleteUnreferencedFreeFunction(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteBasicPackageVariable(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safevariable\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -417,6 +439,7 @@ func TestRemoveSafeDeleteBasicPackageVariable(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteRefusesEffectfulPackageVariable(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safevariable\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -434,6 +457,7 @@ func TestRemoveSafeDeleteRefusesEffectfulPackageVariable(t *testing.T) {
 }
 
 func TestRemoveRejectsSharedValueSpecWithoutWriting(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "decls.go")
 	initial := "package sample\nvar left, right = pair()\n"
 	writeGo(t, path, initial)
@@ -447,6 +471,7 @@ func TestRemoveRejectsSharedValueSpecWithoutWriting(t *testing.T) {
 }
 
 func TestRemoveSafeDeleteUnexportedStandaloneConstant(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safeconstant\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)

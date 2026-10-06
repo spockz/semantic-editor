@@ -11,6 +11,7 @@ import (
 )
 
 func TestInsertType_SectionPlacement(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "model.go")
 
@@ -80,6 +81,7 @@ func helper() {}
 }
 
 func TestInsertType_Validation(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "model.go")
 
@@ -132,6 +134,7 @@ func Run() {}
 }
 
 func TestInsertType_DuplicateNameFailsUnchanged(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "model.go")
 	initial := "package model\n\n// Keep this documentation.\ntype Config struct {\n\tHost string\n}\n\ntype Other struct{}\n"

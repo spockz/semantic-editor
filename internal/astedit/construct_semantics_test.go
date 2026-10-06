@@ -16,6 +16,7 @@ import (
 )
 
 func TestReplaceConstructStatementExpressionAmbiguityAndPaths(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() {\n\tf(1, 1)\n}\n")
 	before, err := os.ReadFile(path)
@@ -72,6 +73,7 @@ func assertCallArgumentValues(t *testing.T, source []byte, expected ...string) {
 }
 
 func TestReplaceConstructPreservesReplacementComments(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn value\n}\n")
 	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "value", "next /* retained */ + 1", ConstructOptions{ConstructPath: "0.e0"}); err != nil {
@@ -87,6 +89,7 @@ func TestReplaceConstructPreservesReplacementComments(t *testing.T) {
 }
 
 func TestReplaceConstructRejectsTrailingLineCommentWithoutWrite(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn value + 1\n}\n")
 	before, err := os.ReadFile(path)
@@ -107,6 +110,7 @@ func TestReplaceConstructRejectsTrailingLineCommentWithoutWrite(t *testing.T) {
 }
 
 func TestReplaceConstructPreservesStatementCommentsAndRejectsUnsafeLineComment(t *testing.T) {
+	t.Parallel()
 	t.Run("nested block comment survives", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "main.go")
 		writeConstructFixture(t, path, "package p\nfunc run() {\n\told()\n\tother()\n}\n")
@@ -143,6 +147,7 @@ func TestReplaceConstructPreservesStatementCommentsAndRejectsUnsafeLineComment(t
 }
 
 func TestReplaceConstructExpressionKeepsReplacementPrecedence(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn 1 + value\n}\n")
 	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "value", "left + right", ConstructOptions{ConstructPath: "0.e0.1"}); err != nil {
@@ -164,6 +169,7 @@ func TestReplaceConstructExpressionKeepsReplacementPrecedence(t *testing.T) {
 }
 
 func TestReplaceConstructPrunesOrphanImportWithoutOptIn(t *testing.T) {
+	t.Parallel()
 	directory := t.TempDir()
 	if err := os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module example.com/p\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -183,6 +189,7 @@ func TestReplaceConstructPrunesOrphanImportWithoutOptIn(t *testing.T) {
 }
 
 func TestReplaceConstructCallSlotsInGoAndDefer(t *testing.T) {
+	t.Parallel()
 	for _, keyword := range []string{"go", "defer"} {
 		t.Run(keyword, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "main.go")
@@ -216,6 +223,7 @@ func TestReplaceConstructCallSlotsInGoAndDefer(t *testing.T) {
 }
 
 func TestReplaceConstructDeclarationKindAndFunctionComments(t *testing.T) {
+	t.Parallel()
 	t.Run("declaration kind mismatch is rejected unchanged", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "main.go")
 		writeConstructFixture(t, path, "package p\nvar Value = 1\n")
@@ -253,6 +261,7 @@ func TestReplaceConstructDeclarationKindAndFunctionComments(t *testing.T) {
 }
 
 func TestReplaceConstructFindsHeaderInitializerAndAssignmentIndexExpressions(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, source, selector, replacement, path string
 	}{
@@ -298,6 +307,7 @@ func TestReplaceConstructFindsHeaderInitializerAndAssignmentIndexExpressions(t *
 }
 
 func TestReplaceConstructClassifiesIndexSlotsWithPartialTypeInfo(t *testing.T) {
+	t.Parallel()
 	t.Run("unresolved import does not hide known literal index", func(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "main.go")
 		writeConstructFixture(t, path, "package p\nimport _ \"example.com/unavailable\"\nfunc run(items []int) int { return items[17] }\n")
@@ -369,6 +379,7 @@ func assertReturnIndexOperand(t *testing.T, source []byte, want string) {
 }
 
 func TestReplaceConstructIncludesSelectAndTypeSwitchRuntimeHeaders(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, source, selector, replacement, path, want string
 	}{
@@ -399,6 +410,7 @@ func TestReplaceConstructIncludesSelectAndTypeSwitchRuntimeHeaders(t *testing.T)
 }
 
 func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, source, selector, path string
 	}{
@@ -450,6 +462,7 @@ func TestReplaceConstructDoesNotExposeTypeArgumentsAsExpressions(t *testing.T) {
 }
 
 func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc make(value int, _ int) []int { return []int{value} }\nfunc run() { _ = (make)(17, 0) }\n")
 	if _, err := ReplaceConstruct(context.Background(), path, "run", backend.ConstructStatementOrExpr, "17", "18", ConstructOptions{ConstructPath: "0.e0.0"}); err != nil {
@@ -481,6 +494,7 @@ func TestReplaceConstructKeepsShadowedMakeArgumentsAsExpressions(t *testing.T) {
 }
 
 func TestReplaceConstructNewRuntimeValueArguments(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name, callee, declaration string
 	}{
@@ -571,6 +585,7 @@ func assertConstructTestLiteral(t *testing.T, source []byte, testName, want stri
 }
 
 func TestReplaceConstructRejectsStatementInjectionIntoExpressionWithoutWrite(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn value\n}\n")
 	before, err := os.ReadFile(path)
@@ -591,6 +606,7 @@ func TestReplaceConstructRejectsStatementInjectionIntoExpressionWithoutWrite(t *
 }
 
 func TestReplaceConstructRejectsTypeSyntaxInExpressionSlot(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() any {\n\treturn value\n}\n")
 	before, err := os.ReadFile(path)
@@ -611,6 +627,7 @@ func TestReplaceConstructRejectsTypeSyntaxInExpressionSlot(t *testing.T) {
 }
 
 func TestConstructCandidatesDoNotCrossFunctionLiteralOwnership(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() {\n\touter(func() { hidden() })\n\tkeep()\n}\nfunc hiddenOwner() { hidden() }\n")
 	before, err := os.ReadFile(path)
@@ -641,6 +658,7 @@ func TestConstructCandidatesDoNotCrossFunctionLiteralOwnership(t *testing.T) {
 }
 
 func TestRemoveConstructOnlyDeletesDirectStatements(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() int {\n\treturn value + 1\n}\n")
 	before, err := os.ReadFile(path)
@@ -661,6 +679,7 @@ func TestRemoveConstructOnlyDeletesDirectStatements(t *testing.T) {
 }
 
 func TestRemoveConstructUniqueCallUsesDirectStatementTarget(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() {\n\tbefore()\n\trelease()\n\tafter()\n}\n")
 	_, _, refusal, err := Remove(context.Background(), path, RemoveOptions{Kind: string(backend.ConstructStatementOrExpr), InFunction: "run", Discriminator: "release()"}, false)
@@ -677,6 +696,7 @@ func TestRemoveConstructUniqueCallUsesDirectStatementTarget(t *testing.T) {
 }
 
 func TestInsertConstructRejectsStatementsEscapingWrapper(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() {\n\tkeep()\n}\n")
 	before, err := os.ReadFile(path)
@@ -699,6 +719,7 @@ func TestInsertConstructRejectsStatementsEscapingWrapper(t *testing.T) {
 }
 
 func TestInsertConstructAmbiguityRevisionBoundRetry(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join(t.TempDir(), "main.go")
 	writeConstructFixture(t, path, "package p\nfunc run() {\n\tflush()\n\tflush()\n}\n")
 	before, err := os.ReadFile(path)
@@ -751,6 +772,7 @@ func TestInsertConstructAmbiguityRevisionBoundRetry(t *testing.T) {
 }
 
 func TestStatementInsertionAnchorsPreserveExistingCalls(t *testing.T) {
+	t.Parallel()
 	source := []byte("package p\nfunc run() {\n\tflush()\n\treturn\n}\n")
 	for _, intent := range []InsertStatementIntent{
 		{Function: "run", Anchor: "before", Discriminator: "flush()", Source: "record()"},

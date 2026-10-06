@@ -1,7 +1,7 @@
 # Architecture Decision Record (ADR) 0044: Benchmark Experiment Dimensions and Result Semantics
 
 Status: Accepted
-Date: 2026-09-23
+Date: 2026-10-06
 
 ## Context
 
@@ -33,6 +33,20 @@ by its repetition number. Record the fully resolved conditions on every run.
 Keep technical provenance auditable without using it to create comparison
 groups.
 
+### The 7-Axis Task Complexity Framework
+
+Rather than using an opaque scalar difficulty score, each benchmark fixture has an explicit 7-axis complexity profile scored on a 5-dot scale (`●○○○○` to `●●●●●`). Each axis captures specific strengths and failure modes of LLM coding agents:
+
+| Dimension | Why It Matters / Agent Dynamics | Vanilla Agent Profile | Semedit MCP Profile |
+| --- | --- | --- | --- |
+| **1. Locality & Fan-Out** ($D_{\text{loc}}$) | **Multi-file degradation cliff**: LLMs excel at 1-file edits, but success drops below 20% once edits span $>3$ files due to omitted peripheral call sites. | **Strong at `●○○○○`** (1-turn local patch); **Collapses at `●●●●●`** (misses call sites in downstream packages). | **Dominates at `●●●●●`**: Compiler traces symbol usages across packages and updates all files deterministically in $O(1)$ tool output tokens. |
+| **2. Context Burden** ($D_{\text{ctx}}$) | **Working memory saturation & 'Lost-in-the-Middle'**: Loading thousands of lines of context causes models to lose track of early instructions and file structures. | **Strong at `●○○○○`** (<50 lines fits in prompt); **Poor at `●●●●●`** (wastes thousands of tokens grepping and reading unrelated code). | **Dominates at `●●●●●`**: Operates via compiler-indexed symbols; zero prompt tokens spent reading unmodified files into memory. |
+| **3. Symbol Ambiguity** ($D_{\text{amb}}$) | **Token-level pattern matching vs. Type Graph**: LLMs lack an internal compiler. When identical names exist (`r.ID`, `Close()`, `Get()`), regex and textual search cannot distinguish receiver types. | **Strong at `●○○○○`** (unique names like `ParseXMLToAST`); **Fails at `●●●●●`** (false-positive search/replace breaks unrelated structs). | **Dominates at `●●●●●`**: The language server type checker resolves exact struct field bindings and receiver types with 100% precision. |
+| **4. Change Composition** ($D_{\text{comp}}$) | **State tracking & error compounding**: RefactorBench shows agents fail multi-hop refactoring (22% vs 87% human) because intermediate steps break state and compound errors ($P \approx p^N$). | **Moderate at `●●○○○`**; struggles with multi-step sequential dependencies. | **Strong at `●●●●●` with `semantic_batch`**: Executes compound mutations atomically in an in-memory session, avoiding intermediate broken states. |
+| **5. Invariant Strictness** ($D_{\text{inv}}$) | **Probabilistic generation vs. AST invariants**: LLM text generation is prone to whitespace drift, dropped comments, and damaged compiler directives (`//go:embed`, `//go:build`). | **Fragile at `●●●●●`** (patch reject errors, linter failures from formatting churn). | **Dominates at `●●●●●`**: AST-level transformations isolate target nodes without collateral damage to comments, whitespace, or build tags. |
+| **6. Edit Scale** ($D_{\text{scl}}$) | **Output token budgets & generation exhaustion**: Generating diffs for 20+ call sites linearly bloats output tokens and increases truncation risk. | **Collapses at `●●●●●`** (exceeds token limits, truncates diffs, becomes 'lazy' with `// ...existing code...`). | **Dominates at `●●●●●`**: Zero-token output transformation; a ~25-token tool call triggers $N$ refactorings in the host engine. |
+| **7. Staging & Verification** ($D_{\text{stg}}$) | **Paranoia tax & diagnostic loops**: When tools lack feedback, agents run defensive verification turns (`git diff`, `go test`), doubling latency and token spend. | **Fast at `●○○○○`** (single-shot diff + test in one command); fragile under complex compilation breaks. | **Strong at `●●●●●`**: Integrated compiler diagnostic deltas terminate invalid trajectories and provide immediate verification signals. |
+
 Retain every measurement and supporting observation already used in benchmark
 reports. This includes wall-clock and startup latencies; top-level, internal,
 initial-load, MCP-discovery, and corrective interactive turns; tool invocation
@@ -55,18 +69,8 @@ the first matching alternative in its declared order. Final-answer events are
 not tool calls. Missing or unknown telemetry remains unknown. Do not count it as a match or
 failure.
 
-Authentic repository benchmarks use three named arms: `baseline-diff`,
-`semedit-agentic`, and `semedit-explicit`. Skill delivery is an independent
-boolean condition on the agentic arm. For the initial Multi-SWE fixture set,
-`semedit-explicit` replays the dataset's human `fix_patch`; every result records
-`execution_mode=ground_truth_fix_patch_replay` so this oracle upper bound is not
-mistaken for an agent's semantic-tool execution. Repository and issue metadata,
-acceptance patches, and seven-axis complexity profiles are fixture conditions
-or evaluation inputs and do not alter the issue text shown to agents.
-
-This ADR establishes semantics, not a normative data schema. The harness
-validates fixture metadata and records the resolved run conditions alongside
-each result.
+This ADR establishes semantics, not a normative data schema. Define and
+validate a versioned schema alongside implementation.
 
 ## Invariants
 
@@ -88,10 +92,9 @@ each result.
   catalog changes cannot reinterpret an old trace.
 - Chain matching is deterministic and does not constrain task success unless an
   experiment explicitly makes it part of its success criteria.
-- Explicit fix-patch replay is distinguishable from agent execution in every
-  serialized result and comparison.
-- Repository hydration, fixture extraction, and skill installation occur before
-  the measured agent interval.
+- Large monorepo fixture workspaces (e.g. Multi-SWE-bench Go) are hydrated via
+  local Copy-on-Write cloning (`cp -Rc` / reflink) from pre-cached shallow clones
+  in `.scratch/cache/repos/` strictly outside measured agent wall-clock time.
 
 ## Consequences
 

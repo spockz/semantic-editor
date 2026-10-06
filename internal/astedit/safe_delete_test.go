@@ -10,6 +10,7 @@ import (
 )
 
 func TestSafeDeleteReferenceScanClassifiesCompilerResolvedUses(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/safescan\n\ngo 1.23\n"), 0o600); err != nil {
 		t.Fatal(err)

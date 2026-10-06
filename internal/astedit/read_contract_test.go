@@ -12,6 +12,7 @@ import (
 )
 
 func TestInspectGoPreservesGroupFunctionImportsRevisionAndUTF16(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	source := []byte("package demo\nimport (\n fmt \"fmt\"\n _ \"net/http/pprof\"\n . \"strings\"\n \"example.org/implicit\"\n)\n/*" + string([]byte{0xF0, 0x9F, 0x98, 0x80}) + "*/ const ( First = iota; Second; Third )\nfunc Convert(input string) (string, error) {\n\tif input == \"\" {\n\t\treturn \"\", fmt.Errorf(\"empty\")\n\t}\n\treturn input, nil\n}\n")
 	path := filepath.Join(root, "source.go")
@@ -77,6 +78,7 @@ func TestInspectGoPreservesGroupFunctionImportsRevisionAndUTF16(t *testing.T) {
 }
 
 func TestInspectGoReturnsAllAmbiguitiesAndInheritedDeclaration(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	first := filepath.Join(root, "first", "shared.go")
 	second := filepath.Join(root, "second", "shared.go")
@@ -135,6 +137,7 @@ func TestInspectGoReturnsAllAmbiguitiesAndInheritedDeclaration(t *testing.T) {
 }
 
 func TestOutlineGoFiltersStructurallyAndPreservesEmptyAndTestFiles(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	emptySource := []byte("// Package empty preserves file documentation.\npackage empty\n")
 	if err := os.WriteFile(filepath.Join(root, "empty.go"), emptySource, 0o600); err != nil {
@@ -252,6 +255,7 @@ func outlineFileByName(outline *backend.OutlineResult, name string) *backend.Out
 }
 
 func TestOutlineGoRetainsExportedFreeFunctionWhenFilteringUnexported(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
 	path := filepath.Join(root, "functions.go")
 	if err := os.WriteFile(path, []byte("package demo\nfunc Visible() {}\nfunc hidden() {}\n"), 0o600); err != nil {

@@ -16,24 +16,47 @@ func WithBaseDir(ctx context.Context, baseDir string) context.Context {
 	return context.WithValue(ctx, baseDirContextKey{}, strings.TrimSpace(baseDir))
 }
 
+func resolveBaseDir(ctx context.Context, workDir string) (string, error) {
+	if baseDir, _ := ctx.Value(baseDirContextKey{}).(string); baseDir != "" {
+		resolved, err := filepath.Abs(baseDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve Go base directory: %w", err)
+		}
+		return resolved, nil
+	}
+	if workDir == "" {
+		return "", fmt.Errorf("go workspace directory is empty")
+	}
+	root, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve Go workspace directory: %w", err)
+	}
+	return filepath.Join(root, ".scratch", "go"), nil
+}
+
+func verifyStateDirectory(dir string) error {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("create Go state directory %q: %w", dir, err)
+	}
+	if _, err := os.ReadDir(dir); err != nil {
+		return fmt.Errorf("read Go state directory %q: %w", dir, err)
+	}
+	probe, err := os.CreateTemp(dir, ".semedit-go-state-")
+	if err != nil {
+		return fmt.Errorf("write Go state directory %q: %w", dir, err)
+	}
+	name := probe.Name()
+	_ = probe.Close()
+	_ = os.Remove(name)
+	return nil
+}
+
 // Environment returns an environment whose Go state remains below the workspace scratch directory.
 func Environment(ctx context.Context, workDir string) ([]string, error) {
-	baseDir, _ := ctx.Value(baseDirContextKey{}).(string)
-	var err error
-	if baseDir == "" {
-		if workDir == "" {
-			return nil, fmt.Errorf("go workspace directory is empty")
-		}
-		root, resolveErr := filepath.Abs(workDir)
-		if resolveErr != nil {
-			return nil, fmt.Errorf("resolve Go workspace directory: %w", resolveErr)
-		}
-		baseDir = filepath.Join(root, ".scratch", "go")
-	} else {
-		baseDir, err = filepath.Abs(baseDir)
-		if err != nil {
-			return nil, fmt.Errorf("resolve Go base directory: %w", err)
-		}
+	explicitBaseDir := ctx.Value(baseDirContextKey{}) != nil
+	baseDir, err := resolveBaseDir(ctx, workDir)
+	if err != nil {
+		return nil, err
 	}
 
 	cacheDir := filepath.Join(baseDir, "build")
@@ -41,24 +64,26 @@ func Environment(ctx context.Context, workDir string) ([]string, error) {
 	tempDir := filepath.Join(baseDir, "tmp")
 	binDir := filepath.Join(baseDir, "bin")
 	goplsCacheDir := filepath.Join(baseDir, "gopls")
+	if !explicitBaseDir {
+		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOCACHE")); shared != "" {
+			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
+				cacheDir = absShared
+			}
+		}
+		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOMODCACHE")); shared != "" {
+			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
+				moduleCacheDir = absShared
+			}
+		}
+		if shared := strings.TrimSpace(os.Getenv("SEMEDIT_SHARED_GOPLSCACHE")); shared != "" {
+			if absShared, resolveErr := filepath.Abs(shared); resolveErr == nil {
+				goplsCacheDir = absShared
+			}
+		}
+	}
 	for _, dir := range []string{baseDir, cacheDir, moduleCacheDir, tempDir, binDir, goplsCacheDir} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
-			return nil, fmt.Errorf("create Go state directory %q: %w", dir, err)
-		}
-		if _, err := os.ReadDir(dir); err != nil {
-			return nil, fmt.Errorf("read Go state directory %q: %w", dir, err)
-		}
-		probe, err := os.CreateTemp(dir, ".semedit-go-state-")
-		if err != nil {
-			return nil, fmt.Errorf("write Go state directory %q: %w", dir, err)
-		}
-		name := probe.Name()
-		if err := probe.Close(); err != nil {
-			_ = os.Remove(name)
-			return nil, fmt.Errorf("close Go state probe %q: %w", name, err)
-		}
-		if err := os.Remove(name); err != nil {
-			return nil, fmt.Errorf("remove Go state probe %q: %w", name, err)
+		if err := verifyStateDirectory(dir); err != nil {
+			return nil, err
 		}
 	}
 
