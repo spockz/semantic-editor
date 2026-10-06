@@ -287,6 +287,18 @@ func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *tes
 	if len(documentation.Runs) != 2 {
 		t.Fatalf("got %d run pages, want 2", len(documentation.Runs))
 	}
+	if len(documentation.AggregateDetails) != 1 || documentation.AggregateDetails[0].Task != "task-speed" {
+		t.Fatalf("aggregate detail pages = %#v, want one page for task-speed", documentation.AggregateDetails)
+	}
+	detail := documentation.AggregateDetails[0]
+	if !strings.Contains(documentation.Aggregates, "/docs/benchmarks/aggregates/tasks/"+detail.ID+"/") || strings.Contains(documentation.Aggregates, "9.00s") {
+		t.Fatalf("aggregate overview should link to the detail page without listing observations: %s", documentation.Aggregates)
+	}
+	for _, want := range []string{"Median / pass rate", "IQR", "p90", "Max", "4 sessions"} {
+		if !strings.Contains(detail.Content, want) {
+			t.Errorf("benchmark detail page missing %q", want)
+		}
+	}
 	for _, want := range []string{
 		"Published runs: 2.",
 		"## Benchmark runs",
@@ -307,6 +319,34 @@ func TestRenderBenchmarkDocumentationSelectsBestPairsAndPreservesRunPages(t *tes
 		if !strings.Contains(runPage, want) {
 			t.Errorf("run page missing %q", want)
 		}
+	}
+}
+
+func TestWriteBenchmarkAggregatePagesCreatesLinkedDetailPage(t *testing.T) {
+	t.Parallel()
+	benchmarksDir := t.TempDir()
+	page := benchmarkAggregatePage{
+		ID:      benchmarkAggregatePageID("../task:one"),
+		Task:    "../task:one",
+		Content: "pooled details",
+	}
+	if err := writeBenchmarkAggregates(benchmarksDir, "overview"); err != nil {
+		t.Fatalf("write aggregate overview: %v", err)
+	}
+	if err := writeBenchmarkAggregateDetails(benchmarksDir, []benchmarkAggregatePage{page}); err != nil {
+		t.Fatalf("write aggregate details: %v", err)
+	}
+	detailPath := filepath.Join(benchmarksDir, "aggregates", "tasks", page.ID, "index.md")
+	content, err := os.ReadFile(detailPath)
+	if err != nil {
+		t.Fatalf("read aggregate detail page: %v", err)
+	}
+	if string(content) != page.Content {
+		t.Fatalf("detail content = %q, want %q", content, page.Content)
+	}
+	overviewPath := filepath.Join(benchmarksDir, "aggregates", "index.md")
+	if _, err := os.Stat(overviewPath); err != nil {
+		t.Fatalf("aggregate overview missing: %v", err)
 	}
 }
 
@@ -897,7 +937,7 @@ func assertPolicyBrowserPublication(t *testing.T, rows []map[string]json.RawMess
 		if seen[policy] != 2 {
 			t.Errorf("policy %s rows = %d, want 2", policy, seen[policy])
 		}
-		if !strings.Contains(renderBenchmarkAggregatesDoc(comparisons), "Semedit restriction: "+policy) {
+		if !strings.Contains(renderBenchmarkAggregateDetailDoc("task", aggregateBenchmarkMetrics(comparisons)), "Semedit restriction: "+policy) {
 			t.Errorf("policy %s not labeled", policy)
 		}
 	}
@@ -1090,5 +1130,132 @@ func TestIntegrationFeedbackSurvivesReportPublication(t *testing.T) {
 	}
 	if strings.Contains(rendered, "<unassessed>") || strings.Contains(rendered, "capture <error>") {
 		t.Fatal("feedback HTML was not escaped")
+	}
+}
+
+func TestBenchmarkAggregatePoolsArmsAndUsageAcrossRuns(t *testing.T) {
+	t.Parallel()
+	comparisons := benchmarkAggregateUsageTestComparisons()
+	groups := aggregateBenchmarkMetrics(comparisons)
+	assertBenchmarkAggregateUsageGroups(t, groups)
+	assertBenchmarkAggregateUsageTotalsAndPage(t, groups, comparisons)
+}
+
+func TestBenchmarkAggregateArmNamesMapLegacyAndPreserveExplicitArm(t *testing.T) {
+	t.Parallel()
+	target := BenchTarget{Harness: "codex", Model: "gpt-6-luna"}
+	makeComparison := func(semeditArm string) *BenchComparisonSummary {
+		return &BenchComparisonSummary{
+			TaskID:        "task-arms",
+			Target:        target,
+			MCPPrompt:     "same configuration",
+			SmallBaseline: &BenchRunResult{Arm: "baseline-diff", Target: target, Prompt: "baseline prompt", Oracle: &BenchOracleResult{Passed: true}},
+			SmallSemedit:  &BenchRunResult{Arm: semeditArm, Target: target, Prompt: "semedit prompt", Oracle: &BenchOracleResult{Passed: true}},
+		}
+	}
+	groups := aggregateBenchmarkMetrics([]*BenchComparisonSummary{
+		makeComparison("semedit"),
+		makeComparison("semedit-explicit"),
+	})
+	if len(groups) != 3 {
+		t.Fatalf("arm groups = %d, want baseline plus implicit and explicit semedit", len(groups))
+	}
+	for _, arm := range []string{"baseline", "semedit-implicit", "semedit-explicit"} {
+		if findBenchmarkAggregateUsageGroup(t, groups, "gpt-6-luna", "default", arm) == nil {
+			t.Errorf("missing arm %q", arm)
+		}
+	}
+	if got := benchmarkAggregateArmLabel("baseline"); got != "baseline (vanilla)" {
+		t.Errorf("baseline label = %q", got)
+	}
+	if got := benchmarkAggregateArmLabel("semedit-implicit"); got != "semedit-implicit (default)" {
+		t.Errorf("implicit label = %q", got)
+	}
+	if got := benchmarkAggregateArmLabel("semedit-explicit"); got != "semedit-explicit" {
+		t.Errorf("explicit label = %q", got)
+	}
+	legacyGroups := aggregateBenchmarkMetrics([]*BenchComparisonSummary{makeComparison("semedit")})
+	legacyDetail := renderBenchmarkAggregateDetailDoc("task-arms", legacyGroups)
+	if !strings.Contains(legacyDetail, "Arm: semedit-implicit (default)") || strings.Contains(legacyDetail, "Arm: semedit-explicit") {
+		t.Errorf("legacy detail page should show only its recorded implicit arm: %s", legacyDetail)
+	}
+}
+
+func benchmarkAggregateUsageTestComparisons() []*BenchComparisonSummary {
+	makeRun := func(arm, model string, input, output int, seconds float64) *BenchRunResult {
+		return &BenchRunResult{
+			Arm: arm, Target: BenchTarget{Harness: "codex", Model: model, Effort: "medium"},
+			PromptTokens: input, OutputTokens: output, ReasoningTokens: output / 10,
+			WallClock: time.Duration(seconds * float64(time.Second)),
+			Oracle:    &BenchOracleResult{Passed: true},
+		}
+	}
+	target := BenchTarget{Harness: "codex", Model: "gpt-6-luna", Effort: "medium"}
+	return []*BenchComparisonSummary{
+		{TaskID: "task", Target: target, PromptVariant: "system-a", SmallBaseline: makeRun("baseline", "gpt-6-luna", 100, 10, 1), SmallSemedit: makeRun("semedit", "gpt-6-luna", 200, 20, 2)},
+		{TaskID: "task", Target: target, PromptVariant: "system-a", SmallBaseline: makeRun("baseline", "gpt-6-luna", 300, 30, 3), SmallSemedit: makeRun("semedit", "gpt-6-luna", 400, 40, 4)},
+		{TaskID: "task", Target: target, PromptVariant: "system-b", SmallBaseline: makeRun("baseline", "gpt-6-luna", 50, 5, 5), SmallSemedit: makeRun("semedit", "gpt-6-luna", 60, 6, 6)},
+		{TaskID: "task", Target: BenchTarget{Harness: "codex", Model: "unknown-model", Effort: "medium"}, PromptVariant: "system-a", SmallBaseline: makeRun("baseline", "unknown-model", 70, 7, 7), SmallSemedit: makeRun("semedit", "unknown-model", 80, 8, 8)},
+	}
+}
+
+func findBenchmarkAggregateUsageGroup(t *testing.T, groups []benchmarkAggregateGroup, model, prompt, arm string) *benchmarkAggregateGroup {
+	t.Helper()
+	for index := range groups {
+		group := &groups[index]
+		if strings.Contains(group.target, model) && group.prompt == prompt && group.arm == arm {
+			return group
+		}
+	}
+	t.Fatalf("missing aggregate for model %q, prompt %q, arm %q", model, prompt, arm)
+	return nil
+}
+
+func assertBenchmarkAggregateUsageGroups(t *testing.T, groups []benchmarkAggregateGroup) {
+	t.Helper()
+	if len(groups) != 6 {
+		t.Fatalf("aggregate groups = %d, want six arm configurations", len(groups))
+	}
+	baseline := findBenchmarkAggregateUsageGroup(t, groups, "gpt-6-luna", "system-a", "baseline")
+	if baseline.sessionCount != 2 || baseline.totalInputTokens != 400 || baseline.totalOutputTokens != 40 || baseline.totalReasoningTokens != 4 {
+		t.Errorf("pooled usage = sessions %d, input %d, output %d, reasoning %d; want 2, 400, 40, 4", baseline.sessionCount, baseline.totalInputTokens, baseline.totalOutputTokens, baseline.totalReasoningTokens)
+	}
+	latency := baseline.metrics["Wall-clock latency"]
+	if latency == nil || latency.count != 2 || latency.median() != 2 || latency.quantile(0.75)-latency.quantile(0.25) != 1 || latency.quantile(0.9) != 2.8 || latency.quantile(1) != 3 {
+		t.Errorf("pooled latency = %#v; want N=2, median=2, IQR=1, p90=2.8, max=3", latency)
+	}
+	if !baseline.costKnown || baseline.totalCost != 0.00155 {
+		t.Errorf("known baseline cost = (%v, %v), want (0.00155, true)", baseline.totalCost, baseline.costKnown)
+	}
+	semedit := findBenchmarkAggregateUsageGroup(t, groups, "gpt-6-luna", "system-a", "semedit-implicit")
+	if semedit.sessionCount != 2 {
+		t.Errorf("same semedit arm across runs sessions = %d, want 2", semedit.sessionCount)
+	}
+	if separate := findBenchmarkAggregateUsageGroup(t, groups, "gpt-6-luna", "system-b", "baseline"); separate.sessionCount != 1 {
+		t.Errorf("different prompt configuration sessions = %d, want 1", separate.sessionCount)
+	}
+	if unknown := findBenchmarkAggregateUsageGroup(t, groups, "unknown-model", "system-a", "baseline"); unknown.costKnown {
+		t.Error("unknown model cost formula was marked available")
+	}
+}
+
+func assertBenchmarkAggregateUsageTotalsAndPage(t *testing.T, groups []benchmarkAggregateGroup, comparisons []*BenchComparisonSummary) {
+	t.Helper()
+	totals := benchmarkAggregateUsageTotals(groups)
+	if totals.sessions != 8 || totals.inputTokens != 1260 || totals.outputTokens != 126 || totals.reasoningTokens != 10 || totals.pricedGroups != 4 || totals.unpricedGroups != 2 {
+		t.Errorf("overall totals = %+v, want 8 sessions, 1260 input, 126 output, 10 reasoning, 4 priced and 2 unpriced arms", totals)
+	}
+	if totals.cost < 0.0042874 || totals.cost > 0.0042876 {
+		t.Errorf("overall known cost = %.8f credits, want approximately 0.0042875 across four priced arms", totals.cost)
+	}
+	page := renderBenchmarkAggregateDetailDoc("task", groups)
+	for _, want := range []string{"Benchmark total:** 8 sessions", "10 reasoning tokens", "1396 total tokens", "Total model cost (credits)", "Unavailable: no declared model cost formula", "2.80s", "1.00s"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("benchmark detail page missing %q", want)
+		}
+	}
+	overview := renderBenchmarkAggregatesDoc(comparisons)
+	if !strings.Contains(overview, "Overall:** 8 sessions") || !strings.Contains(overview, "task") || strings.Contains(overview, "2.80s") {
+		t.Errorf("aggregate overview should contain totals and links without detailed metric values: %s", overview)
 	}
 }

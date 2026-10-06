@@ -242,7 +242,8 @@ type benchmarkDocumentationRun struct {
 
 // benchmarkDocumentation groups all generated benchmark pages from one immutable result snapshot.
 type benchmarkDocumentation struct {
-	Index      string
-	Aggregates string
-	Runs       []benchmarkDocumentationRun
+	Index            string
+	Aggregates       string
+	AggregateDetails []benchmarkAggregatePage
+	Runs             []benchmarkDocumentationRun
 }

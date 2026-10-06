@@ -139,6 +139,9 @@ func writeBenchmarkDocumentation(rootDir, outputDir string, documentation benchm
 	if err := writeBenchmarkAggregates(benchmarksDir, documentation.Aggregates); err != nil {
 		return err
 	}
+	if err := writeBenchmarkAggregateDetails(benchmarksDir, documentation.AggregateDetails); err != nil {
+		return err
+	}
 	if err := writeBenchmarkRuns(benchmarksDir, documentation.Runs); err != nil {
 		return err
 	}
@@ -152,6 +155,20 @@ func writeBenchmarkAggregates(benchmarksDir, content string) error {
 	}
 	if err := writeGeneratedFile(filepath.Join(aggregatesDir, "index.md"), []byte(content)); err != nil {
 		return fmt.Errorf("writing benchmark aggregates: %w", err)
+	}
+	return nil
+}
+
+func writeBenchmarkAggregateDetails(benchmarksDir string, pages []benchmarkAggregatePage) error {
+	tasksDir := filepath.Join(benchmarksDir, "aggregates", "tasks")
+	for _, page := range pages {
+		pageDir := filepath.Join(tasksDir, page.ID)
+		if err := os.MkdirAll(pageDir, 0o750); err != nil {
+			return fmt.Errorf("creating benchmark aggregate detail directory for %s: %w", page.Task, err)
+		}
+		if err := writeGeneratedFile(filepath.Join(pageDir, "index.md"), []byte(page.Content)); err != nil {
+			return fmt.Errorf("writing benchmark aggregate detail for %s: %w", page.Task, err)
+		}
 	}
 	return nil
 }

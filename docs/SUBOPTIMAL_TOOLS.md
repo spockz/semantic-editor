@@ -4895,3 +4895,27 @@ failure remains the documented batch behavior.
 - Observed failure: the tool reported `validate declaration snippet: syntax error: expected declaration, found ArmSemeditExplicit`; it made no changes.
 - Workaround: use the complete `const` declaration form or a narrowly scoped fallback for the constant block.
 - Root cause: the tool requires a declaration snippet rather than an isolated constant specification for this insertion request.
+
+## 2026-10-06: Semantic lookup used absent guessed declarations
+
+- Tool: `semantic_lookup`.
+- Target: `cmd/docgen/benchmark_aggregate.go`, guessed symbols `renderBenchmarkAggregate`, `aggregateBenchmark`, and `benchmarkArm`.
+- Observed failure: all three lookups returned `symbol not found` because the aggregate implementation uses different declaration names.
+- Workaround: inspect the benchmark publication map and locate the actual aggregate declarations before retrying semantic navigation.
+- Root cause: lookup targets were guessed before reading the aggregate implementation outline.
+
+## 2026-10-06: Function insertion rejected grouped declarations
+
+- Tool: `semantic_insert_function`.
+- Target: `cmd/docgen/benchmark_compare.go`, proposed configuration helper and result type.
+- Observed failure: the operation rejected the snippet because it contained a type declaration and a function; it accepts one function declaration.
+- Workaround: insert the type with `semantic_insert_type`, then insert the helper function separately.
+- Root cause: the requested operation was given multiple top-level declarations instead of one function.
+
+## 2026-10-06: Function insertion rejected a test's visibility modifier
+
+- Tool: `semantic_insert_function`.
+- Target: `cmd/docgen/benchmarks_test.go`, `TestWriteBenchmarkAggregatePagesCreatesLinkedDetailPage`.
+- Observed failure: the operation rejected the explicit `private` access modifier because Go test function names beginning with `Test` are exported.
+- Workaround: retry with inferred access based on the test function's exported name.
+- Root cause: the insertion request's visibility did not match Go's casing convention.

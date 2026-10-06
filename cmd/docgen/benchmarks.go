@@ -18,10 +18,10 @@ func renderBenchmarkDocumentation(rootDir string) (benchmarkDocumentation, error
 	}
 
 	comparisons := collectBenchmarkComparisons(runs)
-
 	return benchmarkDocumentation{
-		Index:      renderBestBenchmarksDoc(selectBestBenchmarkComparisons(runs), runs),
-		Aggregates: renderBenchmarkAggregatesDoc(comparisons),
-		Runs:       runs,
+		Index:            renderBestBenchmarksDoc(selectBestBenchmarkComparisons(runs), runs),
+		Aggregates:       renderBenchmarkAggregatesDoc(comparisons),
+		AggregateDetails: renderBenchmarkAggregateDetails(comparisons),
+		Runs:             runs,
 	}, nil
 }

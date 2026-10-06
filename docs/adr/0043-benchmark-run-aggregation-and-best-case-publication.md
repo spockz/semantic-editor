@@ -65,12 +65,20 @@ Oracle outcome is absolute: no speed, token, or one-shot advantage can cause a
 failed arm to outrank a passing arm. The tenfold override applies only after
 the pair outcome class is equal.
 
-The aggregate page reports the median, interquartile range, 90th percentile,
-and maximum for every numeric telemetry metric, plus pass counts and rates for
-binary outcomes. Quantiles use linear interpolation between adjacent ordered
-observations. Summaries are separated by task, target, prompt variant, MCP
-instruction mode, context variant, and arm. Technical provenance remains
-auditable metadata and does not split aggregate cells.
+The aggregate overview links to one detail page per benchmark. Each detail page
+reports the median, interquartile range, 90th percentile, and maximum for every
+numeric telemetry metric, plus pass counts and rates for binary outcomes.
+Quantiles use linear interpolation between adjacent ordered session
+observations pooled across all included runs; pages never average per-run
+quantiles. Arm identity uses the task, provider/model/effort target,
+arm role, prompt variant and exact prompt configuration, MCP instruction mode,
+restriction policy, context variant, and any additional recorded execution
+configuration such as result variant or interactive mode. Run/session identity,
+timestamps, provenance, and observed usage or outcome metrics never split an
+arm. The aggregate also reports session and token totals, per-arm model cost
+when the target has a declared rate schedule, and totals across arms with known
+cost formulas. Unknown costs are explicitly unavailable and excluded from the
+known-cost total.
 
 ## Invariants
 
@@ -90,6 +98,11 @@ auditable metadata and does not split aggregate cells.
 - A reported model cost is measured in credits and only available for an explicitly
   declared target-model rate schedule; unavailable cost is never treated as
   zero.
+- Repeated sessions with the same experiment-defining configuration share one
+  aggregate arm across runs; changes to a recorded treatment field keep arms
+  separate.
+- Aggregate quantiles are recomputed from the pooled session-level values,
+  while session/token/cost totals sum observations across the included arms.
 - Root-level legacy result files remain publishable as the `legacy` run until
   all writers use explicit run identifiers.
 
@@ -97,8 +110,9 @@ auditable metadata and does not split aggregate cells.
 
 The front page answers the product question using the most favorable observed
 evidence without disguising it as an average. Readers can inspect variation in
-the aggregate page and reproduce every displayed observation from its run
-page. The five-percent speed and model-cost bands make cost and one-shot
+per-benchmark detail pages and reproduce every displayed observation from its
+run page. The compact overview provides cross-benchmark session, token, and
+known-cost totals. The five-percent speed and model-cost bands make cost and one-shot
 completion relevant where elapsed-time and cost differences are practically
 close. The tenfold override captures exceptional cost reductions without
 allowing any resource metric to outweigh correctness.

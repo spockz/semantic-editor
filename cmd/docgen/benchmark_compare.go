@@ -2,6 +2,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"math"
 	"sort"
@@ -21,6 +22,12 @@ const (
 	benchmarkPairExplicitVerifiedSmall
 	benchmarkPairExplicitVerifiedLarge
 )
+
+const benchmarkAggregateArmBaseline = "baseline"
+
+const benchmarkAggregateArmSemeditImplicit = "semedit-implicit"
+
+const benchmarkAggregateArmSemeditExplicit = "semedit-explicit"
 
 func (c benchmarkPairContext) label() string {
 	switch c {
@@ -261,6 +268,10 @@ func benchmarkAggregateIdentity(comp *BenchComparisonSummary) string {
 		displaySemeditArmRestriction(comp.SemeditArmRestrict),
 		prompt,
 		displayMCPServerInstructions(comp.MCPServerInstructions, comp.LegacyMCPInstructions),
+		comp.VanillaPrompt,
+		comp.MCPPrompt,
+		comp.VanillaVerifiedPrompt,
+		comp.MCPVerifiedPrompt,
 	}, "\x00")
 }
 
@@ -302,55 +313,157 @@ func (summary benchmarkMetricSummary) median() float64 {
 }
 
 type benchmarkAggregateGroup struct {
-	restriction  string
-	task         string
-	target       string
-	prompt       string
-	instructions string
-	context      string
-	arm          string
-	metrics      map[string]*benchmarkMetricSummary
+	restriction          string
+	task                 string
+	target               string
+	prompt               string
+	instructions         string
+	context              string
+	arm                  string
+	sessionCount         int
+	totalInputTokens     int
+	totalOutputTokens    int
+	totalReasoningTokens int
+	totalCost            float64
+	costKnown            bool
+	metrics              map[string]*benchmarkMetricSummary
+}
+
+type benchmarkArmKey struct {
+	task                string
+	target              BenchTarget
+	restriction         string
+	promptVariant       string
+	promptConfiguration string
+	context             benchmarkPairContext
+	arm                 string
+	variant             string
+	runInstructions     string
+	interactiveMode     string
+	prompt              string
 }
 
 func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string {
-	var sb strings.Builder
-	sb.WriteString("---\ntitle: \"Benchmark metric aggregates\"\ndescription: \"Median, interquartile range, p90, maximum, and pass rates for each experimental condition and arm.\"\nicon: \"chart-bar\"\ndraft: false\nweight: 21\n---\n\n## Metric distributions across benchmark runs\n\nEach table covers one experimental condition, context variant, and arm. **N** counts publishable observations with that metric. Numeric summaries use linearly interpolated quantiles over sorted observations: median (p50), IQR (p75 − p25), p90, and maximum. Boolean metrics are reported as passes over N and a success rate. Technical provenance remains audit metadata and does not split groups. Cached input is shown raw and in cache-adjusted token units: uncached input + output + reasoning + cached input / 10. Model-specific cost uses the declared per-million-token rates in ADR-0043 and is omitted when no rate schedule exists.\n\n[Return to best-case outcomes](/docs/benchmarks/).\n\n")
-
 	groups := aggregateBenchmarkMetrics(comparisons)
+	var sb strings.Builder
+	sb.WriteString("---\ntitle: \"Benchmark aggregates\"\ndescription: \"A compact overview of pooled benchmark results with links to per-benchmark distributions.\"\nicon: \"chart-bar\"\ndraft: false\nweight: 21\n---\n\n")
+	sb.WriteString("Results pool session observations across all included runs. Each benchmark page contains per-arm Median, IQR (Q3 − Q1), p90, and Max, along with session and token usage and cost availability.\n\n")
+	sb.WriteString("[Return to best-case outcomes](/docs/benchmarks/).\n\n")
 	if len(groups) == 0 {
 		sb.WriteString("> [!NOTE]\n> No publishable benchmark observations are available to aggregate.\n")
 		return sb.String()
 	}
-
-	metrics := benchmarkMetrics()
+	totals := benchmarkAggregateUsageTotals(groups)
+	fmt.Fprintf(&sb, "**Overall:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known cost (credits) across %d priced arm groups · %d unpriced arm groups.\n\n",
+		totals.sessions, totals.inputTokens, totals.outputTokens, totals.reasoningTokens, totals.inputTokens+totals.outputTokens+totals.reasoningTokens,
+		formatBenchmarkMetric("cost", totals.cost), totals.pricedGroups, totals.unpricedGroups)
+	sb.WriteString("| Benchmark | Sessions | Arm/context groups | Input tokens | Output tokens | Total tokens | Known cost (credits) | Unpriced groups |\n| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+	byTask := make(map[string][]benchmarkAggregateGroup)
+	tasks := make([]string, 0)
 	for _, group := range groups {
-		fmt.Fprintf(&sb, "### %s · %s · %s · %s arm\n\n", group.task, group.target, group.context, group.arm)
-		fmt.Fprintf(&sb, "Prompt variant: %s · MCP server instructions: %s · Semedit restriction: %s\n\n", group.prompt, group.instructions, group.restriction)
-		sb.WriteString("| Metric | N | Median | IQR | p90 | Max |\n| :--- | ---: | ---: | ---: | ---: | ---: |\n")
-		for _, metric := range metrics {
-			if metric.unit == "binary" {
-				continue
-			}
+		if _, exists := byTask[group.task]; !exists {
+			tasks = append(tasks, group.task)
+		}
+		byTask[group.task] = append(byTask[group.task], group)
+	}
+	sort.Strings(tasks)
+	for _, task := range tasks {
+		taskGroups := byTask[task]
+		taskTotals := benchmarkAggregateUsageTotals(taskGroups)
+		id := benchmarkAggregatePageID(task)
+		fmt.Fprintf(&sb, "| [%s](/docs/benchmarks/aggregates/tasks/%s/) | %d | %d | %d | %d | %d | %s | %d |\n",
+			task, id, taskTotals.sessions, len(taskGroups), taskTotals.inputTokens, taskTotals.outputTokens,
+			taskTotals.inputTokens+taskTotals.outputTokens+taskTotals.reasoningTokens, formatBenchmarkMetric("cost", taskTotals.cost), taskTotals.unpricedGroups)
+	}
+	return sb.String()
+}
+
+func benchmarkAggregatePageID(task string) string {
+	sum := sha256.Sum256([]byte(task))
+	var slug strings.Builder
+	lastHyphen := false
+	for _, r := range strings.ToLower(task) {
+		if slug.Len() >= 48 {
+			break
+		}
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
+			slug.WriteRune(r)
+			lastHyphen = false
+		} else if !lastHyphen && slug.Len() > 0 {
+			slug.WriteByte('-')
+			lastHyphen = true
+		}
+	}
+	name := strings.Trim(slug.String(), "-")
+	if name == "" {
+		name = "benchmark"
+	}
+	return fmt.Sprintf("%s-%x", name, sum[:8])
+}
+
+func renderBenchmarkAggregateDetails(comparisons []*BenchComparisonSummary) []benchmarkAggregatePage {
+	groups := aggregateBenchmarkMetrics(comparisons)
+	byTask := make(map[string][]benchmarkAggregateGroup)
+	tasks := make([]string, 0)
+	for _, group := range groups {
+		if _, exists := byTask[group.task]; !exists {
+			tasks = append(tasks, group.task)
+		}
+		byTask[group.task] = append(byTask[group.task], group)
+	}
+	sort.Strings(tasks)
+	pages := make([]benchmarkAggregatePage, 0, len(tasks))
+	for _, task := range tasks {
+		pages = append(pages, benchmarkAggregatePage{
+			ID:      benchmarkAggregatePageID(task),
+			Task:    task,
+			Content: renderBenchmarkAggregateDetailDoc(task, byTask[task]),
+		})
+	}
+	return pages
+}
+
+func renderBenchmarkAggregateDetailDoc(task string, groups []benchmarkAggregateGroup) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "---\ntitle: \"%s benchmark results\"\ndescription: \"Pooled session-level metric distributions and usage for %s.\"\nicon: \"chart-bar\"\ndraft: false\n---\n\n", task, task)
+	sb.WriteString("[Back to all benchmark aggregates](/docs/benchmarks/aggregates/).\n\n")
+	if len(groups) == 0 {
+		sb.WriteString("> [!NOTE]\n> No publishable benchmark observations are available to aggregate.\n")
+		return sb.String()
+	}
+	fmt.Fprintf(&sb, "Results pool underlying session observations across all included runs. Arm identity is based on experimental configuration; run provenance and observed metrics do not define an arm. Legacy `semedit` observations are labeled `%s` (default); `%s` appears only when a run records that arm. Numeric summaries use linearly interpolated quantiles over sorted observations: Median (p50), IQR (Q3 − Q1), p90, and Max. Model-specific cost uses declared per-million-token rates. Unknown cost formulas are marked unavailable and excluded from known-cost totals.\n\n", benchmarkAggregateArmSemeditImplicit, benchmarkAggregateArmSemeditExplicit)
+	totals := benchmarkAggregateUsageTotals(groups)
+	fmt.Fprintf(&sb, "**Benchmark total:** %d sessions · %d input tokens · %d output tokens · %d reasoning tokens · %d total tokens · %s known cost (credits) across %d priced arm groups · %d unpriced arm groups.\n\n",
+		totals.sessions, totals.inputTokens, totals.outputTokens, totals.reasoningTokens, totals.inputTokens+totals.outputTokens+totals.reasoningTokens,
+		formatBenchmarkMetric("cost", totals.cost), totals.pricedGroups, totals.unpricedGroups)
+	for _, group := range groups {
+		fmt.Fprintf(&sb, "## %s · %s · %s · Arm: %s\n\n", group.target, group.context, group.prompt, benchmarkAggregateArmLabel(group.arm))
+		fmt.Fprintf(&sb, "MCP server instructions: %s · Semedit restriction: %s\n\n", group.instructions, group.restriction)
+		sb.WriteString("| Measure | N | Median / pass rate | IQR | p90 | Max | Total usage / cost |\n| :--- | ---: | ---: | ---: | ---: | ---: | ---: |\n")
+		fmt.Fprintf(&sb, "| Sessions | %d | — | — | — | — | %d |\n", group.sessionCount, group.sessionCount)
+		fmt.Fprintf(&sb, "| Input tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalInputTokens)
+		fmt.Fprintf(&sb, "| Output tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalOutputTokens)
+		fmt.Fprintf(&sb, "| Reasoning tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalReasoningTokens)
+		fmt.Fprintf(&sb, "| Total tokens | %d | — | — | — | — | %d |\n", group.sessionCount, group.totalInputTokens+group.totalOutputTokens+group.totalReasoningTokens)
+		if group.costKnown {
+			fmt.Fprintf(&sb, "| Total model cost (credits) | %d | — | — | — | — | %s |\n", group.sessionCount, formatBenchmarkMetric("cost", group.totalCost))
+		} else {
+			fmt.Fprintf(&sb, "| Total model cost (credits) | %d | — | — | — | — | Unavailable: no declared model cost formula |\n", group.sessionCount)
+		}
+		for _, metric := range benchmarkMetrics() {
 			summary := group.metrics[metric.name]
-			if summary == nil {
+			if summary == nil || metric.unit == "binary" {
 				continue
 			}
-			fmt.Fprintf(&sb, "| %s | %d | %s | %s | %s | %s |\n",
-				metric.name,
-				summary.count,
+			fmt.Fprintf(&sb, "| %s | %d | %s | %s | %s | %s | — |\n", metric.name, summary.count,
 				formatBenchmarkMetric(metric.unit, summary.median()),
 				formatBenchmarkMetric(metric.unit, summary.quantile(0.75)-summary.quantile(0.25)),
 				formatBenchmarkMetric(metric.unit, summary.quantile(0.9)),
 				formatBenchmarkMetric(metric.unit, summary.quantile(1)))
 		}
-		sb.WriteString("\nPass rates (true observations count as passes):\n\n")
-		sb.WriteString("| Measure | N | Passes | Success rate |\n| :--- | ---: | ---: | ---: |\n")
-		for _, metric := range metrics {
-			if metric.unit != "binary" {
-				continue
-			}
+		for _, metric := range benchmarkMetrics() {
 			summary := group.metrics[metric.name]
-			if summary == nil || summary.count == 0 {
+			if summary == nil || metric.unit != "binary" || summary.count == 0 {
 				continue
 			}
 			passed := 0
@@ -359,15 +472,48 @@ func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string 
 					passed++
 				}
 			}
-			fmt.Fprintf(&sb, "| %s | %d | %d/%d | %.1f%% |\n", metric.name, summary.count, passed, summary.count, float64(passed)/float64(summary.count)*100)
+			fmt.Fprintf(&sb, "| %s | %d | %d/%d (%.1f%%) | — | — | — | — |\n", metric.name, summary.count, passed, summary.count, float64(passed)/float64(summary.count)*100)
 		}
 		sb.WriteString("\n")
 	}
 	return sb.String()
 }
 
+type benchmarkAggregatePage struct {
+	ID      string
+	Task    string
+	Content string
+}
+
+type benchmarkAggregateUsage struct {
+	sessions        int
+	inputTokens     int
+	outputTokens    int
+	reasoningTokens int
+	cost            float64
+	pricedGroups    int
+	unpricedGroups  int
+}
+
+func benchmarkAggregateUsageTotals(groups []benchmarkAggregateGroup) benchmarkAggregateUsage {
+	var totals benchmarkAggregateUsage
+	for _, group := range groups {
+		totals.sessions += group.sessionCount
+		totals.inputTokens += group.totalInputTokens
+		totals.outputTokens += group.totalOutputTokens
+		totals.reasoningTokens += group.totalReasoningTokens
+		if group.costKnown {
+			totals.cost += group.totalCost
+			totals.pricedGroups++
+		} else {
+			totals.unpricedGroups++
+		}
+	}
+	return totals
+}
+
 func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmarkAggregateGroup {
-	groups := make(map[string]*benchmarkAggregateGroup)
+	groups := make(map[benchmarkArmKey]*benchmarkAggregateGroup)
 	for _, comparison := range comparisons {
 		for _, context := range []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge, benchmarkPairExplicitSmall, benchmarkPairExplicitLarge, benchmarkPairExplicitVerifiedSmall, benchmarkPairExplicitVerifiedLarge} {
 			addBenchmarkComparisonMetrics(groups, comparison, context)
@@ -386,35 +532,69 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 	return result
 }
 
-func addBenchmarkComparisonMetrics(groups map[string]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext) {
+func addBenchmarkComparisonMetrics(groups map[benchmarkArmKey]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext) {
 	baseline, semedit := benchmarkPairRuns(comparison, context)
 	if baseline == nil || semedit == nil {
 		return
 	}
-	addBenchmarkMetricRun(groups, comparison, context, "Vanilla", baseline)
-	addBenchmarkMetricRun(groups, comparison, context, "Semedit MCP", semedit)
+	addBenchmarkMetricRun(groups, comparison, context, benchmarkAggregateArmName(benchmarkAggregateArmBaseline, baseline), baseline)
+	addBenchmarkMetricRun(groups, comparison, context, benchmarkAggregateArmName(benchmarkAggregateArmSemeditImplicit, semedit), semedit)
 }
 
-func addBenchmarkMetricRun(groups map[string]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext, arm string, run *BenchRunResult) {
+func benchmarkAggregateArmName(defaultName string, run *BenchRunResult) string {
+	if run == nil {
+		return defaultName
+	}
+	switch strings.ToLower(strings.TrimSpace(run.Arm)) {
+	case benchmarkAggregateArmSemeditExplicit:
+		return benchmarkAggregateArmSemeditExplicit
+	case benchmarkAggregateArmSemeditImplicit:
+		return benchmarkAggregateArmSemeditImplicit
+	}
+	return defaultName
+}
+
+func benchmarkAggregateArmLabel(arm string) string {
+	switch arm {
+	case benchmarkAggregateArmBaseline:
+		return benchmarkAggregateArmBaseline + " (vanilla)"
+	case benchmarkAggregateArmSemeditImplicit:
+		return benchmarkAggregateArmSemeditImplicit + " (default)"
+	case benchmarkAggregateArmSemeditExplicit:
+		return benchmarkAggregateArmSemeditExplicit
+	default:
+		return arm
+	}
+}
+
+func addBenchmarkMetricRun(groups map[benchmarkArmKey]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext, arm string, run *BenchRunResult) {
 	if run == nil {
 		return
 	}
-	prompt := strings.TrimSpace(comparison.PromptVariant)
-	if prompt == "" {
-		prompt = "default"
-	}
-	instructions := displayMCPServerInstructions(comparison.MCPServerInstructions, comparison.LegacyMCPInstructions)
-	key := strings.Join([]string{benchmarkAggregateIdentity(comparison), context.label(), arm}, "\x00")
-	group := groups[key]
+	config := resolveBenchmarkAggregateRunConfig(comparison, context, arm, run)
+	costRun := *run
+	costRun.Target = config.target
+	group := groups[config.key]
 	if group == nil {
 		group = &benchmarkAggregateGroup{
-			task: comparison.TaskID, target: comparison.Target.String(), prompt: prompt, instructions: instructions,
-			context: context.label(), arm: arm, metrics: make(map[string]*benchmarkMetricSummary), restriction: displaySemeditArmRestriction(comparison.SemeditArmRestrict),
+			task: comparison.TaskID, target: config.target.String(), prompt: config.prompt,
+			instructions: config.instructions, context: context.label(), arm: arm,
+			metrics: make(map[string]*benchmarkMetricSummary), restriction: config.restriction,
+			costKnown: true,
 		}
-		groups[key] = group
+		groups[config.key] = group
+	}
+	group.sessionCount++
+	group.totalInputTokens += run.PromptTokens
+	group.totalOutputTokens += run.OutputTokens
+	group.totalReasoningTokens += run.ReasoningTokens
+	if cost, available := benchmarkCost(&costRun); available {
+		group.totalCost += cost
+	} else {
+		group.costKnown = false
 	}
 	for _, metric := range benchmarkMetrics() {
-		value, present := metric.value(run)
+		value, present := metric.value(&costRun)
 		if !present {
 			continue
 		}
@@ -499,5 +679,82 @@ func formatBenchmarkMetric(unit string, value float64) string {
 		return fmt.Sprintf("%.4f", value)
 	default:
 		return fmt.Sprintf("%.2f", value)
+	}
+}
+
+func benchmarkArmPromptConfiguration(comparison *BenchComparisonSummary, context benchmarkPairContext, arm string) string {
+	verified := context == benchmarkPairVerifiedSmall || context == benchmarkPairVerifiedLarge
+	switch arm {
+	case benchmarkAggregateArmBaseline:
+		if verified {
+			return comparison.VanillaVerifiedPrompt
+		}
+		return comparison.VanillaPrompt
+	case benchmarkAggregateArmSemeditImplicit, benchmarkAggregateArmSemeditExplicit:
+		if verified {
+			return comparison.MCPVerifiedPrompt
+		}
+		return comparison.MCPPrompt
+	default:
+		return ""
+	}
+}
+
+type benchmarkAggregateRunConfig struct {
+	key          benchmarkArmKey
+	target       BenchTarget
+	prompt       string
+	instructions string
+	restriction  string
+}
+
+func resolveBenchmarkAggregateRunConfig(comparison *BenchComparisonSummary, context benchmarkPairContext, arm string, run *BenchRunResult) benchmarkAggregateRunConfig {
+	prompt := strings.TrimSpace(comparison.PromptVariant)
+	if prompt == "" {
+		prompt = "default"
+	}
+	promptVariant := strings.TrimSpace(run.PromptVariant)
+	if promptVariant == "" {
+		promptVariant = prompt
+	}
+	instructions := run.MCPServerInstructions
+	legacyInstructions := run.LegacyMCPInstructions
+	if instructions == "" && legacyInstructions == "" {
+		instructions = comparison.MCPServerInstructions
+		legacyInstructions = comparison.LegacyMCPInstructions
+	}
+	restriction := run.SemeditArmRestrict
+	if restriction == "" {
+		restriction = comparison.SemeditArmRestrict
+	}
+	target := run.Target
+	if target.Harness == "" {
+		target.Harness = comparison.Target.Harness
+	}
+	if target.Model == "" {
+		target.Model = comparison.Target.Model
+	}
+	if target.Effort == "" {
+		target.Effort = comparison.Target.Effort
+	}
+	promptConfiguration := benchmarkArmPromptConfiguration(comparison, context, arm)
+	if promptConfiguration == "" {
+		promptConfiguration = run.Prompt
+	}
+	effectivePrompt := run.Prompt
+	if effectivePrompt == "" {
+		effectivePrompt = promptConfiguration
+	}
+	return benchmarkAggregateRunConfig{
+		key: benchmarkArmKey{
+			task: comparison.TaskID, target: target,
+			restriction: displaySemeditArmRestriction(restriction), promptVariant: promptVariant,
+			promptConfiguration: promptConfiguration, context: context, arm: arm, variant: run.Variant,
+			runInstructions: displayMCPServerInstructions(instructions, legacyInstructions),
+			interactiveMode: run.InteractiveMode, prompt: effectivePrompt,
+		},
+		target: target, prompt: promptVariant,
+		instructions: displayMCPServerInstructions(instructions, legacyInstructions),
+		restriction:  displaySemeditArmRestriction(restriction),
 	}
 }
