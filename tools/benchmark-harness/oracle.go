@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -25,17 +26,20 @@ import (
 
 // TaskMetadata models the structured frontmatter embedded within each txtar benchmark archive.
 type TaskMetadata struct {
-	TaskID                  string            `json:"task_id"`
-	Category                string            `json:"category"`
-	Instruction             string            `json:"instruction"`
-	VerificationConstraint  string            `json:"verification_constraint,omitempty"`
-	Contexts                []string          `json:"contexts,omitempty"`
-	PromptVariants          map[string]string `json:"prompt_variants,omitempty"`
-	InteractiveFollowups    []string          `json:"interactive_followups,omitempty"`
-	InteractiveMode         string            `json:"interactive_mode,omitempty"`
-	StagedInitialTotalEdits int               `json:"staged_initial_total_edits,omitempty"`
-	StagedFollowups         []StagedFollowup  `json:"staged_followups,omitempty"`
-	Oracle                  OracleConfig      `json:"oracle"`
+	TaskID                  string             `json:"task_id"`
+	Category                string             `json:"category"`
+	Instruction             string             `json:"instruction"`
+	ProblemStatementFile    string             `json:"problem_statement_file,omitempty"`
+	Repository              RepositoryMetadata `json:"repository"`
+	Complexity              ComplexityProfile  `json:"complexity,omitzero"`
+	VerificationConstraint  string             `json:"verification_constraint,omitempty"`
+	Contexts                []string           `json:"contexts,omitempty"`
+	PromptVariants          map[string]string  `json:"prompt_variants,omitempty"`
+	InteractiveFollowups    []string           `json:"interactive_followups,omitempty"`
+	InteractiveMode         string             `json:"interactive_mode,omitempty"`
+	StagedInitialTotalEdits int                `json:"staged_initial_total_edits,omitempty"`
+	StagedFollowups         []StagedFollowup   `json:"staged_followups,omitempty"`
+	Oracle                  OracleConfig       `json:"oracle"`
 }
 
 type StagedFollowup struct {
@@ -51,6 +55,21 @@ type OracleConfig struct {
 	Build                   BuildConfig          `json:"level_3_build"                       yaml:"level_3_build"`
 	Test                    TestConfig           `json:"level_4_test"                        yaml:"level_4_test"`
 	DiagnosticExpectedTools []string             `json:"diagnostic_expected_tools,omitempty"`
+}
+
+type RepositoryMetadata struct {
+	URL        string `json:"url,omitempty"`
+	BaseCommit string `json:"base_commit,omitempty"`
+}
+
+type ComplexityProfile struct {
+	Locality    int `json:"locality,omitempty"`
+	Context     int `json:"context,omitempty"`
+	Ambiguity   int `json:"ambiguity,omitempty"`
+	Composition int `json:"composition,omitempty"`
+	Invariants  int `json:"invariants,omitempty"`
+	Scale       int `json:"scale,omitempty"`
+	Staging     int `json:"staging,omitempty"`
 }
 
 // MutationPolicyConfig defines file modification constraints.
@@ -83,8 +102,9 @@ type BuildConfig struct {
 
 // TestConfig specifies test suite requirements.
 type TestConfig struct {
-	PassTests     bool   `json:"pass_tests"      yaml:"pass_tests"`
-	HiddenTestDir string `json:"hidden_test_dir" yaml:"hidden_test_dir"`
+	PassTests     bool     `json:"pass_tests"        yaml:"pass_tests"`
+	HiddenTestDir string   `json:"hidden_test_dir"   yaml:"hidden_test_dir"`
+	Command       []string `json:"command,omitempty" yaml:"command,omitempty"`
 }
 
 // OracleResult records evaluation outcomes across all validation levels.
@@ -103,6 +123,8 @@ type OracleResult struct {
 type Task struct {
 	Metadata       TaskMetadata
 	Archive        *Archive
+	TestPatch      []byte
+	FixPatch       []byte
 	contextVariant string
 }
 
@@ -122,10 +144,93 @@ func ParseTask(data []byte) (*Task, error) {
 		return nil, errors.New("benchmark fixture missing task_id")
 	}
 
-	return &Task{
+	task := &Task{
 		Metadata: meta,
 		Archive:  ar,
-	}, nil
+	}
+	if meta.ProblemStatementFile != "" {
+		statementPath := filepath.ToSlash(filepath.Clean(meta.ProblemStatementFile))
+		if !strings.HasPrefix(statementPath, ".benchmark/") || strings.Contains(statementPath, "../") {
+			return nil, fmt.Errorf("problem_statement_file %q must be within .benchmark/", meta.ProblemStatementFile)
+		}
+		problemStatement, found := archiveFileContents(ar, meta.ProblemStatementFile)
+		if !found {
+			return nil, fmt.Errorf("benchmark fixture problem statement file %q is missing", meta.ProblemStatementFile)
+		}
+		task.Metadata.Instruction = string(problemStatement)
+		task.Metadata.PromptVariants = map[string]string{"default": string(problemStatement)}
+	}
+	task.TestPatch, _ = archiveFileContents(ar, ".benchmark/test.patch")
+	task.FixPatch, _ = archiveFileContents(ar, ".benchmark/fix.patch")
+	if task.Metadata.Repository.URL != "" {
+		if !validRepositoryCommit(task.Metadata.Repository.BaseCommit) {
+			return nil, errors.New("repository.base_commit must be a full 40-character hexadecimal commit SHA")
+		}
+		if err := task.Metadata.Complexity.Validate(); err != nil {
+			return nil, err
+		}
+		if len(task.TestPatch) == 0 || len(task.FixPatch) == 0 {
+			return nil, errors.New("external repository fixtures require .benchmark/test.patch and .benchmark/fix.patch")
+		}
+		if err := validateOracleTestCommand(task.Metadata.Oracle.Test.Command); err != nil {
+			return nil, err
+		}
+		if task.Metadata.ProblemStatementFile == "" {
+			return nil, errors.New("external repository fixtures require problem_statement_file")
+		}
+	}
+	return task, nil
+}
+
+func validRepositoryCommit(value string) bool {
+	if len(value) != 40 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func (profile ComplexityProfile) Validate() error {
+	axes := []struct {
+		name  string
+		value int
+	}{
+		{name: "locality", value: profile.Locality},
+		{name: "context", value: profile.Context},
+		{name: "ambiguity", value: profile.Ambiguity},
+		{name: "composition", value: profile.Composition},
+		{name: "invariants", value: profile.Invariants},
+		{name: "scale", value: profile.Scale},
+		{name: "staging", value: profile.Staging},
+	}
+	for _, axis := range axes {
+		if axis.value < 1 || axis.value > 5 {
+			return fmt.Errorf("complexity.%s must be between 1 and 5", axis.name)
+		}
+	}
+	return nil
+}
+
+func archiveFileContents(archive *Archive, name string) ([]byte, bool) {
+	if archive == nil {
+		return nil, false
+	}
+	for _, file := range archive.Files {
+		if filepath.ToSlash(file.Name) == name {
+			return file.Data, true
+		}
+	}
+	return nil, false
+}
+
+func validateOracleTestCommand(args []string) error {
+	for _, arg := range args {
+		if arg == "-race" || arg == "." || strings.HasPrefix(arg, "./") && !strings.Contains(arg, "/../") && !strings.HasSuffix(arg, "/..") {
+			continue
+		}
+		return fmt.Errorf("oracle.level_4_test.command contains unsupported Go test argument %q", arg)
+	}
+	return nil
 }
 
 type stagedFollowupYAML struct {
@@ -233,6 +338,8 @@ func (parser *taskFrontmatterParser) appendListItem(item string) {
 		metadata.InteractiveFollowups = append(metadata.InteractiveFollowups, item)
 	case "oracle.diagnostic_expected_tools":
 		metadata.Oracle.DiagnosticExpectedTools = append(metadata.Oracle.DiagnosticExpectedTools, item)
+	case "oracle.level_4_test.command":
+		metadata.Oracle.Test.Command = append(metadata.Oracle.Test.Command, item)
 	case "oracle.level_1_mutation_policy.disallowed_files":
 		metadata.Oracle.MutationPolicy.DisallowedFiles = append(metadata.Oracle.MutationPolicy.DisallowedFiles, item)
 	case "oracle.level_2_ast.must_contain_symbols":
@@ -261,6 +368,9 @@ func (parser *taskFrontmatterParser) setScalar(path, value string) error {
 
 func (parser *taskFrontmatterParser) setKnownScalar(path, value string) error {
 	metadata := &parser.metadata
+	if strings.HasPrefix(path, "complexity.") {
+		return parser.setComplexityAxis(path, value)
+	}
 	switch path {
 	case "task_id":
 		metadata.TaskID = value
@@ -296,6 +406,38 @@ func (parser *taskFrontmatterParser) setKnownScalar(path, value string) error {
 		return parser.setPassTests(value)
 	case "oracle.level_4_test.hidden_test_dir":
 		metadata.Oracle.Test.HiddenTestDir = value
+	case "problem_statement_file":
+		metadata.ProblemStatementFile = value
+	case "repository.url":
+		metadata.Repository.URL = value
+	case "repository.base_commit":
+		metadata.Repository.BaseCommit = value
+	}
+	return nil
+}
+
+func (parser *taskFrontmatterParser) setComplexityAxis(path, value string) error {
+	axis, err := strconv.Atoi(value)
+	if err != nil || axis < 1 || axis > 5 {
+		return fmt.Errorf("%s must be between 1 and 5", path)
+	}
+	switch path {
+	case "complexity.locality":
+		parser.metadata.Complexity.Locality = axis
+	case "complexity.context":
+		parser.metadata.Complexity.Context = axis
+	case "complexity.ambiguity":
+		parser.metadata.Complexity.Ambiguity = axis
+	case "complexity.composition":
+		parser.metadata.Complexity.Composition = axis
+	case "complexity.invariants":
+		parser.metadata.Complexity.Invariants = axis
+	case "complexity.scale":
+		parser.metadata.Complexity.Scale = axis
+	case "complexity.staging":
+		parser.metadata.Complexity.Staging = axis
+	default:
+		return fmt.Errorf("unsupported complexity axis %q", path)
 	}
 	return nil
 }
@@ -397,6 +539,9 @@ func (t *Task) ExtractVariantTo(targetDir, variant string) error {
 	}
 	for _, file := range t.Archive.Files {
 		if strings.HasPrefix(file.Name, "want/") || strings.HasPrefix(file.Name, "want\\") {
+			continue
+		}
+		if strings.HasPrefix(filepath.ToSlash(file.Name), ".benchmark/") {
 			continue
 		}
 		destPath := filepath.Join(targetDir, filepath.FromSlash(file.Name))
@@ -516,19 +661,30 @@ func evaluateOracleTests(ctx context.Context, task *Task, workDir string) error 
 	if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
 		return fmt.Errorf("install hidden tests: %w", err)
 	}
-	if output, err := runOracleGoCommand(ctx, workDir, "test"); err != nil {
+	if err := applyRepositoryPatch(ctx, workDir, task.TestPatch, "Multi-SWE test patch"); err != nil {
+		return err
+	}
+	if output, err := runOracleGoCommand(ctx, workDir, "test", task.Metadata.Oracle.Test.Command...); err != nil {
 		return fmt.Errorf("go test failed: %w\n%s", err, output)
 	}
 	return nil
 }
 
-func runOracleGoCommand(ctx context.Context, workDir, operation string) ([]byte, error) {
+func runOracleGoCommand(ctx context.Context, workDir, operation string, args ...string) ([]byte, error) {
 	var command *exec.Cmd
 	switch operation {
 	case "build":
-		command = exec.CommandContext(ctx, "go", "build", "./...")
+		if len(args) == 0 {
+			args = []string{"./..."}
+		}
+		// #nosec G204 -- build receives no fixture-controlled arguments.
+		command = exec.CommandContext(ctx, "go", append([]string{"build"}, args...)...)
 	case "test":
-		command = exec.CommandContext(ctx, "go", "test", "./...")
+		if len(args) == 0 {
+			args = []string{"./..."}
+		}
+		// #nosec G204 -- test arguments are restricted to package paths and -race at fixture load.
+		command = exec.CommandContext(ctx, "go", append([]string{"test"}, args...)...)
 	default:
 		return nil, fmt.Errorf("unsupported oracle Go command %q", operation)
 	}
@@ -537,7 +693,7 @@ func runOracleGoCommand(ctx context.Context, workDir, operation string) ([]byte,
 		return nil, fmt.Errorf("prepare oracle Go environment: %w", err)
 	}
 	command.Dir = workDir
-	env = append(env, "CGO_ENABLED=0")
+	env = append(env, "PWD="+workDir, "CGO_ENABLED=0")
 	command.Env = env
 	return command.CombinedOutput()
 }
@@ -883,15 +1039,16 @@ func astContainsIdent(node ast.Node, sym string) bool {
 }
 
 func astContainsExactIdent(node ast.Node, sym string) bool {
-	parts := strings.Split(sym, ".")
-	targetIdent := parts[len(parts)-1]
+	if strings.Contains(sym, ".") {
+		return false
+	}
 
 	found := false
 	ast.Inspect(node, func(n ast.Node) bool {
 		if found {
 			return false
 		}
-		if id, ok := n.(*ast.Ident); ok && id.Name == targetIdent {
+		if id, ok := n.(*ast.Ident); ok && id.Name == sym {
 			found = true
 			return false
 		}

@@ -432,12 +432,16 @@ type benchmarkComparisonArm struct {
 var benchmarkComparisonArms = []benchmarkComparisonArm{
 	{field: "small_baseline", context: "small", arm: "baseline"},
 	{field: "small_semedit", context: "small", arm: "semedit"},
+	{field: "small_semedit_explicit", context: "small", arm: benchmarkArmSemeditExplicit},
 	{field: "small_verified_baseline", context: "small_verified", arm: "baseline"},
 	{field: "small_verified_semedit", context: "small_verified", arm: "semedit"},
+	{field: "small_verified_semedit_explicit", context: "small_verified", arm: benchmarkArmSemeditExplicit},
 	{field: "large_baseline", context: "large", arm: "baseline"},
 	{field: "large_semedit", context: "large", arm: "semedit"},
+	{field: "large_semedit_explicit", context: "large", arm: benchmarkArmSemeditExplicit},
 	{field: "large_verified_baseline", context: "large_verified", arm: "baseline"},
 	{field: "large_verified_semedit", context: "large_verified", arm: "semedit"},
+	{field: "large_verified_semedit_explicit", context: "large_verified", arm: benchmarkArmSemeditExplicit},
 }
 
 func splitBenchmarkComparison(comparison map[string]json.RawMessage, legacyDurations bool) ([]map[string]json.RawMessage, error) {

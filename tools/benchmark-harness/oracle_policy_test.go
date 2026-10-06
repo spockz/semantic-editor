@@ -29,6 +29,61 @@ func TestEvaluateForbidsTestFileChangesFromWorkspaceSnapshot(t *testing.T) {
 	}
 }
 
+func TestQualifiedForbiddenMethodSymbolUsesReceiverIdentity(t *testing.T) {
+	data, readErr := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "task_14_scoped_homonym_rename.txtar"))
+	if readErr != nil {
+		t.Fatalf("read task 14 fixture: %v", readErr)
+	}
+	task, parseErr := ParseTask(data)
+	if parseErr != nil {
+		t.Fatalf("parse task 14 fixture: %v", parseErr)
+	}
+	workDir := t.TempDir()
+	if extractErr := task.ExtractTo(workDir); extractErr != nil {
+		t.Fatalf("extract task 14 fixture: %v", extractErr)
+	}
+
+	typesPath := filepath.Join(workDir, "transport", "types.go")
+	types, readErr := os.ReadFile(typesPath)
+	if readErr != nil {
+		t.Fatalf("read types.go: %v", readErr)
+	}
+	types = []byte(strings.Replace(string(types), "func (c *Client) Close()", "func (c *Client) Shutdown()", 1))
+	if writeErr := pipeline.WriteAtomic(typesPath, types); writeErr != nil {
+		t.Fatalf("write renamed types.go: %v", writeErr)
+	}
+	callsPath := filepath.Join(workDir, "transport", "client_calls.go")
+	calls, readErr := os.ReadFile(callsPath)
+	if readErr != nil {
+		t.Fatalf("read client_calls.go: %v", readErr)
+	}
+	calls = []byte(strings.Replace(string(calls), "c.Close()", "c.Shutdown()", 1))
+	if writeErr := pipeline.WriteAtomic(callsPath, calls); writeErr != nil {
+		t.Fatalf("write renamed client_calls.go: %v", writeErr)
+	}
+
+	result, evaluateErr := Evaluate(t.Context(), task, workDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate renamed fixture: %v", evaluateErr)
+	}
+	if !result.Passed {
+		t.Fatalf("renamed fixture result = %+v; want pass despite decoy Close methods", result)
+	}
+
+	types = append(types, []byte("\nfunc (c *Client) Close() string { return \"legacy\" }\n")...)
+	if writeErr := pipeline.WriteAtomic(typesPath, types); writeErr != nil {
+		t.Fatalf("restore stale Client.Close: %v", writeErr)
+	}
+	result, evaluateErr = Evaluate(t.Context(), task, workDir, nil)
+	if evaluateErr != nil {
+		t.Fatalf("evaluate stale declaration: %v", evaluateErr)
+	}
+	if result.Passed || result.FailureStage != "level_2_ast" {
+		t.Fatalf("stale declaration result = %+v; want level 2 AST failure", result)
+	}
+
+}
+
 func loadTask12MutationPolicyFixture(t *testing.T) *Task {
 	t.Helper()
 	fixturePath := filepath.Join("..", "..", "testdata", "bench", "task_12_request_identity_migration.txtar")

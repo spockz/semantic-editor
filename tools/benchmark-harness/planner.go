@@ -53,6 +53,7 @@ type Job struct {
 	Task                  *Task
 	Execution             AgentExecution
 	MCPServerInstructions MCPServerInstructionMode
+	SemeditSkill          bool
 }
 
 type PlanOptions struct {
@@ -65,6 +66,8 @@ type PlanOptions struct {
 	Timeout               time.Duration
 	OutDir                string
 	RunID                 string
+	Resume                bool
+	SemeditSkill          bool
 	OutJSON               string
 	OutMD                 string
 	MCPServerInstructions []MCPServerInstructionMode
@@ -106,7 +109,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 		return err
 	}
 	options := plan.Options
-	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s semedit-prewarm-verify=%t out-dir=%q run-id=%q out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.SemeditPrewarmVerify, options.OutDir, options.RunID, options.OutJSON, options.OutMD); err != nil {
+	if _, err := fmt.Fprintf(w, "Settings: timeout=%s concurrency=%d repeats=%d MCP-instructions=%s semedit-arm-restrict=%s semedit-skill=%t semedit-prewarm-verify=%t out-dir=%q run-id=%q resume=%t out-json=%q out-md=%q\n", options.Timeout, options.Concurrency, options.Repeats, strings.Join(mcpInstructionModeStrings(options.MCPServerInstructions), ","), options.SemeditArmRestriction, options.SemeditSkill, options.SemeditPrewarmVerify, options.OutDir, options.RunID, options.Resume, options.OutJSON, options.OutMD); err != nil {
 		return err
 	}
 	for index, job := range plan.Jobs {
@@ -117,7 +120,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 			policy = "-"
 			applies = false
 		}
-		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d MCP-instructions=%s policy=%s policy-applies=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, job.MCPServerInstructions, policy, applies); err != nil {
+		if _, err := fmt.Fprintf(w, "  %d. %s pair=%s task=%s fixture=%s target=%s arm=%s context=%s prompt-variant=%s repeat=%d MCP-instructions=%s policy=%s policy-applies=%t semedit-skill=%t\n", index+1, job.ID, emptyAsDash(job.PairID), job.TaskID, job.FixturePath, job.Target.String(), job.Arm, job.Context, promptVariant, job.Repeat, job.MCPServerInstructions, policy, applies, job.SemeditSkill); err != nil {
 			return err
 		}
 		if job.Execution.Prompt != "" {
@@ -150,6 +153,10 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 }
 
 func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, execute JobExecutor) ([]JobOutcome, error) {
+	return ExecutePlanWithCompletion(ctx, plan, output, execute, nil)
+}
+
+func ExecutePlanWithCompletion(ctx context.Context, plan *BenchmarkPlan, output io.Writer, execute JobExecutor, onComplete func(JobOutcome) error) ([]JobOutcome, error) {
 	if plan == nil || len(plan.Jobs) == 0 {
 		return nil, nil
 	}
@@ -158,7 +165,7 @@ func ExecutePlan(ctx context.Context, plan *BenchmarkPlan, output io.Writer, exe
 	}
 	concurrency := min(max(plan.Options.Concurrency, 1), len(plan.Jobs))
 	completed := runPlanWorkers(ctx, plan, concurrency, execute)
-	return collectPlanOutcomes(output, plan, completed)
+	return collectPlanOutcomesWithCompletion(output, plan, completed, onComplete)
 }
 
 type indexedPlanOutcome struct {
@@ -211,6 +218,10 @@ func executePlanJob(ctx context.Context, plan *BenchmarkPlan, job Job, execute J
 
 func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err error) {
 	result.TaskID = job.TaskID
+	if job.Task != nil && job.Task.Metadata.Repository.URL != "" {
+		profile := job.Task.Metadata.Complexity
+		result.Complexity = &profile
+	}
 	result.JobID = job.ID
 	result.ComparisonPairID = job.PairID
 	result.Variant = job.Context
@@ -221,14 +232,19 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	result.PromptVariant = job.PromptVariant
 	result.Target = job.Target
 	result.Arm = job.Arm
+	result.SemeditSkill = job.SemeditSkill
+	directPatchReplay := job.Task != nil && job.Task.Metadata.Repository.URL != "" && job.Arm == ArmSemeditExplicit
 	result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
-	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm)
+	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm) && !directPatchReplay
 	result.Prompt = job.Execution.Prompt
 	result.MCPServerInstructions = job.MCPServerInstructions
 	if job.Arm == ArmControl {
 		result.SemeditArmRestrict = ""
 		result.SemeditArmRestrictionApplied = false
 		result.Prompt = ""
+	}
+	if directPatchReplay {
+		result.Prompt = job.Task.Metadata.Instruction
 	}
 	if result.Provenance == nil {
 		result.Provenance = make(ProvenanceSet)
@@ -244,20 +260,6 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	} else if result.Error != "" {
 		result.Success = false
 	}
-}
-
-func collectPlanOutcomes(output io.Writer, plan *BenchmarkPlan, completed <-chan indexedPlanOutcome) ([]JobOutcome, error) {
-	ordered := make([]JobOutcome, len(plan.Jobs))
-	var progressErr error
-	done := 0
-	for item := range completed {
-		done++
-		ordered[item.index] = item.outcome
-		if err := writePlanProgress(output, plan, done, item.outcome); err != nil {
-			progressErr = errors.Join(progressErr, fmt.Errorf("write job progress: %w", err))
-		}
-	}
-	return ordered, progressErr
 }
 
 func writePlanProgress(output io.Writer, plan *BenchmarkPlan, done int, outcome JobOutcome) error {
@@ -699,12 +701,14 @@ func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, erro
 		if options.SemeditPrewarmVerify {
 			pairParts = append(pairParts, "prewarm-verify")
 		}
+		pairParts = append(pairParts, "semedit-skill=false")
 		pairID := stablePlanID(pairParts...)
 		for offset := range conditions {
 			condition := conditions[(offset+specification.Repeat-1)%len(conditions)]
 			job := specification
 			job.PromptVariant = condition.variant
-			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction))
+			job.SemeditSkill = false
+			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction), "semedit-skill=false")
 			job.PairID = pairID
 			job.Arm = condition.arm
 			job.MCPServerInstructions = mode
@@ -746,6 +750,9 @@ func appendPromptJobs(plan *BenchmarkPlan, fixture fixtureSpec, selected variant
 }
 
 func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
+	if specification.Task.Metadata.Repository.URL != "" && specification.Target.Harness != string(HarnessControl) {
+		return makeExternalRepositoryJobs(specification, options)
+	}
 	variant := specification.Context
 	if specification.PromptVariant != "" {
 		variant += ":" + specification.PromptVariant
@@ -763,20 +770,23 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 		if !isControl {
 			arms = []ArmType{ArmBaseline, ArmSemedit}
 			pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode)}
+			pairParts = append(pairParts, "semedit-skill=false")
 			if options.SemeditPrewarmVerify {
 				pairParts = append(pairParts, "prewarm-verify")
 			}
 			pairID = stablePlanID(pairParts...)
 		}
 		for _, arm := range arms {
+			job := specification
+			job.SemeditSkill = false
 			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode)}
+			idParts = append(idParts, fmt.Sprintf("semedit-skill=%t", job.SemeditSkill))
 			if arm != ArmControl {
 				idParts = append(idParts, string(policy))
 				if options.SemeditPrewarmVerify {
 					idParts = append(idParts, "prewarm-verify")
 				}
 			}
-			job := specification
 			job.ID = stablePlanID(idParts...)
 			job.PairID = pairID
 			job.Arm = arm
@@ -789,10 +799,48 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 				if err != nil {
 					return nil, err
 				}
+				execution.SemeditSkill = job.SemeditSkill
 				job.Execution = execution
 			}
 			jobs = append(jobs, job)
 		}
+	}
+	return jobs, nil
+}
+
+func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, error) {
+	variant := specification.Context
+	if specification.PromptVariant != "" {
+		variant += ":" + specification.PromptVariant
+	}
+	policy := options.SemeditArmRestriction
+	skillEnabled := options.SemeditSkill
+	pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(MCPServerInstructionsNone), fmt.Sprintf("semedit-skill=%t", skillEnabled)}
+	if options.SemeditPrewarmVerify {
+		pairParts = append(pairParts, "prewarm-verify")
+	}
+	pairID := stablePlanID(pairParts...)
+	jobs := make([]Job, 0, 3)
+	for _, arm := range []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit} {
+		job := specification
+		job.Arm = arm
+		job.PairID = pairID
+		job.MCPServerInstructions = MCPServerInstructionsNone
+		job.SemeditSkill = skillEnabled && arm == ArmSemeditAgentic
+		idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(MCPServerInstructionsNone), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), string(policy)}
+		if options.SemeditPrewarmVerify {
+			idParts = append(idParts, "prewarm-verify")
+		}
+		job.ID = stablePlanID(idParts...)
+		if arm != ArmSemeditExplicit {
+			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy)
+			if err != nil {
+				return nil, err
+			}
+			execution.SemeditSkill = job.SemeditSkill
+			job.Execution = execution
+		}
+		jobs = append(jobs, job)
 	}
 	return jobs, nil
 }
@@ -813,4 +861,23 @@ func mcpInstructionModeStrings(modes []MCPServerInstructionMode) []string {
 		values[index] = string(mode)
 	}
 	return values
+}
+
+func collectPlanOutcomesWithCompletion(output io.Writer, plan *BenchmarkPlan, completed <-chan indexedPlanOutcome, onComplete func(JobOutcome) error) ([]JobOutcome, error) {
+	ordered := make([]JobOutcome, len(plan.Jobs))
+	var progressErr error
+	done := 0
+	for item := range completed {
+		done++
+		ordered[item.index] = item.outcome
+		if onComplete != nil {
+			if err := onComplete(item.outcome); err != nil {
+				progressErr = errors.Join(progressErr, fmt.Errorf("persist job %s result: %w", item.outcome.Job.ID, err))
+			}
+		}
+		if err := writePlanProgress(output, plan, done, item.outcome); err != nil {
+			progressErr = errors.Join(progressErr, fmt.Errorf("write job progress: %w", err))
+		}
+	}
+	return ordered, progressErr
 }

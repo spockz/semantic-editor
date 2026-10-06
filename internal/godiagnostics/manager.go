@@ -661,7 +661,12 @@ func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (di
 		}
 		manifestRoots[module.Dir] = struct{}{}
 		for _, path := range pkg.GoFiles {
-			fileSet[path] = struct{}{}
+			canonicalPath, err := canonicalGoSourcePath(path)
+			if err != nil {
+				visitErr = err
+				return false
+			}
+			fileSet[canonicalPath] = struct{}{}
 		}
 		for _, path := range append(slices.Clone(pkg.OtherFiles), pkg.EmbedFiles...) {
 			state, err := readInputState(path)
@@ -689,4 +694,16 @@ func assembleDiagnosticsScope(moduleRoot string, loaded []*packages.Package) (di
 		maps.Copy(scope.manifests, state)
 	}
 	return scope, nil
+}
+
+func canonicalGoSourcePath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve Go source path %q: %w", path, err)
+	}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize Go source path %q: %w", path, err)
+	}
+	return canonical, nil
 }

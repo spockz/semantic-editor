@@ -18,6 +18,7 @@ func TestOpenCodeUsageProcessAccounting(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(program), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	first := `{"type":"step_finish","part":{"type":"step-finish","id":"finish-1","messageID":"message-1","reason":"tool-calls","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}}`
 	duplicate := `{"type":"message.part.updated","properties":{"part":{"type":"step-finish","id":"finish-1","messageID":"message-1","reason":"tool-calls","tokens":{"input":3,"output":4,"reasoning":2,"cache":{"read":5,"write":7}}}}}`
@@ -116,6 +117,7 @@ printf '{"type":"step_finish","part":{"id":"finish-%s","type":"step-finish","rea
 	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(program), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("SEMEDIT_SESSION_COUNT", countPath)
 	t.Setenv("SEMEDIT_CAPTURE_CONFIG", configPath)

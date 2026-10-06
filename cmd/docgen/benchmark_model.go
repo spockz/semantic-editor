@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const benchmarkArmSemeditExplicit = "semedit-explicit"
+
 // BenchTarget identifies the execution harness and model for a benchmark.
 type BenchTarget struct {
 	Harness string `json:"harness"`
@@ -28,6 +30,9 @@ func (t BenchTarget) String() string {
 
 // BenchRunResult captures telemetry for a single trial.
 type BenchRunResult struct {
+	Complexity                       *ComplexityProfile           `json:"complexity,omitempty"`
+	ExecutionMode                    string                       `json:"execution_mode,omitempty"`
+	SemeditSkill                     bool                         `json:"semedit_skill"`
 	SemeditArmRestrict               string                       `json:"semedit_arm_restrict,omitempty"`
 	SemeditArmRestrictionApplied     *bool                        `json:"semedit_arm_restriction_applied,omitempty"`
 	TaskID                           string                       `json:"task_id"`
@@ -189,30 +194,35 @@ type BenchOracleResult struct {
 
 // BenchComparisonSummary bundles Baseline vs MCP runs for a task and target.
 type BenchComparisonSummary struct {
-	SemeditArmRestrict    string            `json:"semedit_arm_restrict,omitempty"`
-	SelectedRunID         string            `json:"-"`
-	TaskID                string            `json:"task_id"`
-	PromptVariant         string            `json:"prompt_variant,omitempty"`
-	MCPServerInstructions string            `json:"mcp_server_instructions,omitempty"`
-	LegacyMCPInstructions string            `json:"mcp_instructions,omitempty"`
-	Provenance            map[string]string `json:"provenance,omitempty"`
-	LegacyClassifiers     map[string]string `json:"classifiers,omitempty"`
-	TxtarPath             string            `json:"txtar_path,omitempty"`
-	TxtarProvenance       string            `json:"txtar_provenance,omitempty"`
-	Target                BenchTarget       `json:"target"`
-	VanillaPrompt         string            `json:"vanilla_prompt,omitempty"`
-	MCPPrompt             string            `json:"mcp_prompt,omitempty"`
-	VanillaVerifiedPrompt string            `json:"vanilla_verified_prompt,omitempty"`
-	MCPVerifiedPrompt     string            `json:"mcp_verified_prompt,omitempty"`
-	BeforeState           string            `json:"before_state,omitempty"`
-	SmallBaseline         *BenchRunResult   `json:"small_baseline,omitempty"`
-	SmallSemedit          *BenchRunResult   `json:"small_semedit,omitempty"`
-	SmallVerifiedBaseline *BenchRunResult   `json:"small_verified_baseline,omitempty"`
-	SmallVerifiedSemedit  *BenchRunResult   `json:"small_verified_semedit,omitempty"`
-	LargeBaseline         *BenchRunResult   `json:"large_baseline,omitempty"`
-	LargeSemedit          *BenchRunResult   `json:"large_semedit,omitempty"`
-	LargeVerifiedBaseline *BenchRunResult   `json:"large_verified_baseline,omitempty"`
-	LargeVerifiedSemedit  *BenchRunResult   `json:"large_verified_semedit,omitempty"`
+	Complexity            *ComplexityProfile `json:"complexity,omitempty"`
+	SemeditArmRestrict    string             `json:"semedit_arm_restrict,omitempty"`
+	SelectedRunID         string             `json:"-"`
+	TaskID                string             `json:"task_id"`
+	PromptVariant         string             `json:"prompt_variant,omitempty"`
+	MCPServerInstructions string             `json:"mcp_server_instructions,omitempty"`
+	LegacyMCPInstructions string             `json:"mcp_instructions,omitempty"`
+	Provenance            map[string]string  `json:"provenance,omitempty"`
+	LegacyClassifiers     map[string]string  `json:"classifiers,omitempty"`
+	TxtarPath             string             `json:"txtar_path,omitempty"`
+	TxtarProvenance       string             `json:"txtar_provenance,omitempty"`
+	Target                BenchTarget        `json:"target"`
+	VanillaPrompt         string             `json:"vanilla_prompt,omitempty"`
+	MCPPrompt             string             `json:"mcp_prompt,omitempty"`
+	VanillaVerifiedPrompt string             `json:"vanilla_verified_prompt,omitempty"`
+	MCPVerifiedPrompt     string             `json:"mcp_verified_prompt,omitempty"`
+	BeforeState           string             `json:"before_state,omitempty"`
+	SmallBaseline         *BenchRunResult    `json:"small_baseline,omitempty"`
+	SmallSemedit          *BenchRunResult    `json:"small_semedit,omitempty"`
+	SmallVerifiedBaseline *BenchRunResult    `json:"small_verified_baseline,omitempty"`
+	SmallVerifiedSemedit  *BenchRunResult    `json:"small_verified_semedit,omitempty"`
+	SmallSemeditExplicit  *BenchRunResult    `json:"small_semedit_explicit,omitempty"`
+	SmallVerifiedExplicit *BenchRunResult    `json:"small_verified_semedit_explicit,omitempty"`
+	LargeBaseline         *BenchRunResult    `json:"large_baseline,omitempty"`
+	LargeSemedit          *BenchRunResult    `json:"large_semedit,omitempty"`
+	LargeVerifiedBaseline *BenchRunResult    `json:"large_verified_baseline,omitempty"`
+	LargeVerifiedSemedit  *BenchRunResult    `json:"large_verified_semedit,omitempty"`
+	LargeSemeditExplicit  *BenchRunResult    `json:"large_semedit_explicit,omitempty"`
+	LargeVerifiedExplicit *BenchRunResult    `json:"large_verified_semedit_explicit,omitempty"`
 }
 
 // BenchReport captures an empirical report file.

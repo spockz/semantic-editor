@@ -1,6 +1,6 @@
 # Architecture Decision Record (ADR) 0044: Benchmark Experiment Dimensions and Result Semantics
 
-Status: Proposed
+Status: Accepted
 Date: 2026-09-23
 
 ## Context
@@ -55,8 +55,18 @@ the first matching alternative in its declared order. Final-answer events are
 not tool calls. Missing or unknown telemetry remains unknown. Do not count it as a match or
 failure.
 
-This ADR establishes semantics, not a normative data schema. Define and
-validate a versioned schema alongside implementation.
+Authentic repository benchmarks use three named arms: `baseline-diff`,
+`semedit-agentic`, and `semedit-explicit`. Skill delivery is an independent
+boolean condition on the agentic arm. For the initial Multi-SWE fixture set,
+`semedit-explicit` replays the dataset's human `fix_patch`; every result records
+`execution_mode=ground_truth_fix_patch_replay` so this oracle upper bound is not
+mistaken for an agent's semantic-tool execution. Repository and issue metadata,
+acceptance patches, and seven-axis complexity profiles are fixture conditions
+or evaluation inputs and do not alter the issue text shown to agents.
+
+This ADR establishes semantics, not a normative data schema. The harness
+validates fixture metadata and records the resolved run conditions alongside
+each result.
 
 ## Invariants
 
@@ -78,6 +88,10 @@ validate a versioned schema alongside implementation.
   catalog changes cannot reinterpret an old trace.
 - Chain matching is deterministic and does not constrain task success unless an
   experiment explicitly makes it part of its success criteria.
+- Explicit fix-patch replay is distinguishable from agent execution in every
+  serialized result and comparison.
+- Repository hydration, fixture extraction, and skill installation occur before
+  the measured agent interval.
 
 ## Consequences
 

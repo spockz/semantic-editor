@@ -98,6 +98,161 @@ func (s *Server) executeBatchWithContext(ctx context.Context, edits []BatchEntry
 	return response, errors.Join(resultErr, release())
 }
 
+// UnmarshalJSON normalizes canonical, flat, and tool-keyed batch entries before validation.
+func (entry *BatchEntry) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("batch edit must be a JSON object: %w", err)
+	}
+	if raw == nil {
+		return fmt.Errorf("batch edit must be a JSON object")
+	}
+	if toolRaw, hasTool := raw["tool"]; hasTool {
+		return entry.unmarshalNamedBatchEntry(raw, toolRaw)
+	}
+	return entry.unmarshalShorthandBatchEntry(raw)
+}
+
+func batchParameterError(entry operation.Entry, raw map[string]any) string {
+	supportedSet := make(map[string]struct{}, len(entry.Params)*2)
+	required := make([]string, 0, len(entry.Params))
+	for _, param := range entry.Params {
+		if param.JSONName != "" {
+			supportedSet[param.JSONName] = struct{}{}
+			if param.Required {
+				required = append(required, param.JSONName)
+			}
+		}
+		if param.CLIName != "" {
+			supportedSet[param.CLIName] = struct{}{}
+		}
+	}
+	supported := make([]string, 0, len(supportedSet))
+	for key := range supportedSet {
+		supported = append(supported, key)
+	}
+	slices.Sort(supported)
+	slices.Sort(required)
+
+	unknown := make([]string, 0)
+	for key := range raw {
+		if _, ok := supportedSet[key]; !ok {
+			unknown = append(unknown, key)
+		}
+	}
+	if len(unknown) == 0 {
+		return ""
+	}
+	slices.Sort(unknown)
+	message := fmt.Sprintf("unknown parameter %q for %q; supported keys are [%s]", unknown[0], entry.MCPName, strings.Join(supported, ", "))
+	if suggestion := closestBatchParameter(unknown[0], supported); suggestion != "" {
+		message += fmt.Sprintf(". Did you mean %q?", suggestion)
+	}
+	if len(required) > 0 {
+		message += fmt.Sprintf(" Required parameters: [%s]", strings.Join(required, ", "))
+	}
+	return message
+}
+
+func closestBatchParameter(unknown string, supported []string) string {
+	best, bestDistance := "", len([]rune(unknown))+1
+	for _, candidate := range supported {
+		distance := batchEditDistance(unknown, candidate)
+		threshold := max(2, len([]rune(unknown))/3)
+		if distance <= threshold && distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	return best
+}
+
+func batchEditDistance(left, right string) int {
+	leftRunes, rightRunes := []rune(left), []rune(right)
+	previous := make([]int, len(rightRunes)+1)
+	for index := range previous {
+		previous[index] = index
+	}
+	for row, leftRune := range leftRunes {
+		current := make([]int, len(rightRunes)+1)
+		current[0] = row + 1
+		for column, rightRune := range rightRunes {
+			cost := 0
+			if leftRune != rightRune {
+				cost = 1
+			}
+			current[column+1] = min(current[column]+1, previous[column+1]+1, previous[column]+cost)
+		}
+		previous = current
+	}
+	return previous[len(rightRunes)]
+}
+
+func (entry *BatchEntry) unmarshalNamedBatchEntry(raw map[string]json.RawMessage, toolRaw json.RawMessage) error {
+	var tool string
+	if err := json.Unmarshal(toolRaw, &tool); err != nil {
+		return fmt.Errorf("batch edit tool must be a string: %w", err)
+	}
+	if strings.TrimSpace(tool) == "" {
+		return fmt.Errorf("batch edit tool must not be empty")
+	}
+	entry.Tool = tool
+	lifted := make(map[string]json.RawMessage, len(raw))
+	if paramsRaw, hasParams := raw["params"]; hasParams {
+		if len(paramsRaw) == 0 || string(paramsRaw) == "null" {
+			return fmt.Errorf("batch edit params must be a JSON object when provided")
+		}
+		if err := json.Unmarshal(paramsRaw, &lifted); err != nil || lifted == nil {
+			return fmt.Errorf("batch edit params must be a JSON object")
+		}
+	}
+	for key, value := range raw {
+		if key == "tool" || key == "params" {
+			continue
+		}
+		if _, exists := lifted[key]; exists {
+			return fmt.Errorf("batch edit parameter %q appears in both params and sibling fields", key)
+		}
+		lifted[key] = value
+	}
+	params, err := json.Marshal(lifted)
+	if err != nil {
+		return fmt.Errorf("encode batch edit params: %w", err)
+	}
+	entry.Params = params
+	return nil
+}
+
+func (entry *BatchEntry) unmarshalShorthandBatchEntry(raw map[string]json.RawMessage) error {
+	if len(raw) != 1 {
+		return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one 'semantic_*' tool key")
+	}
+	for tool, params := range raw {
+		if !strings.HasPrefix(tool, "semantic_") {
+			return fmt.Errorf("invalid batch edit: specify a 'tool' key or exactly one 'semantic_*' tool key")
+		}
+		if len(params) == 0 || string(params) == "null" {
+			return fmt.Errorf("batch edit shorthand for %q requires a JSON argument object", tool)
+		}
+		var object map[string]json.RawMessage
+		if err := json.Unmarshal(params, &object); err != nil || object == nil {
+			return fmt.Errorf("batch edit shorthand for %q requires a JSON argument object", tool)
+		}
+		entry.Tool = tool
+		entry.Params = params
+	}
+	return nil
+}
+
+func validateBatchEntry(entry operation.Entry, params map[string]any) error {
+	if _, err := entry.Parse(params); err != nil {
+		if message := batchParameterError(entry, params); message != "" {
+			return errors.New(message)
+		}
+		return err
+	}
+	return nil
+}
+
 func batchEntryResult(tool string, result BatchResult, err error) BatchResult {
 	result.Tool = tool
 	result.Status = "ok"
@@ -551,7 +706,7 @@ func (s *Server) executeBatch(ctx context.Context, edits []BatchEntry, autoOrgan
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params must be a JSON object; put operation arguments under params, for example {\"tool\":\"semantic_rename\",\"params\":{\"symbol\":\"Old\",\"to\":\"New\"}}", index)})
 			return response, nil
 		}
-		if _, err := entry.Parse(raw); err != nil {
+		if err := validateBatchEntry(entry, raw); err != nil {
 			response.Status = "error"
 			response.Results = append(response.Results, BatchResult{Tool: batchEntry.Tool, Status: "error", Error: fmt.Sprintf("edit %d params: %v", index, err)})
 			return response, nil

@@ -131,6 +131,7 @@ func convertOracleDuration(fields map[string]any) error {
 
 // ComparisonSummary bundles Baseline vs MCP runs for a specific Task and Target across variants.
 type ComparisonSummary struct {
+	Complexity            *ComplexityProfile       `json:"complexity,omitempty"`
 	SemeditArmRestrict    SemeditArmRestriction    `json:"semedit_arm_restrict,omitempty"`
 	TaskID                string                   `json:"task_id"`
 	Repeat                int                      `json:"repeat,omitempty"`
@@ -149,10 +150,14 @@ type ComparisonSummary struct {
 	SmallSemedit          *RunResult               `json:"small_semedit,omitempty"`
 	SmallVerifiedBaseline *RunResult               `json:"small_verified_baseline,omitempty"`
 	SmallVerifiedSemedit  *RunResult               `json:"small_verified_semedit,omitempty"`
+	SmallSemeditExplicit  *RunResult               `json:"small_semedit_explicit,omitempty"`
+	SmallVerifiedExplicit *RunResult               `json:"small_verified_semedit_explicit,omitempty"`
 	LargeBaseline         *RunResult               `json:"large_baseline,omitempty"`
 	LargeSemedit          *RunResult               `json:"large_semedit,omitempty"`
 	LargeVerifiedBaseline *RunResult               `json:"large_verified_baseline,omitempty"`
 	LargeVerifiedSemedit  *RunResult               `json:"large_verified_semedit,omitempty"`
+	LargeSemeditExplicit  *RunResult               `json:"large_semedit_explicit,omitempty"`
+	LargeVerifiedExplicit *RunResult               `json:"large_verified_semedit_explicit,omitempty"`
 }
 
 var noSemanticToolsAvailablePattern = regexp.MustCompile(`(?i)\bno\b(?:\W+\w+)*\W+\btools?\b(?:\W+\w+)*\W+\bavailable\b`)
@@ -223,6 +228,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
+				Complexity:            r.Complexity,
 				TaskID:                baseTask,
 				Repeat:                k.repeat,
 				PromptVariant:         r.PromptVariant,
@@ -350,13 +356,13 @@ func comparisonContextName(variant comparisonRunVariant) string {
 func comparisonHasSemeditVariant(comp *ComparisonSummary, variant comparisonRunVariant) bool {
 	switch {
 	case variant.large && variant.verified:
-		return comp.LargeVerifiedSemedit != nil
+		return comp.LargeVerifiedSemedit != nil || comp.LargeVerifiedExplicit != nil
 	case variant.large:
-		return comp.LargeSemedit != nil
+		return comp.LargeSemedit != nil || comp.LargeSemeditExplicit != nil
 	case variant.verified:
-		return comp.SmallVerifiedSemedit != nil
+		return comp.SmallVerifiedSemedit != nil || comp.SmallVerifiedExplicit != nil
 	default:
-		return comp.SmallSemedit != nil
+		return comp.SmallSemedit != nil || comp.SmallSemeditExplicit != nil
 	}
 }
 
@@ -446,6 +452,30 @@ func (rep *BenchmarkReport) RenderMarkdown() string {
 	return sb.String()
 }
 
+func (rep *BenchmarkReport) UnmarshalJSON(data []byte) error {
+	if rep == nil {
+		return fmt.Errorf("benchmark report receiver is nil")
+	}
+	var value any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return err
+	}
+	if err := restoreBenchmarkDurationsFromMilliseconds(value); err != nil {
+		return err
+	}
+	restored, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("restore benchmark durations: %w", err)
+	}
+	type reportAlias BenchmarkReport
+	var decoded reportAlias
+	if err := json.Unmarshal(restored, &decoded); err != nil {
+		return err
+	}
+	*rep = BenchmarkReport(decoded)
+	return nil
+}
+
 func comparisonTargetLabel(comp *ComparisonSummary) string {
 	target := comp.Target.String()
 	if comp.Repeat > 0 {
@@ -514,16 +544,23 @@ func renderComparisonState(sb *strings.Builder, comp *ComparisonSummary) {
 
 func hasVerifiedComparisons(comp *ComparisonSummary) bool {
 	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil ||
-		comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
+		comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil || comp.SmallVerifiedExplicit != nil || comp.LargeVerifiedExplicit != nil
 }
 
 func renderStandardSections(sb *strings.Builder, comp *ComparisonSummary) {
-	if comp.SmallBaseline == nil && comp.SmallSemedit == nil && comp.LargeBaseline == nil && comp.LargeSemedit == nil {
+	if comp.SmallBaseline == nil && comp.SmallSemedit == nil && comp.LargeBaseline == nil && comp.LargeSemedit == nil && comp.SmallSemeditExplicit == nil && comp.LargeSemeditExplicit == nil {
 		return
 	}
-	renderComparisonTable(sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
-	renderDiffSection(sb, 5, "Standard vs Semedit in Small Context", comp.SmallBaseline, comp.SmallSemedit)
-	renderDiffSection(sb, 5, "Standard vs Semedit in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+	if comp.SmallSemedit != nil || comp.LargeSemedit != nil {
+		renderComparisonTable(sb, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+		renderDiffSection(sb, 5, "Baseline vs Semedit Agentic in Small Context", comp.SmallBaseline, comp.SmallSemedit)
+		renderDiffSection(sb, 5, "Baseline vs Semedit Agentic in Large Context", comp.LargeBaseline, comp.LargeSemedit)
+	}
+	if comp.SmallSemeditExplicit != nil || comp.LargeSemeditExplicit != nil {
+		renderComparisonTable(sb, comp.SmallBaseline, comp.SmallSemeditExplicit, comp.LargeBaseline, comp.LargeSemeditExplicit)
+		renderDiffSection(sb, 5, "Baseline vs Semedit Explicit in Small Context", comp.SmallBaseline, comp.SmallSemeditExplicit)
+		renderDiffSection(sb, 5, "Baseline vs Semedit Explicit in Large Context", comp.LargeBaseline, comp.LargeSemeditExplicit)
+	}
 	renderSemanticToolReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
 	renderSemanticToolReflection(sb, "Standard vs Semedit in Large Context", comp.LargeSemedit)
 	renderSemanticBatchReflection(sb, "Standard vs Semedit in Small Context", comp.SmallSemedit)
@@ -537,9 +574,16 @@ func renderVerifiedSections(sb *strings.Builder, comp *ComparisonSummary) {
 		return
 	}
 	sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
-	renderComparisonTable(sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
-	renderDiffSection(sb, 6, "Verified vs Semedit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
-	renderDiffSection(sb, 6, "Verified vs Semedit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	if comp.SmallVerifiedSemedit != nil || comp.LargeVerifiedSemedit != nil {
+		renderComparisonTable(sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+		renderDiffSection(sb, 6, "Verified vs Semedit Agentic in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit)
+		renderDiffSection(sb, 6, "Verified vs Semedit Agentic in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+	}
+	if comp.SmallVerifiedExplicit != nil || comp.LargeVerifiedExplicit != nil {
+		renderComparisonTable(sb, comp.SmallVerifiedBaseline, comp.SmallVerifiedExplicit, comp.LargeVerifiedBaseline, comp.LargeVerifiedExplicit)
+		renderDiffSection(sb, 6, "Verified vs Semedit Explicit in Small Context", comp.SmallVerifiedBaseline, comp.SmallVerifiedExplicit)
+		renderDiffSection(sb, 6, "Verified vs Semedit Explicit in Large Context", comp.LargeVerifiedBaseline, comp.LargeVerifiedExplicit)
+	}
 	renderSemanticToolReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
 	renderSemanticToolReflection(sb, "Verified vs Semedit in Large Context", comp.LargeVerifiedSemedit)
 	renderSemanticBatchReflection(sb, "Verified vs Semedit in Small Context", comp.SmallVerifiedSemedit)
@@ -705,7 +749,17 @@ func renderOracleComparisonRows(sb *strings.Builder, runs benchmarkComparisonRun
 }
 
 func mcpColumnHeader(context string, run *RunResult) string {
-	label := fmt.Sprintf("MCP (%s)", context)
+	armLabel := "MCP"
+	if run != nil {
+		switch run.Arm {
+		case ArmBaseline, ArmSemedit, ArmControl:
+		case ArmSemeditAgentic:
+			armLabel = "Semedit Agentic"
+		case ArmSemeditExplicit:
+			armLabel = "Semedit Explicit"
+		}
+	}
+	label := fmt.Sprintf("%s (%s)", armLabel, context)
 	if run == nil || run.MCPVerified {
 		return label
 	}
@@ -1110,7 +1164,9 @@ func assignComparisonRun(comp *ComparisonSummary, r *RunResult) {
 	switch r.Arm {
 	case ArmBaseline:
 		assignBaselineComparisonRun(comp, r, variant)
-	case ArmSemedit, ArmSemeditExplicit, ArmControl:
+	case ArmSemeditExplicit:
+		assignExplicitComparisonRun(comp, r, variant)
+	case ArmSemedit, ArmSemeditAgentic, ArmControl:
 		assignSemeditComparisonRun(comp, r, variant)
 	}
 }
@@ -1157,6 +1213,22 @@ func assignSemeditComparisonRun(comparison *ComparisonSummary, run *RunResult, v
 	assignComparisonRunSlot(&comparison.SmallSemedit, &comparison.LargeSemedit, run, variant.large)
 }
 
+func assignExplicitComparisonRun(comparison *ComparisonSummary, run *RunResult, variant comparisonRunVariant) {
+	if variant.large {
+		if variant.verified {
+			comparison.LargeVerifiedExplicit = run
+		} else {
+			comparison.LargeSemeditExplicit = run
+		}
+		return
+	}
+	if variant.verified {
+		comparison.SmallVerifiedExplicit = run
+	} else {
+		comparison.SmallSemeditExplicit = run
+	}
+}
+
 func assignComparisonPrompt(current *string, prompt string) {
 	if *current == "" && prompt != "" {
 		*current = prompt
@@ -1198,6 +1270,57 @@ func renderSemanticIntegrationReflection(sb *strings.Builder, title string, run 
 		fmt.Fprintf(sb, "<blockquote>%s</blockquote>\n\n", html.EscapeString(reflection.Response))
 	}
 	renderSemanticReflectionDetails(sb, reflection)
+}
+
+func restoreBenchmarkDurationsFromMilliseconds(value any) error {
+	switch typed := value.(type) {
+	case []any:
+		for _, child := range typed {
+			if err := restoreBenchmarkDurationsFromMilliseconds(child); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		for _, child := range typed {
+			if err := restoreBenchmarkDurationsFromMilliseconds(child); err != nil {
+				return err
+			}
+		}
+		for _, key := range []string{
+			"wall_clock_ms",
+			"process_start_to_first_event_ms",
+			"first_event_to_first_tool_call_ms",
+			"mcp_initialize_to_first_semantic_call_ms",
+			"mcp_server_start_to_initialize_ms",
+		} {
+			if err := restoreDurationField(typed, key); err != nil {
+				return err
+			}
+		}
+		if _, isOracle := typed["level_1_policy"]; isOracle {
+			if err := restoreDurationField(typed, "duration_ms"); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func restoreDurationField(fields map[string]any, key string) error {
+	raw, exists := fields[key]
+	if !exists || raw == nil {
+		return nil
+	}
+	milliseconds, ok := raw.(float64)
+	if !ok || milliseconds != float64(int64(milliseconds)) {
+		return fmt.Errorf("restore %s: expected integral milliseconds, got %T (%v)", key, raw, raw)
+	}
+	const maximumMilliseconds = float64((1<<63 - 1) / int64(time.Millisecond))
+	if milliseconds > maximumMilliseconds || milliseconds < -maximumMilliseconds {
+		return fmt.Errorf("restore %s: duration is out of range: %v milliseconds", key, milliseconds)
+	}
+	fields[key] = int64(milliseconds) * int64(time.Millisecond)
+	return nil
 }
 
 // SaveReport writes telemetry stats as JSON and a rendered Markdown table.

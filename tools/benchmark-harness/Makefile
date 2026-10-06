@@ -25,6 +25,8 @@ endif
 BENCH_DIR ?= $(REPO_ROOT)/testdata/bench
 OUT_DIR ?= $(REPO_ROOT)/data/benchmarks/results
 RUN_ID ?= run-$(shell date -u '+%Y%m%dT%H%M%SZ')
+RESUME ?= false
+SEMEDIT_SKILL ?= false
 
 TARGET ?= codex/gpt-5.6-luna/medium
 VARIANTS ?= small,large
@@ -59,8 +61,11 @@ bench-help: ## Show benchmark harness commands and usage examples
 	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/free-top10"
 	@echo "  make bench TASK=task-01-rename-local TARGET=opencode/openrouter/cohere/north-mini-code:free REPEATS=3"
 	@echo "  make bench-all TARGET=opencode/openrouter/free-top10 REPEATS=2"
+	@echo "  make bench-all RUN_ID=my-run RESUME=true"
 	@echo "  make bench TASK=task-01-rename-local SEMEDIT_ARM_RESTRICT=readwrite"
+	@echo "  make bench TASK=grpc__grpc-go-2951 SEMEDIT_SKILL=true"
 	@echo "  SEMEDIT_ARM_RESTRICT accepts read, write (default), or readwrite"
+	@echo "  SEMEDIT_SKILL controls optional skill delivery to external-repository semedit-agentic jobs"
 	@echo "  MCP_SERVER_INSTRUCTIONS accepts a comma-separated subset of none, descriptive, and prescriptive"
 	@echo "  go run ./tools/benchmark-harness --list-openrouter-free"
 	@echo "  make bench-all"
@@ -100,12 +105,14 @@ bench-all: bench-go-env ## Run all benchmarks in small and large context with al
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
+		--semedit-skill="$(SEMEDIT_SKILL)" \
 		--semedit-prewarm-verify="$(SEMEDIT_PREWARM_VERIFY)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
 		--out-dir "$(OUT_DIR)" \
-		--run-id "$(RUN_ID)"
+		--run-id "$(RUN_ID)" \
+		$(if $(filter true,$(RESUME)),--resume)
 
 .PHONY: bench
 bench: bench-go-env ## Run a specific benchmark in small and large context (e.g. make bench TASK=generate_template_main)
@@ -118,9 +125,11 @@ bench: bench-go-env ## Run a specific benchmark in small and large context (e.g.
 		--repeats "$(REPEATS)" \
 		--mcp-server-instructions "$(MCP_SERVER_INSTRUCTIONS)" \
 		--semedit-arm-restrict "$(SEMEDIT_ARM_RESTRICT)" \
+		--semedit-skill="$(SEMEDIT_SKILL)" \
 		--semedit-prewarm-verify="$(SEMEDIT_PREWARM_VERIFY)" \
 		$(foreach provenance,$(PROVENANCE),--provenance "$(provenance)") \
 		$(foreach classifier,$(CLASSIFIERS),--classifier "$(classifier)") \
 		--dir "$(BENCH_DIR)" \
 		--out-dir "$(OUT_DIR)" \
-		--run-id "$(RUN_ID)"
+		--run-id "$(RUN_ID)" \
+		$(if $(filter true,$(RESUME)),--resume)

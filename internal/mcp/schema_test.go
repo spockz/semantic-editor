@@ -21,6 +21,7 @@ import (
 	"semedit/internal/mcptest"
 	"semedit/internal/operation"
 	"semedit/internal/sourcebuf"
+	"slices"
 )
 
 const fieldInsertionToolName = "semantic_insert_field"
@@ -167,34 +168,18 @@ func toolNameSet(tools []map[string]any) map[string]bool {
 
 func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	registry := operation.NewRegistry()
-	params := []operation.ParameterContract{{
-		Name:        "file",
-		JSONName:    "file",
-		Type:        operation.ParamString,
-		Description: "target file",
-		Required:    true,
-	}}
+	params := []operation.ParameterContract{{Name: "file", JSONName: "file", Type: operation.ParamString, Required: true}}
 	parse := func(map[string]any) (struct{}, error) { return struct{}{}, nil }
-	if err := operation.Register(registry, operation.Def[struct{}, struct{}]{
-		Key:       "custom_batch",
-		Summary:   "Custom batchable operation.",
-		Params:    params,
-		MCPName:   "semantic_custom_batch",
-		Batchable: true,
-		Parse:     parse,
+	if err := operation.Register(registry, operation.Def[struct{}, string]{
+		Key: "custom-batch", Summary: "Custom batchable operation.", Params: params, MCPName: "semantic_custom_batch", Batchable: true, Parse: parse,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := operation.Register(registry, operation.Def[struct{}, struct{}]{
-		Key:     "custom_nonbatch",
-		Summary: "Custom non-batchable operation.",
-		Params:  params,
-		MCPName: "semantic_custom_nonbatch",
-		Parse:   parse,
+	if err := operation.Register(registry, operation.Def[struct{}, string]{
+		Key: "custom-nonbatch", Summary: "Custom non-batchable operation.", Params: params, MCPName: "semantic_custom_nonbatch", Parse: parse,
 	}); err != nil {
 		t.Fatal(err)
 	}
-
 	tools := listToolsWithRegistry(t, "full", registry)
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
@@ -203,30 +188,22 @@ func TestMCPBatchSchemaUsesInjectedRegistry(t *testing.T) {
 	if _, ok := byName["semantic_insert_function"]; ok {
 		t.Fatal("injected registry discovery inherited a default operation")
 	}
-	batch := byName["semantic_batch"]
-	if batch == nil {
-		t.Fatal("tools/list omitted semantic_batch for injected registry")
-	}
 	customBatch, ok := byName["semantic_custom_batch"]
 	if !ok {
 		t.Fatal("tools/list omitted custom batchable operation")
 	}
 	assertStandardOutputSchema(t, customBatch["outputSchema"], "string")
-	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
-	branches := edits["items"].(map[string]any)["oneOf"].([]any)
-	if len(branches) != 1 {
-		t.Fatalf("injected registry batch alternatives = %d, want 1", len(branches))
+	batch := byName["semantic_batch"]
+	if batch == nil {
+		t.Fatal("tools/list omitted semantic_batch for injected registry")
 	}
-	branch := branches[0].(map[string]any)
-	properties := branch["properties"].(map[string]any)
-	if got := properties["tool"].(map[string]any)["const"]; got != "semantic_custom_batch" {
-		t.Fatalf("injected batch tool const = %#v, want semantic_custom_batch", got)
+	items := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	names := items["properties"].(map[string]any)["tool"].(map[string]any)["enum"].([]any)
+	if !reflect.DeepEqual(names, []any{"semantic_custom_batch"}) {
+		t.Fatalf("injected registry batch enum = %#v, want custom batchable tool only", names)
 	}
-	if !reflect.DeepEqual(properties["params"], customBatch["inputSchema"]) {
-		t.Fatal("injected batch params schema does not match the custom operation schema")
-	}
-	if got := properties["params"].(map[string]any)["required"]; !reflect.DeepEqual(got, []any{"file"}) {
-		t.Fatalf("injected batch params required = %#v, want file", got)
+	if items["additionalProperties"] != true || items["properties"].(map[string]any)["params"].(map[string]any)["type"] != "object" {
+		t.Fatalf("injected batch schema is not compact: %#v", items)
 	}
 	if _, ok := byName["semantic_custom_nonbatch"]; !ok {
 		t.Fatal("tools/list omitted custom non-batchable operation")
@@ -845,41 +822,58 @@ func listToolsWithLiveReload(t *testing.T) []map[string]any {
 	return response.Result.Tools
 }
 
+func schemaEnumContains(values []any, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
+	}
+	return false
+}
+
 func assertBatchSchemaProfile(t *testing.T, profile string) {
 	tools := listTools(t, profile)
 	byName := make(map[string]map[string]any, len(tools))
 	for _, tool := range tools {
 		byName[tool["name"].(string)] = tool
 	}
-
-	batch, ok := byName["semantic_batch"]
-	if !ok {
+	batch := byName["semantic_batch"]
+	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
 	}
 	assertBatchOutputSchema(t, batch["outputSchema"])
 	description := batch["description"].(string)
-	if !strings.Contains(description, "diagnostic_delta") || !strings.Contains(description, "final_diff") {
-		t.Fatalf("batch description = %q, want final_diff and diagnostic_delta guidance", description)
+	for _, phrase := range []string{"sequentially against the working state", "earlier edits", "diagnostic_delta", "final_diff"} {
+		if !strings.Contains(description, phrase) {
+			t.Errorf("batch description %q omitted %q", description, phrase)
+		}
 	}
-
-	inputSchema := batch["inputSchema"].(map[string]any)
-	edits := inputSchema["properties"].(map[string]any)["edits"].(map[string]any)
-	if got := edits["minItems"]; got != float64(1) {
-		t.Fatalf("edits.minItems = %#v, want 1", got)
+	input := batch["inputSchema"].(map[string]any)
+	edits := input["properties"].(map[string]any)["edits"].(map[string]any)
+	if edits["minItems"] != float64(1) {
+		t.Fatalf("edits.minItems = %#v, want 1", edits["minItems"])
 	}
-	branches := edits["items"].(map[string]any)["oneOf"].([]any)
-
+	item := edits["items"].(map[string]any)
+	properties := item["properties"].(map[string]any)
+	toolSchema := properties["tool"].(map[string]any)
 	expected := expectedBatchSchemaEntries(profile)
-	if len(branches) != len(expected.ByName) {
-		t.Fatalf("batch alternatives = %d, want %d", len(branches), len(expected.ByName))
+	expectedNames := make([]string, 0, len(expected.ByName))
+	for name := range expected.ByName {
+		expectedNames = append(expectedNames, name)
 	}
-	seen := make(map[string]bool, len(branches))
-	for index, rawBranch := range branches {
-		name := assertBatchSchemaBranch(t, rawBranch, index, byName, expected)
-		seen[name] = true
+	slices.Sort(expectedNames)
+	if !reflect.DeepEqual(toolSchema["enum"], toAnySlice(expectedNames)) {
+		t.Fatalf("batch tool enum = %#v, want registry batchable names %#v", toolSchema["enum"], expectedNames)
 	}
-	assertExpectedBatchSchemaNames(t, expected, seen)
-	assertNoNonBatchableSchemaEntries(t, profile, seen)
+	if item["required"] == nil || !reflect.DeepEqual(item["required"], []any{"tool"}) {
+		t.Fatalf("batch item required = %#v, want [tool]", item["required"])
+	}
+	if item["additionalProperties"] != true || properties["params"].(map[string]any)["type"] != "object" {
+		t.Fatalf("batch item schema is not compact and tolerant: %#v", item)
+	}
+	if _, exists := item["oneOf"]; exists {
+		t.Fatalf("batch item schema retains duplicated oneOf schemas: %#v", item)
+	}
 }
 
 type batchSchemaExpectations struct {
@@ -897,69 +891,6 @@ func expectedBatchSchemaEntries(profile string) batchSchemaExpectations {
 		expected.Names = append(expected.Names, entry.MCPName)
 	}
 	return expected
-}
-
-func assertBatchSchemaBranch(t *testing.T, raw any, index int, byName map[string]map[string]any, expected batchSchemaExpectations) string {
-	t.Helper()
-	branch := raw.(map[string]any)
-	properties := branch["properties"].(map[string]any)
-	name := properties["tool"].(map[string]any)["const"].(string)
-	if name != expected.Names[index] {
-		t.Fatalf("batch alternative %d = %q, want registry order %q", index, name, expected.Names[index])
-	}
-	entry, ok := expected.ByName[name]
-	if !ok {
-		t.Fatalf("batch schema advertised unexpected tool %q", name)
-	}
-	if got := branch["required"].([]any); !reflect.DeepEqual(got, []any{"tool", "params"}) {
-		t.Fatalf("%s required = %#v, want tool and params", name, got)
-	}
-	if branch["additionalProperties"] != false {
-		t.Fatalf("%s additionalProperties = %#v, want false", name, branch["additionalProperties"])
-	}
-	params := properties["params"].(map[string]any)
-	if !reflect.DeepEqual(params, byName[name]["inputSchema"]) {
-		t.Fatalf("%s batch params schema drifted from direct schema", name)
-	}
-	assertBatchRequiredParams(t, name, params, entry.Params)
-	return name
-}
-
-func assertBatchRequiredParams(t *testing.T, name string, params map[string]any, contracts []operation.ParameterContract) {
-	t.Helper()
-	expected := make([]any, 0)
-	for _, param := range contracts {
-		if param.Required {
-			expected = append(expected, param.JSONName)
-		}
-	}
-	if len(expected) == 0 {
-		if params["required"] != nil {
-			t.Fatalf("%s batch params required = %#v, want omitted", name, params["required"])
-		}
-		return
-	}
-	if !reflect.DeepEqual(params["required"], expected) {
-		t.Fatalf("%s batch params required = %#v, want %#v", name, params["required"], expected)
-	}
-}
-
-func assertExpectedBatchSchemaNames(t *testing.T, expected batchSchemaExpectations, seen map[string]bool) {
-	t.Helper()
-	for name := range expected.ByName {
-		if !seen[name] {
-			t.Errorf("batch schema omitted registry batchable tool %q", name)
-		}
-	}
-}
-
-func assertNoNonBatchableSchemaEntries(t *testing.T, profile string, seen map[string]bool) {
-	t.Helper()
-	for _, entry := range operation.DefaultRegistry().All() {
-		if entry.MCPName != "" && !entry.Batchable && (profile != "mutations-only" || !entry.ReadOnly) && seen[entry.MCPName] {
-			t.Errorf("batch schema advertised non-batchable tool %q", entry.MCPName)
-		}
-	}
 }
 
 func TestConstructReplacementSchemasAreExposedAndBatchable(t *testing.T) {
@@ -1028,26 +959,19 @@ func assertConstructBatchSchema(t *testing.T, byName map[string]map[string]any) 
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
 	}
-	if description, ok := batch["description"].(string); !ok || !strings.Contains(description, "Child outcomes and receipts are captured intermediate states, not final continuation targets") || !strings.Contains(description, "inspect final targets after the batch to resolve continuation fields") {
-		t.Fatalf("batch description omitted the child-state boundary: %#v", batch["description"])
+	description, ok := batch["description"].(string)
+	if !ok || !strings.Contains(description, "sequentially against the working state") || !strings.Contains(description, "inspect final targets after the batch") {
+		t.Fatalf("batch description omitted sequential and final-state semantics: %#v", batch["description"])
 	}
-	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
-	branches := edits["items"].(map[string]any)["oneOf"].([]any)
-	batchTools := make(map[string]map[string]any, len(branches))
-	for _, raw := range branches {
-		branch := raw.(map[string]any)
-		properties := branch["properties"].(map[string]any)
-		toolName, _ := properties["tool"].(map[string]any)["const"].(string)
-		batchTools[toolName] = properties["params"].(map[string]any)
+	items := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	toolSchema := items["properties"].(map[string]any)["tool"].(map[string]any)
+	names, ok := toolSchema["enum"].([]any)
+	if !ok {
+		t.Fatalf("batch tool schema enum = %#v", toolSchema["enum"])
 	}
 	for _, name := range []string{"semantic_replace_construct", "semantic_replace_decl", "semantic_insert_construct"} {
-		params, ok := batchTools[name]
-		if !ok {
+		if !schemaEnumContains(names, name) {
 			t.Errorf("semantic_batch schema omitted %s", name)
-			continue
-		}
-		if !reflect.DeepEqual(params, byName[name]["inputSchema"]) {
-			t.Errorf("semantic_batch params for %s differ from tools/list schema", name)
 		}
 	}
 }
@@ -1121,60 +1045,33 @@ func TestConstructSchemaUsesRegisteredBackendCapabilities(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/customconstruct\n\ngo 1.24\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	custom := customConstructBackend{
-		Backend: gobackend.NewGoBackend(),
-		kinds:   []backend.ConstructKind{"custom_kind", backend.ConstructLoop},
-	}
+	custom := customConstructBackend{Backend: gobackend.NewGoBackend(), kinds: []backend.ConstructKind{"custom_kind", backend.ConstructLoop}}
 	registry, err := backend.NewRegistry(custom)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tools := listToolsAt(t, root, mcp.WithService(backend.NewService(registry)), mcp.WithEnabledLanguages("go"))
-	replaceFound := false
-	for _, tool := range tools {
-		if tool["name"] != "semantic_replace_construct" {
-			continue
-		}
-		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
-		kind := properties["kind"].(map[string]any)
-		if got, want := kind["enum"], toAnySlice([]string{"custom_kind", "loop"}); !reflect.DeepEqual(got, want) {
-			t.Fatalf("construct kind enum = %#v, want registered backend values %#v", got, want)
-		}
-		replaceFound = true
+	byName := namedMCPTools(tools)
+	replace := byName["semantic_replace_construct"]
+	if replace == nil {
+		t.Fatal("tools/list omitted semantic_replace_construct")
 	}
-	if !replaceFound {
-		got := make([]string, 0, len(tools))
-		for _, tool := range tools {
-			got = append(got, tool["name"].(string))
-		}
-		t.Fatalf("tools/list omitted semantic_replace_construct; tools=%v", got)
+	kind := replace["inputSchema"].(map[string]any)["properties"].(map[string]any)["kind"].(map[string]any)
+	if got, want := kind["enum"], toAnySlice([]string{"custom_kind", "loop"}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("construct kind enum = %#v, want registered backend values %#v", got, want)
 	}
-	if hasTool(tools, "semantic_insert_construct") {
+	if byName["semantic_insert_construct"] != nil {
 		t.Fatal("tools/list advertised insertion without a structure capability provider")
 	}
-	for _, tool := range tools {
-		if tool["name"] != "semantic_batch" {
-			continue
-		}
-		branches := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
-		for _, raw := range branches {
-			branch := raw.(map[string]any)["properties"].(map[string]any)
-			if branch["tool"].(map[string]any)["const"] == "semantic_insert_construct" {
-				t.Fatal("semantic_batch advertised insertion without a structure capability provider")
-			}
-		}
+	batchItems := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	batchNames := batchItems["properties"].(map[string]any)["tool"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(batchNames, "semantic_replace_construct") || schemaEnumContains(batchNames, "semantic_insert_construct") {
+		t.Fatalf("batch tool enum = %#v, want replace only", batchNames)
 	}
-	for _, tool := range tools {
-		if tool["name"] != "semantic_insert_function" {
-			continue
-		}
-		access := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
-		if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
-			t.Fatalf("Go insertion access enum = %#v, want %#v", got, want)
-		}
-		return
+	access := byName["semantic_insert_function"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]
+	if got, want := access, toAnySlice([]string{"infer", "public", "private"}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Go insertion access enum = %#v, want %#v", got, want)
 	}
-	t.Fatal("tools/list omitted Go insertion despite the registered Go backend")
 }
 
 func hasTool(tools []map[string]any, name string) bool {
@@ -1276,7 +1173,7 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_insert_decl description", toolDescription("semantic_insert_decl"), "one Go constant or variable", "instead of replace_file_content")
 	assertContains("semantic_insert_declaration description", toolDescription("semantic_insert_declaration"), "generic placement controls", "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_construct description", toolDescription("semantic_insert_construct"), "construct", "semantic_replace_construct")
-	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "never beside tool", "zero-based edit index", `"symbol":"Run"`)
+	assertContains("semantic_batch description", toolDescription("semantic_batch"), `{"tool":"semantic_tool_name","params":{...}}`, "flat form", "single-key", "sequentially against the working state", "zero-based edit index")
 	assertContains("semantic_lookup description", toolDescription("semantic_lookup"), "Returns symbol, file, kind, line, and column", "file-navigation reads", "not accepted as semedit tool parameters")
 	assertContains("semantic_insert_case description", toolDescription("semantic_insert_case"), "exact discriminator expression", "kind=case alone does not identify", "construct_path")
 	assertContains("semantic_insert_case.discriminator", paramDescription("semantic_insert_case", "discriminator"), "Selector: switch discriminant expression", "tagless switch", "Copy discriminator from")
@@ -1298,32 +1195,27 @@ func TestGeneratedSemanticInputSchemasRejectUnknownProperties(t *testing.T) {
 	if verifySchema == nil || batchSchema == nil || insertFunctionSchema == nil {
 		t.Fatal("tools/list omitted semantic_verify, semantic_batch, or semantic_insert_function")
 	}
-	for name, schema := range map[string]map[string]any{"semantic_verify": verifySchema, "semantic_batch": batchSchema} {
-		if schema["additionalProperties"] != false {
-			t.Errorf("%s additionalProperties = %#v, want false", name, schema["additionalProperties"])
-		}
+	if verifySchema["additionalProperties"] != false || batchSchema["additionalProperties"] != false {
+		t.Fatal("standalone and batch request schemas must reject unknown top-level properties")
+	}
+	items := batchSchema["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	itemProperties := items["properties"].(map[string]any)
+	if items["additionalProperties"] != true || !reflect.DeepEqual(items["required"], []any{"tool"}) {
+		t.Fatalf("batch item schema should tolerate flat params and require only tool: %#v", items)
+	}
+	if itemProperties["params"].(map[string]any)["type"] != "object" {
+		t.Fatalf("batch params schema = %#v, want generic object", itemProperties["params"])
+	}
+	if _, exists := items["oneOf"]; exists {
+		t.Fatal("batch item schema contains duplicated per-tool schemas")
+	}
+	names := itemProperties["tool"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(names, "semantic_replace_body") {
+		t.Fatal("batch tool enum omitted semantic_replace_body")
 	}
 	access := insertFunctionSchema["properties"].(map[string]any)["access_modifier"].(map[string]any)
 	if !reflect.DeepEqual(access["enum"], []any{"infer", "public", "private"}) {
 		t.Fatalf("Go insert-function access enum = %#v, want only infer/public/private", access["enum"])
-	}
-	edits := batchSchema["properties"].(map[string]any)["edits"].(map[string]any)
-	branches := edits["items"].(map[string]any)["oneOf"].([]any)
-	foundReplaceBody := false
-	for _, rawBranch := range branches {
-		branch := rawBranch.(map[string]any)
-		properties := branch["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] != "semantic_replace_body" {
-			continue
-		}
-		foundReplaceBody = true
-		params := properties["params"].(map[string]any)
-		if params["additionalProperties"] != false {
-			t.Errorf("semantic_batch semantic_replace_body params additionalProperties = %#v, want false", params["additionalProperties"])
-		}
-	}
-	if !foundReplaceBody {
-		t.Fatal("semantic_batch omitted semantic_replace_body")
 	}
 }
 
@@ -1490,24 +1382,14 @@ func TestMoveConstructIsAdvertisedInBatchWithDestinationReceipt(t *testing.T) {
 	if batch == nil {
 		t.Fatal("tools/list omitted semantic_batch")
 	}
-	assertMoveBatchSchema(t, batch, moveInput)
+	assertMoveBatchSchema(t, batch)
 }
 
-func assertMoveBatchSchema(t *testing.T, batch map[string]any, moveInput map[string]any) {
+func assertMoveBatchSchema(t *testing.T, batch map[string]any) {
 	t.Helper()
-	edits := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)
-	branches := edits["items"].(map[string]any)["oneOf"].([]any)
-	found := false
-	for _, raw := range branches {
-		properties := raw.(map[string]any)["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] == "semantic_move_construct" {
-			found = true
-			if !reflect.DeepEqual(properties["params"], moveInput) {
-				t.Fatal("batch move params schema does not match the public operation schema")
-			}
-		}
-	}
-	if !found {
+	items := batch["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	names := items["properties"].(map[string]any)["tool"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(names, "semantic_move_construct") {
 		t.Fatal("semantic_batch schema omitted semantic_move_construct")
 	}
 	output := batch["outputSchema"].(map[string]any)["properties"].(map[string]any)["result"].(map[string]any)["properties"].(map[string]any)
@@ -1637,17 +1519,17 @@ func assertTypedBatchPayloadSchema(t *testing.T, byName map[string]map[string]an
 	t.Helper()
 	batchInput := byName["semantic_batch"]["inputSchema"].(map[string]any)
 	items := batchInput["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
-	branches := items["oneOf"].([]any)
-	var batchPayload map[string]any
-	for _, rawBranch := range branches {
-		branch := rawBranch.(map[string]any)
-		properties := branch["properties"].(map[string]any)
-		if properties["tool"].(map[string]any)["const"] == consumerName {
-			batchPayload = properties["params"].(map[string]any)["properties"].(map[string]any)["payload"].(map[string]any)
-		}
+	properties := items["properties"].(map[string]any)
+	names := properties["tool"].(map[string]any)["enum"].([]any)
+	if !schemaEnumContains(names, consumerName) {
+		t.Fatalf("compact batch schema omitted typed consumer %s", consumerName)
 	}
-	if batchPayload == nil || batchPayload["additionalProperties"] != false {
-		t.Fatalf("batch payload schema = %#v", batchPayload)
+	params := properties["params"].(map[string]any)
+	if params["type"] != "object" || items["additionalProperties"] != true {
+		t.Fatalf("batch item schema does not accept typed args and flat siblings: %#v", items)
+	}
+	if _, exists := params["properties"]; exists {
+		t.Fatalf("batch params schema duplicated operation property schemas: %#v", params)
 	}
 }
 
@@ -2456,20 +2338,20 @@ func assertLanguageSpecificTools(t *testing.T, byName map[string]map[string]any,
 
 func assertBatchRenameLanguageEnum(t *testing.T, byName map[string]map[string]any, languages []string) {
 	t.Helper()
-	batch := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)["oneOf"].([]any)
-	for _, raw := range batch {
-		branch := raw.(map[string]any)["properties"].(map[string]any)
-		if branch["tool"].(map[string]any)["const"] != "semantic_rename" {
-			continue
-		}
-		params := branch["params"].(map[string]any)
-		property := params["properties"].(map[string]any)["language"].(map[string]any)
-		if got := property["enum"]; !reflect.DeepEqual(got, toAnySlice(languages)) {
-			t.Errorf("batch rename language enum = %#v, want %#v", got, languages)
-		}
-		return
+	items := byName["semantic_batch"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["edits"].(map[string]any)["items"].(map[string]any)
+	toolSchema := items["properties"].(map[string]any)["tool"].(map[string]any)
+	names := toolSchema["enum"].([]any)
+	if !schemaEnumContains(names, "semantic_rename") {
+		t.Fatal("batch schema omitted semantic_rename")
 	}
-	t.Error("batch schema omitted semantic_rename")
+	rename := byName["semantic_rename"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["language"].(map[string]any)
+	if got := rename["enum"]; !reflect.DeepEqual(got, toAnySlice(languages)) {
+		t.Errorf("standalone rename language enum = %#v, want %#v", got, languages)
+	}
+	params := items["properties"].(map[string]any)["params"].(map[string]any)
+	if params["type"] != "object" {
+		t.Fatalf("batch params schema = %#v, want generic object schema", params)
+	}
 }
 
 func TestToolsListScopesVerifyAndOmitsBatchForMakeOnlyWorkspace(t *testing.T) {

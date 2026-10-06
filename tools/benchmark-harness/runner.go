@@ -26,6 +26,8 @@ const (
 	ArmBaseline ArmType = "baseline-diff"
 	// ArmSemedit represents semedit semantic AST tools.
 	ArmSemedit ArmType = "semedit"
+	// ArmSemeditAgentic identifies the autonomous semantic-tool arm for repository benchmarks.
+	ArmSemeditAgentic ArmType = "semedit-agentic"
 	// ArmControl represents direct semedit execution without an LLM.
 	ArmControl ArmType = "control"
 )
@@ -211,6 +213,9 @@ type RunConfig struct {
 // RunResult aggregates telemetry, performance metrics, and oracle outcomes.
 type RunResult struct {
 	TaskID                           string                   `json:"task_id"`
+	Complexity                       *ComplexityProfile       `json:"complexity,omitempty"`
+	ExecutionMode                    string                   `json:"execution_mode,omitempty"`
+	SemeditSkill                     bool                     `json:"semedit_skill"`
 	JobID                            string                   `json:"job_id,omitempty"`
 	ComparisonPairID                 string                   `json:"comparison_pair_id,omitempty"`
 	Variant                          string                   `json:"variant,omitempty"`
@@ -369,6 +374,7 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 
 	res := &RunResult{
 		TaskID:                task.Metadata.TaskID,
+		ExecutionMode:         "deterministic_ast_control",
 		MCPServerInstructions: MCPServerInstructionsNone,
 		Provenance:            r.provenanceFor(),
 		Arm:                   ArmControl,
@@ -525,5 +531,5 @@ func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObser
 }
 
 func isSemeditArm(arm ArmType) bool {
-	return arm == ArmSemedit || arm == ArmSemeditExplicit
+	return arm == ArmSemedit || arm == ArmSemeditAgentic || arm == ArmSemeditExplicit
 }

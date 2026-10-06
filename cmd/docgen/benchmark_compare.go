@@ -16,6 +16,10 @@ const (
 	benchmarkPairLarge
 	benchmarkPairVerifiedSmall
 	benchmarkPairVerifiedLarge
+	benchmarkPairExplicitSmall
+	benchmarkPairExplicitLarge
+	benchmarkPairExplicitVerifiedSmall
+	benchmarkPairExplicitVerifiedLarge
 )
 
 func (c benchmarkPairContext) label() string {
@@ -28,6 +32,14 @@ func (c benchmarkPairContext) label() string {
 		return "verified small context"
 	case benchmarkPairVerifiedLarge:
 		return "verified large context"
+	case benchmarkPairExplicitSmall:
+		return "semedit explicit small context"
+	case benchmarkPairExplicitLarge:
+		return "semedit explicit large context"
+	case benchmarkPairExplicitVerifiedSmall:
+		return "verified semedit explicit small context"
+	case benchmarkPairExplicitVerifiedLarge:
+		return "verified semedit explicit large context"
 	default:
 		return "unknown context"
 	}
@@ -43,6 +55,14 @@ func benchmarkPairRuns(comp *BenchComparisonSummary, context benchmarkPairContex
 		return comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit
 	case benchmarkPairVerifiedLarge:
 		return comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit
+	case benchmarkPairExplicitSmall:
+		return comp.SmallBaseline, comp.SmallSemeditExplicit
+	case benchmarkPairExplicitLarge:
+		return comp.LargeBaseline, comp.LargeSemeditExplicit
+	case benchmarkPairExplicitVerifiedSmall:
+		return comp.SmallVerifiedBaseline, comp.SmallVerifiedExplicit
+	case benchmarkPairExplicitVerifiedLarge:
+		return comp.LargeVerifiedBaseline, comp.LargeVerifiedExplicit
 	default:
 		return nil, nil
 	}
@@ -58,6 +78,14 @@ func setBenchmarkPairRuns(comp *BenchComparisonSummary, context benchmarkPairCon
 		comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit = baseline, semedit
 	case benchmarkPairVerifiedLarge:
 		comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit = baseline, semedit
+	case benchmarkPairExplicitSmall:
+		comp.SmallBaseline, comp.SmallSemeditExplicit = baseline, semedit
+	case benchmarkPairExplicitLarge:
+		comp.LargeBaseline, comp.LargeSemeditExplicit = baseline, semedit
+	case benchmarkPairExplicitVerifiedSmall:
+		comp.SmallVerifiedBaseline, comp.SmallVerifiedExplicit = baseline, semedit
+	case benchmarkPairExplicitVerifiedLarge:
+		comp.LargeVerifiedBaseline, comp.LargeVerifiedExplicit = baseline, semedit
 	}
 }
 
@@ -73,7 +101,7 @@ const benchmarkRelativeSimilarityThreshold = 0.05
 
 func selectBestBenchmarkComparisons(runs []benchmarkDocumentationRun) []bestBenchmarkPair {
 	selected := make(map[string]bestBenchmarkPair)
-	contexts := []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge}
+	contexts := []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge, benchmarkPairExplicitSmall, benchmarkPairExplicitLarge, benchmarkPairExplicitVerifiedSmall, benchmarkPairExplicitVerifiedLarge}
 	for _, run := range runs {
 		for _, comparison := range run.Comparisons {
 			for _, context := range contexts {
@@ -341,7 +369,7 @@ func renderBenchmarkAggregatesDoc(comparisons []*BenchComparisonSummary) string 
 func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmarkAggregateGroup {
 	groups := make(map[string]*benchmarkAggregateGroup)
 	for _, comparison := range comparisons {
-		for _, context := range []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge} {
+		for _, context := range []benchmarkPairContext{benchmarkPairSmall, benchmarkPairLarge, benchmarkPairVerifiedSmall, benchmarkPairVerifiedLarge, benchmarkPairExplicitSmall, benchmarkPairExplicitLarge, benchmarkPairExplicitVerifiedSmall, benchmarkPairExplicitVerifiedLarge} {
 			addBenchmarkComparisonMetrics(groups, comparison, context)
 		}
 	}
@@ -360,6 +388,9 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 
 func addBenchmarkComparisonMetrics(groups map[string]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext) {
 	baseline, semedit := benchmarkPairRuns(comparison, context)
+	if baseline == nil || semedit == nil {
+		return
+	}
 	addBenchmarkMetricRun(groups, comparison, context, "Vanilla", baseline)
 	addBenchmarkMetricRun(groups, comparison, context, "Semedit MCP", semedit)
 }

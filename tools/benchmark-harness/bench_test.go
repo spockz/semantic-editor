@@ -192,6 +192,7 @@ func TestRunOpenCodeCapturesToolOutcomeAndSession(t *testing.T) {
 	if err := os.Chmod(script, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	installPassthroughOpenCodeSandbox(t, binDir)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	workDir := t.TempDir()
@@ -693,6 +694,9 @@ func TestParseAllBenchmarkFixtures(t *testing.T) {
 			if strings.HasPrefix(normalized, "want/") {
 				t.Errorf("fixture %s contains golden want/ file %s: violates anti-leakage invariant", entry.Name(), file.Name)
 			}
+		}
+		if task.Metadata.Repository.URL != "" {
+			continue
 		}
 
 		// Verify extraction to temp dir

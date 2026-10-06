@@ -229,6 +229,20 @@ func TestBenchmarkMakeTargetsForwardRestrictionPolicy(t *testing.T) {
 	}
 }
 
+func TestBenchmarkMakeTargetsForwardResumeFlag(t *testing.T) {
+	for _, target := range []string{"bench", "bench-all"} {
+		args := []string{"-n", "-f", "Makefile", target, "RESUME=true", "RUN_ID=resume-run"}
+		// #nosec G204 -- dry-run repository benchmark Make targets with controlled values.
+		output, err := exec.Command("make", args...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("make %s: %v\n%s", target, err, output)
+		}
+		if !strings.Contains(string(output), "--resume") || !strings.Contains(string(output), "--run-id \"resume-run\"") {
+			t.Errorf("%s did not forward resume and the selected run ID:\n%s", target, output)
+		}
+	}
+}
+
 func TestCLIControlSharesSchedulerAndRetainsFailure(t *testing.T) {
 	trial := runCLITrial(t, []string{"--target=control"}, false)
 	if trial.Err == nil {

@@ -1,0 +1,57 @@
+# This fixture isolates a bound rename among same-named methods in a small package.
+task_id: task-14-scoped-homonym-rename
+category: symbol_disambiguation
+instruction: "Rename only transport.Client.Close to transport.Client.Shutdown and update its call sites. Keep Server.Close, Store.Close, Cache.Close, and Session.Close unchanged, even though they have the same method name and signature. Do not make unrelated changes."
+contexts:
+  - small
+prompt_variants:
+  default: "Rename only transport.Client.Close to transport.Client.Shutdown and update its call sites. Keep Server.Close, Store.Close, Cache.Close, and Session.Close unchanged, even though they have the same method name and signature. Do not make unrelated changes."
+  explicit: "Call semantic_lookup with {\"file\":\"transport/types.go\",\"symbol\":\"Client.Close\"}. Then call semantic_rename with {\"file\":\"transport/types.go\",\"symbol\":\"Client.Close\",\"to\":\"Shutdown\"}. Let semantic_rename update Client.Close and its references. Keep Server.Close, Store.Close, Cache.Close, and Session.Close unchanged."
+oracle:
+  level_1_mutation_policy:
+    disallowed_files:
+      - "go.mod"
+      - "go.sum"
+  level_2_ast:
+    file: "transport/types.go"
+    must_contain_symbols:
+      - "Client.Shutdown"
+      - "Server.Close"
+      - "Store.Close"
+      - "Cache.Close"
+      - "Session.Close"
+    must_not_contain_symbols:
+      - "Client.Close"
+  level_3_build:
+    clean_compile: true
+  level_4_test:
+    pass_tests: false
+-- go.mod --
+module example.com/scopedrename
+
+go 1.23
+-- transport/types.go --
+package transport
+
+type Client struct{}
+type Server struct{}
+type Store struct{}
+type Cache struct{}
+type Session struct{}
+
+func (c *Client) Close() string  { return "client" }
+func (s *Server) Close() string  { return "server" }
+func (s *Store) Close() string   { return "store" }
+func (c *Cache) Close() string   { return "cache" }
+func (s *Session) Close() string { return "session" }
+-- transport/client_calls.go --
+package transport
+
+func CloseClient(c *Client) string { return c.Close() }
+-- transport/other_calls.go --
+package transport
+
+func CloseServer(s *Server) string   { return s.Close() }
+func CloseStore(s *Store) string     { return s.Close() }
+func CloseCache(c *Cache) string     { return c.Close() }
+func CloseSession(s *Session) string { return s.Close() }

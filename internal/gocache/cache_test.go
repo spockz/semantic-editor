@@ -77,13 +77,16 @@ func TestEnvironmentKeepsGoplsCacheBelowSelectedBase(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := "GOPLSCACHE=" + filepath.Join(baseDir, "gopls")
+	foundGoplsCache := false
 	for _, variable := range environment {
 		if strings.HasPrefix(variable, "GOPLSCACHE=") {
 			if variable != want {
 				t.Fatalf("GOPLSCACHE = %q, want %q", variable, want)
 			}
-			return
+			foundGoplsCache = true
 		}
 	}
-	t.Fatal("Go subprocess environment omitted GOPLSCACHE")
+	if !foundGoplsCache {
+		t.Fatal("Go subprocess environment omitted GOPLSCACHE")
+	}
 }

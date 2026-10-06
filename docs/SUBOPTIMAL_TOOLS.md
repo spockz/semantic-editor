@@ -1,5 +1,109 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-06: semantic lookup missed the rename definition
+
+- Tool: `semantic_lookup`.
+- Target: `internal/operation/wire_backend.go`.
+- Observed failure: lookup of the guessed symbol `semanticRenameDef` returned `symbol not found`.
+- Workaround: inspect the operation declarations in the selected file to identify the registered rename definition before retrying semantic inspection.
+- Root cause: the guessed symbol name did not match the code's actual declaration name.
+
+## 2026-10-06: insert-function rejected helper declarations bundled together
+
+- Tool: `semantic_insert_function`.
+- Target: `internal/mcp/batch.go`.
+- Observed failure: a snippet with three function declarations was rejected; no source changes were made.
+- Workaround: insert each complete function separately.
+- Root cause: the operation accepts exactly one function declaration per call.
+
+## 2026-10-06: replace-construct required a path for a repeated if selector
+
+- Tool: `semantic_replace_construct`.
+- Target: `internal/mcp/batch.go`, `Server.executeBatch`.
+- Observed failure: selecting the `err != nil` branch was ambiguous and made no changes; the tool returned construct paths including `2.0.6` for `entry.Parse(raw)`.
+- Workaround: retry with the returned path `2.0.6`.
+- Root cause: several error checks in the method share the same condition, so the selector requires a structural path.
+
+## 2026-10-06: replace-construct again required a path for the same repeated selector
+
+- Tool: `semantic_replace_construct`.
+- Target: `internal/mcp/batch.go`, `Server.executeBatch`.
+- Observed failure: the new `err != nil` selection was ambiguous; no changes were made. The tool returned path `2.0.6` for the parser-validation branch.
+- Workaround: retry with the returned path `2.0.6`.
+- Root cause: other error checks still use the same condition in this method.
+
+## 2026-10-06: replace-body rejected a test replacement with an extra brace
+
+- Tool: `semantic_replace_body`.
+- Target: `internal/mcp/schema_test.go`, `assertBatchSchemaProfile`.
+- Observed failure: the replacement body included the surrounding declaration's closing brace and was rejected as a syntax error; no changes were made.
+- Workaround: retry with only the function body, without the closing declaration brace.
+- Root cause: the semantic operation accepts bare body statements, not a complete function declaration.
+
+## 2026-10-06: replace-body rejected a second test body with an extra brace
+
+- Tool: `semantic_replace_body`.
+- Target: `internal/mcp/schema_test.go`, `assertConstructBatchSchema`.
+- Observed failure: the replacement body again included a declaration-closing brace; the tool rejected it without changing the file.
+- Workaround: retry after removing the final declaration brace.
+- Root cause: the semantic operation accepts bare body statements, not a complete function declaration.
+
+## 2026-10-06: inspect-symbol missed a guessed schema test name
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/mcp/schema_test.go`.
+- Observed failure: inspection of `TestMCPBatchSchemaUsesBackendCapabilities` returned `symbol not found`.
+- Workaround: search test declarations in the selected file and inspect using the exact declared name.
+- Root cause: the guessed test name did not match a declaration.
+
+## 2026-10-06: scaffold-file rejected a plain purpose header
+
+- Tool: `semantic_scaffold_file`.
+- Target: `tools/benchmark-harness/resume.go`.
+- Observed failure: the tool rejected the unprefixed purpose text as invalid Go source and created no file.
+- Workaround: retry with a Go comment prefix in the purpose header.
+- Root cause: the tool expects the optional purpose header in Go comment syntax, although its parameter description does not state that requirement.
+
+## 2026-10-06: semantic batch inserted declarations but could not verify the workspace
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/resume.go`.
+- Observed failure: all three type insertions succeeded, then the verification hook failed because `golangci-lint` requires workspace trust; diagnostics also included unrelated existing type errors in other packages.
+- Workaround: retain the successful insertions, add imports through semantic tooling, and rely on the repository's configured checks for verification.
+- Root cause: the semantic batch automatically runs workspace verification, but the call did not include trusted-workspace authorization and the full workspace has pre-existing diagnostics.
+
+## 2026-10-06: insert-function rejected two declarations in one snippet
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/resume.go`.
+- Observed failure: the tool rejected a snippet containing `prepareBenchmarkRunDir` and `saveRunManifest`; it made no changes.
+- Workaround: insert each complete function separately.
+- Root cause: this operation accepts exactly one function declaration per request.
+
+## 2026-10-06: replace-decl does not update struct types
+
+- Tool: `semantic_replace_decl`.
+- Target: `tools/benchmark-harness/planner.go`, `PlanOptions`.
+- Observed failure: the tool refused the replacement with `requires a type alias`; no changes were made.
+- Workaround: use a structural operation that can insert a field into a struct.
+- Root cause: despite accepting a target type name, this operation only supports type aliases, not struct declarations.
+
+## 2026-10-06: insert-function rejected exported method visibility
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/report.go`, `BenchmarkReport.UnmarshalJSON`.
+- Observed failure: the tool rejected a private access modifier for the exported method; no change was made.
+- Workaround: retry with public access.
+- Root cause: method name casing determines exported visibility and must match the requested modifier.
+
+## 2026-10-06: insert-function rejected a test with private visibility
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/resume_test.go`, `TestResumeCheckpointRestoresJobResultAndSkipsCompletedJob`.
+- Observed failure: the tool rejected the `Test...` function because its public casing did not match the private access modifier; no change was made.
+- Workaround: retry with public access.
+- Root cause: the inserter applies Go casing-based visibility validation to test functions.
+
 ## 2026-10-06: semantic lookup requested a nonexistent benchmark test
 
 - Tool: `semantic_lookup`.

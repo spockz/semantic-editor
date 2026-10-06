@@ -2,6 +2,7 @@
 package godiagnostics
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -19,6 +20,33 @@ func TestSelectPackageFilesRejectsErrorsWithoutGoFiles(t *testing.T) {
 	_, _, err := selectPackageFiles(root, loaded)
 	if err == nil || !strings.Contains(err.Error(), "incomplete Go package coverage") {
 		t.Fatalf("selectPackageFiles() error = %v, want incomplete package coverage", err)
+	}
+}
+
+func TestAssembleDiagnosticsScopeCanonicalizesSymlinkedGoFiles(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "source.go")
+	if err := os.WriteFile(file, []byte("package sample\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliasRoot := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, aliasRoot); err != nil {
+		t.Fatal(err)
+	}
+
+	scope, err := assembleDiagnosticsScope(root, []*packages.Package{{
+		Module:  &packages.Module{Dir: root},
+		GoFiles: []string{filepath.Join(aliasRoot, "source.go")},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scope.files) != 1 || scope.files[0] != canonical {
+		t.Fatalf("scope files = %v, want canonical path %q", scope.files, canonical)
 	}
 }
 

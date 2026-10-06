@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -315,6 +316,8 @@ type benchmarkCLIFlags struct {
 	outMD               string
 	outDir              string
 	runID               string
+	resume              bool
+	semeditSkill        bool
 	timeout             time.Duration
 	concurrency         int
 	repeats             int
@@ -391,6 +394,8 @@ func registerBenchmarkCLIFlags(fs *flag.FlagSet, input *benchmarkCLIFlags) {
 	fs.StringVar(&input.outMD, "out-md", "", "Optional report Markdown output path")
 	fs.StringVar(&input.outDir, "out-dir", "data/benchmarks/results", "Parent directory for run-scoped results; empty disables run output")
 	fs.StringVar(&input.runID, "run-id", "", "Required run identifier when --out-dir is non-empty")
+	fs.BoolVar(&input.resume, "resume", false, "Resume an existing run directory and skip jobs with saved results")
+	fs.BoolVar(&input.semeditSkill, "semedit-skill", false, "Expose the semedit skill to semedit-agentic repository benchmark jobs")
 	fs.StringVar(&input.settings.ExtractTo, "extract-to", "", "Extract fixture to target directory and exit")
 	fs.StringVar(&input.settings.EvalDir, "eval-dir", "", "Evaluate target directory and exit")
 	fs.DurationVar(&input.timeout, "timeout", 5*time.Minute, "Timeout per benchmark job")
@@ -427,6 +432,8 @@ func applyBenchmarkCLIPlan(settings *benchmarkCLIOptions, input benchmarkCLIFlag
 	settings.Plan.Timeout = input.timeout
 	settings.Plan.OutDir = input.outDir
 	settings.Plan.RunID = input.runID
+	settings.Plan.Resume = input.resume
+	settings.Plan.SemeditSkill = input.semeditSkill
 	settings.Plan.OutJSON = input.outJSON
 	settings.Plan.OutMD = input.outMD
 	settings.Plan.MCPServerInstructions = mcpModes
@@ -503,26 +510,51 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 		fmt.Fprintf(os.Stderr, "flush plan: %v\n", err)
 		return 1
 	}
-	resultDir := ""
-	var err error
-	if plan.Options.OutDir != "" {
-		resultDir, err = createBenchmarkRunDir(plan.Options.OutDir, plan.Options.RunID)
+	resultDir, err := prepareBenchmarkRunDir(plan)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "invalid benchmark result directory: %v\n", err)
+		return 1
+	}
+	completed := make(map[string]*RunResult)
+	if plan.Options.Resume {
+		completed, err = loadJobCheckpoints(resultDir, plan)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "invalid benchmark result directory: %v\n", err)
+			fmt.Fprintf(os.Stderr, "load benchmark checkpoints: %v\n", err)
 			return 1
 		}
+		fmt.Printf("Resuming run %s: %d saved jobs, %d jobs remaining\n", plan.Options.RunID, len(completed), len(plan.Jobs)-len(completed))
 	}
+	pending := pendingBenchmarkPlan(plan, completed)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	outcomes, progressErr := ExecutePlan(ctx, plan, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
+	freshOutcomes, progressErr := ExecutePlanWithCompletion(ctx, pending, os.Stdout, func(ctx context.Context, job Job) (*RunResult, error) {
 		runner := NewRunner(filepath.Join(".scratch", "benchmarks"), WithMCPServerInstructions(job.MCPServerInstructions), WithSemeditArmRestriction(plan.Options.SemeditArmRestriction), WithSemeditPrewarmVerify(plan.Options.SemeditPrewarmVerify), WithProvenance(plan.Options.Provenance))
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}
+		if job.Task != nil && job.Task.Metadata.Repository.URL != "" && job.Arm == ArmSemeditExplicit {
+			return runner.ExecutePatchReplay(ctx, job.Task, job.Target, job.Context)
+		}
 		return runner.ExecuteAgent(ctx, job.Execution)
+	}, func(outcome JobOutcome) error {
+		if resultDir == "" {
+			return nil
+		}
+		if ctx.Err() != nil && errors.Is(outcome.Err, context.Canceled) {
+			return nil
+		}
+		path, err := saveJobOutcomeCheckpoint(resultDir, outcome)
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(os.Stdout, " Saved individual job result: %s\n", path); err != nil {
+			return fmt.Errorf("print job result path: %w", err)
+		}
+		return nil
 	})
+	outcomes := mergeJobOutcomes(plan, completed, freshOutcomes)
 	results := make([]*RunResult, 0, len(outcomes))
-	failed := progressErr != nil
+	failed := progressErr != nil || len(outcomes) != len(plan.Jobs)
 	for _, outcome := range outcomes {
 		results = append(results, outcome.Result)
 		if outcome.Err != nil || outcome.Result == nil || !outcome.Result.Success {
@@ -535,7 +567,7 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 		return 1
 	}
 	if progressErr != nil {
-		fmt.Fprintf(os.Stderr, "write progress: %v\n", progressErr)
+		fmt.Fprintf(os.Stderr, "save job checkpoint or write progress: %v\n", progressErr)
 	}
 	if failed {
 		return 1

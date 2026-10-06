@@ -62,6 +62,14 @@ type benchmarkDocGrouping struct {
 func renderDocComparison(sb *strings.Builder, comp *BenchComparisonSummary, grouping *benchmarkDocGrouping) {
 	writeBenchmarkDocGroupHeading(sb, comp, grouping)
 	fmt.Fprintf(sb, "#### %s\n\n", formatDocConfiguration(comp))
+	if comp.Complexity != nil {
+		chart, err := RenderRadarSVG(*comp.Complexity, 620, 460)
+		if err != nil {
+			fmt.Fprintf(sb, "> Complexity chart unavailable: %s.\n\n", err)
+		} else {
+			sb.WriteString(`<figure class="benchmark-complexity-radar">` + chart + "\n<figcaption>Task complexity across locality, context, ambiguity, composition, invariants, edit scale, and staging (1–5).</figcaption>\n</figure>\n\n")
+		}
+	}
 	writeDocConfigurationDetails(sb, comp)
 	writeDocComparisonPrompts(sb, comp)
 	writeDocBeforeState(sb, comp.BeforeState)
@@ -115,11 +123,21 @@ func writeDocBeforeState(sb *strings.Builder, state string) {
 
 func writeDocRunComparisons(sb *strings.Builder, comp *BenchComparisonSummary) {
 	if hasStandardBenchmarkRuns(comp) {
-		writeDocComparisonResults(sb, "Standard vs Semedit", 5, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+		if comp.SmallSemedit != nil || comp.LargeSemedit != nil {
+			writeDocComparisonResults(sb, "Baseline vs Semedit Agentic", 5, comp.SmallBaseline, comp.SmallSemedit, comp.LargeBaseline, comp.LargeSemedit)
+		}
+		if comp.SmallSemeditExplicit != nil || comp.LargeSemeditExplicit != nil {
+			writeDocComparisonResults(sb, "Baseline vs Semedit Explicit", 5, comp.SmallBaseline, comp.SmallSemeditExplicit, comp.LargeBaseline, comp.LargeSemeditExplicit)
+		}
 	}
 	if hasVerifiedBenchmarkRuns(comp) {
 		sb.WriteString("##### Verified Directive Comparison (+Self-Correction Loop)\n\n")
-		writeDocComparisonResults(sb, "Verified vs Semedit", 6, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+		if comp.SmallVerifiedSemedit != nil || comp.LargeVerifiedSemedit != nil {
+			writeDocComparisonResults(sb, "Verified vs Semedit Agentic", 6, comp.SmallVerifiedBaseline, comp.SmallVerifiedSemedit, comp.LargeVerifiedBaseline, comp.LargeVerifiedSemedit)
+		}
+		if comp.SmallVerifiedExplicit != nil || comp.LargeVerifiedExplicit != nil {
+			writeDocComparisonResults(sb, "Verified vs Semedit Explicit", 6, comp.SmallVerifiedBaseline, comp.SmallVerifiedExplicit, comp.LargeVerifiedBaseline, comp.LargeVerifiedExplicit)
+		}
 	}
 }
 
@@ -136,11 +154,11 @@ func writeDocComparisonContext(sb *strings.Builder, headingLevel int, label stri
 }
 
 func hasStandardBenchmarkRuns(comp *BenchComparisonSummary) bool {
-	return comp.SmallBaseline != nil || comp.SmallSemedit != nil || comp.LargeBaseline != nil || comp.LargeSemedit != nil
+	return comp.SmallBaseline != nil || comp.SmallSemedit != nil || comp.LargeBaseline != nil || comp.LargeSemedit != nil || comp.SmallSemeditExplicit != nil || comp.LargeSemeditExplicit != nil
 }
 
 func hasVerifiedBenchmarkRuns(comp *BenchComparisonSummary) bool {
-	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil || comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil
+	return comp.SmallVerifiedBaseline != nil || comp.SmallVerifiedSemedit != nil || comp.LargeVerifiedBaseline != nil || comp.LargeVerifiedSemedit != nil || comp.SmallVerifiedExplicit != nil || comp.LargeVerifiedExplicit != nil
 }
 
 func writeDocPrompt(sb *strings.Builder, label, prompt string) {
@@ -333,7 +351,13 @@ func renderDocOutcomeRows(sb *strings.Builder, sbRun, smRun, lbRun, lmRun *Bench
 }
 
 func docMCPColumnHeader(context string, run *BenchRunResult) string {
-	label := fmt.Sprintf("MCP (%s)", context)
+	armLabel := "MCP"
+	if run != nil && run.Arm == benchmarkArmSemeditExplicit {
+		armLabel = "Semedit Explicit"
+	} else if run != nil && run.Arm == "semedit-agentic" {
+		armLabel = "Semedit Agentic"
+	}
+	label := fmt.Sprintf("%s (%s)", armLabel, context)
 	if run == nil || run.MCPVerified {
 		return label
 	}

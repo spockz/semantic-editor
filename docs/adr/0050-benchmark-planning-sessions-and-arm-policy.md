@@ -22,6 +22,23 @@ these jobs without rediscovering fixtures or expanding dimensions. Agent targets
 always schedule paired baseline and semedit jobs. Direct control uses the same
 scheduler. Complete plan rendering precedes execution.
 
+Fixtures with pinned external repositories use the three-arm benchmark matrix:
+`baseline-diff`, `semedit-agentic`, and `semedit-explicit`. The latter replays
+the source dataset's `fix_patch` as an oracle upper bound and records
+`execution_mode=ground_truth_fix_patch_replay`; it is not counted as an agent
+tool invocation. External fixtures expose only their verbatim problem statement
+to the agent. Their test and fix patches remain private to the harness, and the
+test patch is applied only in the private oracle workspace. The optional
+`--semedit-skill` condition installs the repository skill into the agent
+workspace only for the `semedit-agentic` arm. It participates in job and pair
+identities independently of the arm.
+
+External repository caches are stored under the configured benchmark scratch
+directory. Each run workspace is hydrated from the cache and checked out at its
+declared base commit before agent timing begins. The harness uses copy-on-write
+or reflink copy where supported and falls back to a regular recursive copy
+without changing the measurement boundary.
+
 Fixtures declare supported physical contexts. An archive without additional
 context declarations has only its established base context. Verification
 variants remain treatments over those physical contexts. The planner intersects
@@ -99,6 +116,15 @@ be combined with `--target`. Explicit `--arm` selection is rejected. Validated
 compound context/prompt variants remain supported. Make targets retain their
 configured agent target and both use the same plan-and-execute path.
 
+When run output is enabled, write a versioned manifest before dispatch and an
+atomic one-run report for each completed job under `jobs/`. Each job record also
+stores its resolved identity and prompts, so later analysis does not depend on
+the aggregate reports. `--resume` requires the same run ID and matching plan
+fingerprint, including fixture bytes and measurement-affecting settings. Resume
+loads valid checkpoints and dispatches only jobs without a saved result. Failed
+task outcomes count as completed to avoid silently repeating provider work;
+signal-cancelled jobs remain pending and can run on resume.
+
 ## Invariants
 
 - Planning errors prevent all backend execution; intentional exclusions remain
@@ -106,11 +132,15 @@ configured agent target and both use the same plan-and-execute path.
 - The printed plan and execution consume the same jobs and resolved prompts.
 - Unsupported contexts are never relabelled or populated with generic overlays.
 - Every planned job has exactly one terminal result and advances progress.
+- Per-job checkpoints use atomic writes; a resume with a mismatched plan fails before dispatch.
+- Resume never repeats a saved terminal task failure and never treats signal cancellation as completed work.
 - Agent pairs share experiment conditions but only semedit receives policy steering.
 - Different policies, including historical unspecified policy, never merge silently.
 - Follow-ups reuse the task session and workspace and never receive hidden oracle output.
 - Diagnostic questioning never changes measured task aggregates.
 - Transcript failures remain explicit; missing telemetry is not measured zero.
+- External repository arms share a pinned base commit; acceptance patches remain
+  outside the issue prompt and test patches stay outside the agent workspace.
 
 ## Consequences
 

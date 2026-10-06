@@ -15,6 +15,7 @@ type AgentExecution struct {
 	Followups       []string
 	StagedFollowups []StagedFollowup
 	Policy          SemeditArmRestriction
+	SemeditSkill    bool
 }
 
 type SemeditArmRestriction string

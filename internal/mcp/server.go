@@ -1463,25 +1463,14 @@ func operationInputSchemaForParams(params []operation.ParameterContract) (map[st
 	return schema, nil
 }
 
-func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.Backend, verificationOutput *operation.ValueSchema) (map[string]any, error) {
-	const batchDescription = "Use this tool instead of sending several independent semantic edits when they must run in order. Each edit must have exactly {\"tool\":\"semantic_tool_name\",\"params\":{...}}; put that operation arguments inside params, never beside tool. Example: {\"tool\":\"semantic_replace_body\",\"params\":{\"file\":\"main.go\",\"symbol\":\"Run\",\"body\":\"return nil\"}}. Validation errors identify the zero-based edit index and params problem. On failure, earlier successful edits remain applied and are not rolled back. Child outcomes and receipts are captured intermediate states, not final continuation targets; inspect final targets after the batch to resolve continuation fields. Successful batches return final_diff and diagnostic_delta."
-	branches := make([]any, 0, len(entries))
+func batchToolSchemaForLanguages(entries []operation.Entry, _ []backend.Backend, verificationOutput *operation.ValueSchema) (map[string]any, error) {
+	const batchDescription = "Use this tool instead of sending several independent semantic edits when they form a compound refactoring. It executes an ordered sequence in one tool call. Edits run sequentially against the working state: each edit sees changes made by earlier edits, so later edits can resolve symbols created or renamed earlier in the batch. Each edit may use {\"tool\":\"semantic_tool_name\",\"params\":{...}} or the flat form {\"tool\":\"semantic_tool_name\",\"file\":\"main.go\",...}; params is the exact JSON argument object from the standalone tool schema. A single-key {\"semantic_tool_name\":{...}} shorthand is also accepted. Validation errors identify the zero-based edit index. On failure, earlier successful edits remain applied and are not rolled back. Child outcomes and receipts are intermediate states, not final continuation targets; inspect final targets after the batch to resolve continuation fields. Successful batches return final_diff and diagnostic_delta."
+
+	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		paramsSchema, err := operationInputSchemaForBackends(entry, backends)
-		if err != nil {
-			return nil, fmt.Errorf("build batch params schema for %q: %w", entry.MCPName, err)
-		}
-		addWorkspaceRootInput(paramsSchema)
-		branches = append(branches, map[string]any{
-			"type": "object",
-			schemaPropertiesKey: map[string]any{
-				"tool":   map[string]any{"const": entry.MCPName},
-				"params": paramsSchema,
-			},
-			"required":              []string{"tool", "params"},
-			additionalPropertiesKey: false,
-		})
+		names = append(names, entry.MCPName)
 	}
+	slices.Sort(names)
 	outputSchema, err := batchOutputSchemaForEntries(entries, verificationOutput)
 	if err != nil {
 		return nil, fmt.Errorf("build batch output schema: %w", err)
@@ -1492,7 +1481,26 @@ func batchToolSchemaForLanguages(entries []operation.Entry, backends []backend.B
 		toolFieldInputSchema: map[string]any{
 			"type": "object",
 			schemaPropertiesKey: map[string]any{
-				"edits":                 map[string]any{"type": "array", "minItems": 1, "items": map[string]any{"oneOf": branches}},
+				"edits": map[string]any{
+					"type":     "array",
+					"minItems": 1,
+					"items": map[string]any{
+						"type": "object",
+						schemaPropertiesKey: map[string]any{
+							"tool": map[string]any{
+								"type":               "string",
+								"enum":               names,
+								schemaDescriptionKey: "The batchable semantic tool to execute in this step.",
+							},
+							"params": map[string]any{
+								"type":               "object",
+								schemaDescriptionKey: "The exact JSON arguments accepted by the selected standalone tool. This object may be omitted when arguments are supplied as sibling fields.",
+							},
+						},
+						"required":              []string{"tool"},
+						additionalPropertiesKey: true,
+					},
+				},
 				"auto_organize_imports": map[string]any{"type": "boolean", "default": false},
 				"workspace_root":        workspaceRootParameterSchema(),
 				"trust_workspace":       map[string]any{"type": "boolean", "description": "Trust configured verification hooks for this batch request and its selected workspace root."},

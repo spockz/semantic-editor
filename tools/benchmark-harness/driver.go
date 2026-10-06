@@ -121,15 +121,25 @@ type agentWorkspaceSetup struct {
 }
 
 func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, target Target, arm ArmType, variant, workDir string, session *agentSession) (agentWorkspaceSetup, error) {
+	if task.Metadata.Repository.URL != "" {
+		if err := hydrateExternalRepository(ctx, task, runner.baseScratchDir, workDir); err != nil {
+			return agentWorkspaceSetup{}, fmt.Errorf("hydrate external repository fixture: %w", err)
+		}
+	}
 	if err := task.ExtractVariantTo(workDir, variant); err != nil {
 		return agentWorkspaceSetup{}, fmt.Errorf("extract task fixture: %w", err)
 	}
-	if target.Harness == string(HarnessOpenCode) {
+	if task.Metadata.Repository.URL != "" && session.execution.SemeditSkill {
+		if err := installSemeditSkill(workDir, runner.baseScratchDir); err != nil {
+			return agentWorkspaceSetup{}, fmt.Errorf("install semedit benchmark skill: %w", err)
+		}
+	}
+	if target.Harness == string(HarnessOpenCode) && task.Metadata.Repository.URL == "" {
 		if err := initializeOpenCodeFixtureGit(ctx, workDir); err != nil {
 			return agentWorkspaceSetup{}, err
 		}
 	}
-	if target.Harness == string(HarnessCodex) {
+	if target.Harness == string(HarnessCodex) && task.Metadata.Repository.URL == "" {
 		if err := writeBenchmarkAGENTSOverride(workDir); err != nil {
 			return agentWorkspaceSetup{}, fmt.Errorf("prepare Codex fixture instructions: %w", err)
 		}
@@ -153,6 +163,24 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 		return agentWorkspaceSetup{}, err
 	}
 	return setup, nil
+}
+
+func installSemeditSkill(workDir, scratchRoot string) error {
+	repositoryRoot := filepath.Dir(filepath.Dir(filepath.Dir(scratchRoot)))
+	sourcePath := filepath.Join(repositoryRoot, "skills", "semedit", "SKILL.md")
+	// #nosec G304 -- the source is the repository-owned semedit skill.
+	content, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return fmt.Errorf("read source skill %s: %w", sourcePath, err)
+	}
+	skillPath := filepath.Join(workDir, ".agents", "skills", "semedit", "SKILL.md")
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o750); err != nil {
+		return fmt.Errorf("create project skill directory: %w", err)
+	}
+	if err := pipeline.WriteAtomic(skillPath, content); err != nil {
+		return fmt.Errorf("write project skill: %w", err)
+	}
+	return nil
 }
 
 func setAgentInitialFile(session *agentSession, task *Task, workDir string) error {
@@ -186,6 +214,7 @@ type agentRunResultInput struct {
 func newAgentRunResult(r *Runner, task *Task, input agentRunResultInput) *RunResult {
 	return &RunResult{
 		TaskID: task.Metadata.TaskID, Variant: input.variant,
+		ExecutionMode: "agent", SemeditSkill: input.execution.SemeditSkill,
 		InteractiveMode:              task.Metadata.InteractiveMode,
 		PromptVariant:                promptVariantFromExecution(input.execution),
 		SemeditArmRestrict:           input.execution.Policy,
@@ -306,6 +335,12 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 		}
 	}
 	res.PromptVariant = promptVarName
+	if task.Metadata.Repository.URL != "" {
+		if arm != ArmBaseline && arm != ArmSemedit && arm != ArmSemeditAgentic {
+			return "", fmt.Errorf("unsupported external-repository task arm %s", arm)
+		}
+		return baseInstruction, nil
+	}
 	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
 		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
 	}

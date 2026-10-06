@@ -260,7 +260,7 @@ func TestRenderMarkdownIncludesVerifiedDirectiveAndToolOutcome(t *testing.T) {
 	markdown := report.RenderMarkdown()
 	assertMarkdownContains(t, markdown, []string{
 		"##### Verified Directive Comparison (+Self-Correction Loop)",
-		"###### Verified vs Semedit in Small Context",
+		"###### Verified vs Semedit Agentic in Small Context",
 		"<div class=\"callout callout-warning\"><div class=\"callout-title\"><span>⚠</span> Why no semantic edit tool was used</div><div class=\"callout-desc\">Ordinary editing seemed simpler.</div></div>",
 		"| 1 | `run_command` (outcome unavailable) | `semedit/semantic_rename` (<span role=\"img\" aria-label=\"Transport succeeded\" title=\"Transport succeeded\">✓</span> <span role=\"img\" aria-label=\"Functional failed\" title=\"Functional failed\">✗</span>): symbol not found |",
 	})
@@ -305,8 +305,12 @@ func TestBuildComparisonsSharesOneBaselineAcrossExplicitPromptArms(t *testing.T)
 		if comparison == nil {
 			t.Fatalf("missing %s comparison", variant)
 		}
-		if comparison.SmallBaseline != baseline || comparison.SmallSemedit == nil {
-			t.Errorf("%s comparison does not share the baseline and have its own semedit result: %+v", variant, comparison)
+		if variant == "explicit" {
+			if comparison.SmallBaseline != baseline || comparison.SmallSemeditExplicit != explicit {
+				t.Errorf("%s comparison does not preserve the shared baseline and distinct explicit result: %+v", variant, comparison)
+			}
+		} else if comparison.SmallBaseline != baseline || comparison.SmallSemedit != implicit {
+			t.Errorf("%s comparison does not share the baseline and have its own agentic result: %+v", variant, comparison)
 		}
 	}
 }

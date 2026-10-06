@@ -7,8 +7,17 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func installPassthroughOpenCodeSandbox(t *testing.T, binDir string) {
+	t.Helper()
+	script := "#!/bin/sh\n[ \"$1\" = -f ] || exit 2\nshift 2\nexec \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(binDir, "sandbox-exec"), []byte(script), 0o750); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestOpenCodeSeatbeltAllowsFixtureAndDeniesOutsideFiles(t *testing.T) {
 	if runtime.GOOS != "darwin" {
@@ -47,6 +56,9 @@ func TestOpenCodeSeatbeltAllowsFixtureAndDeniesOutsideFiles(t *testing.T) {
 	}
 	output, readErr := run(fixtureFile)
 	if readErr != nil {
+		if strings.Contains(string(output), "sandbox_apply: Operation not permitted") {
+			t.Skipf("host does not permit nested macOS Seatbelt profiles: %s", strings.TrimSpace(string(output)))
+		}
 		t.Fatalf("fixture read failed: %v: %s", readErr, output)
 	}
 	if string(output) != "fixture-visible" {

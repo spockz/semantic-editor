@@ -513,6 +513,7 @@ exit 0
 	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
 		t.Fatal(err)
 	}
+	installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	runner := NewRunner(filepath.Join(root, "scratch"))
 	for _, mode := range []string{"empty", "malformed", "null", "object"} {

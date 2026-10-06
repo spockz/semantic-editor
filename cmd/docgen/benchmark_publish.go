@@ -42,15 +42,21 @@ func filterPublishableBenchmarkComparison(comp *BenchComparisonSummary) *BenchCo
 	filtered.SmallSemedit = publishableBenchmarkRun(comp.SmallSemedit)
 	filtered.SmallVerifiedBaseline = publishableBenchmarkRun(comp.SmallVerifiedBaseline)
 	filtered.SmallVerifiedSemedit = publishableBenchmarkRun(comp.SmallVerifiedSemedit)
+	filtered.SmallSemeditExplicit = publishableBenchmarkRun(comp.SmallSemeditExplicit)
+	filtered.SmallVerifiedExplicit = publishableBenchmarkRun(comp.SmallVerifiedExplicit)
 	filtered.LargeBaseline = publishableBenchmarkRun(comp.LargeBaseline)
 	filtered.LargeSemedit = publishableBenchmarkRun(comp.LargeSemedit)
 	filtered.LargeVerifiedBaseline = publishableBenchmarkRun(comp.LargeVerifiedBaseline)
 	filtered.LargeVerifiedSemedit = publishableBenchmarkRun(comp.LargeVerifiedSemedit)
+	filtered.LargeSemeditExplicit = publishableBenchmarkRun(comp.LargeSemeditExplicit)
+	filtered.LargeVerifiedExplicit = publishableBenchmarkRun(comp.LargeVerifiedExplicit)
 
 	if filtered.SmallBaseline == nil && filtered.SmallSemedit == nil &&
 		filtered.SmallVerifiedBaseline == nil && filtered.SmallVerifiedSemedit == nil &&
 		filtered.LargeBaseline == nil && filtered.LargeSemedit == nil &&
-		filtered.LargeVerifiedBaseline == nil && filtered.LargeVerifiedSemedit == nil {
+		filtered.LargeVerifiedBaseline == nil && filtered.LargeVerifiedSemedit == nil &&
+		filtered.SmallSemeditExplicit == nil && filtered.SmallVerifiedExplicit == nil &&
+		filtered.LargeSemeditExplicit == nil && filtered.LargeVerifiedExplicit == nil {
 		return nil
 	}
 	return &filtered

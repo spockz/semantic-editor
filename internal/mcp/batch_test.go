@@ -618,6 +618,50 @@ func TestBatchPostProcessFailureReturnsStructuredPartialDiff(t *testing.T) {
 	}
 }
 
+func TestBatchAcceptsCanonicalFlatAndToolKeyedEntriesSequentially(t *testing.T) {
+	root := t.TempDir()
+	file := filepath.Join(root, "file.go")
+	if err := os.WriteFile(file, []byte("package testpkg\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/batchergonomics\n\ngo 1.23\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inputs := []string{
+		`{"tool":"semantic_insert_function","params":{"file":"file.go","source":"func Added() int { return 1 }"}}`,
+		`{"tool":"semantic_replace_body","file":"file.go","symbol":"Added","body":"return 2"}`,
+		`{"semantic_insert_function":{"file":"file.go","source":"func Second() int { return 3 }"}}`,
+	}
+	edits := make([]mcp.BatchEntry, 0, len(inputs))
+	for _, input := range inputs {
+		var edit mcp.BatchEntry
+		if err := json.Unmarshal([]byte(input), &edit); err != nil {
+			t.Fatalf("decode batch entry %s: %v", input, err)
+		}
+		edits = append(edits, edit)
+	}
+	server := mcptest.NewServer(t, "full", root, &bytes.Buffer{})
+	response, err := server.ExecuteBatch(context.Background(), edits, false)
+	if err != nil {
+		t.Fatalf("ExecuteBatch returned error: %v", err)
+	}
+	if response.Status != "ok" || len(response.Results) != len(inputs) {
+		t.Fatalf("batch response = %+v, want three successful edits", response)
+	}
+	for index, result := range response.Results {
+		if result.Status != "ok" {
+			t.Fatalf("batch result %d = %+v, want success", index, result)
+		}
+	}
+	source, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(source), "func Added() int {") || !strings.Contains(string(source), "return 2") || !strings.Contains(string(source), "func Second() int { return 3 }") {
+		t.Fatalf("later edit did not resolve the earlier inserted function; source:\n%s", source)
+	}
+}
+
 func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "file.go")
@@ -628,13 +672,13 @@ func TestBatchRejectsUnknownParamsBeforeExecutingAnyEdit(t *testing.T) {
 	srv := mcptest.NewServer(t, "full", root, &bytes.Buffer{})
 	response, err := srv.ExecuteBatch(context.Background(), []mcp.BatchEntry{
 		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2"}`)},
-		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"file":"file.go","symbol":"Foo","body":"return 2","unexpected":true}`)},
+		{Tool: "semantic_replace_body", Params: json.RawMessage(`{"flie":"file.go","symbol":"Foo","body":"return 2"}`)},
 	}, false)
 	if err != nil {
 		t.Fatalf("ExecuteBatch returned error: %v", err)
 	}
-	if response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "supported keys") || !strings.Contains(response.Results[0].Error, "file") {
-		t.Fatalf("batch response = %+v, want unknown parameter error with supported keys", response)
+	if response.Status != "error" || len(response.Results) != 1 || !strings.Contains(response.Results[0].Error, "supported keys") || !strings.Contains(response.Results[0].Error, "Did you mean \"file\"") || !strings.Contains(response.Results[0].Error, "Required parameters") {
+		t.Fatalf("batch response = %+v, want actionable unknown parameter error", response)
 	}
 	got, err := os.ReadFile(file)
 	if err != nil {
