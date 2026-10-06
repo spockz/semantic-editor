@@ -10,6 +10,7 @@ import (
 	"slices"
 
 	"semedit/internal/backend"
+	"semedit/internal/capability"
 )
 
 // Entry is the type-erased view of an operation stored in the registry.
@@ -36,6 +37,7 @@ type Entry struct {
 	Parse              func(map[string]any) (any, error)
 	Invoke             func(CallContext, map[string]any) (any, error)
 	Format             func(any) (string, error)
+	LanguageContracts  map[backend.LanguageID]capability.OperationContract
 }
 
 // SupportsBufferedBatch selects eligible Go requests and preserves disk-only contracts.

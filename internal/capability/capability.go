@@ -1,6 +1,11 @@
 // Package capability declares the code-derived language capability matrix consumed by cmd/docgen and internal/operation.
 package capability
 
+// OperationContract describes the implemented analysis and recovery requirements for one language-operation pair.
+type OperationContract struct {
+	Variants []ContractVariant
+}
+
 // Well-known operation keys used as map keys in LanguageMatrix.Operations.
 const (
 	// OpLookup resolves a symbol location.
@@ -29,13 +34,14 @@ type LanguageMatrix struct {
 
 // OpCapability describes backend support and interface metadata for one operation.
 type OpCapability struct {
-	Supported    bool
-	Description  string
-	CLICommand   string
-	MCPTool      string
-	PlacementKey bool
-	Level        string
-	ReadOnly     bool
+	Supported        bool
+	Description      string
+	CLICommand       string
+	MCPTool          string
+	PlacementKey     bool
+	Level            string
+	ReadOnly         bool
+	LanguageContract *OperationContract
 }
 
 // Constraint describes a language rule surfaced in generated documentation.

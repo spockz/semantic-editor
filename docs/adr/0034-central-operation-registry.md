@@ -18,8 +18,48 @@ drifted from behavior by construction.
 Establish `internal/operation` as the single registry owning handler and
 metadata per operation. Cobra commands (`internal/cli`), MCP `tools/list`
 schemas plus dispatch, batch entries, and the docgen capability matrix all
-derive from registered `Def` values. Registration is the act that makes an
-operation invokable, documented, and tested.
+derive from registered entries. Typed `Def` values supply handlers and parameter
+contracts; the registry-owned language contract catalog supplies each implemented
+pair's analysis scope, preconditions, capabilities, and existing-error tolerance.
+The production registry rejects missing or incomplete language contracts.
+Registration makes an operation invokable, documented, and tested.
+
+`internal/operation/language_contracts.go` owns the language contracts, and
+`internal/capability.OperationContract` carries their typed transfer shape.
+Each contract contains exact request variants with closed analysis and
+prerequisite enums, capability and guarantee flags, and broken-code support
+bitmaps. Variant selectors distinguish file/scope selection, same/cross-package
+movement, safe deletion, inferred/explicit packages, normalization/check-only,
+and batch behavior. Variant lookup uses exact equality, not flag containment.
+
+`CodeFaults` contains six independent flags: target-file syntax/type errors,
+syntax/type errors in another file of that package, and syntax/type errors in
+another package. `CombinationSet` contains one bit per exact fault mask:
+`uint64(1) << faults`. Supported, rejected, and conditional sets must be
+disjoint; omitted combinations are unknown. Conditional support carries a
+closed recovery-condition enum. Healthy source must be supported when all
+non-source prerequisites hold. A support classification promises the variant's
+scoped guarantees, not compilation of the entire project. Rejection does not
+imply zero writes unless the operation's publication contract says so.
+
+`Cases` enumerates all 64 classifications for fixture generation and fails for
+invalid declarations. Generated CLI scenarios exercise supported and rejected
+combinations; conditional cases require explicit control of their recovery
+condition, and unknown cases cannot supply an oracle. No subset or superset
+closure is inferred, including when two individual faults are supported.
+CLI long help and MCP descriptions render them through `Entry.Description`;
+MCP discovery renders only enabled concrete languages plus applicable auto
+dispatch. The capability matrix carries the same contract into generated docs
+for all implemented languages. Lone auto handlers for workspace snapshot/undo
+are language-independent capabilities. Auto verification selects source coverage
+and project hooks; it does not advertise unsupported concrete language backends.
+
+These contracts describe the implemented analysis and checks. They do not add
+a clean-project compilation gate or automatically reject a request based on
+descriptive metadata. Handler safety checks remain the execution authority.
+Package/module type preflight, target parsing, LSP analysis, normalization, and
+diagnostic coverage remain distinct requirements, as clarified in
+[ADR-0002](0002-dual-engine-architecture.md).
 
 Execution code is grouped into feature packages where a feature has a cohesive
 capture, validation, or publication lifecycle. `internal/contractedit` owns
@@ -57,6 +97,13 @@ diagnostic deltas like standalone rename (prior bypass read as accidental).
 
 - One registration per operation; unregistered names are rejected identically
   by CLI, MCP, and batch dispatch.
+- Every production operation has one complete language contract per handler;
+  unsupported language pairs have no advertised contract. CLI help, enabled MCP
+  descriptions, and generated documentation project that same metadata.
+- Production contracts reject unknown enum values, duplicate variant selectors,
+  overlapping fault sets, missing recovery conditions, and unsupported healthy
+  cases. Descriptions are generated from these values rather than independent
+  prose declarations.
 - `Parse` output flows into `Run` input with full compile-time checking;
   dispatch-site exhaustiveness is enforced by contract tests, not the compiler.
 - Backend `Capabilities()` remains the enforcement source for registry-level
@@ -70,11 +117,13 @@ diagnostic deltas like standalone rename (prior bypass read as accidental).
 
 ## Consequences
 
-- Adding an operation means writing one def plus ingress-neutral tests; CLI,
-  MCP, docs, and batch coverage follow by construction.
+- Adding an operation means writing one def, its language contracts, and
+  ingress-neutral tests; CLI, MCP, docs, and batch metadata follow from the
+  registry.
 - CLI contracts are intentionally registry-defined rather than
   backward-compatible with historical command-specific spellings or output.
-- `internal/capability` keeps only transfer shapes for docgen; backend
+- `internal/capability` keeps typed contract shapes, validation, and shared
+  rendering for public surfaces and generated tests; backend
   `CapabilityMatrix` methods and the cross-literal conformance test are
   deleted as redundant.
 - The lookup missing-symbol validation message is uniformized as a deliberate

@@ -84,3 +84,21 @@ func TestRegisteredPayloadFlagsAdvertiseStdin(t *testing.T) {
 		t.Fatal("registry has no source, body, or case payload parameters")
 	}
 }
+
+func TestCommandsIncludeLanguageContractsInLongHelp(t *testing.T) {
+	registry := operation.DefaultRegistry()
+	commands := cli.Commands(t.TempDir())
+	for _, command := range commands {
+		entry, ok := registry.LookupCLI(command.Name())
+		if !ok {
+			t.Fatalf("command %q missing registry entry", command.Name())
+		}
+		want := entry.Description()
+		if command.Long != want {
+			t.Errorf("command %q Long = %q, want registry description %q", command.Name(), command.Long, want)
+		}
+		if len(entry.LanguageContracts) > 0 && command.Long == command.Short {
+			t.Errorf("command %q help omits language contract details", command.Name())
+		}
+	}
+}

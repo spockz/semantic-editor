@@ -154,6 +154,44 @@ All three tiers run locally during standard development (`go test ./...` / `make
 
 ## 5. Coding Standards & Invariants
 
+### Operation-Language Contracts
+
+The operation registry owns the public requirements for every implemented
+language-operation pair. Update `internal/operation/language_contracts.go` when
+adding a handler or changing its analysis scope, preconditions, capabilities, or
+tolerance of existing errors. Use the closed types in
+`internal/capability/contract_model.go`: analysis/prerequisite enums, feature and
+guarantee flags, exact request variants, and broken-code bitmaps. Production
+registry construction validates these declarations. Keep conditional requirements
+explicit, including cross-package movement, safe-delete, test variants, and
+normalization modes.
+
+CLI command help, enabled-language MCP descriptions, and generated reference
+tables consume these contracts. Document semedit's implemented behavior; an
+upstream language server's broader feature set does not establish adapter
+support or guarantee success on malformed code. Target parsing, package typing,
+module proofs, and diagnostic coverage remain separate typed requirements.
+
+`CodeFaults` assigns bits 0 through 5 to target syntax, target type, other-file
+same-package syntax, same-package type, other-package syntax, and other-package
+type errors. A `CombinationSet` has one bit per exact fault mask:
+`uint64(1) << faults`; it is not a mask of individually supported faults. For
+example, support for `FaultTargetType` and `FaultOtherPackageSyntax` does not
+establish support for their combination. Classify each exact case as supported,
+rejected, conditional, or unknown. Supported and rejected cases must meet the
+variant's scoped contract when other prerequisites hold. Conditional cases name
+their recovery condition; unknown cases make no promise.
+
+`BrokenCodeSupport.Cases()` returns these cases for test generation and reports
+invalid declarations as errors. `TestREQ001BrokenCodeBitmapCLIContracts` builds
+CLI txtar scenarios from all 64 combinations for selected-file Go lookup,
+outline, inspection, and body replacement, asserting output and file contents.
+Add scenario-specific generators as more behavior becomes deterministic.
+Conditional cases need controlled server/normalization/check behavior; never
+turn them or unknown cases into unconditional success or failure assertions.
+
+### Source and Workspace Rules
+
 * **Error Handling**: Wrap errors with context using `fmt.Errorf("...: %w", err)` and inspect using `errors.Is` / `errors.As`.
 * **No Unsolicited File Writes**: Tooling must never create or modify workspace configuration files (`go.work`, `Cargo.toml`) on disk without explicit user approval.
 * **Sandboxing**: Temporary scratch files or experimental code must always use a gitignored `.scratch/` directory.

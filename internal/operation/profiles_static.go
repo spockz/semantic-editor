@@ -47,9 +47,6 @@ func rustProfile() Profile {
 	return Profile{
 		Language: backend.LanguageRust, DisplayName: "Rust", Maturity: "Selected-file refactoring preview",
 		Limitations: []capability.Constraint{
-			{Title: "Selected-File Rename Only",
-				Description: "Rust supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and other structural edit/refactoring capabilities are unavailable.",
-				Severity:    "error"},
 			{Title: "Trusted Explicit Workspace",
 				Description: "Lookup requires a selected .rs file, a deterministic Cargo root, explicit workspace trust, and a preinstalled rust-analyzer; Cargo is never invoked.",
 				Severity:    "error"},
@@ -64,9 +61,6 @@ func javaProfile() Profile {
 	return Profile{
 		Language: backend.LanguageJava, DisplayName: "Java", Maturity: "Selected-file refactoring preview",
 		Limitations: []capability.Constraint{
-			{Title: "Selected-File Rename Only",
-				Description: "Java supports selected-file rename only; formatting, imports, verification, extraction, inline, move, and hierarchy refactoring capabilities are unavailable.",
-				Severity:    "error"},
 			{Title: "Trusted Explicit Workspace",
 				Description: "Lookup requires a selected .java file, an explicit or unambiguous Maven/Gradle root, explicit workspace trust, a preinstalled JDT LS distribution, and Java 21 or newer; JDT LS operations never invoke build tools. Bounded Maven process actions are exposed separately by the central operation registry.",
 				Severity:    "error"},
@@ -81,9 +75,6 @@ func scalaProfile() Profile {
 	return Profile{
 		Language: backend.LanguageScala, DisplayName: "Scala", Maturity: readOnlyPreview,
 		Limitations: []capability.Constraint{
-			{Title: "Lookup Only",
-				Description: "Scala rename, formatting, imports, verification, build import, and structural edits are unavailable.",
-				Severity:    "error"},
 			{Title: "Trusted Explicit Tools",
 				Description: "Lookup requires a selected .scala file, an explicit workspace root for project markers, explicit workspace trust, a pinned preinstalled Metals distribution, and recorded Java 21 or newer; no build tool is invoked.",
 				Severity:    "error"},
@@ -99,9 +90,6 @@ func kotlinProfile() Profile {
 		Language: backend.LanguageKotlin, DisplayName: "Kotlin", Maturity: readOnlyPreview,
 		SupportedModifiers: []string{"public", "private", "protected", "internal"},
 		Limitations: []capability.Constraint{
-			{Title: "Read Only",
-				Description: "Kotlin supports trusted lookup and selected-file diagnostics only; rename, formatting, imports, and structural edits are unavailable.",
-				Severity:    "error"},
 			{Title: "Trusted Server",
 				Description: "A selected .kt or .kts file and request-scoped workspace trust are required before the preinstalled fwcd/kotlin-language-server is resolved or launched. Upstream may execute project classpath scripts or Maven/Gradle while resolving dependencies.",
 				Severity:    "error"},
@@ -116,9 +104,6 @@ func bashProfile() Profile {
 	return Profile{
 		Language: backend.LanguageBash, DisplayName: "Bash", Maturity: readOnlyPreview,
 		Limitations: []capability.Constraint{
-			{Title: "Read Only",
-				Description: "Bash supports trusted selected-file lookup and diagnostics only; rename, formatting, imports, and structural edits are unavailable.",
-				Severity:    "error"},
 			{Title: "Selected File",
 				Description: "Only .sh and .bash files are accepted. The server runs in a source-only scratch workspace after request-scoped workspace trust.",
 				Severity:    "error"},
@@ -136,9 +121,6 @@ func makeProfile() Profile {
 	return Profile{
 		Language: backend.LanguageMake, DisplayName: "Makefile", Maturity: readOnlyPreview,
 		Limitations: []capability.Constraint{
-			{Title: "Read Only",
-				Description: "Makefile supports trusted selected-file target and assignment-variable lookup only; conditional lookup, verification, rename, formatting, imports, and structural edits are unavailable.",
-				Severity:    "error"},
 			{Title: "Selected File",
 				Description: "Only Makefile, makefile, GNUmakefile, and .mk files are accepted. make-ls runs in an isolated source workspace after request-scoped trust.",
 				Severity:    "error"},
@@ -153,9 +135,6 @@ func haskellProfile() Profile {
 	return Profile{
 		Language: backend.LanguageHaskell, DisplayName: "Haskell", Maturity: readOnlyPreview,
 		Limitations: []capability.Constraint{
-			{Title: "Lookup Only",
-				Description: "Haskell rename, formatting, imports, verification, compilation, diagnostics, and structural edits are unavailable.",
-				Severity:    "error"},
 			{Title: "Explicit Standalone Trust",
 				Description: "Lookup requires --haskell-standalone (or standalone_haskell=true), a selected .hs file, explicit workspace trust, preinstalled GHC, and a matching preinstalled haskell-language-server-wrapper; hie.yaml, stack.yaml, cabal.project, *.cabal, and package.yaml project markers are rejected.",
 				Severity:    "error"},

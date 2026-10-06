@@ -752,5 +752,8 @@ func DefaultRegistry() *Registry {
 	if err := registerContractOps(registry); err != nil {
 		panic(err)
 	}
+	if err := registry.installLanguageContracts(); err != nil {
+		panic(err)
+	}
 	return registry
 }

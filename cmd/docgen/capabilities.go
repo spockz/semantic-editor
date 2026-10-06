@@ -83,14 +83,17 @@ func extractOperationCapabilities() ([]CodeCapability, error) {
 		backend.LanguageJava,
 		backend.LanguageScala,
 		backend.LanguageHaskell,
+		backend.LanguageKotlin,
+		backend.LanguageBash,
+		backend.LanguageMake,
 	}
 	var capabilities []CodeCapability
 	for _, lang := range langOrder {
-		m, err := registry.Matrix(lang)
+		matrix, err := registry.Matrix(lang)
 		if err != nil {
 			return nil, fmt.Errorf("operation capability matrix for %s: %w", lang, err)
 		}
-		capabilities = append(capabilities, capabilityFromMatrix(m))
+		capabilities = append(capabilities, capabilityFromMatrix(matrix))
 	}
 	return capabilities, nil
 }
@@ -99,11 +102,12 @@ func capabilityFromMatrix(matrix capability.LanguageMatrix) CodeCapability {
 	ops := make(map[string]OpMetadata, len(matrix.Operations))
 	for name, op := range matrix.Operations {
 		ops[name] = OpMetadata{
-			Supported:    op.Supported,
-			Description:  op.Description,
-			CLICommand:   op.CLICommand,
-			MCPTool:      op.MCPTool,
-			PlacementKey: op.PlacementKey,
+			Supported:        op.Supported,
+			Description:      op.Description,
+			CLICommand:       op.CLICommand,
+			MCPTool:          op.MCPTool,
+			PlacementKey:     op.PlacementKey,
+			LanguageContract: op.LanguageContract,
 		}
 	}
 	constraints := make([]Constraint, len(matrix.Limitations))

@@ -72,19 +72,28 @@ func (r *Registry) Matrix(language backend.LanguageID) (capability.LanguageMatri
 	}
 	operations := make(map[string]capability.OpCapability, len(r.byKey))
 	for _, entry := range r.All() {
-		supported := slices.Contains(entry.Languages, language)
+		supported := slices.Contains(entry.Languages, language) || slices.Contains(entry.Languages, backend.LanguageAuto) && len(entry.Languages) == 1
+		var languageContract *capability.OperationContract
+		contract, hasContract := entry.LanguageContracts[language]
+		if !hasContract && supported {
+			contract, hasContract = entry.LanguageContracts[backend.LanguageAuto]
+		}
+		if hasContract {
+			languageContract = &contract
+		}
 		command := ""
 		if entry.CLIName != "" {
 			command = "semedit " + entry.CLIName
 		}
 		operations[entry.Key] = capability.OpCapability{
-			Supported:    supported,
-			Description:  entry.Summary,
-			CLICommand:   command,
-			MCPTool:      entry.MCPName,
-			PlacementKey: entry.PlacementKey,
-			Level:        string(entry.Level),
-			ReadOnly:     entry.ReadOnly,
+			Supported:        supported,
+			Description:      entry.Summary,
+			CLICommand:       command,
+			MCPTool:          entry.MCPName,
+			PlacementKey:     entry.PlacementKey,
+			Level:            string(entry.Level),
+			ReadOnly:         entry.ReadOnly,
+			LanguageContract: languageContract,
 		}
 	}
 	return capability.LanguageMatrix{

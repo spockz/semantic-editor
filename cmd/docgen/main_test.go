@@ -382,3 +382,51 @@ func TestRenderedPagesAvoidPassiveVoice(t *testing.T) {
 		}
 	}
 }
+
+func TestOperationCapabilityContractsCoverAllLanguagesAndRender(t *testing.T) {
+	capabilities, err := extractOperationCapabilities()
+	if err != nil {
+		t.Fatalf("extract operation capabilities: %v", err)
+	}
+	wantLanguages := []string{"go", "rust", "java", "scala", "haskell", "kotlin", "bash", "make"}
+	if len(capabilities) != len(wantLanguages) {
+		t.Fatalf("extracted %d languages, want %d", len(capabilities), len(wantLanguages))
+	}
+	for index, language := range wantLanguages {
+		if capabilities[index].Language != language {
+			t.Errorf("language[%d] = %q, want %q", index, capabilities[index].Language, language)
+		}
+		for operation, metadata := range capabilities[index].Operations {
+			if metadata.Supported && metadata.LanguageContract == nil {
+				t.Errorf("%s/%s is supported without an operation contract", language, operation)
+			}
+		}
+	}
+	page := renderMarkdown(capabilities, nil, nil)
+	for _, phrase := range []string{
+		"## Per-Language Operation Contracts",
+		"| Operation | CLI command | MCP tool | Variant | Analysis scope | Preconditions | Capabilities | Guarantees | Error tolerance |",
+		"### Go",
+		"### Kotlin",
+		"### Bash",
+		"### Make",
+		"semedit lookup",
+		"semantic_lookup",
+		"selected_file",
+		"Guarantees",
+		"healthy=supported",
+		"target_syntax=",
+	} {
+		if !strings.Contains(page, phrase) {
+			t.Errorf("rendered contract documentation missing %q", phrase)
+		}
+	}
+	if strings.Contains(page, "the target typechecks before editing") || strings.Contains(page, "clean project is required") {
+		t.Error("generated documentation promises a clean project instead of rendering typed fault support")
+	}
+	if strings.Index(page, "### Go") > strings.Index(page, "### Kotlin") ||
+		strings.Index(page, "### Kotlin") > strings.Index(page, "### Bash") ||
+		strings.Index(page, "### Bash") > strings.Index(page, "### Make") {
+		t.Error("contract language sections are not rendered in registry order")
+	}
+}

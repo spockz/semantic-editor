@@ -35,6 +35,7 @@ func renderMarkdown(caps []CodeCapability, placements []string, examples []Txtar
 	var buf bytes.Buffer
 	writeReferencePreamble(&buf)
 	writeCapabilityMatrix(&buf, caps)
+	writeOperationContracts(&buf, caps)
 	writeLanguageConstraints(&buf, caps)
 	writePlacementQualifiers(&buf, placements)
 	writeExecutableWorkflows(&buf, examples)
@@ -80,6 +81,45 @@ func writeCapabilityMatrix(buf *bytes.Buffer, caps []CodeCapability) {
 			markdownCell(strings.Join(modifiers, ", ")),
 			markdownCell(strings.Join(operations, ", ")),
 		)
+	}
+}
+
+func writeOperationContracts(buf *bytes.Buffer, caps []CodeCapability) {
+	buf.WriteString("\n## Per-Language Operation Contracts\n\n")
+	buf.WriteString("Contracts distinguish exact request variants, prerequisites, capabilities, and scoped guarantees. Supported means the operation can meet those guarantees when its other prerequisites hold; it does not promise a clean project. Conditional cases require the named analysis, normalization, or reporting condition. Unknown cases make no promise.\n\n")
+	buf.WriteString("Fault bits 0 through 5 represent target-file syntax/type errors, syntax/type errors in another file of the same package, and syntax/type errors in another package. Each 64-bit support mask has one bit per exact fault combination: `uint64(1) << faults`. Mixed faults use that exact bit; individual support implies no combined support.\n\n")
+	for _, language := range caps {
+		operations := make([]string, 0, len(language.Operations))
+		for name, metadata := range language.Operations {
+			if metadata.Supported && metadata.LanguageContract != nil {
+				operations = append(operations, name)
+			}
+		}
+		slices.Sort(operations)
+		if len(operations) == 0 {
+			continue
+		}
+		fmt.Fprintf(buf, "### %s\n\n", markdownCell(language.DisplayName))
+		buf.WriteString("| Operation | CLI command | MCP tool | Variant | Analysis scope | Preconditions | Capabilities | Guarantees | Error tolerance |\n| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n")
+		for _, name := range operations {
+			metadata := language.Operations[name]
+			contract := metadata.LanguageContract
+			for _, variant := range contract.Variants {
+				capabilities := append([]string{metadata.Description}, variant.CapabilitiesDescription())
+				fmt.Fprintf(buf, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					markdownCell(name),
+					markdownCell(metadata.CLICommand),
+					markdownCell(metadata.MCPTool),
+					markdownCell(variant.When.String()),
+					markdownCell(variant.AnalysisScope.Description()),
+					markdownCell(variant.PreconditionsDescription()),
+					markdownCell(strings.Join(capabilities, "; ")),
+					markdownCell(variant.GuaranteesDescription()),
+					markdownCell(variant.ErrorTolerance.Description()),
+				)
+			}
+		}
+		buf.WriteString("\n")
 	}
 }
 

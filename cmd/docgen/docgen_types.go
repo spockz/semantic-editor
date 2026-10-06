@@ -1,6 +1,10 @@
 // docgen_types.go keeps the shared data shapes used by extraction and rendering together.
 package main
 
+import (
+	"semedit/internal/capability"
+)
+
 // CodeCapability represents extracted language capability metadata.
 type CodeCapability struct {
 	Language           string
@@ -13,11 +17,12 @@ type CodeCapability struct {
 
 // OpMetadata describes an operation.
 type OpMetadata struct {
-	Supported    bool
-	Description  string
-	CLICommand   string
-	MCPTool      string
-	PlacementKey bool
+	Supported        bool
+	Description      string
+	CLICommand       string
+	MCPTool          string
+	PlacementKey     bool
+	LanguageContract *capability.OperationContract
 }
 
 // Constraint describes a language rule.

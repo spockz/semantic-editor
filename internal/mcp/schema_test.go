@@ -2327,6 +2327,14 @@ func assertLanguageSpecificTools(t *testing.T, byName map[string]map[string]any,
 		if _, ok := byName["semantic_verify"]["inputSchema"].(map[string]any)["examples"]; ok {
 			t.Error("Java-only verify schema retained an example with an unsupported language")
 		}
+		renameDescription := byName["semantic_rename"]["description"].(string)
+		if !strings.Contains(renameDescription, "java:") || strings.Contains(renameDescription, "go:") {
+			t.Errorf("Java-only rename description has unfiltered language contracts: %s", renameDescription)
+		}
+		verifyDescription := byName["semantic_verify"]["description"].(string)
+		if !strings.Contains(verifyDescription, "language-independent / auto:") {
+			t.Errorf("Java-only verify description omitted its auto routing contract: %s", verifyDescription)
+		}
 	}
 	if caseName == "go only" || caseName == "mixed" {
 		access := byName["semantic_insert_construct"]["inputSchema"].(map[string]any)["properties"].(map[string]any)["access_modifier"].(map[string]any)["enum"]

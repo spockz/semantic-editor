@@ -3937,6 +3937,86 @@ The need to report successfully written paths motivated adding a report-returnin
 - Workaround: inspect the declaration outline and use its actual file in the assigned review worktree.
 - Root cause: the review request used an outdated declaration location after the adapter was split from the contract wire file. Read-only navigation must also select the current worktree rather than relying on the installed server's primary checkout.
 
+## 2026-10-06: Scaffold purpose header requires Go comment syntax
+
+- Tool: `semantic_scaffold_file`.
+- Target: `internal/operation/language_contracts.go`.
+- Observed failure: `invalid purpose header: expected 'package', found Language` when the purpose header was supplied as plain prose.
+- Workaround: supply the explanatory header as a Go `//` comment before retrying; no source file was created by the rejected request.
+- Root cause: the caller omitted comment syntax from the source header parameter.
+
+## 2026-10-06: Batch final verification requires project hook trust
+
+- Tool: `semantic_batch`.
+- Target: `internal/operation/language_contracts.go`.
+- Observed failure: all eight declaration insertions succeeded, then final `semantic_verify` rejected the detected `golangci-lint` hook because workspace trust was absent.
+- Workaround: retain the applied edits and use the repository's authorized `make check` for verification. The installed batch schema exposes no workspace-trust argument.
+- Root cause: the batch's final verification now detects project checks requiring trust, but its exposed request schema cannot grant that trust.
+
+## 2026-10-06: Declaration replacement cannot replace a struct type
+
+- Tool: `semantic_replace_decl`.
+- Target: `internal/capability/capability.go`, `OperationContract`.
+- Observed failure: the operation rejected replacement of the struct because it supports constants, variables, and type aliases.
+- Workaround: use the development CLI's `replace-construct --kind type` operation for struct replacement.
+- Root cause: the caller selected the narrower declaration tool instead of the supported generic type replacement operation.
+
+## 2026-10-06: Body replacement cannot change a return signature
+
+- Tool: `semantic_replace_body` in a model correction batch.
+- Target: `internal/capability/contract_model.go`, `BrokenCodeSupport.Cases`.
+- Observed failure: changing the body to return a result and an error retained the one-result signature, producing return-count diagnostics. The batch then failed its final verification because project lint hooks require workspace trust.
+- Workaround: replace the complete method using CLI `replace-construct --kind method`; use individual semantic operations for the remaining edits.
+- Root cause: body replacement preserves the declaration signature, and the exposed batch schema cannot provide the trust required by this project's verification hooks.
+
+## 2026-10-06: Symbol inspection used the wrong file
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/capability/contract_model.go`, `OperationContract`.
+- Observed failure: symbol not found because the transfer type is declared in `capability.go`.
+- Workaround: inspect the declaration in its actual file and use the model file for its methods.
+- Root cause: caller selected the method-definition file rather than the type-definition file.
+
+## 2026-10-06: Function insertion requires a single declaration
+
+- Tool: `semantic_insert_function`.
+- Target: `internal/operation/language_contracts.go`.
+- Observed failure: one call containing three function declarations was rejected.
+- Workaround: insert each function in a separate call.
+- Root cause: the caller supplied multiple declarations to an operation that accepts one complete function or method.
+
+## 2026-10-06: Profile helper replacement had an incomplete body
+
+- Tool: `semantic_replace_body`.
+- Target: `internal/operation/language_contract_profiles.go`.
+- Observed failure: an incomplete supplied body lacked a closing brace and was rejected before editing.
+- Workaround: supply the complete, parseable function body.
+- Root cause: malformed caller input.
+
+## 2026-10-06: Documentation comments cannot target grouped constants
+
+- Tool: CLI `set-doc-comment`.
+- Target: `internal/capability/contract_model.go`, `ScopeNone`.
+- Observed failure: grouped constants were rejected because comment ownership is unsupported.
+- Workaround: use supported semantic comments for standalone declarations and a focused, atomically published patch for constant-block API comments.
+- Root cause: the documentation operation deliberately excludes grouped declaration ownership.
+
+## 2026-10-06: Documentation comments cannot route qualified methods
+
+- Tool: CLI `set-doc-comment`.
+- Target: exported receiver methods in `internal/capability/contract_model.go`.
+- Observed limitation: qualified receiver-method selectors are unsupported by the documentation operation.
+- Workaround: publish focused API-comment additions through the atomic writer, preserving method implementations.
+- Root cause: the documentation operation's selector support is narrower than symbol inspection and body replacement.
+
+## 2026-10-06: Atomic publisher command treated a destination as source
+
+- Tool: atomic publication helper invoked through `go run`.
+- Target: `internal/capability/contract_model.go`.
+- Observed failure: the `.go` destination argument was interpreted as another Go source file, so publication did not occur.
+- Workaround: build the publisher under `.scratch` and pass the destination to the compiled helper.
+- Root cause: Go source-file argument parsing precedes program-argument parsing for this invocation.
+
 ## 2026-10-04: OpenCode hard-task rerun masks mutation and undo errors
 
 - Tools: `semantic_rename`, `semantic_replace_construct`, and `semantic_undo` through OpenCode's MCP client.

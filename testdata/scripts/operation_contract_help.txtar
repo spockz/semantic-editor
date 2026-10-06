@@ -1,0 +1,51 @@
+# Registry requirements reach observable CLI help and enabled-language MCP discovery.
+exec semedit replace-body --help
+stdout 'Variant: selected_file'
+stdout 'the selected file'
+stdout 'Guarantees:'
+stdout 'healthy=supported'
+stdout 'target_syntax='
+
+exec semedit change-signature --help
+stdout 'the active module'
+stdout 'test variants'
+stdout 'module proof'
+stdout 'conditional=0x'
+
+exec semedit lookup --help
+stdout 'go: Variant: selected_file'
+stdout 'rust: Variant: selected_file'
+stdout 'java: Variant: selected_file'
+stdout 'scala: Variant: selected_file'
+stdout 'haskell: Variant: selected_file'
+stdout 'kotlin: Variant: selected_file'
+stdout 'bash: Variant: selected_file'
+stdout 'make: Variant: selected_file'
+stdout 'read-only'
+
+exec semedit rename --help
+stdout 'go: Variant:'
+stdout 'rust: Variant: selected_file'
+stdout 'java: Variant: selected_file'
+! stdout 'scala: Variant:'
+! stdout 'kotlin: Variant:'
+
+exec semedit verify --help
+stdout 'java: Variant:'
+stdout 'organize imports'
+stdout 'kotlin: Variant: selected_file'
+stdout 'bash: Variant: selected_file'
+stdout 'Variant: selected_file,check_only'
+stdout 'check_only'
+! stdout 'rust: Variant:'
+! stdout 'make: Variant:'
+
+stdin tools.json
+exec semedit mcp --enabled-languages go --tool-profile full
+stdout 'go: Variant:'
+! stdout 'java: Variant:'
+! stdout 'rust: Variant:'
+! stdout 'kotlin: Variant:'
+
+-- tools.json --
+{"jsonrpc":"2.0","id":1,"method":"tools/list"}

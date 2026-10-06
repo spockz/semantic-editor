@@ -743,6 +743,23 @@ func entrySupportsAny(entry operation.Entry, languages []backend.LanguageID) boo
 }
 
 func toolSchemaForLanguages(entry operation.Entry, backends []backend.Backend) (map[string]any, error) {
+	enabled := make(map[backend.LanguageID]struct{}, len(backends))
+	for _, candidate := range backends {
+		enabled[candidate.Language()] = struct{}{}
+	}
+	if len(entry.Languages) > 0 {
+		filtered := make([]backend.LanguageID, 0, len(entry.Languages))
+		for _, language := range entry.Languages {
+			if language == backend.LanguageAuto {
+				filtered = append(filtered, language)
+				continue
+			}
+			if _, ok := enabled[language]; ok {
+				filtered = append(filtered, language)
+			}
+		}
+		entry.Languages = filtered
+	}
 	tool, err := toolSchema(entry)
 	if err != nil {
 		return nil, err
@@ -809,16 +826,18 @@ func toolOutputAndContinuations(entry operation.Entry) (toolOutputAndContinuatio
 	return toolOutputAndContinuationsResult{schema: output, continuations: continuations}, nil
 }
 
-func toolSchemaDescription(entry operation.Entry) string {
-	description := entry.Summary
-	if entry.Output == nil {
-		return description
-	}
-	var fieldNames []string
-	for _, metadata := range entry.Output.Metadata {
-		label := "`" + metadata.Field + "`"
-		if metadata.Description != "" {
-			label += " (" + metadata.Description + ")"
+func toolSchemaDescription(entry operation.Entry, continuations map[string]any) string {
+	description := entry.Description()
+	if entry.Output != nil && len(entry.Output.Continuations) > 0 {
+		fieldNames := make([]string, 0, len(entry.Output.Continuations))
+		for _, continuation := range entry.Output.Continuations {
+			name := continuation.Field
+			if continuation.Path != "" {
+				name = continuation.Path
+			}
+			if name != "" {
+				fieldNames = append(fieldNames, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
+			}
 		}
 		fieldNames = append(fieldNames, label)
 	}

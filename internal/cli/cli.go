@@ -315,6 +315,7 @@ func buildCommand(workDir string, registry *operation.Registry, entry operation.
 	cmd := &cobra.Command{
 		Use:           entry.CLIName,
 		Short:         entry.Summary,
+		Long:          entry.Description(),
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
