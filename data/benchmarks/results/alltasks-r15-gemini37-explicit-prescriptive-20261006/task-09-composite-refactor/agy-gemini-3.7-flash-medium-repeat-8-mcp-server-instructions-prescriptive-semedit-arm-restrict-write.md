@@ -1,0 +1,167 @@
+# Empirical Benchmark Report: Vanilla LLM vs. Semedit MCP
+
+<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+* **Date**: 2026-10-06 09:19:03 CEST
+
+## Test case: `task-09-composite-refactor`
+
+### Target: `agy/gemini-3.7-flash-medium (repeat 8)`
+
+#### Configuration: explicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Fixture**: `testdata/bench/task_09_composite_refactor.txtar` (`sha256:67c732ecf313ddf77dc541a4 (uncommitted)`)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+**Semedit MCP Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In parallel, call semantic_lookup for Config.Port in config/config.go and inspect Config.Addr. Then serially: semantic_rename the field Config.Port to ListenPort; semantic_insert_function in config/config.go with source `func DefaultConfig() *Config { return &Config{Host: \"localhost\", ListenPort: 8080} }` at public_end; semantic_organize_imports with {\"file\":\"config/config.go\"}. Preserve Addr behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package config
+
+import (
+	"archive/tar"
+	"fmt"
+)
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | <span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> MCP (Small) | Δ (Small) | Vanilla (Large) | <span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 2.53s | 2.65s | N/A | 2.57s | 2.84s | N/A |
+| **Process Start → First Event** | — | — | — | — | — | — |
+| **First Event → First Tool Call** | — | — | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | N/A | 1 | 1 | N/A |
+| **Internal Tool Cycles** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Initial Load / Discovery Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Tool Invocations** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Output Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Reasoning / Thinking Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Cached Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Uncached Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Cached vs Uncached Token Ratio** | — | — | — | — | — | — |
+| **Oracle L1: Mutation Policy** | — | — | — | — | — | — |
+| **Oracle L2: AST Invariants** | — | — | — | — | — | — |
+| **Oracle L3: Clean Build** | — | — | — | — | — | — |
+| **Oracle L4: Verification Test** | — | — | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ⚠️ NO (Fallback) | — | ✅ N/A (Vanilla) | ⚠️ NO (Fallback) | — |
+
+#### Configuration: implicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Fixture**: `testdata/bench/task_09_composite_refactor.txtar` (`sha256:67c732ecf313ddf77dc541a4 (uncommitted)`)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+**Semedit MCP Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> In config/config.go: rename Config.Port to Config.ListenPort, insert DefaultConfig() *Config returning Host localhost and ListenPort 8080, and clean up unused imports. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package config
+
+import (
+	"archive/tar"
+	"fmt"
+)
+
+type Config struct {
+	Host string
+	Port int
+}
+
+func (c *Config) Addr() string {
+	return fmt.Sprintf("%s:%d", c.Host, c.Port)
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | <span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> MCP (Small) | Δ (Small) | Vanilla (Large) | <span role="img" aria-label="Semantic tool invocation not verified" title="Semantic tool invocation not verified">⚠</span> MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 2.53s | 3.40s | N/A | 2.57s | 2.64s | N/A |
+| **Process Start → First Event** | — | — | — | — | — | — |
+| **First Event → First Tool Call** | — | — | — | — | — | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | N/A | 1 | 1 | N/A |
+| **Internal Tool Cycles** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Initial Load / Discovery Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Tool Invocations** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Output Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Reasoning / Thinking Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Cached Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Uncached Input Tokens** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Cached vs Uncached Token Ratio** | — | — | — | — | — | — |
+| **Oracle L1: Mutation Policy** | — | — | — | — | — | — |
+| **Oracle L2: AST Invariants** | — | — | — | — | — | — |
+| **Oracle L3: Clean Build** | — | — | — | — | — | — |
+| **Oracle L4: Verification Test** | — | — | — | — | — | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ⚠️ NO (Fallback) | — | ✅ N/A (Vanilla) | ⚠️ NO (Fallback) | — |
+

@@ -112,7 +112,7 @@ func RenderBenchmarkPlan(w io.Writer, plan *BenchmarkPlan) error {
 	for index, job := range plan.Jobs {
 		promptVariant := emptyAsDash(job.PromptVariant)
 		policy := string(options.SemeditArmRestriction)
-		applies := job.Arm == ArmSemedit
+		applies := isSemeditArm(job.Arm)
 		if job.Arm == ArmControl {
 			policy = "-"
 			applies = false
@@ -222,7 +222,7 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	result.Target = job.Target
 	result.Arm = job.Arm
 	result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
-	result.SemeditArmRestrictionApplied = job.Arm == ArmSemedit
+	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm)
 	result.Prompt = job.Execution.Prompt
 	result.MCPServerInstructions = job.MCPServerInstructions
 	if job.Arm == ArmControl {
@@ -637,15 +637,93 @@ func appendTargetJobs(plan *BenchmarkPlan, fixture fixtureSpec, selected variant
 			}
 			targetPrompts = []string{selected.PromptName}
 		} else {
-			targetPrompts = promptNames
+			targetPrompts = make([]string, 0, len(promptNames))
+			for _, promptName := range promptNames {
+				if promptName != "explicit" {
+					targetPrompts = append(targetPrompts, promptName)
+				}
+			}
 		}
 	}
 	for _, promptName := range targetPrompts {
+		if !isControl && promptName == "explicit" {
+			if err := appendExplicitPromptJobs(plan, fixture, selected, target, seenJobs); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := appendPromptJobs(plan, fixture, selected, target, promptName, seenJobs); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func appendExplicitPromptJobs(plan *BenchmarkPlan, fixture fixtureSpec, selected variantSelection, target Target, seenJobs map[string]bool) error {
+	for repeat := 1; repeat <= plan.Options.Repeats; repeat++ {
+		specification := Job{TaskID: fixture.Task.Metadata.TaskID, FixturePath: fixture.Path, Context: selected.Context, Target: target, Repeat: repeat, Task: fixture.Task}
+		jobs, err := makeExplicitPromptJobs(specification, plan.Options)
+		if err != nil {
+			return fmt.Errorf("resolve explicit prompt experiment for fixture %s: %w", fixture.Task.Metadata.TaskID, err)
+		}
+		for _, job := range jobs {
+			if seenJobs[job.ID] {
+				return fmt.Errorf("duplicate resolved benchmark job %s; remove overlapping context or prompt variants", job.ID)
+			}
+			seenJobs[job.ID] = true
+			plan.Jobs = append(plan.Jobs, job)
+		}
+	}
+	return nil
+}
+
+func makeExplicitPromptJobs(specification Job, options PlanOptions) ([]Job, error) {
+	if _, ok := specification.Task.Metadata.PromptVariants["explicit"]; !ok {
+		return nil, fmt.Errorf("fixture %s has no explicit prompt", specification.Task.Metadata.TaskID)
+	}
+	modes := options.MCPServerInstructions
+	if len(modes) == 0 {
+		modes = []MCPServerInstructionMode{MCPServerInstructionsNone}
+	}
+	conditions := []struct {
+		arm     ArmType
+		variant string
+	}{
+		{arm: ArmBaseline},
+		{arm: ArmSemedit, variant: "implicit"},
+		{arm: ArmSemeditExplicit, variant: "explicit"},
+	}
+	jobs := make([]Job, 0, len(modes)*len(conditions))
+	for _, mode := range modes {
+		pairParts := []string{"pair", specification.TaskID, specification.Target.String(), specification.Context, fmt.Sprint(specification.Repeat), string(options.SemeditArmRestriction), string(mode), "semedit-prompt-experiment"}
+		if options.SemeditPrewarmVerify {
+			pairParts = append(pairParts, "prewarm-verify")
+		}
+		pairID := stablePlanID(pairParts...)
+		for offset := range conditions {
+			condition := conditions[(offset+specification.Repeat-1)%len(conditions)]
+			job := specification
+			job.PromptVariant = condition.variant
+			job.ID = stablePlanID("job", specification.TaskID, specification.Target.String(), string(condition.arm), specification.Context, condition.variant, fmt.Sprint(specification.Repeat), string(mode), string(options.SemeditArmRestriction))
+			job.PairID = pairID
+			job.Arm = condition.arm
+			job.MCPServerInstructions = mode
+			if isSemeditArm(condition.arm) {
+				job.Policy = options.SemeditArmRestriction
+			}
+			variant := specification.Context
+			if condition.variant != "" {
+				variant += ":" + condition.variant
+			}
+			execution, err := ResolveAgentExecution(job.Task, job.Target, condition.arm, variant, options.SemeditArmRestriction)
+			if err != nil {
+				return nil, err
+			}
+			job.Execution = execution
+			jobs = append(jobs, job)
+		}
+	}
+	return jobs, nil
 }
 
 func appendPromptJobs(plan *BenchmarkPlan, fixture fixtureSpec, selected variantSelection, target Target, promptName string, seenJobs map[string]bool) error {
@@ -703,7 +781,7 @@ func makePlannedJobs(specification Job, options PlanOptions) ([]Job, error) {
 			job.PairID = pairID
 			job.Arm = arm
 			job.MCPServerInstructions = mode
-			if arm == ArmSemedit {
+			if isSemeditArm(arm) {
 				job.Policy = policy
 			}
 			if arm != ArmControl {

@@ -287,6 +287,30 @@ func TestBuildComparisonsPreservesIndependentRepeats(t *testing.T) {
 	}
 }
 
+func TestBuildComparisonsSharesOneBaselineAcrossExplicitPromptArms(t *testing.T) {
+	target := Target{Harness: string(HarnessOpenCode), Model: "qwen36-iq4-xs"}
+	baseline := &RunResult{TaskID: "task-01-rename-local", Variant: "small", Target: target, Repeat: 1, Arm: ArmBaseline}
+	implicit := &RunResult{TaskID: "task-01-rename-local", Variant: "small:implicit", PromptVariant: "implicit", Target: target, Repeat: 1, Arm: ArmSemedit}
+	explicit := &RunResult{TaskID: "task-01-rename-local", Variant: "small:explicit", PromptVariant: "explicit", Target: target, Repeat: 1, Arm: ArmSemeditExplicit}
+	comparisons := BuildComparisons([]*RunResult{baseline, implicit, explicit})
+	if got, want := len(comparisons), 2; got != want {
+		t.Fatalf("comparison count = %d, want %d", got, want)
+	}
+	byVariant := make(map[string]*ComparisonSummary, len(comparisons))
+	for _, comparison := range comparisons {
+		byVariant[comparison.PromptVariant] = comparison
+	}
+	for _, variant := range []string{"implicit", "explicit"} {
+		comparison := byVariant[variant]
+		if comparison == nil {
+			t.Fatalf("missing %s comparison", variant)
+		}
+		if comparison.SmallBaseline != baseline || comparison.SmallSemedit == nil {
+			t.Errorf("%s comparison does not share the baseline and have its own semedit result: %+v", variant, comparison)
+		}
+	}
+}
+
 func TestRenderSemanticToolCalloutReportsUnavailableToolsAsError(t *testing.T) {
 	t.Parallel()
 

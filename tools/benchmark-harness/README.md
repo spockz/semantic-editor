@@ -81,6 +81,12 @@ The selected `read`, `write`, or `readwrite` policy is a comparison condition on
 
 Policy changes must remain consistent across planning, prompts, result metadata, comparison keys, filenames, and publication. Historical results without policy metadata remain `unspecified`; the new-run default `write` must not be applied to them. Planned results retain exact fixture task identities, while legacy results retain their established normalization.
 
+## Explicit semedit prompt experiment
+
+Every agent fixture declares an `explicit` prompt that names the semantic tool sequence and task-specific arguments. Select it with `--variants small:explicit` (or `large:explicit`). That selection schedules three results per repeat and instruction mode: baseline, semedit with the default implicit task prompt, and semedit with the explicit tool plan. The two semedit comparisons share the same baseline run. The arm execution order rotates across repeats. Existing report columns and paired deltas remain unchanged; ordinary `small` selections do not include the explicit experiment. Explicit prompts permit parallel independent read-only lookups and require mutations to run serially or inside one ordered `semantic_batch`.
+
+The experiment investigates whether semedit's extra time and tool cycles come from model-side operation selection and planning or from MCP execution. Explicit instructions add input tokens, so compare turns, tool cycles, invocations, failures, token components, and wall time together rather than assuming lower total tokens. See [RQ-0065](../../docs/research/RQ-0065-explicit-semedit-prompt-arm.md).
+
 ## OpenCode AMD Beast smoke run
 
 Use `opencode/qwen36-iq4-xs` without an effort suffix. The provider defaults to

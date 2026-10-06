@@ -1,0 +1,1313 @@
+{
+  "comparisons": [
+    {
+      "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nRead rename-plan.md. In parallel, lookup Processor.LoadInput and Processor.CheckInput in pipeline/workflow.go. Then serially call semantic_rename for LoadInput to ReadRequest and CheckInput to ValidateRequest, using each returned symbol; preserve all other rows and behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "repeat": 6,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+        "cached_prompt_tokens": 87808,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:27.850653Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:27.850671Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257021Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257032Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-2aff9797e0a5318c",
+        "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 2992,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 87808,
+            "initial_load_turns": 0,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3164,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 468,
+            "process_start_to_first_event_ms": 133,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 101048,
+            "reasoning_tokens": 38,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 13240,
+            "wall_clock_ms": 12996
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-0376b7d4469f6ef5",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 3164,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 468,
+        "process_start_to_first_event_ms": 133,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 101048,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-12-rename-scale-02_1791266187774785000.json"
+        },
+        "reasoning_tokens": 38,
+        "repeat": 6,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-12-rename-scale-02",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+          "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+          "file_change",
+          "/bin/zsh -lc 'go test ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 13240,
+        "variant": "small",
+        "wall_clock_ms": 16257
+      },
+      "small_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+        "cached_prompt_tokens": 118272,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:23.229545Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.229562Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.605042Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.605053Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-2aff9797e0a5318c",
+        "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 4007,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 118272,
+            "initial_load_turns": 0,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2303,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 500,
+            "process_start_to_first_event_ms": 144,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nRead rename-plan.md. In parallel, lookup Processor.LoadInput and Processor.CheckInput in pipeline/workflow.go. Then serially call semantic_rename for LoadInput to ReadRequest and CheckInput to ValidateRequest, using each returned symbol; preserve all other rows and behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 141273,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat rename-plan.md'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "language": "go",
+                  "symbol": "Processor.LoadInput"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "language": "go",
+                  "symbol": "Processor.CheckInput"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "language": "go",
+                  "symbol": "Processor.LoadInput",
+                  "to": "ReadRequest",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "language": "go",
+                  "symbol": "Processor.CheckInput",
+                  "to": "ValidateRequest",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 23001,
+            "wall_clock_ms": 21743
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-7de0d4b03c481dc8",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2303,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 500,
+        "process_start_to_first_event_ms": 144,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nRead rename-plan.md. In parallel, lookup Processor.LoadInput and Processor.CheckInput in pipeline/workflow.go. Then serially call semantic_rename for LoadInput to ReadRequest and CheckInput to ValidateRequest, using each returned symbol; preserve all other rows and behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 141273,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 6,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not combine the renames because the prompt explicitly required serial `semantic_rename` calls in the stated order, using each returned symbol. `semantic_batch` was available, but batching was unsuitable under that instruction."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Using semedit’s tools made these two ordered renames feel precise and low-friction, so I’d ask my owner to add them for coding tasks that need reliable symbol-aware changes."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-12-rename-scale-02",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat rename-plan.md'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "language": "go",
+              "symbol": "Processor.LoadInput"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "language": "go",
+              "symbol": "Processor.CheckInput"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "language": "go",
+              "symbol": "Processor.LoadInput",
+              "to": "ReadRequest",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "language": "go",
+              "symbol": "Processor.CheckInput",
+              "to": "ValidateRequest",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc 'cat rename-plan.md'",
+          "semantic_lookup",
+          "semantic_lookup",
+          "semantic_rename",
+          "semantic_rename"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 23001,
+        "variant": "small:explicit",
+        "wall_clock_ms": 24309
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-12-rename-scale-02",
+      "txtar_path": "testdata/bench/task_12_rename_scale_02.txtar",
+      "txtar_provenance": "sha256:3c910d12b866efa6ec6dda4d (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "repeat": 6,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+        "cached_prompt_tokens": 87808,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:27.850653Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:27.850671Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257021Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257032Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-2aff9797e0a5318c",
+        "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 2992,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 87808,
+            "initial_load_turns": 0,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3164,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 468,
+            "process_start_to_first_event_ms": 133,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 101048,
+            "reasoning_tokens": 38,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 13240,
+            "wall_clock_ms": 12996
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-0376b7d4469f6ef5",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 3164,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 468,
+        "process_start_to_first_event_ms": 133,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 101048,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-12-rename-scale-02_1791266187774785000.json"
+        },
+        "reasoning_tokens": 38,
+        "repeat": 6,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-12-rename-scale-02",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+          "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+          "file_change",
+          "/bin/zsh -lc 'go test ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 13240,
+        "variant": "small",
+        "wall_clock_ms": 16257
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+        "cached_prompt_tokens": 233216,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:31.073862Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.073879Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.448293Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.448305Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-2aff9797e0a5318c",
+        "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 2795,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 233216,
+            "initial_load_turns": 0,
+            "internal_turns": 10,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2121,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1094,
+            "process_start_to_first_event_ms": 127,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 255845,
+            "reasoning_tokens": 212,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat AGENTS.override.md'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Processor.LoadInput",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Processor.CheckInput",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "symbol": "Processor.LoadInput",
+                  "to": "ReadRequest",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "pipeline/workflow.go",
+                  "symbol": "Processor.CheckInput",
+                  "to": "ValidateRequest",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 22629,
+            "wall_clock_ms": 37356
+          }
+        ],
+        "internal_turns": 10,
+        "job_id": "job-d0ca7dce178d7c97",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2121,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1094,
+        "process_start_to_first_event_ms": 127,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 255845,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000.json"
+        },
+        "reasoning_tokens": 212,
+        "repeat": 6,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "Batching was suitable and available, but I didn’t use it: I applied each rename as a separate semantic operation in plan order. I should have combined them with `semantic_batch`."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: semantic rename updated the `Processor` methods and their call sites cleanly, which made this small refactor feel reassuringly straightforward."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-12-rename-scale-02",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat AGENTS.override.md'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Processor.LoadInput",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Processor.CheckInput",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "symbol": "Processor.LoadInput",
+              "to": "ReadRequest",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "pipeline/workflow.go",
+              "symbol": "Processor.CheckInput",
+              "to": "ValidateRequest",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+          "/bin/zsh -lc 'cat AGENTS.override.md'",
+          "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+          "semantic_lookup",
+          "semantic_lookup",
+          "semantic_rename",
+          "semantic_rename",
+          "/bin/zsh -lc 'go test ./...'",
+          "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+          "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 22629,
+        "variant": "small:implicit",
+        "wall_clock_ms": 39630
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-12-rename-scale-02",
+      "txtar_path": "testdata/bench/task_12_rename_scale_02.txtar",
+      "txtar_provenance": "sha256:3c910d12b866efa6ec6dda4d (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "semedit-explicit",
+      "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+      "cached_prompt_tokens": 118272,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:23.229545Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.229562Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.605042Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:23.605053Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-2aff9797e0a5318c",
+      "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 4007,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 118272,
+          "initial_load_turns": 0,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2303,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 500,
+          "process_start_to_first_event_ms": 144,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nRead rename-plan.md. In parallel, lookup Processor.LoadInput and Processor.CheckInput in pipeline/workflow.go. Then serially call semantic_rename for LoadInput to ReadRequest and CheckInput to ValidateRequest, using each returned symbol; preserve all other rows and behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 141273,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat rename-plan.md'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "language": "go",
+                "symbol": "Processor.LoadInput"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "language": "go",
+                "symbol": "Processor.CheckInput"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "language": "go",
+                "symbol": "Processor.LoadInput",
+                "to": "ReadRequest",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "language": "go",
+                "symbol": "Processor.CheckInput",
+                "to": "ValidateRequest",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 23001,
+          "wall_clock_ms": 21743
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-7de0d4b03c481dc8",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2303,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 500,
+      "process_start_to_first_event_ms": 144,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nRead rename-plan.md. In parallel, lookup Processor.LoadInput and Processor.CheckInput in pipeline/workflow.go. Then serially call semantic_rename for LoadInput to ReadRequest and CheckInput to ValidateRequest, using each returned symbol; preserve all other rows and behavior. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 141273,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 6,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not combine the renames because the prompt explicitly required serial `semantic_rename` calls in the stated order, using each returned symbol. `semantic_batch` was available, but batching was unsuitable under that instruction."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Using semedit’s tools made these two ordered renames feel precise and low-friction, so I’d ask my owner to add them for coding tasks that need reliable symbol-aware changes."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-12-rename-scale-02",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat rename-plan.md'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "language": "go",
+            "symbol": "Processor.LoadInput"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "language": "go",
+            "symbol": "Processor.CheckInput"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "language": "go",
+            "symbol": "Processor.LoadInput",
+            "to": "ReadRequest",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "language": "go",
+            "symbol": "Processor.CheckInput",
+            "to": "ValidateRequest",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-12-rename-scale-02_1791266183105718000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc 'cat rename-plan.md'",
+        "semantic_lookup",
+        "semantic_lookup",
+        "semantic_rename",
+        "semantic_rename"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 23001,
+      "variant": "small:explicit",
+      "wall_clock_ms": 24309
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+      "cached_prompt_tokens": 87808,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:27.850653Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:27.850671Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257021Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:28.257032Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-2aff9797e0a5318c",
+      "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 2992,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 87808,
+          "initial_load_turns": 0,
+          "internal_turns": 4,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3164,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 468,
+          "process_start_to_first_event_ms": 133,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 101048,
+          "reasoning_tokens": 38,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 13240,
+          "wall_clock_ms": 12996
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-0376b7d4469f6ef5",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 3164,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 468,
+      "process_start_to_first_event_ms": 133,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 101048,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-12-rename-scale-02_1791266187774785000.json"
+      },
+      "reasoning_tokens": 38,
+      "repeat": 6,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-12-rename-scale-02",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'rename-plan.md' -g '*.go' -g 'go.mod' | head -200\"",
+        "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat pipeline/workflow.go \u0026\u0026 git status --short'",
+        "file_change",
+        "/bin/zsh -lc 'go test ./...'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 13240,
+      "variant": "small",
+      "wall_clock_ms": 16257
+    },
+    {
+      "arm": "semedit",
+      "before_state": "// Package pipeline provides independent processing stages for the rename scale benchmark.\npackage pipeline\n\ntype Processor struct{}\n\nfunc (Processor) LoadInput(value int) int { return value + 1 }\nfunc (Processor) CheckInput(value int) int { return value + 2 }\n\nfunc Run(processor Processor, value int) int {\n\tvalue = processor.LoadInput(value)\n\tvalue = processor.CheckInput(value)\n\treturn value\n}",
+      "cached_prompt_tokens": 233216,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:56:31.073862Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.073879Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.448293Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:56:31.448305Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-2aff9797e0a5318c",
+      "diff": "File pipeline/workflow.go modified (13 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 2795,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 233216,
+          "initial_load_turns": 0,
+          "internal_turns": 10,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2121,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1094,
+          "process_start_to_first_event_ms": 127,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 255845,
+          "reasoning_tokens": 212,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat AGENTS.override.md'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Processor.LoadInput",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Processor.CheckInput",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "symbol": "Processor.LoadInput",
+                "to": "ReadRequest",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "pipeline/workflow.go",
+                "symbol": "Processor.CheckInput",
+                "to": "ValidateRequest",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 22629,
+          "wall_clock_ms": 37356
+        }
+      ],
+      "internal_turns": 10,
+      "job_id": "job-d0ca7dce178d7c97",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2121,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1094,
+      "process_start_to_first_event_ms": 127,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"rename-plan.md\".\n\nApply every Processor method rename in rename-plan.md and update all call sites. Preserve behavior and run go test ./... before finishing. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 255845,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000.json"
+      },
+      "reasoning_tokens": 212,
+      "repeat": 6,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "Batching was suitable and available, but I didn’t use it: I applied each rename as a separate semantic operation in plan order. I should have combined them with `semantic_batch`."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: semantic rename updated the `Processor` methods and their call sites cleanly, which made this small refactor feel reassuringly straightforward."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-12-rename-scale-02",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat AGENTS.override.md'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Processor.LoadInput",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Processor.CheckInput",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "symbol": "Processor.LoadInput",
+            "to": "ReadRequest",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "pipeline/workflow.go",
+            "symbol": "Processor.CheckInput",
+            "to": "ValidateRequest",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-12-rename-scale-02_1791266190980529000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 10,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'rename-plan.md' -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'go.mod' -g '*.go' | head -80\"",
+        "/bin/zsh -lc 'cat AGENTS.override.md'",
+        "/bin/zsh -lc 'cat rename-plan.md \u0026\u0026 cat go.mod \u0026\u0026 git status --short'",
+        "semantic_lookup",
+        "semantic_lookup",
+        "semantic_rename",
+        "semantic_rename",
+        "/bin/zsh -lc 'go test ./...'",
+        "/bin/zsh -lc 'git diff -- go.mod rename-plan.md'",
+        "/bin/zsh -lc \"git diff -- pipeline/workflow.go \u0026\u0026 rg -n 'LoadInput|CheckInput|ReadRequest|ValidateRequest' --glob '*.go' .\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 22629,
+      "variant": "small:implicit",
+      "wall_clock_ms": 39630
+    }
+  ],
+  "timestamp": "2026-10-06T08:51:09.656664+02:00"
+}

@@ -1,0 +1,2057 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 125184,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:35.774196Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:35.774217Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106029Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106044Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.638528Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690228Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690643Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461effd4bf926de-AMS\n2026-10-06T04:31:37.407460Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:37.407522Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 214ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f001ca57cd17-AMS\n2026-10-06T04:31:38.013111Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.013180Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 362ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0057f23b660-AMS\n2026-10-06T04:31:38.700399Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.700470Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 776ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f009b86eed05-AMS\n2026-10-06T04:31:39.789108Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:39.789168Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.705s)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0109a0eb8fc-AMS\n",
+        "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 9861,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 125184,
+            "initial_load_turns": 3,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2935,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 906,
+            "process_start_to_first_event_ms": 285,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 140556,
+            "reasoning_tokens": 104,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 15372,
+            "wall_clock_ms": 32704
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-17d9879ce5751e5d",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2935,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 906,
+        "process_start_to_first_event_ms": 285,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 140556,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-01-rename-local_1791261095536719000.json"
+        },
+        "reasoning_tokens": 104,
+        "repeat": 7,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+          "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+          "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+          "file_change",
+          "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+          "/bin/zsh -lc 'cat api/server.go; git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 15372,
+        "variant": "large",
+        "wall_clock_ms": 35836
+      },
+      "large_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 117504,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:46.233325Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.233347Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.607327Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.607338Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5075,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 117504,
+            "initial_load_turns": 0,
+            "internal_turns": 2,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3936,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 242,
+            "process_start_to_first_event_ms": 142,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 134657,
+            "reasoning_tokens": 28,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName",
+                  "to": "newName"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 17153,
+            "wall_clock_ms": 15331
+          }
+        ],
+        "internal_turns": 2,
+        "job_id": "job-33673be41524b81b",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3936,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 242,
+        "process_start_to_first_event_ms": 142,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 134657,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-01-rename-local_1791261106093911000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-01-rename-local_1791261106093911000.json"
+        },
+        "reasoning_tokens": 28,
+        "repeat": 7,
+        "semantic_batch_reflection": {
+          "error": "run codex: signal: segmentation fault [termination_origin=outside_harness]: 2026-10-06T04:32:05.636565Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:32:05.636585Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/",
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: I felt confident using the semantic rename to update the method and its callers in one step, with no diagnostics introduced."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName",
+              "to": "newName"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 2,
+        "tools_used": [
+          "semantic_lookup",
+          "semantic_rename"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 17153,
+        "variant": "large:explicit",
+        "wall_clock_ms": 19399
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 79616,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:57.633326Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:57.633346Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130487Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f76cff1e8815ec72",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5649,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 79616,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2590,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 282,
+            "process_start_to_first_event_ms": 140,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 99997,
+            "reasoning_tokens": 15,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 20381,
+            "wall_clock_ms": 15850
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-d1079b0941364858",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2590,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 282,
+        "process_start_to_first_event_ms": 140,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 99997,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-01-rename-local_1791260937533515000.json"
+        },
+        "reasoning_tokens": 15,
+        "repeat": 7,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+          "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+          "file_change",
+          "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 20381,
+        "variant": "small",
+        "wall_clock_ms": 18540
+      },
+      "small_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 145920,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:59.465919Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.465939Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.831140Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.831152Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f76cff1e8815ec72",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5356,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 145920,
+            "initial_load_turns": 2,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2355,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 389,
+            "process_start_to_first_event_ms": 154,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 164025,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+                "transport_status": "unknown"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName",
+                  "to": "newName"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 18105,
+            "wall_clock_ms": 22950
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-a888397ed6b38e7a",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2355,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 389,
+        "process_start_to_first_event_ms": 154,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 164025,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-01-rename-local_1791260939379067000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-01-rename-local_1791260939379067000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 7,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not batch because the user explicitly required `semantic_lookup` first, then conditional declaration inspection, and only afterward `semantic_rename`; that ordered dependency is not suitable for a single `semantic_batch`. The lookup result determined the file and symbol passed to the rename, so batching was not used."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "As the agent who used semedit to rename `Server.oldName` and its callers, I found its semantic lookup and rename reassuringly precise, and I’d ask my owner to add these tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+            "transport_status": "unknown"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName",
+              "to": "newName"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_rename"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 18105,
+        "variant": "small:explicit",
+        "wall_clock_ms": 25473
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "txtar_path": "testdata/bench/task_01_rename_local.txtar",
+      "txtar_provenance": "sha256:44c14c3f4fcec22a45c89249 (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 125184,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:35.774196Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:35.774217Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106029Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106044Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.638528Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690228Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690643Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461effd4bf926de-AMS\n2026-10-06T04:31:37.407460Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:37.407522Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 214ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f001ca57cd17-AMS\n2026-10-06T04:31:38.013111Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.013180Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 362ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0057f23b660-AMS\n2026-10-06T04:31:38.700399Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.700470Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 776ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f009b86eed05-AMS\n2026-10-06T04:31:39.789108Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:39.789168Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.705s)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0109a0eb8fc-AMS\n",
+        "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 9861,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 125184,
+            "initial_load_turns": 3,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2935,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 906,
+            "process_start_to_first_event_ms": 285,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 140556,
+            "reasoning_tokens": 104,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+                "transport_status": "unknown"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 15372,
+            "wall_clock_ms": 32704
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-17d9879ce5751e5d",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2935,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 906,
+        "process_start_to_first_event_ms": 285,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 140556,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-01-rename-local_1791261095536719000.json"
+        },
+        "reasoning_tokens": 104,
+        "repeat": 7,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+            "transport_status": "unknown"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+          "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+          "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+          "file_change",
+          "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+          "/bin/zsh -lc 'cat api/server.go; git status --short'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 15372,
+        "variant": "large",
+        "wall_clock_ms": 35836
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 122368,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:45.204041Z ERROR codex_models_manager::manager: failed to load models cache: EOF while parsing a value at line 1 column 0\n2026-10-06T04:31:45.518250Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.518264Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.572457Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.572468Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5431,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 122368,
+            "initial_load_turns": 1,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3324,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 556,
+            "process_start_to_first_event_ms": 513,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 160214,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Server.oldName",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName",
+                  "to": "newName",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 37846,
+            "wall_clock_ms": 26361
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-b9b8b996214eaf96",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3324,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 556,
+        "process_start_to_first_event_ms": 513,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 160214,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 7,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I used semantic_lookup to identify `Server.oldName`, then made one semantic_rename call; there were no multiple mutation operations to combine with semantic_batch. Batching was unsuitable for this single rename."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I would ask my owner to add semedit’s tools: the semantic rename updated the method and its call site in one step, which felt reassuringly precise."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Server.oldName",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName",
+              "to": "newName",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "semantic_lookup",
+          "semantic_rename",
+          "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 37846,
+        "variant": "large:implicit",
+        "wall_clock_ms": 29899
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 79616,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:57.633326Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:57.633346Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130487Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f76cff1e8815ec72",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5649,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 79616,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2590,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 282,
+            "process_start_to_first_event_ms": 140,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 99997,
+            "reasoning_tokens": 15,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 20381,
+            "wall_clock_ms": 15850
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-d1079b0941364858",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2590,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 282,
+        "process_start_to_first_event_ms": 140,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 99997,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-01-rename-local_1791260937533515000.json"
+        },
+        "reasoning_tokens": 15,
+        "repeat": 7,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+          "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+          "file_change",
+          "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 20381,
+        "variant": "small",
+        "wall_clock_ms": 18540
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 99072,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:58.008445Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.008465Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.366267Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.366285Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-f76cff1e8815ec72",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 5324,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 99072,
+            "initial_load_turns": 2,
+            "internal_turns": 3,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2420,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 345,
+            "process_start_to_first_event_ms": 139,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 115403,
+            "reasoning_tokens": 14,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "api/server.go",
+                  "symbol": "Server.oldName",
+                  "to": "newName",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 16331,
+            "wall_clock_ms": 19684
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-7d78b6dba66777e7",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2420,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 345,
+        "process_start_to_first_event_ms": 139,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 115403,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000.json"
+        },
+        "reasoning_tokens": 14,
+        "repeat": 7,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Semedit’s semantic rename updated `Server.oldName` and its call site cleanly, which made this small refactor feel reliable; based on this run, I’d ask my owner to add its tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-01-rename-local",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "api/server.go",
+              "symbol": "Server.oldName",
+              "to": "newName",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+          "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+          "semantic_rename"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 16331,
+        "variant": "small:implicit",
+        "wall_clock_ms": 22246
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "txtar_path": "testdata/bench/task_01_rename_local.txtar",
+      "txtar_provenance": "sha256:44c14c3f4fcec22a45c89249 (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 79616,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:57.633326Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:57.633346Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130487Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.130502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-f76cff1e8815ec72",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 5649,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 79616,
+          "initial_load_turns": 2,
+          "internal_turns": 4,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2590,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 282,
+          "process_start_to_first_event_ms": 140,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 99997,
+          "reasoning_tokens": 15,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 20381,
+          "wall_clock_ms": 15850
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-d1079b0941364858",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2590,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 282,
+      "process_start_to_first_event_ms": 140,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 99997,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-01-rename-local_1791260937533515000.json"
+      },
+      "reasoning_tokens": 15,
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc 'rg -n \"oldName|newName\" .'",
+        "/bin/zsh -lc 'cat api/server.go \u0026\u0026 git status --short'",
+        "file_change",
+        "/bin/zsh -lc 'rg -n \"oldName|newName\" api \u0026\u0026 git diff -- api/server.go'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 20381,
+      "variant": "small",
+      "wall_clock_ms": 18540
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 99072,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:58.008445Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.008465Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.366267Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:58.366285Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-f76cff1e8815ec72",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 5324,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 99072,
+          "initial_load_turns": 2,
+          "internal_turns": 3,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2420,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 345,
+          "process_start_to_first_event_ms": 139,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 115403,
+          "reasoning_tokens": 14,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName",
+                "to": "newName",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 16331,
+          "wall_clock_ms": 19684
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-7d78b6dba66777e7",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2420,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 345,
+      "process_start_to_first_event_ms": 139,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 115403,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000.json"
+      },
+      "reasoning_tokens": 14,
+      "repeat": 7,
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Semedit’s semantic rename updated `Server.oldName` and its call site cleanly, which made this small refactor feel reliable; based on this run, I’d ask my owner to add its tools."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName",
+            "to": "newName",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-01-rename-local_1791260937941162000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS*.md' -g '*.go' -g 'go.mod' -g 'go.sum' -g 'README*'\"",
+        "/bin/zsh -lc 'cat AGENTS.override.md \u0026\u0026 cat api/server.go \u0026\u0026 cat go.mod'",
+        "semantic_rename"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 16331,
+      "variant": "small:implicit",
+      "wall_clock_ms": 22246
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 145920,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:28:59.465919Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.465939Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.831140Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:28:59.831152Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-f76cff1e8815ec72",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 5356,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 145920,
+          "initial_load_turns": 2,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2355,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 389,
+          "process_start_to_first_event_ms": 154,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 164025,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+              "transport_status": "unknown"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName",
+                "to": "newName"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 18105,
+          "wall_clock_ms": 22950
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-a888397ed6b38e7a",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2355,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 389,
+      "process_start_to_first_event_ms": 154,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 164025,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-01-rename-local_1791260939379067000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-01-rename-local_1791260939379067000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 7,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not batch because the user explicitly required `semantic_lookup` first, then conditional declaration inspection, and only afterward `semantic_rename`; that ordered dependency is not suitable for a single `semantic_batch`. The lookup result determined the file and symbol passed to the rename, so batching was not used."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "As the agent who used semedit to rename `Server.oldName` and its callers, I found its semantic lookup and rename reassuringly precise, and I’d ask my owner to add these tools."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+          "transport_status": "unknown"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName",
+            "to": "newName"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'api/server.go' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md'\"",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_rename"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 18105,
+      "variant": "small:explicit",
+      "wall_clock_ms": 25473
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 125184,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:35.774196Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:35.774217Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106029Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.106044Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:36.638528Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690228Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:36.690643Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461effd4bf926de-AMS\n2026-10-06T04:31:37.407460Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:37.407522Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 214ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f001ca57cd17-AMS\n2026-10-06T04:31:38.013111Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.013180Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (2/5 in 362ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=2 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0057f23b660-AMS\n2026-10-06T04:31:38.700399Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:38.700470Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (3/5 in 776ms)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=3 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f009b86eed05-AMS\n2026-10-06T04:31:39.789108Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:31:39.789168Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (4/5 in 1.705s)... turn_id=01a10f7b-37fd-7742-87d2-c855dd0a6f3e retries=4 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a461f0109a0eb8fc-AMS\n",
+      "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 9861,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 125184,
+          "initial_load_turns": 3,
+          "internal_turns": 6,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2935,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 906,
+          "process_start_to_first_event_ms": 285,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 140556,
+          "reasoning_tokens": 104,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+              "transport_status": "unknown"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 15372,
+          "wall_clock_ms": 32704
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-17d9879ce5751e5d",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2935,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 906,
+      "process_start_to_first_event_ms": 285,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 140556,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-01-rename-local_1791261095536719000.json"
+      },
+      "reasoning_tokens": 104,
+      "repeat": 7,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+          "transport_status": "unknown"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat api/server.go; git status --short'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 6,
+      "tools_used": [
+        "/bin/zsh -lc \"rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g '*.go'\"",
+        "/bin/zsh -lc \"rg -n 'oldName|newName|\"'^func '\"\\\\(.*\\\\*?Server\\\\)' --glob '*.go'\"",
+        "/bin/zsh -lc \"cat api/server.go \u0026\u0026 rg -n 'oldName' .\"",
+        "file_change",
+        "/bin/zsh -lc \"git diff -- api/server.go \u0026\u0026 rg -n 'oldName' --glob '\"'!**/*_test.go'\"' .\"",
+        "/bin/zsh -lc 'cat api/server.go; git status --short'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 15372,
+      "variant": "large",
+      "wall_clock_ms": 35836
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 122368,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:45.204041Z ERROR codex_models_manager::manager: failed to load models cache: EOF while parsing a value at line 1 column 0\n2026-10-06T04:31:45.518250Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.518264Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.572457Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:45.572468Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 5431,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 122368,
+          "initial_load_turns": 1,
+          "internal_turns": 4,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3324,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 556,
+          "process_start_to_first_event_ms": 513,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 160214,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Server.oldName",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName",
+                "to": "newName",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 37846,
+          "wall_clock_ms": 26361
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-b9b8b996214eaf96",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 3324,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 556,
+      "process_start_to_first_event_ms": 513,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName and update all call-sites. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 160214,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 7,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I used semantic_lookup to identify `Server.oldName`, then made one semantic_rename call; there were no multiple mutation operations to combine with semantic_batch. Batching was unsuitable for this single rename."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I would ask my owner to add semedit’s tools: the semantic rename updated the method and its call site in one step, which felt reassuringly precise."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Server.oldName",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName",
+            "to": "newName",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-01-rename-local_1791261105045924000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"oldName|newName\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+        "semantic_lookup",
+        "semantic_rename",
+        "/bin/zsh -lc 'git diff -- api/server.go \u0026\u0026 rg -n \"oldName|newName\" api'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 37846,
+      "variant": "large:implicit",
+      "wall_clock_ms": 29899
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 117504,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:31:46.233325Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.233347Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.607327Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:31:46.607338Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-a9b861ef2be4cfbb",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 5075,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 117504,
+          "initial_load_turns": 0,
+          "internal_turns": 2,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3936,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 242,
+          "process_start_to_first_event_ms": 142,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 134657,
+          "reasoning_tokens": 28,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "api/server.go",
+                "symbol": "Server.oldName",
+                "to": "newName"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 17153,
+          "wall_clock_ms": 15331
+        }
+      ],
+      "internal_turns": 2,
+      "job_id": "job-33673be41524b81b",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 3936,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 242,
+      "process_start_to_first_event_ms": 142,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nIn parallel, call semantic_lookup for Server.oldName in api/server.go and inspect its declaration if needed. Then call semantic_rename with the returned file and symbol Server.oldName and to= newName; let the rename update callers. Do not make unrelated edits. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 134657,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-01-rename-local_1791261106093911000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-01-rename-local_1791261106093911000.json"
+      },
+      "reasoning_tokens": 28,
+      "repeat": 7,
+      "semantic_batch_reflection": {
+        "error": "run codex: signal: segmentation fault [termination_origin=outside_harness]: 2026-10-06T04:32:05.636565Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:32:05.636585Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/",
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: I felt confident using the semantic rename to update the method and its callers in one step, with no diagnostics introduced."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-01-rename-local",
+      "tool_calls": [
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "api/server.go",
+            "symbol": "Server.oldName",
+            "to": "newName"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 2,
+      "tools_used": [
+        "semantic_lookup",
+        "semantic_rename"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 17153,
+      "variant": "large:explicit",
+      "wall_clock_ms": 19399
+    }
+  ],
+  "timestamp": "2026-10-06T08:51:09.577017+02:00"
+}

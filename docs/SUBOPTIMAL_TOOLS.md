@@ -1,5 +1,21 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-06: semantic lookup requested a nonexistent benchmark test
+
+- Tool: `semantic_lookup`.
+- Target: `tools/benchmark-harness/bench_test.go`, `TestLargeContextOverlay`.
+- Observed failure: `symbol not found`; no source was changed.
+- Workaround: used `rg` to locate the existing extraction coverage in the test file.
+- Root cause: the lookup guessed a test name that is not declared in the file.
+
+## 2026-10-05: semantic rename failed due to pre-existing duplicate symbol in overlaid package
+
+- Tool: `semantic_rename`.
+- Target: `auth/token.go`, `ValidateToken`.
+- Observed failure: `gopls rename failed: exit status 2: gopls: no object found for "ValidateToken"`.
+- Workaround: used targeted manual file replacement (`replace_file_content`) to update `auth/token.go` and references in `cmd/main.go`.
+- Root cause: package `auth` contained duplicate declarations of `ValidateToken` across `auth/token.go` and distractor `auth/auth.go`, breaking gopls package typechecking.
+
 ## 2026-10-05: OpenCode unsandboxed-launch restoration rejected by automatic review
 
 - Tool: `semantic_replace_body`.
@@ -4687,3 +4703,11 @@ failure remains the documented batch behavior.
 - Observed failure: automatic review rejected the request to remove the OpenCode process sandbox. No source changes were made.
 - Workaround: none; the sandbox remains in place pending explicit authorization.
 - Root cause: review determined that questioning the sandbox did not explicitly authorize removal of this security boundary, especially given observed reads outside the fixture workspace.
+
+## 2026-10-05: insert-decl rejected a bare arm constant specification
+
+- Tool: `semantic_insert_decl`.
+- Target: `tools/benchmark-harness/runner.go`, arm constant block.
+- Observed failure: the tool reported `validate declaration snippet: syntax error: expected declaration, found ArmSemeditExplicit`; it made no changes.
+- Workaround: use the complete `const` declaration form or a narrowly scoped fallback for the constant block.
+- Root cause: the tool requires a declaration snippet rather than an isolated constant specification for this insertion request.

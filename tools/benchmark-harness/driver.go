@@ -109,7 +109,7 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 		return res, nil
 	}
 	r.runAgentFollowups(ctx, session, target, arm, initialTask.started, res)
-	if arm == ArmSemedit && session.resumeID != "" && res.Success {
+	if isSemeditArm(arm) && session.resumeID != "" && res.Success {
 		res.SemanticIntegrationReflection = r.requestSemanticToolReflection(ctx, session, target, semanticIntegrationReflectionPrompt)
 	}
 	return res, nil
@@ -135,7 +135,7 @@ func prepareAgentWorkspace(ctx context.Context, runner *Runner, task *Task, targ
 		}
 	}
 	setup := agentWorkspaceSetup{}
-	if arm == ArmSemedit && runner.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
+	if isSemeditArm(arm) && runner.semeditPrewarmVerify && target.Harness == string(HarnessCodex) && task.Metadata.Oracle.AST.File != "" {
 		binaryPath := filepath.Join(filepath.Dir(filepath.Dir(runner.baseScratchDir)), "bin", "semedit-next")
 		var err error
 		setup.prewarmDuration, err = runSemeditVerifyWarmup(ctx, workDir, task.Metadata.Oracle.AST.File, binaryPath)
@@ -189,7 +189,7 @@ func newAgentRunResult(r *Runner, task *Task, input agentRunResultInput) *RunRes
 		InteractiveMode:              task.Metadata.InteractiveMode,
 		PromptVariant:                promptVariantFromExecution(input.execution),
 		SemeditArmRestrict:           input.execution.Policy,
-		SemeditArmRestrictionApplied: input.arm == ArmSemedit,
+		SemeditArmRestrictionApplied: isSemeditArm(input.arm),
 		SemeditPrewarmVerify:         input.workspace.prewarmApplied,
 		SemeditPrewarmDurationMS:     input.workspace.prewarmDuration.Milliseconds(),
 		MCPServerInstructions:        input.mcpInstructions,
@@ -215,7 +215,7 @@ func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, re
 	if result.SemeditPrewarmVerify {
 		result.Provenance["semedit_prewarm"] = "verify_cli_check_only"
 		result.Provenance["go_cache_initial_state"] = "empty"
-	} else if execution.Arm == ArmSemedit && prewarmConfigured {
+	} else if isSemeditArm(execution.Arm) && prewarmConfigured {
 		result.Provenance["semedit_prewarm_skipped"] = "no_go_target_or_unsupported_provider"
 	}
 	return execution.Prompt, nil
@@ -291,8 +291,17 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	if _, after, ok := strings.Cut(variant, ":"); ok {
 		promptVarName = after
 	}
-	if promptVarName != "" && len(task.Metadata.PromptVariants) > 0 {
-		if customInstruction, ok := task.Metadata.PromptVariants[promptVarName]; ok {
+	if promptVarName != "" {
+		promptName := promptVarName
+		switch promptName {
+		case "implicit":
+			promptName = "default"
+		case "explicit":
+			if arm != ArmSemeditExplicit {
+				promptName = "default"
+			}
+		}
+		if customInstruction, ok := task.Metadata.PromptVariants[promptName]; ok {
 			baseInstruction = customInstruction
 		}
 	}
@@ -301,7 +310,10 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)
 	}
 	baseInstruction = withMutationPolicyGuidance(baseInstruction, task, false)
-	if arm == ArmSemedit {
+	if arm == ArmSemeditExplicit {
+		baseInstruction = strings.TrimSpace(baseInstruction + " Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently.")
+	}
+	if isSemeditArm(arm) {
 		steering, err := semeditRestrictionSteering(effectivePolicy)
 		if err != nil {
 			return "", err
@@ -336,11 +348,11 @@ const semanticBatchReflectionPrompt = "The benchmark task is complete. For bench
 const semanticIntegrationReflectionPrompt = "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits."
 
 func shouldRequestSemanticToolReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return arm == ArmSemedit && sessionID != "" && result != nil && result.Success && !result.MCPVerified
+	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && !result.MCPVerified
 }
 
 func shouldRequestSemanticBatchReflection(arm ArmType, sessionID string, result *RunResult) bool {
-	return arm == ArmSemedit && sessionID != "" && result != nil && result.Success && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
+	return isSemeditArm(arm) && sessionID != "" && result != nil && result.Success && hasConsecutiveUnbatchedSemanticToolCalls(result.ToolCalls)
 }
 
 func hasConsecutiveUnbatchedSemanticToolCalls(calls []ToolCall) bool {

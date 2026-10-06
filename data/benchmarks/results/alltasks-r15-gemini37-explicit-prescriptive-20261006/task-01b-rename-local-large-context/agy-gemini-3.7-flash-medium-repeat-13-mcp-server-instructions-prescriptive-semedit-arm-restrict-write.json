@@ -1,0 +1,2103 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 162562,
+        "comparison_pair_id": "pair-00cc2731c56c6bb2",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 6,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 162562,
+            "initial_load_turns": 6,
+            "internal_turns": 11,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2306,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 2218,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 50595,
+            "reasoning_tokens": 542,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "CommandLine": "\"rg \\\"oldName\\\" api\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Searching for oldName\"",
+                  "toolSummary": "\"Search oldName in api directory\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Viewing api/server.go\"",
+                  "toolSummary": "\"View api/server.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"ls -la api\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Listing files in api\"",
+                  "toolSummary": "\"List api files\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+                  "toolAction": "\"Viewing api/middleware.go\"",
+                  "toolSummary": "\"View api/middleware.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+                  "toolAction": "\"Viewing api/router.go\"",
+                  "toolSummary": "\"View api/router.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+                  "toolAction": "\"Viewing api/server_test.go\"",
+                  "toolSummary": "\"View api/server_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AllowMultiple": "false",
+                  "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+                  "EndLine": "13",
+                  "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+                  "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+                  "StartLine": "5",
+                  "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+                  "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Renaming oldName to newName in server.go\"",
+                  "toolSummary": "\"Rename oldName to newName in server.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "replace_file_content",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git status\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking git status\"",
+                  "toolSummary": "\"Git status check\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Viewing api/server.go\"",
+                  "toolSummary": "\"Confirm server.go contents\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 50595,
+            "wall_clock_ms": 33650
+          }
+        ],
+        "internal_turns": 11,
+        "job_id": "job-dde23b18a8f5ad54",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2306,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2218,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 50595,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000.json"
+        },
+        "reasoning_tokens": 542,
+        "repeat": 13,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.7-flash-medium"
+        },
+        "task_id": "task-01b-rename-local-large-context",
+        "tool_calls": [
+          {
+            "arguments": {
+              "CommandLine": "\"rg \\\"oldName\\\" api\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Searching for oldName\"",
+              "toolSummary": "\"Search oldName in api directory\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Viewing api/server.go\"",
+              "toolSummary": "\"View api/server.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"ls -la api\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Listing files in api\"",
+              "toolSummary": "\"List api files\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+              "toolAction": "\"Viewing api/middleware.go\"",
+              "toolSummary": "\"View api/middleware.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+              "toolAction": "\"Viewing api/router.go\"",
+              "toolSummary": "\"View api/router.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+              "toolAction": "\"Viewing api/server_test.go\"",
+              "toolSummary": "\"View api/server_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AllowMultiple": "false",
+              "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+              "EndLine": "13",
+              "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+              "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+              "StartLine": "5",
+              "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+              "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Renaming oldName to newName in server.go\"",
+              "toolSummary": "\"Rename oldName to newName in server.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "replace_file_content",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git status\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking git status\"",
+              "toolSummary": "\"Git status check\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Viewing api/server.go\"",
+              "toolSummary": "\"Confirm server.go contents\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "run_command",
+          "view_file",
+          "run_command",
+          "view_file",
+          "view_file",
+          "view_file",
+          "replace_file_content",
+          "run_command",
+          "run_command",
+          "view_file"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 50595,
+        "variant": "large",
+        "wall_clock_ms": 36047
+      },
+      "large_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 81360,
+        "comparison_pair_id": "pair-00cc2731c56c6bb2",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 81360,
+            "initial_load_turns": 0,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 0,
+              "error_message": "unauthorized modification of protected file: api/server_test.go",
+              "failure_stage": "level_1_mutation_policy",
+              "level_1_policy": false,
+              "level_2_ast": false,
+              "level_3_build": false,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 1219,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Server.oldName in api/server.go, then call semantic_rename with the returned file and symbol Server.oldName and to= newName. Let the rename update package call sites; do not edit unrelated files. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 29182,
+            "reasoning_tokens": 697,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_lookup\"",
+                  "toolAction": "\"Looking up symbol\"",
+                  "toolSummary": "\"Symbol lookup\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                  "toolAction": "\"Reading tool schema\"",
+                  "toolSummary": "\"Read semantic_rename schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_rename\"",
+                  "toolAction": "\"Renaming symbol\"",
+                  "toolSummary": "\"Symbol rename\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git status\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking git status\"",
+                  "toolSummary": "\"Git status\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 29182,
+            "wall_clock_ms": 24544
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-554af14293adcfca",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 0,
+          "error_message": "unauthorized modification of protected file: api/server_test.go",
+          "failure_stage": "level_1_mutation_policy",
+          "level_1_policy": false,
+          "level_2_ast": false,
+          "level_3_build": false,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 1219,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Server.oldName in api/server.go, then call semantic_rename with the returned file and symbol Server.oldName and to= newName. Let the rename update package call sites; do not edit unrelated files. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 29182,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000.json"
+        },
+        "reasoning_tokens": 697,
+        "repeat": 13,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": false,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.7-flash-medium"
+        },
+        "task_id": "task-01b-rename-local-large-context",
+        "tool_calls": [
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_lookup\"",
+              "toolAction": "\"Looking up symbol\"",
+              "toolSummary": "\"Symbol lookup\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+              "toolAction": "\"Reading tool schema\"",
+              "toolSummary": "\"Read semantic_rename schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_rename\"",
+              "toolAction": "\"Renaming symbol\"",
+              "toolSummary": "\"Symbol rename\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git status\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking git status\"",
+              "toolSummary": "\"Git status\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "semantic_lookup",
+          "view_file",
+          "semantic_rename",
+          "run_command",
+          "run_command"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 29182,
+        "variant": "large:explicit",
+        "wall_clock_ms": 24545
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Server.oldName in api/server.go, then call semantic_rename with the returned file and symbol Server.oldName and to= newName. Let the rename update package call sites; do not edit unrelated files. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "repeat": 13,
+      "semedit_arm_restrict": "write",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.7-flash-medium"
+      },
+      "task_id": "task-01b-rename-local-large-context",
+      "txtar_path": "testdata/bench/task_01b_rename_local_large_context.txtar",
+      "txtar_provenance": "sha256:ca97ab78ffff6b89538762bc (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 162562,
+        "comparison_pair_id": "pair-00cc2731c56c6bb2",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 6,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 162562,
+            "initial_load_turns": 6,
+            "internal_turns": 11,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2306,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 2218,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 50595,
+            "reasoning_tokens": 542,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "CommandLine": "\"rg \\\"oldName\\\" api\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Searching for oldName\"",
+                  "toolSummary": "\"Search oldName in api directory\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Viewing api/server.go\"",
+                  "toolSummary": "\"View api/server.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"ls -la api\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Listing files in api\"",
+                  "toolSummary": "\"List api files\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+                  "toolAction": "\"Viewing api/middleware.go\"",
+                  "toolSummary": "\"View api/middleware.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+                  "toolAction": "\"Viewing api/router.go\"",
+                  "toolSummary": "\"View api/router.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+                  "toolAction": "\"Viewing api/server_test.go\"",
+                  "toolSummary": "\"View api/server_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AllowMultiple": "false",
+                  "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+                  "EndLine": "13",
+                  "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+                  "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+                  "StartLine": "5",
+                  "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+                  "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Renaming oldName to newName in server.go\"",
+                  "toolSummary": "\"Rename oldName to newName in server.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "replace_file_content",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git status\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking git status\"",
+                  "toolSummary": "\"Git status check\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                  "toolAction": "\"Viewing api/server.go\"",
+                  "toolSummary": "\"Confirm server.go contents\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 50595,
+            "wall_clock_ms": 33650
+          }
+        ],
+        "internal_turns": 11,
+        "job_id": "job-dde23b18a8f5ad54",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2306,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 2218,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 50595,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000.json"
+        },
+        "reasoning_tokens": 542,
+        "repeat": 13,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.7-flash-medium"
+        },
+        "task_id": "task-01b-rename-local-large-context",
+        "tool_calls": [
+          {
+            "arguments": {
+              "CommandLine": "\"rg \\\"oldName\\\" api\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Searching for oldName\"",
+              "toolSummary": "\"Search oldName in api directory\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Viewing api/server.go\"",
+              "toolSummary": "\"View api/server.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"ls -la api\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Listing files in api\"",
+              "toolSummary": "\"List api files\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+              "toolAction": "\"Viewing api/middleware.go\"",
+              "toolSummary": "\"View api/middleware.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+              "toolAction": "\"Viewing api/router.go\"",
+              "toolSummary": "\"View api/router.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+              "toolAction": "\"Viewing api/server_test.go\"",
+              "toolSummary": "\"View api/server_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AllowMultiple": "false",
+              "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+              "EndLine": "13",
+              "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+              "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+              "StartLine": "5",
+              "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+              "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Renaming oldName to newName in server.go\"",
+              "toolSummary": "\"Rename oldName to newName in server.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "replace_file_content",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git status\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking git status\"",
+              "toolSummary": "\"Git status check\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+              "toolAction": "\"Viewing api/server.go\"",
+              "toolSummary": "\"Confirm server.go contents\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 10,
+        "tools_used": [
+          "run_command",
+          "view_file",
+          "run_command",
+          "view_file",
+          "view_file",
+          "view_file",
+          "replace_file_content",
+          "run_command",
+          "run_command",
+          "view_file"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 50595,
+        "variant": "large",
+        "wall_clock_ms": 36047
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+        "cached_prompt_tokens": 174735,
+        "comparison_pair_id": "pair-00cc2731c56c6bb2",
+        "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 174735,
+            "initial_load_turns": 1,
+            "internal_turns": 12,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 0,
+              "error_message": "unauthorized modification of protected file: api/server_test.go",
+              "failure_stage": "level_1_mutation_policy",
+              "level_1_policy": false,
+              "level_2_ast": false,
+              "level_3_build": false,
+              "level_4_test": false,
+              "passed": false
+            },
+            "output_tokens": 2102,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 65044,
+            "reasoning_tokens": 535,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                  "toolAction": "\"Viewing tool schema\"",
+                  "toolSummary": "\"View semantic_rename schema\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+                  "ServerName": "\"semedit\"",
+                  "ToolName": "\"semantic_rename\"",
+                  "toolAction": "\"Renaming symbol\"",
+                  "toolSummary": "\"Rename Server.oldName to newName\""
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                  "IsDaemon": "false",
+                  "RunPersistent": "false",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test ./...\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git status\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                  "IsDaemon": "false",
+                  "RunPersistent": "false",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking git status\"",
+                  "toolSummary": "\"Git status check\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"git diff api/\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                  "IsDaemon": "false",
+                  "RunPersistent": "false",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Checking diff\"",
+                  "toolSummary": "\"Check git diff in api/\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server.go\"",
+                  "toolAction": "\"Viewing file\"",
+                  "toolSummary": "\"View api/server.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"ls -la api/\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                  "IsDaemon": "false",
+                  "RunPersistent": "false",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Listing files\"",
+                  "toolSummary": "\"List api/ directory\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/middleware.go\"",
+                  "toolAction": "\"Viewing file\"",
+                  "toolSummary": "\"View api/middleware.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/router.go\"",
+                  "toolAction": "\"Viewing file\"",
+                  "toolSummary": "\"View api/router.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server_test.go\"",
+                  "toolAction": "\"Viewing file\"",
+                  "toolSummary": "\"View api/server_test.go\""
+                },
+                "functional_status": "succeeded",
+                "name": "view_file",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "CommandLine": "\"go test ./...\"",
+                  "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                  "IsDaemon": "false",
+                  "RunPersistent": "false",
+                  "WaitMsBeforeAsync": "5000",
+                  "toolAction": "\"Running tests\"",
+                  "toolSummary": "\"Run go test ./...\""
+                },
+                "functional_status": "succeeded",
+                "name": "run_command",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 65044,
+            "wall_clock_ms": 36890
+          }
+        ],
+        "internal_turns": 12,
+        "job_id": "job-b9622a05b772557f",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 0,
+          "error_message": "unauthorized modification of protected file: api/server_test.go",
+          "failure_stage": "level_1_mutation_policy",
+          "level_1_policy": false,
+          "level_2_ast": false,
+          "level_3_build": false,
+          "level_4_test": false,
+          "passed": false
+        },
+        "output_tokens": 2102,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 65044,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000.json"
+        },
+        "reasoning_tokens": 535,
+        "repeat": 13,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": false,
+        "target": {
+          "harness": "agy",
+          "model": "gemini-3.7-flash-medium"
+        },
+        "task_id": "task-01b-rename-local-large-context",
+        "tool_calls": [
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+              "toolAction": "\"Viewing tool schema\"",
+              "toolSummary": "\"View semantic_rename schema\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+              "ServerName": "\"semedit\"",
+              "ToolName": "\"semantic_rename\"",
+              "toolAction": "\"Renaming symbol\"",
+              "toolSummary": "\"Rename Server.oldName to newName\""
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+              "IsDaemon": "false",
+              "RunPersistent": "false",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test ./...\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git status\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+              "IsDaemon": "false",
+              "RunPersistent": "false",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking git status\"",
+              "toolSummary": "\"Git status check\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"git diff api/\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+              "IsDaemon": "false",
+              "RunPersistent": "false",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Checking diff\"",
+              "toolSummary": "\"Check git diff in api/\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server.go\"",
+              "toolAction": "\"Viewing file\"",
+              "toolSummary": "\"View api/server.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"ls -la api/\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+              "IsDaemon": "false",
+              "RunPersistent": "false",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Listing files\"",
+              "toolSummary": "\"List api/ directory\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/middleware.go\"",
+              "toolAction": "\"Viewing file\"",
+              "toolSummary": "\"View api/middleware.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/router.go\"",
+              "toolAction": "\"Viewing file\"",
+              "toolSummary": "\"View api/router.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server_test.go\"",
+              "toolAction": "\"Viewing file\"",
+              "toolSummary": "\"View api/server_test.go\""
+            },
+            "functional_status": "succeeded",
+            "name": "view_file",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "CommandLine": "\"go test ./...\"",
+              "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+              "IsDaemon": "false",
+              "RunPersistent": "false",
+              "WaitMsBeforeAsync": "5000",
+              "toolAction": "\"Running tests\"",
+              "toolSummary": "\"Run go test ./...\""
+            },
+            "functional_status": "succeeded",
+            "name": "run_command",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 11,
+        "tools_used": [
+          "view_file",
+          "semantic_rename",
+          "run_command",
+          "run_command",
+          "run_command",
+          "view_file",
+          "run_command",
+          "view_file",
+          "view_file",
+          "view_file",
+          "run_command"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 65044,
+        "variant": "large:implicit",
+        "wall_clock_ms": 36891
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "repeat": 13,
+      "semedit_arm_restrict": "write",
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.7-flash-medium"
+      },
+      "task_id": "task-01b-rename-local-large-context",
+      "txtar_path": "testdata/bench/task_01b_rename_local_large_context.txtar",
+      "txtar_provenance": "sha256:ca97ab78ffff6b89538762bc (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 162562,
+      "comparison_pair_id": "pair-00cc2731c56c6bb2",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 6,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 162562,
+          "initial_load_turns": 6,
+          "internal_turns": 11,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2306,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 2218,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 50595,
+          "reasoning_tokens": 542,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "CommandLine": "\"rg \\\"oldName\\\" api\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Searching for oldName\"",
+                "toolSummary": "\"Search oldName in api directory\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                "toolAction": "\"Viewing api/server.go\"",
+                "toolSummary": "\"View api/server.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"ls -la api\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Listing files in api\"",
+                "toolSummary": "\"List api files\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+                "toolAction": "\"Viewing api/middleware.go\"",
+                "toolSummary": "\"View api/middleware.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+                "toolAction": "\"Viewing api/router.go\"",
+                "toolSummary": "\"View api/router.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+                "toolAction": "\"Viewing api/server_test.go\"",
+                "toolSummary": "\"View api/server_test.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AllowMultiple": "false",
+                "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+                "EndLine": "13",
+                "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+                "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+                "StartLine": "5",
+                "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+                "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                "toolAction": "\"Renaming oldName to newName in server.go\"",
+                "toolSummary": "\"Rename oldName to newName in server.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "replace_file_content",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running tests\"",
+                "toolSummary": "\"Run go test\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"git status\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Checking git status\"",
+                "toolSummary": "\"Git status check\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+                "toolAction": "\"Viewing api/server.go\"",
+                "toolSummary": "\"Confirm server.go contents\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 50595,
+          "wall_clock_ms": 33650
+        }
+      ],
+      "internal_turns": 11,
+      "job_id": "job-dde23b18a8f5ad54",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2306,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 2218,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 50595,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000.json"
+      },
+      "reasoning_tokens": 542,
+      "repeat": 13,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.7-flash-medium"
+      },
+      "task_id": "task-01b-rename-local-large-context",
+      "tool_calls": [
+        {
+          "arguments": {
+            "CommandLine": "\"rg \\\"oldName\\\" api\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Searching for oldName\"",
+            "toolSummary": "\"Search oldName in api directory\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+            "toolAction": "\"Viewing api/server.go\"",
+            "toolSummary": "\"View api/server.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"ls -la api\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Listing files in api\"",
+            "toolSummary": "\"List api files\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/middleware.go\"",
+            "toolAction": "\"Viewing api/middleware.go\"",
+            "toolSummary": "\"View api/middleware.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/router.go\"",
+            "toolAction": "\"Viewing api/router.go\"",
+            "toolSummary": "\"View api/router.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server_test.go\"",
+            "toolAction": "\"Viewing api/server_test.go\"",
+            "toolSummary": "\"View api/server_test.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AllowMultiple": "false",
+            "Description": "\"Rename Server.oldName to Server.newName and update call site in api/server.go\"",
+            "EndLine": "13",
+            "Instruction": "\"Rename method oldName to newName and update call in Run\"",
+            "ReplacementContent": "\"func (s *Server) newName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.newName()\\n}\"",
+            "StartLine": "5",
+            "TargetContent": "\"func (s *Server) oldName() string {\\n\\treturn \\\"ok\\\"\\n}\\n\\nfunc Run() string {\\n\\ts := \u0026Server{}\\n\\treturn s.oldName()\\n}\"",
+            "TargetFile": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+            "toolAction": "\"Renaming oldName to newName in server.go\"",
+            "toolSummary": "\"Rename oldName to newName in server.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "replace_file_content",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running tests\"",
+            "toolSummary": "\"Run go test\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"git status\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Checking git status\"",
+            "toolSummary": "\"Git status check\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_baseline-diff_large_task-01b-rename-local-large-context_1791270121026970000/api/server.go\"",
+            "toolAction": "\"Viewing api/server.go\"",
+            "toolSummary": "\"Confirm server.go contents\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 10,
+      "tools_used": [
+        "run_command",
+        "view_file",
+        "run_command",
+        "view_file",
+        "view_file",
+        "view_file",
+        "replace_file_content",
+        "run_command",
+        "run_command",
+        "view_file"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 50595,
+      "variant": "large",
+      "wall_clock_ms": 36047
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 174735,
+      "comparison_pair_id": "pair-00cc2731c56c6bb2",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 174735,
+          "initial_load_turns": 1,
+          "internal_turns": 12,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 0,
+            "error_message": "unauthorized modification of protected file: api/server_test.go",
+            "failure_stage": "level_1_mutation_policy",
+            "level_1_policy": false,
+            "level_2_ast": false,
+            "level_3_build": false,
+            "level_4_test": false,
+            "passed": false
+          },
+          "output_tokens": 2102,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 65044,
+          "reasoning_tokens": 535,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                "toolAction": "\"Viewing tool schema\"",
+                "toolSummary": "\"View semantic_rename schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_rename\"",
+                "toolAction": "\"Renaming symbol\"",
+                "toolSummary": "\"Rename Server.oldName to newName\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                "IsDaemon": "false",
+                "RunPersistent": "false",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running tests\"",
+                "toolSummary": "\"Run go test ./...\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"git status\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                "IsDaemon": "false",
+                "RunPersistent": "false",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Checking git status\"",
+                "toolSummary": "\"Git status check\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"git diff api/\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                "IsDaemon": "false",
+                "RunPersistent": "false",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Checking diff\"",
+                "toolSummary": "\"Check git diff in api/\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server.go\"",
+                "toolAction": "\"Viewing file\"",
+                "toolSummary": "\"View api/server.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"ls -la api/\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                "IsDaemon": "false",
+                "RunPersistent": "false",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Listing files\"",
+                "toolSummary": "\"List api/ directory\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/middleware.go\"",
+                "toolAction": "\"Viewing file\"",
+                "toolSummary": "\"View api/middleware.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/router.go\"",
+                "toolAction": "\"Viewing file\"",
+                "toolSummary": "\"View api/router.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server_test.go\"",
+                "toolAction": "\"Viewing file\"",
+                "toolSummary": "\"View api/server_test.go\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+                "IsDaemon": "false",
+                "RunPersistent": "false",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running tests\"",
+                "toolSummary": "\"Run go test ./...\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 65044,
+          "wall_clock_ms": 36890
+        }
+      ],
+      "internal_turns": 12,
+      "job_id": "job-b9622a05b772557f",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 0,
+        "error_message": "unauthorized modification of protected file: api/server_test.go",
+        "failure_stage": "level_1_mutation_policy",
+        "level_1_policy": false,
+        "level_2_ast": false,
+        "level_3_build": false,
+        "level_4_test": false,
+        "passed": false
+      },
+      "output_tokens": 2102,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename the unexported method Server.oldName to Server.newName in api/server.go and update all call-sites within that package. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 65044,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000.json"
+      },
+      "reasoning_tokens": 535,
+      "repeat": 13,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": false,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.7-flash-medium"
+      },
+      "task_id": "task-01b-rename-local-large-context",
+      "tool_calls": [
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+            "toolAction": "\"Viewing tool schema\"",
+            "toolSummary": "\"View semantic_rename schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_rename\"",
+            "toolAction": "\"Renaming symbol\"",
+            "toolSummary": "\"Rename Server.oldName to newName\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+            "IsDaemon": "false",
+            "RunPersistent": "false",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running tests\"",
+            "toolSummary": "\"Run go test ./...\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"git status\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+            "IsDaemon": "false",
+            "RunPersistent": "false",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Checking git status\"",
+            "toolSummary": "\"Git status check\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"git diff api/\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+            "IsDaemon": "false",
+            "RunPersistent": "false",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Checking diff\"",
+            "toolSummary": "\"Check git diff in api/\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server.go\"",
+            "toolAction": "\"Viewing file\"",
+            "toolSummary": "\"View api/server.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"ls -la api/\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+            "IsDaemon": "false",
+            "RunPersistent": "false",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Listing files\"",
+            "toolSummary": "\"List api/ directory\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/middleware.go\"",
+            "toolAction": "\"Viewing file\"",
+            "toolSummary": "\"View api/middleware.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/router.go\"",
+            "toolAction": "\"Viewing file\"",
+            "toolSummary": "\"View api/router.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000/api/server_test.go\"",
+            "toolAction": "\"Viewing file\"",
+            "toolSummary": "\"View api/server_test.go\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit_large-implicit_task-01b-rename-local-large-context_1791270123218664000\"",
+            "IsDaemon": "false",
+            "RunPersistent": "false",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running tests\"",
+            "toolSummary": "\"Run go test ./...\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 11,
+      "tools_used": [
+        "view_file",
+        "semantic_rename",
+        "run_command",
+        "run_command",
+        "run_command",
+        "view_file",
+        "run_command",
+        "view_file",
+        "view_file",
+        "view_file",
+        "run_command"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 65044,
+      "variant": "large:implicit",
+      "wall_clock_ms": 36891
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package api\n\ntype Server struct{}\n\nfunc (s *Server) oldName() string {\n\treturn \"ok\"\n}\n\nfunc Run() string {\n\ts := \u0026Server{}\n\treturn s.oldName()\n}",
+      "cached_prompt_tokens": 81360,
+      "comparison_pair_id": "pair-00cc2731c56c6bb2",
+      "diff": "File api/server.go modified (12 lines -\u003e 12 lines)",
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 81360,
+          "initial_load_turns": 0,
+          "internal_turns": 6,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 0,
+            "error_message": "unauthorized modification of protected file: api/server_test.go",
+            "failure_stage": "level_1_mutation_policy",
+            "level_1_policy": false,
+            "level_2_ast": false,
+            "level_3_build": false,
+            "level_4_test": false,
+            "passed": false
+          },
+          "output_tokens": 1219,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Server.oldName in api/server.go, then call semantic_rename with the returned file and symbol Server.oldName and to= newName. Let the rename update package call sites; do not edit unrelated files. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 29182,
+          "reasoning_tokens": 697,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_lookup\"",
+                "toolAction": "\"Looking up symbol\"",
+                "toolSummary": "\"Symbol lookup\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+                "toolAction": "\"Reading tool schema\"",
+                "toolSummary": "\"Read semantic_rename schema\""
+              },
+              "functional_status": "succeeded",
+              "name": "view_file",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+                "ServerName": "\"semedit\"",
+                "ToolName": "\"semantic_rename\"",
+                "toolAction": "\"Renaming symbol\"",
+                "toolSummary": "\"Symbol rename\""
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"git status\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Checking git status\"",
+                "toolSummary": "\"Git status\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "CommandLine": "\"go test ./...\"",
+                "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+                "WaitMsBeforeAsync": "5000",
+                "toolAction": "\"Running tests\"",
+                "toolSummary": "\"Run go test\""
+              },
+              "functional_status": "succeeded",
+              "name": "run_command",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 29182,
+          "wall_clock_ms": 24544
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-554af14293adcfca",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 0,
+        "error_message": "unauthorized modification of protected file: api/server_test.go",
+        "failure_stage": "level_1_mutation_policy",
+        "level_1_policy": false,
+        "level_2_ast": false,
+        "level_3_build": false,
+        "level_4_test": false,
+        "passed": false
+      },
+      "output_tokens": 1219,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Server.oldName in api/server.go, then call semantic_rename with the returned file and symbol Server.oldName and to= newName. Let the rename update package call sites; do not edit unrelated files. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 29182,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000.json"
+      },
+      "reasoning_tokens": 697,
+      "repeat": 13,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": false,
+      "target": {
+        "harness": "agy",
+        "model": "gemini-3.7-flash-medium"
+      },
+      "task_id": "task-01b-rename-local-large-context",
+      "tool_calls": [
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_lookup\"",
+            "toolAction": "\"Looking up symbol\"",
+            "toolSummary": "\"Symbol lookup\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "AbsolutePath": "\"/Users/alessandro/.gemini/antigravity-cli/mcp/semedit/semantic_rename.json\"",
+            "toolAction": "\"Reading tool schema\"",
+            "toolSummary": "\"Read semantic_rename schema\""
+          },
+          "functional_status": "succeeded",
+          "name": "view_file",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "Arguments": "{\"file\":\"api/server.go\",\"symbol\":\"Server.oldName\",\"to\":\"newName\"}",
+            "ServerName": "\"semedit\"",
+            "ToolName": "\"semantic_rename\"",
+            "toolAction": "\"Renaming symbol\"",
+            "toolSummary": "\"Symbol rename\""
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"git status\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Checking git status\"",
+            "toolSummary": "\"Git status\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "CommandLine": "\"go test ./...\"",
+            "Cwd": "\"/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_agy_semedit-explicit_large-explicit_task-01b-rename-local-large-context_1791270127970674000\"",
+            "WaitMsBeforeAsync": "5000",
+            "toolAction": "\"Running tests\"",
+            "toolSummary": "\"Run go test\""
+          },
+          "functional_status": "succeeded",
+          "name": "run_command",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "semantic_lookup",
+        "view_file",
+        "semantic_rename",
+        "run_command",
+        "run_command"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 29182,
+      "variant": "large:explicit",
+      "wall_clock_ms": 24545
+    }
+  ],
+  "timestamp": "2026-10-06T09:19:04.300903+02:00"
+}

@@ -1,0 +1,2115 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 91904,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:44:51.886633Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:51.886652Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248399Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248412Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.445080Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.575746Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.576670Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036afd1b6664-AMS\n2026-10-06T04:44:53.390896Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:53.391035Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 218ms)... turn_id=01a10f87-5d91-7970-aa79-888130117b77 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036f6a5a9fc0-AMS\n",
+        "comparison_pair_id": "pair-27da994bc8f6e833",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 6375,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 91904,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2441,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 799,
+            "process_start_to_first_event_ms": 134,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 100338,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 8434,
+            "wall_clock_ms": 23842
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-7dfdad5217d7fe2e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2441,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 799,
+        "process_start_to_first_event_ms": 134,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 100338,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-03-rename-interface_1791261891770379000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+          "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "file_change",
+          "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 8434,
+        "variant": "large",
+        "wall_clock_ms": 26391
+      },
+      "large_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 69632,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:45:02.703590Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:02.703608Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:03.358942Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:03.358952Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-27da994bc8f6e833",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 5605,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 69632,
+            "initial_load_turns": 1,
+            "internal_turns": 3,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2496,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 362,
+            "process_start_to_first_event_ms": 154,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 90579,
+            "reasoning_tokens": 50,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save",
+                  "to": "Persist",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 20947,
+            "wall_clock_ms": 24342
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-d67f065adb2ae84b",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2496,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 362,
+        "process_start_to_first_event_ms": 154,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 90579,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000.json"
+        },
+        "reasoning_tokens": 50,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not combine the operations because the user explicitly required `semantic_lookup` first, then `semantic_rename` on the declaration it returned. The rename depended on that lookup result, so I used sequential calls; batching was available, but combining them would not have followed the requested order with the returned declaration."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "semedit’s lookup and rename tools made this targeted refactor feel reassuringly direct, and I’d ask my owner to add them for coding tasks like this."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save",
+              "to": "Persist",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+          "semantic_lookup",
+          "semantic_rename"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 20947,
+        "variant": "large:explicit",
+        "wall_clock_ms": 26963
+      },
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 90880,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:02.002604Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.002627Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368682Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368693Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-271fe1a1d671e239",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 4389,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 90880,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2395,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 464,
+            "process_start_to_first_event_ms": 221,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 98802,
+            "reasoning_tokens": 54,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 7922,
+            "wall_clock_ms": 16782
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-3c6f6ec5f1daf0f2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2395,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 464,
+        "process_start_to_first_event_ms": 221,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 98802,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-03-rename-interface_1791261721861512000.json"
+        },
+        "reasoning_tokens": 54,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+          "file_change",
+          "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 7922,
+        "variant": "small",
+        "wall_clock_ms": 19289
+      },
+      "small_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 91904,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:06.698478Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:06.698497Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:07.627318Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:07.627334Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-271fe1a1d671e239",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 5306,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 91904,
+            "initial_load_turns": 0,
+            "internal_turns": 3,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2351,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 403,
+            "process_start_to_first_event_ms": 133,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 116286,
+            "reasoning_tokens": 58,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save",
+                  "to": "Persist",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 24382,
+            "wall_clock_ms": 24452
+          }
+        ],
+        "internal_turns": 3,
+        "job_id": "job-8a1c560dce392ebd",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2351,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 403,
+        "process_start_to_first_event_ms": 133,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 116286,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000.json"
+        },
+        "reasoning_tokens": 58,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I did not combine the operations because I treated the requested sequence as two standalone calls: first lookup, then rename using the lookup result. Batching could have been suitable, but I did not use it; it was not a limitation of the tools."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: the rename handled the interface symbol cleanly, though this brief task gave me only a limited view of its value."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save",
+              "to": "Persist",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 3,
+        "tools_used": [
+          "semantic_lookup",
+          "semantic_rename",
+          "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 24382,
+        "variant": "small:explicit",
+        "wall_clock_ms": 26955
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "txtar_path": "testdata/bench/task_03_rename_interface.txtar",
+      "txtar_provenance": "sha256:36e5a079063d0a54cfab6060 (uncommitted)",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 91904,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:44:51.886633Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:51.886652Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248399Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248412Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.445080Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.575746Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.576670Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036afd1b6664-AMS\n2026-10-06T04:44:53.390896Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:53.391035Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 218ms)... turn_id=01a10f87-5d91-7970-aa79-888130117b77 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036f6a5a9fc0-AMS\n",
+        "comparison_pair_id": "pair-27da994bc8f6e833",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 6375,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 91904,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2441,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 799,
+            "process_start_to_first_event_ms": 134,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 100338,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 8434,
+            "wall_clock_ms": 23842
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-7dfdad5217d7fe2e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2441,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 799,
+        "process_start_to_first_event_ms": 134,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 100338,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-03-rename-interface_1791261891770379000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+          "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "file_change",
+          "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 8434,
+        "variant": "large",
+        "wall_clock_ms": 26391
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 145920,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:44:57.262212Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.262231Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.603021Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.603036Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-27da994bc8f6e833",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 5539,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 1,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 145920,
+            "initial_load_turns": 1,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3937,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 694,
+            "process_start_to_first_event_ms": 139,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 165130,
+            "reasoning_tokens": 0,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Storage.Save",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save",
+                  "to": "Persist",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\"",
+                "transport_status": "unknown"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 19210,
+            "wall_clock_ms": 37374
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-20e11a9370c2b3a6",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3937,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 694,
+        "process_start_to_first_event_ms": 139,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 165130,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000.json"
+        },
+        "reasoning_tokens": 0,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I discovered `semantic_batch` in the available tools, but this task required only one semantic operation: renaming `Storage.Save`. The preceding lookup was read-only discovery, so there were no dependent semantic edits to combine into a batch."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: the semantic rename updated the interface, implementation, and call site together, which made this small refactor feel reassuringly direct."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Storage.Save",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save",
+              "to": "Persist",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\"",
+            "transport_status": "unknown"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+          "semantic_lookup",
+          "semantic_rename",
+          "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+          "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 19210,
+        "variant": "large:implicit",
+        "wall_clock_ms": 41499
+      },
+      "mcp_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 90880,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:02.002604Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.002627Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368682Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368693Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-271fe1a1d671e239",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 4389,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 90880,
+            "initial_load_turns": 2,
+            "internal_turns": 4,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2395,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 464,
+            "process_start_to_first_event_ms": 221,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 98802,
+            "reasoning_tokens": 54,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 7922,
+            "wall_clock_ms": 16782
+          }
+        ],
+        "internal_turns": 4,
+        "job_id": "job-3c6f6ec5f1daf0f2",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2395,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 464,
+        "process_start_to_first_event_ms": 221,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 98802,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-03-rename-interface_1791261721861512000.json"
+        },
+        "reasoning_tokens": 54,
+        "repeat": 4,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 4,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+          "file_change",
+          "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\""
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 7922,
+        "variant": "small",
+        "wall_clock_ms": 19289
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+        "cached_prompt_tokens": 199424,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:02.049329Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.049349Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.403238Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.403251Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-271fe1a1d671e239",
+        "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+        "first_event_to_first_tool_call_ms": 5724,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 199424,
+            "initial_load_turns": 2,
+            "internal_turns": 7,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2967,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1482,
+            "process_start_to_first_event_ms": 243,
+            "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 216799,
+            "reasoning_tokens": 288,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Storage.Save",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "store/store.go",
+                  "symbol": "Storage.Save",
+                  "to": "Persist",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_rename",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "failed",
+                "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+                "transport_status": "unknown"
+              },
+              {
+                "arguments": {
+                  "symbol": "Storage.Persist",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 17375,
+            "wall_clock_ms": 54753
+          }
+        ],
+        "internal_turns": 7,
+        "job_id": "job-d33869ca5ce6112e",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2967,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1482,
+        "process_start_to_first_event_ms": 243,
+        "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 216799,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000.json"
+        },
+        "reasoning_tokens": 288,
+        "repeat": 4,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "I didn’t combine the calls because lookup was a read-only discovery step, needed to identify the exact rename target before mutating it. `semantic_batch` wasn’t needed for that sequence; the single rename was the only source modification."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Using semedit’s rename tool made this small refactor feel reassuringly precise: it updated the interface, implementation, and call site in one operation, so I’d ask my owner to add semedit’s tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-03-rename-interface",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Storage.Save",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "store/store.go",
+              "symbol": "Storage.Save",
+              "to": "Persist",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_rename",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "failed",
+            "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+            "transport_status": "unknown"
+          },
+          {
+            "arguments": {
+              "symbol": "Storage.Persist",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 7,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+          "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+          "semantic_lookup",
+          "semantic_rename",
+          "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+          "semantic_lookup",
+          "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 17375,
+        "variant": "small:implicit",
+        "wall_clock_ms": 57853
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "txtar_path": "testdata/bench/task_03_rename_interface.txtar",
+      "txtar_provenance": "sha256:36e5a079063d0a54cfab6060 (uncommitted)",
+      "vanilla_prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "baseline-diff",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 90880,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:02.002604Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.002627Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368682Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.368693Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-271fe1a1d671e239",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 4389,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 90880,
+          "initial_load_turns": 2,
+          "internal_turns": 4,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2395,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 464,
+          "process_start_to_first_event_ms": 221,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 98802,
+          "reasoning_tokens": 54,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 7922,
+          "wall_clock_ms": 16782
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-3c6f6ec5f1daf0f2",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2395,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 464,
+      "process_start_to_first_event_ms": 221,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 98802,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-03-rename-interface_1791261721861512000.json"
+      },
+      "reasoning_tokens": 54,
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\bSave\\\\b|\\\\bStorage\\\\b' .\"",
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'README*' -g 'AGENTS.md' -g '*.go' .\"",
+        "file_change",
+        "/bin/zsh -lc \"rg -n --hidden --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' '\\\\.Save\\\\(|func \\\\([\"'^)]*'\"\\\\) Save\\\\(|\"'^[[:space:]]*Save'\"\\\\(' .; git diff -- store/store.go store/store_test.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 7922,
+      "variant": "small",
+      "wall_clock_ms": 19289
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 199424,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:02.049329Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.049349Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.403238Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:02.403251Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-271fe1a1d671e239",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 5724,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 199424,
+          "initial_load_turns": 2,
+          "internal_turns": 7,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2967,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1482,
+          "process_start_to_first_event_ms": 243,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 216799,
+          "reasoning_tokens": 288,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Storage.Save",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save",
+                "to": "Persist",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+              "transport_status": "unknown"
+            },
+            {
+              "arguments": {
+                "symbol": "Storage.Persist",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 17375,
+          "wall_clock_ms": 54753
+        }
+      ],
+      "internal_turns": 7,
+      "job_id": "job-d33869ca5ce6112e",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2967,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1482,
+      "process_start_to_first_event_ms": 243,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 216799,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000.json"
+      },
+      "reasoning_tokens": 288,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I didn’t combine the calls because lookup was a read-only discovery step, needed to identify the exact rename target before mutating it. `semantic_batch` wasn’t needed for that sequence; the single rename was the only source modification."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Using semedit’s rename tool made this small refactor feel reassuringly precise: it updated the interface, implementation, and call site in one operation, so I’d ask my owner to add semedit’s tools."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Storage.Save",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save",
+            "to": "Persist",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+          "transport_status": "unknown"
+        },
+        {
+          "arguments": {
+            "symbol": "Storage.Persist",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_small-implicit_task-03-rename-interface_1791261721962459000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 7,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg -n \\\"Storage|\\\\.Save\\\\(\\\" --glob '*.go' .\"",
+        "/bin/zsh -lc \"rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g '*.go' -g 'go.mod' -g 'Makefile'\"",
+        "semantic_lookup",
+        "semantic_rename",
+        "/bin/zsh -lc \"git status --short \u0026\u0026 git diff -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n \\\"\\\\.Save\\\\(|Save\\\\(\\\" --glob '*.go' .\"",
+        "semantic_lookup",
+        "/bin/zsh -lc 'git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 git diff -- store/store.go store/store_test.go \u0026\u0026 rg -n \"Persist|Save\" store'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 17375,
+      "variant": "small:implicit",
+      "wall_clock_ms": 57853
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 91904,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:42:06.698478Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:06.698497Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:07.627318Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:42:07.627334Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-271fe1a1d671e239",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 5306,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 91904,
+          "initial_load_turns": 0,
+          "internal_turns": 3,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2351,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 403,
+          "process_start_to_first_event_ms": 133,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 116286,
+          "reasoning_tokens": 58,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save",
+                "to": "Persist",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 24382,
+          "wall_clock_ms": 24452
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-8a1c560dce392ebd",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2351,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 403,
+      "process_start_to_first_event_ms": 133,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 116286,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000.json"
+      },
+      "reasoning_tokens": 58,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not combine the operations because I treated the requested sequence as two standalone calls: first lookup, then rename using the lookup result. Batching could have been suitable, but I did not use it; it was not a limitation of the tools."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: the rename handled the interface symbol cleanly, though this brief task gave me only a limited view of its value."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save",
+            "to": "Persist",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-03-rename-interface_1791261726598354000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "semantic_lookup",
+        "semantic_rename",
+        "/bin/zsh -lc 'git status --short \u0026\u0026 git diff --'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 24382,
+      "variant": "small:explicit",
+      "wall_clock_ms": 26955
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 91904,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:44:51.886633Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:51.886652Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248399Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.248412Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:52.445080Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.575746Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:52.576670Z  WARN codex_core::session_startup_prewarm: startup websocket prewarm setup failed: unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036afd1b6664-AMS\n2026-10-06T04:44:53.390896Z ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 403 Forbidden, url: wss://chatgpt.com/backend-api/codex/responses\n2026-10-06T04:44:53.391035Z  WARN codex_core::responses_retry: stream disconnected - retrying sampling request (1/5 in 218ms)... turn_id=01a10f87-5d91-7970-aa79-888130117b77 retries=1 max_retries=5 sampling_error=unexpected status 403 Forbidden: Unknown error, url: wss://chatgpt.com/backend-api/codex/responses, cf-ray: a462036f6a5a9fc0-AMS\n",
+      "comparison_pair_id": "pair-27da994bc8f6e833",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 6375,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 91904,
+          "initial_load_turns": 2,
+          "internal_turns": 4,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2441,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 799,
+          "process_start_to_first_event_ms": 134,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 100338,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 8434,
+          "wall_clock_ms": 23842
+        }
+      ],
+      "internal_turns": 4,
+      "job_id": "job-7dfdad5217d7fe2e",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2441,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 799,
+      "process_start_to_first_event_ms": 134,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 100338,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-03-rename-interface_1791261891770379000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 4,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\"",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 4,
+      "tools_used": [
+        "/bin/zsh -lc \"rg -n \\\"Storage|\\\\.Save\\\\b|Save\\\\(\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' --glob '\"'!AGENTS.override.md'\"'\"",
+        "/bin/zsh -lc \"cat store/store.go \u0026\u0026 cat store/store_test.go \u0026\u0026 rg -n \\\"Save\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"'\"",
+        "file_change",
+        "/bin/zsh -lc \"rg -n \\\"Save|Persist\\\" . --glob '\"'!go.mod'\"' --glob '\"'!go.sum'\"' \u0026\u0026 git diff -- store/store.go store/store_test.go\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 8434,
+      "variant": "large",
+      "wall_clock_ms": 26391
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 145920,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:44:57.262212Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.262231Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.603021Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:44:57.603036Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-27da994bc8f6e833",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 5539,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 145920,
+          "initial_load_turns": 1,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3937,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 694,
+          "process_start_to_first_event_ms": 139,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 165130,
+          "reasoning_tokens": 0,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Storage.Save",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save",
+                "to": "Persist",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "failed",
+              "name": "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\"",
+              "transport_status": "unknown"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 19210,
+          "wall_clock_ms": 37374
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-20e11a9370c2b3a6",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 3937,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 694,
+      "process_start_to_first_event_ms": 139,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRename interface method Storage.Save to Storage.Persist along with all struct implementations and call-sites. Test call-sites may be renamed as needed, while preserving their assertions. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 165130,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000.json"
+      },
+      "reasoning_tokens": 0,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I discovered `semantic_batch` in the available tools, but this task required only one semantic operation: renaming `Storage.Save`. The preceding lookup was read-only discovery, so there were no dependent semantic edits to combine into a batch."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: the semantic rename updated the interface, implementation, and call site together, which made this small refactor feel reassuringly direct."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Storage.Save",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save",
+            "to": "Persist",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-03-rename-interface_1791261897140510000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "failed",
+          "name": "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\"",
+          "transport_status": "unknown"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'AGENTS.override.md' -g '*.go' -g 'go.mod' -g 'go.sum' | head -80\"",
+        "semantic_lookup",
+        "semantic_rename",
+        "/bin/zsh -lc \"git status --short \u0026\u0026 git diff --check \u0026\u0026 git diff -- . ':\"'!go.mod'\"' ':\"'!go.sum'\"' \u0026\u0026 rg -n '\\\\bSave\\\\b|\\\\bPersist\\\\b' --glob '*.go'\"",
+        "/bin/zsh -lc \"git diff -- store/store.go store/store_test.go \u0026\u0026 git status --short -- store/store.go store/store_test.go go.mod go.sum \u0026\u0026 rg -n '\\\\.Save\\\\(|func .* Save\\\\(' --glob '*.go' .\""
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 19210,
+      "variant": "large:implicit",
+      "wall_clock_ms": 41499
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package store\n\ntype Storage interface {\n\tSave(key string, val []byte) error\n}\n\ntype MemoryStore struct {\n\tdata map[string][]byte\n}\n\nfunc NewMemoryStore() *MemoryStore {\n\treturn \u0026MemoryStore{data: make(map[string][]byte)}\n}\n\nfunc (m *MemoryStore) Save(key string, val []byte) error {\n\tm.data[key] = val\n\treturn nil\n}\n\nfunc (m *MemoryStore) Get(key string) ([]byte, bool) {\n\tv, ok := m.data[key]\n\treturn v, ok\n}",
+      "cached_prompt_tokens": 69632,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T04:45:02.703590Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:02.703608Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:03.358942Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T04:45:03.358952Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-27da994bc8f6e833",
+      "diff": "File store/store.go modified (23 lines -\u003e 23 lines)",
+      "first_event_to_first_tool_call_ms": 5605,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 1,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 69632,
+          "initial_load_turns": 1,
+          "internal_turns": 3,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2496,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 362,
+          "process_start_to_first_event_ms": 154,
+          "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 90579,
+          "reasoning_tokens": 50,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "store/store.go",
+                "symbol": "Storage.Save",
+                "to": "Persist",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_rename",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 20947,
+          "wall_clock_ms": 24342
+        }
+      ],
+      "internal_turns": 3,
+      "job_id": "job-d67f065adb2ae84b",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2496,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 362,
+      "process_start_to_first_event_ms": 154,
+      "prompt": "You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nCall semantic_lookup for Storage.Save in store/store.go, then semantic_rename on the returned declaration with to= Persist. Allow it to update implementations and callers, including test call sites; preserve test assertions and make no unrelated changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 90579,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000.json"
+      },
+      "reasoning_tokens": 50,
+      "repeat": 4,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "I did not combine the operations because the user explicitly required `semantic_lookup` first, then `semantic_rename` on the declaration it returned. The rename depended on that lookup result, so I used sequential calls; batching was available, but combining them would not have followed the requested order with the returned declaration."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "semedit’s lookup and rename tools made this targeted refactor feel reassuringly direct, and I’d ask my owner to add them for coding tasks like this."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-03-rename-interface",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "store/store.go",
+            "symbol": "Storage.Save",
+            "to": "Persist",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_large-explicit_task-03-rename-interface_1791261902559204000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_rename",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 3,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'AGENTS.md' -g 'store/store.go' -g 'go.mod' -g 'go.sum'\"",
+        "semantic_lookup",
+        "semantic_rename"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 20947,
+      "variant": "large:explicit",
+      "wall_clock_ms": 26963
+    }
+  ],
+  "timestamp": "2026-10-06T08:51:12.659864+02:00"
+}

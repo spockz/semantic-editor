@@ -325,7 +325,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	} else if override != "" {
 		args = append(args, "-c", override)
 	}
-	if res.Arm == ArmSemedit {
+	if isSemeditArm(res.Arm) {
 		args = append(args, "-c", r.codexMCPBinaryOverride())
 		args = append(args, "-c", codexMCPEnabledOverride())
 		args = append(args, "-c", codexMCPGoEnvironmentOverride())
@@ -483,7 +483,7 @@ func (r *Runner) codexMCPOverride(arm ArmType, workDir string) (string, error) {
 	switch arm {
 	case ArmBaseline:
 		return "mcp_servers.semedit.enabled=false", nil
-	case ArmSemedit:
+	case ArmSemedit, ArmSemeditExplicit:
 		return r.codexMCPServerInstructionsOverride(workDir)
 	default:
 		return "", fmt.Errorf("unsupported Codex benchmark arm %q", arm)

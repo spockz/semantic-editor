@@ -1,0 +1,326 @@
+# Empirical Benchmark Report: Vanilla LLM vs. Semedit MCP
+
+<style>
+table.benchmark-tool-calls {
+  width: 100%;
+  table-layout: fixed;
+}
+
+table.benchmark-tool-calls th:first-child,
+table.benchmark-tool-calls td:first-child {
+  width: 3rem;
+}
+
+table.benchmark-tool-calls td {
+  min-width: 0;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command,
+table.benchmark-tool-calls pre.benchmark-tool-arguments {
+  width: 100%;
+  max-width: 32rem;
+  margin: 0.5rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+table.benchmark-tool-calls pre.benchmark-shell-command code {
+  white-space: inherit;
+}
+
+.benchmark-delta-positive {
+  color: var(--bs-success, #198754);
+  font-weight: 700;
+}
+
+.benchmark-delta-negative {
+  color: var(--bs-danger, #dc3545);
+  font-weight: 700;
+}
+</style>
+
+* **Date**: 2026-10-06 08:51:10 CEST
+
+## Test case: `task-05-insert-method`
+
+### Target: `codex/gpt-6-luna/medium (repeat 1)`
+
+#### Configuration: explicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Fixture**: `testdata/bench/task_05_insert_method.txtar` (`sha256:59f934b113c870cd0f9fa4bc (uncommitted)`)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> Add a new method func (s *Server) Stop() placed immediately after Server.Start. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+**Semedit MCP Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> Call semantic_lookup with {\"file\":\"api/server.go\",\"symbol\":\"Server.Start\"}. Then call semantic_insert_function with {\"file\":\"api/server.go\",\"source\":\"func (s *Server) Stop() { s.running = false }\",\"placement\":\"after_symbol\",\"target_symbol\":\"Server.Start\"}. Do not alter Start or unrelated code. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package api
+
+type Server struct {
+	running bool
+}
+
+func (s *Server) Start() {
+	s.running = true
+}
+
+func (s *Server) IsRunning() bool {
+	return s.running
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | MCP (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 44.05s | 22.99s | <span class="benchmark-delta-positive">-47.8%</span> | 18.28s | 24.26s | <span class="benchmark-delta-negative">+32.7%</span> |
+| **Process Start → First Event** | 0.15s | 0.14s | — | 0.14s | 0.29s | — |
+| **First Event → First Tool Call** | 14.24s | 9.01s | — | 5.79s | 6.10s | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | 0% | 1 | 1 | 0% |
+| **Internal Tool Cycles** | 3 | 1 | <span class="benchmark-delta-positive">-66.7%</span> | 3 | 4 | <span class="benchmark-delta-negative">+33.3%</span> |
+| **Initial Load / Discovery Turns** | 2 | 0 | <span class="benchmark-delta-positive">-100.0%</span> | 2 | 0 | <span class="benchmark-delta-positive">-100.0%</span> |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Tool Invocations** | 3 | 1 | <span class="benchmark-delta-positive">-66.7%</span> | 3 | 4 | <span class="benchmark-delta-negative">+33.3%</span> |
+| **Output Tokens** | 309 | 436 | <span class="benchmark-delta-negative">+41.1%</span> | 426 | 731 | <span class="benchmark-delta-negative">+71.6%</span> |
+| **Reasoning / Thinking Tokens** | 69 | 136 | <span class="benchmark-delta-negative">+97.1%</span> | 0 | 251 | <span class="benchmark-delta-negative">+100.0%</span> |
+| **Total Input Tokens** | 78154 | 147513 | <span class="benchmark-delta-negative">+88.7%</span> | 78475 | 248403 | <span class="benchmark-delta-negative">+216.5%</span> |
+| **Cached Input Tokens** | 66560 | 136448 | <span class="benchmark-delta-positive">+105.0%</span> | 71680 | 227072 | <span class="benchmark-delta-positive">+216.8%</span> |
+| **Uncached Input Tokens** | 11594 | 11065 | <span class="benchmark-delta-positive">-4.6%</span> | 6795 | 21331 | <span class="benchmark-delta-negative">+213.9%</span> |
+| **Cached vs Uncached Token Ratio** | 5.74:1 | 12.33:1 | <span class="benchmark-delta-positive">+114.8%</span> | 10.55:1 | 10.65:1 | <span class="benchmark-delta-positive">+0.9%</span> |
+| **Oracle L1: Mutation Policy** | ✅ PASS | ✅ PASS | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L2: AST Invariants** | ✅ PASS | ❌ FAIL | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L3: Clean Build** | ✅ PASS | ❌ FAIL | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L4: Verification Test** | ✅ PASS | ❌ FAIL | — | ✅ PASS | ✅ PASS | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ✅ YES | — | ✅ N/A (Vanilla) | ✅ YES | — |
+
+##### Standard vs Semedit in Small Context
+* **Vanilla Edit**: File api/server.go modified (13 lines -> 17 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg --files -g &#39;AGENTS*&#39; -g &#39;*.go&#39; -g &#39;PROJECT_BRIEF.md&#39; -g &#39;go.mod&#39; -g &#39;go.sum&#39;&#34;</code></pre></td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+<tr><td>2</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat api/server.go&#39;</code></pre></td><td>—</td></tr>
+<tr><td>3</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td>—</td></tr>
+</tbody>
+</table>
+
+##### Standard vs Semedit in Large Context
+* **Vanilla Edit**: File api/server.go modified (13 lines -> 17 lines)
+* **MCP Edit**: File api/server.go modified (13 lines -> 15 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg -n \&#34;func \\(s \\*Server\\) Start|type Server struct\&#34; .&#34;</code></pre></td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+<tr><td>2</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat api/server.go&#39;</code></pre></td><td><code>semedit/semantic_insert_construct</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;kind&#34;: &#34;method&#34;,
+  &#34;source&#34;: &#34;func (s *Server) Stop() { s.running = false }&#34;,
+  &#34;placement&#34;: &#34;after_symbol&#34;,
+  &#34;target_symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+<tr><td>3</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg --files -g &#39;SUBOPTIMAL_TOOLS.md&#39; -g &#39;AGENTS*&#39; -g &#39;api/server.go&#39;&#34;</code></pre></td></tr>
+<tr><td>4</td><td>—</td><td><span role="img" aria-label="Transport unknown" title="Transport unknown">?</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;rg --files docs&#39;</code></pre></td></tr>
+</tbody>
+</table>
+
+#### Standard vs Semedit in Large Context: Semedit Batch-Use Reflection
+
+Consecutive semantic MCP calls were detected without `semantic_batch`. This diagnostic follow-up is excluded from one-shot, interactive-recovery, correctness, tool-use, token, turn, and latency metrics.
+
+<div class="callout callout-warning"><div class="callout-title"><span>⚠</span> Why semantic edits were not batched</div><div class="callout-desc">I did not discover a callable `semantic_batch` tool in the available tool inventory. The requested sequence was therefore performed as separate calls, with the insertion kept after the lookup.</div></div>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.</pre>
+</details>
+
+#### Standard vs Semedit in Large Context: Semedit Integration Feedback
+
+Agent opinion based on this run; excluded from benchmark measurements.
+
+<blockquote>I’d ask my owner to add semedit’s tools: the semantic insertion worked cleanly and resolved a real undefined-method diagnostic, though I was disappointed that the requested specialized insertion tool wasn’t callable.</blockquote>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit&#39;s tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit&#39;s tools or not. This sentence will be the first thing a potential new user sees about semedit&#39;s usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.</pre>
+</details>
+
+#### Configuration: implicit prompt · prescriptive MCP instructions · write semedit restriction
+
+* **Fixture**: `testdata/bench/task_05_insert_method.txtar` (`sha256:59f934b113c870cd0f9fa4bc (uncommitted)`)
+
+**Vanilla LLM Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> Add a new method func (s *Server) Stop() placed immediately after Server.Start. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.
+
+**Semedit MCP Prompt**:
+> Do not edit tests. You are forbidden to modify protected files: "go.mod", "go.sum".
+>
+> Add a new method func (s *Server) Stop() placed immediately after Server.Start. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.
+
+<details><summary><b>Initial Workspace State (Before Edit)</b></summary>
+
+```go
+package api
+
+type Server struct {
+	running bool
+}
+
+func (s *Server) Start() {
+	s.running = true
+}
+
+func (s *Server) IsRunning() bool {
+	return s.running
+}
+```
+</details>
+
+| Metric | Vanilla (Small) | MCP (Small) | Δ (Small) | Vanilla (Large) | MCP (Large) | Δ (Large) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Wall-Clock Latency** | 44.05s | 45.30s | <span class="benchmark-delta-negative">+2.8%</span> | 18.28s | 37.28s | <span class="benchmark-delta-negative">+104.0%</span> |
+| **Process Start → First Event** | 0.15s | 0.14s | — | 0.14s | 0.19s | — |
+| **First Event → First Tool Call** | 14.24s | 7.96s | — | 5.79s | 4.30s | — |
+| **MCP Initialize → First Semantic Call** | — | — | — | — | — | — |
+| **MCP Server Start → Initialize** | — | — | — | — | — | — |
+| **Top-Level User Turns** | 1 | 1 | 0% | 1 | 1 | 0% |
+| **Internal Tool Cycles** | 3 | 5 | <span class="benchmark-delta-negative">+66.7%</span> | 3 | 6 | <span class="benchmark-delta-negative">+100.0%</span> |
+| **Initial Load / Discovery Turns** | 2 | 2 | 0% | 2 | 2 | 0% |
+| **MCP Discovery / Schema Turns** | 0 | 0 | 0% | 0 | 0 | 0% |
+| **Total Tool Invocations** | 3 | 5 | <span class="benchmark-delta-negative">+66.7%</span> | 3 | 6 | <span class="benchmark-delta-negative">+100.0%</span> |
+| **Output Tokens** | 309 | 529 | <span class="benchmark-delta-negative">+71.2%</span> | 426 | 663 | <span class="benchmark-delta-negative">+55.6%</span> |
+| **Reasoning / Thinking Tokens** | 69 | 134 | <span class="benchmark-delta-negative">+94.2%</span> | 0 | 132 | <span class="benchmark-delta-negative">+100.0%</span> |
+| **Total Input Tokens** | 78154 | 221180 | <span class="benchmark-delta-negative">+183.0%</span> | 78475 | 226213 | <span class="benchmark-delta-negative">+188.3%</span> |
+| **Cached Input Tokens** | 66560 | 197632 | <span class="benchmark-delta-positive">+196.9%</span> | 71680 | 208384 | <span class="benchmark-delta-positive">+190.7%</span> |
+| **Uncached Input Tokens** | 11594 | 23548 | <span class="benchmark-delta-negative">+103.1%</span> | 6795 | 17829 | <span class="benchmark-delta-negative">+162.4%</span> |
+| **Cached vs Uncached Token Ratio** | 5.74:1 | 8.39:1 | <span class="benchmark-delta-positive">+46.2%</span> | 10.55:1 | 11.69:1 | <span class="benchmark-delta-positive">+10.8%</span> |
+| **Oracle L1: Mutation Policy** | ✅ PASS | ✅ PASS | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L2: AST Invariants** | ✅ PASS | ✅ PASS | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L3: Clean Build** | ✅ PASS | ✅ PASS | — | ✅ PASS | ✅ PASS | — |
+| **Oracle L4: Verification Test** | ✅ PASS | ✅ PASS | — | ✅ PASS | ✅ PASS | — |
+| **MCP Tools Invocation Verified** | ✅ N/A (Vanilla) | ✅ YES | — | ✅ N/A (Vanilla) | ✅ YES | — |
+
+##### Standard vs Semedit in Small Context
+* **Vanilla Edit**: File api/server.go modified (13 lines -> 17 lines)
+* **MCP Edit**: File api/server.go modified (13 lines -> 17 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg --files -g &#39;AGENTS*&#39; -g &#39;*.go&#39; -g &#39;PROJECT_BRIEF.md&#39; -g &#39;go.mod&#39; -g &#39;go.sum&#39;&#34;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg --files -g &#39;PROJECT_BRIEF.md&#39; -g &#39;README*&#39; -g &#39;*.go&#39; -g &#39;AGENTS.md&#39; -g &#39;AGENTS.override.md&#39;&#34;</code></pre></td></tr>
+<tr><td>2</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat api/server.go&#39;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat AGENTS.override.md&#39;</code></pre></td></tr>
+<tr><td>3</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+<tr><td>4</td><td>—</td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;symbol&#34;: &#34;Server.Start&#34;,
+  &#34;file&#34;: &#34;api/server.go&#34;
+}</code></pre></td></tr>
+<tr><td>5</td><td>—</td><td><code>semedit/semantic_insert_construct</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;kind&#34;: &#34;method&#34;,
+  &#34;source&#34;: &#34;func (s *Server) Stop() {\n\ts.running = false\n}&#34;,
+  &#34;placement&#34;: &#34;after_symbol&#34;,
+  &#34;target_symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+</tbody>
+</table>
+
+##### Standard vs Semedit in Large Context
+* **Vanilla Edit**: File api/server.go modified (13 lines -> 17 lines)
+* **MCP Edit**: File api/server.go modified (13 lines -> 17 lines)
+
+<table class="benchmark-tool-calls">
+<thead><tr><th>#</th><th>Vanilla</th><th>Semedit MCP</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;rg -n \&#34;func \\(s \\*Server\\) Start|type Server struct\&#34; .&#34;</code></pre></td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;pwd &amp;&amp; \
+rg --files -g &#39;AGENTS*&#39; -g &#39;PROJECT_BRIEF.md&#39; -g &#39;*.go&#39; | head -80&#34;</code></pre></td></tr>
+<tr><td>2</td><td><span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat api/server.go&#39;</code></pre></td><td><span role="img" aria-label="Transport unknown" title="Transport unknown">?</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#39;cat AGENTS.override.md &amp;&amp; \
+cat PROJECT_BRIEF.md 2&gt;/dev/null&#39;</code></pre></td></tr>
+<tr><td>3</td><td><code>file_change</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)</td><td><span role="img" aria-label="Transport unknown" title="Transport unknown">?</span> <span role="img" aria-label="Functional failed" title="Functional failed">✗</span><pre class="benchmark-shell-command"><code class="language-shell">/bin/zsh -lc &#34;sed -n &#39;1,240p&#39; api/server.go &amp;&amp; \
+rg -n &#39;semantic_insert_function|semantic_lookup|semantic_inspect_symbol&#39; .&#34;</code></pre></td></tr>
+<tr><td>4</td><td>—</td><td><code>semedit/semantic_lookup</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;symbol&#34;: &#34;Server.Start&#34;,
+  &#34;workspace_root&#34;: &#34;.&#34;
+}</code></pre></td></tr>
+<tr><td>5</td><td>—</td><td><code>semedit/semantic_inspect_symbol</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;symbol&#34;: &#34;Server.Start&#34;,
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;workspace_root&#34;: &#34;.&#34;
+}</code></pre></td></tr>
+<tr><td>6</td><td>—</td><td><code>semedit/semantic_insert_construct</code> (<span role="img" aria-label="Transport succeeded" title="Transport succeeded">✓</span> <span role="img" aria-label="Functional succeeded" title="Functional succeeded">✓</span>)<pre class="benchmark-tool-arguments"><code class="language-json">{
+  &#34;file&#34;: &#34;api/server.go&#34;,
+  &#34;workspace_root&#34;: &#34;.&#34;,
+  &#34;kind&#34;: &#34;method&#34;,
+  &#34;source&#34;: &#34;func (s *Server) Stop() {\n\ts.running = false\n}&#34;,
+  &#34;placement&#34;: &#34;after_symbol&#34;,
+  &#34;target_symbol&#34;: &#34;Server.Start&#34;
+}</code></pre></td></tr>
+</tbody>
+</table>
+
+#### Standard vs Semedit in Small Context: Semedit Batch-Use Reflection
+
+Consecutive semantic MCP calls were detected without `semantic_batch`. This diagnostic follow-up is excluded from one-shot, interactive-recovery, correctness, tool-use, token, turn, and latency metrics.
+
+<div class="callout callout-warning"><div class="callout-title"><span>⚠</span> Why semantic edits were not batched</div><div class="callout-desc">I didn’t combine the calls because I treated lookup, inspection, and insertion as dependent steps: I needed the results from each to select the next operation. I did not check whether `semantic_batch` could express that dependency, so batching was not ruled out as unsuitable or unavailable.</div></div>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.</pre>
+</details>
+
+#### Standard vs Semedit in Small Context: Semedit Integration Feedback
+
+Agent opinion based on this run; excluded from benchmark measurements.
+
+<blockquote>I’d ask my owner to add semedit’s tools: being able to place `Stop` immediately after `Start` and get diagnostics in the same operation felt reassuringly precise.</blockquote>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit&#39;s tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit&#39;s tools or not. This sentence will be the first thing a potential new user sees about semedit&#39;s usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.</pre>
+</details>
+
+#### Standard vs Semedit in Large Context: Semedit Batch-Use Reflection
+
+Consecutive semantic MCP calls were detected without `semantic_batch`. This diagnostic follow-up is excluded from one-shot, interactive-recovery, correctness, tool-use, token, turn, and latency metrics.
+
+<div class="callout callout-warning"><div class="callout-title"><span>⚠</span> Why semantic edits were not batched</div><div class="callout-desc">I used consecutive semantic MCP calls to locate and inspect `Server.Start`, then insert `Server.Stop`; I did not discover or check whether `semantic_batch` was available. The calls depended on the symbol and file details returned by the preceding calls, but I can’t say whether batching could have handled that dependency.</div></div>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.</pre>
+</details>
+
+#### Standard vs Semedit in Large Context: Semedit Integration Feedback
+
+Agent opinion based on this run; excluded from benchmark measurements.
+
+<blockquote>I’d ask my owner to add semedit’s tools: using them to inspect `Server.Start` and insert `Stop` immediately after it felt reassuringly precise, though this small task only gave me a limited view of their value.</blockquote>
+
+<details><summary>Session reflection</summary>
+
+<p><strong>Prompt:</strong></p><pre>The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit&#39;s tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit&#39;s tools or not. This sentence will be the first thing a potential new user sees about semedit&#39;s usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.</pre>
+</details>
+

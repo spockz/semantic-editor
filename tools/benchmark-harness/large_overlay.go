@@ -35,7 +35,7 @@ type Session struct {
 	Token string
 }
 
-func ValidateToken(token string) bool {
+func ValidateSessionToken(token string) bool {
 	return token != ""
 }
 `,

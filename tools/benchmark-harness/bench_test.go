@@ -924,6 +924,28 @@ func TestTask11MixedSinkFixtureExtractsCompilingSmallAndLargeWorkspaces(t *testi
 	}
 }
 
+func TestTask02LargeContextExtractsCompilingWorkspace(t *testing.T) {
+	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_02_rename_cross_pkg.txtar"))
+	data, err := os.ReadFile(fixturePath)
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	workDir := t.TempDir()
+	if err := task.ExtractVariantTo(workDir, "large"); err != nil {
+		t.Fatalf("extract large fixture: %v", err)
+	}
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = workDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build large fixture: %v\n%s", err, output)
+	}
+}
+
 func TestTask11MixedSinkControlPassesOracle(t *testing.T) {
 	fixturePath := filepath.Clean(filepath.Join("..", "..", "testdata", "bench", "task_11_mixed_sink_api_migration.txtar"))
 	data, err := os.ReadFile(fixturePath)
@@ -1058,6 +1080,7 @@ func TestMatrixPromptVariantsRequiresDeclaredPrompts(t *testing.T) {
 
 	withPrompts := &Task{Metadata: TaskMetadata{PromptVariants: map[string]string{
 		"default":      "Rename the symbol.",
+		"explicit":     "Call semantic tools in order.",
 		"empty-prompt": " ",
 	}}}
 	if got, want := matrixPromptVariants(withPrompts, "small"), []string{"small:default"}; !slices.Equal(got, want) {
@@ -1065,6 +1088,9 @@ func TestMatrixPromptVariantsRequiresDeclaredPrompts(t *testing.T) {
 	}
 	if got, want := matrixPromptVariants(withPrompts, "large:default"), []string{"large:default"}; !slices.Equal(got, want) {
 		t.Fatalf("unexpected explicit prompt variant: got %v, want %v", got, want)
+	}
+	if got, want := matrixPromptVariants(withPrompts, "small:explicit"), []string{"small:explicit"}; !slices.Equal(got, want) {
+		t.Fatalf("unexpected explicit arm selection: got %v, want %v", got, want)
 	}
 	if got := matrixPromptVariants(withPrompts, "large:missing"); got != nil {
 		t.Fatalf("expected undeclared prompt variant to be skipped, got %v", got)
@@ -1115,7 +1141,7 @@ func TestCollectAvailableBenchmarks(t *testing.T) {
 		}
 		if b.TaskID == "task-11-mixed-sink-api-migration" {
 			foundMixedSinkMigration = true
-			if got, want := b.PromptVariants, []string{"default", "prefer_discover_semedit"}; !slices.Equal(got, want) {
+			if got, want := b.PromptVariants, []string{"default", "explicit", "prefer_discover_semedit"}; !slices.Equal(got, want) {
 				t.Errorf("unexpected task-11 prompt variants: got %v, want %v", got, want)
 			}
 		}

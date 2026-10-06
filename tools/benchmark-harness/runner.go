@@ -30,6 +30,8 @@ const (
 	ArmControl ArmType = "control"
 )
 
+const ArmSemeditExplicit ArmType = "semedit-explicit"
+
 // MCPServerInstructionMode identifies the server-wide instruction policy for a benchmark cell.
 type MCPServerInstructionMode string
 
@@ -520,4 +522,8 @@ func diagnosticToolCoverage(expected []string, calls []ToolCall, state ToolObser
 	sort.Strings(coverage.Observed)
 	sort.Strings(coverage.Missing)
 	return coverage
+}
+
+func isSemeditArm(arm ArmType) bool {
+	return arm == ArmSemedit || arm == ArmSemeditExplicit
 }

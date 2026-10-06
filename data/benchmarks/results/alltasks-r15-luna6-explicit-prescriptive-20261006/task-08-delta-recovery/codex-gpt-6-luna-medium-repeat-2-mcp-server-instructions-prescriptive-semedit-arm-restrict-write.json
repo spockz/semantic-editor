@@ -1,0 +1,2748 @@
+{
+  "comparisons": [
+    {
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 112128,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:34.477226Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.477242Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800844Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800855Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 17557,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 112128,
+            "initial_load_turns": 4,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2525,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 583,
+            "process_start_to_first_event_ms": 127,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 121950,
+            "reasoning_tokens": 138,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc ''",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 9822,
+            "wall_clock_ms": 111798
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-e82f55decd971c60",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2525,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 583,
+        "process_start_to_first_event_ms": 127,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 121950,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-08-delta-recovery_1791264094355300000.json"
+        },
+        "reasoning_tokens": 138,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc ''",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+          "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+          "/bin/zsh -lc ''",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 9822,
+        "variant": "large",
+        "wall_clock_ms": 114425
+      },
+      "large_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 206592,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:27.455806Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.455826Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.557692Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.557703Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 7553,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 206592,
+            "initial_load_turns": 0,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3889,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 903,
+            "process_start_to_first_event_ms": 451,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 251316,
+            "reasoning_tokens": 270,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "language": "go",
+                  "symbol": "Service.Process"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "language": "go",
+                  "symbol": "Service.Execute"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+                "functional_status": "failed",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "language": "go",
+                  "symbol": "Service.Process"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "language": "go",
+                  "symbol": "Execute"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "language": "go",
+                  "symbol": "Execute"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "params": {
+                        "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                        "expected_revision": "3146ce0835323bd54a0f98329011844af8d472f3a407a9b776d88095581928d3",
+                        "file": "service/service.go",
+                        "symbol": "Execute"
+                      },
+                      "tool": "semantic_replace_body"
+                    }
+                  ]
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 44724,
+            "wall_clock_ms": 57741
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-912ae7a40dc3c0a1",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3889,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 903,
+        "process_start_to_first_event_ms": 451,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 251316,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-08-delta-recovery_1791264087049048000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-08-delta-recovery_1791264087049048000.json"
+        },
+        "reasoning_tokens": 270,
+        "repeat": 2,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Semedit gave me a precise way to inspect and update the function while preserving its signature, and I’d ask my owner to add its tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "language": "go",
+              "symbol": "Service.Process"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "language": "go",
+              "symbol": "Service.Execute"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+            "functional_status": "failed",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "language": "go",
+              "symbol": "Service.Process"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "language": "go",
+              "symbol": "Execute"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "language": "go",
+              "symbol": "Execute"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "params": {
+                    "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                    "expected_revision": "3146ce0835323bd54a0f98329011844af8d472f3a407a9b776d88095581928d3",
+                    "file": "service/service.go",
+                    "symbol": "Execute"
+                  },
+                  "tool": "semantic_replace_body"
+                }
+              ]
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "semantic_lookup",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_batch"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 44724,
+        "variant": "large:explicit",
+        "wall_clock_ms": 61726
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "explicit",
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 103936,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:56.534244Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.534262Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570489Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-988b2ba0a0267440",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 6918,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 103936,
+            "initial_load_turns": 3,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2072,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 937,
+            "process_start_to_first_event_ms": 431,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 126467,
+            "reasoning_tokens": 164,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 22531,
+            "wall_clock_ms": 32046
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-58250cd341d4b220",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2072,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 937,
+        "process_start_to_first_event_ms": 431,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 126467,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-08-delta-recovery_1791263816174015000.json"
+        },
+        "reasoning_tokens": 164,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+          "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+          "file_change",
+          "/bin/zsh -lc 'go test ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 22531,
+        "variant": "small",
+        "wall_clock_ms": 34219
+      },
+      "small_semedit": {
+        "arm": "semedit-explicit",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 214528,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:54.243694Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:54.243713Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:55.124083Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:55.124097Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-988b2ba0a0267440",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 11981,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 0,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 214528,
+            "initial_load_turns": 0,
+            "internal_turns": 7,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2029,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 909,
+            "process_start_to_first_event_ms": 149,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 245459,
+            "reasoning_tokens": 365,
+            "step": 1,
+            "tool_calls": [
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Service.Execute"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+                "functional_status": "failed",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Service.Process"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Service.Process"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Service.Execute"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000/service/service.go: symbol not found\"} resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small",
+                "functional_status": "failed",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Execute"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Execute"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "edits": [
+                    {
+                      "params": {
+                        "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                        "file": "service/service.go",
+                        "symbol": "Execute"
+                      },
+                      "tool": "semantic_replace_body"
+                    }
+                  ],
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_batch",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 30931,
+            "wall_clock_ms": 60453
+          }
+        ],
+        "internal_turns": 7,
+        "job_id": "job-b5cbdfe8cbf6ccd9",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2029,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 909,
+        "process_start_to_first_event_ms": 149,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 245459,
+        "prompt_variant": "explicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000.json"
+        },
+        "reasoning_tokens": 365,
+        "repeat": 2,
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "Semantic inspection exposed the broken `Process` call signature, and the targeted body replacement fixed it cleanly, so I’d ask my owner to add semedit’s tools."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Service.Execute"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+            "functional_status": "failed",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Service.Process"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Service.Process"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Service.Execute"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000/service/service.go: symbol not found\"} resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small",
+            "functional_status": "failed",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Execute"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Execute"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "edits": [
+                {
+                  "params": {
+                    "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                    "file": "service/service.go",
+                    "symbol": "Execute"
+                  },
+                  "tool": "semantic_replace_body"
+                }
+              ],
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_batch",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 7,
+        "tools_used": [
+          "semantic_lookup",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_inspect_symbol",
+          "semantic_lookup",
+          "semantic_inspect_symbol",
+          "semantic_batch"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 30931,
+        "variant": "small:explicit",
+        "wall_clock_ms": 62573
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "txtar_path": "testdata/bench/task_08_delta_recovery.txtar",
+      "txtar_provenance": "sha256:507ce829eaf016fb135a9cc0 (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    },
+    {
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "large_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 112128,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:34.477226Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.477242Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800844Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800855Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 17557,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 4,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 112128,
+            "initial_load_turns": 4,
+            "internal_turns": 6,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2525,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 583,
+            "process_start_to_first_event_ms": 127,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 121950,
+            "reasoning_tokens": 138,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc ''",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 9822,
+            "wall_clock_ms": 111798
+          }
+        ],
+        "internal_turns": 6,
+        "job_id": "job-e82f55decd971c60",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2525,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 583,
+        "process_start_to_first_event_ms": 127,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 121950,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-08-delta-recovery_1791264094355300000.json"
+        },
+        "reasoning_tokens": 138,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc ''",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 6,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+          "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+          "/bin/zsh -lc ''",
+          "file_change",
+          "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 9822,
+        "variant": "large",
+        "wall_clock_ms": 114425
+      },
+      "large_semedit": {
+        "arm": "semedit",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 187392,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:22.055927Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.055951Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.442901Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.442911Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+        "diff": "File service/service.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 4812,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 187392,
+            "initial_load_turns": 2,
+            "internal_turns": 9,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2650,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1250,
+            "process_start_to_first_event_ms": 191,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 206425,
+            "reasoning_tokens": 319,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "(*Service).Process",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "symbol": "Execute",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_lookup",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Execute",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "discriminator": "s.Process(\"item-42\")",
+                  "file": "service/service.go",
+                  "in_function": "Execute",
+                  "kind": "statement/expression",
+                  "source": "return s.Process(\"item-42\", 1)",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+                },
+                "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected operand, found 'return'\"} syntax error: expected operand, found 'return'",
+                "functional_status": "failed",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "discriminator": "s.Process(\"item-42\")",
+                  "file": "service/service.go",
+                  "in_function": "Execute",
+                  "kind": "statement/expression",
+                  "source": "s.Process(\"item-42\", 1)",
+                  "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 19033,
+            "wall_clock_ms": 49003
+          }
+        ],
+        "internal_turns": 9,
+        "job_id": "job-0f1809463e2b03ea",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 2650,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1250,
+        "process_start_to_first_event_ms": 191,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 206425,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000.json"
+        },
+        "reasoning_tokens": 319,
+        "repeat": 2,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "Batching was unsuitable for these operations: the semantic lookup and inspection were read only, so `semantic_batch` could not combine them with the later edit. The edit depended on the exact target details from that inspection."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: the semantic edit fixed the caller mismatch and confirmed the diagnostic cleared, though I needed a retry after the first replacement was rejected."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "(*Service).Process",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "symbol": "Execute",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_lookup",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Execute",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "discriminator": "s.Process(\"item-42\")",
+              "file": "service/service.go",
+              "in_function": "Execute",
+              "kind": "statement/expression",
+              "source": "return s.Process(\"item-42\", 1)",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+            },
+            "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected operand, found 'return'\"} syntax error: expected operand, found 'return'",
+            "functional_status": "failed",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "discriminator": "s.Process(\"item-42\")",
+              "file": "service/service.go",
+              "in_function": "Execute",
+              "kind": "statement/expression",
+              "source": "s.Process(\"item-42\", 1)",
+              "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 9,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+          "semantic_lookup",
+          "semantic_lookup",
+          "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+          "semantic_inspect_symbol",
+          "semantic_replace_construct",
+          "semantic_replace_construct",
+          "/bin/zsh -lc 'go test ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 19033,
+        "variant": "large:implicit",
+        "wall_clock_ms": 51743
+      },
+      "mcp_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "mcp_server_instructions": "prescriptive",
+      "prompt_variant": "implicit",
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "small_baseline": {
+        "arm": "baseline-diff",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 103936,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:56.534244Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.534262Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570489Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-988b2ba0a0267440",
+        "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+        "first_event_to_first_tool_call_ms": 6918,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 3,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 103936,
+            "initial_load_turns": 3,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 2072,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 937,
+            "process_start_to_first_event_ms": 431,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+            "prompt_tokens": 126467,
+            "reasoning_tokens": 164,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "file_change",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./...'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 22531,
+            "wall_clock_ms": 32046
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-58250cd341d4b220",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": false,
+        "oracle": {
+          "duration_ms": 2072,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 937,
+        "process_start_to_first_event_ms": 431,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+        "prompt_tokens": 126467,
+        "provenance": {
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-08-delta-recovery_1791263816174015000.json"
+        },
+        "reasoning_tokens": 164,
+        "repeat": 2,
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": false,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "file_change",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./...'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+          "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+          "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+          "file_change",
+          "/bin/zsh -lc 'go test ./...'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 22531,
+        "variant": "small",
+        "wall_clock_ms": 34219
+      },
+      "small_semedit": {
+        "arm": "semedit",
+        "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+        "cached_prompt_tokens": 173056,
+        "codex_exit_code": 0,
+        "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:52.363872Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.363892Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.729701Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.729713Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+        "comparison_pair_id": "pair-988b2ba0a0267440",
+        "diff": "File service/service.go modified (13 lines -\u003e 13 lines)",
+        "first_event_to_first_tool_call_ms": 3617,
+        "initial_context_tokens": 0,
+        "initial_load_turns": 2,
+        "interaction_steps": [
+          {
+            "cached_prompt_tokens": 173056,
+            "initial_load_turns": 2,
+            "internal_turns": 5,
+            "mcp_load_turns": 0,
+            "oracle": {
+              "duration_ms": 3084,
+              "level_1_policy": true,
+              "level_2_ast": true,
+              "level_3_build": true,
+              "level_4_test": true,
+              "passed": true
+            },
+            "output_tokens": 1122,
+            "process_start_to_first_event_ms": 144,
+            "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+            "prompt_tokens": 204665,
+            "reasoning_tokens": 527,
+            "step": 1,
+            "tool_calls": [
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "file": "service/service.go",
+                  "symbol": "Service.Process",
+                  "workspace_root": "."
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_inspect_symbol",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "arguments": {
+                  "discriminator": "return s.Process(\"item-42\")",
+                  "file": "service/service.go",
+                  "in_function": "Execute",
+                  "kind": "statement/expression",
+                  "source": "return s.Process(\"item-42\", 1)",
+                  "workspace_root": "."
+                },
+                "functional_status": "succeeded",
+                "name": "semantic_replace_construct",
+                "server": "semedit",
+                "transport_status": "succeeded"
+              },
+              {
+                "functional_status": "succeeded",
+                "name": "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'",
+                "transport_status": "succeeded"
+              }
+            ],
+            "turns": 1,
+            "uncached_prompt_tokens": 31609,
+            "wall_clock_ms": 30711
+          }
+        ],
+        "internal_turns": 5,
+        "job_id": "job-efc0bb6d9341efa3",
+        "mcp_load_turns": 0,
+        "mcp_server_instructions": "prescriptive",
+        "mcp_verified": true,
+        "oracle": {
+          "duration_ms": 3084,
+          "level_1_policy": true,
+          "level_2_ast": true,
+          "level_3_build": true,
+          "level_4_test": true,
+          "passed": true
+        },
+        "output_tokens": 1122,
+        "process_start_to_first_event_ms": 144,
+        "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+        "prompt_tokens": 204665,
+        "prompt_variant": "implicit",
+        "provenance": {
+          "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-08-delta-recovery_1791263812288102000.mcp-metrics.json",
+          "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-08-delta-recovery_1791263812288102000.json"
+        },
+        "reasoning_tokens": 527,
+        "repeat": 2,
+        "semantic_batch_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+          "response": "Batching was not used because I inspected and edited only one declaration, so a multi-operation `semantic_batch` was unnecessary. The body-edit tool was unavailable, and I used the available construct replacement for that single change."
+        },
+        "semantic_integration_reflection": {
+          "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+          "response": "I’d ask my owner to add semedit’s tools: the semantic replacement resolved the call mismatch precisely and showed the compiler diagnostic disappearing, which made the fix feel clear and dependable."
+        },
+        "semedit_arm_restrict": "write",
+        "semedit_arm_restriction_applied": true,
+        "semedit_prewarm_verify": false,
+        "success": true,
+        "target": {
+          "effort": "medium",
+          "harness": "codex",
+          "model": "gpt-6-luna"
+        },
+        "task_id": "task-08-delta-recovery",
+        "tool_calls": [
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "file": "service/service.go",
+              "symbol": "Service.Process",
+              "workspace_root": "."
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_inspect_symbol",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "arguments": {
+              "discriminator": "return s.Process(\"item-42\")",
+              "file": "service/service.go",
+              "in_function": "Execute",
+              "kind": "statement/expression",
+              "source": "return s.Process(\"item-42\", 1)",
+              "workspace_root": "."
+            },
+            "functional_status": "succeeded",
+            "name": "semantic_replace_construct",
+            "server": "semedit",
+            "transport_status": "succeeded"
+          },
+          {
+            "functional_status": "succeeded",
+            "name": "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'",
+            "transport_status": "succeeded"
+          }
+        ],
+        "tool_count": 5,
+        "tools_used": [
+          "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+          "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+          "semantic_inspect_symbol",
+          "semantic_replace_construct",
+          "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'"
+        ],
+        "turns": 1,
+        "uncached_prompt_tokens": 31609,
+        "variant": "small:implicit",
+        "wall_clock_ms": 33969
+      },
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "txtar_path": "testdata/bench/task_08_delta_recovery.txtar",
+      "txtar_provenance": "sha256:507ce829eaf016fb135a9cc0 (uncommitted)",
+      "vanilla_prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE."
+    }
+  ],
+  "duration_unit": "milliseconds",
+  "format_version": 2,
+  "runs": [
+    {
+      "arm": "semedit",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 173056,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:52.363872Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.363892Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.729701Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:52.729713Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-988b2ba0a0267440",
+      "diff": "File service/service.go modified (13 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 3617,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 173056,
+          "initial_load_turns": 2,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3084,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1122,
+          "process_start_to_first_event_ms": 144,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 204665,
+          "reasoning_tokens": 527,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Service.Process",
+                "workspace_root": "."
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "discriminator": "return s.Process(\"item-42\")",
+                "file": "service/service.go",
+                "in_function": "Execute",
+                "kind": "statement/expression",
+                "source": "return s.Process(\"item-42\", 1)",
+                "workspace_root": "."
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_construct",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 31609,
+          "wall_clock_ms": 30711
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-efc0bb6d9341efa3",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 3084,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1122,
+      "process_start_to_first_event_ms": 144,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 204665,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-08-delta-recovery_1791263812288102000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_small-implicit_task-08-delta-recovery_1791263812288102000.json"
+      },
+      "reasoning_tokens": 527,
+      "repeat": 2,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "Batching was not used because I inspected and edited only one declaration, so a multi-operation `semantic_batch` was unnecessary. The body-edit tool was unavailable, and I used the available construct replacement for that single change."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: the semantic replacement resolved the call mismatch precisely and showed the compiler diagnostic disappearing, which made the fix feel clear and dependable."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Service.Process",
+            "workspace_root": "."
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "discriminator": "return s.Process(\"item-42\")",
+            "file": "service/service.go",
+            "in_function": "Execute",
+            "kind": "statement/expression",
+            "source": "return s.Process(\"item-42\", 1)",
+            "workspace_root": "."
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_construct",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'cat service/service.go \u0026\u0026 rg --files | head -100'",
+        "semantic_inspect_symbol",
+        "semantic_replace_construct",
+        "/bin/zsh -lc 'go test ./service \u0026\u0026 git diff -- service/service.go \u0026\u0026 git status --short -- service/service.go go.mod go.sum'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 31609,
+      "variant": "small:implicit",
+      "wall_clock_ms": 33969
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 214528,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:54.243694Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:54.243713Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:55.124083Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:55.124097Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-988b2ba0a0267440",
+      "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 11981,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 214528,
+          "initial_load_turns": 0,
+          "internal_turns": 7,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2029,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 909,
+          "process_start_to_first_event_ms": 149,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 245459,
+          "reasoning_tokens": 365,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Service.Execute"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+              "functional_status": "failed",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Service.Process"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Service.Process"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Service.Execute"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000/service/service.go: symbol not found\"} resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small",
+              "functional_status": "failed",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Execute"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Execute"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "edits": [
+                  {
+                    "params": {
+                      "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                      "file": "service/service.go",
+                      "symbol": "Execute"
+                    },
+                    "tool": "semantic_replace_body"
+                  }
+                ],
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_batch",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 30931,
+          "wall_clock_ms": 60453
+        }
+      ],
+      "internal_turns": 7,
+      "job_id": "job-b5cbdfe8cbf6ccd9",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2029,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 909,
+      "process_start_to_first_event_ms": 149,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 245459,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000.json"
+      },
+      "reasoning_tokens": 365,
+      "repeat": 2,
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Semantic inspection exposed the broken `Process` call signature, and the targeted body replacement fixed it cleanly, so I’d ask my owner to add semedit’s tools."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Service.Execute"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+          "functional_status": "failed",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Service.Process"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Service.Process"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Service.Execute"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000/service/service.go: symbol not found\"} resolve Service.Execute in /Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small",
+          "functional_status": "failed",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Execute"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Execute"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "edits": [
+              {
+                "params": {
+                  "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                  "file": "service/service.go",
+                  "symbol": "Execute"
+                },
+                "tool": "semantic_replace_body"
+              }
+            ],
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit-explicit_small-explicit_task-08-delta-recovery_1791263814177534000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_batch",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 7,
+      "tools_used": [
+        "semantic_lookup",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_inspect_symbol",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_batch"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 30931,
+      "variant": "small:explicit",
+      "wall_clock_ms": 62573
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 103936,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:16:56.534244Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.534262Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570489Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:16:56.570502Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-988b2ba0a0267440",
+      "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 6918,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 3,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 103936,
+          "initial_load_turns": 3,
+          "internal_turns": 5,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2072,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 937,
+          "process_start_to_first_event_ms": 431,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 126467,
+          "reasoning_tokens": 164,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 22531,
+          "wall_clock_ms": 32046
+        }
+      ],
+      "internal_turns": 5,
+      "job_id": "job-58250cd341d4b220",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2072,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 937,
+      "process_start_to_first_event_ms": 431,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 126467,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_small_task-08-delta-recovery_1791263816174015000.json"
+      },
+      "reasoning_tokens": 164,
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 5,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'AGENTS.md' -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc \"sed -n '1,240p' service/service.go \u0026\u0026 rg -n \\\"Service|service\\\\.|func .*\\\\(\\\" service\"",
+        "/bin/zsh -lc \"rg --files \u0026\u0026 cat go.mod \u0026\u0026 sed -n '1,120p' service/service_test.go \u0026\u0026 rg -n \\\"Process\\\\(|Execute\\\\(\\\" .\"",
+        "file_change",
+        "/bin/zsh -lc 'go test ./...'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 22531,
+      "variant": "small",
+      "wall_clock_ms": 34219
+    },
+    {
+      "arm": "semedit",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 187392,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:22.055927Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.055951Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.442901Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:22.442911Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+      "diff": "File service/service.go modified (13 lines -\u003e 13 lines)",
+      "first_event_to_first_tool_call_ms": 4812,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 2,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 187392,
+          "initial_load_turns": 2,
+          "internal_turns": 9,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2650,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 1250,
+          "process_start_to_first_event_ms": 191,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 206425,
+          "reasoning_tokens": 319,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "(*Service).Process",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "symbol": "Execute",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "symbol": "Execute",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "discriminator": "s.Process(\"item-42\")",
+                "file": "service/service.go",
+                "in_function": "Execute",
+                "kind": "statement/expression",
+                "source": "return s.Process(\"item-42\", 1)",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected operand, found 'return'\"} syntax error: expected operand, found 'return'",
+              "functional_status": "failed",
+              "name": "semantic_replace_construct",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "discriminator": "s.Process(\"item-42\")",
+                "file": "service/service.go",
+                "in_function": "Execute",
+                "kind": "statement/expression",
+                "source": "s.Process(\"item-42\", 1)",
+                "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_replace_construct",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'go test ./...'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 19033,
+          "wall_clock_ms": 49003
+        }
+      ],
+      "internal_turns": 9,
+      "job_id": "job-0f1809463e2b03ea",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 2650,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 1250,
+      "process_start_to_first_event_ms": 191,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 206425,
+      "prompt_variant": "implicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000.json"
+      },
+      "reasoning_tokens": 319,
+      "repeat": 2,
+      "semantic_batch_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes and do not run tools. During this task you made consecutive semantic_* MCP calls without using semantic_batch. In one to three sentences, explain why you did not combine those operations with semantic_batch. State whether batching was not discovered, was unsuitable for the operations, could not be used, or had another reason. Do not retry the task.",
+        "response": "Batching was unsuitable for these operations: the semantic lookup and inspection were read only, so `semantic_batch` could not combine them with the later edit. The edit depended on the exact target details from that inspection."
+      },
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "I’d ask my owner to add semedit’s tools: the semantic edit fixed the caller mismatch and confirmed the diagnostic cleared, though I needed a retry after the first replacement was rejected."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "(*Service).Process",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "symbol": "Execute",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "symbol": "Execute",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "discriminator": "s.Process(\"item-42\")",
+            "file": "service/service.go",
+            "in_function": "Execute",
+            "kind": "statement/expression",
+            "source": "return s.Process(\"item-42\", 1)",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"syntax error: expected operand, found 'return'\"} syntax error: expected operand, found 'return'",
+          "functional_status": "failed",
+          "name": "semantic_replace_construct",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "discriminator": "s.Process(\"item-42\")",
+            "file": "service/service.go",
+            "in_function": "Execute",
+            "kind": "statement/expression",
+            "source": "s.Process(\"item-42\", 1)",
+            "workspace_root": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/run_codex_semedit_large-implicit_task-08-delta-recovery_1791264081911649000"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_replace_construct",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'go test ./...'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 9,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service.go' -g 'AGENTS.md' -g 'AGENTS.override.md' -g 'README.md' | head -80 \u0026\u0026 git status --short\"",
+        "/bin/zsh -lc 'cat service/service.go \u0026\u0026 cat AGENTS.override.md'",
+        "semantic_lookup",
+        "semantic_lookup",
+        "/bin/zsh -lc \"rg -n 'Process\\\\(|Execute\\\\(' . -g '*.go' -g '\"'!**/*_test.go'\"'\"",
+        "semantic_inspect_symbol",
+        "semantic_replace_construct",
+        "semantic_replace_construct",
+        "/bin/zsh -lc 'go test ./...'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 19033,
+      "variant": "large:implicit",
+      "wall_clock_ms": 51743
+    },
+    {
+      "arm": "semedit-explicit",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 206592,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:27.455806Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.455826Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.557692Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:27.557703Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+      "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 7553,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 0,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 206592,
+          "initial_load_turns": 0,
+          "internal_turns": 6,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 3889,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 903,
+          "process_start_to_first_event_ms": 451,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+          "prompt_tokens": 251316,
+          "reasoning_tokens": 270,
+          "step": 1,
+          "tool_calls": [
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "language": "go",
+                "symbol": "Service.Process"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "language": "go",
+                "symbol": "Service.Execute"
+              },
+              "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+              "functional_status": "failed",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "language": "go",
+                "symbol": "Service.Process"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "language": "go",
+                "symbol": "Execute"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_lookup",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "file": "service/service.go",
+                "language": "go",
+                "symbol": "Execute"
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_inspect_symbol",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            },
+            {
+              "arguments": {
+                "edits": [
+                  {
+                    "params": {
+                      "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                      "expected_revision": "3146ce0835323bd54a0f98329011844af8d472f3a407a9b776d88095581928d3",
+                      "file": "service/service.go",
+                      "symbol": "Execute"
+                    },
+                    "tool": "semantic_replace_body"
+                  }
+                ]
+              },
+              "functional_status": "succeeded",
+              "name": "semantic_batch",
+              "server": "semedit",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 44724,
+          "wall_clock_ms": 57741
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-912ae7a40dc3c0a1",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": true,
+      "oracle": {
+        "duration_ms": 3889,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 903,
+      "process_start_to_first_event_ms": 451,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nInspect Service.Process and Service.Execute in service/service.go in parallel. Then use semantic_replace_body on Service.Execute only, with body `s := \u0026Service{}; return s.Process(\\\"item-42\\\", 1)`. Preserve the Service.Process contract and make no other changes. Parallelize independent read-only lookups. Perform mutations serially in the stated order or inside one ordered semantic_batch; never run overlapping mutations concurrently. Use semedit semantic tools for supported source code modifications. Shell commands for builds and tests are allowed. When done, output DONE.",
+      "prompt_tokens": 251316,
+      "prompt_variant": "explicit",
+      "provenance": {
+        "mcp_metrics_file": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-08-delta-recovery_1791264087049048000.mcp-metrics.json",
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_semedit-explicit_large-explicit_task-08-delta-recovery_1791264087049048000.json"
+      },
+      "reasoning_tokens": 270,
+      "repeat": 2,
+      "semantic_integration_reflection": {
+        "prompt": "The benchmark task is complete. For benchmark analysis only, do not make further file changes, do not run tools, and do not retry the task. Write a one-sentence user-facing summary about the value that semedit's tools provide for coding, from your perspective as the coding AI agent that performed this task. Use a bit of emotion, grounded in your actual experience during this run, and make clear whether you would ask your owner to add semedit's tools or not. This sentence will be the first thing a potential new user sees about semedit's usefulness to an AI agent. Be candid: a negative or mixed recommendation is welcome; if you did not use the tools or could not assess them, say so and do not invent benefits.",
+        "response": "Semedit gave me a precise way to inspect and update the function while preserving its signature, and I’d ask my owner to add its tools."
+      },
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": true,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "language": "go",
+            "symbol": "Service.Process"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "language": "go",
+            "symbol": "Service.Execute"
+          },
+          "failure": "Critical result (JSON): {\"application_state\":\"unknown\",\"error\":\"resolve Service.Execute in service/service.go: symbol not found\"} resolve Service.Execute in service/service.go: symbol not found",
+          "functional_status": "failed",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "language": "go",
+            "symbol": "Service.Process"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "language": "go",
+            "symbol": "Execute"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_lookup",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "file": "service/service.go",
+            "language": "go",
+            "symbol": "Execute"
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_inspect_symbol",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        },
+        {
+          "arguments": {
+            "edits": [
+              {
+                "params": {
+                  "body": "s := \u0026Service{}; return s.Process(\"item-42\", 1)",
+                  "expected_revision": "3146ce0835323bd54a0f98329011844af8d472f3a407a9b776d88095581928d3",
+                  "file": "service/service.go",
+                  "symbol": "Execute"
+                },
+                "tool": "semantic_replace_body"
+              }
+            ]
+          },
+          "functional_status": "succeeded",
+          "name": "semantic_batch",
+          "server": "semedit",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 6,
+      "tools_used": [
+        "semantic_lookup",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_lookup",
+        "semantic_inspect_symbol",
+        "semantic_batch"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 44724,
+      "variant": "large:explicit",
+      "wall_clock_ms": 61726
+    },
+    {
+      "arm": "baseline-diff",
+      "before_state": "package service\n\ntype Service struct{}\n\nfunc (s *Service) Process(id string, count int) string {\n\treturn id\n}\n\nfunc Execute() string {\n\ts := \u0026Service{}\n\t// Signature mismatch: caller passes only id, callee expects (id string, count int)\n\treturn s.Process(\"item-42\")\n}",
+      "cached_prompt_tokens": 112128,
+      "codex_exit_code": 0,
+      "codex_stderr": "Reading additional input from stdin...\n2026-10-06T05:21:34.477226Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.477242Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800844Z  WARN codex_skills::interface: ignoring interface.icon_small: icon path with '..' must resolve under plugin assets/\n2026-10-06T05:21:34.800855Z  WARN codex_skills::interface: ignoring interface.icon_large: icon path with '..' must resolve under plugin assets/\n",
+      "comparison_pair_id": "pair-5fb1116f1f6fd08f",
+      "diff": "File service/service.go modified (13 lines -\u003e 12 lines)",
+      "first_event_to_first_tool_call_ms": 17557,
+      "initial_context_tokens": 0,
+      "initial_load_turns": 4,
+      "interaction_steps": [
+        {
+          "cached_prompt_tokens": 112128,
+          "initial_load_turns": 4,
+          "internal_turns": 6,
+          "mcp_load_turns": 0,
+          "oracle": {
+            "duration_ms": 2525,
+            "level_1_policy": true,
+            "level_2_ast": true,
+            "level_3_build": true,
+            "level_4_test": true,
+            "passed": true
+          },
+          "output_tokens": 583,
+          "process_start_to_first_event_ms": 127,
+          "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+          "prompt_tokens": 121950,
+          "reasoning_tokens": 138,
+          "step": 1,
+          "tool_calls": [
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc ''",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "file_change",
+              "transport_status": "succeeded"
+            },
+            {
+              "functional_status": "succeeded",
+              "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+              "transport_status": "succeeded"
+            }
+          ],
+          "turns": 1,
+          "uncached_prompt_tokens": 9822,
+          "wall_clock_ms": 111798
+        }
+      ],
+      "internal_turns": 6,
+      "job_id": "job-e82f55decd971c60",
+      "mcp_load_turns": 0,
+      "mcp_server_instructions": "prescriptive",
+      "mcp_verified": false,
+      "oracle": {
+        "duration_ms": 2525,
+        "level_1_policy": true,
+        "level_2_ast": true,
+        "level_3_build": true,
+        "level_4_test": true,
+        "passed": true
+      },
+      "output_tokens": 583,
+      "process_start_to_first_event_ms": 127,
+      "prompt": "Do not edit tests. You are forbidden to modify protected files: \"go.mod\", \"go.sum\".\n\nRepair signature mismatch compile errors between caller and callee in service/service.go without breaking the contract. Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.",
+      "prompt_tokens": 121950,
+      "provenance": {
+        "session_transcript": "/Users/alessandro/.codex-workspaces/worktrees/318f14ee-b4fe-4414-9a7d-5427835dd89b/semantic-editor/.scratch/benchmarks/transcripts/run_codex_baseline-diff_large_task-08-delta-recovery_1791264094355300000.json"
+      },
+      "reasoning_tokens": 138,
+      "repeat": 2,
+      "semedit_arm_restrict": "write",
+      "semedit_arm_restriction_applied": false,
+      "semedit_prewarm_verify": false,
+      "success": true,
+      "target": {
+        "effort": "medium",
+        "harness": "codex",
+        "model": "gpt-6-luna"
+      },
+      "task_id": "task-08-delta-recovery",
+      "tool_calls": [
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc ''",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "file_change",
+          "transport_status": "succeeded"
+        },
+        {
+          "functional_status": "succeeded",
+          "name": "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'",
+          "transport_status": "succeeded"
+        }
+      ],
+      "tool_count": 6,
+      "tools_used": [
+        "/bin/zsh -lc \"pwd \u0026\u0026 rg --files -g 'PROJECT_BRIEF.md' -g 'service/service.go' -g 'AGENTS*' -g 'Makefile' -g 'go.mod' -g 'go.sum'\"",
+        "/bin/zsh -lc \"sed -n '1,260p' service/service.go \u0026\u0026 rg -n \\\"service\\\\.|Service|func .*\\\\(\\\" --glob '*.go'\"",
+        "/bin/zsh -lc 'cat service/service_test.go \u0026\u0026 cat AGENTS.override.md \u0026\u0026 git status --short'",
+        "/bin/zsh -lc ''",
+        "file_change",
+        "/bin/zsh -lc 'gofmt -w service/service.go \u0026\u0026 go test ./service'"
+      ],
+      "turns": 1,
+      "uncached_prompt_tokens": 9822,
+      "variant": "large",
+      "wall_clock_ms": 114425
+    }
+  ],
+  "timestamp": "2026-10-06T08:51:07.991966+02:00"
+}

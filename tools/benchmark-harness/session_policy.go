@@ -57,12 +57,15 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 	followups := make([]string, 0, len(task.Metadata.InteractiveFollowups))
 	for _, followup := range task.Metadata.InteractiveFollowups {
 		followup = withMutationPolicyGuidance(followup, task, true)
-		if arm == ArmSemedit {
+		if isSemeditArm(arm) {
 			steering, err := semeditRestrictionSteering(policy)
 			if err != nil {
 				return AgentExecution{}, err
 			}
 			followup = strings.TrimSpace(followup + " " + steering + " When done, output DONE.")
+		}
+		if arm == ArmSemeditExplicit {
+			followup = strings.TrimSpace(followup + " Use the explicit semantic tool sequence from the initial prompt. Parallelize only independent read-only lookups; keep mutations serial or inside one ordered semantic_batch.")
 		}
 		followups = append(followups, followup)
 	}
@@ -75,12 +78,15 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 			stageTask := &Task{Metadata: TaskMetadata{Oracle: step.Oracle}}
 			stagePrompt := withMutationPolicyGuidance(step.Instruction, stageTask, false)
 			switch arm {
-			case ArmSemedit:
+			case ArmSemedit, ArmSemeditExplicit:
 				steering, err := semeditRestrictionSteering(policy)
 				if err != nil {
 					return AgentExecution{}, err
 				}
 				stagePrompt = strings.TrimSpace(stagePrompt + " " + steering + " When done, output DONE.")
+				if arm == ArmSemeditExplicit {
+					stagePrompt = strings.TrimSpace(stagePrompt + " Apply this stage using semantic_lookup for the current symbol followed by semantic_rename with the new identifier from the named rename-plan.md row. Keep mutations serial and change only this stage's row.")
+				}
 			case ArmBaseline:
 				stagePrompt = strings.TrimSpace(stagePrompt + " Do not use semantic editing MCP tools; use standard file editing. When done, output DONE.")
 			default:

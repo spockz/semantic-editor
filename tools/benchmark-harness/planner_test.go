@@ -156,3 +156,36 @@ func TestBuildBenchmarkPlanExpandsInstructionModesAndKeepsControlSingle(t *testi
 		}
 	}
 }
+
+func TestBuildBenchmarkPlanCreatesThreeArmExplicitPromptCell(t *testing.T) {
+	dir := t.TempDir()
+	writePlanningFixture(t, dir, "explicit-cell", "contexts:\n  - small\nprompt_variants:\n  default: concise\n  explicit: call semantic tools in a fixed order\n")
+	plan, err := BuildBenchmarkPlan(PlanOptions{BenchDir: dir, Targets: []Target{{Harness: "codex"}}, Variants: []string{"small:explicit"}, Repeats: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(plan.Jobs), 6; got != want {
+		t.Fatalf("jobs = %d, want %d: %+v", got, want, plan.Jobs)
+	}
+	byPair := make(map[string]map[ArmType]Job)
+	for _, job := range plan.Jobs {
+		if byPair[job.PairID] == nil {
+			byPair[job.PairID] = make(map[ArmType]Job)
+		}
+		byPair[job.PairID][job.Arm] = job
+	}
+	if len(byPair) != 2 {
+		t.Fatalf("pair count = %d, want two repeats", len(byPair))
+	}
+	for pairID, jobs := range byPair {
+		if len(jobs) != 3 {
+			t.Errorf("pair %s has %d arms, want three", pairID, len(jobs))
+		}
+		if jobs[ArmBaseline].PairID != pairID || jobs[ArmSemedit].PairID != pairID || jobs[ArmSemeditExplicit].PairID != pairID {
+			t.Errorf("pair %s does not contain baseline, implicit, and explicit arms: %+v", pairID, jobs)
+		}
+		if jobs[ArmBaseline].PromptVariant != "" || jobs[ArmSemedit].PromptVariant != "implicit" || jobs[ArmSemeditExplicit].PromptVariant != "explicit" {
+			t.Errorf("pair %s prompt variants = %q, %q, %q; want shared baseline, implicit, explicit", pairID, jobs[ArmBaseline].PromptVariant, jobs[ArmSemedit].PromptVariant, jobs[ArmSemeditExplicit].PromptVariant)
+		}
+	}
+}

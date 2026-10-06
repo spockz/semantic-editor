@@ -281,7 +281,7 @@ func (r *Runner) openCodeConfig(workDir string, arm ArmType, target Target, env 
 	if arm == ArmBaseline {
 		return config, nil
 	}
-	if arm != ArmSemedit {
+	if !isSemeditArm(arm) {
 		return nil, fmt.Errorf("unsupported OpenCode benchmark arm %q", arm)
 	}
 	args, err := r.openCodeMCPArguments(workDir)

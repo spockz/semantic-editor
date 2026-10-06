@@ -516,7 +516,7 @@ func assertCLIResultConditions(t *testing.T, trial cliTrial, resolved string) {
 		if result.JobID == "" || result.ComparisonPairID == "" || !strings.Contains(trial.Output, result.JobID) || !strings.Contains(trial.Output, result.ComparisonPairID) {
 			t.Error("executed result identity differs from plan")
 		}
-		if result.SemeditArmRestrictionApplied != (result.Arm == ArmSemedit) {
+		if result.SemeditArmRestrictionApplied != isSemeditArm(result.Arm) {
 			t.Error("policy applicability wrong")
 		}
 	}

@@ -87,7 +87,7 @@ func (s *agentSession) evaluateStage(ctx context.Context, result *RunResult, ora
 }
 
 func (s *agentSession) retainTaskMCPMetrics() error {
-	if s.result == nil || s.execution.Arm != ArmSemedit {
+	if s.result == nil || !isSemeditArm(s.execution.Arm) {
 		return nil
 	}
 	source := benchmarkMCPMetricsPath(s.workDir)
@@ -188,7 +188,7 @@ func (s *agentSession) finalizeResult() {
 		reason = "no task turn produced tool observation evidence"
 	}
 	s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
-	shouldSkipReflection := s.execution.Arm == ArmSemedit && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls))
+	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls))
 	if shouldSkipReflection {
 		s.result.DiagnosticReflectionSkipped = diagnosticReflectionSkipReason(s.result.Error)
 	}

@@ -210,21 +210,16 @@ func normalizeTaskBase(taskID string) string {
 
 // BuildComparisons pairs corresponding baseline and semedit runs into structured comparison sets.
 func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
-	type key struct {
-		baseTask              string
-		target                string
-		repeat                int
-		promptVariant         string
-		mcpServerInstructions MCPServerInstructionMode
-		semeditArmRestrict    SemeditArmRestriction
-	}
-
-	grouped := make(map[key]*ComparisonSummary)
+	grouped := make(map[comparisonKey]*ComparisonSummary)
+	sharedBaseline, sharedBaselineNeeded := indexSharedPromptBaselines(runs)
 
 	for _, r := range runs {
+		if r == nil || isSharedPromptBaseline(r, sharedBaselineNeeded) {
+			continue
+		}
 		baseTask := comparisonTaskIdentity(r)
 		mcpServerInstructions := normalizeMCPServerInstructions(r.MCPServerInstructions)
-		k := key{baseTask: baseTask, target: r.Target.String(), repeat: r.Repeat, promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions, semeditArmRestrict: r.SemeditArmRestrict}
+		k := comparisonKey{baseTask: baseTask, target: r.Target.String(), repeat: r.Repeat, promptVariant: r.PromptVariant, mcpServerInstructions: mcpServerInstructions, semeditArmRestrict: r.SemeditArmRestrict}
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
@@ -248,6 +243,7 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 
 		assignComparisonRun(comp, r)
 	}
+	assignSharedPromptBaselines(grouped, sharedBaseline)
 
 	result := make([]*ComparisonSummary, 0, len(grouped))
 	for _, comp := range grouped {
@@ -274,6 +270,94 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 	})
 
 	return result
+}
+
+type comparisonKey struct {
+	baseTask              string
+	target                string
+	repeat                int
+	promptVariant         string
+	mcpServerInstructions MCPServerInstructionMode
+	semeditArmRestrict    SemeditArmRestriction
+}
+
+func indexSharedPromptBaselines(runs []*RunResult) (map[comparisonBaselineKey][]*RunResult, map[comparisonBaselineKey]bool) {
+	baselines := make(map[comparisonBaselineKey][]*RunResult)
+	needed := make(map[comparisonBaselineKey]bool)
+	for _, run := range runs {
+		if run == nil {
+			continue
+		}
+		key := comparisonBaselineKeyFor(run)
+		if isSemeditArm(run.Arm) && (run.PromptVariant == "implicit" || run.PromptVariant == "explicit") {
+			needed[key] = true
+		}
+		if run.Arm == ArmBaseline && run.PromptVariant == "" {
+			baselines[key] = append(baselines[key], run)
+		}
+	}
+	return baselines, needed
+}
+
+func isSharedPromptBaseline(run *RunResult, needed map[comparisonBaselineKey]bool) bool {
+	return run.Arm == ArmBaseline && run.PromptVariant == "" && needed[comparisonBaselineKeyFor(run)]
+}
+
+func assignSharedPromptBaselines(grouped map[comparisonKey]*ComparisonSummary, baselines map[comparisonBaselineKey][]*RunResult) {
+	variants := []comparisonRunVariant{{}, {large: true}, {verified: true}, {large: true, verified: true}}
+	for key, comparison := range grouped {
+		if key.promptVariant != "implicit" && key.promptVariant != "explicit" {
+			continue
+		}
+		for _, variant := range variants {
+			if !comparisonHasSemeditVariant(comparison, variant) {
+				continue
+			}
+			baselineKey := comparisonBaselineKey{task: comparison.TaskID, target: key.target, context: comparisonContextName(variant), verified: variant.verified, repeat: key.repeat, mcpServerInstructions: key.mcpServerInstructions, semeditArmRestrict: key.semeditArmRestrict}
+			for _, baseline := range baselines[baselineKey] {
+				assignBaselineComparisonRun(comparison, baseline, variant)
+				comparison.Provenance = commonProvenance(comparison.Provenance, baseline.Provenance)
+				if comparison.BeforeState == "" {
+					comparison.BeforeState = baseline.BeforeState
+				}
+			}
+		}
+	}
+}
+
+type comparisonBaselineKey struct {
+	task                  string
+	target                string
+	context               string
+	verified              bool
+	repeat                int
+	mcpServerInstructions MCPServerInstructionMode
+	semeditArmRestrict    SemeditArmRestriction
+}
+
+func comparisonBaselineKeyFor(run *RunResult) comparisonBaselineKey {
+	variant := comparisonRunVariantFor(run)
+	return comparisonBaselineKey{task: comparisonTaskIdentity(run), target: run.Target.String(), context: comparisonContextName(variant), verified: variant.verified, repeat: run.Repeat, mcpServerInstructions: normalizeMCPServerInstructions(run.MCPServerInstructions), semeditArmRestrict: run.SemeditArmRestrict}
+}
+
+func comparisonContextName(variant comparisonRunVariant) string {
+	if variant.large {
+		return "large"
+	}
+	return "small"
+}
+
+func comparisonHasSemeditVariant(comp *ComparisonSummary, variant comparisonRunVariant) bool {
+	switch {
+	case variant.large && variant.verified:
+		return comp.LargeVerifiedSemedit != nil
+	case variant.large:
+		return comp.LargeSemedit != nil
+	case variant.verified:
+		return comp.SmallVerifiedSemedit != nil
+	default:
+		return comp.SmallSemedit != nil
+	}
 }
 
 // commonProvenance retains only technical context shared by all runs in a comparison.
@@ -1026,7 +1110,7 @@ func assignComparisonRun(comp *ComparisonSummary, r *RunResult) {
 	switch r.Arm {
 	case ArmBaseline:
 		assignBaselineComparisonRun(comp, r, variant)
-	case ArmSemedit, ArmControl:
+	case ArmSemedit, ArmSemeditExplicit, ArmControl:
 		assignSemeditComparisonRun(comp, r, variant)
 	}
 }

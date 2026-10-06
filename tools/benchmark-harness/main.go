@@ -153,6 +153,9 @@ func matrixPromptVariants(task *Task, contextVariant string) []string {
 
 	variants := make([]string, 0, len(declared))
 	for _, promptVariant := range declared {
+		if promptVariant == "explicit" {
+			continue
+		}
 		variants = append(variants, contextVariant+":"+promptVariant)
 	}
 	return variants
