@@ -776,7 +776,7 @@ func toolSchema(entry operation.Entry) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	description := toolSchemaDescription(entry)
+	description := toolSchemaDescription(entry, toolOutput.continuations)
 	inputSchema, err := operationInputSchema(entry)
 	if err != nil {
 		return nil, err
@@ -838,6 +838,36 @@ func toolSchemaDescription(entry operation.Entry, continuations map[string]any) 
 			if name != "" {
 				fieldNames = append(fieldNames, "`"+name+"` copied from the same result record to "+strings.Join(continuation.Consumers, ", "))
 			}
+		}
+		slices.Sort(fieldNames)
+		description += " Structured results may expose declared continuations when resolved: " + strings.Join(fieldNames, "; ") + ". An absent continuation means there is no resolved continuation target."
+	} else if len(continuations) > 0 {
+		fieldNames := make([]string, 0, len(continuations))
+		for name := range continuations {
+			switch name {
+			case "origin_file":
+				fieldNames = append(fieldNames, "`origin_file` (historical origin evidence; not a continuation target)")
+			case "line", "column":
+				fieldNames = append(fieldNames, "`"+name+"` (navigation only)")
+			case "kind":
+				fieldNames = append(fieldNames, "`kind` (descriptive only)")
+			case "package":
+				fieldNames = append(fieldNames, "`"+name+"` (copyable resolved package name)")
+			default:
+				fieldNames = append(fieldNames, "`"+name+"` (copyable)")
+			}
+		}
+		slices.Sort(fieldNames)
+		description += " Successful structured results may include: " + strings.Join(fieldNames, ", ") + "."
+	}
+	if entry.Output == nil {
+		return description
+	}
+	var fieldNames []string
+	for _, metadata := range entry.Output.Metadata {
+		label := "`" + metadata.Field + "`"
+		if metadata.Description != "" {
+			label += " (" + metadata.Description + ")"
 		}
 		fieldNames = append(fieldNames, label)
 	}

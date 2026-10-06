@@ -534,11 +534,21 @@ func aggregateBenchmarkMetrics(comparisons []*BenchComparisonSummary) []benchmar
 
 func addBenchmarkComparisonMetrics(groups map[benchmarkArmKey]*benchmarkAggregateGroup, comparison *BenchComparisonSummary, context benchmarkPairContext) {
 	baseline, semedit := benchmarkPairRuns(comparison, context)
-	if baseline == nil || semedit == nil {
+	if isExplicitBenchmarkPairContext(context) {
+		addBenchmarkMetricRun(groups, comparison, context, benchmarkAggregateArmName(benchmarkAggregateArmSemeditExplicit, semedit), semedit)
 		return
 	}
 	addBenchmarkMetricRun(groups, comparison, context, benchmarkAggregateArmName(benchmarkAggregateArmBaseline, baseline), baseline)
 	addBenchmarkMetricRun(groups, comparison, context, benchmarkAggregateArmName(benchmarkAggregateArmSemeditImplicit, semedit), semedit)
+}
+
+func isExplicitBenchmarkPairContext(context benchmarkPairContext) bool {
+	switch context {
+	case benchmarkPairExplicitSmall, benchmarkPairExplicitLarge, benchmarkPairExplicitVerifiedSmall, benchmarkPairExplicitVerifiedLarge:
+		return true
+	default:
+		return false
+	}
 }
 
 func benchmarkAggregateArmName(defaultName string, run *BenchRunResult) string {
