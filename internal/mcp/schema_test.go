@@ -1180,8 +1180,9 @@ func TestDefaultMCPCatalogDocumentsHighRiskToolBehavior(t *testing.T) {
 	assertContains("semantic_assertion_mode description", toolDescription("semantic_assertion_mode"), "trust_workspace=true", "dry_run=true", "without trust or file writes")
 	assertContains("semantic_assertion_mode.dry_run", paramDescription("semantic_assertion_mode", "dry_run"), "without writing", "trust_workspace is not required")
 	assertContains("semantic_assertion_mode.trust_workspace", paramDescription("semantic_assertion_mode", "trust_workspace"), "Must be true", "non-dry-run")
-	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Required to select Rust or Java rename scope", "paths are relative to the workspace root", "Copy file from semantic_lookup")
-	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Target: qualified symbol identifier", "Copy symbol from semantic_lookup")
+	t.Run("direct symbol targeting", func(t *testing.T) {
+		assertDirectSymbolTargeting(t, byName)
+	})
 	assertContains("semantic_insert_declaration.source", paramDescription("semantic_insert_declaration", "source"), "Prefer semantic_insert_function", "semantic_insert_type", "semantic_insert_decl")
 	assertContains("semantic_insert_function description", toolDescription("semantic_insert_function"), "one complete Go function or method", "parameters, results, and body")
 	assertContains("semantic_insert_type description", toolDescription("semantic_insert_type"), "one Go struct, interface, or type alias", "instead of replace_file_content")
@@ -2559,4 +2560,32 @@ func assertNativeVerifyProjectionWireResults(t *testing.T, root string, registry
 	if batch["status"] != "ok" || !ok || verification["normalize"] == nil || verification["checks"] == nil {
 		t.Fatalf("batch native verification result = %#v", batch)
 	}
+}
+
+func assertDirectSymbolTargeting(t *testing.T, byName map[string]map[string]any) {
+	t.Helper()
+	paramDescription := func(toolName, paramName string) string {
+		tool, ok := byName[toolName]
+		if !ok {
+			t.Fatalf("tools/list omitted %s", toolName)
+		}
+		properties := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		property, ok := properties[paramName].(map[string]any)
+		if !ok {
+			t.Fatalf("%s schema omitted parameter %s", toolName, paramName)
+		}
+		return property["description"].(string)
+	}
+	assertContains := func(label, value string, want ...string) {
+		t.Helper()
+		for _, phrase := range want {
+			if !strings.Contains(value, phrase) {
+				t.Errorf("%s = %q, want wording containing %q", label, value, phrase)
+			}
+		}
+	}
+	assertContains("semantic_rename.file", paramDescription("semantic_rename", "file"), "Optional for Go if the symbol is unique across the workspace", "recommended to disambiguate common names", "Required for Rust or Java")
+	assertContains("semantic_rename.symbol", paramDescription("semantic_rename", "symbol"), "Direct short names are resolved in-place", "calling semantic_lookup first is not required")
+	assertContains("semantic_replace_body.symbol", paramDescription("semantic_replace_body", "symbol"), "short function name or Receiver.Method", "resolved directly in the given file")
+	assertContains("semantic_replace_construct.symbol", paramDescription("semantic_replace_construct", "symbol"), "short declaration name or Receiver.Method", "resolved directly in the given file")
 }

@@ -4919,3 +4919,11 @@ failure remains the documented batch behavior.
 - Observed failure: the operation rejected the explicit `private` access modifier because Go test function names beginning with `Test` are exported.
 - Workaround: retry with inferred access based on the test function's exported name.
 - Root cause: the insertion request's visibility did not match Go's casing convention.
+
+## 2026-10-07: semantic inspection used stale parameter names and test path
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `internal/operation/wire_backend.go` (`replaceBodyParams`, `replaceConstructParams`) and `internal/backend/golang/backend_test.go` (`TestRename`).
+- Observed failure: the parameter declarations were not in the guessed file, and the guessed backend test file does not exist. The inspection returned `symbol not found` or a missing-file error without changing files.
+- Workaround: locate declarations and tests with repository file/search tools, then inspect the actual symbols.
+- Root cause: the handover names outdated source locations; body/construct parameter contracts are in `internal/operation/wire_engine_mutations.go`, and Go backend tests use different filenames.

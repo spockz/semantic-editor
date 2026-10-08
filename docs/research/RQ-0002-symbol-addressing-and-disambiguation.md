@@ -59,3 +59,5 @@ Formalized and implemented across [ADR-0003: Symbol-Based Addressing Over File C
 1. **Hierarchical Symbol Qualification**: Models address symbols by name and receiver qualification (`TypeName.MethodName`) directly, eliminating line and character coordinate arithmetic.
 2. **Two-Tier Disambiguation Protocol**: The symbol resolver (`internal/symbol/resolver.go`) and neutral backend (`internal/backend/backend.go`) detect duplicate/overloaded symbols, returning structured ambiguous candidate sets (`Ambiguous: true`, `Candidates: [...]`) when unqualified queries match multiple definitions.
 3. **Semantic Inspection & Outline Navigation**: `semantic_inspect_symbol`, `semantic_outline`, and `semantic_find_references` provide whole-symbol source retrieval, body-elided outlines, and reference discovery with persistent revision coordinates.
+
+Go resolution also tolerates a package prefix in `package.Name` and `package.Type.Method` queries. Mutation ambiguity errors list candidate files and qualified names, allowing a retry with `file` or receiver qualification without a separate lookup call.

@@ -19,6 +19,8 @@ This semantic-editing layer lets the model name the intended symbol directly ins
 2. The selected language backend resolves the identifier to its exact native coordinate and feeds it into the underlying language server or compiler adapter. Go currently uses its existing AST resolver.
 3. For multi-step interactions, `semedit` generates ephemeral session symbol handles (`sym_e4f91b`) that remain stable regardless of line shifts.
 
+Go symbol addressing accepts direct short names scoped by `file`, receiver-qualified names such as `Type.Method`, and three-part `package.Type.Method` identifiers. A known file and symbol can therefore be sent directly to a mutation without a preliminary discovery lookup.
+
 Backend-native lookup is also permitted when an adapter can resolve symbols more accurately than a shared resolver. This decision does not require a broken-source fallback engine; syntax-error recovery remains outside this foundation slice.
 
 ## Invariants

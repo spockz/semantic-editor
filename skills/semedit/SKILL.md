@@ -51,6 +51,10 @@ Examples:
 
 For methods, qualify the receiver when useful, such as `Server.Start` or `(*Server).Do`. For Go lookup, omit the optional file when the symbol owner is unknown; supply it to disambiguate repeated local names. Go insertion calls accept one declaration, and an exported name requires public access. Relative file and path parameters resolve from the active semedit MCP workspace root, not the task's current directory. If MCP is rooted at the repository and the target is an isolated worktree, include `.scratch/worktrees/<name>/...` in the path; for Rust or Java rename, the selected file must belong to the trusted active workspace. Maven `root` must be absolute and remain inside the trusted workspace; use an absolute worktree path to target an isolated worktree.
 
+### Direct targeting over preliminary lookup
+
+When the target file and symbol name are already known from the task description or an error trace, call `semantic_rename`, `semantic_replace_body`, or `semantic_replace_construct` directly with `file` and a short `symbol`, such as `file: "server.go", symbol: "Start"` or `symbol: "Server.Start"`. Use `semantic_lookup` first only when the file location or symbol definition is genuinely unknown.
+
 ## Respect backend capabilities
 
 The declaration, loop, body, file, import, dependency, and switch-case operations above are Go operations. Symbol inspection and reference discovery currently support Go workspaces. Declaration outline supports Go, Java, Kotlin, Rust, Scala, Makefile, and Bash backends. Symbol lookup supports Go, trusted Rust, Java, Scala, and standalone Haskell backends. Semantic rename is available for Go workspaces and for selected Rust or Java files; Rust/Java rename requires both `file` and `trust_workspace: true`. Scala and Haskell are lookup-only. Java verification is limited to its advertised selected-file actions and requires workspace trust. Use only operations exposed for the current workspace and follow their schema requirements. For unsupported changes, use the available editing workflow and report any relevant limitation.

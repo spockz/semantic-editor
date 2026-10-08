@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"semedit/internal/adapters/golang"
 	"semedit/internal/astedit"
@@ -243,7 +244,11 @@ func (GoBackend) Rename(ctx context.Context, request backend.RenameRequest) (*ba
 	}
 	lookup := convertLookup(request.Project.RootDir, snapshot.Result)
 	if lookup.Ambiguous {
-		return nil, &backend.Error{Operation: backend.OperationRename, Err: backend.ErrAmbiguous}
+		candidateLocs := make([]string, 0, len(snapshot.Result.Candidates))
+		for _, candidate := range snapshot.Result.Candidates {
+			candidateLocs = append(candidateLocs, fmt.Sprintf("%s (%s)", candidate.File, candidate.BuildQualifiedName()))
+		}
+		return nil, fmt.Errorf("%w: symbol %q matches %d candidates: [%s]. Specify 'file' or a receiver qualification (e.g. 'TypeName.%s') to disambiguate directly", backend.ErrAmbiguous, request.Symbol, len(candidateLocs), strings.Join(candidateLocs, ", "), request.Symbol)
 	}
 	if lookup.Definition == nil {
 		return nil, fmt.Errorf("rename lookup lacks a declaration identity")

@@ -5,6 +5,10 @@
 * **Category**: Agent Steering & Tool Design
 * **Date**: 2026-09-20
 
+## 0. Direct Mutation Targeting
+
+Tool parameter descriptions now state that short names resolve directly in a selected Go file and that a preliminary `semantic_lookup` is unnecessary when the target is already known. Tolerant package-qualified resolution and actionable candidate locations for ambiguous mutations support the same goal by removing avoidable discovery turns.
+
 ---
 
 ## 1. Context & Motivation

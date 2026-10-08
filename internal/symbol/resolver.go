@@ -54,24 +54,34 @@ type LookupResult struct {
 
 // ParseIdentifier decomposes a query identifier into receiver and symbol name.
 func ParseIdentifier(raw string) (receiver string, name string, err error) {
+	_, receiver, name, err = parseIdentifier(raw)
+	return receiver, name, err
+}
+
+func parseIdentifier(raw string) (pkg string, receiver string, name string, err error) {
 	clean := normalizeInput(raw)
 	if clean == "" {
-		return "", "", fmt.Errorf("%w: identifier cannot be empty", ErrInvalidIdentifier)
+		return "", "", "", fmt.Errorf("%w: identifier cannot be empty", ErrInvalidIdentifier)
 	}
 
 	parts := strings.Split(clean, ".")
 	switch len(parts) {
 	case 1:
-		return "", parts[0], nil
+		return "", "", parts[0], nil
 	case 2:
-		recv := strings.TrimPrefix(parts[0], "*")
-		recv = strings.TrimPrefix(recv, "(")
-		recv = strings.TrimSuffix(recv, ")")
-		recv = strings.TrimPrefix(recv, "*")
-		return recv, parts[1], nil
+		return "", cleanReceiver(parts[0]), parts[1], nil
+	case 3:
+		return parts[0], cleanReceiver(parts[1]), parts[2], nil
 	default:
-		return "", "", fmt.Errorf("%w: %q (expected [Receiver.]Name)", ErrInvalidIdentifier, raw)
+		return "", "", "", fmt.Errorf("%w: %q (expected [Package.][Receiver.]Name)", ErrInvalidIdentifier, raw)
 	}
+}
+
+func cleanReceiver(raw string) string {
+	recv := strings.TrimPrefix(raw, "*")
+	recv = strings.TrimPrefix(recv, "(")
+	recv = strings.TrimSuffix(recv, ")")
+	return strings.TrimPrefix(recv, "*")
 }
 
 type sourceSnapshotReader struct {
@@ -99,18 +109,20 @@ func Resolve(rootDir string, filePath string, query string) (*LookupResult, erro
 	return snapshot.Result, nil
 }
 
-func scanFile(filePath string, targetRecv string, targetName string, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) ([]*Symbol, error) {
+func scanFile(filePath string, targetPackage string, targetRecv string, targetName string, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) ([]*Symbol, error) {
 	cleanPath := filepath.Clean(filePath)
 	src, err := reader.read(cleanPath)
 	if err != nil {
 		return nil, &SymbolError{Op: "read", File: cleanPath, Symbol: targetName, Err: err}
 	}
-
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, src, parser.ParseComments)
 	if err != nil {
 		pos := extractPosition(fset, err)
 		return nil, &SymbolError{Op: "parse", File: filePath, Symbol: targetName, Pos: pos, Err: err}
+	}
+	if targetPackage != "" && node.Name.Name != targetPackage {
+		return nil, nil
 	}
 
 	indexedReceiver, err := receiverTypeIndex(filePath, targetRecv, node, packageIndexes, reader)
@@ -372,7 +384,7 @@ func ResolveSnapshot(rootDir string, filePath string, query string) (*Resolution
 
 // ResolveSnapshotWithContext resolves symbols against the current batch source revision.
 func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath string, query string) (*ResolutionSnapshot, error) {
-	recv, name, err := ParseIdentifier(query)
+	pkg, recv, name, err := parseIdentifier(query)
 	if err != nil {
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: err}
 	}
@@ -385,27 +397,49 @@ func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath st
 	reader := newSourceSnapshotReader()
 	reader.ctx = ctx
 	packageIndexes := make(map[string]*packageTypeIndex)
+	declarations, usages, err := scanResolutionCandidates(rootDir, targetFiles, pkg, recv, name, packageIndexes, reader)
+	if err != nil {
+		return nil, err
+	}
+	return resolveCandidates(filePath, query, declarations, usages, reader)
+}
+
+func scanResolutionCandidates(rootDir string, targetFiles []string, pkg, recv, name string, packageIndexes map[string]*packageTypeIndex, reader *sourceSnapshotReader) ([]*Symbol, []*Symbol, error) {
 	var declarations, usages []*Symbol
-	for _, file := range targetFiles {
-		symbols, scanErr := scanFile(file, recv, name, packageIndexes, reader)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		for _, candidate := range symbols {
-			candidate.QualifiedName = candidate.BuildQualifiedName()
-			if rootDir != "" {
-				if relative, relErr := filepath.Rel(rootDir, candidate.File); relErr == nil && !strings.HasPrefix(relative, "..") {
-					candidate.File = relative
+	scan := func(targetPackage, targetRecv string) error {
+		for _, file := range targetFiles {
+			symbols, err := scanFile(file, targetPackage, targetRecv, name, packageIndexes, reader)
+			if err != nil {
+				return err
+			}
+			for _, candidate := range symbols {
+				candidate.QualifiedName = candidate.BuildQualifiedName()
+				if rootDir != "" {
+					if relative, err := filepath.Rel(rootDir, candidate.File); err == nil && !strings.HasPrefix(relative, "..") {
+						candidate.File = relative
+					}
+				}
+				if isLocalBinding(candidate.Kind) {
+					usages = append(usages, candidate)
+				} else {
+					declarations = append(declarations, candidate)
 				}
 			}
-			if isLocalBinding(candidate.Kind) {
-				usages = append(usages, candidate)
-			} else {
-				declarations = append(declarations, candidate)
-			}
+		}
+		return nil
+	}
+	if err := scan(pkg, recv); err != nil {
+		return nil, nil, err
+	}
+	if pkg == "" && recv != "" && len(declarations) == 0 && len(usages) == 0 {
+		if err := scan(recv, ""); err != nil {
+			return nil, nil, err
 		}
 	}
+	return declarations, usages, nil
+}
 
+func resolveCandidates(filePath, query string, declarations, usages []*Symbol, reader *sourceSnapshotReader) (*ResolutionSnapshot, error) {
 	result := &LookupResult{Usages: usages}
 	if len(declarations) > 0 {
 		if len(declarations) > 1 {
@@ -417,7 +451,6 @@ func ResolveSnapshotWithContext(ctx context.Context, rootDir string, filePath st
 		setLegacyDefinition(result, result.Definition)
 		return &ResolutionSnapshot{Result: result, Files: reader.snapshot()}, nil
 	}
-
 	if len(usages) == 0 {
 		return nil, &SymbolError{Op: "resolve", File: filePath, Symbol: query, Err: ErrNotFound}
 	}

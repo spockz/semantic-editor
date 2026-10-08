@@ -25,8 +25,10 @@ func TestParseIdentifier(t *testing.T) {
 		{"ValidateToken", "", "ValidateToken", false},
 		{"'ValidateToken'", "", "ValidateToken", false},
 		{"validate'", "", "validate'", false},
+		{"api.Server.Start", "Server", "Start", false},
+		{"api.(*Server).Start", "Server", "Start", false},
 		{"", "", "", true},
-		{"a.b.c", "", "", true},
+		{"a.b.c.d", "", "", true},
 	}
 
 	for _, tt := range tests {
@@ -45,6 +47,51 @@ func TestParseIdentifier(t *testing.T) {
 		if recv != tt.wantRecv || name != tt.wantName {
 			t.Errorf("ParseIdentifier(%q) = (%q, %q), want (%q, %q)", tt.input, recv, name, tt.wantRecv, tt.wantName)
 		}
+	}
+}
+
+func TestResolvePackageQualificationAndFileScope(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	files := map[string]string{
+		"audit/event.go":       "package audit\nfunc NormalizeEvent() {}\ntype Processor struct{}\nfunc (Processor) LoadInput() {}\n",
+		"workflow/workflow.go": "package workflow\nfunc Validate() {}\n",
+		"other/other.go":       "package other\nfunc Validate() {}\n",
+	}
+	for name, source := range files {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir fixture: %v", err)
+		}
+		if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+	}
+
+	for _, query := range []string{"audit.Processor.LoadInput", "audit.(*Processor).LoadInput"} {
+		result, err := symbol.Resolve(root, "", query)
+		if err != nil {
+			t.Fatalf("Resolve(%q) error = %v", query, err)
+		}
+		if result.Definition == nil || result.Definition.File != "audit/event.go" || result.Definition.QualifiedName != "Processor.LoadInput" {
+			t.Errorf("Resolve(%q) = %#v", query, result)
+		}
+	}
+
+	result, err := symbol.Resolve(root, "audit/event.go", "audit.NormalizeEvent")
+	if err != nil {
+		t.Fatalf("Resolve(package-qualified function) error = %v", err)
+	}
+	if result.Definition == nil || result.Definition.File != "audit/event.go" || result.Definition.Name != "NormalizeEvent" {
+		t.Errorf("Resolve(package-qualified function) = %#v", result)
+	}
+
+	result, err = symbol.Resolve(root, "workflow/workflow.go", "Validate")
+	if err != nil {
+		t.Fatalf("Resolve(file-scoped short name) error = %v", err)
+	}
+	if result.Definition == nil || result.Definition.File != "workflow/workflow.go" || result.Definition.Name != "Validate" {
+		t.Errorf("Resolve(file-scoped short name) = %#v", result)
 	}
 }
 

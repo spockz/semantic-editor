@@ -54,6 +54,26 @@ func TestFindReferencesSearchesModuleFromSelectedFile(t *testing.T) {
 	}
 }
 
+func TestRenameAmbiguityListsCandidateLocations(t *testing.T) {
+	root := writeReferenceFixture(t, map[string]string{
+		"first/validate.go":  "package first\nfunc Validate() {}\n",
+		"second/validate.go": "package second\nfunc Validate() {}\n",
+	})
+	_, err := (GoBackend{}).Rename(context.Background(), backend.RenameRequest{
+		Project: backend.ProjectContext{RootDir: root, Language: backend.LanguageGo},
+		Symbol:  "Validate",
+		To:      "Check",
+	})
+	if !errors.Is(err, backend.ErrAmbiguous) {
+		t.Fatalf("Rename() error = %v, want ambiguity", err)
+	}
+	for _, candidate := range []string{"first/validate.go (Validate)", "second/validate.go (Validate)", "Specify 'file'"} {
+		if !strings.Contains(err.Error(), candidate) {
+			t.Errorf("Rename() error %q does not contain %q", err, candidate)
+		}
+	}
+}
+
 func TestFindReferencesNormalizesGenericOriginsAcrossTestVariants(t *testing.T) {
 	root := writeReferenceFixture(t, map[string]string{
 		"go.mod":                  "module example.com/genericrefs\ngo 1.23\n",
