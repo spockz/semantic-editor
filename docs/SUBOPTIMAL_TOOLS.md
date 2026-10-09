@@ -1,5 +1,113 @@
 # Suboptimal Model Context Protocol (MCP) Tools & Dogfooding Feedback Log
 
+## 2026-10-08: Semantic lookup guessed two benchmark harness symbol names
+
+- Tool: `semantic_lookup`
+- Target: `tools/benchmark-harness/opencode_driver.go` symbol `openCodeMCPArgs` and `tools/benchmark-harness/bench_test.go` symbol `TestMCPServerInstructionModes`
+- Observed failure: Both guessed symbols were not found; no files changed.
+- Workaround applied: Locate the actual OpenCode helper and test names with repository search, then use their resolved declarations.
+- Root cause: The lookup selectors were inferred from behavior rather than the repository's exact symbol names.
+
+## 2026-10-08: Tool log patch assumed the wrong document heading
+
+- Tool: `apply_patch`
+- Target: `docs/SUBOPTIMAL_TOOLS.md`
+- Observed failure: The patch could not find the assumed `# Suboptimal Tool Behavior` heading and made no changes.
+- Workaround applied: Read the existing heading and retry the log insertion against its exact text.
+- Root cause: The patch context used a generic heading instead of the document's actual title.
+
+## 2026-10-08: MCP instruction case edit used the switch value as its selector
+
+- Tool: `semantic_replace_construct` inside `semantic_batch`
+- Target: `tools/benchmark-harness/codex_driver.go`, `Runner.codexMCPServerInstructionsOverride`
+- Observed failure: The batch successfully changed the parser, runner default, and plan default, then could not select the `none` case using `r.mcpServerInstructionsMode`; prior child edits remained applied.
+- Workaround applied: Use the diagnostic's exact case construct path for the adapter edit, then apply the same selector correction to the other adapters.
+- Root cause: The construct selector expects a case value or construct path, not the switch expression.
+
+## 2026-10-08: Semantic batch verification could not validate the shared workspace
+
+- Tool: `semantic_batch` with three `semantic_replace_construct` children
+- Target: MCP instruction `none` cases in the Codex, OpenCode, and Agy benchmark adapters
+- Observed failure: All three edits succeeded, but final verification stopped because the workspace trust flag was unavailable to the batch wrapper; its returned diagnostics also included existing compile errors in `internal/astedit/inspect.go` and `internal/backend/backend_test.go`.
+- Workaround applied: Keep the successful edits, log the unrelated diagnostics, and defer acceptance verification to the parent `make check` as requested.
+- Root cause: The batch wrapper did not pass trust through to the verifier, and the shared working tree contains concurrent edits with unresolved diagnostics.
+
+## 2026-10-08: Default-mode test batch could not run semantic verification
+
+- Tool: `semantic_batch` with a CLI flag update and four test insertions
+- Target: benchmark harness CLI, runner, planner, and adapter tests
+- Observed failure: All five child edits succeeded, but the final verifier again required workspace trust; its diagnostics included pre-existing unresolved compile errors in the shared tree.
+- Workaround applied: Preserve the completed edits and hand verification to the parent `make check` preflight.
+- Root cause: The batch wrapper does not expose the trust option required by its automatic linter hook.
+
+## 2026-10-08: External plan test lookup used a stale test name
+
+- Tool: `semantic_lookup`
+- Target: `tools/benchmark-harness/external_repo_test.go` symbol `TestExternalRepositoryPlanIncludesPairedExplicitAgent`
+- Observed failure: The requested symbol did not exist in the file; no changes were made.
+- Workaround applied: Locate the current external planning test declaration with repository search before inspecting it.
+- Root cause: The handoff name no longer matched the current test name.
+
+## 2026-10-07: Import organization dropped an explicitly requested nested-module import
+
+- Tool: `semantic_organize_imports`.
+- Target: `tools/package-closure/plugin/plugin.go`.
+- Observed failure: Adding `semedit.tools/package-closure` returned success but the import remained absent, leaving both `packageclosure` references undefined and blocking `make check`.
+- Workaround: Restore the single required import with a targeted file patch.
+- Root cause: Import resolution ran from the parent workspace for a separately governed nested module; the explicit addition did not survive organization.
+
+## 2026-10-07: Resume test inspection used an incomplete symbol name
+
+- Tool: `semantic_inspect_symbol`, target `TestResumeRejectsChangedPlan`.
+- Observed: symbol not found in `resume_test.go`.
+- Workaround: inspect the discovered `TestResumeRejectsChangedPlanFingerprint` declaration.
+- Root cause: the caller omitted the final word of the exact symbol name.
+
+## 2026-10-07: Semantic function insertion rejected escaped rune literal
+
+- Tool: `semantic_insert_function`, target `appendFakeCodexAppServerProcess` in `tools/benchmark-harness/codex_app_server_test.go`.
+- Observed: the tool rejected the Go snippet with `syntax error: illegal rune literal`; no source was changed.
+- Workaround: simplify the inserted snippets and submit each helper individually with valid Go literal escaping.
+- Root cause: the caller encoded a newline rune literal incorrectly while transporting the snippet through the tool wrapper.
+
+## 2026-10-07: Semantic function insertion reported an unexpected declaration collision
+
+- Tool: `semantic_insert_function`, target `appendFakeCodexAppServerProcess` in `tools/benchmark-harness/codex_app_server_test.go`.
+- Observed: the tool reported the declaration already exists after the earlier failed insertion, although that failure had reported a syntax error.
+- Workaround: inspect the current declaration and repair or reuse it before inserting further helpers.
+- Root cause: the failed insertion may have partially changed the workspace before returning its error.
+
+## 2026-10-07: Live continuity body replacement needed import cleanup
+
+- Tool: `semantic_replace_body`, target `TestLiveCodexAppServerKeepsMCPAcrossHints`.
+- Observed: the replacement introduced `strings` references without an import; the tool reported both undefined references in its diagnostic delta.
+- Workaround: run semantic import organization before verification.
+- Root cause: the caller omitted `auto_organize_imports`, whose default is false.
+
+## 2026-10-07: Semantic replacement targeted a helper before insertion
+
+- Tool: `semantic_replace_body`, target `runFakeCodexAppServer` in `tools/benchmark-harness/codex_app_server_test.go`.
+- Observed: the operation failed with `symbol not found`; no source was changed.
+- Workaround: insert the helper as a new function, then use semantic body replacement only after it exists.
+- Root cause: the helper had not yet been declared in the file.
+
+## 2026-10-07: Symbol inspection used an absent benchmark file
+
+- Tool: `semantic_inspect_symbol`, target `Target` in `tools/benchmark-harness/bench.go`.
+- Observed: the selected file does not exist.
+- Workaround: locate the declaration in `target.go` before inspecting it.
+- Root cause: caller supplied an unverified filename.
+
+## 2026-10-07: Codex continuity edits apply but batch verification rejects workspace trust
+
+- Tool: `semantic_batch` targeting `tools/benchmark-harness/session.go`.
+- Observed: all four lifecycle edits applied; final verification returned `workspace trust is required to run verification hook "golangci-lint"`. The response included an oversized whole-workspace diff and unrelated diagnostics from concurrent edits.
+- Workaround: retain applied changes and use the repository's `make check` after the coordinated implementation completes.
+- Root cause: the exposed batch schema has no workspace-trust argument for the configured verification hook; verification and edit status must be inspected separately.
+- Repeated while inserting five declarations into `tools/benchmark-harness/session_continuity_test.go`: all insertions applied; the same trust rejection prevented final verification. The fallback remains `make check` after concurrent edits finish.
+- Repeated while refactoring provider guards and live-test helpers in `session.go` and `codex_app_server_live_test.go`: all three edits applied; final verification again rejected the configured lint hook's missing trust parameter.
+- Repeated while removing shadowed error bindings from both session continuity tests: both body replacements applied; final verification failed with the same missing-trust rejection.
+
 ## 2026-10-06: semantic lookup missed the rename definition
 
 - Tool: `semantic_lookup`.
@@ -4919,6 +5027,745 @@ failure remains the documented batch behavior.
 - Observed failure: the operation rejected the explicit `private` access modifier because Go test function names beginning with `Test` are exported.
 - Workaround: retry with inferred access based on the test function's exported name.
 - Root cause: the insertion request's visibility did not match Go's casing convention.
+
+## 2026-10-06: Body replacement omitted a required import
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/external_repo.go`, `ensureRepositoryCache`.
+- Observed failure: the replacement used `slices.Contains` but left imports unchanged; diagnostics reported `undefined: slices`.
+- Workaround: organize imports for the file after the body replacement.
+- Root cause: body replacement formats the declaration but does not add imports referenced by the new body.
+
+## 2026-10-07: Inspection requested a nonexistent benchmark symbol
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/driver.go`, `evaluateWorkspace`.
+- Observed failure: the response had no structured result, and the calling wrapper failed while reading it.
+- Workaround: locate the actual declaration, `evaluateAgentResult`, and inspect that symbol.
+- Root cause: the request used an assumed function name instead of a lookup result; the wrapper did not handle the unsuccessful response.
+
+## 2026-10-07: Type structure replacement is unsupported
+
+- Tool: `semantic_insert_structure`.
+- Target: `tools/benchmark-harness/session.go`, `agentSession`.
+- Observed failure: `overwrite=true` returned `overwrite is unsupported for type structure insertion`; dependent body edits reported the missing field.
+- Workaround: add the single session error field with a targeted patch, then retain semantic tools for method bodies.
+- Root cause: the tool supports inserting types but cannot replace an existing struct or add a field.
+
+## 2026-10-07: Guessed construct paths rejected oracle error edits
+
+- Tool: `semantic_replace_construct`.
+- Targets: `tools/benchmark-harness/runner.go`, `Runner.ExecuteControl`; `tools/benchmark-harness/external_repo.go`, `Runner.ExecutePatchReplay`.
+- Observed failure: guessed construct paths selected no matching conditional; the tool returned the valid candidate paths without changing files.
+- Workaround: use the returned paths for the oracle evaluation error branches.
+- Root cause: construct paths were guessed instead of obtained from the ambiguity response.
+
+## 2026-10-07: File scaffold rejected a package purpose header
+
+- Tool: `semantic_scaffold_file`.
+- Target: `tools/package-closure/analyzer.go`.
+- Observed failure: the tool rejected the purpose header as invalid Go syntax and did not create the file.
+- Workaround: retry with an explicit Go line comment in the purpose header.
+- Root cause: the tool's `purpose_header` expects comment syntax, although its description only says it accepts a comment header.
+
+## 2026-10-07: Guessed patch-replay method name failed inspection
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/external_repo.go`, `Runner.executeRepositoryPatchReplay`.
+- Observed failure: the tool returned `symbol not found` without changing source.
+- Workaround: use the documented `Runner.ExecutePatchReplay` declaration for inspection.
+- Root cause: the caller guessed a method name instead of using the declaration identified in the existing tool log.
+
+## 2026-10-07: Declaration replacement rejected a variable block
+
+- Tool: `semantic_replace_decl` inside `semantic_batch`.
+- Target: `.scratch/explicit-recipes/go-zero-2463/base/core/logx/fields.go`, `fieldsContextKey`.
+- Observed failure: the tool rejected a `var (...)` snippet with `multiple declarations found in snippet`; no edits in the batch were applied.
+- Workaround: retry with a single target variable declaration, then insert the additional variables with a separate semantic declaration operation.
+- Root cause: declaration replacement only accepts one declaration, while the recipe proposed replacing a single variable with a grouped variable declaration.
+
+## 2026-10-07: Batch edits applied but workspace verification required trust
+
+- Tool: `semantic_batch`.
+- Target: `.scratch/explicit-recipes/go-zero-2463/base/core/logx/fields.go`, `writer.go`, and `core/logc/logs.go`.
+- Observed failure: all requested semantic edits reported success in three batches, but each batch returned an error when its final verification hook required workspace trust; no batch diagnostic result was produced. Existing main-workspace diagnostics were also unrelated to the nested go-zero checkout.
+- Workaround: explicitly trust the isolated recipe workspace when running a targeted semantic verification, if the server permits selecting that nested module.
+- Root cause: the batch schema has no workspace-trust parameter, while the host verification hook is configured to require trust.
+
+## 2026-10-07: Verify could not resolve a nested scratch module
+
+- Tool: `semantic_verify`.
+- Target: `.scratch/explicit-recipes/go-zero-2463/base`.
+- Observed failure: the tool reported `detected Go sources have no verifiable module scope`; formatting was applied before that failure.
+- Workaround: none applied; the isolated repository is beneath the root workspace's excluded `.scratch` directory.
+- Root cause: verification resolves module scope from the active root and does not descend into the ignored scratch checkout.
+
+## 2026-10-07: MCP batch preflight could not load a pinned dependency
+
+- Tool: `semantic_batch` through the repository MCP stdio server.
+- Target: clean replay of go-zero `63cfe60f1a7583865757780ebfe2a5309a542134`.
+- Observed failure: the batch failed before edits while gopls tried to download `github.com/ClickHouse/clickhouse-go/v2@v2.0.14`; DNS access to `proxy.golang.org` was unavailable in the sandbox.
+- Workaround: request a narrowly scoped escalated replay using the repository's shared Go module cache.
+- Root cause: the selected module cache did not contain this pinned module metadata and sandbox network access was unavailable.
+
+## Semantic outline target path error (2026-10-07)
+
+- Tool: `semantic_outline`
+- Target: `tools/benchmark-harness/driver_test.go`
+- Observed failure: the tool returned `stat ... driver_test.go: no such file or directory`; the guessed test path does not exist.
+- Workaround: enumerate the existing benchmark test files with `rg --files` and inspect the actual relevant test file through semantic tools.
+- Root cause: I guessed a test filename without confirming it exists.
+
+## Semantic inspect guessed source path error (2026-10-07)
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/fixtures.go`
+- Observed failure: the tool returned `open .../fixtures.go: no such file or directory`; the guessed declaration path does not exist.
+- Workaround: use `semantic_lookup` without a file to locate the declaration, then inspect the returned file.
+- Root cause: I guessed the declaration's source file without checking the semantic index.
+
+## 2026-10-07: Verification hook required explicit workspace trust
+
+- Tool: `semantic_verify`.
+- Target: `tools/package-closure`.
+- Observed failure: Go analysis completed and surfaced a pre-existing `SplitSeq` efficiency hint, but verification stopped before the configured golangci-lint hook because workspace trust was not set.
+- Workaround: retry targeted verification with `trust_workspace=true`.
+- Root cause: the tool requires an explicit trust flag when a workspace verification hook invokes golangci-lint.
+
+## 2026-10-07: Nested-module verification hook could not load custom linter
+
+- Tool: `semantic_verify`.
+- Target: `tools/package-closure`.
+- Observed failure: after explicit trust, the Go language-server check completed, but the configured golangci-lint hook exited because its binary did not contain the `packageclosure` plugin.
+- Workaround: use the repository Make target, which builds the custom golangci-lint binary, and the package module's Go tests for verification.
+- Root cause: the semantic verification hook invoked a golangci-lint binary without the repository's custom plugin build configuration.
+
+## Semantic construct switch replacement unsupported (2026-10-07)
+
+- Tool: `semantic_replace_construct`
+- Target: `tools/benchmark-harness/planner.go`, `makeExternalRepositoryJobs`
+- Observed failure: the tool rejected `kind: switch` as an unsupported Go construct kind.
+- Workaround: replace the containing function body with the same implementation plus the exhaustive switch cases.
+- Root cause: Go switch statements are not supported by this construct replacement operation.
+
+## Semantic verification hook requires trust (2026-10-07)
+
+- Tool: `semantic_verify`
+- Targets: `tools/benchmark-harness/planner.go`, `driver.go`, `main.go`, and `external_repo_test.go`
+- Observed failure: check-only verification stopped at the `golangci-lint` hook with `workspace trust is required`; the language-server pass also reported unrelated workspace-wide diagnostics while checking the module.
+- Workaround: continue with the repository's `make lint-check` and benchmark-harness test target, which establish the configured local Go environment.
+- Root cause: the verification hook requires explicit workspace trust and the shared workspace currently has unrelated build/type diagnostics from concurrent edits.
+
+## Semantic scaffold rejected purpose header (2026-10-07)
+
+- Tool: `semantic_scaffold_file`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: scaffolding with a prose `purpose_header` failed parsing with `expected 'package', found codex_app_server`; no file was created.
+- Workaround: retry scaffolding with a Go comment-form purpose header.
+- Root cause: the scaffold parser rejected the provided header format.
+
+## Semantic batch verification required trust (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: all requested insertions applied, but the trailing verification hook failed because workspace trust was not enabled; its diagnostics also included unrelated concurrent repository errors.
+- Workaround: continue with semantic insertions and rely on the repository verification workflow after integration; no inserted code was manually rewritten.
+- Root cause: the batch automatically runs the configured `golangci-lint` hook, which requires workspace trust.
+
+## Semantic batch verification retried without trust (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: inserted app-server methods successfully, then the automatic verification hook again stopped because workspace trust was not enabled.
+- Workaround: continue with targeted repository checks after implementation and integration.
+- Root cause: the configured verification hook requires workspace trust and is not authorized in this task context.
+
+## Semantic replace-declaration rejected struct type (2026-10-07)
+
+- Tool: `semantic_replace_decl`.
+- Target: `tools/benchmark-harness/codex_app_server.go`, `codexAppServer`.
+- Observed failure: the operation rejected replacement because it only supports type aliases, not struct declarations; no change was made.
+- Workaround: avoid adding the field and use the reader completion channel to unblock pending RPCs after an unexpected server request.
+- Root cause: the operation's supported type surface excludes struct declarations.
+
+## Semantic body replacement rejected JSON-RPC reader body (2026-10-07)
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/codex_app_server.go`, `codexAppServer.readLoop`.
+- Observed failure: parser rejected an anonymous nested struct declaration in the replacement body with `expected declaration, found '}'`; file was left unchanged.
+- Workaround: simplify JSON decoding to a `map[string]json.RawMessage` and decode each envelope field separately.
+- Root cause: the supplied local type/tag declaration was malformed for the semantic parser.
+
+## Semantic batch verification blocked for Unix process helper (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server_process_unix.go`.
+- Observed failure: both process helper functions were inserted, but automatic verification stopped because workspace trust was not enabled; unrelated repository diagnostics were also returned.
+- Workaround: rely on the parent task's repository verification after integration.
+- Root cause: the configured verification hook requires workspace trust.
+
+## Semantic insertion treated platform files as one package scope (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server_process_windows.go`.
+- Observed failure: insertion of the Windows implementation was rejected as a duplicate declaration from the Unix build-tagged file.
+- Workaround: complete the platform-specific declaration in the build-tagged helper with a targeted source edit.
+- Root cause: semantic declaration collision checks do not account for mutually exclusive Go build tags.
+
+## Semantic batch verification blocked for stderr synchronization (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: synchronization helper declarations were inserted, but the automatic verification hook stopped because workspace trust was not enabled.
+- Workaround: continue with targeted source inspection and the parent task's integrated verification.
+- Root cause: the configured verification hook requires workspace trust.
+
+## Semantic batch verification blocked for interruption drain (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: the interruption drain helpers were inserted, but automatic verification stopped because workspace trust was not enabled.
+- Workaround: continue with targeted source inspection and parent-owned integrated verification.
+- Root cause: the configured verification hook requires workspace trust.
+
+## Semantic batch verification blocked for thread/MCP status handling (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: request rejection and pre-turn MCP status helpers were inserted; automatic verification stopped because workspace trust was not enabled.
+- Workaround: continue with targeted source inspection and parent-owned integrated verification.
+- Root cause: the configured verification hook requires workspace trust.
+
+## Semantic batch rejected function insertion (2026-10-07)
+
+- Tool: `semantic_batch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: the batch rejected the first edit because `semantic_insert_function` is not batchable; no edits were applied.
+- Workaround: insert declarations with `semantic_insert_function` directly, then replace affected bodies with `semantic_replace_body`.
+- Root cause: the batch tool supports a narrower set of nested tools than its general edit workflow suggests.
+
+## Targeted patch context mismatch during shared constant update (2026-10-07)
+
+- Tool: `apply_patch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: the combined patch did not match a switch-case context after concurrent semantic edits; no files were changed by that call.
+- Workaround: inspect current exact declarations and apply smaller file-specific patches.
+- Root cause: concurrent/source-aware changes shifted the adapter text since the patch context was prepared.
+
+## Targeted error-message patch context mismatch (2026-10-07)
+
+- Tool: `apply_patch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: the combined lowercase-error patch did not match a reader shutdown context after concurrent edits; no adapter changes were applied by that call.
+- Workaround: inspect the current error strings and apply narrower exact-context patches.
+- Root cause: the adapter structure changed during the lint refactor after the patch was prepared.
+
+## Targeted JSON-RPC field patch context mismatch (2026-10-07)
+
+- Tool: `apply_patch`.
+- Target: `tools/benchmark-harness/codex_app_server.go`.
+- Observed failure: the combined patch expected the RPC write call in the adapter, but its current location/context differed; no adapter changes were applied by that call.
+- Workaround: inspect exact current RPC write literals and patch them independently.
+- Root cause: the function body was moved while extracting JSON-RPC dispatch helpers.
+
+## Guessed app-server reader symbol inspection failed (2026-10-07)
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/codex_app_server.go`, `(*codexAppServer).readMessages`.
+- Observed failure: symbol not found; no file was changed.
+- Workaround: locate the current declaration names before inspecting them.
+- Root cause: the reader was split into dispatch helpers during refactoring.
+
+## Guessed session finalizer symbol inspection failed (2026-10-07)
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/session.go`, `(*agentSession).finishTask`.
+- Observed failure: symbol not found; no file was changed.
+- Workaround: locate and inspect `finalizeResult`.
+- Root cause: the assumed finalizer name did not match the existing declaration.
+
+## Reference lookup encountered an incomplete concurrent declaration (2026-10-07)
+
+- Tool: `semantic_find_references`.
+- Target: `providerContinuationTransport` in `tools/benchmark-harness/session.go`.
+- Observed failure: package loading failed because the concurrent OpenCode implementation referenced an uninserted `appendOpenCodeSessionLoopbackRule` helper.
+- Workaround: inspect the known declarations directly and repeat semantic verification after the implementation is complete.
+- Root cause: the lookup ran between dependent declaration insertions in another worker.
+
+## Reference lookup encountered a concurrent test type migration (2026-10-07)
+
+- Tool: `semantic_find_references`.
+- Target: `agentSession.runTurn` in `tools/benchmark-harness/session.go`.
+- Observed failure: package loading failed while OpenCode tests still initialized `chan error` after the server completion channel changed to `chan struct{}`.
+- Workaround: use targeted declaration inspections during dependent edits and repeat verification after tests and transport types are coherent.
+- Root cause: the reference query ran during an incomplete transport/test migration.
+
+## OpenCode continuation investigation
+
+## Agy process struct replacement was unsupported (2026-10-07)
+
+- Tool: `semantic_replace_decl`.
+- Target: `tools/benchmark-harness/agy_stream.go`, `agyProcess`.
+- Observed failure: The tool rejected replacing the named struct declaration, reporting that replacement requires a type alias; no file was changed.
+- Workaround: Keep the process state shape stable and add frozen-config bytes to the owning `agySession` with a narrow `apply_patch` edit after the semantic replacement was unsupported.
+- Root cause: The replacement tool's documented type support is limited to aliases, not defined struct types.
+
+## Agy platform helper insertion collided across build-tagged files (2026-10-07)
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/agy_stream_process_windows.go`, `configureAgyStreamProcess`.
+- Observed failure: The tool reported a package declaration collision with the Unix build-tagged helper, although the files are mutually exclusive during Go builds; no Windows declaration was added.
+- Workaround: Reuse the repository's existing Codex process-group helpers, which already provide Unix group signals and Windows process signaling.
+- Root cause: The semantic index did not account for mutually exclusive build constraints when checking package symbol collisions.
+
+## Agy regression test body replacement had malformed syntax (2026-10-07)
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/session_test.go`, `TestAgyResumeFailureKeepsOnlyNewTranscriptMetrics`.
+- Observed failure: The parser rejected the candidate body with `expected declaration, found '}'`; no source was changed.
+- Workaround: Re-read the function boundaries and make a narrower structural replacement with the function's exact bare body.
+- Root cause: The multi-line fake shell script and Go body braces were not balanced in the transported snippet.
+
+## Agy reader close-channel patch targeted stale body text (2026-10-07)
+
+- Tool: `apply_patch`.
+- Target: `tools/benchmark-harness/agy_stream.go`, `(*agyProcess).runTurn`.
+- Observed failure: The patch context did not match the current body, so no file was changed.
+- Workaround: Re-read the current function and apply a smaller patch against its actual receive branch.
+- Root cause: The attempted context included cancellation handling that the earlier semantic replacement had not applied.
+
+## Agy turn body replacement had malformed syntax (2026-10-07)
+
+- Tool: `semantic_replace_body`.
+- Target: `tools/benchmark-harness/agy_stream.go`, `(*agyProcess).runTurn`.
+- Observed failure: The parser rejected the candidate body with `expected declaration, found '}'`; no source was changed.
+- Workaround: Make the small context-cancellation check as a targeted structural change after re-reading the current body.
+- Root cause: The full replacement included an extra closing brace in the supplied body.
+
+## Agy test insertion used a mismatched visibility (2026-10-07)
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/agy_stream_test.go`, `TestAgyStreamSessionReusesProcessAndDeltasUsage`.
+- Observed failure: The tool rejected a public `Test*` function requested with private access; no file was changed.
+- Workaround: Retry with `access_modifier: public`.
+- Root cause: Test declarations follow Go's exported casing and must use matching semantic visibility.
+
+## Agy usage helper insertion rejected multiple functions (2026-10-07)
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/agy_stream.go`.
+- Observed failure: The tool rejected a snippet containing both `agyUsageDelta` and `cumulativeAgyCounter`; no source was changed.
+- Workaround: Insert each function as its own semantic operation.
+- Root cause: The operation accepts exactly one complete function declaration.
+
+## Agy stream startup referenced a later reader helper (2026-10-07)
+
+- Tool: `semantic_insert_function`.
+- Target: `tools/benchmark-harness/agy_stream.go`, `(*agySession).start`.
+- Observed failure: The declaration was written with a diagnostic for the not-yet-inserted `readAgyStream`; the tool verifies each function immediately.
+- Workaround: Add the reader helper next and verify the complete transport after all helpers are present.
+- Root cause: The stream startup implementation was inserted before its reader dependency.
+
+## Agy stream type insertion reported an intermediate diagnostic (2026-10-07)
+
+- Tool: `semantic_insert_type`.
+- Target: `tools/benchmark-harness/agy_stream.go`.
+- Observed failure: The first new type referenced `agyStreamEvent` before that type had been inserted, and the tool reported an undefined-type diagnostic after writing the declaration.
+- Workaround: Insert the dependent event type next, then verify the complete file after all related declarations are present.
+- Root cause: The transport types were inserted in dependency order incorrectly; the tool verified each standalone declaration immediately.
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/session.go`
+- Observed failure: Looking up `Runner.runOpenCode` and `Runner.openCodeEnvironment` in `session.go` returned `symbol not found` because the declarations are in other files.
+- Workaround: Re-ran declaration discovery with `semantic_outline` and used the correct file scope for subsequent inspections.
+- Root cause: The lookup was scoped to the provider adapter file before locating the runner declarations.
+
+- Tool: `semantic_outline`
+- Target: `tools/benchmark-harness/opencode_driver_test.go`
+- Observed failure: The requested test file does not exist; the tool returned a filesystem stat error.
+- Workaround: Will locate the existing test file with `rg --files` before inspecting it.
+- Root cause: Assumed a test filename based on the implementation filename; tests are collected in a different file.
+
+- Tool: `semantic_insert_function`
+- Target: `tools/benchmark-harness/opencode_session.go`
+- Observed failure: Attempting to insert several declarations in one operation returned no successful structured result.
+- Workaround: Split the insertion into one function per semantic operation.
+- Root cause: The operation accepts one complete Go function or method declaration at a time.
+
+- Tool: `semantic_replace_decl`
+- Target: `tools/benchmark-harness/opencode_session.go`
+- Observed failure: Replacing the `openCodeSession` struct was rejected because this operation only supports type aliases.
+- Workaround: Use a narrowly targeted source edit to add the required lifecycle timestamp field; continue using semantic tools for supported declarations and function bodies.
+- Root cause: The current Go replace-declaration tool does not support replacing struct types.
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/bench_test.go`
+- Observed failure: Looking up `TestOpenCodeRejectsEmptyAndMalformedResumedStreams` in this file returned no symbol; the test is in another file.
+- Workaround: Use the repository's file inventory to locate the test before inspection.
+- Root cause: The symbol search was scoped to the wrong test file.
+
+- Tool: `semantic_replace_body`
+- Target: `tools/benchmark-harness/opencode_session.go`
+- Observed failure: The close-method replacement did not produce a successful result because the replacement argument included the function signature and braces.
+- Workaround: Retry with only the method's bare statements, as required by the tool.
+- Root cause: Passed a full declaration instead of a body fragment.
+
+- Tool: `semantic_insert_function`
+- Target: `tools/benchmark-harness/opencode_process_windows.go`
+- Observed failure: Both Windows-specific process helper insertions returned no successful structured result, and outlining the file found no declarations.
+- Workaround: Add the two small platform adapter functions with a targeted source patch after preserving the Windows build constraint.
+- Root cause: The active semantic Go backend did not process the non-native build-tagged file.
+
+- Tool: `semantic_replace_decl`
+- Target: `tools/benchmark-harness/opencode_session_test.go`
+- Observed failure: Attempting to update the `openCodeFakeClient` function signature was rejected as an unexpected declaration type.
+- Workaround: Use a minimal source patch for the function signature and return statement; continue to use semantic tools for its body.
+- Root cause: This operation only replaces package-level constants, variables, and supported types, not function signatures.
+
+## Suboptimal tool behavior
+
+## Agy stream transport work
+
+- Tool: `semantic_insert_structure`
+- Target: `tools/benchmark-harness/agy_stream.go`, declaration `agyProcess`
+- Observed failure: The tool rejected `overwrite: true` for a type structure insertion, even though the task was to add a field to the existing type.
+- Workaround applied: Record the failure and use the smallest supported semantic or atomic source edit for the single field addition.
+- Root cause: The insertion tool supports new structural constructs but does not support replacing an existing struct type.
+
+- Tool: `semantic_insert_structure`
+- Target: `tools/benchmark-harness/agy_stream.go`, Agy event handling helpers
+- Observed failure: A single insertion request containing two function declarations was rejected because the tool accepts only one structural construct.
+- Workaround applied: Record the failure and insert each helper separately.
+- Root cause: The insertion operation is scoped to exactly one function or other construct per request.
+
+- Tool: `apply_patch`
+- Target: `tools/benchmark-harness/agy_stream.go`, Agy error strings
+- Observed failure: A multi-hunk patch did not apply because one expected line had already changed during semantic refactoring.
+- Workaround applied: Record the stale-context failure and retry against the current function bodies with smaller targeted edits.
+- Root cause: Concurrent source edits and refactoring made the original line context stale.
+
+- Tool: `semantic_find_references`
+- Target: `tools/benchmark-harness/agy_driver.go`, `recordAgyResponseMetrics`
+- Observed failure: Reference analysis stopped because `opencode_session.go` changed while the workspace index was being analyzed.
+- Workaround applied: Record the failure; rely on stable declaration usage inspection after concurrent edits settle.
+- Root cause: Shared-worktree concurrent edits invalidate semantic reference snapshots.
+
+- Tool: Semantic editing tools, deletion capability unavailable
+- Target: `tools/benchmark-harness/agy_driver.go`, unreferenced one-shot Agy runner declarations
+- Observed failure: No declaration-removal operation is exposed by the available semantic editing tools, so the obsolete declarations could not be removed structurally.
+- Workaround applied: Confirmed zero live references with `semantic_find_references`, then removed only those declarations with a targeted patch.
+- Root cause: The available semantic operations support insertion and replacement but not declaration deletion.
+
+- Tool: `semantic_replace_body`
+- Target: `tools/benchmark-harness/agy_stream.go`, `waitAgyShutdown` timeout parameter
+- Observed limitation: The available semantic operation edits function bodies but does not change signatures; the linter requires removing an always-constant parameter.
+- Workaround applied: Record the limitation and use a targeted signature/call-site edit after semantic body inspection.
+- Root cause: No semantic signature-edit operation is exposed for this declaration.
+
+- Tool: `semantic_replace_body`
+- Target: `tools/benchmark-harness/opencode_session_test.go`, `TestOpenCodeAttachHelperProcess`
+- Observed failure: Immediate semantic diagnostics reported the newly referenced `runOpenCodeUsageHelper` as undefined while its implementation was pending in the same coordinated edit.
+- Workaround applied: Continue with the planned semantic insertion of the helper, then verify the file after the declaration exists.
+- Root cause: The operation validates each individual edit before the multi-declaration change is complete.
+
+- Tool: `semantic_insert_function`
+- Target: `tools/benchmark-harness/opencode_session_test.go`, `runOpenCodeUsageTurn`
+- Observed failure: Immediate semantic diagnostics reported `usageTurnTokens` undefined while the helper declarations were being inserted in dependency order.
+- Workaround applied: Add the referenced helper using the semantic insertion tool before validating the completed helper set.
+- Root cause: Per-operation diagnostics run before the planned multi-function test fixture is complete.
+
+## grpc-go-2735 semantic_outline schema mismatch
+
+- Tool: `semantic_outline`
+- Target: `.scratch/explicit-recipes/grpc-go-2735/reference/backoff.go`, `internal/backoff/backoff.go`, `dialoptions.go`, and `clientconn.go`
+- Observed failure: Four read-only outline calls were rejected with `unknown param "file"`; runtime schema lists `path` as the supported source selector although the advertised declaration says `file`.
+- Workaround applied: None yet; retrying with the runtime-supported `path` key.
+- Root cause: The exposed tool declaration and the active MCP operation schema disagree on the outline selector name.
+
+## 2026-10-08: Symbol inspection selected a file without the requested symbol
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `NewClient` in `.scratch/benchmarks/cache/repos/go-zero/68acfb1891837ec2e401588173cdd16ca1b9a9c4/core/discov/internal/etcdclient.go`.
+- Observed failure: The tool returned `symbol not found` because `NewClient` is not declared in the selected file.
+- Workaround applied: Continue inspecting verified declarations in their owning files; do not infer this symbol's definition from this failed lookup.
+- Root cause: The selected-file scope was guessed before locating the declaration.
+
+## grpc-go-2735 gold-reference lookups used base-only names
+
+- Tool: `semantic_inspect_symbol`
+- Target: `.scratch/explicit-recipes/grpc-go-2735/reference/balancer/grpclb/grpclb.go`, `balancer/xds/xds_client.go`, and `internal/backoff/backoff.go`
+- Observed failure: The human-fix reference no longer contains `defaultBackoffConfig` or `factor`, so those base-revision selectors returned symbol-not-found errors.
+- Workaround applied: Query the new names from the reference, and inspect the original base when the previous declaration is needed.
+- Root cause: The accepted patch intentionally renames these identifiers.
+
+## 2026-10-08: grpc-go-3361 semantic_batch blocked by missing cached module
+
+- Tool: `semantic_batch` through the frozen `semedit-20261008` server.
+- Target: `.scratch/explicit-recipes/grpc-go-3361/replay/balancer/base/balancer.go`.
+- Observed failure: Batch diagnostics failed before any child edit because `gopls` could not load `github.com/envoyproxy/go-control-plane@v0.9.1-0.20191026205805-5f8ba28d4473` while `GOPROXY=off`.
+- Workaround applied: None yet; the tool reported application state unknown, so inspect the replay status and hydrate the exact dependency from the local cache before retrying the same single batch.
+- Root cause: The isolated pinned checkout's dependency is absent from the frozen workspace module cache, and the transport disables network module lookup.
+- Retry: After the cache-ready signal, the same preflight still failed on the identical missing module; no batch child ran. Preserve both responses and confirm the transport's exact cache path before retrying.
+- Retry: A second post-signal replay also failed before edits with the same missing-module diagnostic. The archive and expanded module directory are now present in `.scratch/go/mod`; verify Go's module-cache resolution before any further MCP retry.
+- Retry: Even after `go list -m github.com/envoyproxy/go-control-plane` and `go list -mod=readonly ./balancer/base` succeeded with the transport cache variables, batch preflight still reports the same module lookup failure. No child edit ran; investigate the gopls package-load scope/environment rather than repeating the mutation call.
+- Retry: The transport fix supplied explicit `go-base-dir`, expected workspace root, and full tool profile; gopls now reaches the correct dependency cache but preflight stops on the unrelated nested package `security/advancedtls` with “package has errors but no selected Go files.” No child edit ran. Narrow the semantic workspace to the repository's main module or resolve the nested-module diagnostics before retrying.
+- Retry: After hydrating the `security/advancedtls` module graph, semantic_batch preflight advances further but stops at `test/tools` with “no Go source files found in project root.” No child edit ran; the broad workspace scan treats a non-Go tools directory as a project root. Narrow the semantic scope to the main module without changing task sources.
+
+## 2026-10-08: grpc-go TLS helper lookup used a nonexistent file
+
+- Tool: `semantic_lookup`.
+- Target: `configDial` in `.scratch/benchmarks/cache/repos/grpc-go/648cf9b00e25b3af7839d6678a8fe319505c3b80/test/test.go`.
+- Observed failure: The selected file does not exist in the pinned checkout.
+- Workaround applied: None yet; locate the declaration through the checkout's file list, then query the actual owning file.
+- Root cause: The source file path was assumed before locating the helper.
+
+## 2026-10-08: grpc-go-3361 retry targeted an already-inserted field
+
+- Tool: `semantic_batch`.
+- Target: `balancer/base/balancer.go` in the isolated grpc-go-3361 replay.
+- Observed failure: Child 1 returned `field "resolverErr" already exists on baseBalancer`; an earlier request with an absolute package workspace scope had completed its edits after its caller yielded.
+- Workaround applied: Preserve the partially edited replay, create a new clean copy from the pinned base, and send the exact one-batch recipe once with the portable relative `workspace_root`.
+- Root cause: The command's 30-second wait yielded while the MCP process was still running; the call was not complete even though the shell output was empty.
+
+## 2026-10-08: go-zero-964 semantic_batch blocked by missing cached module
+
+- Tool: `semantic_batch` through the frozen `semedit-20261008` server.
+- Target: `.scratch/explicit-recipes/go-zero-964/replay-base`.
+- Observed failure: Three batch attempts failed pre-diagnostics before any child edit because `gopls` could not load `github.com/ClickHouse/clickhouse-go@v1.4.3` while `GOPROXY=off`, even though standalone `go list -m all` succeeded against the same cache.
+- Workaround applied: Use the updated transport with `mcp --go-base-dir <repo>/.scratch/go` so the MCP server's explicit Go cache root matches the prepared pinned module artifacts.
+- Root cause: `internal/mcp` sets `gocache.WithBaseDir` and ignores inherited `GOMODCACHE` for diagnostics.
+
+## 2026-10-08: go-zero-964 batch rejected a grouped type replacement
+
+- Tool: `semantic_batch`, child `semantic_replace_construct` at edit index 10.
+- Target: `.scratch/explicit-recipes/go-zero-964/replay-base/core/discov/publisher.go`, `Publisher`.
+- Observed failure: The replacement of the `Publisher` member from a parenthesized type group failed with `multiple declarations found in snippet`; the batch retained the ten earlier successful edits and stopped before later children.
+- Workaround applied: None yet; retry only after isolating the exact `Publisher` type declaration as a single declaration, while preserving the already-applied successful batch prefix in private scratch.
+- Root cause: The replacement tool accepts one declaration, but the recipe passed an entire parenthesized declaration group containing `PublisherOption` and `Publisher`.
+
+## grpc-go-2735 first batch blocked by an uncached module
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/mcp_transport.py`
+- Target: fresh replay at `.scratch/explicit-recipes/grpc-go-2735/replay-final`
+- Observed failure: Batch preflight stopped before executing edits because Go diagnostics could not load `cloud.google.com/go@v0.26.0` with `GOPROXY=off`.
+- Workaround applied: None yet; locate the already available local module cache or ask the parent to seed it, then retry only after confirming the workspace is still pristine.
+- Root cause: The isolated replay workspace's module graph references an uncached historical dependency and the replay environment correctly has network access disabled.
+
+## grpc-go-2735 replay retry still sees the old module cache
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/mcp_transport.py`
+- Target: fresh replay at `.scratch/explicit-recipes/grpc-go-2735/replay-final`
+- Observed failure: After the parent reported the dependency cache ready, the offline batch preflight still returned `module lookup disabled by GOPROXY=off` for `cloud.google.com/go@v0.26.0`; zero child edits ran again.
+- Workaround applied: None yet; verify the seeded artifact is visible under the exact `.scratch/go/mod` cache path used by the transport before another attempt.
+- Root cause: The replay subprocess did not resolve the supposedly seeded pinned module artifact from its configured cache.
+
+## grpc-go-2735 batch could not relocate a grouped constant
+
+- Tool: `semantic_move_construct` inside `semantic_batch`
+- Target: `clientconn.go` constant `minConnectTimeout`, destination `dialoptions.go`
+- Observed failure: The batch completed 16 preceding edits, then refused with `cannot move one member of a grouped declaration; split the group first`.
+- Workaround applied: None yet; author a new replay batch that removes the constant from its grouped declaration before inserting it in `dialoptions.go`, then start from a fresh pinned copy because batches do not roll back earlier edits.
+- Root cause: The constant shares a parenthesized declaration, and `semantic_move_construct` does not split groups.
+
+## grpc-go-2735 semantic batch normalized the cloned go.mod
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/mcp_transport.py`
+- Target: `.scratch/explicit-recipes/grpc-go-2735/replay-final/go.mod`
+- Observed failure: The partial batch altered the pinned clone's manifest, adding `go 1.27.1` and regrouping indirect requirements even though the recipe changed no module dependencies.
+- Workaround applied: None yet; preserve this failed attempt and prepare a clean replay with import organization disabled because every required import already exists.
+- Root cause: Semantic batch child operations were configured with `auto_organize_imports=true`, which caused an unrelated workspace normalization on the older external module.
+
+## grpc-go-2735 batch diagnostics still reject a populated module cache
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/mcp_transport.py`
+- Target: clean replay at `.scratch/explicit-recipes/grpc-go-2735/replay-final-2`
+- Observed failure: Preflight still reports `module lookup disabled by GOPROXY=off` for `cloud.google.com/go@v0.26.0` after the module's info, mod, and zip files were present and `go mod download` succeeded offline.
+- Workaround applied: None yet; compare the diagnostics subprocess environment with a successful offline `go list` using the same module cache.
+- Root cause: The MCP diagnostics path did not observe the populated module cache as the direct Go command did.
+
+## grpc-go-2735 readonly transport copy resolved cache one level too high
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/grpc-go-2735/mcp_transport_readonly.py`
+- Target: `.scratch/explicit-recipes/grpc-go-2735/replay-final-2`
+- Observed failure: The copied transport returned the same offline module lookup error before edits.
+- Workaround applied: Correct the copied helper's repository-root calculation from `parents[2]` to `parents[3]` so it points back to the repository, then retry against the same clean replay.
+- Root cause: Copying the helper one directory deeper changed the meaning of its relative ancestor lookup, so it configured a nonexistent scratch module cache.
+
+## grpc-go-2735 readonly transport with corrected root still fails preflight
+
+- Tool: `semantic_batch` via `.scratch/explicit-recipes/grpc-go-2735/mcp_transport_readonly.py`
+- Target: clean replay at `.scratch/explicit-recipes/grpc-go-2735/replay-final-2`
+- Observed failure: Preflight returned the same `cloud.google.com/go@v0.26.0` lookup error even though the helper now points at the populated `.scratch/go/mod` cache and direct offline `go list ./...` succeeds.
+- Workaround applied: None yet; retry once with a fresh, private GOPLSCACHE path to rule out stale gopls state.
+- Root cause: The MCP diagnostics session disagrees with a successful Go module resolution using the same cache and offline settings.
+
+## grpc-go-2735 offline diagnostics ignored GOMODCACHE configuration
+
+- Tool: `semantic_batch` through the custom transport
+- Target: `.scratch/explicit-recipes/grpc-go-2735/replay-final-2`
+- Observed failure: Each preflight returned `module lookup disabled by GOPROXY=off` for `cloud.google.com/go@v0.26.0`, even after the module was present in `.scratch/go/mod` and direct Go commands succeeded.
+- Workaround applied: Use the shared MCP transport with `--go-base-dir` pointing at the repository's `.scratch/go`; preserve the current clean replay for that retry.
+- Root cause: `internal/mcp` passes an explicit `gocache.WithBaseDir`, which overrides inherited `GOMODCACHE` and `SEMEDIT_SHARED` settings. The CLI must receive `mcp --go-base-dir` so diagnostics use the intended cache.
+
+## grpc-go-2735 grouped var replacement requires a full declaration
+
+- Tool: `semantic_replace_construct` inside `semantic_batch`
+- Target: `balancer/grpclb/grpclb.go` declaration `defaultBackoffStrategy`
+- Observed failure: The batch completed 25 children, then returned `validate replacement declaration: syntax error: expected declaration, found defaultBackoffStrategy` because the replacement source contained the declaration's comments and assignment spec, but not the `var` declaration wrapper.
+- Workaround applied: None yet; supply a complete `var` declaration and retry the entire batch against a fresh pinned clone because the batch left prior edits in the failed workspace.
+- Root cause: Declaration replacement validates its source as a complete Go declaration, including the `var` keyword (and a group wrapper when retaining grouped members).
+
+## grpc-go-2735 grouped var cannot be replaced as a multi-spec declaration
+
+- Tool: `semantic_replace_construct` inside `semantic_batch`
+- Target: `balancer/grpclb/grpclb.go` declaration `defaultBackoffStrategy`
+- Observed failure: The batch completed 25 children, then rejected the complete grouped `var` snippet with `multiple declarations found in snippet`.
+- Workaround applied: None yet; use the dedicated `semantic_replace_decl` operation to replace just the named package variable, then retry from a fresh pinned clone.
+- Root cause: `semantic_replace_construct` accepts only a single declaration in its replacement snippet; the grouped declaration contains an unrelated error variable that must remain intact.
+
+## grpc-go-2735 safe delete refused a module containing generation directives
+
+- Tool: `semantic_remove_construct` inside `semantic_batch`
+- Target: `health/client.go` package constant `maxDelay`
+- Observed failure: The batch completed 29 children, then returned `safe_delete refuses modules containing Go generation or link-name directives` while attempting to remove the now-unused constant.
+- Workaround applied: None yet; retry with `safe_delete: false` for this single known-obsolete constant and validate the complete workspace with the benchmark oracle.
+- Root cause: Safe-delete conservatively refuses any module containing generation or link-name directives, even when the selected constant has no remaining references after the recipe's earlier updates.
+
+## grpc-go-2735 function declaration replacement rejected the selected method
+
+- Tool: `semantic_replace_construct` inside `semantic_batch`
+- Target: `resolver/dns/dns_resolver.go` method `dnsBuilder.Build`
+- Observed failure: The batch completed 31 children, then rejected the source with `replacement must preserve the selected function symbol "dnsBuilder.Build"`; the source contained the same pointer-receiver method name.
+- Workaround applied: None yet; use `semantic_replace_body` to update the method implementation while retaining its existing declaration, then retry from a fresh pinned clone.
+- Root cause: Review of the failed payload found `kind: "function"` for a method. The validator correctly rejected that mismatch; `kind: "method"` accepts full method replacement. Body replacement remains sufficient for this unchanged signature.
+
+## Method replacement review guessed a nonexistent entry point
+
+- Tool: `semantic_inspect_symbol`
+- Target: `internal/astedit/construct_declaration.go` symbol `ReplaceDeclarationConstruct`
+- Observed failure: Symbol inspection returned `symbol not found` because the guessed exported entry point does not exist.
+- Workaround applied: Inspect the successfully resolved helpers `parseFunctionReplacement` and `findFunctionConstructTarget`, then use the declaration outline to locate the actual entry point if needed.
+- Root cause: The reviewer inferred an exported name before checking the file outline.
+
+## Method replacement review lookup scope failures
+
+- Tool: `semantic_lookup`
+- Target: `extractReceiverName` constrained to `internal/astedit/construct_declaration.go`, and `ParseIdentifier` constrained to directory `internal/symbol`
+- Observed failure: The first lookup returned `symbol not found` because the helper is declared in another file; the second tried to read the directory path as a file and returned `is a directory`.
+- Workaround applied: Resolve the declaration filenames with `rg`, then pass those exact files to semantic lookup and inspection.
+- Root cause: Selected-file lookup cannot find package siblings, while the `file` parameter does not accept a directory scope despite the attempted constraint.
+
+## Method replacement review guessed the test harness name
+
+- Tool: `semantic_lookup`
+- Target: `main_test.go` symbol `TestScripts`
+- Observed failure: Lookup returned `symbol not found`; the repository's testscript harness uses a different test function name.
+- Workaround applied: Inspect the declaration outline for `main_test.go` and use the exact returned test name.
+- Root cause: The reviewer inferred the common `TestScripts` name from the testscript package before checking this repository's declarations.
+
+## Oracle gcflags review guessed a nonexistent config type
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/oracle.go` symbol `OracleTestConfig`
+- Observed failure: Inspection returned `symbol not found`; the oracle test settings use a different declaration name.
+- Workaround applied: Inspect the file outline and use the exact type name before reading the declaration.
+- Root cause: The reviewer inferred the type name from the YAML section instead of resolving the declaration first.
+
+## grpc-go-2951 batch removal vocabulary mismatch
+
+- Tool: `semantic_remove_construct` inside `semantic_batch`
+- Target: grpc-go-2951 recipe child 24
+- Observed failure: Batch preflight rejected `kind: "variable"` with `unsupported removal kind "variable"`; no child edits ran.
+- Workaround applied: Use the batch parser's exact removal token `var`, then retry from the unchanged pinned base.
+- Root cause: The authored recipe used the descriptive declaration kind instead of the removal parser vocabulary.
+
+## Explicit recipe audit guessed a test name
+
+- Tool: `semantic_inspect_symbol`
+- Target: `tools/benchmark-harness/external_repo_test.go`, `TestExternalRepositoryPlanIncludesPairedExplicitAgent`
+- Observed failure: The guessed test symbol did not exist.
+- Workaround applied: Read the declaration outline before selecting the actual planning test.
+- Root cause: The caller inferred a test name without checking declarations.
+
+## grpc-go-2951 initializer insertion rejects legal package initializers
+
+- Tool: `semantic_insert_function` inside `semantic_batch`
+- Target: `clientconn.go`, new `init` function
+- Observed failure: Child 18 rejected the declaration because a test file in the package already declares `init`; Go permits multiple package initializers.
+- Workaround applied: Fold the new initialization statements into the existing `service_config.go` initializer using one body replacement; retry the complete recipe in a fresh pinned copy.
+- Root cause: Package declaration collision checks treat `init` as an ordinary uniquely named function.
+
+## grpc-go-2951 final refactoring session synchronization timed out
+
+- Tool: `semantic_batch`
+- Target: grpc-go-2951 fresh 59-operation recipe replay
+- Observed failure: All 59 requested child edits completed, but final `session_sync` returned `gopls session: context deadline exceeded`; the overall batch failed.
+- Workaround applied: Preserve the failed receipt and investigate the synchronization deadline before another fresh replay.
+- Root cause: Retained-session synchronization has a 90-second deadline and reloads the complete Go analysis scope. A subsequent fresh replay with the identical 59-operation payload completed successfully, followed by a passing ordinary oracle. The timeout receipt remains an authoring failure; child success alone did not establish batch success.
+
+## Explicit recipe harness verification selected an incompatible linter
+
+- Tool: `semantic_verify`
+- Target: `tools/benchmark-harness`, trusted check-only verification
+- Observed failure: The configured `golangci-lint` hook exited 3 while building linters, although the repository's configured `make check` passed.
+- Workaround applied: Retain the semantic verification receipt; use the repository's configured check and harness test commands, and inspect the hook's tool resolution before any retry.
+- Root cause: The hook resolved a global golangci-lint binary incompatible with the project's `packageclosure.so` plugin (`different version of package cmp`). `make check` uses the pinned toolchain-matched linter instead; use that same executable on PATH for semantic verification.
+
+## Explicit recipe verification omitted the project linter cache environment
+
+- Tool: `semantic_verify`
+- Target: `tools/benchmark-harness`, pinned linter retry
+- Observed failure: Verification exited 1 and emitted denied cache writes under the user-level golangci-lint cache.
+- Workaround applied: Inspect the retained hook output and match the Makefile's project-local `GOLANGCI_LINT_CACHE` before retrying.
+- Root cause: The standalone launch inherited the default user cache; separately, the hook treats existing `packageclosure` architecture advisories as errors, whereas the Makefile reports them informationally before running the remaining linters.
+
+## Explicit recipe semantic verification treats architecture advisories as failures
+
+- Tool: `semantic_verify`
+- Target: `tools/benchmark-harness`, pinned linter and project-local cache
+- Observed failure: Verification returned an existing `packageclosure` recommendation to split provider and harness files; no source diagnostics or ordinary lint defects blocked `make check`.
+- Workaround applied: Stop retries after identifying the configuration difference. Use the configured `make check` and harness behavior tests as the acceptance checks; retain this semantic verification failure without claiming success.
+- Root cause: The generic golangci-lint verification hook uses its default issues exit code. The repository's Makefile explicitly makes package-closure recommendations informational, then disables that advisory analyzer for required lint checks.
+
+## 2026-10-08: Test helper batch applied edits but verification lacked workspace trust
+
+- Tool: `semantic_batch` with six `semantic_insert_function` children
+- Target: `tools/benchmark-harness/external_repo_test.go`
+- Observed failure: All six helper insertions returned success, but the batch's final verification returned `workspace trust is required to run verification hook "golangci-lint"`.
+- Workaround applied: Preserve the successful source edits and defer lint/test verification to the parent preflight, which is already coordinating fixture publication.
+- Root cause: The batch did not receive the explicit workspace trust required to execute the configured verification hook.
+
+## 2026-10-09: Timing audit inspected a helper in the wrong file
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `tools/benchmark-harness/driver.go`, `elapsedTaskTime`.
+- Observed failure: no symbol inspection record was returned; the caller selected the usage file instead of locating the declaration.
+- Workaround: locate the helper's declaration and inspect its actual file.
+- Root cause: the audit reused a helper name from its call site without checking its declaration location.
+
+## 2026-10-08: Replay transport expected JSON from a successful body replacement
+
+- Tool: `semantic_replace_body`, local replay transport helper.
+- Target: `internal/mcp/server_test.go`, `TestMCPServerReturnsConfiguredInstructions`.
+- Observed failure: the semantic edit succeeded with unchanged diagnostics, but the helper raised `JSONDecodeError` while parsing the tool's plain-text `structuredContent.result` as JSON.
+- Workaround: inspect the retained response's explicit `isError: false`, diagnostic status, and source diff; do not repeat the successful mutation.
+- Root cause: the recipe-focused helper assumes JSON batch result text for every tool response.
+
+## 2026-10-08: Advertised statement replacement rejected by the Go backend
+
+- Tool: `semantic_replace_construct` through the local MCP transport.
+- Target: the `--instructions` flag registration in `main.go`, `newMCPCmd`.
+- Observed failure: the tool advertised statement replacement in CLI help, but the backend returned `unsupported Go construct kind "statement"`; no source changed.
+- Workaround: use one targeted text patch for the unsupported statement mutation.
+- Root cause: the frozen validator's advertised construct kinds exceed its Go backend implementation.
+
+## 2026-10-08: MCP command inspection used an unverified symbol
+
+- Tool: `semantic_inspect_symbol`.
+- Target: `main.go`, guessed `mcpCommand` declaration.
+- Observed failure: inspection returned `symbol not found`; no source changed.
+- Workaround: obtain the declaration name from `semantic_outline` before inspecting it.
+- Root cause: the caller guessed the command builder name instead of locating it first.
 
 ## 2026-10-07: semantic inspection used stale parameter names and test path
 
