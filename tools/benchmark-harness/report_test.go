@@ -652,3 +652,17 @@ func TestStagedInteractionMetricsSerializePerTurn(t *testing.T) {
 		t.Fatalf("follow-up stage metrics = %+v", second)
 	}
 }
+
+func TestBuildComparisonsExcludesLegacyFixReplay(t *testing.T) {
+	baseline := &RunResult{TaskID: "external-task", Variant: "small", Repeat: 1, Arm: ArmBaseline, ExecutionMode: "agent"}
+	replay := &RunResult{TaskID: "external-task", Variant: "small", PromptVariant: "explicit", Repeat: 1, Arm: ArmSemeditExplicit, ExecutionMode: "ground_truth_fix_patch_replay"}
+	comparisons := BuildComparisons([]*RunResult{baseline, replay})
+	if len(comparisons) != 1 || comparisons[0].SmallBaseline != baseline || comparisons[0].SmallSemeditExplicit != nil {
+		t.Fatalf("legacy replay entered agent comparison: %+v", comparisons)
+	}
+	explicit := &RunResult{TaskID: "external-task", Variant: "small", PromptVariant: "explicit", Repeat: 1, Arm: ArmSemeditExplicit, ExecutionMode: "agent"}
+	comparisons = BuildComparisons([]*RunResult{baseline, explicit})
+	if len(comparisons) != 1 || comparisons[0].SmallBaseline != baseline || comparisons[0].SmallSemeditExplicit != explicit {
+		t.Fatalf("explicit agent missing from comparison: %+v", comparisons)
+	}
+}

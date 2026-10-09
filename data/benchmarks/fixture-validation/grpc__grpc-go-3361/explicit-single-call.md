@@ -1,0 +1,71 @@
+Solve only the grpc__grpc-go-3361 task in the supplied pinned checkout. Make exactly one MCP call to semantic_batch using the exact JSON arguments below. Do not make any preliminary or follow-up semantic tool calls, and do not edit files outside balancer/base/balancer.go. Execute all seven child operations in this exact order.
+
+```json
+{
+  "auto_organize_imports": true,
+  "workspace_root": "balancer/base",
+  "edits": [
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "balancer.go",
+        "in_type": "baseBalancer",
+        "kind": "field",
+        "placement": "type_end",
+        "source": "resolverErr error // the last error reported by the resolver; cleared on successful resolution"
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "balancer.go",
+        "in_type": "baseBalancer",
+        "kind": "field",
+        "placement": "type_end",
+        "source": "connErr error // the last connection error; cleared upon leaving TransientFailure"
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "balancer.go",
+        "kind": "method",
+        "source": "// mergeErrors builds an error from the last connection error and the last\n// resolver error.  Must only be called if b.state is TransientFailure.\nfunc (b *baseBalancer) mergeErrors() error {\n\t// connErr must always be non-nil unless there are no SubConns, in which\n\t// case resolverErr must be non-nil.\n\tif b.connErr == nil {\n\t\treturn fmt.Errorf(\"last resolver error: %v\", b.resolverErr)\n\t}\n\tif b.resolverErr == nil {\n\t\treturn fmt.Errorf(\"last connection error: %v\", b.connErr)\n\t}\n\treturn fmt.Errorf(\"last connection error: %v; last resolver error: %v\", b.connErr, b.resolverErr)\n}"
+      }
+    },
+    {
+      "tool": "semantic_replace_body",
+      "params": {
+        "file": "balancer.go",
+        "symbol": "baseBalancer.ResolverError",
+        "body": "b.resolverErr = err\nif len(b.subConns) == 0 {\n\tb.state = connectivity.TransientFailure\n}\nif b.state != connectivity.TransientFailure {\n\t// The picker will not change since the balancer does not currently\n\t// report an error.\n\treturn\n}\nb.regeneratePicker()\nif b.picker != nil {\n\tb.cc.UpdateBalancerState(b.state, b.picker)\n} else {\n\tb.cc.UpdateState(balancer.State{\n\t\tConnectivityState: b.state,\n\t\tPicker:            b.v2Picker,\n\t})\n}"
+      }
+    },
+    {
+      "tool": "semantic_replace_body",
+      "params": {
+        "file": "balancer.go",
+        "symbol": "baseBalancer.UpdateClientConnState",
+        "body": "// TODO: handle s.ResolverState.Err (log if not nil) once implemented.\n// TODO: handle s.ResolverState.ServiceConfig?\nif grpclog.V(2) {\n\tgrpclog.Infoln(\"base.baseBalancer: got new ClientConn state: \", s)\n}\nif len(s.ResolverState.Addresses) == 0 {\n\tb.ResolverError(errors.New(\"produced zero addresses\"))\n\treturn balancer.ErrBadResolverState\n}\n// Successful resolution; clear resolver error and ensure we return nil.\nb.resolverErr = nil\n// addrsSet is the set converted from addrs, it's used for quick lookup of an address.\naddrsSet := make(map[resolver.Address]struct{})\nfor _, a := range s.ResolverState.Addresses {\n\taddrsSet[a] = struct{}{}\n\tif _, ok := b.subConns[a]; !ok {\n\t\t// a is a new address (not existing in b.subConns).\n\t\tsc, err := b.cc.NewSubConn([]resolver.Address{a}, balancer.NewSubConnOptions{HealthCheckEnabled: b.config.HealthCheck})\n\t\tif err != nil {\n\t\t\tgrpclog.Warningf(\"base.baseBalancer: failed to create new SubConn: %v\", err)\n\t\t\tcontinue\n\t\t}\n\t\tb.subConns[a] = sc\n\t\tb.scStates[sc] = connectivity.Idle\n\t\tsc.Connect()\n\t}\n}\nfor a, sc := range b.subConns {\n\t// a was removed by resolver.\n\tif _, ok := addrsSet[a]; !ok {\n\t\tb.cc.RemoveSubConn(sc)\n\t\tdelete(b.subConns, a)\n\t\t// Keep the state of this sc in b.scStates until sc's state becomes Shutdown.\n\t\t// The entry will be deleted in HandleSubConnStateChange.\n\t}\n}\nreturn nil"
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "balancer.go",
+        "kind": "method",
+        "symbol": "baseBalancer.regeneratePicker",
+        "source": "// regeneratePicker takes a snapshot of the balancer, and generates a picker\n// from it. The picker is\n//  - errPicker if the balancer is in TransientFailure,\n//  - built by the pickerBuilder with all READY SubConns otherwise.\nfunc (b *baseBalancer) regeneratePicker() {\n\tif b.state == connectivity.TransientFailure {\n\t\tif b.pickerBuilder != nil {\n\t\t\tb.picker = NewErrPicker(balancer.ErrTransientFailure)\n\t\t} else {\n\t\t\tb.v2Picker = NewErrPickerV2(balancer.TransientFailureError(b.mergeErrors()))\n\t\t}\n\t\treturn\n\t}\n\tif b.pickerBuilder != nil {\n\t\treadySCs := make(map[resolver.Address]balancer.SubConn)\n\n\t\t// Filter out all ready SCs from full subConn map.\n\t\tfor addr, sc := range b.subConns {\n\t\t\tif st, ok := b.scStates[sc]; ok && st == connectivity.Ready {\n\t\t\t\treadySCs[addr] = sc\n\t\t\t}\n\t\t}\n\t\tb.picker = b.pickerBuilder.Build(readySCs)\n\t} else {\n\t\treadySCs := make(map[balancer.SubConn]SubConnInfo)\n\n\t\t// Filter out all ready SCs from full subConn map.\n\t\tfor addr, sc := range b.subConns {\n\t\t\tif st, ok := b.scStates[sc]; ok && st == connectivity.Ready {\n\t\t\t\treadySCs[sc] = SubConnInfo{Address: addr}\n\t\t\t}\n\t\t}\n\t\tb.v2Picker = b.v2PickerBuilder.Build(PickerBuildInfo{ReadySCs: readySCs})\n\t}\n}"
+      }
+    },
+    {
+      "tool": "semantic_replace_body",
+      "params": {
+        "file": "balancer.go",
+        "symbol": "baseBalancer.UpdateSubConnState",
+        "body": "s := state.ConnectivityState\nif grpclog.V(2) {\n\tgrpclog.Infof(\"base.baseBalancer: handle SubConn state change: %p, %v\", sc, s)\n}\noldS, ok := b.scStates[sc]\nif !ok {\n\tif grpclog.V(2) {\n\t\tgrpclog.Infof(\"base.baseBalancer: got state changes for an unknown SubConn: %p, %v\", sc, s)\n\t}\n\treturn\n}\nb.scStates[sc] = s\nswitch s {\ncase connectivity.Idle:\n\tsc.Connect()\ncase connectivity.Shutdown:\n\t// When an address was removed by resolver, b called RemoveSubConn but\n\t// kept the sc's state in scStates. Remove state for this sc here.\n\tdelete(b.scStates, sc)\n}\n\noldAggrState := b.state\nb.state = b.csEvltr.RecordTransition(oldS, s)\n\n// Set or clear the last connection error accordingly.\nb.connErr = state.ConnectionError\n\n// Regenerate picker when one of the following happens:\n//  - this sc became ready from not-ready\n//  - this sc became not-ready from ready\n//  - the aggregated state of balancer became TransientFailure from non-TransientFailure\n//  - the aggregated state of balancer became non-TransientFailure from TransientFailure\nif (s == connectivity.Ready) != (oldS == connectivity.Ready) ||\n\t(b.state == connectivity.TransientFailure) != (oldAggrState == connectivity.TransientFailure) {\n\tb.regeneratePicker()\n}\n\nif b.picker != nil {\n\tb.cc.UpdateBalancerState(b.state, b.picker)\n} else {\n\tb.cc.UpdateState(balancer.State{ConnectivityState: b.state, Picker: b.v2Picker})\n}"
+      }
+    }
+  ]
+}
+```

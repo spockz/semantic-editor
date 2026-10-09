@@ -390,7 +390,7 @@ func (r *Runner) ExecuteControl(ctx context.Context, task *Task) (*RunResult, er
 	oracleRes, err := Evaluate(ctx, task, workDir, modifiedFiles)
 	if err != nil {
 		res.Error = fmt.Sprintf("oracle evaluation: %v", err)
-		return res, nil
+		return res, fmt.Errorf("oracle evaluation: %w", err)
 	}
 
 	res.Oracle = oracleRes

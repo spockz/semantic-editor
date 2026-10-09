@@ -63,7 +63,7 @@ func filterPublishableBenchmarkComparison(comp *BenchComparisonSummary) *BenchCo
 }
 
 func publishableBenchmarkRun(run *BenchRunResult) *BenchRunResult {
-	if run == nil || run.Error != "" || run.Oracle == nil {
+	if run == nil || run.Error != "" || run.Oracle == nil || run.ExecutionMode == "ground_truth_fix_patch_replay" {
 		return nil
 	}
 	return run

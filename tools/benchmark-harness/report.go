@@ -217,9 +217,8 @@ func normalizeTaskBase(taskID string) string {
 func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 	grouped := make(map[comparisonKey]*ComparisonSummary)
 	sharedBaseline, sharedBaselineNeeded := indexSharedPromptBaselines(runs)
-
 	for _, r := range runs {
-		if r == nil || isSharedPromptBaseline(r, sharedBaselineNeeded) {
+		if r == nil || r.ExecutionMode == "ground_truth_fix_patch_replay" || isSharedPromptBaseline(r, sharedBaselineNeeded) {
 			continue
 		}
 		baseTask := comparisonTaskIdentity(r)
@@ -228,34 +227,25 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		comp, exists := grouped[k]
 		if !exists {
 			comp = &ComparisonSummary{
-				Complexity:            r.Complexity,
-				TaskID:                baseTask,
-				Repeat:                k.repeat,
-				PromptVariant:         r.PromptVariant,
-				MCPServerInstructions: mcpServerInstructions,
-				SemeditArmRestrict:    r.SemeditArmRestrict,
-				Provenance:            r.Provenance.Clone(),
-				Target:                r.Target,
-				BeforeState:           r.BeforeState,
+				Complexity: r.Complexity, TaskID: baseTask, Repeat: k.repeat,
+				PromptVariant: r.PromptVariant, MCPServerInstructions: mcpServerInstructions,
+				SemeditArmRestrict: r.SemeditArmRestrict, Provenance: r.Provenance.Clone(),
+				Target: r.Target, BeforeState: r.BeforeState,
 			}
 			grouped[k] = comp
 		} else {
 			comp.Provenance = commonProvenance(comp.Provenance, r.Provenance)
 		}
-
 		if comp.BeforeState == "" && r.BeforeState != "" {
 			comp.BeforeState = r.BeforeState
 		}
-
 		assignComparisonRun(comp, r)
 	}
 	assignSharedPromptBaselines(grouped, sharedBaseline)
-
 	result := make([]*ComparisonSummary, 0, len(grouped))
 	for _, comp := range grouped {
 		result = append(result, comp)
 	}
-
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].TaskID != result[j].TaskID {
 			return result[i].TaskID < result[j].TaskID
@@ -274,7 +264,6 @@ func BuildComparisons(runs []*RunResult) []*ComparisonSummary {
 		}
 		return result[i].SemeditArmRestrict < result[j].SemeditArmRestrict
 	})
-
 	return result
 }
 
@@ -291,7 +280,7 @@ func indexSharedPromptBaselines(runs []*RunResult) (map[comparisonBaselineKey][]
 	baselines := make(map[comparisonBaselineKey][]*RunResult)
 	needed := make(map[comparisonBaselineKey]bool)
 	for _, run := range runs {
-		if run == nil {
+		if run == nil || run.ExecutionMode == "ground_truth_fix_patch_replay" {
 			continue
 		}
 		key := comparisonBaselineKeyFor(run)

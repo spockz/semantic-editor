@@ -1,0 +1,99 @@
+# github.com/agiledragon/gomonkey
+../../../go/mod/github.com/agiledragon/gomonkey@v2.0.2+incompatible/patch.go:163:10: undefined: buildJmpDirective
+# github.com/tal-tech/go-zero/zrpc [github.com/tal-tech/go-zero/zrpc.test]
+zrpc/server_test.go:122:27: not enough arguments in call to serverinterceptors.UnaryCrashInterceptor
+	have ()
+	want (context.Context, interface{}, *grpc.UnaryServerInfo, grpc.UnaryHandler)
+zrpc/server_test.go:122:27: cannot use serverinterceptors.UnaryCrashInterceptor() (value of type interface{}) as grpc.UnaryServerInterceptor value in argument to srv.AddUnaryInterceptors: need type assertion
+zrpc/server_test.go:122:27: cannot use serverinterceptors.UnaryCrashInterceptor() (value of interface type error) as grpc.UnaryServerInterceptor value in argument to srv.AddUnaryInterceptors
+ok  	github.com/tal-tech/go-zero/core/discov	0.436s
+ok  	github.com/tal-tech/go-zero/core/discov/internal	0.794s
+FAIL	github.com/tal-tech/go-zero/zrpc [build failed]
+FAIL	github.com/tal-tech/go-zero/zrpc/internal [build failed]
+--- FAIL: TestAuthenticator (0.00s)
+    auth_test.go:47: 
+        	Error Trace:	auth_test.go:47
+        	Error:      	Expected nil, but got: &net.OpError{Op:"listen", Net:"tcp", Source:net.Addr(nil), Addr:(*net.TCPAddr)(0x563ea97b90b0), Err:(*os.SyscallError)(0x563ea9592ca0)}
+        	Test:       	TestAuthenticator
+    --- FAIL: TestAuthenticator/strict=false (0.00s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x38 pc=0x102eecab4]
+
+goroutine 38 [running]:
+testing.tRunner.func1.2({0x103667a28, 0x103736c50})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2123 +0x1a0
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2126 +0x2c8
+panic({0x103667a28?, 0x103736c50?})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/panic.go:859 +0x120
+github.com/tal-tech/go-zero/core/stores/redis.(*Redis).Hget(0x0, {0x1030aa2ab, 0x4}, {0x1030aa000, 0x3})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/stores/redis/redis.go:523 +0xb4
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).validate.func1()
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:61 +0x2c
+github.com/tal-tech/go-zero/core/collection.(*Cache).Take.func1()
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/collection/cache.go:132 +0x4c
+github.com/tal-tech/go-zero/core/syncx.(*flightGroup).makeCall(0x563ea96ceed0?, 0x563ea97eefc0, {0x1030aa000?, 0x10580fcb8?}, 0x563ea97eef90?)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/syncx/singleflight.go:90 +0x58
+github.com/tal-tech/go-zero/core/syncx.(*flightGroup).Do(0x563ea96ceed0, {0x1030aa000, 0x3}, 0x563ea97eef90)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/syncx/singleflight.go:52 +0x64
+github.com/tal-tech/go-zero/core/collection.(*Cache).Take(0x563ea97c4e00, {0x1030aa000, 0x3}, 0x563ea9592d60)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/collection/cache.go:125 +0x114
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).validate(0x563ea97eedb0, {0x1030aa000, 0x3}, {0x1030aa003, 0x3})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:60 +0x90
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).Authenticate(0x563ea97eedb0, {0x1036d9c08?, 0x563ea97eef30?})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:56 +0x260
+github.com/tal-tech/go-zero/zrpc/internal/auth.TestAuthenticator.func1(0x563ea95f7448)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth_test.go:74 +0x520
+testing.tRunner(0x563ea95f7448, 0x563ea958c588)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0xc4
+created by testing.(*T).Run in goroutine 37
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x3b8
+FAIL	github.com/tal-tech/go-zero/zrpc/internal/auth	1.225s
+ok  	github.com/tal-tech/go-zero/zrpc/internal/balancer/p2c	0.918s
+ok  	github.com/tal-tech/go-zero/zrpc/internal/clientinterceptors	1.887s
+ok  	github.com/tal-tech/go-zero/zrpc/internal/codes	1.868s
+?   	github.com/tal-tech/go-zero/zrpc/internal/mock	[no test files]
+ok  	github.com/tal-tech/go-zero/zrpc/internal/resolver	2.989s
+ok  	github.com/tal-tech/go-zero/zrpc/internal/resolver/kube	2.457s
+--- FAIL: TestStreamAuthorizeInterceptor (0.00s)
+    authinterceptor_test.go:49: 
+        	Error Trace:	authinterceptor_test.go:49
+        	Error:      	Expected nil, but got: &net.OpError{Op:"listen", Net:"tcp", Source:net.Addr(nil), Addr:(*net.TCPAddr)(0x2f217eebc1e0), Err:(*os.SyscallError)(0x2f217eed40c0)}
+        	Test:       	TestStreamAuthorizeInterceptor
+    --- FAIL: TestStreamAuthorizeInterceptor/strict=false (0.00s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x38 pc=0x1029f3534]
+
+goroutine 5 [running]:
+testing.tRunner.func1.2({0x1034e6238, 0x103602090})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2123 +0x1a0
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2126 +0x2c8
+panic({0x1034e6238?, 0x103602090?})
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/runtime/panic.go:859 +0x120
+github.com/tal-tech/go-zero/core/stores/redis.(*Redis).Hget(0x0, {0x102ccea13, 0x4}, {0x102cce44c, 0x3})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/stores/redis/redis.go:523 +0xb4
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).validate.func1()
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:61 +0x2c
+github.com/tal-tech/go-zero/core/collection.(*Cache).Take.func1()
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/collection/cache.go:132 +0x4c
+github.com/tal-tech/go-zero/core/syncx.(*flightGroup).makeCall(0x2f217ee444d0?, 0x2f217f30fec0, {0x102cce44c?, 0x105700108?}, 0x2f217f30fe90?)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/syncx/singleflight.go:90 +0x58
+github.com/tal-tech/go-zero/core/syncx.(*flightGroup).Do(0x2f217ee444d0, {0x102cce44c, 0x3}, 0x2f217f30fe90)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/syncx/singleflight.go:52 +0x64
+github.com/tal-tech/go-zero/core/collection.(*Cache).Take(0x2f217eebaf50, {0x102cce44c, 0x3}, 0x2f217eed4180)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/core/collection/cache.go:125 +0x114
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).validate(0x2f217f30fdd0, {0x102cce44c, 0x3}, {0x102cce44f, 0x3})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:60 +0x90
+github.com/tal-tech/go-zero/zrpc/internal/auth.(*Authenticator).Authenticate(0x2f217f30fdd0, {0x1035989e8?, 0x2f217f30fe30?})
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/auth/auth.go:56 +0x260
+github.com/tal-tech/go-zero/zrpc/internal/serverinterceptors.StreamAuthorizeInterceptor.1(...)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/serverinterceptors/authinterceptor.go:14
+github.com/tal-tech/go-zero/zrpc/internal/serverinterceptors.TestStreamAuthorizeInterceptor.func1(0x2f217eef2488)
+	/Users/alessandro/sources/semantic-editor/.scratch/explicit-recipes/go-zero-964/oracle-deps-uncorrected/zrpc/internal/serverinterceptors/authinterceptor_test.go:68 +0x23c
+testing.tRunner(0x2f217eef2488, 0x2f217ee0a348)
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0xc4
+created by testing.(*T).Run in goroutine 4
+	/opt/homebrew/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x3b8
+FAIL	github.com/tal-tech/go-zero/zrpc/internal/serverinterceptors	2.087s
+FAIL

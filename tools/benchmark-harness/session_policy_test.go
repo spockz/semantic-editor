@@ -2,6 +2,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -106,5 +108,53 @@ func TestResolveStagedFollowupPrompts(t *testing.T) {
 		default:
 			t.Fatalf("unexpected arm %s", arm)
 		}
+	}
+}
+
+func TestExternalRepositoryHintsApplyOnlyToDiscoveryArms(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "testdata", "bench", "zeromicro__go-zero-2463.txtar"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := ParseTask(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(task.Metadata.InteractiveFollowups) != 3 {
+		t.Fatalf("declared hints = %d, want 3", len(task.Metadata.InteractiveFollowups))
+	}
+	target := Target{Harness: "codex", Model: "fixture"}
+	for _, arm := range []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit} {
+		t.Run(string(arm), func(t *testing.T) {
+			execution, err := ResolveAgentExecution(task, target, arm, "small", SemeditArmRestrictWrite)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCount := len(task.Metadata.InteractiveFollowups)
+			if arm == ArmSemeditExplicit {
+				wantCount = 0
+			}
+			if len(execution.Followups) != wantCount {
+				t.Fatalf("resolved hints = %d, want %d", len(execution.Followups), wantCount)
+			}
+			for index, hint := range execution.Followups {
+				if !strings.HasPrefix(hint, task.Metadata.InteractiveFollowups[index]) {
+					t.Errorf("hint %d lost shared content or order: %q", index+1, hint)
+				}
+				if arm == ArmBaseline && hint != task.Metadata.InteractiveFollowups[index] {
+					t.Errorf("vanilla hint received additional steering: %q", hint)
+				}
+			}
+		})
+	}
+}
+
+func TestNewRunnerDefaultsMCPInstructionsToPrescriptive(t *testing.T) {
+	runner := NewRunner(t.TempDir())
+	if runner.mcpServerInstructionsMode != MCPServerInstructionsPrescriptive {
+		t.Fatalf("default MCP instructions = %q, want prescriptive", runner.mcpServerInstructionsMode)
+	}
+	if runner := NewRunner(t.TempDir(), WithMCPServerInstructions("")); runner.mcpServerInstructionsMode != MCPServerInstructionsPrescriptive {
+		t.Fatalf("empty MCP instruction option = %q, want prescriptive", runner.mcpServerInstructionsMode)
 	}
 }

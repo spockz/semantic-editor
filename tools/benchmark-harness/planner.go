@@ -233,18 +233,14 @@ func populatePlanResult(plan *BenchmarkPlan, job Job, result *RunResult, err err
 	result.Target = job.Target
 	result.Arm = job.Arm
 	result.SemeditSkill = job.SemeditSkill
-	directPatchReplay := job.Task != nil && job.Task.Metadata.Repository.URL != "" && job.Arm == ArmSemeditExplicit
 	result.SemeditArmRestrict = plan.Options.SemeditArmRestriction
-	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm) && !directPatchReplay
+	result.SemeditArmRestrictionApplied = isSemeditArm(job.Arm)
 	result.Prompt = job.Execution.Prompt
 	result.MCPServerInstructions = job.MCPServerInstructions
 	if job.Arm == ArmControl {
 		result.SemeditArmRestrict = ""
 		result.SemeditArmRestrictionApplied = false
 		result.Prompt = ""
-	}
-	if directPatchReplay {
-		result.Prompt = job.Task.Metadata.Instruction
 	}
 	if result.Provenance == nil {
 		result.Provenance = make(ProvenanceSet)
@@ -815,32 +811,53 @@ func makeExternalRepositoryJobs(specification Job, options PlanOptions) ([]Job, 
 	}
 	policy := options.SemeditArmRestriction
 	skillEnabled := options.SemeditSkill
-	pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(MCPServerInstructionsNone), fmt.Sprintf("semedit-skill=%t", skillEnabled)}
-	if options.SemeditPrewarmVerify {
-		pairParts = append(pairParts, "prewarm-verify")
+	modes := options.MCPServerInstructions
+	if len(modes) == 0 {
+		modes = []MCPServerInstructionMode{MCPServerInstructionsPrescriptive}
 	}
-	pairID := stablePlanID(pairParts...)
-	jobs := make([]Job, 0, 3)
-	for _, arm := range []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit} {
-		job := specification
-		job.Arm = arm
-		job.PairID = pairID
-		job.MCPServerInstructions = MCPServerInstructionsNone
-		job.SemeditSkill = skillEnabled && arm == ArmSemeditAgentic
-		idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(MCPServerInstructionsNone), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), string(policy)}
+	arms := []ArmType{ArmBaseline, ArmSemeditAgentic, ArmSemeditExplicit}
+	jobs := make([]Job, 0, len(modes)*len(arms))
+	for _, mode := range modes {
+		pairParts := []string{"pair", specification.TaskID, specification.Target.String(), variant, fmt.Sprint(specification.Repeat), string(policy), string(mode), fmt.Sprintf("semedit-skill=%t", skillEnabled)}
 		if options.SemeditPrewarmVerify {
-			idParts = append(idParts, "prewarm-verify")
+			pairParts = append(pairParts, "prewarm-verify")
 		}
-		job.ID = stablePlanID(idParts...)
-		if arm != ArmSemeditExplicit {
-			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, variant, policy)
+		pairID := stablePlanID(pairParts...)
+		for offset := range arms {
+			arm := arms[(offset+specification.Repeat-1)%len(arms)]
+			job := specification
+			job.Arm = arm
+			job.PairID = pairID
+			job.MCPServerInstructions = mode
+			job.PromptVariant = ""
+			job.SemeditSkill = skillEnabled && isSemeditArm(arm)
+			if isSemeditArm(arm) {
+				job.Policy = policy
+			}
+			idParts := []string{"job", specification.TaskID, specification.Target.String(), string(arm), variant, fmt.Sprint(specification.Repeat), string(mode), fmt.Sprintf("semedit-skill=%t", job.SemeditSkill), string(policy)}
+			if options.SemeditPrewarmVerify {
+				idParts = append(idParts, "prewarm-verify")
+			}
+			executionVariant := specification.Context
+			switch arm {
+			case ArmSemeditAgentic:
+				job.PromptVariant = "implicit"
+				executionVariant += ":implicit"
+			case ArmSemeditExplicit:
+				job.PromptVariant = "explicit"
+				executionVariant += ":explicit"
+				idParts = append(idParts, "explicit-agent-execution-v1")
+			case ArmBaseline, ArmSemedit, ArmControl:
+			}
+			job.ID = stablePlanID(idParts...)
+			execution, err := ResolveAgentExecution(job.Task, job.Target, arm, executionVariant, policy)
 			if err != nil {
 				return nil, err
 			}
 			execution.SemeditSkill = job.SemeditSkill
 			job.Execution = execution
+			jobs = append(jobs, job)
 		}
-		jobs = append(jobs, job)
 	}
 	return jobs, nil
 }

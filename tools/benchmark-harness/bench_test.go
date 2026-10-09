@@ -1221,6 +1221,54 @@ func TestParseTaskRejectsMalformedAndMissingOracleSettings(t *testing.T) {
 	}
 }
 
+func TestParseTaskValidatesOracleGoTestCommand(t *testing.T) {
+	fixture := func(argument string) []byte {
+		return fmt.Appendf(nil, `task_id: oracle-test-command
+category: test
+instruction: Validate the oracle test command.
+oracle:
+  level_3_build:
+    clean_compile: false
+  level_4_test:
+    pass_tests: true
+    command:
+      - "-race"
+      - %q
+      - "./..."
+-- go.mod --
+module example.com/oracle-test-command
+go 1.23
+`, argument)
+	}
+
+	task, err := ParseTask(fixture("-gcflags=all=-l"))
+	if err != nil {
+		t.Fatalf("ParseTask accepted command error = %v", err)
+	}
+	if want := []string{"-race", "-gcflags=all=-l", "./..."}; !slices.Equal(task.Metadata.Oracle.Test.Command, want) {
+		t.Fatalf("oracle test command = %q, want %q", task.Metadata.Oracle.Test.Command, want)
+	}
+
+	for _, argument := range []string{
+		"-gcflags",
+		"all=-l",
+		"-gcflags=all=-N",
+		"-gcflags=./...=-l",
+		"-gcflags=all=-l -N",
+		"-ldflags=all=-s",
+		"../...",
+		"./pkg/../...",
+		"./pkg/..",
+	} {
+		t.Run(argument, func(t *testing.T) {
+			_, err := ParseTask(fixture(argument))
+			if err == nil || !strings.Contains(err.Error(), "unsupported Go test argument") || !strings.Contains(err.Error(), argument) {
+				t.Fatalf("ParseTask error = %v, want rejection of %q", err, argument)
+			}
+		})
+	}
+}
+
 func TestEvaluateUsesProjectLocalGoEnvironment(t *testing.T) {
 	root := t.TempDir()
 	workDir := filepath.Join(root, "workspace")
@@ -1703,5 +1751,26 @@ func TestStagedFollowupsRejectNonIncreasingCounts(t *testing.T) {
 	malformed = strings.Replace(string(data), "interactive_mode: staged", "interactive_mode: corrective", 1)
 	if _, err := ParseTask([]byte(malformed)); err == nil || !strings.Contains(err.Error(), "unsupported interactive_mode") {
 		t.Fatalf("unsupported stage mode accepted: %v", err)
+	}
+}
+
+func TestParseTaskLoadsPrivateExplicitRecipe(t *testing.T) {
+	fixture := []byte("task_id: explicit-private\nproblem_statement_file: .benchmark/issue.md\noracle:\n  level_3_build:\n    clean_compile: false\n  level_4_test:\n    pass_tests: false\n-- .benchmark/issue.md --\nOriginal issue\n-- .benchmark/explicit.md --\nCall semantic_batch with exact ordered edits.\n")
+	task, err := ParseTask(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Metadata.Instruction != "Original issue\n" || task.Metadata.PromptVariants["default"] != "Original issue\n" {
+		t.Fatalf("issue prompt changed: %+v", task.Metadata)
+	}
+	if task.Metadata.PromptVariants["explicit"] != "Call semantic_batch with exact ordered edits.\n" {
+		t.Fatalf("explicit recipe missing: %+v", task.Metadata.PromptVariants)
+	}
+	workDir := t.TempDir()
+	if err := task.ExtractTo(workDir); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(workDir, ".benchmark", "explicit.md")); !os.IsNotExist(err) {
+		t.Fatalf("private recipe extracted into workspace: %v", err)
 	}
 }

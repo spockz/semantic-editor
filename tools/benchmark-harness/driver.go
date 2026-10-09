@@ -106,13 +106,13 @@ func (r *Runner) ExecuteAgent(ctx context.Context, execution AgentExecution) (re
 	}
 	initialTask := runInitialAgentTask(ctx, session, target, task, prompt, res)
 	if initialTask.stopEarly {
-		return res, nil
+		return res, session.oracleExecutionErr
 	}
 	r.runAgentFollowups(ctx, session, target, arm, initialTask.started, res)
 	if isSemeditArm(arm) && session.resumeID != "" && res.Success {
 		res.SemanticIntegrationReflection = r.requestSemanticToolReflection(ctx, session, target, semanticIntegrationReflectionPrompt)
 	}
-	return res, nil
+	return res, session.oracleExecutionErr
 }
 
 type agentWorkspaceSetup struct {
@@ -320,15 +320,16 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	if _, after, ok := strings.Cut(variant, ":"); ok {
 		promptVarName = after
 	}
-	if promptVarName != "" {
+	if arm == ArmSemeditExplicit {
+		explicitInstruction, ok := task.Metadata.PromptVariants["explicit"]
+		if !ok || strings.TrimSpace(explicitInstruction) == "" {
+			return "", fmt.Errorf("explicit semedit prompt variant is required and must be nonblank")
+		}
+		baseInstruction = explicitInstruction
+	} else if promptVarName != "" {
 		promptName := promptVarName
-		switch promptName {
-		case "implicit":
+		if promptName == "implicit" || promptName == "explicit" {
 			promptName = "default"
-		case "explicit":
-			if arm != ArmSemeditExplicit {
-				promptName = "default"
-			}
 		}
 		if customInstruction, ok := task.Metadata.PromptVariants[promptName]; ok {
 			baseInstruction = customInstruction
@@ -336,10 +337,17 @@ func prepareAgentPromptWithPolicy(task *Task, arm ArmType, variant string, res *
 	}
 	res.PromptVariant = promptVarName
 	if task.Metadata.Repository.URL != "" {
-		if arm != ArmBaseline && arm != ArmSemedit && arm != ArmSemeditAgentic {
+		if arm == ArmBaseline {
+			return baseInstruction, nil
+		}
+		if arm != ArmSemedit && arm != ArmSemeditAgentic && arm != ArmSemeditExplicit {
 			return "", fmt.Errorf("unsupported external-repository task arm %s", arm)
 		}
-		return baseInstruction, nil
+		steering, err := semeditRestrictionSteering(effectivePolicy)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("%s %s When done, output DONE.", strings.TrimSpace(baseInstruction), steering), nil
 	}
 	if strings.Contains(strings.ToLower(variant), "verified") && task.Metadata.VerificationConstraint != "" {
 		baseInstruction = fmt.Sprintf("%s %s", baseInstruction, task.Metadata.VerificationConstraint)

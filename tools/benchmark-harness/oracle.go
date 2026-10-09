@@ -134,20 +134,14 @@ func ParseTask(data []byte) (*Task, error) {
 	if len(ar.Comment) == 0 {
 		return nil, errors.New("txtar benchmark fixture missing frontmatter comment")
 	}
-
 	meta, err := parseYAMLFrontmatter(ar.Comment)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal frontmatter yaml: %w", err)
 	}
-
 	if meta.TaskID == "" {
 		return nil, errors.New("benchmark fixture missing task_id")
 	}
-
-	task := &Task{
-		Metadata: meta,
-		Archive:  ar,
-	}
+	task := &Task{Metadata: meta, Archive: ar}
 	if meta.ProblemStatementFile != "" {
 		statementPath := filepath.ToSlash(filepath.Clean(meta.ProblemStatementFile))
 		if !strings.HasPrefix(statementPath, ".benchmark/") || strings.Contains(statementPath, "../") {
@@ -158,10 +152,25 @@ func ParseTask(data []byte) (*Task, error) {
 			return nil, fmt.Errorf("benchmark fixture problem statement file %q is missing", meta.ProblemStatementFile)
 		}
 		task.Metadata.Instruction = string(problemStatement)
-		task.Metadata.PromptVariants = map[string]string{"default": string(problemStatement)}
+		if task.Metadata.PromptVariants == nil {
+			task.Metadata.PromptVariants = make(map[string]string)
+		}
+		task.Metadata.PromptVariants["default"] = string(problemStatement)
+	}
+	if explicitPrompt, found := archiveFileContents(ar, ".benchmark/explicit.md"); found {
+		if strings.TrimSpace(string(explicitPrompt)) == "" {
+			return nil, fmt.Errorf("benchmark fixture %q has an empty .benchmark/explicit.md", meta.TaskID)
+		}
+		if task.Metadata.PromptVariants == nil {
+			task.Metadata.PromptVariants = make(map[string]string)
+		}
+		task.Metadata.PromptVariants["explicit"] = string(explicitPrompt)
 	}
 	task.TestPatch, _ = archiveFileContents(ar, ".benchmark/test.patch")
 	task.FixPatch, _ = archiveFileContents(ar, ".benchmark/fix.patch")
+	if err := validateOracleTestCommand(task.Metadata.Oracle.Test.Command); err != nil {
+		return nil, err
+	}
 	if task.Metadata.Repository.URL != "" {
 		if !validRepositoryCommit(task.Metadata.Repository.BaseCommit) {
 			return nil, errors.New("repository.base_commit must be a full 40-character hexadecimal commit SHA")
@@ -171,9 +180,6 @@ func ParseTask(data []byte) (*Task, error) {
 		}
 		if len(task.TestPatch) == 0 || len(task.FixPatch) == 0 {
 			return nil, errors.New("external repository fixtures require .benchmark/test.patch and .benchmark/fix.patch")
-		}
-		if err := validateOracleTestCommand(task.Metadata.Oracle.Test.Command); err != nil {
-			return nil, err
 		}
 		if task.Metadata.ProblemStatementFile == "" {
 			return nil, errors.New("external repository fixtures require problem_statement_file")
@@ -225,7 +231,7 @@ func archiveFileContents(archive *Archive, name string) ([]byte, bool) {
 
 func validateOracleTestCommand(args []string) error {
 	for _, arg := range args {
-		if arg == "-race" || arg == "." || strings.HasPrefix(arg, "./") && !strings.Contains(arg, "/../") && !strings.HasSuffix(arg, "/..") {
+		if arg == "-race" || arg == "-gcflags=all=-l" || arg == "." || strings.HasPrefix(arg, "./") && !strings.Contains(arg, "/../") && !strings.HasSuffix(arg, "/..") {
 			continue
 		}
 		return fmt.Errorf("oracle.level_4_test.command contains unsupported Go test argument %q", arg)
@@ -606,7 +612,9 @@ func Evaluate(ctx context.Context, task *Task, workDir string, modifiedFiles []s
 		return res, nil
 	}
 	res.Level3Build = true
-	if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
+	if err := prepareOracleTests(ctx, task, evalDir); err != nil {
+		return nil, fmt.Errorf("prepare oracle tests: %w", err)
+	} else if err := evaluateOracleTests(ctx, task, evalDir); err != nil {
 		applyOracleFailure(res, oracleFailure{failed: true, stage: "level_4_test", message: err.Error()}, start)
 		return res, nil
 	}
@@ -657,12 +665,6 @@ func evaluateOracleBuild(ctx context.Context, task *Task, workDir string) error 
 func evaluateOracleTests(ctx context.Context, task *Task, workDir string) error {
 	if !task.Metadata.Oracle.Test.PassTests {
 		return nil
-	}
-	if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
-		return fmt.Errorf("install hidden tests: %w", err)
-	}
-	if err := applyRepositoryPatch(ctx, workDir, task.TestPatch, "Multi-SWE test patch"); err != nil {
-		return err
 	}
 	if output, err := runOracleGoCommand(ctx, workDir, "test", task.Metadata.Oracle.Test.Command...); err != nil {
 		return fmt.Errorf("go test failed: %w\n%s", err, output)
@@ -1055,4 +1057,14 @@ func astContainsExactIdent(node ast.Node, sym string) bool {
 		return true
 	})
 	return found
+}
+
+func prepareOracleTests(ctx context.Context, task *Task, workDir string) error {
+	if !task.Metadata.Oracle.Test.PassTests {
+		return nil
+	}
+	if err := installHiddenTests(workDir, task.Metadata.Oracle.Test.HiddenTestDir); err != nil {
+		return fmt.Errorf("install hidden tests: %w", err)
+	}
+	return applyRepositoryPatch(ctx, workDir, task.TestPatch, "Multi-SWE test patch")
 }

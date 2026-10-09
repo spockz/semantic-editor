@@ -1,0 +1,145 @@
+{
+  "task_id": "zeromicro__go-zero-964",
+  "base_commit": "68acfb1891837ec2e401588173cdd16ca1b9a9c4",
+  "workspace": ".scratch/explicit-recipes/go-zero-964/replay-clean",
+  "batch_call": {
+    "auto_organize_imports": true,
+    "trust_workspace": true,
+    "edits": [
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "core/discov/config.go",
+          "kind": "type",
+          "symbol": "EtcdConf",
+          "source": "type EtcdConf struct {\n\tHosts []string\n\tKey   string\n\tUser  string `json:\",optional\"`\n\tPass  string `json:\",optional=User\"`\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_body",
+        "params": {
+          "file": "core/discov/config.go",
+          "symbol": "EtcdConf.Validate",
+          "body": "if len(c.Hosts) == 0 {\n\treturn errors.New(\"empty etcd hosts\")\n}\nif len(c.Key) == 0 {\n\treturn errors.New(\"empty etcd key\")\n}\nif (c.User == \"\") != (c.Pass == \"\") {\n\treturn errors.New(\"etcd user and pass must be paired\")\n}\nreturn nil"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/config.go",
+          "source": "func (c EtcdConf) EnableAuth() bool {\n\treturn c.User != \"\" && c.Pass != \"\"\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "kind": "type",
+          "symbol": "cluster",
+          "source": "type cluster struct {\n\tendpoints  []string\n\tuser       string\n\tpass       string\n\tkey        string\n\tvalues     map[string]map[string]string\n\tlisteners  map[string][]UpdateListener\n\twatchGroup *threading.RoutineGroup\n\tdone       chan lang.PlaceholderType\n\tlock       sync.Mutex\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "kind": "function",
+          "symbol": "DialClient",
+          "source": "func DialClient(endpoints []string, user, pass string) (EtcdClient, error) {\n\treturn clientv3.New(clientv3.Config{\n\t\tEndpoints:            endpoints,\n\t\tAutoSyncInterval:     autoSyncInterval,\n\t\tDialTimeout:          DialTimeout,\n\t\tDialKeepAliveTime:    dialKeepAliveTime,\n\t\tDialKeepAliveTimeout: DialTimeout,\n\t\tRejectOldCluster:     true,\n\t\tUsername:             user,\n\t\tPassword:             pass,\n\t})\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_body",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "symbol": "cluster.newClient",
+          "body": "cli, err := NewClient(c.endpoints, c.user, c.pass)\nif err != nil {\n\treturn nil, err\n}\n\ngo c.watchConnState(cli)\n\nreturn cli, nil"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "source": "func newClusterWithAuth(endpoints []string, user, pass string) *cluster {\n\tc := newCluster(endpoints)\n\tc.user = user\n\tc.pass = pass\n\treturn c\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "source": "func (r *Registry) getClusterWithAuth(endpoints []string, user, pass string) *cluster {\n\tclusterKey := fmt.Sprintf(\"%s|%q|%q\", getClusterKey(endpoints), user, pass)\n\tr.lock.Lock()\n\tdefer r.lock.Unlock()\n\tc, ok := r.clusters[clusterKey]\n\tif !ok {\n\t\tc = newClusterWithAuth(endpoints, user, pass)\n\t\tr.clusters[clusterKey] = c\n\t}\n\treturn c\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "source": "func (r *Registry) GetConnWithAuth(endpoints []string, user, pass string) (EtcdClient, error) {\n\treturn r.getClusterWithAuth(endpoints, user, pass).getClient()\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/internal/registry.go",
+          "source": "func (r *Registry) MonitorWithAuth(endpoints []string, user, pass, key string, l UpdateListener) error {\n\treturn r.getClusterWithAuth(endpoints, user, pass).monitor(key, l)\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "core/discov/publisher.go",
+          "kind": "type",
+          "symbol": "Publisher",
+          "source": "// A Publisher can be used to publish the value to an etcd cluster on the given key.\ntype Publisher struct {\n\tendpoints  []string\n\tuser       string\n\tpass       string\n\tkey        string\n\tfullKey    string\n\tid         int64\n\tvalue      string\n\tlease      clientv3.LeaseID\n\tquit       *syncx.DoneChan\n\tpauseChan  chan lang.PlaceholderType\n\tresumeChan chan lang.PlaceholderType\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/publisher.go",
+          "source": "func NewPublisherWithAuth(endpoints []string, user, pass, key, value string, opts ...PublisherOption) *Publisher {\n\tpublisher := &Publisher{\n\t\tendpoints:  endpoints,\n\t\tuser:       user,\n\t\tpass:       pass,\n\t\tkey:        key,\n\t\tvalue:      value,\n\t\tquit:       syncx.NewDoneChan(),\n\t\tpauseChan:  make(chan lang.PlaceholderType),\n\t\tresumeChan: make(chan lang.PlaceholderType),\n\t}\n\tfor _, opt := range opts {\n\t\topt(publisher)\n\t}\n\treturn publisher\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "core/discov/publisher.go",
+          "source": "func (p *Publisher) KeepAliveWithAuth() error {\n\tcli, err := internal.GetRegistry().GetConnWithAuth(p.endpoints, p.user, p.pass)\n\tif err != nil {\n\t\treturn err\n\t}\n\tp.lease, err = p.register(cli)\n\tif err != nil {\n\t\treturn err\n\t}\n\tproc.AddWrapUpListener(func() {\n\t\tp.Stop()\n\t})\n\treturn p.keepAliveAsync(cli)\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "zrpc/internal/rpcpubserver.go",
+          "kind": "function",
+          "symbol": "NewRpcPubServer",
+          "source": "func NewRpcPubServer(etcdEndpoints []string, etcdKey, listenOn string, opts ...ServerOption) (Server, error) {\n\tregisterEtcd := func() error {\n\t\tpubListenOn := figureOutListenOn(listenOn)\n\t\tpubClient := discov.NewPublisher(etcdEndpoints, etcdKey, pubListenOn)\n\t\treturn pubClient.KeepAlive()\n\t}\n\treturn newKeepAliveServer(registerEtcd, listenOn, opts...), nil\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "zrpc/internal/rpcpubserver.go",
+          "source": "func NewRpcPubServerWithEtcdAuth(etcdEndpoints []string, user, pass, etcdKey, listenOn string, opts ...ServerOption) (Server, error) {\n\tregisterEtcd := func() error {\n\t\tpubListenOn := figureOutListenOn(listenOn)\n\t\tpubClient := discov.NewPublisherWithAuth(etcdEndpoints, user, pass, etcdKey, pubListenOn)\n\t\treturn pubClient.KeepAliveWithAuth()\n\t}\n\treturn newKeepAliveServer(registerEtcd, listenOn, opts...), nil\n}"
+        }
+      },
+      {
+        "tool": "semantic_insert_function",
+        "params": {
+          "file": "zrpc/internal/rpcpubserver.go",
+          "source": "func newKeepAliveServer(registerEtcd func() error, listenOn string, opts ...ServerOption) keepAliveServer {\n\treturn keepAliveServer{\n\t\tregisterEtcd: registerEtcd,\n\t\tServer:       NewRpcServer(listenOn, opts...),\n\t}\n}"
+        }
+      },
+      {
+        "tool": "semantic_replace_construct",
+        "params": {
+          "file": "zrpc/server.go",
+          "kind": "function",
+          "symbol": "NewServer",
+          "source": "func NewServer(c RpcServerConf, register internal.RegisterFn) (*RpcServer, error) {\n\tvar err error\n\tif err = c.Validate(); err != nil {\n\t\treturn nil, err\n\t}\n\n\tvar server internal.Server\n\tmetrics := stat.NewMetrics(c.ListenOn)\n\tserverOptions := []internal.ServerOption{internal.WithMetrics(metrics), internal.WithMaxRetries(c.MaxRetries)}\n\n\tif c.HasEtcd() {\n\t\tif c.Etcd.EnableAuth() {\n\t\t\tserver, err = internal.NewRpcPubServerWithEtcdAuth(c.Etcd.Hosts, c.Etcd.User, c.Etcd.Pass, c.Etcd.Key, c.ListenOn, serverOptions...)\n\t\t} else {\n\t\t\tserver, err = internal.NewRpcPubServer(c.Etcd.Hosts, c.Etcd.Key, c.ListenOn, serverOptions...)\n\t\t}\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t} else {\n\t\tserver = internal.NewRpcServer(c.ListenOn, serverOptions...)\n\t}\n\n\tserver.SetName(c.Name)\n\tif err = setupInterceptors(server, c, metrics); err != nil {\n\t\treturn nil, err\n\t}\n\n\trpcServer := &RpcServer{\n\t\tserver:   server,\n\t\tregister: register,\n\t}\n\tif err = c.SetUp(); err != nil {\n\t\treturn nil, err\n\t}\n\n\treturn rpcServer, nil\n}"
+        }
+      }
+    ]
+  },
+  "execution_root": "the go-zero repository root; all child file paths are relative to that root"
+}

@@ -532,9 +532,6 @@ func executeBenchmarkPlan(plan *BenchmarkPlan) int {
 		if job.Arm == ArmControl {
 			return runner.ExecuteControlVariant(ctx, job.Task, job.Context)
 		}
-		if job.Task != nil && job.Task.Metadata.Repository.URL != "" && job.Arm == ArmSemeditExplicit {
-			return runner.ExecutePatchReplay(ctx, job.Task, job.Target, job.Context)
-		}
 		return runner.ExecuteAgent(ctx, job.Execution)
 	}, func(outcome JobOutcome) error {
 		if resultDir == "" {

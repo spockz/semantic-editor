@@ -6,6 +6,10 @@ repository:
   base_commit: b03f6fd5e3dfa7663a225c36a15d623159f6724b
 contexts:
   - small
+interactive_followups:
+  - "Allow callers to tune the connection retry schedule beyond its maximum delay, including the initial delay, growth factor, randomization, and minimum time allowed for a connection attempt. Preserve the existing default behavior for callers that do not opt in."
+  - "Expose these settings through a public connection-parameter value and a dial option, and ensure the selected parameters control both retry delays and the minimum connection-attempt timeout. Keep the existing backoff configuration options working for compatibility."
+  - "Add grpc.ConnectParams with BackoffBaseDelay, BackoffMultiplier, BackoffJitter, BackoffMaxDelay, and MinConnectTimeout, and wire grpc.WithConnectParams into the dial options and retry strategy. Keep defaults equivalent to the current behavior, retain the legacy WithBackoffConfig and WithBackoffMaxDelay behavior while marking those APIs deprecated, and replace fixed internal backoff configurations with internal/backoff.NewExponentialBuilder and its fluent StrategyBuilder methods. Update the backoff users in ClientConn, health checking, DNS resolution, grpclb, and xDS to use the new strategy API."
 complexity:
   locality: 5
   context: 5
@@ -550,3 +554,325 @@ index 58355990779b..3122eddb0f22 100644
  	retryCount int
  	host       string
  	port       string
+-- .benchmark/explicit.md --
+Implement the requested gRPC backoff change in this workspace. Make exactly one MCP tool call: `semantic_batch` with the exact arguments below. Do not call individual semantic tools before or after this batch. Keep the child operations in the listed order and pass every parameter exactly as shown. If the batch reports an error, stop without retrying.
+
+```json
+{
+  "auto_organize_imports": false,
+  "trust_workspace": true,
+  "edits": [
+    {
+      "tool": "semantic_rename",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "symbol": "factor",
+        "to": "multiplier",
+        "language": "go",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "const",
+        "group": "append",
+        "source": "const maxDelay = 120 * time.Second",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "type",
+        "symbol": "Exponential",
+        "source": "type Exponential struct {\n\t// baseDelay is the amount of time to backoff after the first connection\n\t// failure.\n\tbaseDelay time.Duration\n\t// multiplier is the factor with which to multiply backoffs after a failed\n\t// retry.\n\tmultiplier float64\n\t// jitter is the factor with which backoffs are randomized.\n\tjitter float64\n\t// maxDelay is the upper bound of backoff delay.\n\tmaxDelay time.Duration\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "type",
+        "access_modifier": "public",
+        "source": "// StrategyBuilder helps build an implementation of the Strategy interface,\n// with setters provided to set individual parameters of the backoff strategy.\ntype StrategyBuilder interface {\n\t// BaseDelay sets the amount of time to backoff after the first connection\n\t// failure.\n\tBaseDelay(time.Duration) StrategyBuilder\n\t// Multiplier sets the the factor with which to multiply backoffs after a\n\t// failed retry.\n\tMultiplier(float64) StrategyBuilder\n\t// Jitter sets the factor with which backoffs are randomized.\n\tJitter(float64) StrategyBuilder\n\t// MaxDelay sets the upper bound of backoff delay.\n\tMaxDelay(time.Duration) StrategyBuilder\n\t// Build builds an implementation of the Strategy interface configured using\n\t// the above setter methods.\n\tBuild() Strategy\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "type",
+        "source": "// exponentialBuilder implements the StrategyBuilder interface for an\n// exponential backoff strategy.\ntype exponentialBuilder struct {\n\tbd     time.Duration\n\tmltpr  float64\n\tjitter float64\n\tmd     time.Duration\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "function",
+        "access_modifier": "public",
+        "source": "// NewExponentialBuilder returns an implementation of the StrategyBuilder\n// interface used to build an exponential backoff strategy implementation, as\n// defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\nfunc NewExponentialBuilder() StrategyBuilder {\n\treturn &exponentialBuilder{\n\t\tbd:     baseDelay,\n\t\tmltpr:  multiplier,\n\t\tjitter: jitter,\n\t\tmd:     maxDelay,\n\t}\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "source": "// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) BaseDelay(bd time.Duration) StrategyBuilder {\n\teb.bd = bd\n\treturn eb\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "source": "// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Multiplier(m float64) StrategyBuilder {\n\teb.mltpr = m\n\treturn eb\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "source": "// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Jitter(j float64) StrategyBuilder {\n\teb.jitter = j\n\treturn eb\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "source": "// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) MaxDelay(md time.Duration) StrategyBuilder {\n\teb.md = md\n\treturn eb\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "source": "// BaseDelay helps implement StrategyBuilder.\nfunc (eb *exponentialBuilder) Build() Strategy {\n\treturn Exponential{\n\t\tbaseDelay:  eb.bd,\n\t\tmultiplier: eb.mltpr,\n\t\tjitter:     eb.jitter,\n\t\tmaxDelay:   eb.md,\n\t}\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "internal/backoff/backoff.go",
+        "kind": "method",
+        "symbol": "Exponential.Backoff",
+        "source": "// Backoff returns the amount of time to wait before the next retry given the\n// number of retries.\n// Helps implement Strategy.\nfunc (bc Exponential) Backoff(retries int) time.Duration {\n\tif retries == 0 {\n\t\treturn bc.baseDelay\n\t}\n\tbackoff, max := float64(bc.baseDelay), float64(bc.maxDelay)\n\tfor backoff < max && retries > 0 {\n\t\tbackoff *= bc.multiplier\n\t\tretries--\n\t}\n\tif backoff > max {\n\t\tbackoff = max\n\t}\n\t// Randomize backoff delays so that if a cluster of requests start at\n\t// the same time, they won't operate in lockstep.\n\tbackoff *= 1 + bc.jitter*(grpcrand.Float64()*2-1)\n\tif backoff < 0 {\n\t\treturn 0\n\t}\n\treturn time.Duration(backoff)\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "backoff.go",
+        "kind": "type",
+        "symbol": "BackoffConfig",
+        "source": "// BackoffConfig defines the parameters for the default gRPC backoff strategy.\n// Deprecated: use ConnectParams instead.\ntype BackoffConfig struct {\n\t// MaxDelay is the upper bound of backoff delay.\n\tMaxDelay time.Duration\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "backoff.go",
+        "kind": "type",
+        "access_modifier": "public",
+        "source": "// ConnectParams defines the parameters for connecting and retrying. Users\n// are encouraged to use this instead of BackoffConfig.\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n//\n// This API is EXPERIMENTAL.\ntype ConnectParams struct {\n\t// BackoffBaseDelay is the amount of time to backoff after the first\n\t// connection failure.\n\tBackoffBaseDelay time.Duration\n\t// BackoffMultiplier is the factor with which to multiply backoffs after a\n\t// failed retry. Should ideally be greater than 1.\n\tBackoffMultiplier float64\n\t// BackoffJitter is the factor with which backoffs are randomized.\n\tBackoffJitter float64\n\t// BackoffMaxDelay is the upper bound of backoff delay.\n\tBackoffMaxDelay time.Duration\n\t// MinConnectTimeout is the minimum amount of time we are willing to give a\n\t// connection to complete.\n\tMinConnectTimeout time.Duration\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "backoff.go",
+        "kind": "var",
+        "symbol": "DefaultBackoffConfig",
+        "source": "// DefaultBackoffConfig uses values specified for backoff in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n// Deprecated: use ConnectParams instead.\nvar DefaultBackoffConfig = BackoffConfig{\n\tMaxDelay: 120 * time.Second,\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "dialoptions.go",
+        "kind": "field",
+        "in_type": "dialOptions",
+        "placement": "type_end",
+        "source": "mct time.Duration",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_remove_construct",
+      "params": {
+        "file": "clientconn.go",
+        "kind": "const",
+        "symbol": "minConnectTimeout",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_construct",
+      "params": {
+        "file": "dialoptions.go",
+        "kind": "const",
+        "group": "append",
+        "source": "const (\n\t// Minimum time to give a connection to complete.\n\tminConnectTimeout = 20 * time.Second\n)",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_insert_function",
+      "params": {
+        "file": "dialoptions.go",
+        "source": "// WithConnectParams configures the dialer to use the provided backoff\n// parameters for the algorithm defined in\n// https://github.com/grpc/grpc/blob/master/doc/connection-backoff.md.\n// This will override all the default values with the ones provided here. So,\n// use with caution.\n//\n// This API is EXPERIMENTAL.\nfunc WithConnectParams(p ConnectParams) DialOption {\n\tb := backoff.NewExponentialBuilder()\n\tb.BaseDelay(p.BackoffBaseDelay).Multiplier(p.BackoffMultiplier).Jitter(p.BackoffJitter).MaxDelay(p.BackoffMaxDelay)\n\treturn newFuncDialOption(func(o *dialOptions) {\n\t\to.bs = b.Build()\n\t\to.mct = p.MinConnectTimeout\n\t})\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "dialoptions.go",
+        "kind": "function",
+        "symbol": "WithBackoffMaxDelay",
+        "source": "// WithBackoffMaxDelay configures the dialer to use the provided maximum delay\n// when backing off after failed connection attempts.\n//\n// Deprecated: use WithConnectParams instead.\nfunc WithBackoffMaxDelay(md time.Duration) DialOption {\n\treturn WithBackoffConfig(BackoffConfig{MaxDelay: md})\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "dialoptions.go",
+        "kind": "function",
+        "symbol": "WithBackoffConfig",
+        "source": "// WithBackoffConfig configures the dialer to use the provided backoff\n// parameters after connection failures.\n//\n// Deprecated: use WithConnectParams instead.\nfunc WithBackoffConfig(b BackoffConfig) DialOption {\n\treturn withBackoff(backoff.NewExponentialBuilder().MaxDelay(b.MaxDelay).Build())\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_body",
+      "params": {
+        "file": "dialoptions.go",
+        "symbol": "defaultDialOptions",
+        "body": "return dialOptions{\n\tdisableRetry:    !envconfig.Retry,\n\treqHandshake:    envconfig.RequireHandshake,\n\thealthCheckFunc: internal.HealthCheckFunc,\n\tcopts: transport.ConnectOptions{\n\t\tWriteBufferSize: defaultWriteBufSize,\n\t\tReadBufferSize:  defaultReadBufSize,\n\t},\n\tmct: minConnectTimeout,\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "clientconn.go",
+        "kind": "if",
+        "in_function": "DialContext",
+        "discriminator": "cc.dopts.bs == nil",
+        "source": "if cc.dopts.bs == nil {\n\tcc.dopts.bs = backoff.NewExponentialBuilder().Build()\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "clientconn.go",
+        "kind": "statement/expression",
+        "in_function": "addrConn.resetTransport",
+        "discriminator": "dialDuration := minConnectTimeout",
+        "source": "dialDuration := ac.dopts.mct",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_rename",
+      "params": {
+        "file": "balancer/grpclb/grpclb.go",
+        "symbol": "defaultBackoffConfig",
+        "to": "defaultBackoffStrategy",
+        "language": "go",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_decl",
+      "params": {
+        "file": "balancer/grpclb/grpclb.go",
+        "symbol": "defaultBackoffStrategy",
+        "source": "// defaultBackoffStrategy configures the backoff strategy that's used when the\n// init handshake in the RPC is unsuccessful. It's not for the clientconn\n// reconnect backoff.\n//\n// It has the same value as the default grpc.DefaultBackoffConfig.\n//\n// TODO: make backoff configurable.\nvar defaultBackoffStrategy = backoff.NewExponentialBuilder().Build()",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_rename",
+      "params": {
+        "file": "balancer/xds/xds_client.go",
+        "symbol": "defaultBackoffConfig",
+        "to": "defaultBackoffStrategy",
+        "language": "go",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "balancer/xds/xds_client.go",
+        "kind": "var",
+        "symbol": "defaultBackoffStrategy",
+        "source": "var defaultBackoffStrategy = backoff.NewExponentialBuilder().Build()",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "health/client.go",
+        "kind": "var",
+        "symbol": "backoffStrategy",
+        "source": "var backoffStrategy = backoff.NewExponentialBuilder().Build()",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_remove_construct",
+      "params": {
+        "file": "health/client.go",
+        "kind": "const",
+        "symbol": "maxDelay",
+        "safe_delete": false,
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_construct",
+      "params": {
+        "file": "resolver/dns/dns_resolver.go",
+        "kind": "type",
+        "symbol": "dnsResolver",
+        "source": "// dnsResolver watches for the name resolution update for a non-IP target.\ntype dnsResolver struct {\n\tfreq       time.Duration\n\tbackoff    backoff.Strategy\n\tretryCount int\n\thost       string\n\tport       string\n\tresolver   netResolver\n\tctx        context.Context\n\tcancel     context.CancelFunc\n\tcc         resolver.ClientConn\n\t// rn channel is used by ResolveNow() to force an immediate resolution of the target.\n\trn chan struct{}\n\tt  *time.Timer\n\t// wg is used to enforce Close() to return after the watcher() goroutine has finished.\n\t// Otherwise, data race will be possible. [Race Example] in dns_resolver_test we\n\t// replace the real lookup functions with mocked ones to facilitate testing.\n\t// If Close() doesn't wait for watcher() goroutine finishes, race detector sometimes\n\t// will warns lookup (READ the lookup function pointers) inside watcher() goroutine\n\t// has data race with replaceNetFunc (WRITE the lookup function pointers).\n\twg                   sync.WaitGroup\n\tdisableServiceConfig bool\n}",
+        "auto_organize_imports": false
+      }
+    },
+    {
+      "tool": "semantic_replace_body",
+      "params": {
+        "file": "resolver/dns/dns_resolver.go",
+        "symbol": "(*dnsBuilder).Build",
+        "body": "\thost, port, err := parseTarget(target.Endpoint, defaultPort)\n\tif err != nil {\n\t\treturn nil, err\n\t}\n\n\t// IP address.\n\tif net.ParseIP(host) != nil {\n\t\thost, _ = formatIP(host)\n\t\taddr := []resolver.Address{{Addr: host + \":\" + port}}\n\t\ti := &ipResolver{\n\t\t\tcc: cc,\n\t\t\tip: addr,\n\t\t\trn: make(chan struct{}, 1),\n\t\t\tq:  make(chan struct{}),\n\t\t}\n\t\tcc.NewAddress(addr)\n\t\tgo i.watcher()\n\t\treturn i, nil\n\t}\n\n\t// DNS address (non-IP).\n\tctx, cancel := context.WithCancel(context.Background())\n\td := &dnsResolver{\n\t\tfreq:                 b.minFreq,\n\t\tbackoff:              backoff.NewExponentialBuilder().MaxDelay(b.minFreq).Build(),\n\t\thost:                 host,\n\t\tport:                 port,\n\t\tctx:                  ctx,\n\t\tcancel:               cancel,\n\t\tcc:                   cc,\n\t\tt:                    time.NewTimer(0),\n\t\trn:                   make(chan struct{}, 1),\n\t\tdisableServiceConfig: opts.DisableServiceConfig,\n\t}\n\n\tif target.Authority == \"\" {\n\t\td.resolver = defaultResolver\n\t} else {\n\t\td.resolver, err = customAuthorityResolver(target.Authority)\n\t\tif err != nil {\n\t\t\treturn nil, err\n\t\t}\n\t}\n\n\td.wg.Add(1)\n\tgo d.watcher()\n\treturn d, nil",
+        "auto_organize_imports": false
+      }
+    }
+  ]
+}
+```

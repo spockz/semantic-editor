@@ -1181,6 +1181,17 @@ func TestBenchmarkAggregateArmNamesMapLegacyAndPreserveExplicitArm(t *testing.T)
 	}
 }
 
+func TestPublishableBenchmarkRunExcludesLegacyFixReplay(t *testing.T) {
+	run := &BenchRunResult{ExecutionMode: "ground_truth_fix_patch_replay", Oracle: &BenchOracleResult{}}
+	if publishableBenchmarkRun(run) != nil {
+		t.Fatal("legacy fix replay was publishable as an agent result")
+	}
+	run.ExecutionMode = "agent"
+	if publishableBenchmarkRun(run) != run {
+		t.Fatal("oracle-evaluated explicit agent was excluded")
+	}
+}
+
 func benchmarkAggregateUsageTestComparisons() []*BenchComparisonSummary {
 	makeRun := func(arm, model string, input, output int, seconds float64) *BenchRunResult {
 		return &BenchRunResult{

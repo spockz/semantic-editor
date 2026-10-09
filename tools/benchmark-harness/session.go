@@ -72,18 +72,22 @@ func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, class
 
 func (s *agentSession) evaluate(ctx context.Context, result *RunResult) error {
 	if result == nil {
-		return fmt.Errorf("evaluate session result: result is nil")
+		s.oracleExecutionErr = fmt.Errorf("evaluate session result: result is nil")
+		return s.oracleExecutionErr
 	}
-	return evaluateAgentResult(ctx, s.execution.Task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	s.oracleExecutionErr = evaluateAgentResult(ctx, s.execution.Task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	return s.oracleExecutionErr
 }
 
 func (s *agentSession) evaluateStage(ctx context.Context, result *RunResult, oracle OracleConfig) error {
 	if result == nil {
-		return fmt.Errorf("evaluate session stage: result is nil")
+		s.oracleExecutionErr = fmt.Errorf("evaluate session stage: result is nil")
+		return s.oracleExecutionErr
 	}
 	task := *s.execution.Task
 	task.Metadata.Oracle = oracle
-	return evaluateAgentResult(ctx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	s.oracleExecutionErr = evaluateAgentResult(ctx, &task, s.workDir, s.beforeFiles, s.initialPath, s.beforeContent, result)
+	return s.oracleExecutionErr
 }
 
 func (s *agentSession) retainTaskMCPMetrics() error {
@@ -329,6 +333,7 @@ type agentSession struct {
 	initialPath            string
 	beforeContent          string
 	result                 *RunResult
+	oracleExecutionErr     error
 	retainWorkDir          bool
 	toolObservationState   ToolObservationState
 	taskObservationTurns   int

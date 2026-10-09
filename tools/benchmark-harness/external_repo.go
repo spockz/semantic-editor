@@ -4,7 +4,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -23,15 +22,12 @@ func hydrateExternalRepository(ctx context.Context, task *Task, scratchRoot, wor
 		return fmt.Errorf("external repository metadata requires URL and base commit")
 	}
 	name := strings.TrimSuffix(filepath.Base(repository.URL), ".git")
-	cacheDir := filepath.Join(scratchRoot, "cache", "repos", name)
+	cacheDir := filepath.Join(scratchRoot, "cache", "repos", name, repository.BaseCommit)
 	if err := ensureRepositoryCache(ctx, repository.URL, repository.BaseCommit, cacheDir); err != nil {
 		return err
 	}
 	if err := copyRepositoryCache(ctx, cacheDir, workDir, repository.BaseCommit); err != nil {
 		return fmt.Errorf("hydrate benchmark workspace from repository cache: %w", err)
-	}
-	if output, err := runGit(ctx, workDir, "checkout", "--detach", "-f", repository.BaseCommit); err != nil {
-		return fmt.Errorf("checkout benchmark base commit %s: %w: %s", repository.BaseCommit, err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }
@@ -41,83 +37,67 @@ func ensureRepositoryCache(ctx context.Context, repoURL, baseCommit, cacheDir st
 	lock := lockValue.(*sync.Mutex)
 	lock.Lock()
 	defer lock.Unlock()
-	_, statErr := os.Stat(filepath.Join(cacheDir, ".git"))
-	if os.IsNotExist(statErr) {
-		if parentErr := os.MkdirAll(filepath.Dir(cacheDir), 0o750); parentErr != nil {
-			return fmt.Errorf("create repository cache directory: %w", parentErr)
-		}
-		if removeErr := os.RemoveAll(cacheDir); removeErr != nil {
-			return fmt.Errorf("remove incomplete repository cache %s: %w", cacheDir, removeErr)
-		}
-		stagingRoot, createErr := os.MkdirTemp(filepath.Dir(cacheDir), ".repo-cache-*")
-		if createErr != nil {
-			return fmt.Errorf("create staging directory for repository cache: %w", createErr)
-		}
-		defer func() {
-			if err := os.RemoveAll(stagingRoot); err != nil {
-				retErr = errors.Join(retErr, fmt.Errorf("remove repository cache staging directory: %w", err))
-			}
-		}()
-		stagingCache := filepath.Join(stagingRoot, "repo")
-		cloneArgs := []string{"clone", "--no-checkout"}
-		if remoteRepositoryURL(repoURL) {
-			cloneArgs = append(cloneArgs, "--filter=blob:none")
-		}
-		cloneArgs = append(cloneArgs, repoURL, stagingCache)
-		if output, cloneErr := runGit(ctx, "", cloneArgs...); cloneErr != nil {
-			return fmt.Errorf("clone benchmark repository %s: %w: %s", repoURL, cloneErr, strings.TrimSpace(string(output)))
-		}
-		if renameErr := os.Rename(stagingCache, cacheDir); renameErr != nil {
-			return fmt.Errorf("publish repository cache %s: %w", cacheDir, renameErr)
-		}
-	} else if statErr != nil {
-		return fmt.Errorf("inspect repository cache %s: %w", cacheDir, statErr)
+
+	gitDir := filepath.Join(cacheDir, ".git")
+	info, err := os.Stat(gitDir)
+	if err != nil {
+		return fmt.Errorf("inspect prechecked repository cache %s for %s: %w", cacheDir, repoURL, err)
 	}
-	if _, err := runGit(ctx, cacheDir, "cat-file", "-e", baseCommit+"^{tree}"); err == nil {
-		return nil
+	if !info.IsDir() {
+		return fmt.Errorf("prechecked repository cache %s is not a standalone checkout", cacheDir)
 	}
-	fetchArgs := []string{"fetch"}
-	if remoteRepositoryURL(repoURL) {
-		fetchArgs = append(fetchArgs, "--filter=blob:none")
+	treeOutput, treeErr := runGit(ctx, cacheDir, "cat-file", "-e", baseCommit+"^{tree}")
+	if treeErr != nil {
+		return fmt.Errorf("pinned benchmark commit %s is missing from prechecked cache %s: %w: %s", baseCommit, cacheDir, treeErr, strings.TrimSpace(string(treeOutput)))
 	}
-	fetchArgs = append(fetchArgs, "--depth=1", "origin", baseCommit)
-	if output, err := runGit(ctx, cacheDir, fetchArgs...); err != nil {
-		return fmt.Errorf("fetch benchmark base commit %s: %w: %s", baseCommit, err, strings.TrimSpace(string(output)))
+	checkoutOutput, checkoutErr := runGit(ctx, cacheDir, "checkout", "--detach", "-f", baseCommit)
+	if checkoutErr != nil {
+		return fmt.Errorf("checkout benchmark base commit %s from local cache: %w: %s", baseCommit, checkoutErr, strings.TrimSpace(string(checkoutOutput)))
 	}
-	if output, err := runGit(ctx, cacheDir, "cat-file", "-e", baseCommit+"^{tree}"); err != nil {
-		return fmt.Errorf("verify cached benchmark commit %s: %w: %s", baseCommit, err, strings.TrimSpace(string(output)))
+	remotes, err := runGit(ctx, cacheDir, "remote")
+	if err != nil {
+		return fmt.Errorf("list cached repository remotes: %w", err)
+	}
+	for remote := range strings.FieldsSeq(string(remotes)) {
+		output, removeErr := runGit(ctx, cacheDir, "remote", "remove", remote)
+		if removeErr != nil {
+			return fmt.Errorf("disable remote %s in benchmark cache: %w: %s", remote, removeErr, strings.TrimSpace(string(output)))
+		}
 	}
 	return nil
 }
 
-func remoteRepositoryURL(repoURL string) bool {
-	return strings.HasPrefix(repoURL, "https://") || strings.HasPrefix(repoURL, "http://") || strings.HasPrefix(repoURL, "ssh://") || strings.HasPrefix(repoURL, "git@")
-}
-
 func copyRepositoryCache(ctx context.Context, cacheDir, workDir, baseCommit string) error {
-	var cloneArgs []string
+	source := cacheDir + string(filepath.Separator) + "."
+	var copyArgs []string
 	switch runtime.GOOS {
 	case "darwin":
-		cloneArgs = []string{"-cR", filepath.Join(cacheDir, "."), workDir}
+		copyArgs = []string{"-cR", source, workDir}
 	case "linux":
-		cloneArgs = []string{"-a", "--reflink=auto", filepath.Join(cacheDir, "."), workDir}
+		copyArgs = []string{"-a", "--reflink=auto", source, workDir}
 	default:
-		cloneArgs = []string{"-R", filepath.Join(cacheDir, "."), workDir}
+		copyArgs = []string{"-R", source, workDir}
 	}
-	if _, copyErr := runCommand(ctx, "cp", "", cloneArgs...); copyErr != nil && ctx.Err() != nil {
-		return fmt.Errorf("copy-on-write repository clone: %w", ctx.Err())
+	output, err := runCommand(ctx, "cp", "", copyArgs...)
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("copy checked-out repository into fixture: %w", ctx.Err())
+		}
+		return fmt.Errorf("copy checked-out repository into fixture: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	if _, err := runGit(ctx, workDir, "cat-file", "-e", baseCommit+"^{tree}"); err == nil {
-		return nil
+	head, err := runGit(ctx, workDir, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return fmt.Errorf("read copied repository checkout: %w: %s", err, strings.TrimSpace(string(head)))
 	}
-	if err := os.RemoveAll(workDir); err != nil {
-		return fmt.Errorf("remove incomplete copy-on-write repository clone: %w", err)
+	if strings.TrimSpace(string(head)) != baseCommit {
+		return fmt.Errorf("copied repository HEAD %s does not match pinned commit %s", strings.TrimSpace(string(head)), baseCommit)
 	}
-	if output, err := runGit(ctx, "", "clone", "--shared", "--no-checkout", cacheDir, workDir); err != nil {
-		return fmt.Errorf("clone repository cache into workspace: %w: %s", err, strings.TrimSpace(string(output)))
+	remotes, err := runGit(ctx, workDir, "remote")
+	if err != nil {
+		return fmt.Errorf("inspect copied repository remotes: %w", err)
 	}
-	if output, err := runGit(ctx, workDir, "cat-file", "-e", baseCommit+"^{tree}"); err != nil {
-		return fmt.Errorf("verify fallback repository clone: %w: %s", err, strings.TrimSpace(string(output)))
+	if names := strings.Fields(string(remotes)); len(names) > 0 {
+		return fmt.Errorf("copied repository has configured remotes: %s", strings.Join(names, ", "))
 	}
 	return nil
 }
@@ -126,12 +106,38 @@ func applyRepositoryPatch(ctx context.Context, workDir string, patch []byte, des
 	if len(patch) == 0 {
 		return nil
 	}
-	// #nosec G204 -- executable and subcommand are fixed; the patch is provided over stdin.
-	cmd := exec.CommandContext(ctx, "git", "-C", workDir, "apply", "--whitespace=nowarn", "-")
-	cmd.Stdin = bytes.NewReader(patch)
-	output, err := cmd.CombinedOutput()
+	root, err := filepath.Abs(workDir)
 	if err != nil {
-		return fmt.Errorf("apply %s: %w: %s", description, err, strings.TrimSpace(string(output)))
+		return fmt.Errorf("resolve %s workspace: %w", description, err)
+	}
+	env := make([]string, 0, len(os.Environ())+2)
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !strings.HasPrefix(key, "GIT_") && key != "LC_ALL" {
+			env = append(env, entry)
+		}
+	}
+	env = append(env, "GIT_CEILING_DIRECTORIES="+filepath.Dir(root), "LC_ALL=C")
+	stages := []struct {
+		name string
+		args []string
+	}{
+		{name: "apply", args: []string{"apply", "--verbose", "--whitespace=nowarn", "-"}},
+		{name: "verify applied", args: []string{"apply", "--verbose", "--reverse", "--check", "--whitespace=nowarn", "-"}},
+	}
+	for _, stage := range stages {
+		// #nosec G204 -- executable and arguments are fixed; fixture patch is provided over stdin.
+		cmd := exec.CommandContext(ctx, "git", stage.args...)
+		cmd.Dir = root
+		cmd.Env = env
+		cmd.Stdin = bytes.NewReader(patch)
+		output, runErr := cmd.CombinedOutput()
+		if runErr != nil {
+			return fmt.Errorf("%s %s: %w: %s", stage.name, description, runErr, strings.TrimSpace(string(output)))
+		}
+		if bytes.Contains(output, []byte("Skipped patch ")) {
+			return fmt.Errorf("%s %s: git skipped patch despite exit status 0: %s", stage.name, description, strings.TrimSpace(string(output)))
+		}
 	}
 	return nil
 }
@@ -178,7 +184,7 @@ func (r *Runner) ExecutePatchReplay(ctx context.Context, task *Task, target Targ
 	if err := applyRepositoryPatch(ctx, workDir, task.FixPatch, "ground-truth fix patch"); err != nil {
 		result.Error = err.Error()
 		result.WallClock = time.Since(started)
-		return result, nil
+		return result, err
 	}
 	changed, err := runGit(ctx, workDir, "diff", "--name-only", task.Metadata.Repository.BaseCommit)
 	if err != nil {
@@ -194,7 +200,7 @@ func (r *Runner) ExecutePatchReplay(ctx context.Context, task *Task, target Targ
 	result.WallClock = time.Since(started)
 	if err != nil {
 		result.Error = fmt.Sprintf("oracle evaluation: %v", err)
-		return result, nil
+		return result, fmt.Errorf("oracle evaluation: %w", err)
 	}
 	result.Oracle = oracle
 	result.Success = oracle.Passed

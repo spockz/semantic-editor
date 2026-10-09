@@ -55,8 +55,9 @@ func ResolveAgentExecution(task *Task, target Target, arm ArmType, variant strin
 	if err != nil {
 		return AgentExecution{}, err
 	}
-	followups := make([]string, 0, len(task.Metadata.InteractiveFollowups))
-	for _, followup := range task.Metadata.InteractiveFollowups {
+	declaredFollowups := correctiveFollowupsFor(task, arm)
+	followups := make([]string, 0, len(declaredFollowups))
+	for _, followup := range declaredFollowups {
 		followup = withMutationPolicyGuidance(followup, task, true)
 		if isSemeditArm(arm) {
 			steering, err := semeditRestrictionSteering(policy)
@@ -118,4 +119,11 @@ func promptVariantFromExecution(execution AgentExecution) string {
 		return variant
 	}
 	return ""
+}
+
+func correctiveFollowupsFor(task *Task, arm ArmType) []string {
+	if task.Metadata.Repository.URL != "" && arm == ArmSemeditExplicit {
+		return nil
+	}
+	return task.Metadata.InteractiveFollowups
 }
