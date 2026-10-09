@@ -72,7 +72,7 @@ tools: go-env ## Install development tools (linters, formatters, scanners)
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install golang.org/x/tools/gopls@$(GOPLS_VERSION)
 	go install golang.org/x/vuln/cmd/govulncheck@latest
-	go install github.com/errata-ai/vale/v3/cmd/vale@$(VALE_VERSION)
+	go install github.com/vale-cli/vale/v3/cmd/vale@$(VALE_VERSION)
 	@if command -v npm >/dev/null 2>&1; then \
 		npm install --prefix "$(CURDIR)/.scratch/tools" --no-save --package-lock=false --no-audit --no-fund markdownlint-cli2@$(MARKDOWNLINT_CLI2_VERSION); \
 	else \
@@ -102,7 +102,7 @@ fmt: fix ## Format Go source code and optimize imports
 fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 	@echo "==> Formatting code..."
 	@if command -v gofumpt >/dev/null 2>&1; then \
-		gofumpt -w .; \
+		find . -type d \( -name .scratch -o -name .git -o -name vendor -o -name node_modules -o -name testdata \) -prune -o -type f -name '*.go' -print0 | xargs -0 gofumpt -w; \
 	else \
 		go fmt ./...; \
 	fi
@@ -115,7 +115,7 @@ fmt-go: go-env ## Format Go source code and optimize imports without lint fixes
 			echo "Go module lookup returned an empty module path." >&2; \
 			exit 1; \
 		fi; \
-		goimports -w -local "$$module_path" .; \
+		find . -type d \( -name .scratch -o -name .git -o -name vendor -o -name node_modules \) -prune -o -type f -name '*.go' -execdir goimports -w -local "$$module_path" {} +; \
 	fi
 
 .PHONY: tidy
