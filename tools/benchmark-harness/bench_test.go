@@ -103,7 +103,10 @@ func runCodexDiagnosticCase(t *testing.T, testCase codexDiagnosticCase) {
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	result := &RunResult{Arm: ArmBaseline}
-	_, runErr := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", result, "")
+	threadID, runErr := NewRunner(t.TempDir()).runCodex(context.Background(), t.TempDir(), Target{}, "prompt", result, "")
+	if threadID != "thread-123" {
+		t.Fatalf("runCodex thread ID = %q, want thread-123", threadID)
+	}
 	assertCodexRunStatus(t, testCase, result, runErr)
 	assertCodexStderr(t, testCase, result)
 	assertCodexMalformedOutput(t, testCase, result)

@@ -79,47 +79,27 @@ func TestExecuteAgentOpenCodeExcludesDiagnosticUsage(t *testing.T) {
 	if err := os.Mkdir(bin, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	countPath := filepath.Join(root, "count")
+	countPath := filepath.Join(root, "turn-count")
+	serverCountPath := filepath.Join(root, "server-count")
 	configPath := filepath.Join(root, "captured-config.json")
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
 	program := `#!/bin/sh
 set -eu
-count=0
-if [ -f "$SEMEDIT_SESSION_COUNT" ]; then count=$(cat "$SEMEDIT_SESSION_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_SESSION_COUNT"
-cp "$OPENCODE_CONFIG" "$SEMEDIT_CAPTURE_CONFIG"
-model=''
-resume=''
-while [ "$#" -gt 0 ]; do
- case "$1" in
-  --model) shift; model=$1 ;;
-  --session) shift; resume=$1 ;;
-  --variant) exit 78 ;;
- esac
- shift
-done
-[ "$model" = 'amdbeast/qwen36-iq4-xs' ] || exit 79
-if [ "$count" -gt 1 ]; then [ "$resume" = 'fake-session' ] || exit 80; else [ -z "$resume" ] || exit 81; fi
-printf '{"type":"step_start","sessionID":"fake-session","part":{"id":"start-%s","type":"step-start"}}\n' "$count"
-case "$count" in
- 1) printf 'package main\nfunc Old() {}\n' > main.go
-    input=5; read=3; write=1; output=2; reasoning=1; tool=semantic_lookup ;;
- 2) printf 'package main\nfunc Done() {}\n' > main.go
-    input=7; read=4; write=2; output=2; reasoning=2; tool=semantic_replace_body ;;
- 3|4) sleep 0.15
-    input=100000; read=100000; write=100000; output=100000; reasoning=100000; tool=semantic_insert_construct ;;
- *) exit 82 ;;
-esac
-printf '{"type":"tool_use","part":{"id":"tool-%s","type":"tool","tool":"%s","server":"semedit","state":{"status":"completed","input":{},"output":"ok"}}}\n' "$count" "$tool"
-printf '{"type":"text","part":{"type":"text","text":"I would ask my owner to add semedit because it helped this task."}}\n'
-printf '{"type":"step_finish","part":{"id":"finish-%s","type":"step-finish","reason":"stop","tokens":{"input":%s,"output":%s,"reasoning":%s,"cache":{"read":%s,"write":%s}}}}\n' "$count" "$input" "$output" "$reasoning" "$read" "$write"
+exec "$SEMEDIT_HELPER_BINARY" -test.run=TestOpenCodeAttachHelperProcess -- "$@"
 `
-	if err := os.WriteFile(filepath.Join(bin, "opencode"), []byte(program), 0o750); err != nil {
-		t.Fatal(err)
+	if writeErr := os.WriteFile(filepath.Join(bin, "opencode"), []byte(program), 0o750); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	installPassthroughOpenCodeSandbox(t, bin)
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_SESSION_COUNT", countPath)
+	t.Setenv("SEMEDIT_HELPER_BINARY", binary)
+	t.Setenv("SEMEDIT_OPENCODE_HELPER", "1")
+	t.Setenv("SEMEDIT_OPENCODE_HELPER_MODE", "usage")
+	t.Setenv("SEMEDIT_USAGE_TURN_COUNT", countPath)
+	t.Setenv("SEMEDIT_USAGE_SERVER_COUNT", serverCountPath)
 	t.Setenv("SEMEDIT_CAPTURE_CONFIG", configPath)
 	task := &Task{Metadata: TaskMetadata{TaskID: "opencode-session", Instruction: "Add Done.", Oracle: OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"Done"}}}}, Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Old() {}\n"))}
 	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessOpenCode), Model: openCodeDefaultModel}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: []string{"Correct the implementation so Done exists."}, Policy: SemeditArmRestrictWrite}
@@ -128,7 +108,7 @@ printf '{"type":"step_finish","part":{"id":"finish-%s","type":"step-finish","rea
 		t.Fatal(err)
 	}
 	if !result.Success || result.Turns != 2 || result.PromptTokens != 22 || result.CachedPromptTokens != 7 || result.UncachedPromptTokens != 15 || result.OutputTokens != 4 || result.ReasoningTokens != 3 || result.ToolCount != 2 || result.InitialContextTokens != 9 {
-		t.Fatalf("solving metrics include diagnostic usage or missed a correction: %+v", result)
+		t.Fatalf("solving metrics include diagnostic usage or missed a correction: success=%t turns=%d prompt=%d cached=%d uncached=%d output=%d reasoning=%d tools=%d initial_context=%d", result.Success, result.Turns, result.PromptTokens, result.CachedPromptTokens, result.UncachedPromptTokens, result.OutputTokens, result.ReasoningTokens, result.ToolCount, result.InitialContextTokens)
 	}
 	assertOpenCodeDiagnosticEvidence(t, result, countPath, configPath)
 }
@@ -142,8 +122,12 @@ func assertOpenCodeDiagnosticEvidence(t *testing.T, result *RunResult, countPath
 		t.Fatalf("missing diagnostic answers: %+v", result)
 	}
 	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != "4" {
-		t.Fatalf("process count=%q error=%v", count, err)
+	if err != nil || string(count) != "xxxx" {
+		t.Fatalf("attached turn count=%q error=%v", count, err)
+	}
+	serverCount, err := os.ReadFile(os.Getenv("SEMEDIT_USAGE_SERVER_COUNT"))
+	if err != nil || string(serverCount) != "x" {
+		t.Fatalf("persistent server count=%q error=%v", serverCount, err)
 	}
 	data, err := os.ReadFile(result.Provenance["session_transcript"])
 	if err != nil {

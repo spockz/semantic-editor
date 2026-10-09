@@ -100,6 +100,7 @@ type openCodeEventStream struct {
 	validEvents  int
 	firstEventAt time.Time
 	sessionID    string
+	identityErr  error
 	scanErr      error
 	usage        openCodeUsageTracker
 }
@@ -130,7 +131,11 @@ func consumeOpenCodeEvent(stream *openCodeEventStream, result *RunResult, raw []
 		stream.firstEventAt = observedAt
 	}
 	if candidate := openCodeEventSessionID(event); candidate != "" {
-		stream.sessionID = candidate
+		if stream.sessionID == "" {
+			stream.sessionID = candidate
+		} else if stream.sessionID != candidate {
+			stream.identityErr = errors.Join(stream.identityErr, fmt.Errorf("OpenCode event session %q does not match session %q", candidate, stream.sessionID))
+		}
 	}
 	appendOpenCodeAgentResponse(result, event)
 	stream.tracker.observe(result, event, observedAt)
@@ -147,7 +152,7 @@ func applyOpenCodeStreamMetrics(result *RunResult, stream openCodeEventStream, p
 	result.InitialLoadTurns = stream.tracker.initialLoadTurns
 	result.MCPLoadTurns = stream.tracker.mcpLoadTurns
 	result.ToolCount = len(result.ToolCalls)
-	if !stream.firstEventAt.IsZero() {
+	if !processStartedAt.IsZero() && !stream.firstEventAt.IsZero() {
 		value := stream.firstEventAt.Sub(processStartedAt)
 		result.ProcessStartToFirstEvent = &value
 	}
@@ -172,7 +177,7 @@ func openCodeStreamFailure(stream openCodeEventStream, waitErr error, stderr str
 			providerErr = errors.Join(providerErr, fmt.Errorf("run OpenCode: %w", waitErr))
 		}
 	}
-	providerErr = errors.Join(providerErr, stream.usage.err)
+	providerErr = errors.Join(providerErr, stream.identityErr, stream.usage.err)
 	if stream.validEvents > 0 && (!stream.usage.finished || len(stream.usage.starts) > len(stream.usage.steps)) {
 		providerErr = errors.Join(providerErr, fmt.Errorf("OpenCode stream lacks complete terminal token usage"))
 	}

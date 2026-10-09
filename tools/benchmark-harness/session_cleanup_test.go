@@ -102,26 +102,7 @@ func TestAgentSessionCloseRetainsReadonlyWorkspace(t *testing.T) {
 
 func TestExecuteAgentCleansReadonlyModuleCacheAfterPassingOracle(t *testing.T) {
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(bin, "codex")
-	program := `#!/bin/sh
-set -eu
-cache="$PWD/.scratch/go/mod/pgregory.net/rapid@v1.0.0"
-mkdir -p "$cache"
-printf 'package rapid\n' > "$cache/source.go"
-chmod 500 "$cache"
-printf '{"type":"thread.started","thread_id":"readonly-cache"}\n'
-printf '{"type":"turn.started"}\n'
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
-printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n'
-`
-	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	installCodexAppServerFake(t, root, "readonly-cache")
 	task := &Task{
 		Metadata: TaskMetadata{
 			TaskID:      "readonly-module-cache",

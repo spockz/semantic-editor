@@ -19,6 +19,8 @@ import (
 	"time"
 )
 
+const codexFileChangeItemType = "file_change"
+
 const maxCodexStderrBytes = 64 * 1024
 
 const benchmarkAGENTSOverride = `# Benchmark fixture instruction override
@@ -136,7 +138,7 @@ func (t *codexToolTracker) record(res *RunResult, id string, call ToolCall, obse
 
 func isCodexToolItem(itemType string) bool {
 	switch itemType {
-	case "tool_call", "mcp_tool_call", "function_call", "command_execution", "file_change":
+	case "tool_call", "mcp_tool_call", "function_call", "command_execution", codexFileChangeItemType:
 		return true
 	default:
 		return false
@@ -144,8 +146,8 @@ func isCodexToolItem(itemType string) bool {
 }
 
 func codexToolName(item *codexItem) string {
-	if item.Type == "file_change" {
-		return "file_change"
+	if item.Type == codexFileChangeItemType {
+		return codexFileChangeItemType
 	}
 	for _, name := range []string{item.Tool, item.Command, item.Text} {
 		if clean := strings.TrimSpace(name); clean != "" {
@@ -314,6 +316,7 @@ func (r *Runner) runCodex(ctx context.Context, workDir string, target Target, pr
 	} else {
 		args = append(args, "resume", "--json", resumeID)
 	}
+	args = append(args, "-c", "sandbox_workspace_write.network_access=false")
 	if target.Model != "" {
 		args = append(args, "--model", target.Model)
 	}
@@ -483,7 +486,7 @@ func (r *Runner) codexMCPOverride(arm ArmType, workDir string) (string, error) {
 	switch arm {
 	case ArmBaseline:
 		return "mcp_servers.semedit.enabled=false", nil
-	case ArmSemedit, ArmSemeditExplicit:
+	case ArmSemedit, ArmSemeditAgentic, ArmSemeditExplicit:
 		return r.codexMCPServerInstructionsOverride(workDir)
 	default:
 		return "", fmt.Errorf("unsupported Codex benchmark arm %q", arm)

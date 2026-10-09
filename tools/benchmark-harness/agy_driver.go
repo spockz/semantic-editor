@@ -4,17 +4,13 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"semedit/internal/mcp"
 	"semedit/internal/pipeline"
 	"strings"
-	"time"
 )
 
 // AgyResponse represents the JSON output from agy --output-format json -p.
@@ -45,95 +41,6 @@ func agyToolFunctionalStatus(status string) ToolCallStatus {
 	}
 }
 
-func recordAgyResponseMetrics(res *RunResult, resp AgyResponse) error {
-	res.Turns = resp.NumTurns
-	res.PromptTokens = resp.Usage.InputTokens
-	res.CachedPromptTokens = resp.Usage.CacheReadTokens
-	uncached := resp.Usage.InputTokens - resp.Usage.CacheReadTokens
-	if uncached < 0 {
-		uncached = resp.Usage.InputTokens
-	}
-	res.UncachedPromptTokens = uncached
-	res.OutputTokens = resp.Usage.OutputTokens
-	res.ReasoningTokens = resp.Usage.ThinkingTokens
-	res.agentResponse = strings.TrimSpace(resp.Response)
-	if resp.ConversationID == "" {
-		return fmt.Errorf("agy response did not include a conversation ID")
-	}
-	return extractAgyTools(resp.ConversationID, res)
-}
-
-func (r *Runner) runAgy(ctx context.Context, workDir string, target Target, prompt string, res *RunResult, resumeID string) (string, error) {
-	agyBin := configuredAgyExecutable(r.agyExecutable)
-
-	absWorkDir, err := filepath.Abs(workDir)
-	if err != nil {
-		return "", fmt.Errorf("resolve Agy workspace: %w", err)
-	}
-	repositoryRoot, err := filepath.Abs(filepath.Dir(filepath.Dir(r.baseScratchDir)))
-	if err != nil {
-		return "", fmt.Errorf("resolve repository root for Agy MCP: %w", err)
-	}
-	env, err := fixtureGoEnvironment(ctx, workDir)
-	if err != nil {
-		return "", fmt.Errorf("prepare Agy Go environment: %w", err)
-	}
-	res.MCPServerInstructions = r.mcpServerInstructionsMode
-	if err := writeAgyMCPConfig(absWorkDir, repositoryRoot, res.Arm, res.MCPServerInstructions, env); err != nil {
-		return "", fmt.Errorf("configure Agy MCP server: %w", err)
-	}
-	configPath := filepath.Join(absWorkDir, ".agents", "mcp_config.json")
-	defer func() {
-		_ = os.Remove(configPath)
-	}()
-
-	args := buildAgyArguments(absWorkDir, target, prompt, resumeID)
-
-	// #nosec G204 -- agyBin is one of two fixed executable names; args are passed directly without shell interpretation.
-	cmd := exec.CommandContext(ctx, agyBin, args...)
-	cmd.Dir = workDir
-	cmd.Env = env
-	var output bytes.Buffer
-	cmd.Stdout = &output
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("start Agy: %w", err)
-	}
-	res.processStartedAt = time.Now()
-	runErr := cmd.Wait()
-	out := output.Bytes()
-	var resp AgyResponse
-	decodeErr := json.Unmarshal(out, &resp)
-	if decodeErr == nil {
-		if recordErr := recordAgyResponseMetrics(res, resp); recordErr != nil {
-			decodeErr = recordErr
-		}
-	}
-	var responseErr error
-	if runErr != nil {
-		responseErr = fmt.Errorf("agy exec error: %w (output: %s)", runErr, string(out))
-	}
-	if decodeErr != nil {
-		responseErr = errors.Join(responseErr, fmt.Errorf("decode Agy response and transcript: %w (raw: %s)", decodeErr, string(out)))
-	}
-	if decodeErr == nil && resp.Status != "SUCCESS" {
-		responseErr = errors.Join(responseErr, fmt.Errorf("agy error status (%s): %s", resp.Status, resp.Error))
-	}
-	if resp.ConversationID == "" && decodeErr == nil {
-		responseErr = errors.Join(responseErr, fmt.Errorf("agy did not emit a conversation ID"))
-	}
-	if responseErr != nil {
-		res.toolObservationState = ToolObservationPartial
-		res.toolObservationReason = responseErr.Error()
-	} else {
-		res.toolObservationState = ToolObservationUnknown
-		res.toolObservationReason = "Agy adapter has no validated terminal transcript marker"
-	}
-	if responseErr != nil {
-		return resp.ConversationID, responseErr
-	}
-	return resp.ConversationID, nil
-}
-
 func configuredAgyExecutable(configured string) string {
 	if configured != "" {
 		return configured
@@ -143,21 +50,6 @@ func configuredAgyExecutable(configured string) string {
 		return defaultExecutable
 	}
 	return "agy"
-}
-
-func buildAgyArguments(workDir string, target Target, prompt, resumeID string) []string {
-	args := []string{"--output-format", "json", "--dangerously-skip-permissions", "--add-dir", workDir}
-	if resumeID != "" {
-		args = append(args, "--conversation", resumeID)
-	}
-	if target.Model != "" {
-		args = append(args, "--model", target.Model)
-	}
-	if target.Effort != "" {
-		args = append(args, "--effort", target.Effort)
-	}
-	fullPrompt := fmt.Sprintf("Working directory is %s.\n%s", workDir, prompt)
-	return append(args, "-p", fullPrompt)
 }
 
 type agyTranscriptStep struct {
@@ -178,7 +70,7 @@ func isMutatingTool(name string) bool {
 		strings.Contains(clean, "edit") || strings.Contains(clean, "patch") ||
 		strings.Contains(clean, "insert") || strings.Contains(clean, "delete") ||
 		strings.Contains(clean, "rename") || strings.Contains(clean, "semantic_") ||
-		clean == "file_change" {
+		clean == codexFileChangeItemType {
 		return true
 	}
 	return false
@@ -191,31 +83,6 @@ func isMCPDiscoveryTool(name string) bool {
 		strings.Contains(clean, "read_resource") ||
 		strings.Contains(clean, "get_server_capabilities") ||
 		strings.Contains(clean, "describe")
-}
-
-func extractAgyTools(convID string, res *RunResult) error {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("resolve Agy transcript home: %w", err)
-	}
-	candidates := []string{
-		filepath.Join(home, ".gemini", "antigravity-cli", "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
-		filepath.Join(home, ".gemini", "antigravity", "brain", convID, ".system_generated", "logs", "transcript.jsonl"),
-	}
-	var lastErr error
-	for _, transcriptPath := range candidates {
-		// #nosec G304 -- transcript paths use Agy’s fixed home log layout and provider-issued conversation ID.
-		data, err := os.ReadFile(transcriptPath)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if err := parseAgyTranscript(data, res); err != nil {
-			return fmt.Errorf("parse Agy transcript %s: %w", transcriptPath, err)
-		}
-		return nil
-	}
-	return fmt.Errorf("read Agy transcript for conversation %q: %w", convID, lastErr)
 }
 
 func parseAgyTranscript(data []byte, res *RunResult) error {

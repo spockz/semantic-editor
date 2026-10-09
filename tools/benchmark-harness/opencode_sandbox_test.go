@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,7 +68,11 @@ func TestOpenCodeSeatbeltAllowsFixtureAndDeniesOutsideFiles(t *testing.T) {
 	for _, path := range []string{outsideFile, filepath.Join(fixtureRoot, "outside-link")} {
 		output, outsideReadErr := run(path)
 		if outsideReadErr == nil {
-			t.Errorf("sandbox read outside path %q: %q", path, output)
+			t.Fatalf("sandbox read outside path %q: %q", path, output)
+		}
+		var exitErr *exec.ExitError
+		if !errors.As(outsideReadErr, &exitErr) || exitErr.ExitCode() != 1 {
+			t.Fatalf("outside read failed before a normal permission denial: %v: %s", outsideReadErr, output)
 		}
 	}
 }

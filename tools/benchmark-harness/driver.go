@@ -241,6 +241,9 @@ func prepareAgentRunMetadata(execution AgentExecution, session *agentSession, re
 	result.Prompt = execution.Prompt
 	ensureProvenance(result)
 	result.Provenance["session_transcript"] = session.transcriptPath
+	if transport := providerContinuationTransport(execution.Target); transport != "" {
+		result.Provenance["provider_transport"] = transport
+	}
 	if result.SemeditPrewarmVerify {
 		result.Provenance["semedit_prewarm"] = "verify_cli_check_only"
 		result.Provenance["go_cache_initial_state"] = "empty"

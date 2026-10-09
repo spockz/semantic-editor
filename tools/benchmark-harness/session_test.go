@@ -145,67 +145,36 @@ func TestPrepareAgentWorkspaceReportsInitialFileReadErrors(t *testing.T) {
 
 func TestExecuteAgentUsesOneProcessSessionAndExcludesReflectionMetrics(t *testing.T) {
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	countPath := filepath.Join(root, "count")
-	workLog := filepath.Join(root, "workdirs")
-	script := filepath.Join(bin, "codex")
-	program := `#!/bin/sh
-count=0
-if [ -f "$SEMEDIT_SESSION_COUNT" ]; then count=$(cat "$SEMEDIT_SESSION_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_SESSION_COUNT"
-pwd >> "$SEMEDIT_SESSION_WORKDIRS"
-printf '{"type":"thread.started","thread_id":"fake-session"}\n'
-printf '{"type":"turn.started"}\n'
-case "$count" in
-  1) printf 'package main\nfunc Old() {}\n' > main.go
-     printf '{"type":"item.completed","item":{"id":"lookup","type":"mcp_tool_call","server":"semedit","tool":"semantic_lookup","status":"completed"}}\n'
-     printf '{"type":"item.completed","item":{"id":"unnamed","type":"mcp_tool_call","status":"completed"}}\n' ;;
-  2) printf 'package main\nfunc Done() {}\n' > main.go
-     printf '{"type":"item.completed","item":{"id":"replace","type":"mcp_tool_call","server":"semedit","tool":"semantic_replace_body","status":"failed"}}\n' ;;
-  3|4) sleep 0.05 ;;
-esac
-if [ "$count" -ge 3 ]; then
-  printf '{"type":"item.completed","item":{"id":"diagnostic-tool","type":"mcp_tool_call","server":"semedit","tool":"semantic_insert_construct","status":"completed"}}\n'
-fi
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"I would ask my owner to add semedit because its precise edits eased this task."}}\n'
-case "$count" in
-  1) printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n' ;;
-  2) printf '{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":2}}\n' ;;
-  3|4) printf '{"type":"turn.completed","usage":{"input_tokens":100000,"output_tokens":100000}}\n' ;;
-esac
-`
-	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_SESSION_COUNT", countPath)
-	t.Setenv("SEMEDIT_SESSION_WORKDIRS", workLog)
+	requestLog, processLog := installCodexAppServerFake(t, root, "session")
 	task := &Task{
 		Metadata: TaskMetadata{
 			TaskID:               "session-process",
 			Instruction:          "Add Done.",
 			InteractiveFollowups: []string{"Correct the implementation so Done exists."},
-			Oracle:               OracleConfig{AST: ASTConfig{File: "main.go", MustContainSymbols: []string{"Done"}}, DiagnosticExpectedTools: []string{"semantic_lookup", "semantic_replace_body", "semantic_rename"}},
+			Oracle: OracleConfig{
+				AST:                     ASTConfig{File: "main.go", MustContainSymbols: []string{"Done"}},
+				DiagnosticExpectedTools: []string{"semantic_lookup", "semantic_replace_body", "semantic_rename"},
+			},
 		},
 		Archive: ParseArchive([]byte("-- main.go --\npackage main\nfunc Old() {}\n")),
 	}
-	execution := AgentExecution{Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit, Variant: "small", Prompt: "original", Followups: []string{"Correct the implementation so Done exists."}, Policy: SemeditArmRestrictWrite}
+	execution := AgentExecution{
+		Task: task, Target: Target{Harness: string(HarnessCodex), Model: "fake"}, Arm: ArmSemedit,
+		Variant: "small", Prompt: "original", Followups: []string{"Correct the implementation so Done exists."},
+		Policy: SemeditArmRestrictWrite,
+	}
 	result, err := NewRunner(filepath.Join(root, "scratch")).ExecuteAgent(context.Background(), execution)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertSessionProcessTaskResult(t, result)
-	assertSessionProcessWorkspace(t, countPath, workLog)
+	assertSessionProcessWorkspace(t, processLog, requestLog)
 	assertSessionProcessTranscript(t, result)
 }
 
 func assertSessionProcessTaskResult(t *testing.T, result *RunResult) {
 	t.Helper()
-	if !result.Success || result.Turns != 2 || result.PromptTokens != 12 || result.OutputTokens != 4 || result.ToolCount != 2 || result.DiagnosticToolCoverage == nil || result.DiagnosticToolCoverage.Complete || result.DiagnosticToolCoverage.ObservationState != ToolObservationPartial || result.DiagnosticToolCoverage.ExpectedSatisfied || result.DiagnosticToolCoverage.Missing != nil || !slices.Equal(result.DiagnosticToolCoverage.Observed, []string{"semantic_lookup", "semantic_replace_body"}) {
+	if !result.Success || result.Turns != 2 || result.PromptTokens != 12 || result.OutputTokens != 4 || result.ToolCount != 2 || result.DiagnosticToolCoverage == nil || !result.DiagnosticToolCoverage.Complete || result.DiagnosticToolCoverage.ObservationState != ToolObservationComplete || result.DiagnosticToolCoverage.ExpectedSatisfied || !slices.Equal(result.DiagnosticToolCoverage.Missing, []string{"semantic_rename"}) || !slices.Equal(result.DiagnosticToolCoverage.Observed, []string{"semantic_lookup", "semantic_replace_body"}) {
 		t.Fatalf("task aggregates include non-task telemetry or missed correction: %+v", result)
 	}
 	if slices.Contains(result.DiagnosticToolCoverage.Observed, "semantic_insert_construct") {
@@ -218,17 +187,55 @@ func assertSessionProcessTaskResult(t *testing.T, result *RunResult) {
 
 func assertSessionProcessWorkspace(t *testing.T, countPath, workLog string) {
 	t.Helper()
-	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != "4" {
-		t.Fatalf("expected initial, followup, and two reflection process calls; count=%q err=%v", count, err)
+	processes, err := os.ReadFile(countPath)
+	if err != nil || strings.Count(string(processes), "process") != 1 {
+		t.Fatalf("app-server process count = %q, err=%v; want one process", processes, err)
 	}
-	workdirs, err := os.ReadFile(workLog)
+	data, err := os.ReadFile(workLog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Fields(string(workdirs))
-	if len(lines) != 4 || lines[0] != lines[1] || lines[1] != lines[2] || lines[2] != lines[3] {
-		t.Fatalf("provider process changed work directory across turns: %q", workdirs)
+	type requestRecord struct {
+		Method string `json:"method"`
+		Params struct {
+			ThreadID string `json:"threadId"`
+			CWD      string `json:"cwd"`
+		} `json:"params"`
+	}
+	var requests []requestRecord
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
+		if line == "" {
+			continue
+		}
+		var request requestRecord
+		if err := json.Unmarshal([]byte(line), &request); err != nil {
+			t.Fatalf("decode app-server request %q: %v", line, err)
+		}
+		requests = append(requests, request)
+	}
+	count := func(method string) int {
+		total := 0
+		for _, request := range requests {
+			if request.Method == method {
+				total++
+			}
+		}
+		return total
+	}
+	if count("initialize") != 1 || count("thread/start") != 1 || count("turn/start") != 4 {
+		t.Fatalf("app-server lifecycle requests: initialize=%d thread/start=%d turn/start=%d", count("initialize"), count("thread/start"), count("turn/start"))
+	}
+	var cwd string
+	for _, request := range requests {
+		if request.Method == "thread/start" {
+			cwd = request.Params.CWD
+		}
+		if request.Method == "turn/start" && request.Params.ThreadID != "persistent-thread" {
+			t.Fatalf("turn used thread %q, want original thread persistent-thread", request.Params.ThreadID)
+		}
+	}
+	if cwd == "" || !filepath.IsAbs(cwd) {
+		t.Fatalf("thread/start cwd = %q, want absolute fixture directory", cwd)
 	}
 }
 
@@ -239,7 +246,7 @@ func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
 	if err != nil {
 		t.Fatalf("session evidence missing after cleanup: %v", err)
 	}
-	if strings.Count(string(transcript), "diagnostic_reflection") != 2 || strings.Count(string(transcript), "fake-session") < 4 {
+	if strings.Count(string(transcript), "diagnostic_reflection") != 2 || strings.Count(string(transcript), "persistent-thread") < 4 {
 		t.Fatalf("transcript did not retain task and diagnostic events: %s", transcript)
 	}
 	if result.SemanticIntegrationReflection == nil || result.SemanticIntegrationReflection.Prompt != semanticIntegrationReflectionPrompt || !strings.Contains(result.SemanticIntegrationReflection.Response, "ask my owner") {
@@ -259,7 +266,7 @@ func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(encoded), `"diagnostic_tool_coverage"`) || !strings.Contains(string(encoded), `"observation_state":"partial"`) || !strings.Contains(string(encoded), `"missing":null`) {
+	if !strings.Contains(string(encoded), `"diagnostic_tool_coverage"`) || !strings.Contains(string(encoded), `"observation_state":"complete"`) || !strings.Contains(string(encoded), `"missing":["semantic_rename"]`) {
 		t.Fatalf("diagnostic tool coverage was not serialized: %s", encoded)
 	}
 	for _, privateMetric := range []string{"100000", "diagnostic-tool"} {
@@ -271,23 +278,7 @@ func assertSessionProcessTranscript(t *testing.T, result *RunResult) {
 
 func TestExecuteAgentSkipsPrewarmWithoutGoTargetAndTimesCodexProcess(t *testing.T) {
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	script := filepath.Join(bin, "codex")
-	program := `#!/bin/sh
-sleep 0.03
-printf '{"type":"thread.started","thread_id":"fake-session"}\n'
-printf '{"type":"turn.started"}\n'
-printf '{"type":"item.completed","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"completed"}}\n'
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"hi"}}\n'
-printf '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n'
-`
-	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	installCodexAppServerFake(t, root, "")
 	data, err := os.ReadFile("../../testdata/bench/task_00_hi_overhead.txtar")
 	if err != nil {
 		t.Fatal(err)
@@ -307,8 +298,8 @@ printf '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}\n
 	if result.SemeditPrewarmVerify || result.Provenance["semedit_prewarm_skipped"] == "" {
 		t.Fatalf("prewarm should skip a fixture without a Go target: %+v", result)
 	}
-	if result.processStartedAt.IsZero() || result.WallClock < 30*time.Millisecond {
-		t.Fatalf("wall clock must include Codex execution from its process start: start=%s duration=%s", result.processStartedAt, result.WallClock)
+	if result.processStartedAt.IsZero() || result.WallClock <= 0 {
+		t.Fatalf("wall clock must include Codex execution from process start: start=%s duration=%s", result.processStartedAt, result.WallClock)
 	}
 	if result.WallClock > time.Since(result.processStartedAt) {
 		t.Fatalf("wall clock includes time before Codex process start: measured=%s elapsed=%s", result.WallClock, time.Since(result.processStartedAt))
@@ -379,35 +370,33 @@ func TestAgyResumeFailureKeepsOnlyNewTranscriptMetrics(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	t.Setenv("HOME", home)
-	bin := filepath.Join(root, "bin")
 	logs := filepath.Join(home, ".gemini", "antigravity-cli", "brain", "conversation", ".system_generated", "logs")
-	if err := os.MkdirAll(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.MkdirAll(logs, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	countPath := filepath.Join(root, "count")
 	transcriptPath := filepath.Join(logs, "transcript.jsonl")
+	pidPath := filepath.Join(root, "pid")
 	program := `#!/bin/sh
+printf '%s\n' "$$" > "$SEMEDIT_AGY_PID"
 count=0
-if [ -f "$SEMEDIT_AGY_COUNT" ]; then count=$(cat "$SEMEDIT_AGY_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_AGY_COUNT"
-if [ "$count" -eq 1 ]; then
-  printf '{"type":"PLANNER_RESPONSE"}\n{"type":"GENERIC","status":"done","tool_calls":[{"name":"semantic_lookup","args":{}},{"name":"semantic_replace_body","args":{}}]}\n' >> "$SEMEDIT_AGY_TRANSCRIPT"
-  printf '{"conversation_id":"conversation","status":"SUCCESS","num_turns":1,"usage":{"input_tokens":5,"output_tokens":2}}\n'
-else
-  printf '{"type":"PLANNER_RESPONSE"}\n{"type":"GENERIC","status":"done","tool_calls":[{"name":"semantic_lookup","args":{}}]}\n{malformed' > "$SEMEDIT_AGY_TRANSCRIPT"
-  printf '{"conversation_id":"conversation","status":"ERROR","error":"","num_turns":1,"usage":{"input_tokens":7,"output_tokens":3}}\n'
-fi
+while IFS= read -r prompt; do
+  count=$((count + 1))
+  if [ "$count" -eq 1 ]; then
+    printf '{"event":"init","conversation_id":"conversation"}\n'
+    printf '{"type":"PLANNER_RESPONSE"}\n{"type":"GENERIC","status":"done","tool_calls":[{"name":"semantic_lookup","args":{}},{"name":"semantic_replace_body","args":{}}]}\n' >> "$SEMEDIT_AGY_TRANSCRIPT"
+    input=5; output=2; turns=1; status=SUCCESS
+  else
+    printf '{bad' > "$SEMEDIT_AGY_TRANSCRIPT"
+    input=7; output=3; turns=2; status=SUCCESS
+  fi
+  printf '{"event":"result","result":{"conversation_id":"conversation","status":"%s","num_turns":%s,"usage":{"input_tokens":%s,"output_tokens":%s}}}\n' "$status" "$turns" "$input" "$output"
+done
 `
-	script := filepath.Join(bin, "agy")
+	script := filepath.Join(root, "agy")
 	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_AGY_COUNT", countPath)
+	t.Setenv("SEMEDIT_AGY_PID", pidPath)
 	t.Setenv("SEMEDIT_AGY_TRANSCRIPT", transcriptPath)
 	workDir := filepath.Join(root, "workspace")
 	if err := os.Mkdir(workDir, 0o750); err != nil {
@@ -416,26 +405,44 @@ fi
 	runner := NewRunner(filepath.Join(root, "scratch"))
 	runner.agyExecutable = script
 	provider := &agyProvider{runner: runner}
+	t.Cleanup(func() {
+		if provider.session != nil {
+			if err := provider.session.close(); err != nil {
+				t.Errorf("close Agy provider session: %v", err)
+			}
+		}
+	})
 	first := &RunResult{Arm: ArmBaseline}
-	if _, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "first", first, ""); err != nil {
+	conversationID, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "first", first, "")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if first.processStartedAt.IsZero() || first.measuredWallClock(time.Now()) <= 0 {
 		t.Fatalf("Agy task was not timed from process start: %s", first.processStartedAt)
 	}
 	second := &RunResult{Arm: ArmBaseline}
-	_, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "followup", second, "conversation")
-	if err == nil || !strings.Contains(err.Error(), "decode Agy response and transcript") || !strings.Contains(err.Error(), "cumulative observations regressed") {
-		t.Fatalf("expected parse and normalization errors, got %v", err)
+	continuedID, err := provider.run(context.Background(), workDir, Target{Harness: string(HarnessAgy)}, "followup", second, conversationID)
+	if err == nil || !strings.Contains(err.Error(), "agy cumulative transcript regressed") {
+		t.Fatalf("expected cumulative transcript regression, got %v", err)
+	}
+	if continuedID != conversationID {
+		t.Fatalf("Agy continuation identity changed: got %q want %q", continuedID, conversationID)
 	}
 	if first.InternalTurns != 1 || len(first.ToolCalls) != 2 {
-		t.Fatalf("first cumulative transcript totals mismatch: %+v", first)
+		t.Fatalf("first transcript totals mismatch: %+v", first)
 	}
 	if second.InternalTurns != 0 || len(second.ToolCalls) != 0 || second.ToolCount != 0 || second.MCPVerified {
 		t.Fatalf("unreliable resumed transcript metrics were not withheld: %+v", second)
 	}
-	if second.PromptTokens != 7 || second.OutputTokens != 3 {
-		t.Fatalf("response usage should remain independent of transcript parsing: %+v", second)
+	if second.PromptTokens != 2 || second.OutputTokens != 1 || second.Turns != 1 {
+		t.Fatalf("valid per-turn usage delta should survive transcript failure: %+v", second)
+	}
+	pids, err := os.ReadFile(pidPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(strings.Fields(string(pids))) != 1 {
+		t.Fatalf("Agy continuation used %d processes, want one", len(strings.Fields(string(pids))))
 	}
 }
 
@@ -619,29 +626,7 @@ func TestExecuteAgentSkipsDiagnosticReflectionAfterFailedFinalOracle(t *testing.
 func runFailedFinalOracleScenario(t *testing.T, followups []string) {
 	t.Helper()
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	countPath := filepath.Join(root, "count")
-	script := filepath.Join(bin, "codex")
-	program := `#!/bin/sh
-count=0
-if [ -f "$SEMEDIT_REFLECTION_COUNT" ]; then count=$(cat "$SEMEDIT_REFLECTION_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_REFLECTION_COUNT"
-if [ "$count" -gt "$SEMEDIT_EXPECTED_TASK_ATTEMPTS" ]; then while :; do :; done; fi
-printf '{"type":"thread.started","thread_id":"failed-session"}\n'
-printf '{"type":"turn.started"}\n'
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
-printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n'
-`
-	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_REFLECTION_COUNT", countPath)
-	t.Setenv("SEMEDIT_EXPECTED_TASK_ATTEMPTS", strconv.Itoa(1+len(followups)))
+	requestLog, processLog := installCodexAppServerFake(t, root, "")
 	task := &Task{
 		Metadata: TaskMetadata{
 			TaskID:      "failed-final-oracle",
@@ -669,9 +654,16 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 	if result.SemanticToolReflection != nil || result.SemanticBatchReflection != nil || result.SemanticIntegrationReflection != nil {
 		t.Fatalf("failed final oracle triggered diagnostic reflection: %#v", result)
 	}
-	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != strconv.Itoa(1+len(followups)) {
-		t.Fatalf("provider attempts = %q, err=%v; want %d task attempts and no reflection", count, err, 1+len(followups))
+	processes, err := os.ReadFile(processLog)
+	if err != nil || strings.Count(string(processes), "process") != 1 {
+		t.Fatalf("app-server processes = %q, err=%v; want one task session", processes, err)
+	}
+	requests, err := os.ReadFile(requestLog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(requests), "\"method\":\"turn/start\""); got != 1+len(followups) {
+		t.Fatalf("task turns = %d; want %d", got, 1+len(followups))
 	}
 	if len(result.InteractionSteps) != 1+len(followups) {
 		t.Fatalf("interaction steps = %d, want %d task attempts", len(result.InteractionSteps), 1+len(followups))
@@ -680,39 +672,7 @@ printf '{"type":"turn.completed","usage":{"input_tokens":2,"output_tokens":1}}\n
 
 func TestExecuteAgentStagedFollowupsKeepSessionAndStageCosts(t *testing.T) {
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	countPath := filepath.Join(root, "count")
-	workLog := filepath.Join(root, "workdirs")
-	argsLog := filepath.Join(root, "args")
-	script := filepath.Join(bin, "codex")
-	program := `#!/bin/sh
-count=0
-if [ -f "$SEMEDIT_SESSION_COUNT" ]; then count=$(cat "$SEMEDIT_SESSION_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_SESSION_COUNT"
-pwd >> "$SEMEDIT_SESSION_WORKDIRS"
-printf '%s\n' "$*" >> "$SEMEDIT_SESSION_ARGS"
-printf '{"type":"thread.started","thread_id":"fake-stage"}\n'
-printf '{"type":"turn.started"}\n'
-if [ "$count" -eq 1 ]; then
-  printf 'package main\nfunc B() {}\n' > main.go
-  printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n'
-else
-  printf 'package main\nfunc A() {}\nfunc B() {}\n' > main.go
-  printf '{"type":"turn.completed","usage":{"input_tokens":7,"output_tokens":3}}\n'
-fi
-printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"DONE"}}\n'
-`
-	if err := os.WriteFile(script, []byte(program), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_SESSION_COUNT", countPath)
-	t.Setenv("SEMEDIT_SESSION_WORKDIRS", workLog)
-	t.Setenv("SEMEDIT_SESSION_ARGS", argsLog)
+	requestLog, processLog := installCodexAppServerFake(t, root, "staged")
 	task := &Task{
 		Metadata: TaskMetadata{
 			TaskID:                  "staged-session",
@@ -739,21 +699,19 @@ printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","t
 	if first.PromptTokens != 5 || second.PromptTokens != 7 || result.PromptTokens != 12 || first.OutputTokens != 2 || second.OutputTokens != 3 || result.OutputTokens != 5 {
 		t.Fatalf("per-stage token accounting = %+v, aggregate = %+v", result.InteractionSteps, result)
 	}
-	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != "2" {
-		t.Fatalf("provider calls = %q, err=%v", count, err)
+	processes, err := os.ReadFile(processLog)
+	if err != nil || strings.Count(string(processes), "process") != 1 {
+		t.Fatalf("app-server processes = %q, err=%v", processes, err)
 	}
-	workdirs, err := os.ReadFile(workLog)
+	requests, err := os.ReadFile(requestLog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lines := strings.Fields(string(workdirs))
-	if len(lines) != 2 || lines[0] != lines[1] {
-		t.Fatalf("staged turns changed workspace: %q", workdirs)
+	if got := strings.Count(string(requests), "\"method\":\"turn/start\""); got != 2 {
+		t.Fatalf("staged app-server turns = %d, want two", got)
 	}
-	args, err := os.ReadFile(argsLog)
-	if err != nil || !strings.Contains(string(args), "resume --json fake-stage") {
-		t.Fatalf("staged follow-up did not resume provider session: %q, err=%v", args, err)
+	if !strings.Contains(string(requests), "\"threadId\":\"persistent-thread\"") {
+		t.Fatalf("staged follow-up did not retain its original thread: %s", requests)
 	}
 }
 
@@ -785,16 +743,7 @@ func integrationFeedbackCases() []integrationFeedbackCase {
 func runIntegrationFeedbackCase(t *testing.T, testCase integrationFeedbackCase) {
 	t.Helper()
 	root := t.TempDir()
-	bin := filepath.Join(root, "bin")
-	if err := os.Mkdir(bin, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	countPath := filepath.Join(root, "count")
-	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(integrationFeedbackProvider), 0o750); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SEMEDIT_FEEDBACK_COUNT", countPath)
+	requestLog, processLog := installCodexAppServerFake(t, root, "feedback")
 	t.Setenv("SEMEDIT_FEEDBACK_USE_TOOLS", strconv.FormatBool(testCase.useTools))
 	t.Setenv("SEMEDIT_FEEDBACK_ERROR", strconv.FormatBool(testCase.feedbackError))
 	task := integrationFeedbackTask()
@@ -806,28 +755,12 @@ func runIntegrationFeedbackCase(t *testing.T, testCase integrationFeedbackCase) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertIntegrationFeedbackResult(t, testCase, result, countPath)
+	assertIntegrationFeedbackResult(t, testCase, result, requestLog)
+	processes, err := os.ReadFile(processLog)
+	if err != nil || strings.Count(string(processes), "process") != 1 {
+		t.Fatalf("app-server process count = %q, err=%v", processes, err)
+	}
 }
-
-const integrationFeedbackProvider = `#!/bin/sh
-count=0
-if [ -f "$SEMEDIT_FEEDBACK_COUNT" ]; then count=$(cat "$SEMEDIT_FEEDBACK_COUNT"); fi
-count=$((count + 1))
-printf '%s' "$count" > "$SEMEDIT_FEEDBACK_COUNT"
-if [ "$count" -gt 1 ] && [ "$SEMEDIT_FEEDBACK_ERROR" = true ]; then exit 7; fi
-printf '{"type":"thread.started","thread_id":"feedback-session"}\n'
-printf '{"type":"turn.started"}\n'
-if [ "$count" -eq 1 ]; then
- if [ "$SEMEDIT_FEEDBACK_USE_TOOLS" = true ]; then
-  printf '{"type":"item.completed","item":{"id":"verify","type":"mcp_tool_call","server":"semedit","tool":"semantic_verify","status":"completed"}}\n'
- fi
- printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"Task completed."}}\n'
- printf '{"type":"turn.completed","usage":{"input_tokens":5,"output_tokens":2}}\n'
-else
- printf '{"type":"item.completed","item":{"id":"answer","type":"agent_message","text":"I would not ask my owner to add semedit because I could not assess its value in this task."}}\n'
- printf '{"type":"turn.completed","usage":{"input_tokens":99999,"output_tokens":99999}}\n'
-fi
-`
 
 func integrationFeedbackTask() *Task {
 	return &Task{
@@ -847,9 +780,9 @@ func assertIntegrationFeedbackResult(t *testing.T, testCase integrationFeedbackC
 	if !result.Success || result.Error != "" || result.Turns != 1 || result.PromptTokens != 5 || result.OutputTokens != 2 {
 		t.Fatalf("feedback changed the task outcome or metrics: %+v", result)
 	}
-	count, err := os.ReadFile(countPath)
-	if err != nil || string(count) != strconv.Itoa(testCase.calls) {
-		t.Fatalf("provider calls=%q error=%v; want %d", count, err, testCase.calls)
+	requests, err := os.ReadFile(countPath)
+	if err != nil || strings.Count(string(requests), "\"method\":\"turn/start\"") != testCase.calls {
+		t.Fatalf("app-server task/feedback turns = %q, err=%v; want %d", requests, err, testCase.calls)
 	}
 	if testCase.arm == ArmBaseline {
 		if result.SemanticIntegrationReflection != nil {

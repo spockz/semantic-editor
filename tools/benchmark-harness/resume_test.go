@@ -3,6 +3,9 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,4 +117,60 @@ func TestBenchmarkCLIParsesResumeFlag(t *testing.T) {
 	if !cli.Plan.Resume || cli.Plan.RunID != "resume-run" {
 		t.Fatalf("resume options were not retained: %+v", cli.Plan)
 	}
+}
+
+func TestResumeRejectsLegacyCodingTransport(t *testing.T) {
+	for _, harness := range []string{string(HarnessCodex), string(HarnessAgy), string(HarnessOpenCode)} {
+		t.Run(harness, func(t *testing.T) {
+			root := t.TempDir()
+			fixturePath := filepath.Join(root, "task.txtar")
+			if err := os.WriteFile(fixturePath, []byte("task fixture"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			plan := &BenchmarkPlan{
+				Jobs:    []Job{{ID: "job", FixturePath: fixturePath, Target: Target{Harness: harness}}},
+				Options: PlanOptions{OutDir: root, RunID: "transport-run"},
+			}
+			runDir, err := prepareBenchmarkRunDir(plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest, err := buildRunManifest(plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			manifest.Fingerprint = legacyCodingTransportFingerprint(t, plan)
+			if saveErr := saveRunManifest(runDir, manifest); saveErr != nil {
+				t.Fatal(saveErr)
+			}
+			plan.Options.Resume = true
+			if _, resumeErr := prepareBenchmarkRunDir(plan); resumeErr == nil || !strings.Contains(resumeErr.Error(), "does not match") {
+				t.Fatalf("legacy transport resume error = %v, want fingerprint mismatch", resumeErr)
+			}
+		})
+	}
+}
+
+func legacyCodingTransportFingerprint(t *testing.T, plan *BenchmarkPlan) string {
+	t.Helper()
+	job := plan.Jobs[0]
+	fixtureDigest := sha256.Sum256([]byte("task fixture"))
+	input := struct {
+		RunID      string
+		Options    resumeFingerprintOptions
+		Exclusions []FixtureExclusion
+		Jobs       []resumeFingerprintJob
+	}{
+		RunID: plan.Options.RunID,
+		Jobs: []resumeFingerprintJob{{
+			ID: job.ID, FixturePath: job.FixturePath, Target: job.Target,
+			FixtureSHA256: hex.EncodeToString(fixtureDigest[:]),
+		}},
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }

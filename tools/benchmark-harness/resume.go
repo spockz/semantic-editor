@@ -23,6 +23,7 @@ type jobCheckpoint struct {
 }
 
 type resumeFingerprintJob struct {
+	ProviderTransport     string `json:",omitempty"`
 	ID                    string
 	PairID                string
 	TaskID                string
@@ -87,6 +88,7 @@ func buildRunManifest(plan *BenchmarkPlan) (runManifest, error) {
 		}
 		fixtureDigest := sha256.Sum256(fixtureData)
 		fingerprintJobs = append(fingerprintJobs, resumeFingerprintJob{
+			ProviderTransport:     providerContinuationTransport(job.Target),
 			ID:                    job.ID,
 			PairID:                job.PairID,
 			TaskID:                job.TaskID,

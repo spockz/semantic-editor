@@ -16,13 +16,30 @@ import (
 
 func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, classification string, result *RunResult) error {
 	started := time.Now()
-	resumeID, runErr := s.adapter.run(ctx, s.workDir, target, prompt, result, s.resumeID)
-	started = result.wallClockStart(started)
-	if classification == "task" {
-		if runErr != nil && result.toolObservationState != ToolObservationPartial {
-			result.toolObservationState = ToolObservationPartial
-			result.toolObservationReason = runErr.Error()
+	var returnedID string
+	var runErr error
+	switch {
+	case s.continuationErr != nil:
+		runErr = fmt.Errorf("cannot continue failed provider session: %w", s.continuationErr)
+	case len(s.turns) > 0 && strings.TrimSpace(s.resumeID) == "":
+		runErr = fmt.Errorf("cannot continue provider session: original session ID is missing")
+	default:
+		returnedID, runErr = s.adapter.run(ctx, s.workDir, target, prompt, result, s.resumeID)
+		identityErr := providerSessionIdentityError(s.resumeID, returnedID, runErr)
+		runErr = errors.Join(runErr, identityErr)
+		if identityErr == nil && returnedID != "" && s.resumeID == "" {
+			s.resumeID = returnedID
 		}
+	}
+	if runErr != nil && s.continuationErr == nil {
+		s.continuationErr = runErr
+	}
+	started = result.wallClockStart(started)
+	if runErr != nil && result.toolObservationState != ToolObservationPartial {
+		result.toolObservationState = ToolObservationPartial
+		result.toolObservationReason = runErr.Error()
+	}
+	if classification == "task" {
 		if result.toolObservationState == "" {
 			result.toolObservationState = ToolObservationUnknown
 			result.toolObservationReason = "provider did not confirm complete tool observation capture"
@@ -44,21 +61,12 @@ func (s *agentSession) runTurn(ctx context.Context, target Target, prompt, class
 	}
 	refreshMCPVerified(result)
 	finished := time.Now()
-	if resumeID != "" {
-		s.resumeID = resumeID
-	}
 	s.turns = append(s.turns, sessionTurn{
-		Number:         len(s.turns) + 1,
-		Classification: classification,
-		Prompt:         prompt,
-		StartedAt:      started,
-		FinishedAt:     finished,
-		ResumeID:       resumeID,
-		ProviderError:  errorString(runErr),
-		ProviderExit:   providerExitDescription(result),
-		RawEvents:      append([]json.RawMessage(nil), result.rawEvents...),
-		ToolCalls:      append([]ToolCall(nil), result.ToolCalls...),
-		Response:       result.agentResponse,
+		Number: len(s.turns) + 1, Classification: classification, Prompt: prompt,
+		StartedAt: started, FinishedAt: finished, ResumeID: returnedID,
+		ProviderError: errorString(runErr), ProviderExit: providerExitDescription(result),
+		RawEvents: append([]json.RawMessage(nil), result.rawEvents...),
+		ToolCalls: append([]ToolCall(nil), result.ToolCalls...), Response: result.agentResponse,
 	})
 	data, err := json.MarshalIndent(s.turns, "", "  ")
 	if err != nil {
@@ -150,18 +158,23 @@ func (s *agentSession) retainTaskMCPMetrics() error {
 }
 
 func (s *agentSession) close() (retErr error) {
-	defer func() {
-		retErr = errors.Join(retErr, s.closeRoots())
-	}()
+	defer func() { retErr = errors.Join(retErr, s.closeRoots()) }()
+	if closer, ok := s.adapter.(interface{ close() error }); ok {
+		if err := closer.close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close provider session: %w", err))
+			s.retainWorkDir = true
+		}
+	}
 	if err := s.retainTaskMCPMetrics(); err != nil {
-		return err
+		retErr = errors.Join(retErr, err)
+		s.retainWorkDir = true
 	}
 	s.finalizeResult()
 	if s.retainWorkDir {
 		s.recordRetainedWorkDir()
-		return nil
+		return retErr
 	}
-	return s.removeWorkspace()
+	return errors.Join(retErr, s.removeWorkspace())
 }
 
 func (s *agentSession) closeRoots() error {
@@ -192,7 +205,7 @@ func (s *agentSession) finalizeResult() {
 		reason = "no task turn produced tool observation evidence"
 	}
 	s.result.DiagnosticToolCoverage = diagnosticToolCoverage(s.execution.Task.Metadata.Oracle.DiagnosticExpectedTools, s.result.ToolCalls, state, reason)
-	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success && (!s.result.MCPVerified || hasConsecutiveUnbatchedSemanticToolCalls(s.result.ToolCalls))
+	shouldSkipReflection := isSemeditArm(s.execution.Arm) && s.resumeID != "" && !s.result.Success
 	if shouldSkipReflection {
 		s.result.DiagnosticReflectionSkipped = diagnosticReflectionSkipReason(s.result.Error)
 	}
@@ -327,6 +340,7 @@ type agentSession struct {
 	workspaceRelativePath  string
 	transcriptPath         string
 	resumeID               string
+	continuationErr        error
 	turns                  []sessionTurn
 	started                time.Time
 	beforeFiles            workspaceSnapshot
@@ -354,63 +368,105 @@ type sessionTurn struct {
 	Response       string            `json:"response,omitempty"`
 }
 
-type openCodeProvider struct{ runner *Runner }
+type openCodeProvider struct {
+	runner  *Runner
+	session *openCodeSession
+}
 
-func (p openCodeProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	return p.runner.runOpenCode(ctx, workDir, target, prompt, result, resumeID)
+func (p *openCodeProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
+	if p.session == nil {
+		if resumeID != "" {
+			return "", fmt.Errorf("cannot resume OpenCode session %q without its live server", resumeID)
+		}
+		server, err := newOpenCodeSession(ctx, p.runner, workDir, target, result.Arm)
+		p.session = server
+		if err != nil {
+			if server != nil {
+				result.processStartedAt = server.startedAt
+				result.OpenCodeStderr = server.diagnostic()
+			}
+			return "", err
+		}
+	}
+	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
+		return "", fmt.Errorf("OpenCode session workspace, target, or arm changed")
+	}
+	return p.session.run(ctx, prompt, result, resumeID)
+}
+
+func (p *openCodeProvider) close() error {
+	if p.session == nil {
+		return nil
+	}
+	if err := p.session.close(); err != nil {
+		return fmt.Errorf("close OpenCode provider session: %w", err)
+	}
+	return nil
 }
 
 type agyProvider struct {
-	runner           *Runner
-	calls            int
-	rawEvents        int
-	toolsUsed        int
-	internalTurns    int
-	initialLoadTurns int
-	mcpLoadTurns     int
+	runner  *Runner
+	session *agySession
 }
 
 func (p *agyProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	conversationID, runErr := p.runner.runAgy(ctx, workDir, target, prompt, result, resumeID)
-	callCount := len(result.ToolCalls)
-	rawEventCount := len(result.rawEvents)
-	normalizationErr := error(nil)
-	if callCount < p.calls || rawEventCount < p.rawEvents || len(result.ToolsUsed) < p.toolsUsed {
-		normalizationErr = fmt.Errorf("agy transcript cumulative observations regressed")
-	} else if result.InternalTurns < p.internalTurns || result.InitialLoadTurns < p.initialLoadTurns || result.MCPLoadTurns < p.mcpLoadTurns {
-		normalizationErr = fmt.Errorf("agy transcript turn counters regressed")
+	if p.session == nil {
+		if resumeID != "" {
+			return "", fmt.Errorf("cannot resume Agy conversation %q without its live process", resumeID)
+		}
+		p.session = newAgySession(p.runner, workDir, target, result.Arm)
 	}
-	if normalizationErr != nil {
-		result.ToolCalls = nil
-		result.ToolsUsed = nil
-		result.ToolCount = 0
-		result.InternalTurns = 0
-		result.InitialLoadTurns = 0
-		result.MCPLoadTurns = 0
-		result.MCPVerified = false
-		return conversationID, errors.Join(runErr, normalizationErr)
+	if p.session.workDir != workDir || p.session.target != target || p.session.arm != result.Arm {
+		return "", fmt.Errorf("agy session workspace, target, or arm changed")
 	}
-	result.ToolCalls = append([]ToolCall(nil), result.ToolCalls[p.calls:]...)
-	result.rawEvents = append([]json.RawMessage(nil), result.rawEvents[p.rawEvents:]...)
-	result.ToolsUsed = append([]string(nil), result.ToolsUsed[p.toolsUsed:]...)
-	result.InternalTurns -= p.internalTurns
-	result.InitialLoadTurns -= p.initialLoadTurns
-	result.MCPLoadTurns -= p.mcpLoadTurns
-	p.calls = callCount
-	p.rawEvents = rawEventCount
-	p.toolsUsed += len(result.ToolsUsed)
-	p.internalTurns += result.InternalTurns
-	p.initialLoadTurns += result.InitialLoadTurns
-	p.mcpLoadTurns += result.MCPLoadTurns
-	result.ToolCount = len(result.ToolCalls)
-	refreshMCPVerified(result)
-	return conversationID, runErr
+	return p.session.run(ctx, prompt, result, resumeID)
 }
 
-type codexProvider struct{ runner *Runner }
+func (p *agyProvider) close() error {
+	if p.session == nil {
+		return nil
+	}
+	if err := p.session.close(); err != nil {
+		return fmt.Errorf("close Agy provider session: %w", err)
+	}
+	return nil
+}
 
-func (p codexProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
-	return p.runner.runCodex(ctx, workDir, target, prompt, result, resumeID)
+type codexProvider struct {
+	runner  *Runner
+	server  *codexAppServer
+	workDir string
+	target  Target
+	arm     ArmType
+}
+
+func (p *codexProvider) run(ctx context.Context, workDir string, target Target, prompt string, result *RunResult, resumeID string) (string, error) {
+	if p.server != nil {
+		if workDir != p.workDir || target != p.target || result.Arm != p.arm {
+			return resumeID, fmt.Errorf("codex follow-up changed the original workspace, target, or arm")
+		}
+		if resumeID == "" || resumeID != p.server.threadID {
+			return resumeID, fmt.Errorf("codex follow-up thread %q does not match the original thread %q", resumeID, p.server.threadID)
+		}
+		return p.server.run(ctx, prompt, result)
+	}
+	if resumeID != "" {
+		return resumeID, fmt.Errorf("cannot continue Codex thread %q without its live app-server", resumeID)
+	}
+	server, err := newCodexAppServer(p.runner, workDir, target, result.Arm)
+	if err != nil {
+		return "", err
+	}
+	p.server = server
+	p.workDir, p.target, p.arm = workDir, target, result.Arm
+	return p.server.run(ctx, prompt, result)
+}
+
+func (p *codexProvider) close() error {
+	if p.server == nil {
+		return nil
+	}
+	return p.server.close()
 }
 
 type providerAdapter interface {
@@ -420,11 +476,11 @@ type providerAdapter interface {
 func selectProvider(runner *Runner, target Target) (providerAdapter, error) {
 	switch target.Harness {
 	case string(HarnessCodex):
-		return codexProvider{runner: runner}, nil
+		return &codexProvider{runner: runner}, nil
 	case string(HarnessAgy):
 		return &agyProvider{runner: runner}, nil
 	case string(HarnessOpenCode):
-		return openCodeProvider{runner: runner}, nil
+		return &openCodeProvider{runner: runner}, nil
 	default:
 		return nil, fmt.Errorf("unsupported harness: %s", target.Harness)
 	}
@@ -538,4 +594,30 @@ func makeSessionWorkspaceRemovable(workspaceRoot *os.Root) error {
 		}
 		return makeSessionDirectoryWritable(workspaceRoot, path, info)
 	})
+}
+
+func providerContinuationTransport(target Target) string {
+	switch target.Harness {
+	case string(HarnessCodex):
+		return "codex_app_server_v2"
+	case string(HarnessAgy):
+		return "agy_stream_json_v1"
+	case string(HarnessOpenCode):
+		return "opencode_attached_server_v1"
+	default:
+		return ""
+	}
+}
+
+func providerSessionIdentityError(originalID, returnedID string, runErr error) error {
+	if strings.TrimSpace(returnedID) == "" {
+		if runErr == nil {
+			return fmt.Errorf("provider omitted the original session ID")
+		}
+		return nil
+	}
+	if originalID != "" && returnedID != originalID {
+		return fmt.Errorf("provider changed the original session ID from %q to %q", originalID, returnedID)
+	}
+	return nil
 }

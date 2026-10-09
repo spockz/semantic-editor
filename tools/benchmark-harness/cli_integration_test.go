@@ -37,6 +37,10 @@ func TestBenchmarkProcessHelper(t *testing.T) {
 	if len(args) == 0 {
 		t.Fatal("provider missing args")
 	}
+	if args[0] == "app-server" {
+		runFakeCodexAppServer(t)
+		return
+	}
 	plan, err := os.ReadFile(os.Getenv("SEMEDIT_TEST_OUTPUT"))
 	if err != nil {
 		t.Fatal(err)
@@ -127,8 +131,12 @@ func assertCLIPairedResults(t *testing.T, trial cliTrial) {
 
 func assertCLIIntegrationFollowup(t *testing.T, invocation cliProviderInvocation) {
 	t.Helper()
-	if !slices.Contains(invocation.Args, "mcp_servers.semedit.enabled=true") || !slices.Contains(invocation.Args, "resume") || !slices.Contains(invocation.Args, "fake-session") {
-		t.Error("integration question must resume the semedit session")
+	arguments := strings.Join(invocation.Args, " ")
+	if !strings.Contains(arguments, "mcp_servers.semedit.enabled=true") || !strings.Contains(arguments, "threadId=persistent-thread") {
+		t.Error("integration question did not continue the original semedit thread")
+	}
+	if !strings.Contains(arguments, `mcp_servers.semedit.default_tools_approval_mode="approve"`) {
+		t.Error("semedit app-server did not enable approval for its default tools")
 	}
 }
 
@@ -468,7 +476,7 @@ func runCLITrialProcess(t *testing.T, workspace cliTrialWorkspace, extra []strin
 	// #nosec G204 -- execute this test binary with controlled arguments and a fake provider.
 	command := exec.CommandContext(ctx, workspace.executable, args...)
 	command.Dir = workspace.root
-	command.Env = append(os.Environ(), "SEMEDIT_TEST_PROCESS=cli", "SEMEDIT_TEST_OUTPUT="+workspace.outputPath, "SEMEDIT_TEST_EVIDENCE="+workspace.evidence, "PATH="+workspace.bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	command.Env = append(os.Environ(), "SEMEDIT_TEST_PROCESS=cli", "SEMEDIT_TEST_OUTPUT="+workspace.outputPath, "SEMEDIT_TEST_EVIDENCE="+workspace.evidence, "SEMEDIT_APP_SERVER_LOG="+filepath.Join(workspace.root, "app-server.jsonl"), "SEMEDIT_APP_SERVER_PROCESSES="+filepath.Join(workspace.root, "app-server.processes"), "PATH="+workspace.bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	command.Stdout = output
 	command.Stderr = output
 	runErr := command.Run()
@@ -493,6 +501,9 @@ func readCLITrialResult(t *testing.T, workspace cliTrialWorkspace, process cliPr
 		}
 	} else if !os.IsNotExist(readErr) {
 		t.Fatal(readErr)
+	}
+	if process.err == nil && len(trial.Report.Runs) > 0 {
+		assertCLIAppServerLifecycle(t, workspace, len(trial.Report.Runs), len(trial.Invocations))
 	}
 	return trial
 }
@@ -533,5 +544,29 @@ func assertCLIResultConditions(t *testing.T, trial cliTrial, resolved string) {
 		if result.SemeditArmRestrictionApplied != isSemeditArm(result.Arm) {
 			t.Error("policy applicability wrong")
 		}
+	}
+}
+
+func assertCLIAppServerLifecycle(t *testing.T, workspace cliTrialWorkspace, wantSessions, wantTurns int) {
+	t.Helper()
+	processes, err := os.ReadFile(filepath.Join(workspace.root, "app-server.processes"))
+	if err != nil {
+		t.Fatalf("app-server process log: %v", err)
+	}
+	if got := strings.Count(string(processes), "process"); got != wantSessions {
+		t.Fatalf("app-server processes = %d, want one per benchmark task; runs=%d", got, wantSessions)
+	}
+	data, err := os.ReadFile(filepath.Join(workspace.root, "app-server.jsonl"))
+	if err != nil {
+		t.Fatalf("app-server request log: %v", err)
+	}
+	requests := string(data)
+	for _, method := range []string{"initialize", "thread/start"} {
+		if got := strings.Count(requests, "\"method\":\""+method+"\""); got != wantSessions {
+			t.Errorf("%s requests = %d, want one per benchmark task", method, got)
+		}
+	}
+	if got := strings.Count(requests, "\"method\":\"turn/start\""); got != wantTurns {
+		t.Errorf("turn/start requests = %d, want %d recorded turns", got, wantTurns)
 	}
 }

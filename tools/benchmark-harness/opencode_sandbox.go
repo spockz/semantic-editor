@@ -74,6 +74,8 @@ func renderOpenCodeSeatbeltProfile(fixtureRoot, endpointHost, openCodePath, seme
 	}
 	var profile strings.Builder
 	profile.WriteString("(version 1)\n(deny default)\n(allow process*)\n(allow sysctl-read)\n")
+	// macOS 26 dyld reads the root vnode while locating its shared cache.
+	profile.WriteString("(allow file-read* (literal \"/\"))\n")
 	for _, systemRoot := range []string{"/System", "/usr", "/bin", "/sbin", "/opt/homebrew"} {
 		fmt.Fprintf(&profile, "(allow file-read* (subpath %s))\n", strconv.Quote(systemRoot))
 	}
@@ -148,4 +150,33 @@ func sanitizedOpenCodeEnvironment(source []string) []string {
 		clean = append(clean, entry)
 	}
 	return clean
+}
+
+func (r *Runner) openCodeSessionSandboxProfile(workDir, openCodePath, modelURL, port string) (string, string, error) {
+	sandboxPath, profilePath, err := r.openCodeSandboxProfile(workDir, openCodePath, modelURL)
+	if err != nil {
+		return "", "", err
+	}
+	// #nosec G304 -- profilePath is created under the runner's isolated scratch root.
+	profile, err := os.ReadFile(profilePath)
+	if err != nil {
+		return "", "", fmt.Errorf("read OpenCode sandbox profile: %w", err)
+	}
+	profile, err = appendOpenCodeSessionLoopbackRule(profile, port)
+	if err != nil {
+		return "", "", err
+	}
+	if err := pipeline.WriteAtomic(profilePath, profile); err != nil {
+		return "", "", fmt.Errorf("write OpenCode loopback server permission: %w", err)
+	}
+	return sandboxPath, profilePath, nil
+}
+
+func appendOpenCodeSessionLoopbackRule(profile []byte, port string) ([]byte, error) {
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return nil, fmt.Errorf("OpenCode server port %q is invalid", port)
+	}
+	rule := fmt.Sprintf("\n(allow network-bind (local tcp \"localhost:%d\"))\n(allow network-inbound (local tcp \"localhost:%d\"))\n", portNumber, portNumber)
+	return append(profile, []byte(rule)...), nil
 }
