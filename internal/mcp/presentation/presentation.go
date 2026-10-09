@@ -1,5 +1,5 @@
-// Package mcp presents validated results before potentially large formatter output.
-package mcp
+// Package presentation keeps structured MCP results useful without forwarding bulk payloads.
+package presentation
 
 import (
 	"bytes"
@@ -21,7 +21,8 @@ const (
 	suggestionsField      = "suggestions"
 )
 
-func criticalText(structured map[string]any, body string) (string, error) {
+// CriticalText renders outcome fields before potentially large formatter output.
+func CriticalText(structured map[string]any, body string) (string, error) {
 	presentation := make(map[string]any, len(structured))
 	for key, value := range structured {
 		if key == "tool_request" {
@@ -258,7 +259,8 @@ func deleteBatchWorkingContinuations(result map[string]any) {
 	}
 }
 
-func criticalTextFallback(structured map[string]any, body string, cause error) string {
+// CriticalTextFallback preserves operation errors when structured projection fails.
+func CriticalTextFallback(structured map[string]any, body string, cause error) string {
 	fallback := map[string]any{
 		applicationStateField: "unknown",
 		"presentation_error":  cause.Error(),
@@ -269,7 +271,7 @@ func criticalTextFallback(structured map[string]any, body string, cause error) s
 	if location, ok := structured["location"]; ok {
 		fallback["location"] = location
 	}
-	if text, err := criticalText(fallback, body); err == nil {
+	if text, err := CriticalText(fallback, body); err == nil {
 		return text
 	}
 	return fmt.Sprintf("Critical result projection unavailable: %v\n\n%s", cause, body)
@@ -298,7 +300,8 @@ func (fields orderedJSONObject) MarshalJSON() ([]byte, error) {
 	return result.Bytes(), nil
 }
 
-func criticalNativeFields(value any) (map[string]any, error) {
+// CriticalNativeFields returns schema-validated diagnostic metadata from native results.
+func CriticalNativeFields(value any) (map[string]any, error) {
 	switch result := value.(type) {
 	case operation.FileEditRes:
 		fields := map[string]any{}

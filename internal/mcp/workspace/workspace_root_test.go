@@ -1,5 +1,5 @@
-// Package mcp tests request-root resolution and state binding at MCP ingress.
-package mcp
+// Package workspace tests request-root and path policy without server dispatch dependencies.
+package workspace
 
 import (
 	"os"
@@ -17,31 +17,15 @@ func TestRequestRootAndTrustRejectWrongTypes(t *testing.T) {
 		{"trust_workspace": nil},
 		{"trust_workspace": "true"},
 	} {
-		if _, err := prepareWorkspaceArguments(root, raw); err == nil {
+		if _, err := PrepareWorkspaceArguments(root, raw); err == nil {
 			t.Errorf("prepareWorkspaceArguments(%#v) succeeded", raw)
 		}
 	}
-	if _, err := resolveRequestRoot(root, t.TempDir()); err == nil || !strings.Contains(err.Error(), "outside configured root") {
+	if _, err := ResolveRequestRoot(root, t.TempDir()); err == nil || !strings.Contains(err.Error(), "outside configured root") {
 		t.Errorf("resolveRequestRoot accepted an external workspace: %v", err)
 	}
-	if got, err := resolveRequestRoot(root, filepath.Join(root, ".scratch", "worktrees", "selected")); err == nil || !strings.Contains(err.Error(), "canonicalize workspace root") {
+	if got, err := ResolveRequestRoot(root, filepath.Join(root, ".scratch", "worktrees", "selected")); err == nil || !strings.Contains(err.Error(), "canonicalize workspace root") {
 		t.Errorf("resolveRequestRoot accepted a missing in-root worktree: root=%q err=%v", got, err)
-	}
-}
-
-func TestGoBaseDirForRootSharesDefaultSubdirectoriesAndIsolatesWorktrees(t *testing.T) {
-	t.Parallel()
-	root := t.TempDir()
-	configuredCache := filepath.Join(root, "private-cache")
-	server := &Server{workDir: root, goBaseDir: configuredCache}
-	for _, selected := range []string{root, filepath.Join(root, "module", "nested")} {
-		if got := server.goBaseDirForRoot(selected); got != configuredCache {
-			t.Errorf("goBaseDirForRoot(%q) = %q, want configured cache %q", selected, got, configuredCache)
-		}
-	}
-	worktree := filepath.Join(root, ".scratch", "worktrees", "other")
-	if got, want := server.goBaseDirForRoot(worktree), filepath.Join(worktree, ".scratch", "go"); got != want {
-		t.Errorf("goBaseDirForRoot(worktree) = %q, want isolated cache %q", got, want)
 	}
 }
 
@@ -57,10 +41,10 @@ func TestRequestPathsRejectTraversalAndSymlinks(t *testing.T) {
 			t.Errorf("requestPathWithinRoot(%q) error = %v", path, err)
 		}
 	}
-	if _, err := resolveRequestRoot(root, t.TempDir()); err == nil || !strings.Contains(err.Error(), "outside configured root") {
+	if _, err := ResolveRequestRoot(root, t.TempDir()); err == nil || !strings.Contains(err.Error(), "outside configured root") {
 		t.Errorf("resolveRequestRoot accepted an external workspace: %v", err)
 	}
-	if got, err := resolveRequestRoot(root, filepath.Join(root, ".scratch", "worktrees", "selected")); err == nil || !strings.Contains(err.Error(), "canonicalize workspace root") {
+	if got, err := ResolveRequestRoot(root, filepath.Join(root, ".scratch", "worktrees", "selected")); err == nil || !strings.Contains(err.Error(), "canonicalize workspace root") {
 		t.Errorf("resolveRequestRoot accepted a missing in-root worktree: root=%q err=%v", got, err)
 	}
 	for _, test := range []struct {
@@ -72,7 +56,7 @@ func TestRequestPathsRejectTraversalAndSymlinks(t *testing.T) {
 		{name: "member file", raw: map[string]any{"members": []any{map[string]any{"file": "../outside.go"}}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if err := validateRequestPaths(root, test.raw); err == nil {
+			if err := ValidateRequestPaths(root, test.raw); err == nil {
 				t.Fatalf("validateRequestPaths(%#v) succeeded", test.raw)
 			}
 		})

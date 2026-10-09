@@ -531,7 +531,7 @@ func parseBatchWorkspaceRequest(configuredRoot string, rootJSON, trustJSON json.
 			return "", false, fmt.Errorf("trust_workspace must be a boolean: %w", err)
 		}
 	}
-	root, err := resolveRequestRoot(configuredRoot, requestedRoot)
+	root, err := ResolveRequestRoot(configuredRoot, requestedRoot)
 	return root, trusted, err
 }
 
@@ -554,7 +554,7 @@ func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) (
 			if !ok {
 				return nil, fmt.Errorf("edit %d workspace_root must be a string", index)
 			}
-			resolvedChildRoot, err := resolveRequestRoot(configuredRoot, childRoot)
+			resolvedChildRoot, err := ResolveRequestRoot(configuredRoot, childRoot)
 			if err != nil {
 				return nil, fmt.Errorf("edit %d: %w", index, err)
 			}
@@ -563,7 +563,7 @@ func prepareBatchEntries(configuredRoot, batchRoot string, edits []BatchEntry) (
 			}
 			delete(child, "workspace_root")
 		}
-		if err := validateRequestPaths(batchRoot, child); err != nil {
+		if err := ValidateRequestPaths(batchRoot, child); err != nil {
 			return nil, fmt.Errorf("edit %d: %w", index, err)
 		}
 		encoded, err := json.Marshal(child)
@@ -620,7 +620,7 @@ func (s *Server) handleBatch(ctx context.Context, id json.RawMessage, raw json.R
 		return
 	}
 	structured := timing.structuredContentWithResult(response)
-	critical, err := criticalText(structured, string(bodyBytes))
+	critical, err := CriticalText(structured, string(bodyBytes))
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		critical = criticalTextFallback(structured, string(bodyBytes), err)
@@ -828,7 +828,7 @@ func (s *Server) verifyFinishedBatch(ctx context.Context, response *BatchRespons
 }
 
 func (s *Server) executeBatchForConfiguration(ctx context.Context, configuration serverConfiguration, root string, trustWorkspace bool, edits []BatchEntry, autoOrganizeImports bool) (*BatchResponse, error) {
-	canonicalRoot, err := resolveRequestRoot(configuration.workDir, root)
+	canonicalRoot, err := ResolveRequestRoot(configuration.workDir, root)
 	if err != nil {
 		return nil, err
 	}

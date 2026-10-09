@@ -1600,14 +1600,14 @@ func (s *Server) handleToolCall(ctx context.Context, id json.RawMessage, rawPara
 			return
 		}
 	}
-	requestRoot, rootErr := prepareWorkspaceArguments(configuration.workDir, raw)
+	requestRoot, rootErr := PrepareWorkspaceArguments(configuration.workDir, raw)
 	if rootErr != nil {
 		finishArguments()
 		s.sendToolErrorWithTiming(id, rootErr.Error(), timing, rootErr)
 		return
 	}
-	requestTrust := requestTrustedRoot(requestRoot, configuration.workspaceTrust, raw)
-	projectTrust := canonicalTrust(requestRoot, requestTrust)
+	requestTrust := RequestTrustedRoot(requestRoot, configuration.workspaceTrust, raw)
+	projectTrust := CanonicalTrust(requestRoot, requestTrust)
 	requestServer := requestViewFromConfiguration(configuration, requestRoot, requestTrust)
 	observer := requestMutationObserver(requestServer)
 	ctx = operation.WithMutationObserver(ctx, observer)
@@ -1782,7 +1782,7 @@ func (s *Server) handleReload(id json.RawMessage) {
 }
 
 func (s *Server) sendToolSuccessWithStructuredContent(id json.RawMessage, text string, structuredContent map[string]any) {
-	presented, err := criticalText(structuredContent, text)
+	presented, err := CriticalText(structuredContent, text)
 	if err != nil {
 		structuredContent["presentation_error"] = err.Error()
 		presented = criticalTextFallback(structuredContent, text, err)
@@ -1811,7 +1811,7 @@ func (s *Server) sendToolError(id json.RawMessage, text string, errs ...error) {
 			structured["location"] = loc
 		}
 	}
-	presented, err := criticalText(structured, text)
+	presented, err := CriticalText(structured, text)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		presented = criticalTextFallback(structured, text, err)
@@ -1834,7 +1834,7 @@ func (s *Server) sendToolErrorWithTiming(id json.RawMessage, text string, timing
 			structured["location"] = loc
 		}
 	}
-	presented, err := criticalText(structured, text)
+	presented, err := CriticalText(structured, text)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		presented = criticalTextFallback(structured, text, err)
@@ -1866,7 +1866,7 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 		if location != nil {
 			structured["location"] = location
 		}
-		presented, presentationErr := criticalText(structured, text)
+		presented, presentationErr := CriticalText(structured, text)
 		if presentationErr != nil {
 			structured["presentation_error"] = presentationErr.Error()
 			presented = criticalTextFallback(structured, text, presentationErr)
@@ -1902,7 +1902,7 @@ func (s *Server) sendOperationToolErrorWithTiming(id json.RawMessage, text strin
 	if location != nil {
 		structured["location"] = location
 	}
-	presented, presentationErr := criticalText(structured, text)
+	presented, presentationErr := CriticalText(structured, text)
 	if presentationErr != nil {
 		structured["presentation_error"] = presentationErr.Error()
 		presented = criticalTextFallback(structured, text, presentationErr)
@@ -2321,7 +2321,7 @@ func (s *Server) handleMetricsCall(id json.RawMessage, arguments json.RawMessage
 	records := s.recentToolMetrics(request.Limit)
 	structured := map[string]any{"result": map[string]any{"records": records}}
 	body := fmt.Sprintf("Returned %d timing records, newest first.", len(records))
-	text, err := criticalText(structured, body)
+	text, err := CriticalText(structured, body)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		text = criticalTextFallback(structured, body, err)
@@ -2337,7 +2337,7 @@ func (s *Server) sendToolResultWithNative(id json.RawMessage, text string, timin
 	s.recordToolMetrics(timing)
 	structured := timing.structuredContentWithResult(text)
 	maps.Copy(structured, fields)
-	nativeFields, nativeErr := criticalNativeFields(native)
+	nativeFields, nativeErr := CriticalNativeFields(native)
 	if nativeErr == nil {
 		for key, value := range nativeFields {
 			if _, exists := structured[key]; !exists {
@@ -2348,7 +2348,7 @@ func (s *Server) sendToolResultWithNative(id json.RawMessage, text string, timin
 		structured["presentation_error"] = nativeErr.Error()
 		structured["native_metadata_unavailable"] = true
 	}
-	presented, err := criticalText(structured, text)
+	presented, err := CriticalText(structured, text)
 	if err != nil {
 		structured["presentation_error"] = err.Error()
 		presented = criticalTextFallback(structured, text, err)
@@ -2536,7 +2536,7 @@ func requestViewFromConfiguration(configuration serverConfiguration, root string
 		registryProvided:      configuration.registryProvided,
 		registryValidationErr: configuration.registryValidationErr,
 		liveReload:            configuration.liveReload,
-		workspaceTrust:        canonicalTrust(workspaceRoot, trusted),
+		workspaceTrust:        CanonicalTrust(workspaceRoot, trusted),
 		goBaseDir:             selectedGoBaseDir(configuration.workDir, configuration.goBaseDir, workspaceRoot),
 		explicitGoBaseDir:     configuration.explicitGoBaseDir,
 		enabledLanguages:      slices.Clone(configuration.enabledLanguages),

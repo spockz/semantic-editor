@@ -55,6 +55,10 @@ Eight jobs had the lowest mean, 34.8% below the serial mean. Sixteen jobs were e
 
 `go test ./...` already executes independent package test binaries concurrently according to Go's package scheduling. As more packages are added, this provides additional parallelism without changing individual tests. The benchmark runner should record the package scheduling setting separately from test-level parallelism.
 
+Package boundaries also define build and test cache invalidation. The MCP package previously held presentation projection and workspace root/path policy in the same package test binary as transport dispatch. Those cohesive helpers and focused tests now live in `internal/mcp/presentation` and `internal/mcp/workspace`. A change limited to server dispatch can leave those package test results reusable; a change to a helper still invalidates its own package and dependents that exercise it. The root package retains dispatch integration coverage.
+
+For the current direct Go package graph, `internal/mcp` has 14 outgoing imports under `semedit/internal` and 3 incoming package users (instability 0.82). Each extracted package has 1 outgoing internal import and 1 incoming user (instability 0.50). These are coupling indicators, not package-size targets: no universal count identifies a good seam. Use the graph to find high-efferent packages, then inspect cohesive responsibilities and test dependencies before splitting. Afferent counts show who would be affected by a change, not which source files belong together.
+
 ### B. Unit and Integration Test Parallelism
 
 Tests that call `t.Parallel()` can run concurrently within a test binary. Each candidate test must first prove isolation of temporary directories, module caches, environment variables, ports, subprocesses, and generated artifacts. Integration tests that share a daemon, network port, or mutable fixture must remain serialized or receive per-test resources.
@@ -69,7 +73,7 @@ The Make graph now completes mutating preparation (`fmt`, then `tidy`) before li
 
 ### E. Caching
 
-Record cache state for every measurement. A successful package run can be reused when inputs and flags are cache-compatible. The current `make test` command includes `-shuffle=on`, which chooses a new clock-based test-order seed and causes the full randomized invocation to execute again. Use `-count=1` for uncached execution measurements, or a deterministic cache-compatible command for cache studies. Never compare cached validation time with a real validation run.
+Record cache state for every measurement. A successful package run can be reused when inputs and flags are cache-compatible. The current `make check` path runs `make test-core`, which invokes plain `go test` and is cache-compatible. `make test-race`, `make test-harness`, and `make test-all` use `-shuffle=on` and are intended to rerun randomized suites. Use `-count=1` for uncached execution measurements. Never compare cached validation time with a real validation run.
 
 ## 5. Evaluation Protocol
 

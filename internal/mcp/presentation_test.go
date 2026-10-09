@@ -37,7 +37,7 @@ func TestCriticalTextPreservesCompanionsAndOrdersOutcomeBeforeBulk(t *testing.T)
 		},
 	}
 	body := strings.Repeat("large formatter body", 128)
-	text, err := criticalText(structured, body)
+	text, err := CriticalText(structured, body)
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -98,7 +98,7 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 		},
 		"read_set": map[string]any{"analysis": strings.Repeat("bulk", 512)},
 	}
-	text, err := criticalText(structured, "formatter output")
+	text, err := CriticalText(structured, "formatter output")
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -130,7 +130,7 @@ func TestCriticalTextKeepsFunctionTargetBeforeBulkAndOmitsBatchWorkingTarget(t *
 		t.Fatalf("function target identity or companion revision changed: %#v", result["function_target"])
 	}
 
-	batchText, err := criticalText(map[string]any{"result": &BatchResponse{
+	batchText, err := CriticalText(map[string]any{"result": &BatchResponse{
 		Status: "ok",
 		Results: []BatchResult{{
 			Tool: "semantic_change_signature", Status: "ok",
@@ -173,7 +173,7 @@ func TestCriticalTextOrdersErrorAndReceiptContinuationsBeforeDiagnostics(t *test
 		},
 		"diagnostic_delta": delta,
 	}
-	text, err := criticalText(structured, strings.Repeat("formatter", 128))
+	text, err := CriticalText(structured, strings.Repeat("formatter", 128))
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -231,7 +231,7 @@ func TestCriticalTextKeepsTypedEssentialsWhenNativeMetadataIsUnavailable(t *test
 		"native_metadata_unavailable": true,
 		"presentation_error":          "invalid native diagnostic metadata",
 	}
-	text, err := criticalText(structured, "formatted body")
+	text, err := CriticalText(structured, "formatted body")
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -253,7 +253,7 @@ func TestCriticalNativeFieldsExposeExactDiagnosticResult(t *testing.T) {
 		Delta:            pipeline.DiagnosticDelta{NetDelta: 1, Introduced: []string{"new diagnostic"}, Resolved: []string{}},
 		HasDelta:         true,
 	}
-	fields, err := criticalNativeFields(native)
+	fields, err := CriticalNativeFields(native)
 	if err != nil {
 		t.Fatalf("criticalNativeFields() error = %v", err)
 	}
@@ -274,7 +274,7 @@ func TestCriticalNativeFieldsExposeExactDiagnosticResult(t *testing.T) {
 	if !reflect.DeepEqual(gotDelta, wantDelta) {
 		t.Fatalf("diagnostic delta = %#v, want %#v", gotDelta, wantDelta)
 	}
-	deferred, err := criticalNativeFields(operation.FileEditRes{DiagnosticStatus: "deferred", HasDelta: true})
+	deferred, err := CriticalNativeFields(operation.FileEditRes{DiagnosticStatus: "deferred", HasDelta: true})
 	if err != nil {
 		t.Fatalf("deferred diagnostic fields rejected nil lists: %v", err)
 	}
@@ -301,7 +301,7 @@ func TestBatchCriticalOutcomeKeepsChildrenIntermediateAndAheadOfDiffs(t *testing
 		FinalDiff: strings.Repeat("final diff", 256),
 	}
 	body := strings.Repeat("bulk result", 128)
-	text, err := criticalText(map[string]any{"result": response}, body)
+	text, err := CriticalText(map[string]any{"result": response}, body)
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}
@@ -358,7 +358,7 @@ func TestBatchCriticalVerificationKeepsPartialAndSkippedState(t *testing.T) {
 			Coverage: []operation.LanguageCoverage{{Language: "go", Status: "failed", Paths: []string{"main.go"}, Detail: "coverage note"}},
 		},
 	}
-	text, err := criticalText(map[string]any{"result": response}, "body")
+	text, err := CriticalText(map[string]any{"result": response}, "body")
 	if err != nil {
 		t.Fatalf("criticalText() error = %v", err)
 	}

@@ -1,5 +1,5 @@
-// Package mcp resolves request-selected roots here to bind dispatch, trust, and path checks together.
-package mcp
+// Package workspace binds request roots, trust, and path validation into one policy boundary.
+package workspace
 
 import (
 	"fmt"
@@ -21,7 +21,8 @@ var filesystemPathFields = map[string]struct{}{
 	"contract_file":    {},
 }
 
-func resolveRequestRoot(configuredRoot, requestedRoot string) (string, error) {
+// ResolveRequestRoot canonicalizes a requested workspace beneath its configured root.
+func ResolveRequestRoot(configuredRoot, requestedRoot string) (string, error) {
 	base := configuredRoot
 	if base == "" {
 		base = "."
@@ -140,11 +141,13 @@ func canonicalizeExistingParent(path string) (string, error) {
 	}
 }
 
-func canonicalTrust(root string, trusted bool) backend.WorkspaceTrust {
+// CanonicalTrust binds the trust decision to the canonical workspace root.
+func CanonicalTrust(root string, trusted bool) backend.WorkspaceTrust {
 	return backend.NewWorkspaceTrust(root, trusted)
 }
 
-func validateRequestPaths(root string, raw map[string]any) error {
+// ValidateRequestPaths rejects filesystem paths that escape the selected workspace.
+func ValidateRequestPaths(root string, raw map[string]any) error {
 	_, err := validateRequestPathValue(root, raw, "")
 	return err
 }
@@ -234,7 +237,8 @@ func canonicalRequestRelativePath(root, path string) (string, error) {
 	return relative, nil
 }
 
-func prepareWorkspaceArguments(configuredRoot string, raw map[string]any) (string, error) {
+// PrepareWorkspaceArguments resolves and validates workspace selection in raw arguments.
+func PrepareWorkspaceArguments(configuredRoot string, raw map[string]any) (string, error) {
 	rootValue, present := raw["workspace_root"]
 	if present {
 		if _, ok := rootValue.(string); !ok {
@@ -248,17 +252,18 @@ func prepareWorkspaceArguments(configuredRoot string, raw map[string]any) (strin
 	}
 	rootText, _ := rootValue.(string)
 	delete(raw, "workspace_root")
-	root, err := resolveRequestRoot(configuredRoot, rootText)
+	root, err := ResolveRequestRoot(configuredRoot, rootText)
 	if err != nil {
 		return "", err
 	}
-	if err := validateRequestPaths(root, raw); err != nil {
+	if err := ValidateRequestPaths(root, raw); err != nil {
 		return "", err
 	}
 	return root, nil
 }
 
-func requestTrustedRoot(root string, configured backend.WorkspaceTrust, raw map[string]any) bool {
+// RequestTrustedRoot applies request trust only when it matches the configured root.
+func RequestTrustedRoot(root string, configured backend.WorkspaceTrust, raw map[string]any) bool {
 	if trusted, ok := raw["trust_workspace"].(bool); ok {
 		return trusted
 	}
